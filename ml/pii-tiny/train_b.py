@@ -53,10 +53,26 @@ def shape(word: str, prev: str, nxt: str) -> list[float]:
     ]
 
 
-N_SHAPE = 8
+N_BASE = 8
+GAZ_KEYS = ("tr_first", "tr_last", "en_first", "en_last")
+N_SHAPE = N_BASE + len(GAZ_KEYS)
 
 
-def featurize(text: str):
+def load_gazetteer() -> dict[str, set[str]]:
+    """Name lists from the TRAINING split of the pools only: eval names stay unseen."""
+    from gen import Pools
+
+    p = Pools("train")
+    name = lambda x: x["name"] if isinstance(x, dict) else x  # noqa: E731
+    return {
+        "tr_first": {norm(name(x)) for x in p.tr_first},
+        "tr_last": {norm(x) for x in p.tr_last},
+        "en_first": {norm(name(x)) for x in p.en_first},
+        "en_last": {norm(x) for x in p.en_last},
+    }
+
+
+def featurize(text: str, gaz: dict | None = None):
     toks = tokenize(text)
     words = [text[a:b] for a, b in toks]
     feats = []
@@ -65,7 +81,11 @@ def featurize(text: str):
         if i and "\n" in text[toks[i - 1][1] : toks[i][0]]:
             prev = "\n"
         nxt = words[i + 1] if i + 1 < len(words) else ""
-        feats.append(shape(w, prev, nxt))
+        f = shape(w, prev, nxt)
+        if gaz is not None:
+            n = norm(w)
+            f += [float(n in gaz[k]) for k in GAZ_KEYS]
+        feats.append(f)
     return toks, words, feats
 
 
@@ -81,9 +101,10 @@ def bio(toks, spans):
 
 
 class Vocab:
-    def __init__(self, words=None, chars=None):
+    def __init__(self, words=None, chars=None, gaz=None):
         self.words = words or ["<pad>", "<unk>"]
         self.chars = chars or ["<pad>", "<unk>"]
+        self.gaz = gaz  # None: model without gazetteer features (n_shape = N_BASE)
         self.w = {x: i for i, x in enumerate(self.words)}
         self.c = {x: i for i, x in enumerate(self.chars)}
 
@@ -99,7 +120,7 @@ class Vocab:
                     wc[norm(w)] += 1
         words = ["<pad>", "<unk>"] + [w for w, n in wc.most_common(max_words) if n >= min_count]
         chars = ["<pad>", "<unk>"] + [c for c, n in cc.most_common() if n >= 2]
-        return cls(words, chars)
+        return cls(words, chars, load_gazetteer())
 
     def word_id(self, w):
         return self.w.get(norm(w), 1)
@@ -110,13 +131,13 @@ class Vocab:
 
 
 class Tagger(nn.Module):
-    def __init__(self, n_words, n_chars, wdim=64, cdim=32, cfilters=64, hidden=128):
+    def __init__(self, n_words, n_chars, wdim=64, cdim=32, cfilters=64, hidden=128, n_shape=N_SHAPE):
         super().__init__()
         self.wemb = nn.Embedding(n_words, wdim, padding_idx=0)
         self.cemb = nn.Embedding(n_chars, cdim, padding_idx=0)
         self.conv = nn.Conv1d(cdim, cfilters, kernel_size=3, padding=1)
         self.drop = nn.Dropout(0.25)
-        self.lstm = nn.LSTM(wdim + cfilters + N_SHAPE, hidden, num_layers=2, bidirectional=True, batch_first=True, dropout=0.25)
+        self.lstm = nn.LSTM(wdim + cfilters + n_shape, hidden, num_layers=2, bidirectional=True, batch_first=True, dropout=0.25)
         self.out = nn.Linear(2 * hidden, len(TAGS))
 
     def forward(self, wids, cids, shp):
@@ -128,11 +149,14 @@ class Tagger(nn.Module):
         return self.out(self.drop(h))
 
 
-def encode(rec, vocab, train=False, wdrop=0.0):
-    toks, words, feats = featurize(rec["text"])
+def encode(rec, vocab, train=False, wdrop=0.0, gdrop=0.3):
+    toks, words, feats = featurize(rec["text"], vocab.gaz)
     wids = [vocab.word_id(w) for w in words]
     if train and wdrop:
         wids = [1 if random.random() < wdrop else i for i in wids]
+    if train and vocab.gaz is not None and gdrop:
+        # Hide the gazetteer now and then so unseen names are still found from context.
+        feats = [f[:N_BASE] + [0.0] * len(GAZ_KEYS) if random.random() < gdrop else f for f in feats]
     return {
         "toks": toks,
         "wids": wids,
@@ -146,7 +170,8 @@ def batchify(items):
     n = max(1, max(len(x["wids"]) for x in items))
     w = torch.zeros(len(items), n, dtype=torch.long)
     c = torch.zeros(len(items), n, MAX_CHARS, dtype=torch.long)
-    s = torch.zeros(len(items), n, N_SHAPE)
+    width = next((len(x["shp"][0]) for x in items if x["shp"]), N_SHAPE)
+    s = torch.zeros(len(items), n, width)
     y = torch.full((len(items), n), -100, dtype=torch.long)
     for i, x in enumerate(items):
         k = len(x["wids"])
@@ -210,7 +235,7 @@ def train(args):
     recs = load(args.train)
     dev = load(args.dev)[: args.dev_limit]
     vocab = Vocab.build(recs)
-    model = Tagger(len(vocab.words), len(vocab.chars))
+    model = Tagger(len(vocab.words), len(vocab.chars), n_shape=N_SHAPE if vocab.gaz is not None else N_BASE)
     print(f"vocab words={len(vocab.words)} chars={len(vocab.chars)} params={sum(p.numel() for p in model.parameters()):,}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     weights = torch.ones(len(TAGS))
@@ -244,7 +269,19 @@ def train(args):
                 print(f"epoch {epoch} step {step}/{steps} loss {loss.item():.4f} {time.time() - t0:.0f}s", flush=True)
         res = score(dev, predict(model, vocab, dev))
         print(f"epoch {epoch} dev: " + json.dumps({k: res[k] for k in ("ALL", "PERSON")}) + f" benign_fp={res['benign_fp_rate']}", flush=True)
-        torch.save({"state": model.state_dict(), "words": vocab.words, "chars": vocab.chars}, out / "model.pt")
+        gaz = {k: sorted(v) for k, v in vocab.gaz.items()} if vocab.gaz is not None else None
+        torch.save({"state": model.state_dict(), "words": vocab.words, "chars": vocab.chars, "gaz": gaz}, out / "model.pt")
+
+
+def load_model(path):
+    """Model + vocab from a checkpoint, with or without gazetteer features."""
+    ck = torch.load(Path(path) / "model.pt")
+    gaz = {k: set(v) for k, v in ck["gaz"].items()} if ck.get("gaz") else None
+    vocab = Vocab(ck["words"], ck["chars"], gaz)
+    model = Tagger(len(vocab.words), len(vocab.chars), n_shape=N_SHAPE if gaz is not None else N_BASE)
+    model.load_state_dict(ck["state"])
+    model.eval()
+    return model, vocab
 
 
 def main(argv=None):
@@ -264,10 +301,7 @@ def main(argv=None):
     ap.add_argument("--min-conf", type=float, default=0.0)
     args = ap.parse_args(argv)
     if args.predict:
-        ck = torch.load(Path(args.model) / "model.pt")
-        vocab = Vocab(ck["words"], ck["chars"])
-        model = Tagger(len(vocab.words), len(vocab.chars))
-        model.load_state_dict(ck["state"])
+        model, vocab = load_model(args.model)
         with open(args.pred, "w", encoding="utf-8") as fh:
             for r in predict(model, vocab, load(args.predict), min_conf=args.min_conf):
                 fh.write(json.dumps(r, ensure_ascii=False) + "\n")

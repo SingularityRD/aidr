@@ -19,7 +19,7 @@ import onnxruntime as ort
 import torch
 from onnxruntime.quantization import QuantType, quantize_dynamic
 
-from train_b import MAX_CHARS, TAGS, TOKEN, Tagger, Vocab, batchify, encode, load
+from train_b import GAZ_KEYS, MAX_CHARS, TAGS, TOKEN, batchify, encode, load, load_model
 
 
 def main(argv=None) -> int:
@@ -29,11 +29,7 @@ def main(argv=None) -> int:
     ap.add_argument("--n", type=int, default=300)
     args = ap.parse_args(argv)
     out = Path(args.model)
-    ck = torch.load(out / "model.pt")
-    vocab = Vocab(ck["words"], ck["chars"])
-    model = Tagger(len(vocab.words), len(vocab.chars))
-    model.load_state_dict(ck["state"])
-    model.eval()
+    model, vocab = load_model(out)
 
     recs = load(args.data)[: args.n]
     w, c, s, _ = batchify([encode(recs[0], vocab)])
@@ -49,7 +45,17 @@ def main(argv=None) -> int:
     )
     quantize_dynamic(str(out / "model.onnx"), str(out / "model.int8.onnx"), weight_type=QuantType.QInt8)
     (out / "vocab.json").write_text(
-        json.dumps({"words": vocab.words, "chars": vocab.chars, "tags": TAGS, "maxChars": MAX_CHARS, "token": TOKEN.pattern}, ensure_ascii=False),
+        json.dumps(
+            {
+                "words": vocab.words,
+                "chars": vocab.chars,
+                "tags": TAGS,
+                "maxChars": MAX_CHARS,
+                "token": TOKEN.pattern,
+                "gazetteer": {k: sorted(vocab.gaz[k]) for k in GAZ_KEYS} if vocab.gaz is not None else None,
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 
