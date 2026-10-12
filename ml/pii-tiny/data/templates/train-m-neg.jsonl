@@ -1,0 +1,300 @@
+{"lang": "tr", "domain": "healthcare", "text": "{PERSON1.first} Hanım {LOCATION1.city+ABL} kontrol için geliyor, {NEG:institution+GEN} kardiyoloji bölümünde {NEG:eponym} testi yapılacak. Hatırlatma SMS'i yaz."}
+{"lang": "tr", "domain": "education", "text": "Öğrencimiz {PERSON1.first} {LOCATION1.city+ABL} nakil geldi; önceki okulunda {NEG:eponym} işlenmemiş, {NEG:eponym} konusundan telafi planı yap."}
+{"lang": "tr", "domain": "education", "text": "Türkçe ödevi: \"{NEG:word}\" ve \"{NEG:word}\" kelimelerini mecaz anlamda kullanan iki cümle yaz, {NEG:place} temalı olsun."}
+{"lang": "tr", "domain": "education", "text": "{NEG:eponym} sayıları nerede kullanılır? Doğada ve {NEG:tech} gibi yazılımlarda örnek ver."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} olan çocuklarda okul uyumu: öğretmenlere yönelik {NEG:institution} kaynaklı bir rehber taslağı yaz."}
+{"lang": "mix", "domain": "education", "text": "Kardeşim {PERSON1.first} {LOCATION1.city+LOC} {NEG:institution+DAT} gidiyor, {NEG:eponym} homework'ünde help lazım."}
+{"lang": "tr", "domain": "science", "text": "{NEG:eponym} etkisini ambulans sireni örneğiyle anlat, {NEG:eponym} ile ilişkisi var mı?"}
+{"lang": "en", "domain": "healthcare", "text": "{NEG:eponym} vs {NEG:eponym}: make a table of symptoms, diagnosis and treatment options."}
+{"lang": "tr", "domain": "tourism", "text": "{NEG:place} turu için {NEG:brand} kamera mı yoksa telefon mu yeter? {NEG:place+LOC} drone serbest mi?"}
+{"lang": "tr", "domain": "travel", "text": "Müşterimiz {PERSON1} {LOCATION1.city+ABL} katılacak, diğerleri {NEG:institution+ABL}. {NEG:place} turunda buluşma noktasını belirle."}
+{"lang": "en", "domain": "travel", "text": "{PERSON1.lower} is driving down from {LOCATION1.city}; we pick her up and head to {NEG:place}, then {NEG:place}. Estimate drive times."}
+{"lang": "mix", "domain": "science", "text": "Postdoc {PERSON1} {LOCATION1.country+ABL} geliyor, {NEG:institution} lab'ında {NEG:eponym} üzerinde çalışacak. Onboarding checklist hazırla."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club} altyapısından {PERSON1}, ailesiyle {LOCATION1.district} ilçesinde oturuyor; {NEG:club} teklifi geldi. Menajerine yazılacak e-postayı hazırla."}
+{"lang": "tr", "domain": "education", "text": "{NEG:institution+GEN} kontenjanları düştü mü? {NEG:institution} ile taban puan karşılaştırması yap."}
+{"lang": "tr", "domain": "education", "text": "Kızım {PERSON1.first} {LOCATION1.city+LOC} {NEG:institution+DAT} gidiyor; okul {NEG:place} gezisi düzenliyor. Veli izin dilekçesi yaz."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club} ve {NEG:club} kadın voleybol takımlarını karşılaştıran bir analiz yaz."}
+{"lang": "mix", "domain": "culture", "text": "Dedem {PERSON1.first} {LOCATION1.city+LOC} büyümüş, {NEG:media} ve {NEG:media} onun favorileri. Nostalgic bir birthday card yaz."}
+{"lang": "tr", "domain": "sports", "text": "Oğlum {PERSON1.first} {NEG:club} basketbol okuluna gidiyor, antrenman {LOCATION1.district} ilçesinde; {NEG:brand} ayakkabı mı alalım? Haftalık beslenme planı çıkar."}
+{"lang": "en", "domain": "education", "text": "Prove {NEG:eponym} step by step and show where {NEG:eponym} is used in the proof."}
+{"lang": "tr", "domain": "media", "text": "{NEG:media} yorumunda {PERSON1.first} adlı kullanıcı \"{NEG:club} kaybedince {LOCATION1.city+LOC} sokağa çıkamadım\" yazmış; moderasyon notu yaz."}
+{"lang": "en", "domain": "media", "text": "Write a newsletter intro recommending {NEG:media} and {NEG:media} this weekend."}
+{"lang": "mix", "domain": "healthcare", "text": "[14:02] {PERSON1.first}: {NEG:institution} ER çok kalabalık\n[14:03] {PERSON2.first}: {NEG:institution+DAT} git, {LOCATION1.district} yakın\nBu chat'i hasta yönlendirme notuna çevir."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:word} ve {NEG:word} kelimelerinin etimolojisini açıkla; özel isim olarak kullanımı ayrı tutulsun."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:institution+GEN} randevu sistemi çöktü, {NEG:institution+DAT} yönlendiriliyoruz. Hastalara gönderilecek duyuruyu yaz."}
+{"lang": "tr", "domain": "healthcare", "text": "kaya tuzu tansiyonu yükseltir mi, {NEG:eponym} hastası için {NEG:brand} ürünleri uygun mu"}
+{"lang": "tr", "domain": "travel", "text": "Rezervasyon notu: Misafir {PERSON1.upper}, adres {ADDRESS1.tr}. Tur: {NEG:place} + {NEG:place}. Bu notu otel sistemine uygun formatla."}
+{"lang": "tr", "domain": "education", "text": "{NEG:eponym} ödevimi kontrol eder misin? Hoca {NEG:eponym} yöntemini kullanmamızı istemişti."}
+{"lang": "tr", "domain": "healthcare", "text": "Hastamız {PERSON1.initial} {NEG:institution+ABL} taburcu oldu, {LOCATION1.city+DAT} dönecek. {NEG:eponym} için ilaç kullanım talimatını sadeleştir."}
+{"lang": "tr", "domain": "media", "text": "{NEG:media+LOC} çıkan {NEG:club} haberini daha tarafsız bir dille yeniden yaz."}
+{"lang": "tr", "domain": "healthcare", "text": "Hasta {PERSON1.first} {PERSON1.last}, {LOCATION1.district} ilçesinden {NEG:institution+DAT} getirildi. Ön tanı: {NEG:eponym}. Epikriz taslağını düzenle."}
+{"lang": "mix", "domain": "healthcare", "text": "{NEG:eponym} ile {NEG:eponym} arasındaki farkı explain like I'm five, Türkçe cevap ver."}
+{"lang": "tr", "domain": "healthcare", "text": "Sayın {PERSON1}, {ADDRESS1.tr} adresinde ikamet eden hastamız {NEG:eponym} nedeniyle {NEG:institution+DAT} yönlendirilmiştir. Bu sevk yazısını resmi dile çevir."}
+{"lang": "tr", "domain": "education", "text": "{NEG:institution} hazırlık sınıfında {NEG:media} dizisiyle İngilizce öğrenmek işe yarar mı?"}
+{"lang": "tr", "domain": "media", "text": "{PERSON1.first} {NEG:media} kanalında {NEG:place} gezi vlogu çekiyor; {LOCATION1.city+LOC} yaşadığı için ilk bölüm oradan. Video açıklaması yaz."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club} taraftarı olarak {NEG:club} hakkında espri yap ama saygısız olmasın."}
+{"lang": "mix", "domain": "media", "text": "{PERSON1}, {NEG:media} muhabiri, {LOCATION1.city} based. Conference bio'sunu yaz, {NEG:place} haberlerini vurgula."}
+{"lang": "tr", "domain": "science", "text": "{NEG:eponym} kuralına göre elektron dağılımını yaz, {NEG:eponym} ilkesi neden önemli?"}
+{"lang": "tr", "domain": "education", "text": "Sınav programı: Pazartesi {NEG:eponym}, Çarşamba {NEG:eponym}, Cuma {NEG:eponym}. Çalışma takvimini saat saat böl."}
+{"lang": "mix", "domain": "tourism", "text": "Tour guide {PERSON1.first} {NEG:place+LOC} grubu karşılayacak, kendisi {LOCATION1.city+ABL} geliyor, ilk durak {NEG:institution} olacak. Welcome speech'i Türkçe ve İngilizce yaz."}
+{"lang": "tr", "domain": "education", "text": "{NEG:eponym} ispatındaki hatayı bul: (ispatı yapıştırıyorum) ... Sonra {NEG:eponym} kullanarak doğrusunu yaz."}
+{"lang": "tr", "domain": "education", "text": "{NEG:eponym} ile {NEG:eponym} konularını 9. sınıf seviyesinde anlatan bir ders planı hazırla."}
+{"lang": "tr", "domain": "healthcare", "text": "Diyetisyen {PERSON1.first} {PERSON1.last} {LOCATION1.district} şubesinde çalışıyor; {NEG:eponym} hastaları için hazırladığı menüyü {NEG:institution} standartlarına göre kontrol et."}
+{"lang": "en", "domain": "education", "text": "Write a lesson plan on the {NEG:place} trip for my 7th graders, including a worksheet about {NEG:place} history."}
+{"lang": "tr", "domain": "education", "text": "{NEG:institution+GEN} yüksek lisans başvurusu için niyet mektubu yazacağım; {NEG:eponym} üzerine araştırma yapmak istediğimi vurgula."}
+{"lang": "tr", "domain": "healthcare", "text": "{PERSON1.first} Bey {ADDRESS1.tr_street} adresinde tek yaşıyor, {NEG:eponym} nedeniyle evde bakım istiyor. {NEG:institution+GEN} evde sağlık birimine dilekçe yaz."}
+{"lang": "mix", "domain": "culture", "text": "Annem {PERSON1.first} {LOCATION1.city+LOC} yaşıyor, {NEG:media} fanı; birthday gift ideas ver, {NEG:place} temalı olabilir."}
+{"lang": "tr", "domain": "travel", "text": "{NEG:word} kenarında kamp yapmak istiyoruz, {NEG:place} ve {NEG:place} arasında karar veremedik"}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym}, {NEG:eponym} ve {NEG:eponym} için tek tabloda belirti, tanı yöntemi ve tedavi sütunları oluştur."}
+{"lang": "mix", "domain": "education", "text": "{NEG:institution} application deadline ne zaman? {NEG:institution} için de motivation letter draft'ı yaz."}
+{"lang": "mix", "domain": "education", "text": "{NEG:eponym} algorithm'ini Python'da implement et, yorum satırları Türkçe olsun; {NEG:eponym} ile benchmark yap."}
+{"lang": "tr", "domain": "science", "text": "{NEG:eponym} denklemini türet, ardından {NEG:eponym} ile kuantum mekaniğine geçişi özetle."}
+{"lang": "tr", "domain": "healthcare", "text": "Fizyoterapist {PERSON1.first} Hanım {LOCATION1.neighborhood} Mahallesi'nde oturuyor, {NEG:institution+GEN} {NEG:eponym} rehabilitasyon ekibine katılıyor. Hoş geldin mesajı yaz."}
+{"lang": "tr", "domain": "healthcare", "text": "Kardiyoloji notu: {NEG:eponym} bulgusu pozitif, {NEG:eponym} kriterleri karşılanmıyor. Bunu hastanın anlayacağı dile çevir."}
+{"lang": "mix", "domain": "media", "text": "{NEG:media} interview: {PERSON1.first} {LOCATION1.city+LOC} yaşıyor, {NEG:place} hakkında documentary çekiyor. Intro paragraph'ı yaz."}
+{"lang": "en", "domain": "tourism", "text": "Write cruise shore-excursion descriptions for {NEG:place} and {NEG:place}."}
+{"lang": "mix", "domain": "tourism", "text": "Otel review'una reply yaz: \"{NEG:place} manzarası süperdi ama {NEG:institution} transfer'i geç kaldı.\""}
+{"lang": "tr", "domain": "culture", "text": "Dedem {PERSON1.first} {LOCATION1.city} doğumlu, {NEG:place+DAT} hiç gitmedi. Ona {NEG:place} hakkında nostaljik bir mektup yaz."}
+{"lang": "en", "domain": "sports", "text": "Summarise last night's {NEG:club} vs {NEG:club} match and the key tactical changes."}
+{"lang": "en", "domain": "healthcare", "text": "Is {NEG:brand} sunscreen enough for {NEG:place} in July if someone has {NEG:eponym}?"}
+{"lang": "mix", "domain": "healthcare", "text": "{NEG:eponym} için latest guideline ne diyor? {NEG:institution} protokolüyle compare et."}
+{"lang": "tr", "domain": "travel", "text": "Ailem {LOCATION1.city+LOC} yaşıyor, ben {LOCATION2.city+ABL} geleceğim; ortak tatil için {NEG:place} ya da {NEG:place} öner."}
+{"lang": "en", "domain": "education", "text": "Student roster: {PERSON1}, {PERSON2}, {PERSON3}. Assign each one a presentation topic from {NEG:eponym}, {NEG:eponym}, {NEG:eponym}."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club+GEN} {NEG:place} kampı ne zaman başlıyor? hazırlık maçlarını listele"}
+{"lang": "en", "domain": "science", "text": "Give me five everyday examples of {NEG:eponym} and two of {NEG:eponym}."}
+{"lang": "tr", "domain": "education", "text": "{PERSON1.first} Bey, {NEG:institution+GEN} {LOCATION1.district} kampüsünde değil {NEG:institution+LOC} ders veriyor. Öğrencilere sınıf değişikliği duyurusu yaz."}
+{"lang": "tr", "domain": "travel", "text": "{PERSON1} {LOCATION1.city+LOC} oturuyor, bizimle {NEG:place+DAT} gelecek. {NEG:institution+ABL} kalkan uçuşla buluşma planı yap."}
+{"lang": "en", "domain": "healthcare", "text": "Patient {PERSON1} from {LOCATION1.district} missed her {NEG:eponym} follow-up at {NEG:institution}. Draft a reminder call script."}
+{"lang": "tr", "domain": "media", "text": "umut veren haberler başlıklı bir bülten hazırla; {NEG:media} ve {NEG:media} kaynaklarından örnek başlıklar uydur"}
+{"lang": "tr", "domain": "culture", "text": "Annem {PERSON1.first} {LOCATION1.city+LOC} yaşıyor, {NEG:media} ve {NEG:media} dizilerini çok seviyor. Doğum günü için dizi temalı hediye fikirleri ver."}
+{"lang": "en", "domain": "media", "text": "{PERSON1.first} hosts a {NEG:media} travel show from her home in {LOCATION1.city}. Write episode titles for {NEG:place} and {NEG:place}."}
+{"lang": "en", "domain": "media", "text": "Draft a podcast episode outline on {NEG:eponym}, sponsored by {NEG:brand}."}
+{"lang": "tr", "domain": "education", "text": "{NEG:institution} ve {NEG:institution} arasında Erasmus anlaşması var mı? Başvuru takvimini çıkar."}
+{"lang": "tr", "domain": "education", "text": "ödev: {NEG:eponym} yöntemini kullanarak denklemin kökünü bul. {NEG:eponym} yöntemiyle de karşılaştır"}
+{"lang": "tr", "domain": "tourism", "text": "{NEG:place+GEN} tarihini turistlere anlatacak 2 dakikalık rehber metni yaz, {NEG:eponym} gibi bilimsel terimlerden kaçın."}
+{"lang": "tr", "domain": "sports", "text": "dün akşam {NEG:club} maçını {NEG:media} üzerinden izledim, yorumcuların taktik analizini sadeleştir"}
+{"lang": "tr", "domain": "education", "text": "{PERSON1.initial} hocanın {NEG:institution+LOC} verdiği {NEG:eponym} dersinin notlarını sınav öncesi özet kartlarına dönüştür."}
+{"lang": "en", "domain": "science", "text": "Will {NEG:eponym} still hold in microgravity? Use the {NEG:institution} space lab experiments as reference."}
+{"lang": "mix", "domain": "travel", "text": "{NEG:institution+ABL} early flight var, {NEG:place} hotel check-in saat kaçta? late check-in mümkün mü sor"}
+{"lang": "tr", "domain": "culture", "text": "{NEG:place+LOC} geleneksel düğün adetleri nelerdir? {NEG:place} ile benzerlikleri var mı?"}
+{"lang": "tr", "domain": "travel", "text": "Eşim {PERSON1.first} ve ben {ADDRESS1.tr_street} adresinden taşınıyoruz, önce {NEG:place+LOC} bir hafta tatil yapacağız, dönüşte {NEG:institution+DAT} uğrayacağız. Yapılacaklar listesi hazırla."}
+{"lang": "en", "domain": "media", "text": "Make a watchlist of 10 shows like {NEG:media}, excluding {NEG:media}."}
+{"lang": "tr", "domain": "travel", "text": "yeğenim {PERSON1.lower} {LOCATION1.country+LOC} okuyor, yazın {NEG:place} ve {NEG:place} gezisine bizimle katılacak. vize gerekiyor mu"}
+{"lang": "mix", "domain": "culture", "text": "{NEG:media} series'ini izledim, {NEG:media} ile karşılaştırınca hangisi daha realistic?"}
+{"lang": "mix", "domain": "media", "text": "{NEG:media} podcast'i için {NEG:eponym} bölümünün outline'ını çıkar."}
+{"lang": "tr", "domain": "education", "text": "YKS için {NEG:eponym} ve {NEG:eponym} konularında en çok çıkan soru tiplerini listele."}
+{"lang": "mix", "domain": "healthcare", "text": "{PERSON1} için referral: {NEG:institution} → {NEG:institution}, reason {NEG:eponym}. Adres {ADDRESS1.tr}. Bunu formal English'e çevir."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} için fizik tedavi egzersizleri neler? {NEG:institution} hastanesinin broşüründeki gibi resimli anlatım taslağı ver."}
+{"lang": "tr", "domain": "education", "text": "Bursiyerimiz {PERSON1} {ADDRESS1.tr_street} adresinden {NEG:institution+DAT} her gün 2 saat yol gidiyor; {NEG:eponym} projesinde birinci oldu. Yurt başvurusu için destek mektubu yaz."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club} kulübünün kuruluş hikâyesini ve {NEG:club} ile rekabetini kısaca anlat."}
+{"lang": "en", "domain": "travel", "text": "lisbon is too crowded in august, suggest alternatives like {NEG:place} or {NEG:place} with beaches"}
+{"lang": "en", "domain": "sports", "text": "Make a fantasy league summary: {NEG:club} defence, {NEG:club} midfield, {NEG:club} strikers."}
+{"lang": "en", "domain": "travel", "text": "My layover between {NEG:institution} and {NEG:institution} is 55 minutes. Is that enough with a terminal change?"}
+{"lang": "en", "domain": "travel", "text": "{PERSON1.first} is flying in from {LOCATION1.city} and {PERSON2.first} from {LOCATION2.city}; we all meet in {NEG:place} for the wedding, flying into {NEG:institution}. Build a shared schedule."}
+{"lang": "tr", "domain": "education", "text": "{PERSON1.first+GEN} annesi {LOCATION1.city+LOC} oturuyor, çocuk hafta sonları {NEG:institution} etüt merkezine gelemiyor, {NEG:eponym} konusunu kaçırdı. Rehber öğretmene not yaz."}
+{"lang": "en", "domain": "healthcare", "text": "{NEG:institution} is running a free screening day for {NEG:eponym}. Write a poster headline and three bullet points."}
+{"lang": "mix", "domain": "travel", "text": "{PERSON1.first} {LOCATION1.city+LOC} oturuyor, weekend'de {NEG:place} trip planlıyoruz, return'de {NEG:place+DAT} uğrarız. Itinerary çıkar."}
+{"lang": "en", "domain": "sports", "text": "Our runners {PERSON1} and {PERSON2} trained in {NEG:place} for altitude; write a post about the camp for our {NEG:media} page."}
+{"lang": "en", "domain": "education", "text": "Our class trip goes to {NEG:place} and the {NEG:institution} campus. Write a permission slip for {PERSON1.first}'s parents at {ADDRESS1.en_street}."}
+{"lang": "en", "domain": "culture", "text": "Translate this museum label about {NEG:eponym} and {NEG:eponym} into simple English for kids."}
+{"lang": "tr", "domain": "sports", "text": "yıldız oyuncu sakatlanınca {NEG:club} nasıl oynamalı? {NEG:club} karşısında 4-3-3 mü 4-4-2 mi"}
+{"lang": "tr", "domain": "travel", "text": "deniz kenarında sakin bir yer arıyoruz; {NEG:place}, {NEG:place} yoksa {NEG:place}? çocuklu aile için sırala"}
+{"lang": "tr", "domain": "healthcare", "text": "{PERSON1} ({LOCATION1.district}, {LOCATION1.city}) – {NEG:eponym} takibi, {NEG:institution} endokrin kliniği. Bu notu SOAP formatına dönüştür."}
+{"lang": "tr", "domain": "travel", "text": "{NEG:place} mı {NEG:place} mı? Ekim'de balayı için hangisi daha uygun, bütçe tablosuyla karşılaştır."}
+{"lang": "en", "domain": "travel", "text": "Make a packing list for hiking {NEG:place} in October and a backup plan if {NEG:place} trails are closed."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:media} romanının film uyarlaması ile kitabı karşılaştır, {NEG:place} betimlemeleri nasıl değişmiş?"}
+{"lang": "en", "domain": "media", "text": "Compare {NEG:media} and {NEG:media} for documentaries about {NEG:place}."}
+{"lang": "mix", "domain": "education", "text": "Thesis committee: {PERSON1.initial} ({NEG:institution}), {PERSON2.initial} ({NEG:institution}). Toplantı davetini İngilizce yaz."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:word} kelimesi hem isim hem sıfat olarak kullanılıyor; {NEG:word} ile birlikte birer örnek cümle kur."}
+{"lang": "en", "domain": "science", "text": "Compare {NEG:eponym} and {NEG:eponym} as historical scientific controversies, 500 words."}
+{"lang": "tr", "domain": "media", "text": "{NEG:media} ile {NEG:media} abonelik fiyatlarını karşılaştır, öğrenci indirimi var mı?"}
+{"lang": "en", "domain": "culture", "text": "Grace under pressure: write an essay on that theme using {NEG:media} and {NEG:media} as examples."}
+{"lang": "en", "domain": "culture", "text": "What's the story behind the name {NEG:place}? And why is {NEG:place} called that?"}
+{"lang": "en", "domain": "culture", "text": "Use the words {NEG:word} and {NEG:word} as ordinary nouns or verbs in two sentences about {NEG:place}."}
+{"lang": "tr", "domain": "healthcare", "text": "{PERSON1} {LOCATION1.city+LOC} oturuyor ve {NEG:institution+DAT} sevk edildi. {NEG:eponym} şüphesiyle ilgili hasta bilgilendirme metnini sadeleştir."}
+{"lang": "tr", "domain": "education", "text": "{NEG:institution} kütüphanesinde {NEG:eponym} hakkında hangi kaynaklar var? APA formatında kaynakça örneği ver."}
+{"lang": "en", "domain": "healthcare", "text": "{NEG:eponym} support group meets at {NEG:institution} every Tuesday. Write a friendly invitation."}
+{"lang": "tr", "domain": "culture", "text": "Gül festivali {NEG:place+LOC} mi yapılıyor? {NEG:place} lavanta bahçeleriyle aynı haftaya denk gelir mi"}
+{"lang": "en", "domain": "media", "text": "May I quote {NEG:media} in my thesis about {NEG:eponym} coverage? Explain fair use briefly."}
+{"lang": "tr", "domain": "education", "text": "{PERSON1.first} Öğretmen {ADDRESS1.tr} adresindeki okulda {NEG:eponym} dersi veriyor; {NEG:institution} hazırlık programına uygun haftalık plan hazırla."}
+{"lang": "tr", "domain": "education", "text": "{PERSON1.upper} – {NEG:institution} 11-B\nVeli adresi: {ADDRESS1.tr_street}, {LOCATION1.district}\nKonu: {NEG:eponym} sınavı devamsızlığı\nBu bilgilerle veliye resmi yazı hazırla."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} tanılı {PERSON1.firstlast2}, {ADDRESS1.tr} adresinde oturuyor; {NEG:institution} evde bakım ekibi haftada iki gün gidecek. Ziyaret planı yap."}
+{"lang": "mix", "domain": "education", "text": "{NEG:eponym} theorem'i Türkçe anlat, sonra {NEG:eponym} ile örnek bir soru çöz."}
+{"lang": "tr", "domain": "travel", "text": "Kayınvalidem {PERSON1.first} Hanım {ADDRESS1.tr} adresinde oturuyor; onu alıp {NEG:place+DAT} götüreceğiz, sonra {NEG:place} yaylasına çıkacağız. Yol üstündeki mola yerlerini öner."}
+{"lang": "en", "domain": "healthcare", "text": "Write a 300-word blog post: living with {NEG:eponym}, with tips from {NEG:institution} specialists."}
+{"lang": "en", "domain": "education", "text": "Write a college essay prompt answer about volunteering at {NEG:institution} with {NEG:eponym} patients."}
+{"lang": "tr", "domain": "healthcare", "text": "Komşumuzun oğlu {NEG:eponym} tanısı aldı, ailesine nasıl destek olabiliriz? Bir de {NEG:institution} bu konuda danışmanlık veriyor mu?"}
+{"lang": "mix", "domain": "sports", "text": "{NEG:club} fan forum'u için {NEG:place} away game rehberi yaz, ulaşım ve stadyum info dahil."}
+{"lang": "en", "domain": "education", "text": "Prof. {PERSON1.last} teaches {NEG:eponym} at {NEG:institution}; draft an email asking for an extension on my problem set."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:place} bisiklet turu için parkur önerisi; {NEG:brand} bisiklet mi almalıyım {NEG:brand} mı?"}
+{"lang": "tr", "domain": "travel", "text": "{NEG:place+DAT} kışın gidilir mi? kar lastiği lazım mı, {NEG:place} yolu kapanıyor mu"}
+{"lang": "en", "domain": "culture", "text": "Explain the cultural significance of {NEG:place} festivals and how they differ from {NEG:place} traditions."}
+{"lang": "mix", "domain": "healthcare", "text": "pls summarize: {NEG:eponym} patient, {NEG:institution} follow-up, kontrol 3 ay sonra. {NEG:word} diye bir not da var, ne demek?"}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} tanısında MR mı yoksa {NEG:eponym} testi mi daha güvenilir? Kaynak göster."}
+{"lang": "mix", "domain": "media", "text": "{NEG:media} ve {NEG:media} subscription fiyatlarını compare et, student discount var mı?"}
+{"lang": "en", "domain": "healthcare", "text": "{PERSON1} lives in {LOCATION1.city} and was referred to {NEG:institution} for suspected {NEG:eponym}. Draft a short referral letter."}
+{"lang": "mix", "domain": "education", "text": "quiz hazırla: {NEG:eponym}, {NEG:eponym}, {NEG:eponym} — 5'er soru, answer key ayrı olsun"}
+{"lang": "tr", "domain": "education", "text": "Veli toplantısı notu: {PERSON1} ({LOCATION1.neighborhood} Mah.) – {NEG:eponym} konusunda geride; {NEG:institution} bursu için öneri. Notu toparla."}
+{"lang": "en", "domain": "healthcare", "text": "{NEG:institution} or {NEG:institution} — which has the better neurology residency program?"}
+{"lang": "mix", "domain": "travel", "text": "Flight details: {PERSON1.upper}, {NEG:institution} → {NEG:institution}. Ev adresi {ADDRESS1.tr_street}, {LOCATION1.district}. Transfer booking mail'i yaz."}
+{"lang": "en", "domain": "education", "text": "Explain {NEG:eponym} to a 10-year-old, then explain {NEG:eponym} using the same analogy."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} ölçeği nedir, {NEG:eponym} skorundan farkı ne? Asistanlara 5 dakikalık sunum notu çıkar."}
+{"lang": "tr", "domain": "healthcare", "text": "Dr. {PERSON1.last} bugün {NEG:institution} polikliniğinde değil, {NEG:institution+LOC} nöbette. Hastaya iletilecek mesajı kibarca yaz."}
+{"lang": "tr", "domain": "travel", "text": "{NEG:institution} ile {NEG:institution} arasında aktarmalı uçuşta ne kadar süre bırakmalıyım?"}
+{"lang": "tr", "domain": "healthcare", "text": "can sıkıntısı ve yorgunluk {NEG:eponym} belirtisi olabilir mi, yoksa {NEG:eponym} mi düşünmeli? panik yapmadan açıkla"}
+{"lang": "tr", "domain": "tourism", "text": "Yorumlara cevap: \"{NEG:place} turu harikaydı ama {NEG:institution} transferi gecikti.\" Kibar bir otel cevabı yaz."}
+{"lang": "en", "domain": "culture", "text": "Write a short poem about {NEG:place} at dawn and {NEG:place} at night."}
+{"lang": "en", "domain": "healthcare", "text": "Patient: {PERSON1.initial}, {LOCATION1.city}. Dx: {NEG:eponym}. Follow-up at {NEG:institution} cardiology. Rewrite this as a discharge summary."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} ile {NEG:eponym} arasındaki farkı lise öğrencisine anlatır gibi basitçe açıklar mısın?"}
+{"lang": "mix", "domain": "healthcare", "text": "{NEG:institution} ER'da wait time 4 saat; {NEG:institution} daha mı hızlı? {NEG:eponym} şüphesi var."}
+{"lang": "mix", "domain": "sports", "text": "{NEG:club} vs {NEG:club} match analysis yap, possession ve xG stats'lerini tabloya dök."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:media} dizisinde geçen {NEG:place} sahneleri gerçekten orada mı çekildi?"}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} aşısı var mı? {NEG:eponym} ile karşılaştırarak bağışıklık mekanizmasını anlat."}
+{"lang": "tr", "domain": "sports", "text": "Koşu kulübü: {PERSON1.first} ({LOCATION1.city}), {PERSON2.first} ({LOCATION2.city}). {NEG:place} ultra maratonu için ortak antrenman takvimi yap, {NEG:brand} saatlerle senkron olsun."}
+{"lang": "tr", "domain": "travel", "text": "{PERSON1.first} {LOCATION1.country} doğumlu, vize gerekmiyor; biz ise {NEG:place} ve {NEG:place} için vize alacağız. Konsolosluğa e-posta yaz."}
+{"lang": "tr", "domain": "science", "text": "{NEG:eponym} yasalarını günlük hayattan örneklerle anlat, sonra {NEG:eponym} ile çeliştiği bir durum var mı tartış."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:brand} ve {NEG:brand} sporcu içecekleri {NEG:eponym} hastası için uygun mu? şeker oranlarını karşılaştır"}
+{"lang": "tr", "domain": "science", "text": "deniz suyu neden tuzlu? {NEG:eponym} prensibi bununla ilgili mi, yoksa {NEG:eponym} mi?"}
+{"lang": "en", "domain": "tourism", "text": "Guest {PERSON1.initial} from {LOCATION1.country} wants a vegan food tour in {NEG:place} plus a cooking class like in {NEG:media}. Draft the offer."}
+{"lang": "en", "domain": "education", "text": "will {NEG:institution} accept AP credits for {NEG:eponym}-level calculus? draft a question for admissions"}
+{"lang": "tr", "domain": "media", "text": "{NEG:media} hesabımda {NEG:place} gezisi paylaşacağım, 5 farklı açıklama yaz, emoji olmasın."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:institution} ile {NEG:institution} arasındaki ambulans transferi için protokol metnini düzelt; {NEG:eponym} hastaları öncelikli olsun."}
+{"lang": "en", "domain": "science", "text": "Why is {NEG:eponym} so important in signal processing? Relate it to {NEG:eponym}."}
+{"lang": "en", "domain": "tourism", "text": "List 8 hidden gems around {NEG:place} that aren't in {NEG:media} guides."}
+{"lang": "en", "domain": "travel", "text": "{NEG:institution} lounge access with a {NEG:brand} card: is it worth it for a {NEG:place} trip?"}
+{"lang": "mix", "domain": "travel", "text": "Booking confirmation'ı Türkçeye çevir: guest {PERSON1}, address {ADDRESS1.en}, tour {NEG:place} & {NEG:place}."}
+{"lang": "en", "domain": "healthcare", "text": "my dad was just diagnosed with {NEG:eponym}. what questions should we ask at {NEG:institution} next week?"}
+{"lang": "tr", "domain": "healthcare", "text": "hasta yakını {PERSON1.lower} {LOCATION1.district} ilçesinden aradı, {NEG:eponym} ilacı {NEG:institution} eczanesinde yokmuş. ne cevap verelim"}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:institution}, {NEG:institution} ve {NEG:institution} hastanelerinin onkoloji bölümlerini karşılaştıran bir tablo yap."}
+{"lang": "en", "domain": "science", "text": "Our lab at {NEG:institution} is replicating the {NEG:eponym} experiment. Write the methods section."}
+{"lang": "en", "domain": "education", "text": "Implement {NEG:eponym} in Python and compare its runtime to {NEG:eponym} on a 10k-node graph."}
+{"lang": "tr", "domain": "tourism", "text": "Acentemizin {NEG:place} paket turu için broşür metni yaz; {NEG:place} ve {NEG:place} duraklarını vurgula."}
+{"lang": "mix", "domain": "education", "text": "Öğrencim {PERSON1.first} {LOCATION1.city} based, online ders alıyor; {NEG:eponym} ve {NEG:eponym} topic'lerinde weekly plan hazırla."}
+{"lang": "tr", "domain": "education", "text": "Stajyer {PERSON1.first} {NEG:institution} laboratuvarında {NEG:eponym} deneyini yaptı ama sonuçlar tutmadı. Hata analizi raporu taslağı çıkar."}
+{"lang": "en", "domain": "healthcare", "text": "Is {NEG:eponym} hereditary? If a grandparent had {NEG:eponym}, what is the risk for grandchildren?"}
+{"lang": "mix", "domain": "healthcare", "text": "Dr. {PERSON1.last} ile call'da {NEG:eponym} case'ini konuştuk, {NEG:institution} lab sonuçlarını bekliyoruz. Toplantı notunu toparla."}
+{"lang": "tr", "domain": "tourism", "text": "Otelimiz {NEG:place+LOC}. Web sitesi için {NEG:place} ve çevresini tanıtan SEO uyumlu bir paragraf yaz."}
+{"lang": "tr", "domain": "travel", "text": "{NEG:place}, {NEG:place}, {NEG:place}: Avrupa'da 10 günlük interrail planı yap, gece trenlerini dahil et."}
+{"lang": "tr", "domain": "media", "text": "Gazeteci {PERSON1} {NEG:media} için {NEG:place} röportajı yapacak. Soru listesi hazırla."}
+{"lang": "tr", "domain": "culture", "text": "Babaannem {PERSON1.first} {LOCATION1.city} doğumlu, gençliğinde {NEG:place+LOC} yaşamış. Anılarını {NEG:media} belgeseli tarzında anlat."}
+{"lang": "tr", "domain": "healthcare", "text": "Annem {NEG:eponym} teşhisi aldı, doktor {NEG:institution+DAT} kontrole gelmemizi söyledi. Bu süreçte nelere dikkat etmeliyiz?"}
+{"lang": "mix", "domain": "travel", "text": "{PERSON1.first} {LOCATION1.city+ABL} katılıyor, ben {NEG:institution+ABL} geleceğim; {NEG:place} meeting point'i belirle."}
+{"lang": "tr", "domain": "education", "text": "demir yolu ile {NEG:place+DAT} okul gezisi; {NEG:place} müzesinde öğrencilere sorulacak 10 soru hazırla."}
+{"lang": "tr", "domain": "education", "text": "{NEG:eponym}, {NEG:eponym} ve {NEG:eponym}: üç kavramı bir kavram haritasında birleştir."}
+{"lang": "en", "domain": "healthcare", "text": "Shift handover: {PERSON1} (bed 4, {NEG:eponym} workup) and {PERSON2} (bed 7, {NEG:eponym}). Clean this up into bullet points."}
+{"lang": "tr", "domain": "media", "text": "Muhabirimiz {PERSON1} {LOCATION1.city+LOC} yaşıyor; {NEG:media} için {NEG:place} depremi dosyasını hazırlıyor. Röportaj izin formunu sadeleştir."}
+{"lang": "tr", "domain": "healthcare", "text": "hocam {NEG:eponym} sendromu ile {NEG:eponym} karıştırılıyor mu? kısaca madde madde yaz"}
+{"lang": "en", "domain": "sports", "text": "Coach {PERSON1.last} from {LOCATION1.city} is joining {NEG:club}'s staff after six years at {NEG:club}. Write a short press release."}
+{"lang": "en", "domain": "science", "text": "{PERSON1}, a postdoc from {LOCATION1.country}, joins our {NEG:institution} group next month to work on {NEG:eponym}. Write the welcome email."}
+{"lang": "en", "domain": "sports", "text": "Explain the offside rule using a {NEG:club} goal as example, then a disallowed {NEG:club} goal."}
+{"lang": "en", "domain": "sports", "text": "Plan a cycling week in {NEG:place} with a rest day in {NEG:place}; should I rent a {NEG:brand} or a {NEG:brand}?"}
+{"lang": "tr", "domain": "education", "text": "Öğrencim {PERSON1} {LOCATION1.district} ilçesinden servisle geliyor, {NEG:institution} sınavına hazırlanıyor ama {NEG:eponym} konusunda zorlanıyor. Velisine gönderilecek ilerleme raporunu yaz."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} hakkında yanlış bilinen 5 şey: kısa bir {NEG:media} gönderisi formatında yaz."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} hastalarında uyku düzeni: {NEG:institution} uyku laboratuvarı verilerine göre kısa makale özeti çıkar."}
+{"lang": "tr", "domain": "education", "text": "{NEG:eponym} algoritmasının zaman karmaşıklığı nedir? {NEG:eponym} ile kıyasla ve sözde kod yaz."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club} ile {NEG:club} derbisinin istatistiklerini özetle, son 5 maçın skorlarını tabloya dök."}
+{"lang": "mix", "domain": "tourism", "text": "{NEG:place} için Instagram caption'ları yaz, {NEG:place} hashtag'lerini de ekle; {NEG:brand} kamerayla çektim."}
+{"lang": "tr", "domain": "travel", "text": "{PERSON1.first} ile {PERSON2.first} {NEG:place} gezisine çıkıyor; {PERSON1.first} {LOCATION1.district} ilçesinden alınacak, dönüşte {NEG:place} uğranacak. Araç kiralama planı yap."}
+{"lang": "tr", "domain": "media", "text": "{NEG:media} dizisinin ilk sezonunu spoiler vermeden özetle, {NEG:media} gibi benzer yapımlar öner."}
+{"lang": "en", "domain": "tourism", "text": "Our guide {PERSON1.first} will meet the group at {NEG:institution} arrivals. Write the welcome sign and SMS for {NEG:place} tour guests."}
+{"lang": "en", "domain": "travel", "text": "Draft a 2-week Japan itinerary: {NEG:place}, {NEG:place}, {NEG:place}, with rail pass math."}
+{"lang": "tr", "domain": "travel", "text": "{PERSON1.first} Hanım {ADDRESS1.tr} adresinden {NEG:institution+DAT} taksiyle gidecek, oradan {NEG:place+DAT} uçacak. Yol tarifini ve süreyi hesapla."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:place+LOC} gezilecek müzeler ve {NEG:institution} gibi tarihi okulların ziyaret saatleri neler?"}
+{"lang": "tr", "domain": "healthcare", "text": "Nöbet listesi: {PERSON1.initial} – {NEG:institution}, {PERSON2.initial} – {NEG:institution}. Acil {NEG:eponym} vakaları için kim aranır, tabloya dök."}
+{"lang": "tr", "domain": "education", "text": "ekim ayında {NEG:eponym} ünitesine başlıyoruz, {NEG:eponym} ünitesini de kasıma kaydır; yıllık planı güncelle"}
+{"lang": "en", "domain": "healthcare", "text": "Explain the difference between {NEG:eponym} and {NEG:eponym} in plain language for a patient leaflet."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club+GEN} stadyumuna {NEG:institution+ABL} nasıl gidilir? Maç günü toplu taşıma planı ver."}
+{"lang": "en", "domain": "science", "text": "Our visiting researcher {PERSON1} lives in {LOCATION1.city} and will present on {NEG:eponym} at {NEG:institution}. Write the seminar announcement."}
+{"lang": "tr", "domain": "education", "text": "{NEG:eponym} teoremini ispatla, sonra {NEG:eponym} ile bağlantısını kısaca açıkla."}
+{"lang": "mix", "domain": "culture", "text": "{NEG:media} soundtrack'i hangi {NEG:place} türkülerinden etkilenmiş? kısa bir analiz yaz"}
+{"lang": "en", "domain": "culture", "text": "My neighbour {PERSON1.first} moved here from {LOCATION1.city} and misses {NEG:media}; suggest local book clubs and a trip to {NEG:place}."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club}, {NEG:club}, {NEG:club}: bu sezonun puan durumu tahminini gerekçeleriyle yaz."}
+{"lang": "tr", "domain": "sports", "text": "Antrenörümüz {PERSON1.first} Hoca {LOCATION1.city+ABL} geliyor; {NEG:club} altyapı seçmeleri için {NEG:institution} spor salonunu ayarla."}
+{"lang": "tr", "domain": "education", "text": "Tez danışmanım Doç. Dr. {PERSON1.last} {NEG:institution+ABL} {NEG:institution+DAT} geçti. Tez izleme komitesine bildirim yazısı hazırla."}
+{"lang": "en", "domain": "sports", "text": "what's the best way to watch {NEG:club} games abroad? is {NEG:media} available outside the country"}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:institution+GEN} {NEG:eponym} kliniğinde stajım başlıyor. İlk hafta için çalışma planı çıkar."}
+{"lang": "tr", "domain": "science", "text": "{NEG:eponym} neden {NEG:eponym} kadar ünlü değil? Matematik tarihindeki yerini anlat."}
+{"lang": "en", "domain": "media", "text": "{PERSON1}, a reporter for {NEG:media}, is based in {LOCATION1.city}. Draft her bio for the conference programme, mentioning her {NEG:place} coverage."}
+{"lang": "tr", "domain": "education", "text": "Sınıf listesi: {PERSON1}, {PERSON2}, {PERSON3}. Grup ödevi konuları: {NEG:eponym}, {NEG:eponym}. Rastgele eşleştir ve tabloya dök."}
+{"lang": "mix", "domain": "sports", "text": "Coach {PERSON1.last} {NEG:club+DAT} transfer oldu, {LOCATION1.city+ABL} taşınıyor, {NEG:club} ile sözleşmesi bitti. Press release draft'ı yaz."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:place+GEN} UNESCO listesine girme süreci nasıl oldu? {NEG:place} da aday mı?"}
+{"lang": "tr", "domain": "healthcare", "text": "Eczacılık sınavı için {NEG:eponym}, {NEG:eponym}, {NEG:eponym} ilaç tedavilerini kısaltmalarla özetle."}
+{"lang": "en", "domain": "education", "text": "My daughter {PERSON1.first} goes to {NEG:institution} in {LOCATION1.city}. Help her with this {NEG:eponym} homework without giving the answer away."}
+{"lang": "tr", "domain": "education", "text": "{NEG:institution} mi {NEG:institution} mi? Bilgisayar mühendisliği için artı/eksi listesi çıkar."}
+{"lang": "tr", "domain": "tourism", "text": "{NEG:place+DAT} giden yabancı turistler için 10 maddelik görgü kuralları listesi hazırla, {NEG:place} örneğini de ekle."}
+{"lang": "tr", "domain": "tourism", "text": "Tur rehberi {PERSON1.first} {PERSON1.last} {NEG:place+LOC} grup karşılayacak; {NEG:institution} çıkışında tabela metnini yaz."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} erken belirtileri nelerdir? Bir de {NEG:institution} gibi üniversite hastanelerinde tarama nasıl yapılıyor?"}
+{"lang": "tr", "domain": "travel", "text": "Sayın {PERSON1}, {NEG:place} turu rezervasyonunuz onaylanmıştır. Transfer {NEG:institution+ABL} saat 09:00'da. Bu mesajı İngilizceye çevir."}
+{"lang": "en", "domain": "travel", "text": "{PERSON1} lives in {LOCATION1.city} and wants to meet us in {NEG:place} after our {NEG:place} leg. Find a midpoint town for the first night."}
+{"lang": "mix", "domain": "science", "text": "{NEG:eponym} effect'i ile {NEG:eponym} shift aynı şey mi? kısa ve net anlat"}
+{"lang": "tr", "domain": "sports", "text": "{NEG:club+GEN} yeni transferi {PERSON1} hakkında taraftar yorumlarını özetle; {NEG:media} ne yazmış?"}
+{"lang": "en", "domain": "culture", "text": "My grandmother {PERSON1.first} grew up in {LOCATION1.city} and loves {NEG:media}. Suggest five similar shows or books, including {NEG:media}-style period dramas."}
+{"lang": "tr", "domain": "education", "text": "Danışman: {PERSON1.initial}\nÖğrenci: {PERSON2}\nKonu: {NEG:eponym} uygulamaları\nKurum: {NEG:institution}\nBu bilgilerle tez kapak sayfası oluştur."}
+{"lang": "tr", "domain": "travel", "text": "bahar tatilinde {NEG:place} ve {NEG:place} rotası; günlük 1500 TL bütçe ile mümkün mü"}
+{"lang": "en", "domain": "education", "text": "Explain why {NEG:eponym} and {NEG:eponym} are named after people but {NEG:eponym} is not what it sounds like."}
+{"lang": "mix", "domain": "travel", "text": "Sister'ım {PERSON1.first} {ADDRESS1.tr_street} adresinde oturuyor; {NEG:place} trip'inden önce ona uğrayıp {NEG:institution+DAT} geçeceğiz. Plan yap."}
+{"lang": "tr", "domain": "travel", "text": "{PERSON1.first} ve {PERSON2.first} {LOCATION1.city+ABL} arabayla çıkacak; {NEG:place+LOC} buluşup {NEG:place+DAT} birlikte devam edeceğiz. Yakıt ve süre hesabı yap."}
+{"lang": "en", "domain": "science", "text": "Explain {NEG:eponym} using a falling apple, then explain why {NEG:eponym} breaks down at high speeds."}
+{"lang": "tr", "domain": "science", "text": "savaş sonrası {NEG:eponym} araştırmaları nasıl hızlandı? {NEG:eponym} projesi örneğiyle anlat."}
+{"lang": "mix", "domain": "education", "text": "Vocabulary listesi: {NEG:word}, {NEG:word}, {NEG:word} — her biri için Türkçe karşılık ve example sentence yaz."}
+{"lang": "en", "domain": "sports", "text": "{NEG:club}, {NEG:club} and {NEG:club}: who has the best youth academy? Give evidence."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:eponym} genetik mi? Ailede {NEG:eponym} öyküsü varsa çocuklar için risk nedir, bilimsel kaynaklarla açıkla."}
+{"lang": "tr", "domain": "healthcare", "text": "barış içinde yaşlanmak için {NEG:eponym} riskini azaltan alışkanlıkları listele, {NEG:institution} önerileriyle karşılaştır"}
+{"lang": "en", "domain": "travel", "text": "{NEG:place} or {NEG:place} for a long weekend in May? Compare weather, flights and prices."}
+{"lang": "en", "domain": "tourism", "text": "Write a hotel website blurb for a boutique inn near {NEG:place}, mentioning day trips to {NEG:place}."}
+{"lang": "tr", "domain": "sports", "text": "Maratonda {PERSON1} birinci, {PERSON2} ikinci oldu; ikisi de {LOCATION1.city} kulübünden. {NEG:media} için kısa haber metni yaz, {NEG:brand} sponsorluğunu da an."}
+{"lang": "tr", "domain": "science", "text": "{NEG:eponym} ile {NEG:eponym} arasındaki tartışmayı bilim tarihi açısından özetle."}
+{"lang": "mix", "domain": "sports", "text": "{NEG:club} maçını {NEG:media} üzerinden abroad izlemek mümkün mü? VPN gerekiyor mu"}
+{"lang": "tr", "domain": "healthcare", "text": "{PERSON1.upper} – Doğum yeri: {LOCATION1.city}. {NEG:institution} çocuk nöroloji, ön tanı {NEG:eponym}. Bu başlığı rapor şablonuna yerleştir."}
+{"lang": "tr", "domain": "healthcare", "text": "[09:12] {PERSON1.first}: annem {LOCATION1.city+LOC}, {NEG:institution+DAT} sevk ettiler\n[09:13] {PERSON2.first}: {NEG:eponym} mi dediler?\n[09:14] {PERSON1.first}: evet, bir de {NEG:eponym} testi istendi\nBu yazışmayı özetle."}
+{"lang": "tr", "domain": "healthcare", "text": "{PERSON1} ile {PERSON2.first} aynı gün {NEG:institution+DAT} yatırıldı. İkisinde de {NEG:eponym} şüphesi var. Vardiya devir notunu düzenle."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:eponym} ve {NEG:eponym} isimleri nereden geliyor? Bilim insanlarının adını taşıyan kavramlar listesi yap."}
+{"lang": "en", "domain": "travel", "text": "My sister {PERSON1.first} relocated to {LOCATION1.city}; on the way to visit her I want a stopover in {NEG:place} or {NEG:place}. Ideas?"}
+{"lang": "en", "domain": "healthcare", "text": "Mrs. {PERSON1.last} at {ADDRESS1.en} needs home care after {NEG:eponym} surgery at {NEG:institution}. Draft the care coordination note."}
+{"lang": "en", "domain": "healthcare", "text": "Intake form: {PERSON1}, {ADDRESS1.en}. History: {NEG:eponym}. Referred by {NEG:institution}. Turn this into a structured JSON object."}
+{"lang": "en", "domain": "healthcare", "text": "Dr. {PERSON1.last} moved from {NEG:institution} to {NEG:institution}. Write a notice for patients explaining where to find her."}
+{"lang": "en", "domain": "tourism", "text": "Create a walking-tour script for {NEG:place}, 90 minutes, ending at the {NEG:place} viewpoint."}
+{"lang": "en", "domain": "travel", "text": "Booking note: guest {PERSON1.upper}, home address {ADDRESS1.en}, tour {NEG:place} + {NEG:place}. Format this for our CRM."}
+{"lang": "en", "domain": "travel", "text": "Itinerary for {PERSON1.first} and {PERSON2.first}:\nDay 1 – fly {NEG:institution} → {NEG:place}\nDay 2 – {NEG:place}\nThey live at {ADDRESS1.en_street}; add an airport taxi at 5am."}
+{"lang": "tr", "domain": "healthcare", "text": "{NEG:media} dizisinde gösterilen {NEG:eponym} vakası tıbben gerçekçi mi?"}
+{"lang": "tr", "domain": "healthcare", "text": "Teyzem {PERSON1.first} {LOCATION1.city+LOC} yaşıyor, {NEG:eponym} ameliyatı için {NEG:institution+DAT} gelecek. Refakatçi olarak hangi belgeleri hazırlamalıyım?"}
+{"lang": "en", "domain": "science", "text": "ELI5: {NEG:eponym}, {NEG:eponym}, and why both matter for GPS."}
+{"lang": "tr", "domain": "sports", "text": "{NEG:brand} sponsorluğunda {NEG:club} formaları değişti; taraftar tepkilerini özetle."}
+{"lang": "tr", "domain": "education", "text": "{NEG:institution} mezunları arasında {NEG:org} ve {NEG:org} gibi şirketlere giren çok mu var?"}
+{"lang": "tr", "domain": "tourism", "text": "Misafir listesi:\n- {PERSON1} ({LOCATION1.city})\n- {PERSON2} ({LOCATION2.city})\n- {PERSON3}\nTur: {NEG:place}, {NEG:place}. Oda dağılımını yap."}
+{"lang": "tr", "domain": "travel", "text": "{NEG:institution+ABL} sabah 6'da uçağım var, {NEG:place+DAT} varınca ilk gün ne yapayım?"}
+{"lang": "en", "domain": "sports", "text": "{PERSON1.first} signed for {NEG:club}; his family still lives at {ADDRESS1.en}. Draft a relocation checklist, including schools near {NEG:place}."}
+{"lang": "tr", "domain": "healthcare", "text": "| Hasta | İkamet | Tanı | Kurum |\n|---|---|---|---|\n| {PERSON1} | {LOCATION1.city} | {NEG:eponym} | {NEG:institution} |\n| {PERSON2} | {LOCATION2.city} | {NEG:eponym} | {NEG:institution} |\nBu tabloyu kurum bazında grupla."}
+{"lang": "tr", "domain": "education", "text": "{NEG:media} belgeselindeki {NEG:eponym} anlatımında hata var mı? Öğrencilere izletmeden önce kontrol et."}
+{"lang": "tr", "domain": "healthcare", "text": "{PERSON1.first} {LOCATION1.city+ABL} {LOCATION2.city+DAT} taşındı, {NEG:eponym} dosyasının {NEG:institution+ABL} {NEG:institution+DAT} aktarılması için e-posta yaz."}
+{"lang": "en", "domain": "healthcare", "text": "Dear {PERSON1.first}, your appointment at {NEG:institution} has moved to {NEG:institution} due to renovations. Make this message warmer."}
+{"lang": "mix", "domain": "travel", "text": "{NEG:place+LOC} 4 gün, {NEG:place+LOC} 3 gün — itinerary'yi day by day çıkar, budget tablosu da ekle."}
+{"lang": "en", "domain": "travel", "text": "Rank {NEG:place}, {NEG:place}, {NEG:place} and {NEG:place} by budget-friendliness for backpackers."}
+{"lang": "en", "domain": "education", "text": "Write a vocabulary exercise where {NEG:word}, {NEG:word} and {NEG:word} are used as common words, not names."}
+{"lang": "tr", "domain": "science", "text": "Araştırma görevlisi {PERSON1} {LOCATION1.city+LOC} yaşıyor ama {NEG:institution+GEN} {NEG:eponym} laboratuvarına haftada üç gün geliyor. Ulaşım desteği talep yazısı yaz."}
+{"lang": "en", "domain": "healthcare", "text": "{PERSON1.first} ({LOCATION1.city}) asked whether {NEG:eponym} and {NEG:eponym} can occur together. Draft a nurse-line reply."}
+{"lang": "tr", "domain": "education", "text": "Oğlum {PERSON1.first} {NEG:institution+LOC} okuyor, {NEG:eponym} ödevinde zorlanıyor. Adım adım çözüm yolu gösterir misin?"}
+{"lang": "tr", "domain": "media", "text": "{NEG:media} köşe yazısını özetle: konu {NEG:club} yönetimi ve {NEG:org} sponsorluğu."}
+{"lang": "mix", "domain": "sports", "text": "{PERSON1} {NEG:club+ABL} ayrıldı, {LOCATION1.city+DAT} taşındı ve {NEG:club} ile anlaştı. Fan page için short announcement yaz."}
+{"lang": "tr", "domain": "travel", "text": "{NEG:institution+LOC} rötar oldu, {NEG:place} bağlantısını kaçırdım. Havayoluna şikâyet dilekçesi yaz."}
+{"lang": "en", "domain": "healthcare", "text": "Summarise the latest guidelines on {NEG:eponym} screening, and mention how {NEG:eponym} is handled differently."}
+{"lang": "en", "domain": "culture", "text": "Which museums in {NEG:place} cover {NEG:eponym}? Plan a science-themed museum day."}
+{"lang": "mix", "domain": "travel", "text": "{NEG:place} vs {NEG:place}: hangisi daha budget-friendly? backpacker perspective'inden yaz"}
+{"lang": "mix", "domain": "culture", "text": "{NEG:place+GEN} history'sini 200 kelimede anlat, {NEG:place} ile benzerliklerini highlight et."}
+{"lang": "en", "domain": "education", "text": "Build a 4-week study plan: week 1 {NEG:eponym}, week 2 {NEG:eponym}, week 3 {NEG:eponym}, week 4 review."}
+{"lang": "mix", "domain": "healthcare", "text": "Hasta {PERSON1} {LOCATION1.city+LOC} oturuyor, {NEG:institution+DAT} refer edildi. Bu referral note'u {NEG:eponym} detaylarıyla İngilizceye çevir."}
+{"lang": "tr", "domain": "tourism", "text": "Pansiyon sahibi {PERSON1.first} Bey {ADDRESS1.tr} adresinde; {NEG:place} manzaralı odalar için {NEG:media} ilan metni yaz."}
+{"lang": "en", "domain": "healthcare", "text": "Is {NEG:brand} oat milk safe for someone with {NEG:eponym}? Cite {NEG:institution} dietary advice."}
+{"lang": "tr", "domain": "media", "text": "{NEG:media} ile {NEG:media} arasında hangi platformda daha çok Türk dizisi var?"}
+{"lang": "tr", "domain": "healthcare", "text": "Merhaba {PERSON1.first}, {NEG:institution+GEN} {NEG:eponym} bilgilendirme semineri {NEG:institution+LOC} yapılacak. Bu daveti daha samimi yaz."}
+{"lang": "mix", "domain": "healthcare", "text": "Patient {PERSON1.first} {LOCATION1.district} ilçesinde yalnız yaşıyor, {NEG:eponym} diagnosis sonrası {NEG:institution+DAT} weekly check-up'a gelecek. Care plan yaz."}
+{"lang": "tr", "domain": "healthcare", "text": "Hasta {PERSON1} ve eşi {PERSON2.first}, {ADDRESS1.tr} adresinden {NEG:institution+DAT} taşındıklarını bildirdi. {NEG:eponym} takibi için kayıt güncelleme notunu yaz."}
+{"lang": "en", "domain": "education", "text": "Dear Ms. {PERSON1.last}, your son {PERSON2.first} has been selected for the {NEG:institution} {NEG:eponym} olympiad camp. Rewrite this more concisely."}
+{"lang": "tr", "domain": "education", "text": "Sayın {PERSON1.last} Hoca, {NEG:eponym} konusundaki ödevimi {NEG:institution+GEN} sistemine yükleyemedim. Bu e-postayı resmi hale getir."}
+{"lang": "en", "domain": "sports", "text": "Write a match preview for {NEG:club} vs {NEG:club} in the style of a {NEG:media} column."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:place+GEN} mutfağı ile {NEG:place} mutfağını karşılaştır, 3'er yöresel yemek tarifi ver."}
+{"lang": "mix", "domain": "science", "text": "{PERSON1.first} {LOCATION1.country+ABL} visiting scholar olarak geldi, {NEG:eponym} simulation'larını {NEG:tech} üzerinde çalıştırıyor. Lab access request yaz."}
+{"lang": "tr", "domain": "education", "text": "{PERSON1.first} ile {PERSON2.first} {NEG:institution} yurdunda oda arkadaşı; ikisi de {LOCATION1.city+ABL} geliyor ve {NEG:club} taraftarı. Tanışma etkinliği duyurusu yaz."}
+{"lang": "tr", "domain": "culture", "text": "{NEG:place+LOC} hangi festivaller var? {NEG:media} haberlerine göre bu yıl iptal olan var mı?"}
+{"lang": "en", "domain": "sports", "text": "{PERSON1}, born in {LOCATION1.city}, just signed with {NEG:club}; fans compare him to a {NEG:club} legend. Write a 100-word profile."}
+{"lang": "en", "domain": "education", "text": "{NEG:institution} vs {NEG:institution} for a CS master's: compare cost, ranking and visa support."}
