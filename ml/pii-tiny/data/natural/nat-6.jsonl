@@ -1,0 +1,179 @@
+{"lang": "tr", "domain": "hr", "text": "[[P:Ford]] Bey Ford Otosan'da çalışıyor, Gölcük fabrikasındaki vardiya planını bana o gönderdi. Planı tabloya dökebilir misin?"}
+{"lang": "en", "domain": "software", "text": "[[P:Julia]] is rewriting the pricing model in Julia because the Python version was too slow. Can you suggest how to benchmark both fairly?"}
+{"lang": "tr", "domain": "personal", "text": "[[P:Deniz]] deniz kenarında oturuyor, dün akşam da balkonda çay içtik. Ona doğum günü için kısa bir şiir yazar mısın?"}
+{"lang": "tr", "domain": "healthcare", "text": "Dr. [[P:Parkinson]] ile Parkinson hastalığı üzerine görüştük; yeni ilaç protokolünü sade bir dille özetler misin?"}
+{"lang": "tr", "domain": "education", "text": "[[P:Kemal Paşa]] değil, Kemal Paşa İlkokulu diyecektim. Okulun veli toplantısı duyurusunu düzelt."}
+{"lang": "tr", "domain": "finance", "text": "Koç Holding ve Sabancı Holding'in 2025 yıllık raporlarındaki temettü politikalarını karşılaştırır mısın?"}
+{"lang": "en", "domain": "software", "text": "Our Jenkins pipeline fails after upgrading Jackson to 2.17. The error says InvalidDefinitionException. What changed?"}
+{"lang": "tr", "domain": "healthcare", "text": "Alzheimer ile Parkinson arasındaki farkları hasta yakınlarına anlatacak bir broşür metni hazırla."}
+{"lang": "en", "domain": "education", "text": "Explain Dijkstra's algorithm and compare it with Bellman-Ford for a second-year CS class."}
+{"lang": "tr", "domain": "travel", "text": "Kapadokya'da 3 günlük rota lazım, balon turu dahil. Bütçe kişi başı 15 bin TL."}
+{"lang": "mix", "domain": "software", "text": "Hudson'dan Jenkins'e migration yaparken eski job config'leri nasıl taşırız? Bir checklist çıkar."}
+{"lang": "tr", "domain": "hr", "text": "Sabiha Gökçen Havalimanı'nda çalışan [[P:Sabiha Ertunç]] Hanım'ın vardiya değişikliği talebini onaylayan bir e-posta yaz."}
+{"lang": "en", "domain": "healthcare", "text": "Patient [[P:Gareth Dell]] asked whether his Dell laptop's screen brightness could trigger his migraines. Draft a polite reply from the clinic."}
+{"lang": "tr", "domain": "customer-support", "text": "Müşterimiz [[P:Nermin Koç]], Koç Holding ile bir bağlantısı olmadığını belirtti; faturası yanlışlıkla kurumsal hesaba kesilmiş. Özür e-postası yaz."}
+{"lang": "en", "domain": "legal", "text": "Summarize the main Sarbanes-Oxley Section 404 obligations for a mid-size subsidiary."}
+{"lang": "tr", "domain": "finance", "text": "Basel III sermaye yeterliliği oranlarını bir bankacılık stajyerine anlatır mısın?"}
+{"lang": "tr", "domain": "education", "text": "FATİH SULTAN MEHMET KÖPRÜSÜ HAKKINDA 5. SINIFLAR İÇİN KISA BİR PROJE ÖDEVİ METNİ YAZ"}
+{"lang": "tr", "domain": "education", "text": "[[P:FATİH ARSLAN]]'IN PROJE ÖDEVİ: öğrenci Fatih Sultan Mehmet Köprüsü'nü anlatmış, metni değerlendirir misin?"}
+{"lang": "en", "domain": "software", "text": "Can you write a Hugo shortcode that renders a responsive image gallery? Hugo version is 0.125."}
+{"lang": "en", "domain": "hr", "text": "[[P:Hugo Martins]] joined the docs team last week and is migrating our site to Hugo. Write a short welcome note for Slack."}
+{"lang": "tr", "domain": "personal", "text": "bugün umut ediyorum ki yağmur yağmaz, deniz kenarında piknik yapacağız. hava durumu için hangi siteye bakayım"}
+{"lang": "tr", "domain": "personal", "text": "umut'la deniz'e mesaj atmam lazım, [[P:umut]] cuma gelemiyor [[P:deniz]] de geç kalacak. kibar bir grup mesajı yaz"}
+{"lang": "en", "domain": "research", "text": "Prove that the Fibonacci sequence grows exponentially, using Binet's formula."}
+{"lang": "mix", "domain": "research", "text": "Gauss eliminasyonu ile LU decomposition arasındaki farkı örnekle açıkla, numpy kodu da ekle."}
+{"lang": "tr", "domain": "research", "text": "Prof. Dr. [[P:Gauss]] diye hitap edilen hocamız aslında [[P:Mert Gaus]], adını hep yanlış yazıyorlar. Ona gönderilecek teşekkür mektubunu düzelt."}
+{"lang": "en", "domain": "sales", "text": "Draft a follow-up for [[P:Porsche Tan]] (she goes by Porsche) about the Porsche Cayenne lease quote we sent Monday."}
+{"lang": "tr", "domain": "sales", "text": "Porsche Taycan ile Tesla Model S'in kurumsal kiralama maliyetlerini karşılaştır."}
+{"lang": "en", "domain": "healthcare", "text": "What are early warning signs of Asperger syndrome in adults? Keep it under 200 words."}
+{"lang": "tr", "domain": "legal", "text": "Müvekkilim [[P:Behçet Sağlam]] Behçet hastalığı nedeniyle işten çıkarıldığını iddia ediyor. İş Kanunu kapsamında olası argümanları listele."}
+{"lang": "en", "domain": "travel", "text": "Planning a week in Lisbon in May — what neighborhoods are good for a family with kids?"}
+{"lang": "en", "domain": "travel", "text": "My colleague [[P:Lisbon Achterberg]] is moving to [[L:Lisbon]] next month; write a farewell card message from the team."}
+{"lang": "tr", "domain": "customer-support", "text": "Rize çayı siparişlerimizde kargo gecikiyor; müşterilere gönderilecek genel bilgilendirme mesajı yaz."}
+{"lang": "tr", "domain": "customer-support", "text": "[[P:Hasan Rize]] Bey [[L:Rize]]'de yaşıyor, siparişi üç gündür Trabzon aktarmada bekliyor. Kendisine yanıt taslağı hazırla."}
+{"lang": "mix", "domain": "software", "text": "Ruby on Rails app'te N+1 query'leri nasıl tespit ederim? Bullet gem'i yeterli mi?"}
+{"lang": "mix", "domain": "hr", "text": "[[P:Ruby]] yeni intern, Ruby bilmiyor ama Python'da iyi. Onun için 2 haftalık onboarding planı çıkar."}
+{"lang": "en", "domain": "education", "text": "Write a Pascal program that prints Pascal's triangle up to row 10."}
+{"lang": "en", "domain": "education", "text": "[[P:Ada]] asked why the language Ada is named after [[P:Ada Lovelace]]. Write a short answer for a 10-year-old."}
+{"lang": "tr", "domain": "research", "text": "Bayes teoremini tıbbi test örneğiyle açıklar mısın? Yanlış pozitif oranı %5 olsun."}
+{"lang": "en", "domain": "research", "text": "Newton's second law vs. Lagrangian mechanics: when is each approach more convenient?"}
+{"lang": "tr", "domain": "education", "text": "Johns Hopkins Üniversitesi'nin halk sağlığı yüksek lisans programına başvuru için niyet mektubu taslağı hazırla."}
+{"lang": "en", "domain": "healthcare", "text": "Dr. [[P:Hopkins]] from the cardiology unit wants a summary of the Johns Hopkins study on statin adherence. Keep it to one paragraph."}
+{"lang": "tr", "domain": "hr", "text": "Eczacıbaşı'ndan gelen teklif ile Sabancı Üniversitesi'ndeki pozisyonu artı-eksi tablosunda karşılaştır."}
+{"lang": "tr", "domain": "hr", "text": "[[P:Selin Eczacıbaşı]] Hanım bizimle mülakata gelecek, Eczacıbaşı Topluluğu ile akrabalığı yok. Mülakat sorularını hazırla."}
+{"lang": "en", "domain": "sales", "text": "Disney+ bundle pricing in Turkey vs Netflix — make a comparison table."}
+{"lang": "en", "domain": "personal", "text": "my niece [[P:disney]] (yes thats her nickname) wants a Disney themed birthday party, give me 10 ideas"}
+{"lang": "tr", "domain": "software", "text": "Java'da Jackson ile Gson arasında performans farkı var mı? Büyük JSON dosyaları için hangisi?"}
+{"lang": "tr", "domain": "finance", "text": "Mehmet Akif Ersoy Üniversitesi'nin burs fonuna yapılan bağışların vergi indirimi nasıl hesaplanır?"}
+{"lang": "tr", "domain": "education", "text": "[[P:Mehmet Akif]] Mehmet Akif Ersoy Üniversitesi'nde okuyor, kayıt yenileme dilekçesini yazmama yardım et."}
+{"lang": "mix", "domain": "software", "text": "CI'da Jenkins agent'ları sürekli offline oluyor, [[P:Cenk]] diyor ki JNLP port'u kapalı. Nasıl debug ederiz?"}
+{"lang": "tr", "domain": "travel", "text": "Kaz Dağları'nda kamp yapılabilecek yerler hangileri? Ağustos için öneri ver."}
+{"lang": "en", "domain": "legal", "text": "Explain the difference between GDPR and KVKK on cross-border data transfers."}
+{"lang": "tr", "domain": "customer-support", "text": "SAYIN MÜŞTERİMİZ, ARÇELİK SERVİS RANDEVUNUZ ONAYLANMIŞTIR mesajını daha samimi bir dille yeniden yaz."}
+{"lang": "tr", "domain": "customer-support", "text": "SAYIN [[P:ŞEYMA DEMİR]], ARÇELİK SERVİS RANDEVUNUZ 14 EKİM'DE [[A:BAĞLARBAŞI MAH. ÇİÇEK SOK. NO:7 D:3 ÜSKÜDAR/İSTANBUL]] ADRESİNDE GERÇEKLEŞECEKTİR — bunu küçük harfe çevir"}
+{"lang": "en", "domain": "software", "text": "Is Julia's multiple dispatch faster than Python with numba for ODE solving?"}
+{"lang": "tr", "domain": "healthcare", "text": "Doppler ultrason raporunda 'monofazik akım' ne anlama geliyor?"}
+{"lang": "tr", "domain": "healthcare", "text": "Hastamız [[P:Doppler]] değil [[P:Dilek Doğan]]; raporda isim yanlış yazılmış. Düzeltme talebi dilekçesi yaz."}
+{"lang": "en", "domain": "finance", "text": "Ford Motor Company Q3 earnings: summarize the EV segment losses."}
+{"lang": "en", "domain": "hr", "text": "[[P:Henry Ford]] (no relation to the car guy) is our new accounts payable lead. Write an intro email to the finance team."}
+{"lang": "tr", "domain": "personal", "text": "barış görüşmesi diye bir kitap okuyorum, Vestfalya barışını anlatıyor. özetler misin"}
+{"lang": "tr", "domain": "hr", "text": "Merhaba, [[P:Kartal]] Bey Kartal şubesine atanıyor; tayin yazısını resmi bir dille hazırlar mısın?"}
+{"lang": "tr", "domain": "finance", "text": "Kartal ve Pendik şubelerinin çeyreklik ciro verilerini grafik için tabloya dönüştür:\nKartal 4,2M\nPendik 3,8M\nTuzla 2,1M"}
+{"lang": "tr", "domain": "personal", "text": "kartal gibi süzülen bir uçurtma yaptık bugün, çocuklar için kısa bir hikaye yaz"}
+{"lang": "en", "domain": "software", "text": "Should we pick Ada or Rust for a safety-critical avionics module? List certification considerations."}
+{"lang": "mix", "domain": "software", "text": "Code review notu: `// TODO(ada): fix race condition` — [[P:Ada]] bunu yazmış ama ticket açmamış, Jira ticket açıklaması yaz."}
+{"lang": "tr", "domain": "education", "text": "- Newton yasaları\n- Kepler yasaları\n- Hooke yasası\nbu konular için 9. sınıf ders planı çıkar"}
+{"lang": "tr", "domain": "education", "text": "Sınav gözetmen listesi:\n- [[P:Hüseyin Newton]] (fizik)\n- [[P:Leyla Kepler]] (kimya)\n- [[P:Ozan Hooke]] (biyoloji)\nlisteyi alfabetik sıraya koy"}
+{"lang": "en", "domain": "healthcare", "text": "Write a discharge summary template for a patient with Huntington's disease. No patient details yet."}
+{"lang": "en", "domain": "healthcare", "text": "Discharge note: [[P:Martha Huntington]], 67, admitted for a fall, history of Huntington's disease. Make this clearer and more concise."}
+{"lang": "tr", "domain": "legal", "text": "Türk Borçlar Kanunu 344. maddeye göre kira artışı nasıl hesaplanır?"}
+{"lang": "tr", "domain": "legal", "text": "Kiracım [[P:Gökhan Yasa]] [[A:Moda Cad. No:41 D:5 Kadıköy/İstanbul]] adresinde oturuyor, TBK 344'e aykırı artış yaptığımı iddia ediyor. Cevap ihtarnamesi taslağı hazırla."}
+{"lang": "en", "domain": "sales", "text": "Dell vs Lenovo for a 200-seat office refresh: compare warranty and TCO."}
+{"lang": "en", "domain": "sales", "text": "Hi, can you clean up this note? 'call w/ [[P:michael dell]] (procurement @ Acme, not THE michael dell lol) re: 200 latitudes, he wants net-60'"}
+{"lang": "tr", "domain": "travel", "text": "Sabiha Gökçen'den Lizbon'a aktarmasız uçuş var mı, yoksa İstanbul Havalimanı'ndan mı bakmalıyım?"}
+{"lang": "mix", "domain": "travel", "text": "[[P:Gökçen]] tomorrow Sabiha Gökçen'den uçuyor, [[L:Lizbon]]'da yaşıyor zaten. Ona airport transfer için kısa bir WhatsApp mesajı yaz, english olsun."}
+{"lang": "tr", "domain": "software", "text": "Spring Boot uygulamasında Hibernate lazy loading hatası alıyorum: LazyInitializationException. Çözüm?"}
+{"lang": "en", "domain": "software", "text": "Write a Kafka consumer in Go that commits offsets manually."}
+{"lang": "tr", "domain": "customer-support", "text": "LC Waikiki iade politikasını müşteriye anlatan sade bir metin yaz, 30 gün kuralını vurgula."}
+{"lang": "tr", "domain": "customer-support", "text": "Müşteri [[P:Waikiki Lale]] diye kayıtlı ama asıl adı [[P:Lale Aksu]]; LC Waikiki siparişindeki isim düzeltmesi için yanıt yaz."}
+{"lang": "tr", "domain": "research", "text": "Fibonacci dizisini recursive ve memoized olarak Python'da yaz, karmaşıklıklarını açıkla."}
+{"lang": "en", "domain": "personal", "text": "[[P:Grace]] said grace before dinner and then asked me what Fibonacci numbers are. Explain it simply so I can tell her."}
+{"lang": "en", "domain": "personal", "text": "Will it rain in Rize this weekend? I may go hiking, and I hope the trails are open."}
+{"lang": "en", "domain": "personal", "text": "[[P:Will]] will drive, [[P:May]] may join later, and [[P:Hope]] hopes we leave by 8. Turn this into a group text."}
+{"lang": "tr", "domain": "hr", "text": "Yıldız Teknik Üniversitesi mezunu adaylar için staj ilanı metni hazırla."}
+{"lang": "tr", "domain": "hr", "text": "[[P:Yıldız Teknikçi]] Hanım Yıldız Teknik Üniversitesi'nden mezun, mülakat geri bildirimini daha yapıcı yaz: 'teknik bilgisi iyi ama iletişimi zayıf'."}
+{"lang": "tr", "domain": "healthcare", "text": "Acıbadem'de yapılan MR raporunu sadeleştir: 'L4-L5 düzeyinde diffüz bulging izlenmiştir.'"}
+{"lang": "tr", "domain": "healthcare", "text": "[[P:Necla]] teyzem [[L:Bursa]]'da yaşıyor, Acıbadem'de MR çektirdi. Raporu ona anlatacağım, sade bir dille açıkla: 'L4-L5 diffüz bulging'."}
+{"lang": "en", "domain": "finance", "text": "What does Basel III's liquidity coverage ratio require, and how is it different from NSFR?"}
+{"lang": "mix", "domain": "finance", "text": "[[P:Basel]] Bey (adı gerçekten Basel) Basel III raporu istiyor, executive summary formatında 5 bullet yaz."}
+{"lang": "tr", "domain": "education", "text": "Pascal üçgeni ile binom açılımı arasındaki ilişkiyi lise öğrencisine anlat."}
+{"lang": "tr", "domain": "education", "text": "Öğrencim [[P:Paskal Yılmaz]] Pascal dilinde ödev teslim etmiş, kodu yorumla:\nprogram Hello; begin writeln('Merhaba'); end."}
+{"lang": "en", "domain": "software", "text": "Jenkinsfile: how do I run stages in parallel only on the main branch?"}
+{"lang": "en", "domain": "software", "text": "Slack thread:\n[09:12] [[P:jenkins]]: build 431 failed again\n[09:13] [[P:priya]]: Jenkins or the tests?\n[09:14] [[P:jenkins]]: Jenkins, agent ran out of disk\nSummarize for standup. (yes, our teammate's surname is Jenkins)"}
+{"lang": "tr", "domain": "travel", "text": "Mersin Limanı'ndan Kıbrıs'a feribot saatleri ve araç ücretleri nedir?"}
+{"lang": "tr", "domain": "logistics", "text": "Sevkiyat [[P:Ercan Mersinli]] adına Mersin Limanı'nda bekliyor, alıcı adresi [[A:Çankaya Mah. Atatürk Cad. No:112 Akdeniz/Mersin]]. Gümrük için açıklama metni yaz."}
+{"lang": "tr", "domain": "research", "text": "Behçet hastalığının tanı kriterlerini tablo halinde ver."}
+{"lang": "en", "domain": "research", "text": "Compare Gaussian processes and Bayesian neural networks for small-data regression."}
+{"lang": "tr", "domain": "personal", "text": "şeker bayramında annemlere gidiyoruz, çiçek almak istiyorum, ne önerirsin"}
+{"lang": "tr", "domain": "personal", "text": "[[P:Şeker]] ablam [[P:Çiçek]] ile bayramda bize gelecek, ikisine de kısa bir davet mesajı yaz"}
+{"lang": "tr", "domain": "finance", "text": "Garanti BBVA kredi kartı ekstresindeki 'taksitli nakit avans' kalemini açıklar mısın?"}
+{"lang": "tr", "domain": "finance", "text": "[[P:Garanti]] adında bir müşterimiz yok, sistemde test kaydı kalmış; asıl kayıt [[P:Gonca Erim]]. Veri temizliği için SQL sorgusu yaz."}
+{"lang": "en", "domain": "legal", "text": "Explain Dodd-Frank whistleblower protections in two paragraphs."}
+{"lang": "en", "domain": "legal", "text": "Our client [[P:Frank Dodd]] wants to report accounting fraud. Draft an intake memo outlining Dodd-Frank whistleblower eligibility."}
+{"lang": "tr", "domain": "education", "text": "Atatürk Anadolu Lisesi'nin 50. yıl etkinliği için davetiye metni yaz."}
+{"lang": "tr", "domain": "education", "text": "ATATÜRK ANADOLU LİSESİ 2026 MEZUNLARI: [[P:AYŞENUR TAŞ]], [[P:BERK ÖNAL]], [[P:CANSU ERDEM]] — bu listeyi sertifika için düzgün büyük/küçük harfe çevir"}
+{"lang": "mix", "domain": "software", "text": "Airflow DAG'ım scheduler'da görünmüyor, `dag_id` doğru. What else should I check?"}
+{"lang": "en", "domain": "hr", "text": "Write a job post for a Django developer. Remote, Istanbul time zone."}
+{"lang": "tr", "domain": "hr", "text": "[[P:Django]] lakaplı [[P:Doğan Cemil]] Django ekibinden ayrılıyor, veda maili yaz. Lakabı maile koyma."}
+{"lang": "tr", "domain": "media", "text": "Muhteşem Yüzyıl dizisinin tarihsel doğruluğu hakkında kısa bir değerlendirme yaz."}
+{"lang": "tr", "domain": "media", "text": "Ekşi Sözlük'te Hürriyet hakkındaki eleştirileri özetle."}
+{"lang": "tr", "domain": "sports", "text": "Fenerbahçe - Galatasaray derbisinin taktik analizini yap."}
+{"lang": "tr", "domain": "sports", "text": "[[P:Galip Saray]] Bey Galatasaray kombinesini iptal etmek istiyor, kulübe yazılacak dilekçeyi hazırla."}
+{"lang": "en", "domain": "software", "text": "What's the difference between Siri and Alexa skill development in 2026?"}
+{"lang": "en", "domain": "customer-support", "text": "Customer [[P:Alexa Morgan]] says her Alexa keeps ordering Pampers. Draft a support reply explaining voice purchase settings."}
+{"lang": "tr", "domain": "customer-support", "text": "Turkcell faturamda 'katma değerli servis' ücreti çıkmış, iptal için ne yapmalıyım?"}
+{"lang": "tr", "domain": "customer-support", "text": "Abonemiz [[P:Turgay Celil]] Turkcell'den taşıma yaptırmış, numarası 0532 000 11 22. Hoş geldin SMS'i yaz."}
+{"lang": "en", "domain": "research", "text": "Summarize the Fourier transform intuition without equations."}
+{"lang": "tr", "domain": "research", "text": "Laplace dönüşümü ile Fourier dönüşümü arasındaki ilişkiyi açıkla."}
+{"lang": "en", "domain": "education", "text": "Write a quiz on Euler's formula, five multiple-choice questions."}
+{"lang": "en", "domain": "education", "text": "[[P:Euler Chen]] in my class keeps getting jokes about Euler's formula. Write a short note to the class about respectful name jokes."}
+{"lang": "mix", "domain": "hr", "text": "Performance review'da şunu yazmışım: '[[P:Can]] can-do attitude'u ile öne çıktı, Koç Sistem projesinde ownership aldı.' Daha profesyonel hale getir."}
+{"lang": "mix", "domain": "software", "text": "Deploy sonrası Grafana'da latency spike var, Prometheus query'si yazar mısın p99 için?"}
+{"lang": "mix", "domain": "sales", "text": "Müşteri meeting notu: [[P:Arda]] Mercedes-Benz Türk tarafında procurement'ta, Q1'de 40 araçlık fleet istiyor. Follow-up mail draft'ı yaz."}
+{"lang": "mix", "domain": "sales", "text": "Mercedes-Benz ve BMW fleet leasing tekliflerini karşılaştıran bir one-pager hazırla, Türkçe-İngilizce karışık olabilir."}
+{"lang": "mix", "domain": "healthcare", "text": "Hasta [[P:Elif Saraç]] için discharge summary yaz: Alzheimer şüphesi, MMSE 22, [[L:Ankara]]'da kızıyla yaşıyor."}
+{"lang": "mix", "domain": "education", "text": "Bu hafta lab'da Dijkstra ve A* implementation yapacağız, students için step-by-step guide yaz."}
+{"lang": "mix", "domain": "education", "text": "Lab assistant [[P:Dijkstra]] değil, [[P:Dilara Dikmen]]; slide'da isim yanlış. Düzeltilmiş announcement metnini yaz."}
+{"lang": "mix", "domain": "legal", "text": "KVKK aydınlatma metninde 'açık rıza' ile 'legitimate interest' farkını nasıl anlatırız?"}
+{"lang": "mix", "domain": "finance", "text": "Sabancı Holding'in Q2 earnings call transcript'ini summarize et, key takeaways bullet olsun."}
+{"lang": "mix", "domain": "finance", "text": "[[P:Sabancı]] soyadlı müşterimiz [[P:Tülin Sabancı]] Sabancı Holding ile ilişkisi olmadığını teyit etti, PEP check'i kapatmak için not yaz."}
+{"lang": "mix", "domain": "travel", "text": "Rize'de yayla turu için itinerary lazım, 2 gün, Ayder ve Pokut dahil, budget-friendly olsun."}
+{"lang": "mix", "domain": "customer-support", "text": "Customer [[P:Ayten]] Hanım Disney+ subscription'ını iptal etmek istiyor ama app'te buton yok. Step-by-step yanıt yaz."}
+{"lang": "tr", "domain": "hr", "text": "Ekim ayı performans değerlendirme takvimini hazırla; Kasım'da kalibrasyon toplantısı olacak."}
+{"lang": "tr", "domain": "hr", "text": "[[P:Ekim]] Hanım ekimde doğum iznine çıkıyor, yerine [[P:Kasım Bulut]] bakacak. Ekibe duyuru yaz."}
+{"lang": "tr", "domain": "personal", "text": "bahar geldi, güneş açtı, yıldız falı bakmayı bırak artık diyor annem. buna komik bir cevap yaz"}
+{"lang": "tr", "domain": "personal", "text": "[[P:Bahar]] ile [[P:Güneş]] bu akşam bize geliyor, [[P:Yıldız]] da belki uğrar. Menü öner, biri vejetaryen."}
+{"lang": "tr", "domain": "software", "text": "demir yolu bilet sistemi için veri modeli tasarla: sefer, vagon, koltuk, rezervasyon"}
+{"lang": "tr", "domain": "software", "text": "[[P:Demir]] backend'i yazıyor, [[P:Kaya]] frontend'de. Kaya gibi sağlam bir mimari istiyoruz diye bir README girişi yaz."}
+{"lang": "en", "domain": "software", "text": "Explain the Raft consensus algorithm vs Paxos for a junior engineer."}
+{"lang": "en", "domain": "software", "text": "PR description: '[[P:Paxos]] is my GitHub handle, not the algorithm — I'm [[P:Paxton Osei]]'. Rewrite this contributor bio to be less confusing."}
+{"lang": "en", "domain": "healthcare", "text": "Draft patient education material on Parkinson's disease exercise programs."}
+{"lang": "en", "domain": "healthcare", "text": "Message from [[P:James Parkinson-Lee]]: 'my dad has Parkinson's and lives in [[L:Leeds]], what support groups exist?' Write a compassionate reply."}
+{"lang": "en", "domain": "legal", "text": "What's the statute of limitations for breach of contract in New York?"}
+{"lang": "en", "domain": "legal", "text": "Client intake: [[P:Ruth Bader]], lives at [[A:22 Willow Lane, Bristol BS8 1QU]], dispute with landlord over deposit. Summarize key facts."}
+{"lang": "tr", "domain": "research", "text": "Monte Carlo simülasyonu ile pi sayısını tahmin eden Python kodu yaz."}
+{"lang": "tr", "domain": "travel", "text": "Monte Carlo'ya Nice'ten nasıl gidilir? Tren mi otobüs mü?"}
+{"lang": "en", "domain": "travel", "text": "[[P:Monte]] wants to visit Monte Carlo for the Grand Prix; he lives in [[L:Marseille]]. Suggest train options."}
+{"lang": "tr", "domain": "customer-support", "text": "Pınar süt ürünlerinde son kullanma tarihi şikayetine yanıt şablonu yaz."}
+{"lang": "tr", "domain": "customer-support", "text": "Şikayet eden müşteri [[P:Pınar Sütçü]], Pınar sütünün bozuk çıktığını söylüyor, e-posta adresi pinar.s@example.com. Kibar bir özür yanıtı yaz."}
+{"lang": "en", "domain": "software", "text": "How do I configure Jackson to ignore unknown properties globally in Spring Boot?"}
+{"lang": "en", "domain": "hr", "text": "Reference check notes for [[P:Tom Jackson]]: worked with Jackson library extensively at previous job, strong on Java. Turn into a short paragraph."}
+{"lang": "tr", "domain": "education", "text": "Sabancı Üniversitesi ve Koç Üniversitesi bilgisayar mühendisliği müfredatlarını karşılaştır."}
+{"lang": "tr", "domain": "finance", "text": "DELL HİSSESİ İÇİN TEKNİK ANALİZ YAPMANI İSTEMİYORUM, SADECE SON 4 ÇEYREĞİN GELİR TABLOSUNU ÖZETLE"}
+{"lang": "tr", "domain": "hr", "text": "İK NOTU: [[P:MURAT DELİOĞLU]] DELL LAPTOP ZİMMETİNİ TESLİM ETMEDİ, KENDİSİNE HATIRLATMA MAİLİ YAZ"}
+{"lang": "en", "domain": "research", "text": "What is the Doppler effect and why does an ambulance siren change pitch?"}
+{"lang": "en", "domain": "research", "text": "Write a citation note: the sample was collected by [[P:Christian Doppler]]'s namesake lab, contact [[P:Anika Hoff]] for raw data."}
+{"lang": "tr", "domain": "media", "text": "Netflix'te Kapadokya'da çekilmiş belgeseller var mı?"}
+{"lang": "tr", "domain": "media", "text": "Belgeselin yönetmeni [[P:Kapadokya Ersoy]] değil [[P:Kaan Ersoy]]; altyazı jeneriğini düzelt."}
+{"lang": "en", "domain": "sales", "text": "Write a LinkedIn post announcing our partnership with Siemens Healthineers."}
+{"lang": "en", "domain": "sales", "text": "Thank-you note to [[P:Siemens]]? No — to [[P:Sienna Mertens]] at Siemens, for hosting our demo. Keep it warm and short."}
+{"lang": "tr", "domain": "healthcare", "text": "Asperger sendromlu bir çocuğun okul uyum planı için öğretmenlere yönelik ipuçları yaz."}
+{"lang": "tr", "domain": "healthcare", "text": "Oğlum [[P:Aras]] Asperger tanısı aldı, [[L:İzmir]] Karşıyaka'da okula başlayacak. Öğretmenine yazacağım tanıtım mektubunu düzelt."}
+{"lang": "tr", "domain": "research", "text": "Ohm kanunu ve Kirchhoff yasalarını kullanarak bu devrede akımı hesapla: 12V, 4Ω ve 6Ω paralel."}
+{"lang": "tr", "domain": "legal", "text": "Sarbanes-Oxley uyumu Türkiye'deki bir yan kuruluşu nasıl etkiler?"}
+{"lang": "tr", "domain": "legal", "text": "Avukat [[P:Oksal]] Bey Sarbanes-Oxley raporunu müvekkil [[P:Sarper Banaz]] için hazırlıyor; toplantı notunu toparla."}
+{"lang": "en", "domain": "personal", "text": "grocery list: apples, milk, ford focus oil filter, dell charger, jenkins brand biscuits — sort by store section"}
+{"lang": "en", "domain": "personal", "text": "remind me to call [[P:ford]] about the dell charger he borrowed and to text [[P:jenny]] re saturday"}
+{"lang": "tr", "domain": "personal", "text": "savaş filmlerinden hoşlanmıyorum ama barış temalı bir film önerir misin"}
+{"lang": "tr", "domain": "personal", "text": "[[P:Savaş]] abi ile [[P:Barış]] geçen hafta barıştılar, ikisine ortak bir tebrik notu yaz :)"}
+{"lang": "en", "domain": "software", "text": "Write a regex to validate Turkish IBANs like TR33 0006 1005 1978 6457 8413 26."}
+{"lang": "en", "domain": "finance", "text": "Payment note: send TR33 0006 1005 1978 6457 8413 26 the invoice for [[P:Leyla Gürcan]], address [[A:Atatürk Bulvarı No:88 Çankaya/Ankara]]. Format as a remittance advice."}
+{"lang": "tr", "domain": "research", "text": "Gauss-Seidel yönteminin yakınsama koşulunu açıkla."}
+{"lang": "tr", "domain": "education", "text": "Hacettepe Tıp Fakültesi'ne girmek için kaç net gerekiyor, 2026 için tahmin yap."}
+{"lang": "tr", "domain": "education", "text": "Kızım [[P:Hacer]] Hacettepe'yi kazandı, [[L:Konya]]'dan [[L:Ankara]]'ya taşınacak. Yurt başvurusu dilekçesi yaz."}
+{"lang": "en", "domain": "software", "text": "Hugo vs Jekyll vs Astro for a documentation site — pros and cons."}
+{"lang": "en", "domain": "software", "text": "// author: [[P:hugo.lefevre]]\n// reviewed-by: [[P:jekyll]]? no, [[P:Jeroen Kyll]]\nfix these code header comments to a consistent format"}
+{"lang": "tr", "domain": "personal", "text": "ay tutulması bu ay ne zaman, nereden izlenir"}
+{"lang": "tr", "domain": "personal", "text": "[[P:Ay]] Hanım ay tutulmasını izlemek için bizi [[L:Kaş]]'taki evine çağırdı, teşekkür mesajı yaz."}
+{"lang": "en", "domain": "travel", "text": "Is Sabiha Gökçen or Istanbul Airport better for a 3-hour layover?"}
+{"lang": "en", "domain": "travel", "text": "My aunt [[P:Sabiha]] lands at Sabiha Gökçen at 22:40, then goes to her flat at [[A:Kozyatağı Mah. Bayar Cad. No:15 Kadıköy]]. Write directions for the taxi driver in Turkish."}
