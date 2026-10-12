@@ -117,6 +117,14 @@ class Pools:
         self.us_states = world["us_states"]
         neg_path = POOLS / "distractors.json"
         self.neg = {k: v for k, v in json.loads(neg_path.read_text(encoding="utf-8")).items()} if neg_path.exists() else {}
+        # Name-like ordinary words by language, so "I {NEG:word} call you" gets "will", not "deniz".
+        tr_names = {tr_lower(name_of(x)) for x in load("tr_first_names.json")} | {tr_lower(x) for x in load("tr_surnames.json")}
+        en_names = {name_of(x).lower() for x in load("en_first_names.json")} | {x.lower() for x in load("en_surnames.json")}
+        words = self.neg.get("word", [])
+        self.neg_word = {
+            "tr": [w for w in words if tr_lower(w) in tr_names or re.search("[çğıöşü]", w)] or words,
+            "en": [w for w in words if w.lower() in en_names and not re.search("[çğıöşü]", w)] or words,
+        }
         self.uk_areas = world["uk_postcode_areas"]
 
 
@@ -251,9 +259,14 @@ def fill(template: dict, pools: Pools, rng: random.Random) -> dict:
         out_len += len(literal)
         kind, n, form, neg, case = m.group(1), m.group(2), m.group(3) or "", m.group(4), m.group(5)
         if neg:
-            value = rng.choice(pools.neg.get(neg) or ["Kafka"])
+            if neg == "word" and lang in ("tr", "en"):
+                value = rng.choice(pools.neg_word[lang])
+            else:
+                value = rng.choice(pools.neg.get(neg) or ["Kafka"])
             if neg == "word" and rng.random() < 0.3:
                 value = value[:1].upper() + value[1:]  # sentence-case ordinary word
+            elif neg != "word" and rng.random() < 0.2:
+                value = tr_lower(value)  # people type "kafka", "koç holding" too
             text.append(value)
             out_len += len(value)
             if case:
