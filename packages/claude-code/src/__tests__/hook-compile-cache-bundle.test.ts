@@ -78,6 +78,7 @@ describe("per-call hook compile-cache bootstrap", () => {
 		}
 	});
 
+	// AIDR-SKIP: AIDR-063 qa-owner - private-directory check reads POSIX mode bits; Windows uses ACLs, not mode bits
 	it.skipIf(process.platform === "win32")(
 		"writes the cache only into a private directory and keeps verdicts identical",
 		() => {

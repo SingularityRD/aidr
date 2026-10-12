@@ -26,8 +26,8 @@ const CORE_MODULE = join(repoRoot, "packages", "core", "dist", "hook-compile-cac
 // through. Exit 2 with a stderr reason is the blocking-error answer of every
 // host these bootstraps serve (Claude Code, Codex, Cursor and VS Code hooks);
 // the default Node crash (exit 1) is a non-blocking error for them.
-export const LOAD_FAILURE_EXIT_CODE = 2;
-export const LOAD_FAILURE_MESSAGE = "Singularity AIDR hook failed to load; execution was denied.";
+const LOAD_FAILURE_EXIT_CODE = 2;
+const LOAD_FAILURE_MESSAGE = "Singularity AIDR hook failed to load; execution was denied.";
 
 /** `pre-tool-use.cjs` -> `pre-tool-use.bundle.cjs`. */
 export function hookBundleName(bootstrapName) {
@@ -36,7 +36,7 @@ export function hookBundleName(bootstrapName) {
 }
 
 /** Source of one bootstrap. `runExport` names a function the bundle exports to start the hook. */
-export function hookBootstrapSource(bundleName, { runExport } = {}) {
+function hookBootstrapSource(bundleName, { runExport } = {}) {
 	if (!/^[\w.-]+\.bundle\.cjs$/.test(bundleName)) throw new Error(`unexpected hook bundle name: ${bundleName}`);
 	const load = `require(require("node:path").join(__dirname, ${JSON.stringify(bundleName)}))`;
 	return [
@@ -55,7 +55,7 @@ export function hookBootstrapSource(bundleName, { runExport } = {}) {
 /**
  * Build one bootstrap per entry with the caller's esbuild instance.
  *
- * @param {typeof import("esbuild")} esbuild
+ * @param {{ build: (options: object) => Promise<unknown> }} esbuild
  * @param {object} shared esbuild options shared with the connector's bundles
  * @param {{ outfile: string, runExport?: string }[]} entries outfile is the stable `dist/<name>.cjs`
  * @returns {Promise<string[]>} the bootstrap outfiles

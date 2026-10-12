@@ -161,7 +161,7 @@ for (const [label, tool, input] of SHOULD_ALLOW) {
 for (const [label, raw] of [
 	["unparseable stdin", "{not json"],
 	["empty stdin", ""],
-	["wrong event", JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Bash" })],
+	["wrong event", JSON.stringify({ hook_event_name: "Stop", tool_name: "Bash" })],
 ]) {
 	const res = spawnSync(process.execPath, [BUNDLE], {
 		input: raw,

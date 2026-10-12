@@ -51,15 +51,15 @@ import { sha256 } from "./runtime-policy.ts";
 export const TENANT_OVERLOADED = "tenant_overloaded";
 export const SERVICE_OVERLOADED = "service_overloaded";
 export const TENANT_LIMITER_UNAVAILABLE = "tenant_limiter_unavailable";
-export const UNRESOLVED_TENANT = "unresolved";
+const UNRESOLVED_TENANT = "unresolved";
 
 /** The admission scope ingest and policy share. */
 export const ADMISSION_SCOPE = "machine-api";
 // The kit's PostgREST pool holds 10 connections and a request uses at most one
 // at a time, so the deployment never queues more requests than the pool serves.
-export const DEFAULT_CAPACITY = 10;
-export const DEFAULT_FAIR_SHARE_FLOOR = 2;
-export const DEFAULT_RETRY_AFTER_SECONDS = 1;
+const DEFAULT_CAPACITY = 10;
+const DEFAULT_FAIR_SHARE_FLOOR = 2;
+const DEFAULT_RETRY_AFTER_SECONDS = 1;
 // The main router gives each edge worker a 60 s wall clock, so no live request
 // outlives its lease; a lease left by a killed worker frees itself after this.
 export const LEASE_SECONDS = 60;

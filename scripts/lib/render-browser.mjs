@@ -24,7 +24,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-export const RENDER_FONTS_CONF = path.join(repositoryRoot, "scripts", "lib", "render-fonts.conf");
+const RENDER_FONTS_CONF = path.join(repositoryRoot, "scripts", "lib", "render-fonts.conf");
 /** The families the fixed-size pages are fitted to; rendering without them is refused. */
 const REQUIRED_FAMILIES = ["Liberation Sans", "Liberation Mono"];
 
@@ -60,7 +60,7 @@ function chromiumExecutable(dir) {
  * undefined when playwright-core can launch its own pinned build; otherwise the executable to
  * pass as `executablePath` (AIDR_CHROMIUM_PATH, or the newest installed Playwright Chromium).
  */
-export function chromiumExecutablePath(chromium, log = console.error) {
+function chromiumExecutablePath(chromium, log = console.error) {
 	if (process.env.AIDR_CHROMIUM_PATH) return process.env.AIDR_CHROMIUM_PATH;
 	try {
 		if (existsSync(chromium.executablePath())) return undefined;
@@ -89,7 +89,7 @@ export function chromiumExecutablePath(chromium, log = console.error) {
 }
 
 /** Environment for Chromium: on Linux, only the fonts in render-fonts.conf are visible. */
-export function renderEnvironment() {
+function renderEnvironment() {
 	if (process.platform !== "linux") return { ...process.env };
 	const env = { ...process.env, FONTCONFIG_FILE: RENDER_FONTS_CONF };
 	let families;

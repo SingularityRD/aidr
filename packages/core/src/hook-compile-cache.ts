@@ -33,10 +33,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { preparePrivateLocalDirectory } from "./private-local-file.js";
 
-export const DISABLE_COMPILE_CACHE_ENV = "AIDR_DISABLE_COMPILE_CACHE";
-export const ENABLE_COMPILE_CACHE_ENV = "AIDR_ENABLE_COMPILE_CACHE";
+const DISABLE_COMPILE_CACHE_ENV = "AIDR_DISABLE_COMPILE_CACHE";
+const ENABLE_COMPILE_CACHE_ENV = "AIDR_ENABLE_COMPILE_CACHE";
 
-export type HookCompileCacheStatus =
+type HookCompileCacheStatus =
 	| "enabled"
 	| "already_enabled"
 	| "disabled"
