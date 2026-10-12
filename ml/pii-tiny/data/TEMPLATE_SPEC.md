@@ -88,3 +88,23 @@ Kinds (pools in `data/pools/distractors.json`):
 `{NEG:<kind>}` takes `+SUFFIX` like any slot (`{NEG:org+DAT}` → "Arçelik'e"). Templates may (and
 should) mix distractor slots with real `PERSON` slots, so the model learns to tell them apart in
 the same sentence.
+
+## Natural annotated text (no slots) — `data/natural/*.jsonl`
+
+Free-form prompts written as a real person would type them, with the personal data written out
+**inline and marked** instead of slotted, so the text keeps its natural wording (nicknames,
+possessives, typos, mixed case, Turkish suffixes attached directly):
+
+```json
+{"lang":"tr","domain":"hr","text":"[[P:Gülşen Hanım]]'ın izin talebini [[P:Okan]]'a ilettim, kendisi [[L:Eskişehir]]'de."}
+```
+
+- `[[P:...]]` PERSON, `[[A:...]]` ADDRESS, `[[L:...]]` LOCATION (a place tied to a specific person:
+  residence, birthplace, current whereabouts). The marker contains only the value — never a
+  title, honorific, suffix or apostrophe: `[[P:Ayşe]] Hanım'ın`, `Dr. [[P:Kaya]]`, `[[P:Okan]]'a`.
+- Every name of a real-looking person is marked, including first names alone, nicknames, initials,
+  lower-case handles that are clearly a person's name, and names inside code or tables.
+- Do NOT mark: companies, brands, products, software, institutions (even if named after a person),
+  laws, eponyms, places used as a topic or destination, pet names, fictional characters.
+- Invent values freely (do not reuse the same few names); never use real private individuals.
+  Literal e-mails/phones must use example domains and obviously synthetic numbers.

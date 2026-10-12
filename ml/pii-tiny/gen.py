@@ -158,7 +158,7 @@ class Filler:
             else:
                 first, first2 = name(self.r.choice(self.p.en_first)), name(self.r.choice(self.p.en_first))
                 last = self.r.choice(self.p.en_last)
-            self.people[n] = {"first": first, "first2": first2 or first, "last": last}
+            self.people[n] = {"first": first, "first2": first2 or first, "last": last, "tr": o == "tr"}
         return self.people[n]
 
     def person_form(self, n: str, form: str) -> str:
@@ -173,9 +173,10 @@ class Filler:
         if form == "firstlast2":
             return f"{p['first']} {p['first2']} {p['last']}" if p["first2"] != p["first"] else full
         if form == "upper":
-            return tr_upper(full)
+            # Only Turkish spelling turns i into İ: JOHN SMITH, not JOHN SMİTH.
+            return tr_upper(full) if p["tr"] else full.upper()
         if form == "lower":
-            low = tr_lower(full)
+            low = tr_lower(full) if p["tr"] else full.lower()
             return low.translate(ASCII) if self.r.random() < 0.4 else low
         if form == "initial":
             return f"{p['first'][0]}. {p['last']}"
