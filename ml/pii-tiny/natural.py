@@ -111,6 +111,8 @@ def variant(plain: str, spans: list[dict], pools: Pools, rng: random.Random) -> 
         new_spans.append({"start": n, "end": n + len(repl), "label": s["label"]})
         n += len(repl)
         pos = s["end"]
+        if s["label"] == "PERSON" and rest[:1].isalpha():
+            return None  # "Kerim'cim" typed as "Kerimcim": a swapped name would get the wrong harmony
         if s["label"] == "PERSON" and rest[:1] in ("'", "’"):
             case = next((c for rx, c in CASE_OF if rx.match(rest)), None)
             if case is None:
