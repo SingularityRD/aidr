@@ -98,3 +98,152 @@
 {"lang": "en", "domain": "accounting", "text": "Explain IFRS 16 lease accounting to a non-finance manager in 5 bullet points."}
 {"lang": "tr", "domain": "musteri-hizmetleri", "text": "{PERSON1.first}: kanka müşteri yine aradı, adı {PERSON2} galiba, faturasını görmek istiyor\nBu iç yazışmayı müşteriye gidecek resmi bir dile çevir (sadece müşteri kısmı)."}
 {"lang": "en", "domain": "real-estate", "text": "Write a neighborhood guide paragraph for buyers relocating to {LOCATION1.city}. Client {PERSON1} has two school-age kids."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "{PERSON1.first+ACC} tekrar aramamız gerekiyor; dün {PERSON2.first+LOC} kalan kayıtta numarası yanlış girilmiş. Geri arama scriptini yaz."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "{PERSON1.last+PLU} ile {PERSON2.last+PLU} aynı aileden mi diye soruyor yönetim, çıkar çatışması politikası açısından nasıl bir beyan formu hazırlamalıyız? Formu taslak olarak yaz."}
+{"lang": "tr", "domain": "bankacilik", "text": "sayin {PERSON1.lower} beyefendi, hesabiniza ait kredi karti ekstresi ektedir. odeme son tarihi 28 ekim.\nBu metni Türkçe karakterlerle ve düzgün imla ile yeniden yaz."}
+{"lang": "tr", "domain": "hukuk", "text": "Müvekkil {PERSON1.firstlast2}, eşi {PERSON2.firstlast2} ile anlaşmalı boşanma istiyor. Çocuk {LOCATION1.city+LOC} annesiyle kalacak. Protokol taslağı yaz."}
+{"lang": "tr", "domain": "sigorta", "text": "umut ediyoruz ki hasar bu hafta kapanır. Sigortalı {PERSON1.lower} aracını {LOCATION1.district+DAT} çekici ile götürdü. Durum güncellemesini müşteriye yaz, tonu sakin olsun."}
+{"lang": "tr", "domain": "emlak", "text": "Ev sahibi {PERSON1.first} Bey, kiracısı {PERSON2.first+ABL} şikayetçi değil ama kira artışını %50 yapmak istiyor. Yasal sınırı ve uzlaşma önerisini anlatan bir mesaj yaz."}
+{"lang": "tr", "domain": "muhasebe", "text": "Cari hesap ekstresi hatalı: {PERSON1.upper} adına 3 kayıt, ödeme tarihleri 01.09, 15.09, 30.09. Kayıtları kontrol edip mutabakat mektubunu {PERSON1.first+DAT} hitaben yaz."}
+{"lang": "tr", "domain": "satin-alma", "text": "{PERSON1} — Satın Alma Müdürü\n{PERSON2} — Kalite Kontrol\n{PERSON3} — Finans\nBu üç kişiyi içeren tedarikçi seçim komitesi için toplantı gündemi oluştur."}
+{"lang": "tr", "domain": "lojistik", "text": "Araç plakası 34 ABC 123, şoför {PERSON1.first}, yolcu {PERSON2.first}. {LOCATION1.city+ABL} {LOCATION2.city+DAT} giderken Bolu Dağı'nda kar nedeniyle 6 saat beklediler. Müşteriye gecikme bildirimi yaz."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Yıldız Teknik Üniversitesi ve Boğaziçi Üniversitesi kariyer fuarları için şirket tanıtım standı metni yaz. Güneş enerjisi projelerimizi vurgula."}
+{"lang": "tr", "domain": "hukuk", "text": "Tüketici hakem heyetine başvuru dilekçesi şablonu hazırla; ayıplı mal, 30 gün iade süresi. Ad-soyad yerine [BAŞVURUCU] yaz."}
+{"lang": "tr", "domain": "bankacilik", "text": "Akbank, Garanti BBVA ve Ziraat Bankası'nın ticari kredi faiz oranlarını karşılaştıran bir tablo şablonu hazırla, değer alanlarını boş bırak."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "Çiçek siparişi geç teslim edildi, gül buketinin yarısı solmuş. Müşteriye özür + %20 indirim kodu (CICEK20) içeren mesaj yaz."}
+{"lang": "tr", "domain": "emlak", "text": "Kat malikleri toplantısı tutanağı: yönetici seçimi yapıldı, aidat 1.500 TL'ye çıkarıldı, Demir kapı tamiri onaylandı. Bunu tüm sakinlere duyuru olarak yaz."}
+{"lang": "en", "domain": "customer-service", "text": "{PERSON1.first}, {PERSON2.first}, and {PERSON3.first} from the night shift all flagged the same billing bug. Write a bug report summary for engineering that credits them."}
+{"lang": "en", "domain": "hr", "text": "Re: promotion recommendation for {PERSON1} (\"{PERSON1.first}\") — please tighten this paragraph: she led the SAP migration, mentored two juniors, and cut close time by 3 days."}
+{"lang": "en", "domain": "legal", "text": "Deposition summary needed. Witness: {PERSON1.upper}. Deposed by counsel for defendant Johnson & Johnson. Key testimony below. Summarise in 10 bullets."}
+{"lang": "en", "domain": "banking", "text": "wire to {PERSON1.lower} bounced, beneficiary bank says name mismatch. how do i word the recall request to our correspondent bank"}
+{"lang": "en", "domain": "insurance", "text": "Policyholder Dr. {PERSON1.last} reports water damage at {ADDRESS1.en}. Pipe burst while she was travelling in {LOCATION1.country}. Draft the first notice of loss acknowledgement."}
+{"lang": "en", "domain": "real-estate", "text": "Offer summary: Buyers {PERSON1.firstlast2} and spouse offered $612,000 for {ADDRESS1.en_street}, contingent on inspection. Write a counter-offer cover note to their agent, {PERSON2}."}
+{"lang": "en", "domain": "accounting", "text": "Payroll exception report:\nEMP-0042 {PERSON1.upper} overtime > 20h\nEMP-0107 {PERSON2.upper} missing timesheet\nEMP-0233 {PERSON3.upper} negative PTO balance\nWrite an email to department heads explaining each exception."}
+{"lang": "en", "domain": "procurement", "text": "Draft an RFP section on sustainability requirements for packaging suppliers. Reference ISO 14001. No vendor names."}
+{"lang": "en", "domain": "logistics", "text": "Explain the difference between FOB and CIF Incoterms with a simple example shipment from Izmir to Rotterdam."}
+{"lang": "en", "domain": "sales", "text": "Write a cold email opener for CFOs at manufacturing companies about our AP automation tool. Mention integration with Oracle NetSuite and SAP."}
+{"lang": "mix", "domain": "insan-kaynaklari", "text": "Exit interview özetini İngilizceye çevir: {PERSON1.first} ayrılma sebebi olarak manager'ı {PERSON2.first} Bey'i gösterdi, ayrıca {LOCATION1.city} ofisine relocation istemediğini söyledi."}
+{"lang": "mix", "domain": "hukuk", "text": "NDA'yı review eder misin? Disclosing party: Koç Holding iştiraki, receiving party: {PERSON1} (freelance consultant, {ADDRESS1.tr}). Governing law Türk hukuku olsun."}
+{"lang": "mix", "domain": "musteri-hizmetleri", "text": "Customer {PERSON1.first} chat'te çok kızgın: 'bu ne biçim service!!'. Calm bir response yaz, hem TR hem EN versiyon."}
+{"lang": "mix", "domain": "sigorta", "text": "Claim #CLM-9921: insured {PERSON1.upper}, accident {LOCATION1.district+LOC} oldu, other party {PERSON2}. Liability split %60-%40. Reinsurer'a özet mail yaz in English."}
+{"lang": "mix", "domain": "lojistik", "text": "Bugünkü shipment'lar: Ford Otosan'a 3 palet, Arçelik'e 5 palet, Demirören Medya'ya 1 koli. Loading plan çıkar, forklift availability'ye göre."}
+{"lang": "tr", "domain": "bankacilik", "text": "{PERSON1.initial} (bireysel müşteri) mobil uygulamada şifre sıfırlayamıyor; çağrı merkezi notu: 'müşteri yaşlı, adım adım anlatılmalı'. Adım adım yönerge yaz."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Ekip toplantısında bu sefer {PERSON1.first} Hanım'ın sunum yapması kararlaştırıldı. Bu kararı ekibe bildiren kısa bir mesaj yaz."}
+{"lang": "tr", "domain": "muhasebe", "text": "Yeni muhasebe yazılımına geçiş planı: Logo'dan Mikro'ya. Veri taşıma, paralel çalışma, eğitim adımlarını zaman çizelgesi olarak yaz."}
+{"lang": "tr", "domain": "satin-alma", "text": "Tedarikçi {PERSON1} ile yapılan telefon görüşmesinde fiyatın sabit kalacağı sözlü olarak kabul edildi. Bunu yazılı teyit eden bir e-posta hazırla, Mr. değil {PERSON1.first} Bey diye hitap et."}
+{"lang": "tr", "domain": "lojistik", "text": "Soğuk zincir ihlali raporu: Araç sıcaklığı 2 saat boyunca 9°C'ye çıktı. Sevkiyat Kartal deposundan çıkmıştı. Kalite birimi için düzeltici faaliyet raporu taslağı yaz."}
+{"lang": "en", "domain": "hr", "text": "Draft a polite rejection email to {PERSON1} for the Financial Analyst role. Mention we were impressed by her Ford Foundation internship."}
+{"lang": "en", "domain": "customer-service", "text": "Write five canned responses for common questions about our return policy. Keep each under 40 words."}
+{"lang": "en", "domain": "banking", "text": "Our relationship manager {PERSON1.first} is leaving. Draft a client letter introducing her replacement, {PERSON2}, who joins from Wells Fargo."}
+{"lang": "tr", "domain": "hukuk", "text": "Sayın Av. {PERSON1}, {PERSON2} vekili olarak yaptığınız ihtarnameye cevabımızdır: Kira bedeli düzenli ödenmiştir.\nBu cevabi ihtarnameyi tamamla, daha resmi yap."}
+{"lang": "tr", "domain": "emlak", "text": "{PERSON1.upper} / {PERSON2.upper}\nTAPU DEVİR RANDEVUSU: 22.10.2026 10:30\nYER: {LOCATION1.district} Tapu Müdürlüğü\nBu bilgileri alıcıya gönderilecek bir hatırlatma SMS'ine çevir."}
+{"lang": "tr", "domain": "sigorta", "text": "Hayat sigortası lehtarları: {PERSON1} (%50), {PERSON2} (%25), {PERSON3} (%25). Poliçe sahibi {PERSON4} vefat etti. Lehtarlara gönderilecek başsağlığı ve süreç bilgilendirme mektubu yaz."}
+{"lang": "en", "domain": "legal", "text": "Explain in plain English what a power of attorney is and when a small business owner might need one."}
+{"lang": "en", "domain": "procurement", "text": "{PERSON1}\nProcurement Lead, EMEA\nprocurement-emea@example.com\n\nUse this signature and write a vendor onboarding welcome email."}
+{"lang": "mix", "domain": "bankacilik", "text": "Swift MT103 detayları: ordering customer {PERSON1.upper}, beneficiary {PERSON2.upper}, {LOCATION1.country}. Compliance check için hangi sanctions screening adımları gerekir, Türkçe açıkla."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "Yorum: '{PERSON1.first} bey çok yardımcı oldu ama sistem çok yavaş'. Bu yorumu olumlu ve olumsuz yönleriyle analiz et, aksiyon önerisi sun."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Stajyer değerlendirme formu: Stajyer {PERSON1.lower}, mentor {PERSON2.first} Hanım. Güçlü yönler: Excel, sunum. Gelişim: zaman yönetimi. Bunu resmi bir referans mektubuna çevir."}
+{"lang": "en", "domain": "accounting", "text": "Can you write a reminder to {PERSON1.first} that her expense report from the {LOCATION1.city} trip is missing hotel receipts?"}
+{"lang": "tr", "domain": "satis", "text": "Bayi toplantısında Kaya Yapı'nın sahibi {PERSON1} yeni fiyat listesine itiraz etti. Kendisine özel %5 ek iskonto teklif eden bir mektup yaz."}
+{"lang": "en", "domain": "logistics", "text": "Shift handover: {PERSON1.first} -> {PERSON2.first}. 3 trailers pending at dock 4, one reefer alarm. Rewrite this as a clear handover note."}
+{"lang": "tr", "domain": "bankacilik", "text": "Kredi komitesi kararı: {PERSON1.upper} A.Ş. değil, şahıs firması {PERSON1.upper} TİCARET için 2 milyon TL limit onaylandı. Müşteriye karar yazısını hazırla."}
+{"lang": "tr", "domain": "hukuk", "text": "Avukatlık Kanunu'na göre vekalet ücreti sözleşmesinde bulunması gereken asgari unsurları listele."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "\"{PERSON1}\" adlı kullanıcı uygulamamıza 1 yıldız verdi ve 'para iadesi yok, rezalet' yazdı. Mağaza yorumuna kamuya açık, kibar bir yanıt yaz."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Yıllık izin planı:\n- {PERSON1.first}: 3-14 Kasım\n- {PERSON2.first}: 17-21 Kasım\n- {PERSON3.first}: 1-12 Aralık\nÇakışma var mı kontrol et ve ekibe takvim duyurusu yaz."}
+{"lang": "tr", "domain": "bankacilik", "text": "Müşteri {PERSON1}, {LOCATION1.country} seyahatinde kartının yurt dışı kullanıma kapalı olduğunu fark etmiş. Şube {LOCATION2.city} Merkez. Ona mobil uygulamadan nasıl açacağını anlatan mesaj yaz."}
+{"lang": "tr", "domain": "hukuk", "text": "Tanık beyanı: \"{PERSON1.upper} isimli şahsı olay günü saat 22:00 sularında {ADDRESS1.tr_street} önünde gördüm.\" Bu ifadeyi hukuki terminolojiyle yeniden düzenle."}
+{"lang": "tr", "domain": "emlak", "text": "Kiracı adayı ön değerlendirme:\nAd Soyad: {PERSON1}\nMeslek: Öğretmen\nŞu anki adres: {ADDRESS1.tr}\nReferans: {PERSON2.initial}\nEv sahibine sunulacak kısa bir özet yaz."}
+{"lang": "tr", "domain": "sigorta", "text": "Yangın hasarı ekspertiz raporunun özetini çıkar: işyeri {ADDRESS1.tr}, işletmeci {PERSON1.first} {PERSON1.last}, hasar tahmini 780.000 TL, sebep elektrik kontağı."}
+{"lang": "tr", "domain": "muhasebe", "text": "Gider pusulası düzenlenecek kişi: {PERSON1.lower}, TCKN 10000000078, hizmet: hurda demir alımı, tutar 6.200 TL. Gider pusulası metnini oluştur."}
+{"lang": "tr", "domain": "satin-alma", "text": "İhale komisyonu üyeleri {PERSON1.initial}, {PERSON2.initial} ve {PERSON3.initial} teklif değerlendirme tutanağını imzaladı. Tutanağı Kamu İhale Kanunu formatında düzenle."}
+{"lang": "tr", "domain": "lojistik", "text": "Teslim alan: {PERSON1.upper} (kapıcı)\nTeslim adresi: {ADDRESS1.tr}\nNot: alıcı evde değildi.\nMüşteriye paketin kapıcıya bırakıldığını bildiren SMS yaz."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "Bir müşteri temsilcisi için 'zor müşteri ile görüşme' eğitim senaryosu yaz. Karakterlere isim verme, Müşteri ve Temsilci olarak geçsin."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Ekim ayının çalışanı seçimi için oylama duyurusu yaz. Kriterler: ekip çalışması, müşteri memnuniyeti, inovasyon."}
+{"lang": "tr", "domain": "bankacilik", "text": "Altın hesabı ile yatırım fonu arasındaki farkları emekli bir müşteriye anlatır gibi açıkla. Sade dil kullan."}
+{"lang": "tr", "domain": "emlak", "text": "Kentsel dönüşüm sürecinde kat maliklerinin 2/3 çoğunluk kararı nasıl alınır? 6306 sayılı Kanun'a göre adım adım anlat."}
+{"lang": "en", "domain": "customer-service", "text": "Draft a reply to {PERSON1.first}, who wrote: \"I've been a loyal customer for 9 years and this is how you treat me?\" She was double-charged $89.99."}
+{"lang": "en", "domain": "hr", "text": "Write a warm farewell message from the team to {PERSON1}, who is retiring after 31 years in accounts payable. Mention her famous lemon cake."}
+{"lang": "en", "domain": "legal", "text": "Client intake form summary: Name: {PERSON1}; Opposing party: {PERSON2}; Matter: breach of contract; Jurisdiction: {LOCATION1.city}. Write a conflict-check request memo."}
+{"lang": "en", "domain": "banking", "text": "Account holder {PERSON1.upper} reported card skimming at a gas station near {ADDRESS1.en_street}. Draft the dispute form narrative."}
+{"lang": "en", "domain": "insurance", "text": "{PERSON1.initial} — auto claim, rear-ended at a stoplight. Other driver ({PERSON2}) admitted fault on scene. Write a liability acceptance letter to our insured."}
+{"lang": "en", "domain": "real-estate", "text": "Property manager notes: unit 4B, tenant {PERSON1.first} {PERSON1.last}, late rent 3 months running. Draft a 14-day notice to pay or quit, neutral tone."}
+{"lang": "en", "domain": "accounting", "text": "Explain to {PERSON1.first} in our AR team why we can't recognize revenue on the Ford contract until delivery under ASC 606."}
+{"lang": "en", "domain": "procurement", "text": "Our buyer {PERSON1} negotiated a 7% discount with Dell. Write a short internal announcement and thank her."}
+{"lang": "en", "domain": "logistics", "text": "Write a standard operating procedure for handling damaged inbound pallets at the receiving dock. Generic, no names."}
+{"lang": "en", "domain": "sales", "text": "Can you turn this LinkedIn message into something less pushy? \"Hi {PERSON1.first}, saw you're at Sabanci Holding now, would love 15 mins to show you our ERP.\""}
+{"lang": "mix", "domain": "insan-kaynaklari", "text": "Background check sonucu: {PERSON1.upper} için criminal record yok, employment verification'da bir gap var (2022-2023). HR'a summary yaz, Türkçe."}
+{"lang": "mix", "domain": "bankacilik", "text": "Relationship manager {PERSON1.first} Hanım müşteri {PERSON2+INS} lunch meeting yaptı, müşteri FX hedging ürünleriyle ilgileniyor. Call report formatında yaz."}
+{"lang": "mix", "domain": "emlak", "text": "Property viewing feedback: {PERSON1.first} ve eşi daireyi beğendi ama kitchen küçük dedi. Owner {PERSON2.first} Bey'e update mesajı yaz, Türkçe."}
+{"lang": "mix", "domain": "satin-alma", "text": "Vendor master data update: supplier contact değişti, eski {PERSON1}, yeni {PERSON2} (procurement@ornek.com.tr). SAP'de hangi alanları güncellemem lazım?"}
+{"lang": "mix", "domain": "hukuk", "text": "Power of attorney'i Türkçeye çevir: \"I, {PERSON1.upper}, residing at {ADDRESS1.en}, hereby appoint {PERSON2.upper} as my attorney-in-fact.\""}
+{"lang": "mix", "domain": "musteri-hizmetleri", "text": "Quality team için call evaluation: agent {PERSON1.lower}, script adherence %70, empathy düşük. Coaching notes yaz."}
+{"lang": "tr", "domain": "bankacilik", "text": "{PERSON1.first+GEN} babası {PERSON2} vefat etmiş, mirasçılık belgesi ile hesapların devri için hangi belgeler gerekiyor? Mirasçılara gönderilecek liste halinde yaz."}
+{"lang": "tr", "domain": "sigorta", "text": "Seyahat sağlık sigortası: sigortalı {PERSON1}, {LOCATION1.country} seyahatinde apandisit ameliyatı oldu. Asistans firmasına gönderilecek bilgilendirme yazısı hazırla."}
+{"lang": "tr", "domain": "hukuk", "text": "Kiracı {PERSON1+ACC} tahliye etmek için 'ihtiyaç nedeniyle tahliye' davası açabilir miyiz? Ev sahibi {PERSON2.first} Bey oğlunun evleneceğini söylüyor. Hukuki değerlendirme yaz."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "{PERSON1.upper} - İŞTEN AYRILIŞ BİLDİRİMİ\nSon çalışma günü: 31.10.2026\nKıdem tazminatı ve ihbar süresi hesaplamasını açıklayan bir bilgilendirme yaz."}
+{"lang": "tr", "domain": "muhasebe", "text": "Kasa sayımında 1.250 TL fark çıktı. Kasiyer {PERSON1.first} ve vardiya amiri {PERSON2.first} tutanağı imzaladı. Tutanak metnini düzenle."}
+{"lang": "tr", "domain": "satis", "text": "Kampanya maili taslağı: 'Sevgili {PERSON1.first}, Bahar indirimleri başladı!' Bunu Ekim için sonbahar kampanyasına uyarla."}
+{"lang": "tr", "domain": "lojistik", "text": "Ekim ayı teslimat performans raporu: zamanında teslimat %91, hasarlı teslimat %0,8. Yönetim için 3 paragraflık yorum yaz."}
+{"lang": "tr", "domain": "emlak", "text": "Sahibinden ilanı: 'Deniz manzaralı, güneş alan, Barış Sitesi içinde 2+1'. Bu ilanı İngilizce ve Arapça versiyonlarıyla yeniden yaz."}
+{"lang": "en", "domain": "hr", "text": "Tabulate these interview scores and recommend a candidate:\nCandidate, Technical, Culture, Comms\n{PERSON1}, 8, 7, 9\n{PERSON2}, 9, 6, 7\n{PERSON3}, 7, 9, 8"}
+{"lang": "en", "domain": "banking", "text": "Summarise the main changes in Basel III endgame capital rules for a board briefing. One page."}
+{"lang": "en", "domain": "customer-service", "text": "Hi team — {PERSON1.first} from billing here. Can someone help draft a template for partial refunds? Thx, {PERSON1.first}"}
+{"lang": "en", "domain": "legal", "text": "Please redline this clause for our client {PERSON1}: \"The Tenant shall indemnify the Landlord for any and all claims whatsoever.\""}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "Merhaba {PERSON1.first},\nTalebiniz alınmıştır.\n\nBu hazır yanıtı çok soğuk buluyorum, daha samimi 3 alternatif yaz."}
+{"lang": "tr", "domain": "bankacilik", "text": "AYLIK EKSTRE BİLDİRİMİ\nSayın {PERSON1.upper}\nAdres: {ADDRESS1.tr}\nBu bildirimin dijital kanala geçiş davetini içeren yeni versiyonunu yaz."}
+{"lang": "en", "domain": "insurance", "text": "Write a script for agents explaining deductibles to first-time homeowners."}
+{"lang": "mix", "domain": "lojistik", "text": "Proof of delivery'de imza {PERSON1.initial} gibi görünüyor ama alıcı {PERSON2} imzanın kendisine ait olmadığını söylüyor. Investigation maili yaz, kargo firmasına."}
+{"lang": "tr", "domain": "hukuk", "text": "Sözleşme taraflarından {PERSON1}, sözleşmenin 4. maddesindeki cezai şartın fahiş olduğunu iddia ediyor. Yargıtay'ın cezai şart indirimi konusundaki yaklaşımını özetle."}
+{"lang": "en", "domain": "real-estate", "text": "Draft a welcome letter for new residents of the Kaya Ridge complex covering trash days, parking, and amenities. No names."}
+{"lang": "tr", "domain": "satin-alma", "text": "{PERSON1.first}, şu teklif karşılaştırmasını tabloya dök: A firması 120K / 30 gün vade, B firması 112K / peşin, C firması 125K / 60 gün vade. Hangisini önerirsin?"}
+{"lang": "en", "domain": "accounting", "text": "Draft an engagement letter for our audit client. Partner in charge: {PERSON1}, CPA. Client contact: Mr. {PERSON2.last}, CFO."}
+{"lang": "mix", "domain": "satis", "text": "Q4 forecast call notları: {PERSON1.first} said Arçelik deal %80 probability, {PERSON2.first} ise Vestel'de champion'ımız {PERSON3} ayrıldı dedi. Bunu exec summary'ye çevir."}
+{"lang": "mix", "domain": "insan-kaynaklari", "text": "Can you make this Slack mesajı more professional: 'arkadaşlar {PERSON1.first} yarın son günü, cake alalım mı? 15:00 meeting room 3'"}
+{"lang": "mix", "domain": "bankacilik", "text": "AML alert #A-2210: customer {PERSON1.upper}, son 30 günde {LOCATION1.country+DAT} değil, {LOCATION2.city} şubesinden 14 nakit yatırma. STR draft'ı yaz, Türkçe başlıklarla."}
+{"lang": "mix", "domain": "hukuk", "text": "Contract summary lazım: Lessor {PERSON1}, Lessee Yapı Kredi Leasing, asset: 2 adet forklift. Termination clause'u Türkçe açıkla."}
+{"lang": "mix", "domain": "emlak", "text": "Airbnb host {PERSON1.first} Hanım'ın dairesi {ADDRESS1.tr_street} adresinde. Guest check-in instructions yaz, hem Türkçe hem English."}
+{"lang": "mix", "domain": "muhasebe", "text": "Invoice dispute: client {PERSON1} says fatura tutarı yanlış, PO'da 18.000 TL yazıyor ama invoice 21.600 TL (KDV dahil mi değil mi karışmış). Explain the difference to the client in English."}
+{"lang": "mix", "domain": "sigorta", "text": "Underwriting notu: applicant {PERSON1.firstlast2}, 52 yaşında, smoker, {LOCATION1.city} merkezli. Life policy için loading önerisi yaz, rationale İngilizce."}
+{"lang": "mix", "domain": "lojistik", "text": "Last-mile issue: kurye {PERSON1.first} müşterinin apartmanını bulamadı, adres {ADDRESS1.tr} ama Google Maps yanlış gösteriyor. Customer'a SMS yaz."}
+{"lang": "mix", "domain": "satin-alma", "text": "Supplier audit raporu: Johnson Matthey tesisinde 3 minor non-conformity. Audit lead {PERSON1}. Corrective action plan template'i hazırla."}
+{"lang": "mix", "domain": "musteri-hizmetleri", "text": "NPS survey verbatim'leri:\n- '{PERSON1.first} was super helpful!'\n- 'Kargo geç geldi'\n- 'App çok yavaş'\nTema bazlı grupla ve Türkçe rapor yaz."}
+{"lang": "mix", "domain": "insan-kaynaklari", "text": "Promotion case: {PERSON1.first} {PERSON1.last} Senior'dan Lead'e. Manager {PERSON2.first} support ediyor, skip-level {PERSON3.initial} çekimser. Calibration meeting için one-pager yaz."}
+{"lang": "mix", "domain": "bankacilik", "text": "Mortgage refinance talebi: borrower {PERSON1.lower}, property {ADDRESS1.tr}, current rate %3,2 (2021). Yeni rate senaryoları için English table yap."}
+{"lang": "mix", "domain": "hukuk", "text": "Demand letter'ı Türkçeye çevir ve Sayın {PERSON1.upper} diye başlat: \"Dear Mr. {PERSON1.last}, our client has suffered damages exceeding $40,000...\""}
+{"lang": "mix", "domain": "emlak", "text": "Commercial lease negotiation: tenant Ford Otosan bayisi, landlord {PERSON1}. Rent escalation TÜFE + 2 olsun mu? Pros/cons yaz."}
+{"lang": "mix", "domain": "satis", "text": "Bu prospect listesini CRM import formatına çevir (first_name,last_name,company):\n{PERSON1}, Koç Holding\n{PERSON2}, Eczacıbaşı\n{PERSON3}, Tofaş"}
+{"lang": "mix", "domain": "lojistik", "text": "Warehouse incident: forklift operator {PERSON1.upper} hafif yaralandı, ilk yardım {PERSON2.first} tarafından yapıldı. OSHA-style incident report yaz ama Türk mevzuatına uygun."}
+{"lang": "mix", "domain": "musteri-hizmetleri", "text": "Tone check please: 'Sayın {PERSON1}, şikayetiniz kayda alınmıştır, ancak sorun sizin cihazınızdan kaynaklanmaktadır.' Bu çok blaming mi?"}
+{"lang": "mix", "domain": "muhasebe", "text": "Month-end close checklist'i Türkçeye çevir: bank recs, accruals, prepaid amortization, intercompany. Owner kolonunu boş bırak."}
+{"lang": "mix", "domain": "insan-kaynaklari", "text": "Remote work policy draft'ımızı review et, özellikle 'çalışan yurt dışından max 30 gün çalışabilir' kısmı. Legal risk var mı?"}
+{"lang": "mix", "domain": "bankacilik", "text": "FX forward nedir, ihracatçı bir KOBİ'ye simple English ve Türkçe karışık anlat, real örnek olmasın."}
+{"lang": "mix", "domain": "satin-alma", "text": "Spend analysis yap: kategori bazında IT %34, lojistik %22, ofis %8. Saving opportunity'leri Türkçe sırala."}
+{"lang": "mix", "domain": "sigorta", "text": "Broker {PERSON1} ile renewal meeting: property premium %18 arttı, deductible düşürülmezse {PERSON2.first} Bey (CFO) onay vermeyecek. Meeting minutes yaz."}
+{"lang": "mix", "domain": "hukuk", "text": "Due diligence checklist: target şirketin ortakları {PERSON1} ve {PERSON2}; merkez {ADDRESS1.tr}. Corporate, tax, employment başlıklarıyla checklist yap."}
+{"lang": "mix", "domain": "emlak", "text": "Bu WhatsApp'ı daha profesyonel yap: 'abi {PERSON1.first} bey evi görmek istiyo yarin 11de musait misin, bi de keys kimde'"}
+{"lang": "mix", "domain": "lojistik", "text": "Fleet manager {PERSON1.first} Bey, Mercedes-Benz Actros araçların maintenance schedule'ını istedi. Table olarak hazırla, plaka kolonlu."}
+{"lang": "en", "domain": "customer-service", "text": "Summarise this chat:\n[11:02] {PERSON1.first}: My order was supposed to arrive at {ADDRESS1.en_street} yesterday.\n[11:03] Bot: Let me check.\n[11:05] {PERSON1.first}: It's for my mom's birthday!!\n[11:06] Bot: Transferring to {PERSON2.first}."}
+{"lang": "en", "domain": "hr", "text": "Write a short bio for the company intranet: {PERSON1.firstlast2}, new Head of Tax, previously at Deloitte and KPMG, based in {LOCATION1.city}."}
+{"lang": "en", "domain": "legal", "text": "Summarize the Fair Credit Reporting Act's requirements for background checks in hiring. Bullet points."}
+{"lang": "en", "domain": "banking", "text": "Joint account application: {PERSON1} and {PERSON2}, both residing at {ADDRESS1.en}. Write the welcome letter."}
+{"lang": "en", "domain": "insurance", "text": "URGENT - {PERSON1.upper} - claim denied in error, please reopen. Draft an internal escalation to the claims manager, {PERSON2.first}."}
+{"lang": "en", "domain": "real-estate", "text": "Explain to a first-time buyer what escrow is and why earnest money matters. Friendly tone."}
+{"lang": "en", "domain": "accounting", "text": "Vendor {PERSON1} sent a W-9 with a P.O. box only. Write an email requesting a physical address and explaining why."}
+{"lang": "en", "domain": "procurement", "text": "Make this sound less accusatory: \"{PERSON1.first}, your team shipped the wrong SKUs AGAIN.\""}
+{"lang": "en", "domain": "logistics", "text": "Create a packing list template for international shipments: fields for shipper, consignee, HS code, weight, dimensions."}
+{"lang": "en", "domain": "sales", "text": "Account review for Johnson & Johnson Medical: champion is {PERSON1}, economic buyer {PERSON2.initial}. Write a mutual action plan."}
+{"lang": "en", "domain": "hr", "text": "dear hr, im {PERSON1.lower} from warehouse, my paycheck was short 6 hours this week. can you help\n\nWrite a reply from HR acknowledging and explaining next steps."}
+{"lang": "en", "domain": "customer-service", "text": "Write an FAQ entry about how to update a shipping address after an order is placed."}
+{"lang": "tr", "domain": "musteri-hizmetleri", "text": "Bir müşterimiz ({PERSON1.first}) kargo firmasının paketi {LOCATION1.neighborhood} mahallesindeki yanlış apartmana bıraktığını söylüyor. Kargo firmasına resmi şikayet yaz."}
+{"lang": "tr", "domain": "bankacilik", "text": "Bankacılık Kanunu'na göre müşteri sırrı kapsamına giren bilgiler nelerdir? Çalışanlara yönelik kısa bir eğitim notu yaz."}
+{"lang": "tr", "domain": "hukuk", "text": "İhtarname taslağı: Keşideci {PERSON1}, muhatap {PERSON2}, muhatabın adresi {ADDRESS1.tr}. Konu: 3 aylık ödenmeyen kira. Noter formatında yaz."}
+{"lang": "tr", "domain": "emlak", "text": "{PERSON1.first+PLU} ailesi gibi yabancı uyruklu alıcılar için tapu sürecinde gereken belgeleri listele. Not: aile şu an {LOCATION1.country} vatandaşı."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Disiplin kurulu kararı: {PERSON1.upper} hakkında yazılı ihtar verilmesine karar verilmiştir. Bu kararı çalışana tebliğ edilecek resmi yazıya dönüştür."}
+{"lang": "tr", "domain": "sigorta", "text": "Emeklilik sistemine otomatik katılımda cayma hakkı nasıl kullanılır? Çalışanlara SSS formatında açıkla."}
+{"lang": "tr", "domain": "muhasebe", "text": "Serbest muhasebeci {PERSON1.first} Hanım'ın hazırladığı bilançoda kasa hesabı şişkin görünüyor. Ona bunu kırmadan soracak bir mesaj yaz."}
+{"lang": "tr", "domain": "lojistik", "text": "Mersin Limanı'ndaki yoğunluk nedeniyle konteyner tahliyesi 5 gün gecikecek. İthalatçı müşterilere toplu bilgilendirme maili yaz."}
+{"lang": "tr", "domain": "satin-alma", "text": "{PERSON1.lower} adina kesilen proforma fatura yanlis, firma unvani olmasi gerekiyordu. tedarikciye duzeltme talebi yaz, turkce karakterli olsun"}
+{"lang": "tr", "domain": "satis", "text": "Satış temsilcisi {PERSON1.first+DAT} hedefini %140 aştığı için tebrik mesajı yaz, CEO imzasıyla gidecek."}
+{"lang": "tr", "domain": "bankacilik", "text": "Müşteri {PERSON1.firstlast2} için hazırlanan yatırım danışmanlığı uygunluk testi sonucu 'orta risk'. Ona önerilecek portföy dağılımını açıklayan bir mektup yaz."}
+{"lang": "tr", "domain": "hukuk", "text": "Kişisel Verilerin Korunması Kanunu ile GDPR arasındaki temel farkları tablo halinde göster."}
+{"lang": "tr", "domain": "insan-kaynaklari", "text": "Esnek çalışma talebi: {PERSON1.first} Hanım haftada 2 gün evden çalışmak istiyor, yöneticisi {PERSON2} olumlu. İK onay yazısını hazırla."}
