@@ -36,9 +36,14 @@ EDGE = [
 ]
 
 
-def digest(e) -> str:
+def utf16(text: str, i: int) -> int:
+    """Code-point offset -> UTF-16 code units (the browser's string offsets)."""
+    return len(text[:i].encode("utf-16-le")) // 2
+
+
+def digest(text: str, e) -> str:
     payload = {
-        "tokens": [list(t) for t in e["toks"]],
+        "tokens": [[utf16(text, a), utf16(text, b)] for a, b in e["toks"]],
         "words": e["wids"],
         "chars": [c for row in e["cids"] for c in row],
         "shape": [int(x) for row in e["shp"] for x in row],
@@ -67,7 +72,7 @@ def main(argv=None) -> int:
     words = words[: 2 + 3000]
     gaz = {k: sorted(v for v in full.gaz[k] if v in keep_words or rng.random() < 0.05) for k in GAZ_KEYS} if full.gaz else None
     vocab = Vocab(words, full.chars, {k: set(v) for k, v in gaz.items()} if gaz else None)
-    cases = [{"text": t, "sha256": digest(encode({"text": t, "spans": []}, vocab))} for t in texts]
+    cases = [{"text": t, "sha256": digest(t, encode({"text": t, "spans": []}, vocab))} for t in texts]
     fixture = {
         "vocab": {"words": words, "chars": full.chars, "tags": [], "maxChars": MAX_CHARS, "gazetteer": gaz},
         "cases": cases,
