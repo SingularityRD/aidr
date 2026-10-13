@@ -412,7 +412,7 @@ jobs:
       - name: Vendored frontend audit, Go toolchain and image base pin contract
         run: |
           pnpm audit:vendored
-          node --test scripts/audit-vendored-aig.test.mjs
+          node --test scripts/audit-vendored-aig.test.mjs scripts/release-images.test.mjs
 
       # GOTOOLCHAIN makes the runner's preinstalled go fetch the exact pinned
       # toolchain through the checksum database; govulncheck reports only
