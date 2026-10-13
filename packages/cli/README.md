@@ -138,7 +138,8 @@ signed approval for ingestion on the execution host.
 | Command | What it does |
 |---------|--------------|
 | `aidr setup [--dry-run] [--host <ids>] [--no-install]` | Write local configuration and install or update the connector of every detected host (see [Setup](#setup)) |
-| `aidr status [--json]` | Measured installation state (detection self-test, connectors, data loss) |
+| `aidr status [--json]` | Measured installation state (detection self-test, connectors, data loss), ending with a one-line verdict: protected hosts, hosts to restart, hosts needing a manual step (exact command) |
+| `aidr verify [--json]` | Pass a harmless canary (data only, never executed) and its benign twin through each registered connector's real hook entry point; PASS / FAIL / SKIP per host |
 | `aidr doctor [--json]` | Hosts detected, hooks registered, rule count, core version, mode, DLP policy status, agent permission profiles, approval store and last verdict; exits `1` when any check fails |
 | `aidr support-bundle [--out <path>] [--audit-entries <n>] [--json]` | Write a redacted `.tar.gz` diagnostic bundle (versions, doctor checks, hook registrations, config, recent verdict metadata, threat-rule hashes) and list its contents; never overwrites, uploads nothing, aborts if a redaction check fails. See [docs/support-diagnostics.md](../../docs/support-diagnostics.md) |
 | `aidr pending [--json]` | Blocked agent actions (`ask` verdicts) waiting for an operator decision |

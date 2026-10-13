@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractFromBash, HeuristicsEngine, loadThreatsFromDirs } from "@singularityrd/aidr-core";
+import { standaloneBundleRoot } from "./standalone.js";
 
 /**
  * The bundled rule/allowlist data that ships inside this package. Populated by
@@ -9,8 +10,13 @@ import { extractFromBash, HeuristicsEngine, loadThreatsFromDirs } from "@singula
  * read them out of `@singularityrd/aidr-core` (which publishes only `dist/`).
  */
 export function resolveBundledDataDirs(): { threatsDir: string; allowlistsDir: string } {
-	const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-	const resources = join(packageRoot, "resources");
+	const moduleFile = fileURLToPath(import.meta.url);
+	const packaged = join(resolve(dirname(moduleFile), "..", ".."), "resources");
+	// The standalone (SEA) bundle ships the rules at <root>/dist/resources, next
+	// to bin/aidr; inside a SEA the module file is the binary itself.
+	const standalone = standaloneBundleRoot();
+	const bundled = join(standalone ?? dirname(dirname(moduleFile)), "dist", "resources");
+	const resources = standalone || !existsSync(packaged) ? bundled : packaged;
 	return {
 		threatsDir: join(resources, "threats"),
 		allowlistsDir: join(resources, "allowlists"),

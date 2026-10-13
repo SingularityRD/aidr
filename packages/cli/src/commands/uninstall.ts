@@ -39,6 +39,11 @@ import {
 	type OperatorCommandDeps,
 	OperatorConfirmationError,
 } from "../utils/operator-confirm.js";
+import {
+	STANDALONE_ARTIFACT_ID,
+	STANDALONE_INSTALL_KIND,
+	STANDALONE_MANIFEST,
+} from "../utils/standalone.js";
 import { parseHosts } from "./setup.js";
 
 /**
@@ -202,6 +207,36 @@ interface ReceiptFacts {
 }
 
 /**
+ * A standalone (desktop installer) receipt names the installed bundle instead
+ * of a per-user digest directory. It is attributable when that path is an
+ * absolute directory holding a standalone bundle manifest. The manifest digest
+ * is not compared: an upgrade replaces the bundle in place, and the receipt of
+ * a user who did not rerun setup still names the same, upgraded bundle.
+ */
+function verifyStandaloneReceiptPath(
+	path: string,
+): { ok: false; code: UninstallRefusalCode; detail: string } | null {
+	if (!isAbsolute(path)) {
+		return {
+			ok: false,
+			code: "receipt_path_outside_managed_root",
+			detail: "The receipt's bundle path is not absolute.",
+		};
+	}
+	try {
+		const manifest = JSON.parse(readFileSync(join(path, STANDALONE_MANIFEST), "utf8"));
+		if (manifest?.artifact_id === STANDALONE_ARTIFACT_ID) return null;
+	} catch {
+		// Reported below.
+	}
+	return {
+		ok: false,
+		code: "receipt_connector_missing",
+		detail: `The receipt's AIDR bundle ${path} is missing or has no bundle manifest. Run 'aidr uninstall' before removing the installer package, or reinstall it first.`,
+	};
+}
+
+/**
  * Verify the installation receipt written by `scripts/endpoint-install.mjs`
  * (line 121). Every field checked here is one the installer wrote, so a receipt
  * that fails any check is either absent, truncated or edited after the fact —
@@ -303,23 +338,29 @@ function verifyReceipt(
 			detail: "The receipt names no connector path.",
 		};
 	}
-	// The connector lives at connectors/claude/<digest> (endpoint-install.mjs
-	// line 33), so a receipt pointing elsewhere is not this installation.
-	if (!isStrictlyInside(receipt.path, connectorRoot)) {
-		return {
-			ok: false,
-			code: "receipt_path_outside_managed_root",
-			detail: `The receipt names a connector path outside ${connectorRoot}.`,
-		};
-	}
-	if (
-		resolve(receipt.path).split(sep).pop()?.toLowerCase() !== receipt.artifact_sha256.toLowerCase()
-	) {
-		return {
-			ok: false,
-			code: "receipt_digest_path_mismatch",
-			detail: "The receipt's connector directory name does not match its recorded digest.",
-		};
+	if (receipt.install_kind === STANDALONE_INSTALL_KIND) {
+		const standalone = verifyStandaloneReceiptPath(receipt.path);
+		if (standalone) return standalone;
+	} else {
+		// The connector lives at connectors/claude/<digest> (endpoint-install.mjs
+		// line 33), so a receipt pointing elsewhere is not this installation.
+		if (!isStrictlyInside(receipt.path, connectorRoot)) {
+			return {
+				ok: false,
+				code: "receipt_path_outside_managed_root",
+				detail: `The receipt names a connector path outside ${connectorRoot}.`,
+			};
+		}
+		if (
+			resolve(receipt.path).split(sep).pop()?.toLowerCase() !==
+			receipt.artifact_sha256.toLowerCase()
+		) {
+			return {
+				ok: false,
+				code: "receipt_digest_path_mismatch",
+				detail: "The receipt's connector directory name does not match its recorded digest.",
+			};
+		}
 	}
 	if (typeof receipt.settings_path !== "string" || receipt.settings_path === "") {
 		return {

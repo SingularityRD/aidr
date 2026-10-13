@@ -439,6 +439,7 @@ single binary copied on its own loads no rules and asks on every call:
 |---|---|
 | `bin/aidr-pre-tool-use`, `aidr-post-tool-use`, `aidr-session-start`, `aidr-user-prompt-submit` (`.exe` on Windows) | `packages/claude-code/dist/<entry>.bundle.cjs` |
 | `bin/aidr-health`, `bin/aidr-mcp-server` | `packages/claude-code/dist/health.cjs`, `mcp-server.cjs` |
+| `bin/aidr` | the `aidr` CLI: `packages/cli/dist/index.js` bundled to one CommonJS file (it reads the rules from `dist/resources` next to it) |
 | `dist/resources/threats`, `dist/resources/allowlists` | the shipped rules and allowlists |
 | `dist/response-worker.cjs`, `dist/vendor/`, `dist/native/` | runtime files the bundles load |
 | `aidr-artifact.manifest.json` | sha256 of every file above (connector manifest schema) |
@@ -455,7 +456,10 @@ The script uses the documented flow, which works on every supported Node
 
 It then writes the manifest, copies the directory to a temporary location and runs the relocated
 `aidr-pre-tool-use` with an isolated HOME: a pipe-to-shell command must be denied from the
-shipped rules and `ls -la` allowed, or the build fails. Because the manifest uses the connector
+shipped rules and `ls -la` allowed, and the relocated `aidr status --json` must report a passing
+detection self-test, or the build fails. `--out <dir>` writes elsewhere, `--prebuilt` wraps the
+connector dist already on disk instead of rebundling it, and `--remanifest <dir>` rewrites the
+manifest after the binaries were code-signed (and repeats the smoke). Because the manifest uses the connector
 schema, the relocated hooks also check every rule and allowlist file they read against it. To
 re-check a copied distribution:
 
@@ -470,7 +474,9 @@ with `scripts/sign-artifact-manifest.mjs` (and configure the public key in
 `integrity.public_keys_pem` so the rule check is signature-verified) and the binaries with
 `codesign`/`signtool` before distribution (postject prints
 `warning: The signature seems corrupted!` on Windows, which is expected). No release workflow
-builds or ships the SEA directory; the supported distribution is the signed npm/plugin package.
+builds the SEA directory except the desktop installer jobs of `release-rc.yml`, which package it
+into the signed Windows MSI and Linux .deb/.rpm/tarball ([Desktop installers](installation/desktop-installers.md),
+`deploy/installers/`, tests: `pnpm test:installers`).
 
 ## Building the Extension
 

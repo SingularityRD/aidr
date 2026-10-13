@@ -15,6 +15,8 @@ import {
 	type OperatorCommandDeps,
 	OperatorConfirmationError,
 } from "../utils/operator-confirm.js";
+import { writeSetupLedger } from "../utils/setup-ledger.js";
+import { standaloneBundleRoot } from "../utils/standalone.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 
 interface SetupOptions {
@@ -37,6 +39,8 @@ interface SetupDeps extends OperatorCommandDeps {
 	home?: string;
 	/** Host CLI runner (tests). */
 	run?: HostCommandRunner;
+	/** Standalone bundle root (tests); defaults to the SEA this process runs from. */
+	standaloneRoot?: string | null;
 }
 
 const ACTION_TEXT: Record<HostInstallResult["action"], string> = {
@@ -223,8 +227,16 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 			cursorVsix: options.cursorVsix,
 			vscodeVsix: options.vscodeVsix,
 		};
+		const standaloneRoot =
+			deps.standaloneRoot === undefined ? standaloneBundleRoot() : deps.standaloneRoot;
 		const results = installConnectors(
-			{ home, env: hostEnv, run: deps.run, version: VERSION },
+			{
+				home,
+				env: hostEnv,
+				run: deps.run,
+				version: VERSION,
+				...(standaloneRoot ? { standaloneRoot } : {}),
+			},
 			installOptions,
 		);
 		const active = results.filter((entry) => entry.state === "installed");
@@ -233,6 +245,15 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 				recordHooksInstalled(active.length > 0);
 			} catch {
 				// The measured connector state below is what the user sees either way.
+			}
+			// A rerun that registers nothing new keeps the previous restart hint.
+			const registered = results
+				.filter((entry) => entry.action === "installed" || entry.action === "updated")
+				.map((entry) => entry.host);
+			try {
+				if (registered.length > 0) writeSetupLedger(home, registered);
+			} catch {
+				// Only the restart hint in `aidr status` depends on it.
 			}
 		}
 
@@ -258,7 +279,7 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 			for (const entry of pending) for (const line of entry.followUp) console.log(line);
 		}
 		console.log("");
-		console.log("Verify with: aidr status   (then run a host-side deny canary)");
+		console.log("Verify with: aidr status   and   aidr verify   (restart the agent hosts first)");
 		console.log("");
 		if (failed.length > 0) process.exitCode = 1;
 	} catch (error: unknown) {
