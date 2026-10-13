@@ -11,7 +11,70 @@ type ApiKeyRow = {
 	created_at: string;
 	scope?: string | null;
 	install_limit?: number | null;
+	expires_at?: string | null;
+	rotated_at?: string | null;
 };
+
+/**
+ * Key lifetimes offered at issuance (/v1/api-keys `expires_in_days`; `null` is
+ * an explicit non-expiring key). Matches the edge function's 1..730 day bound.
+ */
+const KEY_LIFETIMES: ReadonlyArray<{ value: string; label: string; days: number | null }> = [
+	{ value: "30", label: "30 days", days: 30 },
+	{ value: "90", label: "90 days", days: 90 },
+	{ value: "365", label: "1 year (recommended)", days: 365 },
+	{ value: "730", label: "2 years", days: 730 },
+	{ value: "never", label: "Never expires (not recommended)", days: null },
+];
+const DEFAULT_KEY_LIFETIME = "365";
+/** Same bounds as the api_keys_label_check constraint. */
+export const MAX_KEY_LABEL_LENGTH = 100;
+const DAY_MS = 86_400_000;
+/** Keys this close to expiry are flagged in the list. */
+export const KEY_EXPIRY_WARNING_DAYS = 30;
+
+function lifetimeDays(value: string): number | null {
+	return KEY_LIFETIMES.find((option) => option.value === value)?.days ?? null;
+}
+
+// Control characters are refused by the API; mirror the rule before submitting.
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
+
+export function labelProblem(label: string): string | null {
+	if ([...label].length > MAX_KEY_LABEL_LENGTH)
+		return `Use at most ${MAX_KEY_LABEL_LENGTH} characters.`;
+	if (CONTROL_CHARACTERS.test(label)) return "Remove line breaks and other control characters.";
+	return null;
+}
+
+/**
+ * Rotation keeps the key's lifetime: a non-expiring key stays non-expiring and
+ * an expiring key gets the same number of days from now (bounded 1..730).
+ */
+export function rotationLifetimeDays(key: ApiKeyRow): number | null {
+	if (!key.expires_at) return null;
+	const end = Date.parse(key.expires_at);
+	const start = Date.parse(key.rotated_at ?? key.created_at);
+	if (!Number.isFinite(end) || !Number.isFinite(start)) return 365;
+	return Math.min(730, Math.max(1, Math.round((end - start) / DAY_MS)));
+}
+
+export type KeyExpiryState =
+	| { kind: "none" }
+	| { kind: "expired" }
+	| { kind: "expiring"; days: number }
+	| { kind: "valid"; days: number };
+
+export function keyExpiryState(
+	expiresAt: string | null | undefined,
+	now = Date.now(),
+): KeyExpiryState {
+	if (!expiresAt) return { kind: "none" };
+	const end = Date.parse(expiresAt);
+	if (!Number.isFinite(end) || end <= now) return { kind: "expired" };
+	const days = Math.ceil((end - now) / DAY_MS);
+	return days <= KEY_EXPIRY_WARNING_DAYS ? { kind: "expiring", days } : { kind: "valid", days };
+}
 
 /**
  * Key types issued by /v1/api-keys. A Browser Guard key can only report
@@ -44,8 +107,9 @@ function createKeyBody(
 	keyType: KeyType,
 	label: string,
 	installLimit: number | null,
+	expiresInDays: number | null,
 ): Record<string, unknown> {
-	const body = { action: "create", label: label || null };
+	const body = { action: "create", label: label || null, expires_in_days: expiresInDays };
 	return keyType === BROWSER_GUARD_KEY_SCOPE
 		? { ...body, scope: BROWSER_GUARD_KEY_SCOPE, install_limit: installLimit }
 		: body;
@@ -114,6 +178,7 @@ function TenantApiKeys({
 	const [label, setLabel] = useState("");
 	const [keyType, setKeyType] = useState<KeyType>(requestedKeyType);
 	const [installLimitInput, setInstallLimitInput] = useState(String(DEFAULT_INSTALL_LIMIT));
+	const [lifetime, setLifetime] = useState(DEFAULT_KEY_LIFETIME);
 	const [createdKey, setCreatedKey] = useState<string | null>(null);
 	const [createdKeyNotice, setCreatedKeyNotice] = useState<string | null>(null);
 	const [showCreatedKey, setShowCreatedKey] = useState(false);
@@ -129,9 +194,11 @@ function TenantApiKeys({
 	const [busy, setBusy] = useState(false);
 
 	const trimmedLabel = useMemo(() => label.trim(), [label]);
+	const invalidLabel = labelProblem(trimmedLabel);
 	const browserKey = keyType === BROWSER_GUARD_KEY_SCOPE;
 	const installLimit = useMemo(() => parseInstallLimit(installLimitInput), [installLimitInput]);
-	const createAllowed = browserKey ? canIssueIngestKey && installLimit !== null : canWrite;
+	const createAllowed =
+		invalidLabel === null && (browserKey ? canIssueIngestKey && installLimit !== null : canWrite);
 	const trimmedEnrollLabel = useMemo(() => enrollLabel.trim(), [enrollLabel]);
 
 	const load = useCallback(async () => {
@@ -201,14 +268,14 @@ function TenantApiKeys({
 		load();
 	}, [load]);
 
-	const rotateKey = async (id: string) => {
+	const rotateKey = async (key: ApiKeyRow) => {
 		setBusy(true);
 		setError(null);
 		try {
 			const res = await supabase.functions.invoke("api-keys", {
 				method: "POST",
 				headers: { "X-AIDR-Tenant-ID": tenantId },
-				body: { action: "renew", id },
+				body: { action: "renew", id: key.id, expires_in_days: rotationLifetimeDays(key) },
 			});
 			if (res.error || res.data?.ok !== true) {
 				throw new Error(readErrorMessage(res.error, "API key rotation was not confirmed."));
@@ -284,8 +351,32 @@ function TenantApiKeys({
 						value={label}
 						onChange={(e) => setLabel(e.target.value)}
 						placeholder="work-laptop, build-server, etc."
+						maxLength={MAX_KEY_LABEL_LENGTH}
+						aria-invalid={invalidLabel !== null}
 					/>
 				</label>
+				{invalidLabel ? (
+					<div className="muted small" role="status">
+						{invalidLabel}
+					</div>
+				) : null}
+
+				<label className="label">
+					Expires after
+					<select className="input" value={lifetime} onChange={(e) => setLifetime(e.target.value)}>
+						{KEY_LIFETIMES.map((option) => (
+							<option key={option.value} value={option.value}>
+								{option.label}
+							</option>
+						))}
+					</select>
+				</label>
+				{lifetimeDays(lifetime) === null ? (
+					<div className="muted small" role="status">
+						A key that never expires stays valid until someone revokes it, even if it leaks. Prefer
+						an expiry and rotate the key before it ends.
+					</div>
+				) : null}
 
 				<div className="row">
 					<button
@@ -303,7 +394,7 @@ function TenantApiKeys({
 								const res = await supabase.functions.invoke("api-keys", {
 									method: "POST",
 									headers: { "X-AIDR-Tenant-ID": tenantId },
-									body: createKeyBody(keyType, trimmedLabel, installLimit),
+									body: createKeyBody(keyType, trimmedLabel, installLimit, lifetimeDays(lifetime)),
 								});
 								if (res.error || res.data?.ok !== true) {
 									setError(readErrorMessage(res.error, "API key creation was not confirmed."));
@@ -522,6 +613,7 @@ function TenantApiKeys({
 								<th>Label</th>
 								<th>Type</th>
 								<th>Created</th>
+								<th>Expires</th>
 								<th>Status</th>
 								<th className="right">
 									<span className="sr-only">Actions</span>
@@ -534,17 +626,28 @@ function TenantApiKeys({
 									<td>{k.label ?? <span className="muted">(no label)</span>}</td>
 									<td className="small">{keyTypeLabel(k)}</td>
 									<td className="mono">{new Date(k.created_at).toLocaleString()}</td>
+									<td className="mono">
+										{k.expires_at ? (
+											new Date(k.expires_at).toLocaleString()
+										) : (
+											<span className="muted">never</span>
+										)}
+									</td>
 									<td>
-										<span className={k.revoked ? "badge badge-error" : "badge badge-success"}>
-											{k.revoked ? "revoked" : "active"}
-										</span>
+										<KeyStatusBadge keyRow={k} />
 									</td>
 									<td className="right">
 										<button
 											className="button button-secondary button-sm"
 											type="button"
-											disabled={k.revoked || busy || !canWrite || createdKey !== null}
-											onClick={() => rotateKey(k.id)}
+											disabled={
+												k.revoked ||
+												keyExpiryState(k.expires_at).kind === "expired" ||
+												busy ||
+												!canWrite ||
+												createdKey !== null
+											}
+											onClick={() => rotateKey(k)}
 										>
 											Rotate
 										</button>
@@ -581,7 +684,7 @@ function TenantApiKeys({
 							))}
 							{keys.length === 0 ? (
 								<tr>
-									<td colSpan={5} className="muted">
+									<td colSpan={6} className="muted">
 										No keys yet.
 									</td>
 								</tr>
@@ -674,6 +777,21 @@ function TenantApiKeys({
 			</div>
 		</div>
 	);
+}
+
+/** Status of an issued key, with an expiry warning before it stops working. */
+function KeyStatusBadge({ keyRow }: { keyRow: ApiKeyRow }) {
+	if (keyRow.revoked) return <span className="badge badge-error">revoked</span>;
+	const expiry = keyExpiryState(keyRow.expires_at);
+	if (expiry.kind === "expired") return <span className="badge badge-error">expired</span>;
+	if (expiry.kind === "expiring") {
+		return (
+			<span className="badge badge-warning" title="Rotate this key before it expires.">
+				expires in {expiry.days} {expiry.days === 1 ? "day" : "days"}
+			</span>
+		);
+	}
+	return <span className="badge badge-success">active</span>;
 }
 
 /** Options shown for an ingest-only Browser Guard key. */

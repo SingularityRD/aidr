@@ -3,7 +3,7 @@
 // rechecking the API key, membership, tenant and entitlement on every request.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKeyBudgeted, authenticateTenantApiKeyHash } from "../_shared/api-key-auth.ts";
+import { apiKeyExpired, authenticateTenantApiKeyBudgeted, authenticateTenantApiKeyHash } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { retiredSecretActive } from "../_shared/key-rotation.ts";
@@ -107,13 +107,16 @@ async function streamGrantedPack(
 
 	const { data: keyRow, error: keyError } = await db
 		.from("api_keys")
-		.select("key_hash,previous_hash,previous_hash_expires_at,revoked")
+		.select("key_hash,previous_hash,previous_hash_expires_at,revoked,expires_at")
 		.eq("id", grant.key_id)
 		.maybeSingle();
 	if (keyError) return json(503, { error: "authorization_unavailable" });
-	if (!keyRow || keyRow.revoked !== false) return json(401, { error: "invalid_api_key" });
-
 	const now = Date.now();
+	if (!keyRow || keyRow.revoked !== false) return json(401, { error: "invalid_api_key" });
+	const keyExpiresAt = (keyRow as { expires_at?: unknown }).expires_at ?? null;
+	if (keyExpiresAt !== null && (typeof keyExpiresAt !== "string" || apiKeyExpired(keyExpiresAt, now))) {
+		return json(401, { error: "invalid_api_key" });
+	}
 	let presentedHash: string | null = null;
 	if (typeof keyRow.key_hash === "string" && await verifyPackKeyFingerprint(keyRow.key_hash, grant.key_fingerprint, grantSecret)) {
 		presentedHash = keyRow.key_hash;
