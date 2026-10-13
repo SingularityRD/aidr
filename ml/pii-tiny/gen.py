@@ -80,6 +80,11 @@ def suffix(word: str, case: str) -> str:
 # ---------------------------------------------------------------- pools
 
 
+def name_of(entry) -> str:
+    """A pool entry's name: first-name pools hold `{"name", ...}` objects, the others plain strings."""
+    return entry["name"] if isinstance(entry, dict) else entry
+
+
 def _held_out(value: str) -> bool:
     return hashlib.sha256(value.encode()).digest()[0] < 39  # ~15%
 
@@ -97,7 +102,6 @@ class Pools:
                 raise SystemExit(f"empty {split} pool")
             return keep
 
-        name_of = lambda x: x["name"] if isinstance(x, dict) else x  # noqa: E731
         self.tr_first = pick(load("tr_first_names.json"), name_of)
         self.tr_last = pick(load("tr_surnames.json"))
         self.en_first = pick(load("en_first_names.json"), name_of)
@@ -148,15 +152,14 @@ class Filler:
     def person(self, n: str) -> dict:
         if n not in self.people:
             o = self._origin()
-            name = lambda x: x["name"] if isinstance(x, dict) else x  # noqa: E731
             if o == "other":
                 x = self.r.choice(self.p.other)
                 first, first2, last = x["first"], None, x["last"]
             elif o == "tr":
-                first, first2 = name(self.r.choice(self.p.tr_first)), name(self.r.choice(self.p.tr_first))
+                first, first2 = name_of(self.r.choice(self.p.tr_first)), name_of(self.r.choice(self.p.tr_first))
                 last = self.r.choice(self.p.tr_last)
             else:
-                first, first2 = name(self.r.choice(self.p.en_first)), name(self.r.choice(self.p.en_first))
+                first, first2 = name_of(self.r.choice(self.p.en_first)), name_of(self.r.choice(self.p.en_first))
                 last = self.r.choice(self.p.en_last)
             self.people[n] = {"first": first, "first2": first2 or first, "last": last, "tr": o == "tr"}
         return self.people[n]

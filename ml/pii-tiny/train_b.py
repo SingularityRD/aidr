@@ -47,7 +47,7 @@ def shape(word: str, prev: str, nxt: str) -> list[float]:
         float(word.isdigit()),
         float(not alpha and not word.isdigit()),
         float(nxt == "'" or nxt == "’"),
-        float(prev in (".", "!", "?", "\n", "") ),
+        float(prev in (".", "!", "?", "\n", "")),
         float(prev == ":" or prev == "="),
         float(len(word) == 1),
     ]
@@ -60,14 +60,13 @@ N_SHAPE = N_BASE + len(GAZ_KEYS)
 
 def load_gazetteer() -> dict[str, set[str]]:
     """Name lists from the TRAINING split of the pools only: eval names stay unseen."""
-    from gen import Pools
+    from gen import Pools, name_of
 
     p = Pools("train")
-    name = lambda x: x["name"] if isinstance(x, dict) else x  # noqa: E731
     return {
-        "tr_first": {norm(name(x)) for x in p.tr_first},
+        "tr_first": {norm(name_of(x)) for x in p.tr_first},
         "tr_last": {norm(x) for x in p.tr_last},
-        "en_first": {norm(name(x)) for x in p.en_first},
+        "en_first": {norm(name_of(x)) for x in p.en_first},
         "en_last": {norm(x) for x in p.en_last},
     }
 

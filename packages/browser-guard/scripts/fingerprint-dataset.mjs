@@ -124,9 +124,9 @@ export function normaliseTokens(value) {
 	const normalised = String(value)
 		.normalize("NFKC")
 		.toLowerCase()
-		.replace(/[​-‏⁠﻿]/gu, "")
-		.replace(/ı/gu, "i")
-		.replace(/i̇/gu, "i");
+		.replace(/[\u200b-\u200f\u2060\ufeff]/gu, "")
+		.replace(/\u0131/gu, "i")
+		.replace(/i\u0307/gu, "i");
 	return normalised.match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 

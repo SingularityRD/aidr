@@ -747,11 +747,13 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	async function policyFor(who: Sender): Promise<GuardResponse> {
 		const content = who.kind === "content";
-		// A content script fetches its policy when it boots: the tab is protected from now on.
-		if (content && who.topFrame) await contentTabs.mark(who.tabId, who.origin);
-		// A subframe guard (the Copilot pane of an Office web app) is registered for policy pushes.
-		if (content && !who.topFrame) await contentFrames.mark(who.tabId, who.frameId, who.site);
-		if (content) refreshExactDataKeys();
+		if (content) {
+			// A content script fetches its policy when it boots: the tab is protected from now on.
+			if (who.topFrame) await contentTabs.mark(who.tabId, who.origin);
+			// A subframe guard (the Copilot pane of an Office web app) is registered for policy pushes.
+			else await contentFrames.mark(who.tabId, who.frameId, who.site);
+			refreshExactDataKeys();
+		}
 		return {
 			ok: true,
 			policy: effectivePolicy(content ? who.site : null, content, await pausedUntil()),

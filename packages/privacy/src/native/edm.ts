@@ -15,7 +15,7 @@ import { readBoundedFile } from '../visual/file-io.js';
  * A leaked dataset key exposes only that dataset, and the secret itself never enters the browser.
  */
 export const EDM_KEY_LABEL='aidr-edm-v2';
-const EDM_MIN_SECRET_BYTES=32;
+const EDM_MIN_SECRET_BYTES=32,EDM_MAX_SECRET_BYTES=1024;
 const MAX_SECRET_FILE_BYTES=4096;
 
 export function deriveEdmKey(secret:Uint8Array,datasetId:string):Buffer {
@@ -27,7 +27,7 @@ export function parseEdmSecret(text:string):Buffer {
   const trimmed=text.trim();
   if(!/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)||trimmed.length%4!==0)throw new Error('EDM_SECRET_INVALID');
   const secret=Buffer.from(trimmed,'base64');
-  if(secret.length<EDM_MIN_SECRET_BYTES||secret.length>1024){secret.fill(0);throw new Error('EDM_SECRET_INVALID');}
+  if(secret.length<EDM_MIN_SECRET_BYTES||secret.length>EDM_MAX_SECRET_BYTES){secret.fill(0);throw new Error('EDM_SECRET_INVALID');}
   return secret;
 }
 

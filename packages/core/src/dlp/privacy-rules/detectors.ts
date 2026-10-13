@@ -224,7 +224,7 @@ function collectRules(text:string,emit:Emit):void {
   // Same boundary class on both sides: starting after `-` too let `eyJ-eyJ-…` rescan the rest of
   // the run from every `eyJ`, which is quadratic in the input length.
   run(text,/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}(?![A-Za-z0-9_-])/g,'SECRET',emit,.97);
-  const labelled=text.replace(/[İı]/g,'i');
+  const labelled=foldLabel(text);
   const credentials:[RegExp,boolean][]=[
     // Explicit credential words: any value is protected.
     [/(?:api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|passwd|pwd|secret|şifre(?:si)?|sifre(?:si)?|parola(?:s[ıi])?)["']?[ \t]*[:=][ \t]*/giu,false],
