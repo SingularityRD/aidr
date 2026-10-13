@@ -1,16 +1,41 @@
 # Getting Started
 
-Connector guides cover Claude Code, Cursor/VS Code, OpenClaw, OpenCode, and Codex. The AIDR CLI is a setup/diagnostic utility, not an agent connector. Use only a signed version approved for customer installation.
+**Singularity AIDR is not yet released for customer use: the steps below apply to an
+approved release, and none is approved yet ([Release status](../README.md#release-status)).**
+For the shortest path (installer, restart your AI tools, `aidr status` / `aidr verify`)
+read the [Quickstart](quickstart.md) ([Türkçe](quickstart.tr.md)); every install and
+deployment guide is listed by role in [Installation guides](installation/README.md).
+
+This page covers the desktop installers and the per-tool connector packages for Claude
+Code, Cursor/VS Code, OpenClaw, OpenCode and Codex. The AIDR CLI is a setup/diagnostic
+utility, not an agent connector. Use only a signed version approved for customer
+installation.
+
+## Local protection and release builds
+
+Two statements elsewhere in these docs can look contradictory; both are true:
+
+- **Detection is local and needs no account.** Every connector checks every tool call on
+  the device itself, with no cloud account, enrollment or network. Signing in to an AIDR
+  control plane ("managed" mode) only adds central features: dashboard, central policy,
+  dashboard approvals, telemetry. When those are missing or lapse, local detection keeps
+  deciding every call.
+- **Release builds are "managed-only": they always run in managed mode and always check
+  that they are genuine.** Until the device is enrolled, managed mode simply has its
+  central features off and decides every call locally, exactly as above. A signed
+  release build also verifies its own files against the release trust key
+  (`integrity.public_keys_pem`, see [Integrity verification](integrity.md)) before it
+  inspects anything. Without that key it blocks every tool call and says so
+  (`Singularity AIDR inspection unavailable`); it does not run unprotected. The desktop
+  installers already contain the key; the per-tool packages need it provisioned first.
 
 ## Current customer-installation status
 
-The current first-customer readiness decision is **NO-GO**. There is no
-customer-installable release approved at this checkout: the candidate-bound
-evidence index has no candidate digest and all 30 gates are `NOT_RUN`. See the
-[readiness profile](production-readiness/first-customer-ready.md). The steps
-below describe a gated installation flow for a future approved release; they
-are not a currently usable customer quickstart. Do not replace the release with
-a source build or an unapproved version.
+The first-customer readiness decision is still **NO-GO**: no customer-installable
+release is approved at this checkout, the candidate-bound evidence index has no
+candidate digest and all 30 gates are `NOT_RUN`. See the
+[readiness profile](production-readiness/first-customer-ready.md). Do not replace the
+release with a source build or an unapproved version.
 
 ## Desktop installers (primary path, Windows and Linux)
 
@@ -23,20 +48,21 @@ hook binaries, the rules and the release trust key (no Node.js), runs
 (signed MSI, also for Intune / SCCM / GPO) and Linux (.deb, .rpm, tarball)
 installers are described in [Desktop installers](installation/desktop-installers.md).
 **macOS installers are not offered yet**; on macOS use the connector packages
-below. The installers are built and signed by the release-candidate workflow
-and fall under the same gated release decision as everything else on this page.
+below (Browser Guard works on macOS in Chrome, Edge and Firefox). The installers
+are built and signed by the release-candidate workflow and fall under the same
+gated release decision as everything else on this page.
 
 The rest of this page describes the per-connector packages, for hosts the
 installers do not cover (Codex, Cursor, VS Code) and for macOS.
 
 ## Installation flow after approval
 
-Local detection works without a cloud account or enrollment. Release builds are
-managed-only, so every installation needs the release trust key
-(`integrity.public_keys_pem`, see [Integrity verification](integrity.md)) before the
-connector can inspect anything. Managed features require a separately deployed control
-plane and an operator-provisioned runtime configuration. Check the tested host versions
-in the [compatibility matrix](compatibility-matrix.md).
+The connector packages detect locally as soon as they are installed, before any
+enrollment, but as release builds they first need the release trust key (see
+[Local protection and release builds](#local-protection-and-release-builds)). Managed
+features require a separately deployed control plane and an operator-provisioned
+runtime configuration. Check the tested host versions in the
+[compatibility matrix](compatibility-matrix.md).
 
 1. Provision the release trust key in `integrity.public_keys_pem`.
 2. Install the exact approved connector version using [Package Installation](package-installation.md).
