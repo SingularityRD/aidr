@@ -1,17 +1,27 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import {
-	ConfigSchema,
 	getAuditLogLossState,
+	isCommercialBuild,
+	isInvalidConfig,
+	loadConfig,
 	readPersistedAuditLossState,
 	readTelemetryLossSummary,
 	resolvePath,
 } from "@singularityrd/aidr-core";
 import { ct } from "../i18n/index.js";
 import { type ConnectorStatus, detectConnectorStatuses } from "../utils/connector-status.js";
+import { describeReleaseKey, releaseKeySeverity, releaseKeyState } from "../utils/release-key.js";
 import { readSetupLedger } from "../utils/setup-ledger.js";
 import { standaloneBundleRoot } from "../utils/standalone.js";
 import { buildStatusVerdict, type StatusVerdict } from "../utils/status-verdict.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
+import { modeLabel } from "./doctor.js";
+
+const CONFIG_STATE_KEY = {
+	valid: "status.configValid",
+	defaults: "status.configDefaults",
+	invalid: "status.configInvalid",
+} as const;
 
 /** Registration, local evaluation and live host enforcement are separate facts. */
 /** The verdict as one line in the current locale. */
@@ -63,16 +73,12 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 	}
 	const connectors = detectConnectorStatuses();
 	const path = resolvePath("~/.singularity-aidr/config.json");
-	let configState = "defaults";
-	let config = ConfigSchema.parse({});
-	try {
-		if (existsSync(path)) {
-			config = ConfigSchema.parse(JSON.parse(readFileSync(path, "utf8")));
-			configState = "valid";
-		}
-	} catch {
-		configState = "invalid";
-	}
+	// The same loader the hooks use: a release build is always managed, and
+	// `aidr doctor` reads it the same way, so the two never disagree on mode.
+	const config = await loadConfig();
+	const configState = isInvalidConfig(config) ? "invalid" : existsSync(path) ? "valid" : "defaults";
+	const releaseKey = releaseKeyState(config);
+	const releaseKeyFailed = releaseKeySeverity(releaseKey) === "fail";
 	const registered = connectors.filter((c) => c.state === "installed");
 	const verdict = statusVerdictFor(connectors);
 	// Rotations happen in short-lived hook processes, so the persisted counter
@@ -103,6 +109,7 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 	}
 	const configurationReady =
 		configState !== "invalid" &&
+		!releaseKeyFailed &&
 		detectionOk &&
 		registered.length > 0 &&
 		!connectors.some((c) => c.state === "installed_but_degraded") &&
@@ -116,7 +123,13 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 		schema_version: 1,
 		checked_at: new Date().toISOString(),
 		detection: { ok: detectionOk, rules: ruleCount, detail },
-		configuration: { state: configState, path, mode: config.mode },
+		configuration: {
+			state: configState,
+			path,
+			mode: config.mode,
+			release_build: isCommercialBuild(),
+		},
+		integrity: releaseKey,
 		managed: {
 			active: managedActive,
 			enabled: managedActive,
@@ -143,16 +156,24 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 			ct("status.detection", {
 				result: detectionOk ? ct("status.passed") : ct("status.failed"),
 				rules: ruleCount,
-				detail,
+				// The probe detail repeats the rule count; only a failure needs it.
+				detail: detectionOk ? "" : ` — ${detail}`,
 			}),
 		);
-		console.log(ct("status.configuration", { state: configState, mode: config.mode }));
+		console.log(
+			ct("status.configuration", {
+				state: ct(CONFIG_STATE_KEY[configState]),
+				mode: modeLabel(config.mode),
+				note: isCommercialBuild() ? ` (${ct("mode.releaseBuildNote")})` : "",
+			}),
+		);
+		console.log(`${releaseKeyFailed ? "✗ " : ""}${describeReleaseKey(releaseKey)}`);
 		for (const connector of connectors)
 			console.log(
 				`  ${connector.label}: ${connector.state === "installed" ? ct("status.registrationDetected") : connector.state} — ${connector.detail}`,
 			);
 		if (config.mode !== "managed") {
-			console.log(ct("status.managedInactive", { mode: config.mode }));
+			console.log(ct("status.managedInactive", { mode: modeLabel(config.mode) }));
 		} else {
 			console.log(
 				ct("status.managed", {

@@ -141,6 +141,29 @@ describe("pending asks", () => {
 		expect(listed[0]?.verified).toBe(true);
 	});
 
+	it("records the matched rule's severity, the one the block message shows", async () => {
+		const withRule = await recordPendingAsk(
+			{
+				actionId: actionId("rule-severity"),
+				toolName: "bash",
+				toolInput: { command: "cat .env" },
+				artifacts: [{ type: "command", value: "cat .env" }],
+				sessionId: "session-1",
+				verdict: {
+					severity: "warning",
+					ruleSeverity: "high",
+					category: "secrets",
+					reasons: ["Reads a .env file"],
+					matchedThreatId: "CRED-004",
+				},
+			},
+			options,
+		);
+		expect(withRule.severity).toBe("high");
+		// Without a matched rule the decision-level severity is kept.
+		expect((await recordAsk(actionId("no-rule"))).severity).toBe("warning");
+	});
+
 	it("writes the store owner-only", async () => {
 		await recordAsk(actionId("mode"));
 		if (process.platform !== "win32") {

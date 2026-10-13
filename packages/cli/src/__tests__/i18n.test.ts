@@ -13,6 +13,7 @@ import {
 	CLI_TR,
 	collectHelpTexts,
 	ct,
+	HELP_GROUPS,
 	HELP_TR,
 	localizeHelp,
 } from "../i18n/index.js";
@@ -115,6 +116,27 @@ describe("CLI message catalog parity", () => {
 	});
 });
 
+// Runs before the Turkish help test: localizeHelp("en") leaves an earlier
+// Turkish configuration in place.
+describe("grouped help", () => {
+	it("groups every top-level command under Setup, Daily use, Approvals, Diagnostics, Advanced", () => {
+		localizeHelp(program, "en");
+		const root = helpOf(program);
+		const headings = ["Setup:", "Daily use:", "Approvals:", "Diagnostics:", "Advanced:"];
+		const positions = headings.map((heading) => root.indexOf(`\n${heading}\n`));
+		expect(positions.every((position) => position > 0)).toBe(true);
+		expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+		expect(root).not.toContain("\nCommands:\n");
+		const known = new Set<string>(HELP_GROUPS.flatMap((group) => [...group.commands]));
+		const ungrouped = program.commands.map((c) => c.name()).filter((name) => !known.has(name));
+		expect(ungrouped).toEqual([]);
+		// The first thing an administrator needs is under the first heading.
+		const setup = root.slice(positions[0], positions[1]);
+		expect(setup).toContain("setup");
+		expect(root.slice(positions[2], positions[3])).toContain("approve");
+	});
+});
+
 describe("help output", () => {
 	it("is unchanged English by default", () => {
 		localizeHelp(program, "en");
@@ -130,14 +152,21 @@ describe("help output", () => {
 		localizeHelp(program, "tr");
 		const root = helpOf(program);
 		expect(root).toContain("Kullanım: aidr");
-		expect(root).toContain("Komutlar:");
+		// Grouped (Setup, Daily use, Approvals, Diagnostics, Advanced), translated.
+		for (const heading of ["Kurulum:", "Günlük kullanım:", "Onaylar:", "Tanılama:", "Gelişmiş:"]) {
+			expect(root).toContain(heading);
+		}
 		expect(root).toContain("Singularity AIDR komut satırı kurulum ve tanılama aracı");
 		const approve = helpOf(find(["approve"]));
 		expect(approve).toMatchInlineSnapshot(`
-			"Kullanım: aidr approve [options] <actionId>
+			"Kullanım: aidr approve [options] [actionId]
 
 			Yalnızca operatör: engellenmiş bir çağrının TEK bir yeniden denemesini onayla
 			(etkileşimli onay; varsayılan 15 dakika)
+
+			Argümanlar:
+			  actionId            \`aidr pending\` çıktısındaki kimlik ya da ilk 8+ karakteri;
+			                      terminalde boş bırakırsanız listeden seçersiniz
 
 			Seçenekler:
 			  --ttl <minutes>     Onayın geçerli kalacağı dakika sayısı (1-1440)
@@ -158,12 +187,19 @@ describe("help output", () => {
 
 describe("incident command output", () => {
 	it("renders the same approval line in both languages", () => {
-		expect(
-			ct("approvals.approved", { actionId: "act_1", expiresAt: "2026-10-13T10:00:00Z" }, "en"),
-		).toBe("Approved act_1… until 2026-10-13T10:00:00Z.");
-		expect(
-			ct("approvals.approved", { actionId: "act_1", expiresAt: "2026-10-13T10:00:00Z" }, "tr"),
-		).toBe("act_1… onaylandı, geçerlilik bitişi: 2026-10-13T10:00:00Z.");
+		expect(ct("approvals.approved", { minutes: 15 }, "en")).toBe(
+			"Approved. Ask the agent to retry within 15 minutes.",
+		);
+		expect(ct("approvals.approved", { minutes: 15 }, "tr")).toBe(
+			"Onaylandı. Yapay zekâ aracından 15 dakika içinde yeniden denemesini isteyin.",
+		);
+	});
+
+	it("says 'yapay zekâ aracı', not 'ajan ana makinesi', in Turkish", () => {
+		const turkish = [...Object.values(CLI_TR), ...Object.values(HELP_TR)].join("\n");
+		expect(turkish).not.toMatch(/ajan ana makine/i);
+		expect(turkish).not.toMatch(/bant dışı/i);
+		expect(CLI_TR["status.verdictNone"]).toContain("yapay zekâ aracı");
 	});
 
 	it("follows AIDR_LOCALE", () => {

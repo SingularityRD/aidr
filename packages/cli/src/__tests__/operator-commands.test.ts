@@ -39,7 +39,7 @@ import { approveCommand, pendingCommand } from "../commands/approvals.js";
 import { auditExportCommand, auditTailCommand, parseSince, toCsv } from "../commands/audit.js";
 import { runDoctor } from "../commands/doctor.js";
 import type { ConnectorStatus } from "../utils/connector-status.js";
-import { OPERATOR_NONINTERACTIVE_ENV } from "../utils/operator-confirm.js";
+import { OPERATOR_NONINTERACTIVE_ENV, readOperatorLine } from "../utils/operator-confirm.js";
 
 const COMMAND = "chmod 777 ./deploy.sh";
 
@@ -308,7 +308,7 @@ describe("aidr approve", () => {
 		expect(err.join("\n")).toContain("No pending Singularity AIDR ask");
 
 		await approveCommand("zzz", { yes: true }, { store, env, streams: nonTtyStreams() });
-		expect(err.join("\n")).toContain("64-character");
+		expect(err.join("\n")).toContain("at least its first 8 characters");
 
 		const id = actionId("tampered");
 		await pendingAsk(id);
@@ -355,6 +355,132 @@ describe("aidr approve", () => {
 		expect(err.join("\n")).toContain("invalid_ttl");
 		await approveCommand(id, { yes: true, ttl: "-1" }, { store, env, streams: nonTtyStreams() });
 		expect(err.join("\n")).toContain("whole number of minutes");
+	});
+});
+
+describe("aidr approve: shorter path, same confirmation", () => {
+	/** A terminal that answers each prompt in turn (the pick, then the confirmation word). */
+	function scriptedTty(answers: string[]) {
+		const input = Object.assign(new PassThrough(), { isTTY: true });
+		const output = Object.assign(new PassThrough(), { isTTY: true });
+		const written: string[] = [];
+		output.on("data", (chunk: Buffer) => written.push(chunk.toString()));
+		answers.forEach((answer, index) => {
+			setTimeout(() => input.write(`${answer}\n`), 30 * (index + 1));
+		});
+		return { input, output, written };
+	}
+
+	async function pendingWithId(id: string, command = COMMAND) {
+		await recordPendingAsk(
+			{
+				actionId: id,
+				toolName: "bash",
+				toolInput: { command },
+				artifacts: [{ type: "command", value: command }],
+				sessionId: "session-1",
+				verdict: {
+					severity: "warning",
+					ruleSeverity: "high",
+					category: "secrets",
+					reasons: ["Reads a .env file"],
+					matchedThreatId: "CRED-004",
+				},
+				connector: "codex",
+			},
+			store,
+		);
+	}
+
+	it("accepts a unique prefix of 8+ characters and still asks for the confirmation word", async () => {
+		const id = actionId("prefix");
+		await pendingAsk(id);
+		await pendingAsk(actionId("other"));
+		const tty = scriptedTty(["approve"]);
+		await approveCommand(id.slice(0, 10), {}, { store, env: {}, streams: tty });
+		expect(process.exitCode).toBeUndefined();
+		expect(tty.written.join("")).toContain(`actionId:   ${id}`);
+		expect(tty.written.join("")).toContain('Type "approve" to confirm');
+		const approvals = await listOperatorApprovals(store);
+		expect(approvals.map((a) => a.actionId)).toEqual([id]);
+		expect(out.join("\n")).toContain("Approved. Ask the agent to retry within 15 minutes.");
+	});
+
+	it("refuses an ambiguous or too-short prefix and approves nothing", async () => {
+		const a = `abcdef01${"0".repeat(56)}`;
+		const b = `abcdef01${"1".repeat(56)}`;
+		await pendingWithId(a);
+		await pendingWithId(b, "cat .env.local");
+		await approveCommand("abcdef01", {}, { store, env: {}, streams: scriptedTty(["approve"]) });
+		expect(err.join("\n")).toContain("2 waiting actions start with abcdef01");
+		await approveCommand("abcdef0", {}, { store, env: {}, streams: scriptedTty(["approve"]) });
+		expect(err.join("\n")).toContain("at least its first 8 characters");
+		expect(await listOperatorApprovals(store)).toHaveLength(0);
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("needs the full id for unattended (--yes) approval", async () => {
+		const id = actionId("unattended-prefix");
+		await pendingAsk(id);
+		await approveCommand(
+			id.slice(0, 12),
+			{ yes: true },
+			{ store, env: { [OPERATOR_NONINTERACTIVE_ENV]: "1" }, streams: nonTtyStreams() },
+		);
+		expect(err.join("\n")).toContain("--yes needs the full 64-character id");
+		expect(await listOperatorApprovals(store)).toHaveLength(0);
+	});
+
+	it("lets the operator pick a numbered entry when no id is given", async () => {
+		const id = actionId("pick");
+		await pendingWithId(id);
+		const tty = scriptedTty(["1", "approve"]);
+		await approveCommand(undefined, { ttl: "10" }, { store, env: {}, streams: tty });
+		const shown = tty.written.join("");
+		expect(shown).toContain("Waiting for your decision");
+		expect(shown).toContain(`1) [${id.slice(0, 8)}] high secrets (CRED-004) — bash:`);
+		expect(shown).toContain(id.slice(0, 8));
+		expect(process.exitCode).toBeUndefined();
+		expect((await listOperatorApprovals(store)).map((a) => a.actionId)).toEqual([id]);
+		expect(out.join("\n")).toContain("Approved. Ask the agent to retry within 10 minutes.");
+	});
+
+	it("approves nothing for an invalid pick", async () => {
+		await pendingWithId(actionId("pick-invalid"));
+		await approveCommand(undefined, {}, { store, env: {}, streams: scriptedTty(["7"]) });
+		expect(err.join("\n")).toContain("no action was chosen");
+		expect(await listOperatorApprovals(store)).toHaveLength(0);
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("requires the id without a terminal (an agent tool call)", async () => {
+		await pendingWithId(actionId("pick-no-tty"));
+		await approveCommand(undefined, {}, { store, env: {}, streams: nonTtyStreams() });
+		expect(err.join("\n")).toContain("Name the action to approve");
+		expect(await listOperatorApprovals(store)).toHaveLength(0);
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("shows local time and the hook's severity word in `aidr pending`", async () => {
+		await pendingWithId(actionId("pending-view"));
+		await pendingCommand({}, { store });
+		const text = out.join("\n");
+		expect(text).toContain("risk:       high secrets (CRED-004)");
+		expect(text).toMatch(/asked: {6}\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(UTC/);
+		expect(text).not.toMatch(/asked:.*T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+		expect(text).toContain("aidr approve <id>");
+	});
+
+	it("writes no escape codes when the confirmation output is not a terminal", async () => {
+		const input = new PassThrough();
+		const output = new PassThrough();
+		const written: string[] = [];
+		output.on("data", (chunk: Buffer) => written.push(chunk.toString()));
+		setTimeout(() => input.write("approve\n"), 10);
+		const answer = await readOperatorLine({ input, output }, "Type: ");
+		expect(answer).toBe("approve");
+		expect(written.join("")).toBe("Type: ");
+		expect(written.join("")).not.toContain("\u001b");
 	});
 });
 
@@ -474,6 +600,30 @@ describe("aidr audit", () => {
 			].join("\n"),
 		);
 	}
+
+	it("hides incident roll-up rows in the readable tail but keeps them in --json", async () => {
+		writeAudit();
+		const rollUp = JSON.stringify({
+			type: "incident_record",
+			schema_version: 1,
+			incident: { incident_id: "inc_1", severity: "critical", events: [] },
+		});
+		writeFileSync(join(home, ".singularity-aidr", "audit.jsonl"), `\n${rollUp}\n${rollUp}\n`, {
+			flag: "a",
+		});
+		await auditTailCommand({ lines: "3" });
+		const text = out.join("\n");
+		expect(text).not.toContain("incident_record");
+		expect(out).toHaveLength(3);
+		expect(out.every((line) => /^\d{4}-\d{2}-\d{2}T/.test(line))).toBe(true);
+
+		out.length = 0;
+		await auditTailCommand({ lines: "2", json: true });
+		expect(out.map((line) => JSON.parse(line).type)).toEqual([
+			"incident_record",
+			"incident_record",
+		]);
+	});
 
 	it("tails the newest entries, redacted", async () => {
 		writeAudit();

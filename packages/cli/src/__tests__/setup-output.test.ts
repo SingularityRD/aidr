@@ -89,22 +89,28 @@ describe("aidr setup output streams", () => {
 		await setupCommand({}, { env: {} });
 
 		const progress = stderr.join("\n");
-		expect(progress).toContain("Detecting environment...");
-		expect(progress).toContain("✓ Agent hosts found: codex");
+		expect(progress).toContain("Looking for AI tools...");
+		expect(progress).toContain("✓ AI tools found: codex");
 		expect(progress).toContain("Creating config...");
 		expect(progress).toContain("✓ Config: /workspace/test/.singularity-aidr/config.json");
 		expect(progress).toContain("Installing connectors...");
-		expect(progress).toContain("✓ 42 rules active");
-		expect(progress).toContain("✓ Detection verified (42 rules, probe matched 1)");
+		// One clean line: no "42 rules. 42 rules, probe matched 1" repetition.
+		expect(progress).toContain("✓ Detection works: 42 rules loaded, self-test passed.");
+		expect(progress).not.toContain("probe matched");
 
 		const summary = stdout.join("\n");
-		expect(summary).toContain("AIDR Setup");
+		expect(summary).toContain("Singularity AIDR setup");
 		expect(summary).toContain("Codex        installed — codex installed");
 		expect(summary).toContain("wrote /home/u/.codex/hooks.json");
 		expect(summary).toContain("✅ Setup complete!");
 		expect(summary).toContain("review and trust the hooks with /hooks");
-		expect(summary).not.toContain("Detecting environment...");
-		expect(summary).not.toContain("42 rules active");
+		expect(summary).not.toContain("Looking for AI tools...");
+		expect(summary).not.toContain("42 rules loaded");
+		// The last line points to the end-to-end check.
+		expect(stdout.filter((line) => line.trim() !== "").at(-1)).toBe(
+			"Next: restart your AI tools, then run: aidr verify",
+		);
+		expect(process.exitCode).toBeUndefined();
 		expect(recordHooksInstalled).toHaveBeenCalledWith(true);
 	});
 
@@ -116,8 +122,8 @@ describe("aidr setup output streams", () => {
 
 		await expect(setupCommand({}, { env: {} })).rejects.toThrow("exit 1");
 
-		expect(stderr.join("\n")).toContain("Detecting environment...\nSetup failed: detection failed");
-		expect(stdout.join("\n")).toContain("AIDR Setup");
+		expect(stderr.join("\n")).toContain("Looking for AI tools...\nSetup failed: detection failed");
+		expect(stdout.join("\n")).toContain("Singularity AIDR setup");
 		expect(stdout.join("\n")).not.toContain("Setup complete");
 	});
 });
@@ -131,8 +137,62 @@ describe("aidr setup connector install", () => {
 		const summary = stdout.join("\n");
 		expect(summary).not.toContain("✅ Setup complete!");
 		expect(summary).toContain("Protection is NOT yet active");
+		expect(summary).toContain("Not protected: Codex");
 		expect(summary).toContain("Codex: install it");
 		expect(recordHooksInstalled).toHaveBeenCalledWith(false);
+		// A detected AI tool left unprotected is a failed setup for scripts too.
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("never marks 'no AI tool found' with a check mark and exits non-zero", async () => {
+		vi.mocked(detectEnvironment).mockResolvedValue({
+			agent: "unknown",
+			detectedHosts: [],
+			hasNode: true,
+			nodeVersion: "v24.0.0",
+		} as never);
+		vi.mocked(installConnectors).mockReturnValue([
+			{ ...hostResult("skipped_not_detected", "not_detected"), detail: "not found" },
+		] as never);
+		await setupCommand({}, { env: {} });
+		const progress = stderr.join("\n");
+		expect(progress).toContain("! No supported AI tool found in this home directory");
+		expect(progress).not.toMatch(/✓ No supported/);
+		expect(stdout.join("\n")).not.toContain("✅");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("reports a partly protected machine as not complete", async () => {
+		vi.mocked(installConnectors).mockReturnValue([
+			hostResult("installed", "installed"),
+			{
+				...hostResult("manual", "runtime_present_not_installed", ["  OpenCode: add the plugin"]),
+				host: "opencode",
+				label: "OpenCode",
+			},
+		] as never);
+		await setupCommand({}, { env: {} });
+		const summary = stdout.join("\n");
+		expect(summary).not.toContain("✅ Setup complete!");
+		expect(summary).toContain("Not protected: OpenCode");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("prints the setup summary in Turkish with 'yapay zekâ aracı' wording", async () => {
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			await setupCommand({}, { env: {} });
+		} finally {
+			vi.unstubAllEnvs();
+		}
+		expect(stderr.join("\n")).toContain("✓ Bulunan yapay zekâ araçları: codex");
+		expect(stderr.join("\n")).toContain(
+			"✓ Tespit çalışıyor: 42 kural yüklendi, öz sınama başarılı.",
+		);
+		expect(stdout.join("\n")).toContain("Codex        kuruldu — codex installed");
+		expect(stdout.join("\n")).toContain(
+			"Sonraki adım: yapay zekâ araçlarınızı yeniden başlatın, ardından şunu çalıştırın: aidr verify",
+		);
 	});
 
 	it("exits non-zero when a host install failed", async () => {

@@ -18,10 +18,17 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 	"Arguments:": "Argümanlar:",
 	"Global Options:": "Genel Seçenekler:",
 
+	// `aidr --help` command groups (see HELP_GROUPS).
+	"Setup:": "Kurulum:",
+	"Daily use:": "Günlük kullanım:",
+	"Approvals:": "Onaylar:",
+	"Diagnostics:": "Tanılama:",
+	"Advanced:": "Gelişmiş:",
+
 	"Singularity AIDR command-line setup and diagnostics":
 		"Singularity AIDR komut satırı kurulum ve tanılama aracı",
 	"Configure AIDR and install or update the connector of every detected agent host (idempotent)":
-		"AIDR'yi yapılandır ve algılanan her ajan ana makinesinin bağlayıcısını kur ya da güncelle (tekrar çalıştırmak güvenlidir)",
+		"AIDR'yi yapılandır ve algılanan her yapay zekâ aracının bağlayıcısını kur ya da güncelle (tekrar çalıştırmak güvenlidir)",
 	"Replace an existing local configuration": "Mevcut yerel yapılandırmanın yerine yenisini yaz",
 	"Credential store: windows-dpapi, macos-keychain, linux-secret-service, encrypted-file, file-acl (default: the OS vault, or the machine-bound encrypted-file store on a host without one; AIDR_SECRET_STORE=file-acl accepts the plaintext file fallback)":
 		"Kimlik bilgisi deposu: windows-dpapi, macos-keychain, linux-secret-service, encrypted-file, file-acl (varsayılan: işletim sistemi kasası; kasası olmayan bir makinede makineye bağlı encrypted-file deposu; AIDR_SECRET_STORE=file-acl düz metin dosya yedeğini kabul eder)",
@@ -37,7 +44,7 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 		"CLI kurulum kimlik bilgisini iptal et (yönetilen uç nokta API anahtarı değildir)",
 	"Emit a machine-readable revocation receipt": "Makinece okunabilir bir iptal makbuzu üret",
 	"Pass a harmless canary (data only, never executed) through each registered connector's hook and report PASS/FAIL per host":
-		"Zararsız bir canary'yi (yalnızca veri, asla çalıştırılmaz) kayıtlı her bağlayıcının hook'undan geçir ve ana makine başına BAŞARILI/BAŞARISIZ bildir",
+		"Zararsız bir canary'yi (yalnızca veri, asla çalıştırılmaz) kayıtlı her bağlayıcının hook'undan geçir ve yapay zekâ aracı başına BAŞARILI/BAŞARISIZ bildir",
 	"Show the local AIDR configuration and hook status":
 		"Yerel AIDR yapılandırmasını ve hook durumunu göster",
 	"Emit measured installation state without credentials":
@@ -109,9 +116,9 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 	"Emit a redacted machine-readable inventory":
 		"Maskelenmiş, makinece okunabilir bir envanter üret",
 	"Also check agent hosts for unsafe autonomy settings, missing AIDR hooks and environment exposure":
-		"Ajan ana makinelerini güvensiz otonomi ayarları, eksik AIDR hook'ları ve ortam açıklığı açısından da denetle",
+		"Yapay zekâ araçlarını güvensiz otonomi ayarları, eksik AIDR hook'ları ve ortam açıklığı açısından da denetle",
 	"Send server names, risk categories and digests (no paths, endpoints or arguments) to the managed control plane; with --agents also host, check id, severity and count per finding":
-		"Sunucu adlarını, risk kategorilerini ve özetleri (yol, uç nokta ya da argüman olmadan) yönetilen kontrol düzlemine gönder; --agents ile bulgu başına ana makine, denetim kimliği, önem ve sayı da gönderilir",
+		"Sunucu adlarını, risk kategorilerini ve özetleri (yol, uç nokta ya da argüman olmadan) yönetilen kontrol düzlemine gönder; --agents ile bulgu başına yapay zekâ aracı, denetim kimliği, önem ve sayı da gönderilir",
 	"Export an AI Bill of Materials (CycloneDX 1.6): agents, MCP servers, AI packages, models, plugins and known vulnerabilities; secrets are redacted":
 		"Yapay zekâ malzeme listesi (AI BOM, CycloneDX 1.6) dışa aktar: ajanlar, MCP sunucuları, yapay zekâ paketleri, modeller, eklentiler ve bilinen zafiyetler; gizli bilgiler maskelenir",
 	"cyclonedx-json or json (AIDR inventory)": "cyclonedx-json ya da json (AIDR envanteri)",
@@ -163,13 +170,17 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 		"Her iki bağımsız imzayı doğrula ve sınırlı, kalıcı tek bir temel gözlemi kabul et",
 	"The exact original request JSON file": "Özgün isteğin birebir aynısını içeren JSON dosyası",
 	"Signed benign-consent approval JSON file": "İmzalı zararsızlık-onayı JSON dosyası",
-	"Check hosts, hook registration, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems":
-		"Ana makineleri, hook kaydını, kuralları, modu, DLP politikasını, ajan profillerini, onayları ve son kararı denetle; sorun varsa sıfırdan farklı kodla çıkar",
+	"Check AI tools, hook registration, release key, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems":
+		"Yapay zekâ araçlarını, hook kaydını, sürüm doğrulama anahtarını, kuralları, modu, DLP politikasını, ajan profillerini, onayları ve son kararı denetle; sorun varsa sıfırdan farklı kodla çıkar",
+	"Explain each check (paths, reasons, key storage)":
+		"Her denetimi açıkla (yollar, nedenler, anahtar saklama yeri)",
 	"Show how the installed detection rules map to OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026 and MITRE ATLAS":
 		"Kurulu tespit kurallarının OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026 ve MITRE ATLAS ile eşleşmesini göster",
 	"table, json or markdown": "table, json ya da markdown",
-	"List blocked agent actions waiting for an out-of-band operator approval":
-		"Bant dışı operatör onayı bekleyen engellenmiş ajan eylemlerini listele",
+	"List blocked agent actions waiting for your approval (given only in your own terminal)":
+		"Onayınızı bekleyen engellenmiş yapay zekâ aracı eylemlerini listele (onay yalnızca kendi terminalinizden verilir)",
+	"The id from `aidr pending`, or its first 8+ characters; omit it in a terminal to pick from a list":
+		"`aidr pending` çıktısındaki kimlik ya da ilk 8+ karakteri; terminalde boş bırakırsanız listeden seçersiniz",
 	"Operator only: approve ONE retry of a blocked call (interactive confirmation; 15-minute default)":
 		"Yalnızca operatör: engellenmiş bir çağrının TEK bir yeniden denemesini onayla (etkileşimli onay; varsayılan 15 dakika)",
 	"Minutes the approval stays usable (1-1440)": "Onayın geçerli kalacağı dakika sayısı (1-1440)",
@@ -280,7 +291,7 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 	"Show what would be installed or updated; change nothing":
 		"Nelerin kurulacağını ya da güncelleneceğini göster; hiçbir şeyi değiştirme",
 	"Only these hosts, comma-separated: claude-code, cursor, vscode, openclaw, opencode, codex (default: every detected host)":
-		"Yalnızca bu ana makineler, virgülle ayrılmış: claude-code, cursor, vscode, openclaw, opencode, codex (varsayılan: algılanan her ana makine)",
+		"Yalnızca bu yapay zekâ araçları, virgülle ayrılmış: claude-code, cursor, vscode, openclaw, opencode, codex (varsayılan: algılanan her araç)",
 	"Configure only and print the manual connector steps":
 		"Yalnızca yapılandır ve elle yapılacak bağlayıcı adımlarını yazdır",
 	"Extracted, verified aidr-claude-plugin directory to install into Claude Code":
@@ -292,13 +303,13 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 	"With AIDR_OPERATOR_NONINTERACTIVE=1, confirm --force without a prompt":
 		"AIDR_OPERATOR_NONINTERACTIVE=1 ile --force seçeneğini sormadan onayla",
 	"Remove AIDR: the connector of every agent host, the AIDR-managed hooks, ~/.singularity-aidr and the AIDR vault items (confirmation required)":
-		"AIDR'yi kaldır: her ajan ana makinesinin bağlayıcısı, AIDR'nin yönettiği hook'lar, ~/.singularity-aidr ve AIDR kasa öğeleri (onay gerekir)",
+		"AIDR'yi kaldır: her yapay zekâ aracının bağlayıcısı, AIDR'nin yönettiği hook'lar, ~/.singularity-aidr ve AIDR kasa öğeleri (onay gerekir)",
 	"Keep ~/.singularity-aidr (config, audit log, approvals) and the vault items":
 		"~/.singularity-aidr dizinini (yapılandırma, denetim günlüğü, onaylar) ve kasa öğelerini koru",
 	"Show what would be removed; change nothing":
 		"Nelerin kaldırılacağını göster; hiçbir şeyi değiştirme",
 	"Only these hosts, comma-separated: claude-code, cursor, vscode, openclaw, opencode, codex (default: all)":
-		"Yalnızca bu ana makineler, virgülle ayrılmış: claude-code, cursor, vscode, openclaw, opencode, codex (varsayılan: tümü)",
+		"Yalnızca bu yapay zekâ araçları, virgülle ayrılmış: claude-code, cursor, vscode, openclaw, opencode, codex (varsayılan: tümü)",
 	"Write a redacted diagnostic archive (versions, doctor checks, hooks, config, recent verdict metadata, rule hashes) for a support case":
 		"Destek talebi için hassas verileri ayıklanmış bir tanılama arşivi yaz (sürümler, doctor denetimleri, hook'lar, yapılandırma, son karar meta verileri, kural özetleri)",
 	"Archive path (.tar.gz); never overwrites an existing file":

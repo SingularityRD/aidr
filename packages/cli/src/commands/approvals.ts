@@ -12,13 +12,16 @@ import {
 	type OperatorApprovalStoreOptions,
 	operatorApprovalStorePath,
 	recordOperatorApproval,
+	severityLabel,
 } from "@singularityrd/aidr-core";
 import { ct } from "../i18n/index.js";
+import { localTime } from "../utils/local-time.js";
 import {
 	type ConfirmationStreams,
 	confirmOperatorAction,
 	OperatorConfirmationError,
 	operatorIdentity,
+	readOperatorLine,
 } from "../utils/operator-confirm.js";
 
 /** Test seams; production callers pass nothing. */
@@ -51,12 +54,17 @@ function safePending<T extends Omit<ListedPendingAsk, "verified">>(p: T): T {
 	};
 }
 
+/** `high secrets (CRED-004)`, with the severity word the hook message used. */
+function riskText(p: { severity: string; category: string; threatId: string | null }): string {
+	return `${severityLabel(p.severity)} ${p.category}${p.threatId ? ` (${p.threatId})` : ""}`;
+}
+
 function describePending(pending: ListedPendingAsk): string[] {
 	const p = safePending(pending);
 	const lines = [
 		`actionId:   ${p.actionId}`,
 		`connector:  ${p.connector}   tool: ${p.tool}`,
-		`risk:       ${p.severity} ${p.category}${p.threatId ? ` (${p.threatId})` : ""}`,
+		`risk:       ${riskText(p)}`,
 		`call:       ${p.summary}`,
 	];
 	for (const artifact of p.artifacts)
@@ -67,7 +75,12 @@ function describePending(pending: ListedPendingAsk): string[] {
 		);
 	}
 	for (const reason of p.reasons) lines.push(`reason:     ${reason}`);
-	lines.push(ct("approvals.asked", { createdAt: p.createdAt, expiresAt: p.expiresAt }));
+	lines.push(
+		ct("approvals.asked", {
+			createdAt: localTime(p.createdAt),
+			expiresAt: localTime(p.expiresAt),
+		}),
+	);
 	if (!p.verified) lines.push(ct("approvals.integrityFailed"));
 	return lines;
 }
@@ -78,9 +91,9 @@ function describeHostDialogAsk(ask: HostDialogAsk): string[] {
 	return [
 		`actionId:   ${p.actionId}`,
 		ct("approvals.hostDialogConnector", { connector: p.connector, tool: p.tool }),
-		`risk:       ${p.severity} ${p.category}${p.threatId ? ` (${p.threatId})` : ""}`,
+		`risk:       ${riskText(p)}`,
 		`call:       ${p.summary}`,
-		`asked:      ${p.createdAt}`,
+		`asked:      ${localTime(p.createdAt)}`,
 	];
 }
 
@@ -123,6 +136,7 @@ function printApprovablePending(pending: ListedPendingAsk[]): void {
 	}
 	console.log("");
 	console.log(ct("approvals.howToApprove"));
+	console.log(ct("approvals.howToPick"));
 }
 
 function printHostDialogAsks(informational: HostDialogAsk[]): void {
@@ -218,15 +232,129 @@ async function approvablePending(
 	return pending;
 }
 
+const FULL_ID = /^[0-9a-f]{64}$/;
+/** A prefix is accepted from 8 hex characters: short enough to type, long enough to be unique. */
+const ID_PREFIX = /^[0-9a-f]{8,63}$/;
+
 /**
- * `aidr approve <actionId>` — the out-of-band, human-only approval of one ask.
+ * The full action id for what the operator typed: the whole id, or a prefix of
+ * at least 8 hex characters that matches exactly one waiting ask. Reports why
+ * and returns null otherwise. A prefix never widens anything: the operator still
+ * sees the full record and types the confirmation word before it is approved.
+ */
+async function resolveActionId(
+	typed: string,
+	options: ApproveOptions,
+	store: OperatorApprovalStoreOptions,
+): Promise<string | null> {
+	const id = typed.trim().replace(/^"|"$/g, "").toLowerCase();
+	if (FULL_ID.test(id)) return id;
+	if (!ID_PREFIX.test(id)) {
+		fail(ct("approvals.badId"));
+		return null;
+	}
+	// Unattended approval (--yes) has no person reading the record before it is
+	// approved, so it must name the exact id: a short prefix could match an ask
+	// recorded after the operator looked.
+	if (options.yes) {
+		fail(ct("approvals.fullIdForYes"));
+		return null;
+	}
+	let pending: ListedPendingAsk[];
+	try {
+		pending = await listPendingAsks(store);
+	} catch (error) {
+		fail(error instanceof Error ? error.message : String(error));
+		return null;
+	}
+	const matches = pending.filter((p) => p.actionId.startsWith(id));
+	if (matches.length === 1) return (matches[0] as ListedPendingAsk).actionId;
+	if (matches.length > 1) {
+		fail(ct("approvals.ambiguous", { count: matches.length, prefix: id }));
+		return null;
+	}
+	const informational = (await hostDialogAsks(store)).some((a) => a.actionId.startsWith(id));
+	fail(informational ? ct("approvals.answeredInHost") : ct("approvals.notFound"));
+	return null;
+}
+
+/**
+ * `aidr approve` with no id: on an interactive terminal, list the waiting asks
+ * numbered and let the operator pick one. Without a terminal (an agent tool
+ * call, a script) the id is required, exactly as before.
+ */
+async function pickPending(
+	options: ApproveOptions,
+	store: OperatorApprovalStoreOptions,
+	deps: ApprovalCommandDeps,
+): Promise<string | null> {
+	const streams = deps.streams ?? { input: process.stdin, output: process.stderr };
+	if (options.yes || !streams.input.isTTY || !streams.output.isTTY) {
+		fail(ct("approvals.idRequired"));
+		return null;
+	}
+	let pending: ListedPendingAsk[];
+	try {
+		pending = (await listPendingAsks(store)).filter((p) => p.verified);
+	} catch (error) {
+		fail(
+			ct("approvals.storeUnreadable", {
+				error: error instanceof Error ? error.message : String(error),
+			}),
+		);
+		return null;
+	}
+	if (pending.length === 0) {
+		streams.output.write(`${ct("approvals.none")}\n`);
+		return null;
+	}
+	const lines = [ct("approvals.pickTitle")];
+	pending.forEach((entry, index) => {
+		const p = safePending(entry);
+		lines.push(
+			`  ${index + 1}) [${p.actionId.slice(0, 8)}] ${riskText(p)} — ${p.tool}: ${p.summary} — ${localTime(p.createdAt)}`,
+		);
+	});
+	streams.output.write(`${lines.join("\n")}\n`);
+	let answer: string;
+	try {
+		answer = await readOperatorLine(streams, ct("approvals.pickPrompt", { count: pending.length }));
+	} catch (error) {
+		fail(error instanceof Error ? error.message : String(error));
+		return null;
+	}
+	const choice = Number(answer.trim());
+	const picked = Number.isInteger(choice) ? pending[choice - 1] : undefined;
+	if (!picked) {
+		fail(ct("approvals.pickNone"));
+		return null;
+	}
+	return picked.actionId;
+}
+
+/** The full id from the argument (whole id or prefix), or from the numbered pick when omitted. */
+function targetActionId(
+	actionId: string | undefined,
+	options: ApproveOptions,
+	store: OperatorApprovalStoreOptions,
+	deps: ApprovalCommandDeps,
+): Promise<string | null> {
+	return actionId === undefined || actionId.trim() === ""
+		? pickPending(options, store, deps)
+		: resolveActionId(actionId, options, store);
+}
+
+/**
+ * `aidr approve [id]` — the out-of-band, human-only approval of one ask.
  *
  * The approval is bound to the action id, the tool and the exact artifact set the
  * operator was shown, expires (15 minutes by default) and is spent by the first
- * matching retry.
+ * matching retry. The id may be shortened to a unique prefix, or omitted on an
+ * interactive terminal to pick from the waiting asks; the typed confirmation is
+ * required either way.
  */
 export async function approveCommand(
-	actionId: string,
+	actionId: string | undefined,
 	options: ApproveOptions = {},
 	deps: ApprovalCommandDeps = {},
 ): Promise<void> {
@@ -235,13 +363,15 @@ export async function approveCommand(
 		fail(ct("approvals.badTtl"));
 		return;
 	}
-	const normalizedId = actionId.trim().replace(/^"|"$/g, "").toLowerCase();
 	const store = await storeOptions(deps);
 	const disabled = disabledNotice(store);
 	if (disabled) {
 		fail(ct("approvals.notApproved", { reason: disabled }));
 		return;
 	}
+
+	const normalizedId = await targetActionId(actionId, options, store, deps);
+	if (!normalizedId) return;
 
 	const pending = await approvablePending(normalizedId, store);
 	if (!pending) return;
@@ -283,13 +413,13 @@ export async function approveCommand(
 			console.log(JSON.stringify({ approved: true, approval }, null, 2));
 			return;
 		}
+		console.log(ct("approvals.approved", { minutes: Math.round(ttlMs / 60000) }));
 		console.log(
-			ct("approvals.approved", {
+			ct("approvals.approvedDetail", {
 				actionId: approval.actionId.slice(0, 12),
-				expiresAt: approval.expiresAt,
+				expiresAt: localTime(approval.expiresAt),
 			}),
 		);
-		console.log(ct("approvals.retryHint"));
 	} catch (error) {
 		fail(
 			error instanceof OperatorApprovalError
