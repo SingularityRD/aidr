@@ -201,6 +201,11 @@ const docRewrites = {
     ["[Codex connector guide](../packages/codex/README.md)", "[Codex connector guide](CODEX-CONNECTOR.md)"],
     ["[first-customer runbook](../deploy/FIRST_CUSTOMER.md)", "[first-customer runbook](START-HERE.md)"],
     ["[production-readiness decision](production-readiness/first-customer-ready.md)", "[production-readiness decision](CANDIDATE-STATUS.md)"],
+    // The integrity guide is a source-tree document (two references).
+    ["[Integrity verification](integrity.md)", "Integrity verification, `docs/integrity.md` in the source release"],
+    ["[Integrity verification](integrity.md)", "Integrity verification, `docs/integrity.md` in the source release"],
+    ["[compatibility matrix](compatibility-matrix.md)", "compatibility matrix (`docs/compatibility-matrix.md` in the source release)"],
+    ["See the [CLI README](../packages/cli/README.md#setup).", "See the Setup section of the CLI README (`packages/cli/README.md` in the source release, and `aidr setup --help`)."],
   ],
   "CODEX-CONNECTOR.md": [
     ["[Package Installation](../../docs/package-installation.md)", "[Package Installation](PACKAGE-INSTALLATION.md)"],

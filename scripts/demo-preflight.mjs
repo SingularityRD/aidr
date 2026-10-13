@@ -47,9 +47,11 @@ await requireText("packages/dashboard/src/main.tsx", [
 	[/DemoPage|isControlledDemoRoute/, "synthetic demo app import or configuration exception", true],
 ]);
 await requireText("packages/dashboard/src/ui/PublicLayout.tsx", [
-	[/<NavLink to="\/login">Dashboard<\/NavLink>/, "real dashboard navigation"],
+	[/<NavLink to="\/login">\{t\("public\.dashboard"\)\}<\/NavLink>/, "real dashboard navigation"],
 	[/to="\/demo"/, "synthetic demo navigation", true],
 ]);
+// The label is translated; the English catalog must still read "Dashboard".
+await requireText("packages/dashboard/src/i18n/en.ts", [[/"public\.dashboard": "Dashboard"/, "English dashboard navigation label"]]);
 await requireText("packages/dashboard/src/ui/pages/public/LandingPage.tsx", [
 	[/to="\/login\?returnTo=%2Fonboarding"/, "onboarding sign-in link"],
 	[/to="\/demo"|href: "\/demo"/, "synthetic demo CTA", true],

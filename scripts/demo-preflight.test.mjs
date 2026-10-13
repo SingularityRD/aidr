@@ -11,6 +11,7 @@ const SCRIPT = path.join(root, "scripts", "demo-preflight.mjs");
 const INPUTS = [
 	"packages/dashboard/src/main.tsx",
 	"packages/dashboard/src/ui/PublicLayout.tsx",
+	"packages/dashboard/src/i18n/en.ts",
 	"packages/dashboard/src/ui/pages/public/LandingPage.tsx",
 	"scripts/dashboard-route-smoke.mjs",
 	"packages/dashboard/tests/browser-smoke.manifest.json",

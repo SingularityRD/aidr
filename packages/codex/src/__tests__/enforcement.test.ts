@@ -469,6 +469,7 @@ describe("Codex operator approval channel", () => {
 		}
 	});
 
+	// AIDR-SKIP: AIDR-063 qa-owner - the encrypted-file fallback is Linux/POSIX only by design; Windows and macOS always have an OS vault
 	it.skipIf(process.platform === "win32" || process.platform === "darwin")(
 		"records and releases an ask on a headless host with no OS vault (default storage)",
 		async () => {

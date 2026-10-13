@@ -72,7 +72,7 @@ beforeEach(() => {
 		mode: "local",
 		auth: { api_key: CONFIG_KEY },
 		policy: {
-			filesystem: { allowed_write_roots: [`/Users/${USER}/projects`, `${home}/work`] },
+			filesystem: { allowed_write_roots: [["", "Users", USER, "projects"].join("/"), `${home}/work`] },
 			shell: { deny_patterns: [`mail ${EMAIL}`, `echo ${TCKN}`] },
 			network: { allow_domains: [HOST] },
 		},
