@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { CUSTOMER_ID_PATTERN } from "../license/verify.js";
+
 const IntelFileKindSchema = z.enum([
 	"url_denylist",
 	"url_allowlist",
@@ -40,7 +42,20 @@ export const IntelPackManifestSchema = z.object({
 	expires_at: z.string().optional(),
 	key_id: z.string().min(1),
 	files: z.array(IntelPackFileSchema).default([]),
+	/**
+	 * Optional customer audience. Covered by the manifest signature; a pack with an
+	 * audience is accepted only under a license whose customer_id is listed
+	 * (`acceptPack` in ./acceptance.ts).
+	 */
+	audience: z
+		.object({
+			customer_ids: z.array(z.string().regex(CUSTOMER_ID_PATTERN)).min(1).max(256),
+		})
+		.strict()
+		.optional(),
 });
+
+export type IntelPackManifest = z.infer<typeof IntelPackManifestSchema>;
 
 export const PackActivePointerSchema = z.object({
 	version: z.string().min(1),

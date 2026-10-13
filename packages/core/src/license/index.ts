@@ -1,0 +1,38 @@
+export {
+	CUSTOMER_PACKET_FORMAT,
+	type CustomerPacketPayload,
+	type CustomerPacketSensitivity,
+	type VerifiedCustomerPacket,
+	verifyCustomerPacket,
+} from "./packet.js";
+export {
+	CUSTOMER_PACKET_FILE_NAME,
+	type CustomerPacketSearchOptions,
+	type CustomerRecord,
+	customerPacketSearchPaths,
+	customerRecordPath,
+	discoverCustomerPacket,
+	installedLicensePath,
+	readCustomerRecord,
+	readInstalledLicense,
+	readSignedDocumentFile,
+	saveCustomerPacket,
+} from "./store.js";
+export {
+	CUSTOMER_ID_PATTERN,
+	defaultLicenseKeyRegistry,
+	LICENSE_FORMAT,
+	LICENSE_PUBLIC_KEYS_FORMAT,
+	type LicenseDocument,
+	type LicenseErrorCode,
+	type LicenseKeyRegistry,
+	type LicensePayload,
+	type LicenseState,
+	LicenseVerificationError,
+	type LicenseVerifyOptions,
+	licenseState,
+	licenseTermEndMs,
+	parseLicensePublicKeyRegistry,
+	type VerifiedLicense,
+	verifyLicense,
+} from "./verify.js";

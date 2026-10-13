@@ -18,10 +18,19 @@ export interface DomainRiskEntry {
 	reason?: string;
 }
 
+/** An installed pack past its signed expires_at: still enforcing, but needs an update. */
+export interface StaleIntelPack {
+	packId: string;
+	version: string;
+	expiresAt: string;
+}
+
 export interface IntelMerged {
 	/** Coverage state for explicitly enabled signed packs; absence is legacy/unset. */
 	availability?: "available" | "unavailable";
 	detail?: string;
+	/** Loaded packs past their expiry (non-enumerable; for status surfaces). */
+	stalePacks?: StaleIntelPack[];
 	urlDenyHosts: Set<string>;
 	urlAllowHosts: Set<string>;
 	domainRisk: Map<string, DomainRiskEntry>;
