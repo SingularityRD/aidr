@@ -13,7 +13,7 @@ network access.
 | | |
 |---|---|
 | Browsers | Chrome 120+, Edge 120+ (Chromium), Firefox 140+ (ESR) |
-| Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
+| Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`) and Microsoft 365 Copilot Chat (`m365.cloud.microsoft`, `copilot.cloud.microsoft`; same site id `copilot`), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
 | Languages | English, Turkish |
 | Data sent anywhere | Nothing by default. When an administrator connects a control plane, only counts per entity type are sent (see [Privacy](#privacy)). |
 
@@ -302,7 +302,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 | `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install. The options page requests exact `https://<host>/*` origins, from a click, only for what the managed policy configures: the hosts of `customSites`, and the Shadow AI catalog origins when `shadowAi` is on (or the origins of explicitly blocked services). No `tabs`, `webNavigation`, `history` or `<all_urls>` permission is requested: the extension sees a tab's URL only on origins it was granted |
 | `content_scripts` | `content.js` and `content-main.js` (`world: "MAIN"`), both `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only. `content-main.js` runs in the page's JavaScript world with no extension APIs and no data: it only hooks `<input type=file>` (`click`, `showPicker`, the `files` getter) so detached and shadow-DOM file inputs are handed to `content.js` for checking (see [Limitations](#limitations)). Custom sites get both scripts |
-| `web_accessible_resources` | none | nothing is exposed to web pages, so a page cannot fingerprint the extension by probing its resources. A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
+| `web_accessible_resources` | none | no extension resource is exposed to web pages, so a page cannot detect the extension by probing its resources. That does not make the extension invisible: the page-world hook in `content-main.js` is observable to a page that looks for it (the patched `HTMLInputElement` `files` getter, `click` and `showPicker`, and the `aidr-file-*` relay events). It sets no global name or flag on `window`; see [Limitations](#limitations). A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
 | `incognito` | `not_allowed` | the extension does not run in private windows |
 | CSP (`extension_pages`) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` | no remote code; `connect-src 'self'` so the options page can load the packaged `_locales` for the language override; `https:` because the control-plane URL is configurable per tenant; loopback HTTP for local development |
 
@@ -330,7 +330,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `enabledEntities` | entity types | all except `USERNAME`, `LOCATION` |
 | `neverRestore` | entity types | `SECRET`, `PRIVATE_KEY` |
 | `literals` | `[{ value, type }]`, up to 1024, 2-256 chars each | none |
-| `exactData` | up to 16 `ExactDataSet`s | none |
+| `exactData` | up to 16 `ExactDataSet`s (`{ datasetId, keySource: "native-host", minEntropyBits >= 64, fingerprints, type }`, no key; see [Exact data match](#exact-data-match)); forces `useNativeHost` on | none |
 | `detectSignals` / `signalAction` | boolean / `off` \| `warn` \| `block` | `true` / `warn` |
 | `blockedSites` / `disabledSites` | site ids | none |
 | `customSites` | up to 20 `{ id, label, hosts, editorSelectors, sendButtonSelectors, responseSelectors }` (managed only) | none |
@@ -340,7 +340,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `fileHandling` / `maxFileBytes` | `scan` \| `block` \| `allow` / bytes (max 50 MiB) | `scan` / 5 MiB |
 | `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
-| `useNativeHost` | boolean | `false` (also a user setting unless managed) |
+| `useNativeHost` | boolean | `false` (also a user setting unless managed; forced on by `requireNativeNer` or `exactData`) |
 | `requireNativeNer` | boolean (managed only; the signed dashboard policy can also switch it on, `true` wins): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
@@ -381,7 +381,11 @@ exactly the granted hosts (`chrome.scripting.registerContentScripts`, id
 and grant/revocation, and accepts messages from those hosts as site `custom`.
 Tabs that were already open are injected as soon as access is granted
 (`chrome.scripting.executeScript`). Until access is granted the options page
-shows the site as **Needs access** and nothing runs there.
+shows the site as **Needs access** and nothing runs there. The script runs in the top
+frame only: a portal whose chat editor lives in an iframe (an embedded assistant widget
+served from another page or host) is not protected, and the policy cannot detect that.
+Configure the host and selectors of the page that contains the editor itself, and try
+the portal before rolling the policy out.
 
 ### Shadow AI discovery and control
 
@@ -416,7 +420,12 @@ sent as aggregated `shadow_ai_usage` events at each flush
 the `tabs` permission would give visibility without a grant, but it exposes every
 URL the user visits and shows a "Read your browsing history" warning, so it is not
 used. Services on a path of a general-purpose host (Notion AI, GitHub Copilot, Bing)
-are not in the catalog; blocking them by host would break the host product.
+are not in the catalog; blocking them by host would break the host product. The one
+path-scoped entry is Microsoft 365 Copilot Chat (`m365-copilot`): its own host
+`copilot.cloud.microsoft` plus only `/chat` (and below) on the shared
+`m365.cloud.microsoft` host are counted and blocked (a `regexFilter` rule), never the
+rest of Microsoft 365. It is a separate service from consumer Copilot (`copilot`), so the
+work-account Copilot can be sanctioned while the consumer one is blocked.
 
 #### Allow / block from the dashboard
 
@@ -457,30 +466,54 @@ alternative for fleets without a control plane.
 
 ### Exact data match
 
-`exactData` lets an organisation flag its own records (customer names, account
-numbers, project code names) without shipping the values. Build a dataset from
-a CSV:
+`exactData` lets an organisation flag its own records (customer records, account
+numbers combined with names, project code names) without shipping the values or
+the key. Create the organisation's EDM secret once, install it in the native host
+configuration (`"exactData": {"secretFile": "/etc/aidr/edm-secret.b64"}`, see
+[`docs/native-host.md`](docs/native-host.md#exact-data-keys-exactdata)), then build each
+dataset from a CSV with the same secret:
 
 ```bash
-node scripts/fingerprint-dataset.mjs --in customers.csv --header --columns full_name \
-  --dataset-id crm-customers --type PERSON --key-file crm.key.b64 --out crm-customers.json
+node scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
+node scripts/fingerprint-dataset.mjs --in customers.csv --header \
+  --columns full_name,account_no --composite \
+  --dataset-id crm-customers --type PERSON --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
-Algorithm (identical in the tool and in `src/engine/exact-data.ts`):
+Algorithm (identical in the tool, the native host and `src/engine/exact-data.ts`):
 
 1. `value.normalize("NFKC").toLowerCase()`
 2. remove U+200B-U+200F, U+2060, U+FEFF
 3. fold Turkish `ı` (U+0131) and `i̇` (`i` + U+0307, what `İ` lowercases to) to `i`
 4. tokens = every match of `/[\p{L}\p{N}]+/gu`; a value must give 1-16 tokens and at least 3 characters
-5. fingerprint = lowercase hex `HMAC-SHA256(key, UTF-8(JSON.stringify(tokens)))`
+5. datasetKey = `HMAC-SHA256(secret, UTF-8("aidr-edm-v2" 0x00 datasetId))`
+6. fingerprint = lowercase hex `HMAC-SHA256(datasetKey, UTF-8(JSON.stringify(tokens)))`
 
-In the page, the same normalisation is applied to the prompt and every window
-of up to 16 consecutive tokens is fingerprinted with WebCrypto and compared with
-the dataset. Only fingerprints and the HMAC key are in the dataset; the source
-values are never written or logged. Anyone holding the dataset can test guesses
-against it, so treat it as confidential and distribute it only through managed
-policy. Without `--key-file`/`--key-b64` a fresh 32-byte key is generated; keep it
-to regenerate the dataset with stable fingerprints.
+The dataset is `{ datasetId, keySource: "native-host", minEntropyBits, fingerprints,
+type }`: no key. Managed policy is readable by every user of the endpoint
+(`chrome://policy`, the policy registry keys, `policies.json`), so the extension
+refuses a dataset that carries `keyB64`. When the policy has datasets the worker
+forces `useNativeHost` on, asks the host for the dataset keys (`edm-keys`), keeps them
+in memory and hands them to the content scripts only. Until a dataset's key has
+arrived (no host, an older host, no secret configured, Firefox), every scan with that
+dataset is incomplete, which the guard treats as not checked (fail closed). In the
+page, the same normalisation is applied to the prompt and every window of up to 16
+consecutive tokens is fingerprinted with WebCrypto and compared with the dataset.
+
+Guessable values are refused. A keyed hash protects only values that cannot be
+enumerated by whoever holds the key, and the host runs as the signed-in user, so a
+user who reads its secret file (or attaches a debugger to the browser) can obtain the
+dataset keys. The tool therefore estimates each value's entropy (digits at log2 10 bits
+each; letter runs as dictionary words, 2 bits per letter up to 16 bits; structured
+identifiers capped: TCKN, card and phone numbers 30 bits, date of birth 16, IBAN 56)
+and refuses the dataset (`LOW_ENTROPY`) when any value is below 64 bits. The policy
+refuses a dataset whose `minEntropyBits` is below 64. Names, short account numbers,
+phone numbers and national ids alone fall below the floor: combine columns with
+`--composite` (one value per row, in column order; it then matches only when the parts
+appear together in that order), or leave weak values out with `--drop-low-entropy`.
+The estimate is conservative but not a proof: a column that looks random but is
+sequential is weaker than estimated. `--key-b64` / `--key-file` are refused. Keep the
+secret: the same secret and dataset id reproduce the same fingerprints.
 
 ## Privacy
 
@@ -520,10 +553,21 @@ to regenerate the dataset with stable fingerprints.
 - Site adapters depend on each product's DOM. A site redesign can break
   interception until the adapter is updated; the real-browser suite in `e2e/`
   guards against regressions on recorded page structures.
+- Microsoft 365 Copilot Chat (`m365.cloud.microsoft/chat`, `copilot.cloud.microsoft`)
+  shares the site id `copilot` with consumer Copilot, so `disabledSites` and
+  `blockedSites` act on both (a `blockedSites` entry blocks only `/chat` of the shared
+  Microsoft 365 host); use the Shadow AI ids `copilot` / `m365-copilot` to treat them
+  differently. The guard runs on the whole `m365.cloud.microsoft` host, because the
+  Microsoft 365 home enters `/chat` without a page load. Its selectors are covered by
+  unit tests against representative markup, not by the real-browser suite or a live
+  tenant. The Copilot pane inside the Office web apps (Word, Excel, PowerPoint, Outlook
+  on the web) runs in a cross-origin iframe and is not covered: Browser Guard runs in
+  the top frame only.
 - Free-form names and addresses without a label ("Name:", "Adres:") need the
   optional native host (NER), which ships without model weights or accuracy
   evidence. Without it, rule detection covers structured identifiers, labelled
-  fields, organisation literals and exact-data sets. Usernames, health/insurance
+  fields, organisation literals and exact-data sets (the latter need the native host
+  for their keys). Usernames, health/insurance
   numbers and places are found only after a label (`Kullanıcı adı:`, `SGK sicil
   no:`, `NHS number:`, `Konum:`, `City:`...); licence plates as validated Turkish
   plates (`34 ABC 123`) or after a plate label. NER is applied to prompts
@@ -568,7 +612,12 @@ to regenerate the dataset with stable fingerprints.
   than checked, while one in a closed shadow root cannot be seen at all. The
   Chromium and Firefox page-world relay is covered by unit tests (jsdom), not yet by
   the real-browser E2E suite. `window.showOpenFilePicker()` (File System Access API)
-  is not intercepted.
+  is not intercepted. The hook is not hidden from the page: it defines no global
+  name, flag or symbol on `window` (its state is kept in a closure), but a page can
+  still tell that `HTMLInputElement.prototype.files`, `click` and `showPicker` are not
+  the browser's own functions and can listen for the `aidr-file-hook-ping`,
+  `aidr-file-scan` and `aidr-file-result` events, so a site can detect that Browser
+  Guard is installed.
 - Restoring works on text the site renders in the page. Content the site
   exports, copies to the clipboard itself, or shares by link contains the
   placeholders, not the originals.

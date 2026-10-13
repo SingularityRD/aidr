@@ -156,24 +156,67 @@ Browser Guard needs three extra steps:
 
 Supported browsers: Chromium-based (Chrome, Edge). The host accepts only
 `chrome-extension://` callers, so Firefox is not supported and reports `unavailable`.
+On Firefox, `requireNativeNer` therefore blocks every prompt and upload that needs NER,
+and `exactData` datasets are never checked (their scans stay incomplete): both fail
+closed. Do not turn them on for Firefox fleets.
+
+## Exact-data keys (`exactData`)
+
+Managed policy is readable by every user of the endpoint (`chrome://policy`, the policy
+registry keys, `policies.json`), so an `exactData` dataset carries no key. The host
+derives one key per dataset from the organisation's EDM secret:
+`HMAC-SHA256(secret, "aidr-edm-v2" 0x00 datasetId)`
+(`packages/privacy/src/native/edm.ts`). Install the secret file that
+`fingerprint-dataset.mjs --new-secret` wrote, and name it in the host config:
+
+```json
+{ "version": 1, "allowedExtensionIds": ["<browser-guard-id>"], "exactData": { "secretFile": "/etc/aidr/edm-secret.b64" } }
+```
+
+The path must be absolute; the file holds base64 of at least 32 bytes, otherwise the host
+refuses to start. When the policy has datasets, the worker forces `useNativeHost` on, asks
+the host for their keys (`edm-keys`), keeps them in memory only and gives them to the
+content scripts (never to the options page or popup, never to `chrome.storage`). Until a
+dataset's key has arrived, every scan with it is reported incomplete, which the guard
+treats as not checked (fail closed); the worker asks the host again at most every 30 s.
+
+What this does and does not protect: the secret and the keys are no longer visible in
+browser policy, and a dataset key unlocks only its own dataset. The host runs as the
+signed-in user, so its config and secret file must be readable by that user: a user who
+reads that file, or attaches a debugger to the browser or the content script, can still
+obtain the keys and test guesses against the fingerprints. That is why
+`fingerprint-dataset.mjs` and the policy refuse datasets whose values are guessable
+(below 64 bits of estimated entropy, `minEntropyBits`), see the README "Exact data match".
 
 ## Protocol (what the bridge speaks)
 
-The bridge uses the privacy host's native-messaging protocol exactly
-(`packages/privacy/src/native/session.ts` and `host.ts`). It adds no extensions to it.
+The bridge uses the privacy host's native-messaging protocol
+(`packages/privacy/src/native/session.ts` and `host.ts`), with its persistent-session
+option.
 
 - Framing: Chrome native messaging (a 4-byte little-endian length, then UTF-8 JSON,
   frames up to 512 KiB). Chrome does the framing.
 - Every request is `{v:1, id, op, ...}` and every reply must echo `{v:1, id, ok:true}`.
   Only one request is outstanding at a time.
-- Each scan uses its own port and host process: `hello` → `begin{kind:"text", size,
-  sha256, policyDigest}` → `write{offset, data}` in 192 KiB base64 chunks → `commit`
-  → `read{offset}` until `done`. An image uses `begin{kind:"image-scan", ...}` (only
-  after `hello` reported `ocr: true`) → `write` → `commit`, whose reply is
+- **One host process for all scans.** The bridge opens one port and sends
+  `hello{persistent:true}`; the host answers `persistent: true` and then serves any
+  number of documents on that connection, so the host process and its NER worker (the
+  model loaded once) stay warm. The bridge starts the host ahead of the first prompt
+  (`status()`, called when the policy loads and by the popup) and allows 15 s for that
+  cold start (`NATIVE_CONNECT_TIMEOUT_MS`). Scans are queued on the connection, one
+  document at a time, each with its own 2 s deadline; at most 8 wait at once. An idle
+  host exits after 15 minutes and is started again on demand. A host from an earlier
+  release refuses the `persistent` field and exits; the bridge then falls back to a
+  plain `hello` and one host process per document, as before (and asks it for no
+  exact-data keys).
+- Each document: `begin{kind:"text", size, sha256, policyDigest}` →
+  `write{offset, data}` in 192 KiB base64 chunks → `commit` → `read{offset}` until
+  `done`. An image uses `begin{kind:"image-scan", ...}` (only when `hello` reported
+  `ocr: true`) → `write` → `commit`, whose reply is
   `{decision: allow|block|review, reasons, counts, coverage, outputBytes: 0}`; nothing
   is read back. The bridge rejects a reply with output bytes, a foreign policy digest,
-  unknown keys or a clean decision with counts. The status probe sends a single `hello` (via
-  `sendNativeMessage`, or a port when that API is missing).
+  unknown keys or a clean decision with counts. `edm-keys{datasetIds}` (idle only)
+  returns `{keys: {datasetId: base64}}`.
 - Browser Guard does not share the AIDR Privacy extension's `PolicyJSON`. It echoes
   the `policyDigest` from `hello`, so the **host's** policy decides. If that policy
   blocks text (`textAction: "block"`, or any type configured as `block` or `review`),
@@ -192,27 +235,30 @@ The bridge uses the privacy host's native-messaging protocol exactly
 | Bridge disabled by policy | `status() = "disabled"`, `scanText → null` | no |
 | `nativeMessaging` not granted, no runtime API, host not installed | `unavailable`, `null`, next attempt after 60 s | this *is* the backoff |
 | Text over 1 MiB (UTF-8), or containing lone surrogates | `null`, host not contacted | no |
-| More than 2 scans already in flight | `null` | no |
-| Whole exchange (permission check + all round trips) over **2 s** | `null`, port disconnected (host exits) | yes |
+| 8 scans already queued on the connection | `null` at once | no |
+| The 2 s deadline passes while the scan waits in the queue or for the host to start | `null`; the host start is not interrupted | no |
+| The 2 s deadline passes during the scan's own exchange | `null`, port disconnected (host exits; the next scan starts a new one) | yes |
+| Host start (process + `hello`) over 15 s | `null`, port disconnected | yes (the status probe backs off at once) |
 | Any malformed reply (unknown key, wrong id/offset/ack, bad digest, hash mismatch, non-canonical base64, output contradicting the input) | `null` | yes |
 | Host engine failure (`NER_*`, `SCAN_BUDGET`, `CONCURRENCY_LIMIT`, `DISPOSED`) | `null` | yes |
 | Host policy block or review | `null` | no (the host is healthy) |
 
 After 3 consecutive failures the bridge marks the host `unavailable` and does not
-contact it for 60 s. A success resets the count. `scanText` never throws.
+contact it for 60 s. A success resets the count. Any failure also ends the connection,
+so a crashed NER worker is replaced by a fresh host. `scanText` never throws.
 
-**Latency caveat.** The host starts a new process for each scan and loads the NER
-model at startup, so a heavy model plus a large prompt can go over the 2 s budget.
-A send waits for the answer (at most 2.5 s in the page); text typed and paused on is
-pre-scanned, so the wait usually happens before Enter. When timeouts keep happening
-the bridge backs off, and the prompt stays protected by the local rules only (and the
-user is told so). Check host start-up time on your target hardware before you depend
-on NER.
+**Latency caveat.** The NER model is loaded once per host process, not per scan, and the
+host is started before the first prompt. A scan on a warm host still has to finish
+within 2 s (2.5 s in the page): a heavy model on a large prompt can exceed it, and with
+`requireNativeNer` such a send is blocked. No cold-start or warm-scan latency has been
+measured for this release on the target Windows or macOS hardware, and the Windows
+launcher is not validated (`prepare-host.mjs` says so). Measure p95 start-up and scan
+time with your model on your hardware before you require NER.
 
 ## Privacy notes
 
 - Only the string passed to `scanText` is sent: no URL, site, tab, user or policy
-  data. The status probe sends only `hello`.
+  data. The status probe sends only `hello`; `edm-keys` sends only dataset ids.
 - The channel is Chrome's stdio pipe to a local process. The bridge opens no socket
   or localhost HTTP endpoint, and it rejects a host whose `hello` does not declare
   `local: true`.
@@ -221,8 +267,10 @@ on NER.
   scan. (JavaScript strings cannot be zeroed. That is a platform limit.)
 - Host error text and `chrome.runtime.lastError` are never logged or shown. Callers
   see only `null` (plus the bridge status).
-- Each pre-scan and send starts a host process for the current editor text, so the
-  host sees drafts as the user types (debounced to pauses of 250 ms), not only what is
-  finally sent. It is a local process under the same user; nothing leaves the machine.
+- Each pre-scan and send sends the current editor text to the one running host, so
+  the host sees drafts as the user types (debounced to pauses of 250 ms), not only what
+  is finally sent. It is a local process under the same user; nothing leaves the
+  machine. The host keeps no document between scans: each `begin` discards the
+  previous one and its buffers are zeroed.
 - The SHA-256 values in the protocol are used only for transfer integrity. They are
   not stored or sent anywhere else.

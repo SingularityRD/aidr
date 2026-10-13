@@ -59,7 +59,13 @@ export interface DnrRule {
 	id: number;
 	priority: number;
 	action: DnrRuleAction;
-	condition: { requestDomains?: string[]; initiatorDomains?: string[]; resourceTypes: string[] };
+	/** `requestDomains` (host and subdomains) or, for path-scoped sites, a RE2 `regexFilter`. */
+	condition: {
+		requestDomains?: string[];
+		initiatorDomains?: string[];
+		regexFilter?: string;
+		resourceTypes: string[];
+	};
 }
 
 export type MessageListener = (

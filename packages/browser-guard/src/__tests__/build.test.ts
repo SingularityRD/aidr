@@ -33,6 +33,8 @@ const EXPECTED_HOSTS = [
 	"gemini.google.com",
 	"claude.ai",
 	"copilot.microsoft.com",
+	"m365.cloud.microsoft",
+	"copilot.cloud.microsoft",
 	"www.perplexity.ai",
 	"perplexity.ai",
 	"chat.deepseek.com",

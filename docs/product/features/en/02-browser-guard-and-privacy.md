@@ -92,7 +92,7 @@ the prompt box, the send button, the answers and the file inputs are.
 | `chatgpt` | ChatGPT | `chatgpt.com`, `chat.openai.com` |
 | `gemini` | Gemini | `gemini.google.com` |
 | `claude` | Claude | `claude.ai` |
-| `copilot` | Microsoft Copilot | `copilot.microsoft.com` |
+| `copilot` | Microsoft Copilot (consumer) and Microsoft 365 Copilot Chat | `copilot.microsoft.com`, `m365.cloud.microsoft`, `copilot.cloud.microsoft` |
 | `perplexity` | Perplexity | `www.perplexity.ai`, `perplexity.ai` |
 | `deepseek` | DeepSeek | `chat.deepseek.com` |
 | `mistral` | Mistral Le Chat | `chat.mistral.ai` |
@@ -130,10 +130,12 @@ zips plus `SHA256SUMS`). To load an unpacked build: `chrome://extensions` → De
 | Platforms | Chrome 120+, Edge 120+, Firefox 140+ (ESR); Windows, macOS, Linux |
 
 **Limitations**
-- Only the eight products above are protected. Other AI websites, desktop and mobile apps,
-  API clients and other browsers are not covered. The manifest declares an optional
-  `https://*/*` host permission, but this build has no code path that uses it to protect
-  other sites.
+- Only the eight products above are protected out of the box. Other AI websites, desktop
+  and mobile apps, API clients and other browsers are not covered. The manifest declares an
+  optional `https://*/*` host permission. It is never requested at install: the options page
+  asks each user, from a click, for the exact `https://<host>/*` origins the managed policy
+  configures (the hosts of `customSites`, feature 13b, and the Shadow AI catalog origins,
+  feature 13a), so users see a browser permission prompt for those sites.
 - Site DOMs change without notice, and a redesign can break interception until the adapter
   is updated. The real-browser suite runs against recorded page structures (fixtures) for
   ChatGPT, Gemini, Claude, Copilot and Perplexity, not against the live sites. DeepSeek,
@@ -208,10 +210,31 @@ A scan is marked incomplete when the prompt exceeds 200,000 characters, when the
 time budget runs out, or when encoded content is nested deeper than the decoder unwraps.
 Findings gathered so far are kept, but the result is never reported as clean.
 
-**How to use** — Always on. By policy, text goes through unmasked in `monitor` mode, which
-never blocks, and on a site in `disabledSites`, which is monitored the same way (the text
-is still scanned and counted). This is not the full list of ways text can leave unchecked:
-see the limitations below for send paths the guard does not recognise.
+**How to use** — Always on for the send gestures described above. It is not a guarantee
+that nothing leaves the browser unmasked. In this build text reaches the AI service without
+masking through:
+- `monitor` mode, and a site in `disabledSites` (scanned and counted, never blocked);
+- **Send original** in `confirm` mode while `allowSendAnyway` is `true` (the default without a managed
+  policy; under a managed policy it is off unless the administrator sets it);
+- a user pause (up to 60 minutes) while `allowUserPause` is `true` (the default without a managed
+  policy; under a managed policy it is off unless the administrator sets it);
+- a send the adapter does not recognise: a new button, shortcut or gesture after a site
+  redesign, or a request the page makes by itself (see Limitations and feature 1);
+- voice input, dictation and voice mode: the site sends the audio to the provider for
+  transcription, so it never passes the guard; only text that ends up in the editor and is
+  sent with a recognised gesture is checked;
+- text before it is sent: the prompt editor belongs to the site, so the site's own scripts
+  (drafts, autosave, typing telemetry) can read what is typed, dropped or dictated into it
+  before the guard checks it at send;
+- tabs in which the content script is not running, for example an already-open tab the
+  extension could not inject into when it started, until the tab is reloaded;
+- private windows, guest profiles, other browser profiles and other browsers, where the
+  extension does not run.
+
+Administrators close the policy-controlled paths with `allowSendAnyway: false`,
+`allowUserPause: false` and a managed `mode`, and the browser-level ones with the hardening
+policies in `deploy/browser-guard/README.md` (private browsing, guest mode, other profiles
+and browsers, developer tools, other extensions).
 
 **Example** — A user pastes a 300,000-character log and presses Enter in `auto` mode. The site
 receives nothing. A red bubble titled **Sending blocked** says "AIDR could not finish
@@ -494,8 +517,10 @@ Covered by the real-browser `paste-*` scenarios.
 
 **Limitations**
 - Only pastes into the recognised prompt editor are handled.
-- Text inserted by other means (drag-and-drop of text, browser autofill, voice input) is
-  checked at send time, not on insertion.
+- Text inserted by other means (drag-and-drop of text, browser autofill) is checked at send
+  time, not on insertion; until then it sits in the site's editor, readable by the page.
+- Voice input, dictation and voice mode are not covered: the audio goes to the provider for
+  transcription without passing the guard (feature 2).
 
 ### 7. File and upload protection
 
@@ -790,73 +815,99 @@ confidential terms. They are not listed here."
 
 ### 9. Exact data match
 
-**What it does** — Flags an organisation's own records (customer names, account numbers,
-employee IDs) without shipping the values to the browser. The browser receives only keyed
-fingerprints.
+**What it does** — Flags an organisation's own records (customer records, account numbers
+combined with names, employee IDs) without shipping the values to the browser. The
+browser receives only keyed fingerprints; the key never travels in browser policy.
 
 **Why it matters** — Rules find anything that looks like an IBAN. Exact data match finds
-*your* customers, including names that no rule can recognise, while the list itself never
-leaves the administrator's hands in readable form.
+*your* customers' records, while the list itself never leaves the administrator's hands in
+readable form.
 
 **How it works**
-1. The administrator builds a dataset from a CSV with
-   `packages/browser-guard/scripts/fingerprint-dataset.mjs`. Each value is normalised
-   (NFKC, lower-case, zero-width marks removed, Turkish `ı` and `i̇` folded to `i`) and split
-   into letter/digit tokens. The fingerprint is `HMAC-SHA256(key, JSON.stringify(tokens))`
+1. The administrator creates the organisation's EDM secret once
+   (`fingerprint-dataset.mjs --new-secret edm-secret.b64`) and installs that file in the
+   AIDR Privacy native host configuration (`"exactData": {"secretFile": ...}`).
+2. A dataset is built from a CSV with the same secret. Each dataset has its own key,
+   `HMAC-SHA256(secret, "aidr-edm-v2" 0x00 datasetId)`. Each value is normalised (NFKC,
+   lower-case, zero-width marks removed, Turkish `ı` and `i̇` folded to `i`) and split into
+   letter/digit tokens; the fingerprint is `HMAC-SHA256(datasetKey, JSON.stringify(tokens))`
    in lowercase hex. A value must give 1–16 tokens and at least 3 characters.
-2. The dataset `{ datasetId, keyB64, fingerprints, type }` is delivered by managed policy
-   (`exactData`).
-3. In the page, the same normalisation is applied to the prompt. Every window of up to 16
-   consecutive tokens is fingerprinted with WebCrypto (at most 65,536 HMACs per scan) and
-   compared with the dataset. A hit is masked as the dataset's type and also raises the
-   `EXACT_DATA_MATCH` signal.
+3. The tool estimates every value's entropy and refuses the dataset when any value is below
+   64 bits (`LOW_ENTROPY`), because a holder of the dataset key could enumerate such values
+   offline (a 7-digit customer number is about 23 bits, a TCKN about 30, a name about 20).
+   Combine columns into one value per row with `--composite` (for example name + account
+   number), or leave guessable values out with `--drop-low-entropy`.
+4. The dataset `{ datasetId, keySource: "native-host", minEntropyBits, fingerprints, type }`
+   is delivered by managed policy (`exactData`). It contains no key. The extension refuses a
+   dataset that carries a `keyB64` or declares less than 64 bits, and forces `useNativeHost`
+   on.
+5. The background worker asks the native host for the dataset keys, keeps them in memory
+   and gives them to the content scripts only. In the page, the prompt is normalised the
+   same way, every window of up to 16 consecutive tokens is fingerprinted with WebCrypto (at
+   most 65,536 HMACs per scan) and compared with the dataset. A hit is masked as the
+   dataset's type and also raises the `EXACT_DATA_MATCH` signal. Until the host has supplied
+   a dataset's key, scans with it are reported incomplete (not checked), never clean.
 
 **How to use**
 
 ```bash
+node packages/browser-guard/scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
 node packages/browser-guard/scripts/fingerprint-dataset.mjs \
-  --in customers.csv --header --columns full_name \
+  --in customers.csv --header --columns full_name,account_no --composite \
   --dataset-id crm-customers --type PERSON \
-  --key-file crm.key.b64 --out crm-customers.json
+  --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
 Options: `--in <file.csv|->`, `--dataset-id`, `--type <ENTITY_TYPE>`, `--header`,
-`--columns a,b`, `--key-b64 <base64>` or `--key-file <file>`, `--out <file.json>`. Without a
-key option a fresh 32-byte key is generated. Keep it so that regenerated datasets produce
-the same fingerprints. The output file is written with mode `0600`, and fingerprints are
-sorted so the file order reveals nothing about the source rows. Put the JSON object into
-the managed `exactData` array. The policy accepts at most 16 datasets and 100,000
-fingerprints in total. The tool itself accepts up to 250,000 per dataset, but a policy over
-the limit is rejected.
+`--columns a,b`, `--composite`, `--secret-file <file>`, `--min-entropy-bits <n>` (64 or
+more), `--drop-low-entropy`, `--out <file.json>`. `--key-b64` / `--key-file` are refused. Keep
+the secret: the same secret and dataset id reproduce the same fingerprints. The output file
+is written with mode `0600`, and fingerprints are sorted so the file order reveals nothing
+about the source rows. Put the JSON object into the managed `exactData` array. The policy
+accepts at most 16 datasets and 100,000 fingerprints in total. The tool itself accepts up to
+250,000 per dataset, but a policy over the limit is rejected.
 
-**Privacy of fingerprints** — Only fingerprints and the HMAC key are in the dataset. Source
-values are never written or logged. Fingerprints are keyed hashes, not encryption: anyone
-holding the dataset (which includes the key) can test guesses against it. Treat the
-dataset as confidential, distribute it only through managed policy, and never commit it to
-a repository. The example dataset in `deploy/browser-guard/` holds `REPLACE_WITH_...`
-placeholders instead of a key and fingerprints; the extension refuses it until it is
-replaced with real `fingerprint-dataset.mjs` output.
+**Privacy of fingerprints** — Source values are never written or logged, and the dataset
+holds no key. What this protects against and what it does not:
+- The secret and the dataset keys are not in browser policy, so a user can no longer read
+  them from `chrome://policy`, the policy registry keys or `policies.json`, and a leaked
+  dataset key exposes only its own dataset.
+- The native host runs as the signed-in user, so its secret file must be readable by that
+  user. A user who reads that file, or attaches a debugger to the browser, can still obtain
+  the keys and test guesses against the fingerprints. The 64-bit entropy floor is what keeps
+  that from recovering the list: it is an estimate (letters count as dictionary words,
+  structured identifiers are capped at their real entropy), not a guarantee, and a column
+  that looks random but is sequential is weaker than estimated.
+- Fingerprints are keyed hashes, not encryption; keep datasets out of repositories.
 
-**Example** — Dataset `crm-customers` (type `PERSON`) contains the fingerprint of "Ahmet
-Kaya". The prompt `Ahmet Kaya called about his order` is found even though no rule
-recognises the name. With default settings (`detectSignals: true`, `signalAction: "warn"`),
-the user sees the confirmation bubble with the coaching line "This text matches records from
-a protected company dataset. Remove them before sending, or use an approved channel."
+The example dataset in `deploy/browser-guard/` holds `REPLACE_WITH_...` placeholder
+fingerprints; the extension refuses it until it is replaced with real
+`fingerprint-dataset.mjs` output.
+
+**Example** — Dataset `crm-customers` (type `PERSON`, composite of name and 16-digit
+account number) contains the fingerprint of "Ahmet Kaya 4000123412341234". The prompt
+`Ahmet Kaya 4000123412341234 called about his order` is found. With default settings
+(`detectSignals: true`, `signalAction: "warn"`), the user sees the confirmation bubble with
+the coaching line "This text matches records from a protected company dataset. Remove them
+before sending, or use an approved channel."
 
 **Availability**
 
 | | |
 |---|---|
 | Plan | Team, Business, Enterprise (catalog) |
-| Deployment | Local / Cloud / On-prem / Air-gapped (dataset delivered by browser policy; the tool runs offline on Node.js) |
-| Platforms | Chrome, Edge, Firefox (desktop); the tool needs Node.js 22.12+ |
+| Deployment | Local / Cloud / On-prem / Air-gapped (dataset delivered by browser policy, secret installed with the native host; the tool runs offline on Node.js) |
+| Platforms | Chrome, Edge (desktop, with the native host); the tool needs Node.js 22.12+. Not Firefox: the native host does not support it, so datasets are never checked there |
 
 **Limitations**
+- Needs the native host from this release with the EDM secret installed. Without it every
+  prompt scan with a dataset is incomplete, which the guard treats as not checked.
 - Matching is on exact token sequences after normalisation. Typos, reordered names and
-  partial values do not match.
+  partial values do not match; a composite value matches only when its parts appear
+  together and in column order.
+- Names, short account numbers, phone numbers and national ids on their own are refused as
+  guessable. The built-in rules still find TCKN, IBAN, card and phone numbers by shape.
 - Policy size limits (100,000 fingerprints in total) cap the dataset size.
-- Browser policy is readable on the endpoint, so the key and fingerprints are exposed to
-  local users (see above).
 
 ### 10. Prompt-injection and risk signals with coaching
 
@@ -1108,8 +1159,11 @@ a sanctioned visit. Covered by the real-browser `shadow-ai` scenario.
   a managed policy cannot grant it silently. Without it blocks still apply, but the user
   sees the browser's own blocked page and nothing is counted.
 - Services that live on a path of a general-purpose site (Notion AI, GitHub Copilot, Copilot
-  in Bing, Microsoft 365 Copilot) are not in the catalog; blocking by host would break the
-  whole product.
+  in Bing) are not in the catalog; blocking by host would break the whole product. Microsoft
+  365 Copilot Chat is the one path-scoped entry (`m365-copilot`): its dedicated host
+  `copilot.cloud.microsoft` and only the `/chat` path of `m365.cloud.microsoft` are counted
+  and blocked, so the rest of the Microsoft 365 home keeps working. The Copilot pane inside
+  the Office web apps is not a separate catalog entry.
 - Hugging Face, DeepL and Grammarly are catalogued by host, so blocking them blocks the whole
   site (model hub, translator, marketing pages).
 
@@ -1150,6 +1204,10 @@ email to the user.
 
 **Limitations**
 - Each user grants host access once; tabs already open need a reload afterwards.
+- The content script runs in the portal's top frame only (`allFrames: false`). A chat widget
+  embedded in an iframe (an internal portal that loads its assistant from another page or
+  host) is not protected, and the policy cannot detect that case: point `hosts` and the
+  selectors at the page that hosts the editor itself, and test the portal before rollout.
 - Selectors follow the portal's markup; a redesign can require an update of the policy.
 
 ### 13c. AI acceptable-use notice
@@ -1218,7 +1276,7 @@ All managed keys (from `static/managed_schema.json` and `src/background/policy.t
 | `enabledEntities` | array of entity types | all except `USERNAME`, `LOCATION` | Types detected and masked by the built-in rules |
 | `neverRestore` | array of entity types | `SECRET`, `PRIVATE_KEY` | Masked but never restored in answers |
 | `literals` | array of `{ value, type }`, ≤ 1,024, 2–256 chars each | none | Organisation terms (feature 8) |
-| `exactData` | array of `{ datasetId, keyB64, fingerprints, type }`, ≤ 16 sets, ≤ 100,000 fingerprints in total | none | Exact data match (feature 9) |
+| `exactData` | array of `{ datasetId, keySource: "native-host", minEntropyBits (≥ 64), fingerprints, type }`, ≤ 16 sets, ≤ 100,000 fingerprints in total; no key (a dataset with `keyB64` is refused) | none | Exact data match (feature 9) |
 | `detectSignals` | boolean | `true` | Detect prompt-injection and source-code signals |
 | `signalAction` | `off` \| `warn` \| `block` | `warn` | What a signal does (feature 10) |
 | `blockedSites` | array of site ids | none | Sites whose pages are blocked from loading (feature 13) |
@@ -1363,9 +1421,12 @@ without sending text off the machine.
 **How it works** — When `useNativeHost` is on, every prompt and paste scan asks the
 background worker for NER (`NATIVE_SCAN`) in parallel with the built-in rules. The worker's
 bridge speaks the privacy host's native-messaging protocol over the browser's stdio pipe.
-There is no socket and no localhost HTTP endpoint. Each scan uses a fresh host process and
-a 2-second budget (the page waits at most 2.5 seconds). Text over 200,000 characters is not
-sent. After three consecutive failures the host is considered unavailable for 60 seconds.
+There is no socket and no localhost HTTP endpoint. The bridge keeps one host process for all
+scans (the NER model is loaded once) and starts it before the first prompt, allowing 15
+seconds for that start. Scans are queued on it, each with a 2-second budget (the page waits
+at most 2.5 seconds); an idle host exits after 15 minutes and is restarted on demand. A host
+from an earlier release is used one process per scan, as before. Text over 200,000
+characters is not sent. After three consecutive failures the host is considered unavailable for 60 seconds.
 The host's `PERSON`, `ADDRESS` and `LOCATION` spans (only types enabled in
 `enabledEntities`) are tagged `source: "native-ner"` with a fixed score of 0.9 and merged
 with the rule findings before masking. When the host gives no usable answer the prompt is
@@ -1418,8 +1479,11 @@ check was rules-only.
   included) are extracted by Browser Guard and sent through the same path. OCR needs
   the host's optional Python/Tesseract stack; the protocol is tested with fake OCR workers,
   and real OCR accuracy must be measured on your own images.
-- A heavy model plus a large prompt can exceed the 2-second budget, and the bridge then
-  backs off to rules only.
+- A heavy model plus a large prompt can exceed the 2-second budget on a warm host; the
+  bridge then backs off to rules only (or, with `requireNativeNer`, blocks the send). No
+  cold-start or scan latency has been measured on target Windows or macOS hardware for this
+  release, and the Windows launcher is not validated: measure p95 latency with your model
+  before requiring NER. Firefox is not supported, so `requireNativeNer` blocks there.
 
 ### 17. What data leaves the device
 

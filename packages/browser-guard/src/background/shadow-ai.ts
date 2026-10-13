@@ -26,6 +26,7 @@
 import {
 	AI_SERVICES,
 	type AiService,
+	scopeRegexFilter,
 	serviceById,
 	serviceForUrl,
 	serviceOrigins,
@@ -83,12 +84,22 @@ export function shadowAiOrigins(policy: ShadowAiPolicy): string[] {
 	return serviceOrigins(shadowAiObserved(policy) ? AI_SERVICES : blockedServices(policy));
 }
 
+/**
+ * One block rule per service: `requestDomains` for a host-only service, a `regexFilter` over
+ * its hosts and path scopes when it has any (Microsoft 365 Copilot Chat: only `/chat` of the
+ * shared Microsoft 365 host is blocked, never the rest of that host).
+ */
 export function buildShadowRules(policy: ShadowAiPolicy): DnrRule[] {
 	return blockedServices(policy).map((s) => ({
 		id: RULE_ID_BY_SERVICE.get(s.id) as number,
 		priority: 1,
 		action: { type: "block" },
-		condition: { requestDomains: [...s.hosts], resourceTypes: ["main_frame", "sub_frame"] },
+		condition: s.paths.length
+			? {
+					regexFilter: scopeRegexFilter(s.hosts, s.paths),
+					resourceTypes: ["main_frame", "sub_frame"],
+				}
+			: { requestDomains: [...s.hosts], resourceTypes: ["main_frame", "sub_frame"] },
 	}));
 }
 

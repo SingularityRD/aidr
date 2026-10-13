@@ -27,7 +27,7 @@ import {
 	type TelemetryConfig,
 	type UserSettings,
 } from "../types.js";
-import { SITE_HOSTS } from "./dnr.js";
+import { SITE_HOSTS, SITE_PATHS } from "./dnr.js";
 import { sha256Hex } from "./sha256.js";
 
 const MIB = 1024 * 1024;
@@ -209,13 +209,15 @@ const isRetiredExampleDataset = (item: unknown): boolean =>
 				RETIRED_EXAMPLE_FINGERPRINTS.has(String(fp).trim().toLowerCase()),
 			)));
 
-const isDatasetKey = (raw: unknown): raw is string =>
-	typeof raw === "string" &&
-	!PLACEHOLDER_PATTERN.test(raw) &&
-	raw.length >= 16 &&
-	raw.length <= 1024 &&
-	raw.length % 4 === 0 &&
-	BASE64_PATTERN.test(raw);
+/**
+ * Lowest estimated entropy (bits) a dataset may declare for its weakest value. Below this, an
+ * endpoint holding the dataset key could enumerate the value space offline (a 7-digit customer
+ * number is about 23 bits, a TCKN about 30): such columns must be combined into composite values
+ * (name + number) or left to the built-in rules. Mirrors MIN_ENTROPY_BITS in
+ * scripts/fingerprint-dataset.mjs (asserted by build-tools.test.ts).
+ */
+export const EXACT_DATA_MIN_ENTROPY_BITS = 64;
+const MAX_ENTROPY_BITS = 4096;
 
 const isFingerprint = (raw: unknown): boolean => typeof raw === "string" && HEX64_PATTERN.test(raw);
 
@@ -223,12 +225,22 @@ const isFingerprint = (raw: unknown): boolean => typeof raw === "string" && HEX6
 function datasetFields(
 	item: unknown,
 ): (Omit<ExactDataSet, "fingerprints"> & { fingerprints: unknown[] }) | null {
-	if (!isPlainObject(item) || !hasExactKeys(item, ["datasetId", "keyB64", "fingerprints", "type"]))
+	if (
+		!isPlainObject(item) ||
+		!hasExactKeys(item, ["datasetId", "keySource", "minEntropyBits", "fingerprints", "type"])
+	)
 		return null;
-	const { datasetId, keyB64, fingerprints, type } = item;
+	const { datasetId, keySource, minEntropyBits, fingerprints, type } = item;
 	if (typeof datasetId !== "string" || !DATASET_ID_PATTERN.test(datasetId)) return null;
-	if (!isDatasetKey(keyB64) || !isEntityType(type) || !Array.isArray(fingerprints)) return null;
-	return { datasetId, keyB64, fingerprints, type };
+	if (keySource !== "native-host" || !isEntityType(type) || !Array.isArray(fingerprints))
+		return null;
+	if (
+		!Number.isSafeInteger(minEntropyBits) ||
+		(minEntropyBits as number) < EXACT_DATA_MIN_ENTROPY_BITS ||
+		(minEntropyBits as number) > MAX_ENTROPY_BITS
+	)
+		return null;
+	return { datasetId, keySource, minEntropyBits: minEntropyBits as number, fingerprints, type };
 }
 
 const exactData: Validator = (raw) => {
@@ -353,7 +365,13 @@ const HOSTNAME_PATTERN =
 	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 /** Labels must not carry control characters. */
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
-const BUILT_IN_HOSTS: ReadonlySet<string> = new Set(Object.values(SITE_HOSTS).flat());
+/** Hosts a built-in site runs on, shared hosts (Microsoft 365) included. */
+const BUILT_IN_HOSTS: ReadonlySet<string> = new Set([
+	...Object.values(SITE_HOSTS).flat(),
+	...Object.values(SITE_PATHS)
+		.flat()
+		.map((p) => p.host),
+]);
 
 /**
  * Normalises one configured custom-site host: a bare hostname or an `https://host[/]`
@@ -799,7 +817,16 @@ export function evaluatePolicy(
 
 	if (admin.present) switchOffUnlessManaged(merged, managedKeys);
 
-	if (merged.requireNativeNer === true) requireNativeHost(merged, managedKeys, warnings);
+	if (merged.requireNativeNer === true)
+		requireNativeHost(merged, managedKeys, warnings, '"requireNativeNer" is true');
+	// Dataset keys come only from the native host (see ExactDataSet).
+	if ((merged.exactData as readonly ExactDataSet[]).length > 0)
+		requireNativeHost(
+			merged,
+			managedKeys,
+			warnings,
+			'"exactData" needs the native host for its keys',
+		);
 
 	merged.version = 1;
 	merged.managedKeys = managedKeys;
@@ -807,13 +834,29 @@ export function evaluatePolicy(
 	return { policy: deepFreeze(merged as unknown as GuardPolicy), warnings };
 }
 
-/** Why a managed `exactData` value is refused outright (example placeholder or retired key). */
-function exampleDataRefusal(value: unknown): string | null {
+/**
+ * Why a managed `exactData` value is refused outright: the retired example key, an example
+ * placeholder, a dataset that carries its HMAC key in browser policy (readable by every user in
+ * chrome://policy, the registry or policies.json, which lets them enumerate the values), or a
+ * dataset whose values are too guessable to protect with a keyed hash.
+ */
+function exactDataRefusal(value: unknown): string | null {
 	if (!Array.isArray(value)) return null;
 	if (value.some(isRetiredExampleDataset))
 		return 'managed: "exactData" uses the retired example dataset key (crm-customers-example), which was published in the deployment examples and is compromised; ignored. Build each dataset with fingerprint-dataset.mjs and a fresh key';
 	if (value.some(isPlaceholderDataset))
 		return 'managed: "exactData" still holds the example placeholder key; ignored. Build each dataset with fingerprint-dataset.mjs';
+	if (value.some((item) => isPlainObject(item) && Object.hasOwn(item, "keyB64")))
+		return 'managed: "exactData" carries its HMAC key ("keyB64") in browser policy, which every user can read (chrome://policy, registry, policies.json); ignored. Rebuild each dataset with fingerprint-dataset.mjs --secret-file and install the secret in the native host configuration';
+	if (
+		value.some(
+			(item) =>
+				isPlainObject(item) &&
+				typeof item.minEntropyBits === "number" &&
+				item.minEntropyBits < EXACT_DATA_MIN_ENTROPY_BITS,
+		)
+	)
+		return `managed: "exactData" has a dataset whose values are below ${EXACT_DATA_MIN_ENTROPY_BITS} bits of estimated entropy and could be enumerated from its fingerprints; ignored. Use composite values (for example name + customer number)`;
 	return null;
 }
 
@@ -892,7 +935,7 @@ function mergeManagedKey(
 		warnings.push(`managed: unknown key "${key}" ignored`);
 		return;
 	}
-	const refusal = key === "exactData" ? exampleDataRefusal(value) : null;
+	const refusal = key === "exactData" ? exactDataRefusal(value) : null;
 	if (refusal) {
 		warnings.push(refusal);
 		policyErrors.push(key);
@@ -924,9 +967,10 @@ function requireNativeHost(
 	merged: Record<string, unknown>,
 	managedKeys: string[],
 	warnings: string[],
+	reason: string,
 ): void {
 	if (merged.useNativeHost !== true)
-		warnings.push('"useNativeHost" forced on because managed "requireNativeNer" is true');
+		warnings.push(`"useNativeHost" forced on because managed ${reason}`);
 	merged.useNativeHost = true;
 	if (!managedKeys.includes("useNativeHost")) managedKeys.push("useNativeHost");
 }

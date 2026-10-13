@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_POLICY,
+	EXACT_DATA_MIN_ENTROPY_BITS,
 	EXACT_DATA_PLACEHOLDER_KEY,
 	evaluatePolicy,
 	GUARD_MODES,
@@ -24,6 +25,10 @@ const open = (managed: Record<string, unknown>) => ({ ...managed, allowUserOverr
 const KEY = "c2VjcmV0LWtleS0xMjM0NTY3OA==";
 /** Keys every managed policy adds (pause and send-original off unless set). */
 const OFF = [...MANAGED_OFF_BY_DEFAULT_KEYS];
+/** Fields every managed dataset carries: the key comes from the native host (BG-8). */
+const NATIVE = { keySource: "native-host", minEntropyBits: 72 } as const;
+const NATIVE_FORCED =
+	'"useNativeHost" forced on because managed "exactData" needs the native host for its keys';
 
 describe("DEFAULT_POLICY", () => {
 	it("matches the documented defaults", () => {
@@ -218,7 +223,7 @@ describe("mergePolicy", () => {
 	it("enforces exact-data limits and normalises fingerprints", () => {
 		const ds = (id: string, n: number) => ({
 			datasetId: id,
-			keyB64: KEY,
+			...NATIVE,
 			fingerprints: Array.from({ length: n }, (_, i) => i.toString(16).padStart(64, "0")),
 			type: "PERSON",
 		});
@@ -227,7 +232,8 @@ describe("mergePolicy", () => {
 			undefined,
 		);
 		expect(ok.exactData[0]?.fingerprints).toEqual([HEX]);
-		expect(ok.managedKeys).toEqual(["exactData", ...OFF]);
+		expect(ok.managedKeys).toEqual(["exactData", ...OFF, "useNativeHost"]);
+		expect(ok.useNativeHost).toBe(true);
 		expect(ok.policyErrors).toEqual([]);
 		// 100k total is allowed; a dataset that would exceed it is dropped, the others stay.
 		const full = mergePolicy(open({ exactData: [ds("a", 50_000), ds("b", 50_000)] }), undefined);
@@ -240,7 +246,9 @@ describe("mergePolicy", () => {
 		expect(mergePolicy(open({ exactData: seventeen }), undefined).exactData).toHaveLength(16);
 		for (const bad of [
 			{ ...ds("x", 1), fingerprints: ["zz"] },
-			{ ...ds("x", 1), keyB64: "not base64!" },
+			{ ...ds("x", 1), keySource: "policy" },
+			{ ...ds("x", 1), minEntropyBits: 80.5 },
+			{ ...ds("x", 1), minEntropyBits: 5000 },
 			{ ...ds("x", 1), datasetId: "-bad" },
 			{ ...ds("x", 1), type: "NOPE" },
 		]) {
@@ -254,7 +262,7 @@ describe("mergePolicy", () => {
 	});
 
 	it("refuses the example placeholder exact-data key by name, never as a usable key", () => {
-		const real = { datasetId: "real", keyB64: KEY, fingerprints: [HEX], type: "PERSON" };
+		const real = { datasetId: "real", ...NATIVE, fingerprints: [HEX], type: "PERSON" };
 		const placeholder = {
 			datasetId: "crm-customers-example",
 			keyB64: EXACT_DATA_PLACEHOLDER_KEY,
@@ -285,14 +293,14 @@ describe("mergePolicy", () => {
 		}
 		// Once replaced, the dataset is accepted without warnings.
 		const replaced = evaluatePolicy({ exactData: [real] }, undefined);
-		expect(replaced.warnings).toEqual([]);
+		expect(replaced.warnings).toEqual([NATIVE_FORCED]);
 		expect(replaced.policy.exactData).toEqual([real]);
 	});
 
 	it("refuses the retired example dataset (published key or its fingerprints) by name", () => {
 		const warning =
 			'managed: "exactData" uses the retired example dataset key (crm-customers-example), which was published in the deployment examples and is compromised; ignored. Build each dataset with fingerprint-dataset.mjs and a fresh key';
-		const real = { datasetId: "real", keyB64: KEY, fingerprints: [HEX], type: "PERSON" };
+		const real = { datasetId: "real", ...NATIVE, fingerprints: [HEX], type: "PERSON" };
 		// The retired key itself is never kept in the repository (only its SHA-256), so the
 		// example's fingerprints, which shipped with it, stand in for it here.
 		const retired = {
@@ -308,7 +316,47 @@ describe("mergePolicy", () => {
 			expect(evaluation.policy.managedKeys).not.toContain("exactData");
 			expect(evaluation.policy.mode).toBe("block");
 		}
-		expect(evaluatePolicy({ exactData: [real] }, undefined).warnings).toEqual([]);
+		expect(evaluatePolicy({ exactData: [real] }, undefined).warnings).toEqual([NATIVE_FORCED]);
+	});
+
+	it("refuses a dataset that carries its HMAC key in browser policy (BG-8)", () => {
+		// chrome://policy, the registry and policies.json show managed values to every user; with
+		// the key a user can enumerate the fingerprinted values offline.
+		const keyed = {
+			datasetId: "crm",
+			keyB64: KEY,
+			fingerprints: [HEX],
+			type: "PERSON",
+		};
+		for (const item of [keyed, { ...keyed, ...NATIVE }]) {
+			const evaluation = evaluatePolicy({ mode: "block", exactData: [item] }, undefined);
+			expect(evaluation.warnings).toEqual([
+				'managed: "exactData" carries its HMAC key ("keyB64") in browser policy, which every user can read (chrome://policy, registry, policies.json); ignored. Rebuild each dataset with fingerprint-dataset.mjs --secret-file and install the secret in the native host configuration',
+			]);
+			expect(evaluation.policy.exactData).toEqual([]);
+			expect(evaluation.policy.mode).toBe("block");
+			expect(JSON.stringify(evaluation.policy)).not.toContain(KEY);
+		}
+	});
+
+	it("refuses a low-entropy dataset by name (BG-8)", () => {
+		expect(EXACT_DATA_MIN_ENTROPY_BITS).toBe(64);
+		const weak = {
+			datasetId: "acct",
+			...NATIVE,
+			minEntropyBits: 23,
+			fingerprints: [HEX],
+			type: "BANK_ACCOUNT",
+		};
+		const evaluation = evaluatePolicy({ exactData: [weak] }, undefined);
+		expect(evaluation.warnings).toEqual([
+			'managed: "exactData" has a dataset whose values are below 64 bits of estimated entropy and could be enumerated from its fingerprints; ignored. Use composite values (for example name + customer number)',
+		]);
+		expect(evaluation.policy.exactData).toEqual([]);
+		const strong = evaluatePolicy({ exactData: [{ ...weak, minEntropyBits: 64 }] }, undefined);
+		expect(strong.policy.exactData).toHaveLength(1);
+		expect(strong.policy.useNativeHost).toBe(true);
+		expect(strong.policy.managedKeys).toContain("useNativeHost");
 	});
 
 	it("hashes like SHA-256 (the retired-key check compares digests)", () => {
@@ -599,7 +647,9 @@ describe("static/managed_schema.json", () => {
 		expect(pattern((exact.fingerprints?.items as { pattern: string }).pattern).test(HEX)).toBe(
 			true,
 		);
-		expect(pattern(exact.keyB64?.pattern).test(KEY)).toBe(true);
+		expect(exact.keyB64).toBeUndefined();
+		expect(exact.keySource?.enum).toEqual(["native-host"]);
+		expect(exact.minEntropyBits?.minimum).toBe(EXACT_DATA_MIN_ENTROPY_BITS);
 		const literal = (props.literals?.items as { properties: Record<string, { pattern: string }> })
 			.properties;
 		expect(pattern(literal.value?.pattern).test("a")).toBe(false);

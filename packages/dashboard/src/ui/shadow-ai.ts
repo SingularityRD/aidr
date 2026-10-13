@@ -18,6 +18,7 @@ export const SHADOW_AI_SERVICES: Readonly<Record<string, { name: string; categor
 	gemini: { name: "Google Gemini", category: "chat" },
 	claude: { name: "Claude", category: "chat" },
 	copilot: { name: "Microsoft Copilot", category: "chat" },
+	"m365-copilot": { name: "Microsoft 365 Copilot Chat", category: "chat" },
 	perplexity: { name: "Perplexity", category: "search" },
 	deepseek: { name: "DeepSeek", category: "chat" },
 	mistral: { name: "Mistral Le Chat", category: "chat" },

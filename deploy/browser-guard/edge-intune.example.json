@@ -83,7 +83,7 @@
       },
       "exactData": {
         "type": "REG_SZ",
-        "value": "[{\"datasetId\":\"crm-customers-example\",\"keyB64\":\"REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET\",\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
+        "value": "[{\"datasetId\":\"crm-customers-example\",\"keySource\":\"native-host\",\"minEntropyBits\":64,\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
       },
       "detectSignals": {
         "type": "REG_DWORD",

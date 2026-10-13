@@ -14,7 +14,7 @@ const EXPECTED_HOSTS: Readonly<Record<Exclude<SiteId, "other" | "custom">, reado
 	chatgpt: ["chatgpt.com", "chat.openai.com"],
 	gemini: ["gemini.google.com"],
 	claude: ["claude.ai"],
-	copilot: ["copilot.microsoft.com"],
+	copilot: ["copilot.microsoft.com", "m365.cloud.microsoft", "copilot.cloud.microsoft"],
 	perplexity: ["www.perplexity.ai", "perplexity.ai"],
 	deepseek: ["chat.deepseek.com"],
 	mistral: ["chat.mistral.ai"],
@@ -66,6 +66,10 @@ describe("adapterForUrl", () => {
 		"https://claude.ai.evil.io/",
 		"https://fakeclaude.ai/",
 		"https://copilot.microsoft.com.evil.com/",
+		"https://m365.cloud.microsoft.evil.com/chat",
+		"https://evil.m365.cloud.microsoft/chat",
+		"https://cloud.microsoft/chat",
+		"https://www.office.com/chat",
 		"https://github.com/features/copilot",
 		"https://evil-perplexity.ai/",
 		"https://labs.perplexity.ai/",
@@ -252,6 +256,36 @@ describe("selectors against representative markup", () => {
 			`<textarea placeholder="x"></textarea><div id="ask-input" contenteditable="true" data-lexical-editor="true"></div>`,
 		);
 		expect(el?.id).toBe("ask-input");
+	});
+
+	it("Microsoft 365 Copilot Chat: its composer, send button and turns outrank other fields (BG-10)", () => {
+		const copilot = adapterById("copilot");
+		// The Microsoft 365 home also has a search textarea with a placeholder; the
+		// consumer fallback `textarea[placeholder]` must not win over the chat composer.
+		const html = `<textarea id="search" placeholder="Search"></textarea>
+			<div data-testid="chat-turn-user-message" id="u">hi</div>
+			<div data-testid="markdown-reply" id="a">answer</div>
+			<span id="m365-chat-editor-target-element" contenteditable="true" role="textbox" data-lexical-editor="true"></span>
+			<button class="fai-SendButton" aria-label="Send" id="send"></button>
+			<button type="submit" id="search-go"></button>`;
+		expect(firstMatch(copilot.editorSelectors, html)?.id).toBe("m365-chat-editor-target-element");
+		expect(firstMatch(copilot.sendButtonSelectors, html)?.id).toBe("send");
+		expect(firstMatch(copilot.responseSelectors, html)?.id).toBe("a");
+		expect(firstMatch(copilot.userMessageSelectors, html)?.id).toBe("u");
+		for (const url of [
+			"https://m365.cloud.microsoft/chat",
+			"https://m365.cloud.microsoft/chat/?auth=2",
+			"https://copilot.cloud.microsoft/",
+		])
+			expect(adapterForUrl(url)).toBe(copilot);
+	});
+
+	it("consumer Copilot keeps its own composer", () => {
+		const copilot = adapterById("copilot");
+		const html = `<textarea id="userInput" placeholder="Message Copilot"></textarea>
+			<button data-testid="submit-button" id="s"></button>`;
+		expect(firstMatch(copilot.editorSelectors, html)?.id).toBe("userInput");
+		expect(firstMatch(copilot.sendButtonSelectors, html)?.id).toBe("s");
 	});
 
 	it("Grok separates assistant and user turns", () => {

@@ -91,6 +91,7 @@ describe("policy: customSites", () => {
 		["single label", [{ ...INTERNAL, hosts: ["intranet"] }]],
 		["IP address", [{ ...INTERNAL, hosts: ["10.0.0.5"] }]],
 		["built-in host", [{ ...INTERNAL, hosts: ["chatgpt.com"] }]],
+		["shared Microsoft 365 host", [{ ...INTERNAL, hosts: ["m365.cloud.microsoft"] }]],
 		["no hosts", [{ ...INTERNAL, hosts: [] }]],
 		[
 			"too many hosts",
@@ -283,6 +284,30 @@ describe("Shadow AI rules", () => {
 		expect(rules[0]?.condition.requestDomains).toEqual(["poe.com"]);
 		expect(new Set(SHADOW_DNR_RULE_IDS).size).toBe(AI_SERVICES.length);
 	});
+
+	it("blocks Microsoft 365 Copilot Chat on its host and /chat path, not the rest of Microsoft 365 (BG-10)", () => {
+		const [rule] = buildShadowRules(policy({ blocked: ["m365-copilot"] }));
+		expect(rule?.condition.requestDomains).toBeUndefined();
+		expect(rule?.condition.resourceTypes).toEqual(["main_frame", "sub_frame"]);
+		const filter = new RegExp(rule?.condition.regexFilter ?? "^$");
+		for (const url of [
+			"https://m365.cloud.microsoft/chat",
+			"https://m365.cloud.microsoft/chat/",
+			"https://m365.cloud.microsoft/chat?auth=2",
+			"https://copilot.cloud.microsoft/",
+			"https://eu.copilot.cloud.microsoft/x",
+		])
+			expect(filter.test(url), url).toBe(true);
+		for (const url of [
+			"https://m365.cloud.microsoft/",
+			"https://m365.cloud.microsoft/apps",
+			"https://m365.cloud.microsoft/chatter",
+			"https://evil.test/m365.cloud.microsoft/chat",
+			"https://copilot.cloud.microsoft.evil.test/",
+			"https://notcopilot.cloud.microsoft/",
+		])
+			expect(filter.test(url), url).toBe(false);
+	});
 });
 
 describe("ShadowAiUsageStore", () => {
@@ -377,7 +402,7 @@ describe("worker: Shadow AI", () => {
 			SHADOW_DNR_RULE_IDS.includes(r.id),
 		);
 		expect(installed).toHaveLength(AI_SERVICES.length - 1);
-		expect(installed.some((r) => r.condition.requestDomains.includes("chatgpt.com"))).toBe(false);
+		expect(installed.some((r) => r.condition.requestDomains?.includes("chatgpt.com"))).toBe(false);
 
 		t.navigate(7, "https://poe.com/chat/abc?x=1");
 		await vi.waitFor(() =>

@@ -5,12 +5,26 @@
  * page. Without the host every scan still works rules-only: `scanText` resolves to
  * `null` and callers keep their local findings.
  *
- * Protocol (packages/privacy/src/native/session.ts, one document per host process):
- *   hello  -> {protocol:1, local:true, ocr, policyId, policyDigest}
+ * One persistent host process: the bridge opens one native-messaging port and keeps it, so
+ * the host process and its NER worker (model loaded once) serve every scan instead of a new
+ * process per scan. Scans are queued on that connection (one document at a time, at most
+ * MAX_QUEUED waiting); each keeps its own deadline. The host is started in advance by
+ * `status()` (the popup and policy load call it) with a longer start-up budget
+ * (NATIVE_CONNECT_TIMEOUT_MS), so the first prompt does not pay for the cold start. A scan
+ * that times out mid-exchange, or any protocol error, ends the connection (fail closed: the
+ * caller gets `null`) and the next scan starts a new host. An idle host exits by itself
+ * (15 minutes, packages/privacy/src/native/host.ts) and is restarted on demand.
+ *
+ * Protocol (packages/privacy/src/native/session.ts):
+ *   hello  {persistent:true} -> {protocol:1, local:true, ocr, policyId, policyDigest, persistent:true}
+ *     An older host refuses the `persistent` field (it exits): the bridge then falls back to a
+ *     plain hello and one host process per document, as before.
  *   begin  {kind:"text", size, sha256, policyDigest} -> {}
  *   write  {offset, data:base64(<=192 KiB)}           -> {received}
  *   commit                                            -> {decision, reasons, counts, outputBytes, sha256, ...}
  *   read   {offset}                                   -> {offset, data, done}
+ *   edm-keys {datasetIds}                            -> {keys: {datasetId: base64}}
+ *     Per-dataset exact-data keys derived from the host's EDM secret (packages/privacy/src/native/edm.ts).
  * Every request carries `{v:1, id, op}`; every response echoes `{v:1, id, ok:true}`.
  * The host returns a sanitised copy of the text, not spans, so findings are recovered
  * by aligning the host output (literal text + `[TYPE]` markers) against the input.
@@ -41,8 +55,10 @@ import {
 } from "../types.js";
 
 export const NATIVE_HOST_NAME = "com.singularity.aidr_privacy";
-/** Upper bound for one complete scan exchange (connect, handshake, upload, commit, read). */
+/** Upper bound for one scan on a running host (queueing, upload, commit, read). */
 export const NATIVE_TIMEOUT_MS = 2_000;
+/** Upper bound for starting the host and its hello: a process start plus the NER model load. */
+export const NATIVE_CONNECT_TIMEOUT_MS = 15_000;
 /** After repeated failures (or a failed probe) the host is not contacted for this long. */
 export const NATIVE_RETRY_AFTER_MS = 60_000;
 /** Consecutive scan failures that mark the host unavailable. */
@@ -57,8 +73,14 @@ const NATIVE_MAX_TEXT_BYTES = 1_048_576;
 const MAX_OUTPUT_BYTES = 2 * NATIVE_MAX_TEXT_BYTES;
 /** The host does not export per-span scores; its redactions are policy decisions. */
 const NATIVE_FINDING_SCORE = 0.9;
-/** Each scan starts its own host process; cap concurrent processes. */
-const MAX_IN_FLIGHT = 2;
+/** Scans waiting for (or running on) the one host connection; more are answered `null` at once. */
+export const NATIVE_MAX_QUEUED = 8;
+const MAX_QUEUED = NATIVE_MAX_QUEUED;
+/** `edm-keys` request limits (the host's own limits, packages/privacy/src/native/session.ts). */
+const MAX_KEY_REQUEST = 16;
+const DATASET_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+/** A 32-byte HMAC-SHA256 key in canonical base64. */
+const EDM_KEY_B64 = /^[A-Za-z0-9+/]{43}=$/;
 
 const HEX64 = /^[a-f0-9]{64}$/;
 const REASON_CODE = /^[A-Z0-9_]{1,64}$/;
@@ -83,7 +105,6 @@ export interface NativePort {
 export interface NativeChromeApi {
 	readonly runtime?: {
 		connectNative?(application: string): NativePort;
-		sendNativeMessage?(application: string, message: object): Promise<unknown>;
 		readonly lastError?: unknown;
 	};
 	readonly permissions?: {
@@ -96,6 +117,7 @@ export interface NativeBridgeOptions {
 	readonly chrome?: NativeChromeApi;
 	readonly timeoutMs?: number;
 	readonly imageTimeoutMs?: number;
+	readonly connectTimeoutMs?: number;
 	readonly retryAfterMs?: number;
 	readonly now?: () => number;
 }
@@ -105,6 +127,8 @@ type Json = Record<string, unknown>;
 interface Hello {
 	readonly policyDigest: string;
 	readonly ocr: boolean;
+	/** The host acknowledged `persistent` (it serves many documents on this connection). */
+	readonly persistent: boolean;
 }
 
 interface Commit {
@@ -127,6 +151,11 @@ type Outcome =
 type ImageOutcome =
 	| { readonly kind: "inspection"; readonly inspection: ImageInspection }
 	| { readonly kind: "unavailable" }
+	| { readonly kind: "failure" };
+
+/** `keys: null`: the host is an older one that cannot derive keys. */
+type KeysOutcome =
+	| { readonly kind: "keys"; readonly keys: Readonly<Record<string, string>> | null }
 	| { readonly kind: "failure" };
 
 const FAILURE = Object.freeze({ kind: "failure" as const });
@@ -171,11 +200,12 @@ function isWellFormed(text: string): boolean {
 }
 
 function parseHello(m: Json): Hello {
-	onlyKeys(m, ["protocol", "local", "ocr", "policyId", "policyDigest"]);
+	onlyKeys(m, ["protocol", "local", "ocr", "policyId", "policyDigest", "persistent"]);
 	if (m.protocol !== 1 || m.local !== true || typeof m.ocr !== "boolean") invalid();
 	if (typeof m.policyId !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/.test(m.policyId)) invalid();
 	if (typeof m.policyDigest !== "string" || !HEX64.test(m.policyDigest)) invalid();
-	return { policyDigest: m.policyDigest, ocr: m.ocr };
+	if (m.persistent !== undefined && m.persistent !== true) invalid();
+	return { policyDigest: m.policyDigest, ocr: m.ocr, persistent: m.persistent === true };
 }
 
 function parseCounts(value: unknown): Partial<Record<EntityType, number>> {
@@ -402,19 +432,29 @@ export function recoverNativeFindings(
 	return widestSpans(markers, literals, earliest, latest);
 }
 
-/** One host process, one outstanding request at a time (as packages/privacy's client). */
+/** Why a session ended: the host sent something other than the pending reply (`refused`), or it went away. */
+class SessionClosed extends Error {
+	readonly refused: boolean;
+	constructor(refused: boolean) {
+		super("NATIVE_UNAVAILABLE");
+		this.refused = refused;
+	}
+}
+
+/** One host connection, one outstanding request at a time (as packages/privacy's client). */
 function openSession(api: NativeChromeApi, connect: (application: string) => NativePort) {
 	const port = connect(NATIVE_HOST_NAME);
 	let pending: { id: string; resolve: (m: Json) => void; reject: (e: Error) => void } | undefined;
 	let closed = false;
-	const fail = () => {
+	const fail = (refused: boolean) => {
 		closed = true;
 		const p = pending;
 		pending = undefined;
-		p?.reject(new Error("NATIVE_UNAVAILABLE"));
+		p?.reject(new SessionClosed(refused));
 	};
-	const close = () => {
-		fail();
+	const end = (refused: boolean) => {
+		if (closed) return;
+		fail(refused);
 		try {
 			port.disconnect();
 		} catch {
@@ -424,12 +464,12 @@ function openSession(api: NativeChromeApi, connect: (application: string) => Nat
 	port.onDisconnect.addListener(() => {
 		// Reading lastError marks it handled; its text is never surfaced.
 		void api.runtime?.lastError;
-		fail();
+		fail(false);
 	});
 	port.onMessage.addListener((m: unknown) => {
 		const p = pending;
 		if (!p || !isRecord(m) || m.v !== 1 || m.id !== p.id || m.ok !== true) {
-			close();
+			end(true);
 			return;
 		}
 		pending = undefined;
@@ -438,7 +478,7 @@ function openSession(api: NativeChromeApi, connect: (application: string) => Nat
 	const rpc = (op: string, payload: Json = {}): Promise<Json> =>
 		new Promise((resolve, reject) => {
 			if (closed || pending) {
-				reject(new Error("NATIVE_UNAVAILABLE"));
+				reject(new SessionClosed(false));
 				return;
 			}
 			const id = crypto.randomUUID();
@@ -446,13 +486,21 @@ function openSession(api: NativeChromeApi, connect: (application: string) => Nat
 			try {
 				port.postMessage({ v: 1, id, op, ...payload });
 			} catch {
-				close();
+				end(false);
 			}
 		});
-	return { rpc, close };
+	return { rpc, close: () => end(false), isClosed: () => closed };
 }
 
 type Session = ReturnType<typeof openSession>;
+
+/** A host process after a successful hello. */
+interface Connection {
+	readonly session: Session;
+	readonly hello: Hello;
+	/** The host keeps serving documents on this connection (it acknowledged `persistent`). */
+	readonly persistent: boolean;
+}
 
 /** Streams the input in host-sized chunks; every acknowledgement must match exactly. */
 async function upload(session: Session, bytes: Uint8Array): Promise<void> {
@@ -480,7 +528,7 @@ async function download(session: Session, output: Uint8Array): Promise<void> {
 }
 
 async function runScan(
-	session: Session,
+	{ session, hello }: Connection,
 	text: string,
 	offset: number,
 	isOpen: () => boolean,
@@ -489,7 +537,6 @@ async function runScan(
 	const bytes = new TextEncoder().encode(text);
 	let output: Uint8Array | undefined;
 	try {
-		const hello = parseHello(await session.rpc("hello"));
 		const inputHash = await sha256(bytes);
 		const begun = await session.rpc("begin", {
 			kind: "text",
@@ -533,13 +580,12 @@ async function runScan(
 }
 
 async function runImageScan(
-	session: Session,
+	{ session, hello }: Connection,
 	bytes: Uint8Array,
 	isOpen: () => boolean,
 	requireNer = false,
 ): Promise<ImageOutcome> {
 	try {
-		const hello = parseHello(await session.rpc("hello"));
 		if (!hello.ocr) return { kind: "unavailable" };
 		const begun = await session.rpc("begin", {
 			kind: "image-scan",
@@ -556,16 +602,36 @@ async function runImageScan(
 	}
 }
 
+/** Keys returned by `edm-keys`: only requested ids, each 32 bytes of canonical base64. */
+function parseKeys(raw: unknown, requested: readonly string[]): Record<string, string> {
+	if (!isRecord(raw)) invalid();
+	const keys: Record<string, string> = {};
+	for (const [id, key] of Object.entries(raw)) {
+		if (!requested.includes(id) || typeof key !== "string" || !EDM_KEY_B64.test(key)) invalid();
+		keys[id] = key;
+	}
+	return keys;
+}
+
+async function runKeyRequest(
+	{ session, persistent }: Connection,
+	datasetIds: readonly string[],
+): Promise<KeysOutcome> {
+	// An older (one-document) host does not know `edm-keys` and would exit on it.
+	if (!persistent) return { kind: "keys", keys: null };
+	try {
+		const reply = await session.rpc("edm-keys", { datasetIds: [...datasetIds] });
+		onlyKeys(reply, ["keys"]);
+		return { kind: "keys", keys: parseKeys(reply.keys, datasetIds) };
+	} catch {
+		return FAILURE;
+	}
+}
+
 interface HostInput {
 	readonly body: string;
 	/** UTF-16 offset of `body` in the caller's text (1 when a leading BOM was dropped). */
 	readonly offset: number;
-}
-
-/** Per-scan state shared with the timeout handler. */
-interface RunState {
-	open: boolean;
-	session: Session | undefined;
 }
 
 /**
@@ -585,12 +651,20 @@ function defaultChrome(): NativeChromeApi | undefined {
 	return (globalThis as unknown as { chrome?: NativeChromeApi }).chrome;
 }
 
+/**
+ * Results of one queued exchange besides the exchange's own outcome. `waiting`: the deadline
+ * passed before the exchange started (the host was still starting, or earlier scans were
+ * queued); `busy`: the queue was full. Neither says anything about the host's health.
+ */
+type Interrupted = "denied" | "timeout" | "waiting" | "busy" | "unavailable" | "abandoned";
+
 export function createNativeBridge(
 	enabled: boolean,
 	options: NativeBridgeOptions = {},
 ): NativeBridge {
 	const timeoutMs = options.timeoutMs ?? NATIVE_TIMEOUT_MS;
 	const imageTimeoutMs = options.imageTimeoutMs ?? NATIVE_IMAGE_TIMEOUT_MS;
+	const connectTimeoutMs = options.connectTimeoutMs ?? NATIVE_CONNECT_TIMEOUT_MS;
 	const retryAfterMs = options.retryAfterMs ?? NATIVE_RETRY_AFTER_MS;
 	const now = options.now ?? (() => Date.now());
 	const api = (): NativeChromeApi | undefined => options.chrome ?? defaultChrome();
@@ -599,7 +673,14 @@ export function createNativeBridge(
 	let failures = 0;
 	let retryAt = 0;
 	let probing = false;
-	let inFlight = 0;
+	/** The live host connection, and the pending attempt to make one. */
+	let live: Connection | null = null;
+	let connecting: Promise<Connection | null> | null = null;
+	/** Set once a host refused `hello {persistent}`: it is an older one-document host. */
+	let legacyHost = false;
+	/** Exchanges run one after another on the one connection. */
+	let chain: Promise<unknown> = Promise.resolve();
+	let queued = 0;
 
 	const backOff = () => {
 		state = "unavailable";
@@ -645,97 +726,138 @@ export function createNativeBridge(
 		}
 	};
 
-	/** One hello round trip; sendNativeMessage when available, else a short-lived port. */
-	const helloReply = async (chrome: NativeChromeApi): Promise<unknown> => {
+	/** Ends a connection; the next exchange starts a new host. */
+	const drop = (conn: Connection | undefined) => {
+		if (!conn) return;
+		conn.session.close();
+		if (live === conn) live = null;
+	};
+
+	/** Starts a host (cold start: process plus NER model) and completes the hello handshake. */
+	const handshake = async (chrome: NativeChromeApi, persistent: boolean): Promise<Connection> => {
 		const runtime = chrome.runtime;
-		const send = runtime?.sendNativeMessage;
-		if (send) {
-			const id = crypto.randomUUID();
-			const answer = Promise.resolve(
-				send.call(runtime, NATIVE_HOST_NAME, { v: 1, id, op: "hello" }),
-			);
-			answer.catch(() => {});
-			const reply = await bounded(answer, () => {});
-			if (!isRecord(reply) || reply.v !== 1 || reply.id !== id || reply.ok !== true) invalid();
-			return reply;
-		}
 		const connect = runtime?.connectNative;
 		if (!connect) invalid();
 		const session = openSession(chrome, (name) => connect.call(runtime, name));
-		const answer = session.rpc("hello");
-		answer.catch(() => {});
 		try {
-			return await bounded(answer, session.close);
-		} finally {
+			const answer = session.rpc("hello", persistent ? { persistent: true } : {});
+			const reply = await bounded(answer, session.close, connectTimeoutMs);
+			if (reply === "timeout") throw new SessionClosed(false);
+			const hello = parseHello(reply);
+			if (persistent !== hello.persistent) invalid();
+			return { session, hello, persistent };
+		} catch (error) {
 			session.close();
+			throw error;
 		}
 	};
 
-	const probe = async (): Promise<void> => {
+	const establish = async (
+		onFailure: () => void,
+		onSuccess: () => void,
+	): Promise<Connection | null> => {
 		const chrome = api();
-		try {
-			if (!chrome || !(await permitted(chrome))) return backOff();
-			const reply = await helloReply(chrome);
-			if (!isRecord(reply)) invalid();
-			parseHello(reply);
-			healthy();
-		} catch {
+		if (!chrome || !(await permitted(chrome))) {
 			backOff();
+			return null;
 		}
-	};
-
-	/** Permission check, a fresh host process and `exchange` on it. */
-	const attempt = async <T>(
-		run: RunState,
-		exchange: (session: Session, isOpen: () => boolean) => Promise<T | typeof FAILURE>,
-	): Promise<T | typeof FAILURE | "denied"> => {
-		const chrome = api();
-		if (!(await permitted(chrome))) return "denied";
-		const runtime = chrome?.runtime;
-		const connect = runtime?.connectNative;
-		if (!chrome || !connect) return "denied";
-		if (!run.open) return FAILURE;
 		try {
-			run.session = openSession(chrome, (name) => connect.call(runtime, name));
+			let conn: Connection;
+			try {
+				conn = await handshake(chrome, !legacyHost);
+			} catch (error) {
+				// An older host refuses the `persistent` field and exits: one host per scan, as before.
+				if (legacyHost || !(error instanceof SessionClosed) || !error.refused) throw error;
+				legacyHost = true;
+				conn = await handshake(chrome, false);
+			}
+			live = conn;
+			onSuccess();
+			return conn;
 		} catch {
-			return FAILURE;
+			onFailure();
+			return null;
 		}
-		return exchange(run.session, () => run.open);
 	};
 
-	/** One bounded host exchange (one deadline covers the permission check too). */
-	const guarded = async <T>(
+	/**
+	 * The live connection, or a new one (one attempt at a time, shared by every caller). The
+	 * probe treats a started host as healthy; a scan only marks it connected and leaves the
+	 * failure count to the scan's own outcome.
+	 */
+	const connection = (onFailure: () => void, onSuccess: () => void): Promise<Connection | null> => {
+		if (live && !live.session.isClosed()) return Promise.resolve(live);
+		live = null;
+		connecting ??= establish(onFailure, onSuccess).finally(() => {
+			connecting = null;
+		});
+		return connecting;
+	};
+
+	/** Starts (and keeps) the host so the first scan does not pay for its start-up. */
+	const probe = async (): Promise<void> => {
+		await connection(backOff, healthy);
+	};
+
+	/**
+	 * Runs `run` on the persistent connection after the exchanges queued before it, within
+	 * `limitMs` from now. A timeout during the exchange ends the connection (its protocol state
+	 * is unknown); a timeout while queued or while the host starts does not.
+	 */
+	const exchange = async <T>(
 		limitMs: number,
-		exchange: (session: Session, isOpen: () => boolean) => Promise<T | typeof FAILURE>,
-	): Promise<T | typeof FAILURE | "denied" | "timeout"> => {
-		inFlight++;
-		const run: RunState = { open: true, session: undefined };
-		const stop = () => {
-			run.open = false;
-			run.session?.close();
-		};
+		run: (conn: Connection, isOpen: () => boolean) => Promise<T | typeof FAILURE>,
+	): Promise<T | typeof FAILURE | Interrupted> => {
+		if (queued >= MAX_QUEUED) return "busy";
+		queued++;
+		const job = { open: true, conn: undefined as Connection | undefined };
 		try {
-			return await bounded(attempt(run, exchange), stop, limitMs);
+			if (!(await permitted(api()))) return "denied";
+			const task = chain.then(async (): Promise<T | typeof FAILURE | Interrupted> => {
+				if (!job.open) return "abandoned";
+				const conn = await connection(failed, () => {
+					state = "connected";
+				});
+				if (!conn) return "unavailable";
+				if (!job.open) return "abandoned";
+				job.conn = conn;
+				const outcome = await run(conn, () => job.open);
+				// A failed exchange leaves the host in an unknown state; an older host serves one document.
+				if (outcome === FAILURE || !conn.persistent || !job.open) drop(conn);
+				return outcome;
+			});
+			chain = task.catch(() => undefined);
+			const result = await bounded(
+				task,
+				() => {
+					job.open = false;
+					drop(job.conn);
+				},
+				limitMs,
+			);
+			if (result === "timeout") return job.conn ? "timeout" : "waiting";
+			return result;
 		} finally {
-			stop();
-			inFlight--;
+			job.open = false;
+			queued--;
 		}
 	};
 
 	/** Applies an exchange's outcome to the health state; the outcome when the host answered. */
 	const settle = <T extends { readonly kind: string }>(
-		outcome: T | "denied" | "timeout",
+		outcome: T | typeof FAILURE | Interrupted,
 	): T | null => {
-		if (outcome === "denied") {
-			backOff();
+		if (typeof outcome === "string") {
+			if (outcome === "denied") backOff();
+			else if (outcome === "timeout") failed();
 			return null;
 		}
-		if (outcome === "timeout" || outcome.kind === "failure") {
+		if (outcome.kind === "failure") {
 			failed();
 			return null;
 		}
 		healthy();
-		return outcome;
+		return outcome as T;
 	};
 
 	return {
@@ -758,11 +880,10 @@ export function createNativeBridge(
 			const input = prepareInput(text);
 			if (!input) return null;
 			if (!input.body.length) return [];
-			if (inFlight >= MAX_IN_FLIGHT) return null;
 			try {
 				const outcome = settle<Outcome>(
-					await guarded(timeoutMs, (session, isOpen) =>
-						runScan(session, input.body, input.offset, isOpen, options.requireNer === true),
+					await exchange(timeoutMs, (conn, isOpen) =>
+						runScan(conn, input.body, input.offset, isOpen, options.requireNer === true),
 					),
 				);
 				return outcome?.kind === "findings" ? outcome.findings : null;
@@ -779,14 +900,32 @@ export function createNativeBridge(
 			if (!enabled || inBackoff()) return null;
 			if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > NATIVE_MAX_IMAGE_BYTES)
 				return null;
-			if (inFlight >= MAX_IN_FLIGHT) return null;
 			try {
 				const outcome = settle<ImageOutcome>(
-					await guarded(imageTimeoutMs, (session, isOpen) =>
-						runImageScan(session, bytes, isOpen, options.requireNer === true),
+					await exchange(imageTimeoutMs, (conn, isOpen) =>
+						runImageScan(conn, bytes, isOpen, options.requireNer === true),
 					),
 				);
 				return outcome?.kind === "inspection" ? outcome.inspection : null;
+			} catch {
+				failed();
+				return null;
+			}
+		},
+
+		async exactDataKeys(
+			datasetIds: readonly string[],
+		): Promise<Readonly<Record<string, string>> | null> {
+			if (!enabled || inBackoff()) return null;
+			const ids = [...new Set(datasetIds)];
+			if (!ids.length || ids.length > MAX_KEY_REQUEST || !ids.every((id) => DATASET_ID.test(id)))
+				return null;
+			try {
+				const outcome = settle<KeysOutcome>(
+					// Usually the first exchange after a policy load: allow for the host's start-up.
+					await exchange(connectTimeoutMs, (conn) => runKeyRequest(conn, ids)),
+				);
+				return outcome?.kind === "keys" ? outcome.keys : null;
 			} catch {
 				failed();
 				return null;

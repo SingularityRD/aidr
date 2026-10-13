@@ -89,7 +89,8 @@ export const MAX_PRIVACY_POLICY_ERRORS = 64;
  * well-formed id this server does not know yet is filed under "other".
  */
 export const SHADOW_AI_SERVICE_CATEGORIES: Readonly<Record<string, string>> = {
-	chatgpt: "chat", gemini: "chat", claude: "chat", copilot: "chat", perplexity: "search",
+	chatgpt: "chat", gemini: "chat", claude: "chat", copilot: "chat", "m365-copilot": "chat",
+	perplexity: "search",
 	deepseek: "chat", mistral: "chat", grok: "chat", poe: "chat", "character-ai": "chat",
 	huggingface: "chat", "meta-ai": "chat", pi: "chat", "duck-ai": "chat", kimi: "chat",
 	qwen: "chat", doubao: "chat", ernie: "chat", chatglm: "chat", yuanbao: "chat",
