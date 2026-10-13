@@ -2,7 +2,7 @@
 
 Yerel Türkçe/İngilizce PII ve sır kontrolü, ekran görüntüsü maskeleme, yapılandırılmış dosya temizleme ve **Chrome Manifest V3 AI Privacy Guard**.
 
-**[Eklenti kurulumu ve API](docs/BROWSER.md)** · **[Güncel test raporu](reports/browser/TEST_REPORT.md)** · **[Eklenenler ve üretim kabul kapıları](docs/BROWSER_GAPS_AND_GATES.md)** · **[Görsel motoru](docs/VISUAL.md)**
+**[Eklenti kurulumu ve API](BROWSER.md)** · **[Güncel test raporu](../reports/browser/TEST_REPORT.md)** · **[Eklenenler ve üretim kabul kapıları](BROWSER_GAPS_AND_GATES.md)** · **[Görsel motoru](VISUAL.md)**
 
 ## Neler eklendi?
 
@@ -47,7 +47,7 @@ const csv = await protectDocument(
 if (csv.output === null) throw new Error('AIDR_DOCUMENT_DENIED');
 ```
 
-BrowserPrivacyEngine kurallı çekirdektir, gerçek NER modeli değildir. Tam Node motoru (`@singularityrd/aidr-privacy`) önceki NER/HMAC/JSON/atomic text özelliklerini korur. Görsel modülü `@singularityrd/aidr-privacy/visual` altında kalır. Ayrıntılı Node/metin kullanımı [0.2 tarihsel README](docs/LEGACY_README_0.2.md) ve mevcut docs altında yer alır.
+BrowserPrivacyEngine kurallı çekirdektir, gerçek NER modeli değildir. Tam Node motoru (`@singularityrd/aidr-privacy`) önceki NER/HMAC/JSON/atomic text özelliklerini korur. Görsel modülü `@singularityrd/aidr-privacy/visual` altında kalır. Ayrıntılı Node/metin kullanımı [0.2 tarihsel README](LEGACY_README_0.2.md) ve mevcut docs altında yer alır.
 
 ## Kod haritası
 

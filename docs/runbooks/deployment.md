@@ -10,7 +10,7 @@ proven by the presence of these instructions.
 
 - [Pre-Deployment Checklist](#pre-deployment-checklist)
 - [NPM Package Release](#npm-package-release)
-- [VS Code/Cursor Extension Publishing](#vscodecursor-extension-publishing)
+- [VS Code/Cursor Extension Publishing](#vs-codecursor-extension-publishing)
 - [Dashboard Deployment](#dashboard-deployment)
 - [Rollback Procedures](#rollback-procedures)
 - [Post-Deploy Monitoring Checklist](#post-deploy-monitoring-checklist)

@@ -15,7 +15,7 @@
 5. [Dağıtım ve Lisans Modeli](#5-dağıtım-ve-lisans-modeli)
 6. [Marka ve Konumlandırma](#6-marka-ve-konumlandırma)
 7. [Yeni Fiyatlandırma](#7-yeni-fiyatlandırma)
-8. [Yol Haritası](#8-yol-haritası)
+8. [Yol Haritası](#8-yol-haritası-kapalı-kaynak)
 9. [Risk ve Mitigasyon](#9-risk-ve-mitigasyon)
 10. [Aksiyon Maddeleri](#10-aksiyon-maddeleri)
 

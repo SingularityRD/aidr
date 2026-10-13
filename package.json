@@ -169,6 +169,7 @@
 		"verify:airgap-images": "node --test scripts/airgap-images.test.mjs",
 		"onprem:config-reference": "node scripts/generate-onprem-config-reference.mjs",
 		"verify:onprem-config-reference": "node --test scripts/onprem-config-reference.test.mjs && node scripts/generate-onprem-config-reference.mjs --check",
+		"verify:doc-links": "node scripts/check-doc-links.mjs",
 		"verify:helm": "node --test deploy/helm/chart.test.mjs deploy/helm/tools.test.mjs",
 		"verify:customer-kit": "node --test scripts/customer-kit-verify.test.mjs",
 		"verify:dlp-delivery": "node --test scripts/provision-dlp-detector.test.mjs",

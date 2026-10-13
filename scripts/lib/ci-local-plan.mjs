@@ -318,8 +318,8 @@ export const STEPS = Object.freeze([
 	step({
 		id: "docs-facts",
 		group: "docs-facts",
-		name: "Brochure facts and feature-guide renderer tests",
-		run: "node --test scripts/brochure-facts.test.mjs scripts/render-feature-guide.test.mjs",
+		name: "Brochure facts, feature-guide renderer and documentation link tests",
+		run: "node --test scripts/brochure-facts.test.mjs scripts/render-feature-guide.test.mjs scripts/check-doc-links.test.mjs",
 		quick: true,
 		timeoutMs: 3 * MIN,
 	}),

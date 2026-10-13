@@ -77,7 +77,7 @@ Extension hooks always exit with code `0`. The host reads the JSON response to d
 
 The extension bundles `threats/` and `allowlists/` from the repo root into `packages/extension/resources/` during build (via `sync-assets.mjs`). These are not checked into git.
 
-See [Building the Extension](../../doc/build_extension.md) for platform-specific build instructions.
+See [Release packaging](../../packages/extension/README.md#release-packaging) in the extension README and the [VS Code/Cursor section of the deployment runbook](../runbooks/deployment.md#vs-codecursor-extension-publishing) for VSIX packaging.
 
 ## Real-host acceptance
 
