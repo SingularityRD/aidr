@@ -239,7 +239,7 @@ describe("Browser Privacy Guard page", () => {
 		renderPage();
 
 		const panel = screen.getByRole("region", { name: "Enroll browsers" });
-		expect(within(panel).getByRole("link", { name: "API Keys" })).toHaveAttribute(
+		expect(within(panel).getByRole("link", { name: "API keys" })).toHaveAttribute(
 			"href",
 			"/api-keys?type=browser_guard",
 		);

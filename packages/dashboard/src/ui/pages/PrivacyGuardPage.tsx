@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import { type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { governanceAction, governanceErrorMessage, stepUpPath } from "../../lib/ai-governance";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase, supabaseProjectUrl } from "../../lib/supabase";
@@ -40,13 +41,12 @@ type BrowserInstall = { id: string; iid: string; display_name: string | null };
 
 type Read<T> = { ok: true; value: T } | { ok: false; error: string };
 
-const SUMMARY_UNAVAILABLE = "Privacy summary is unavailable.";
-const RECENT_UNAVAILABLE = "Recent privacy events are unavailable.";
-
 async function readSummary(
 	tenantId: string,
 	windowDays: PrivacyWindow,
+	t: Translate,
 ): Promise<Read<PrivacySummary>> {
+	const SUMMARY_UNAVAILABLE = t("pg.summaryUnavailable");
 	try {
 		const { data, error } = await supabase.rpc("privacy_guard_summary", {
 			p_tenant_id: tenantId,
@@ -59,7 +59,8 @@ async function readSummary(
 	}
 }
 
-async function readRecent(tenantId: string): Promise<Read<PrivacyEventRow[]>> {
+async function readRecent(tenantId: string, t: Translate): Promise<Read<PrivacyEventRow[]>> {
+	const RECENT_UNAVAILABLE = t("pg.recentUnavailable");
 	try {
 		const { data, error } = await supabase
 			.from("events")
@@ -92,8 +93,9 @@ async function readInstalls(tenantId: string): Promise<Map<string, BrowserInstal
 
 export function PrivacyGuardPage() {
 	const { currentTeam, currentRole, isLoading } = useTeam();
-	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
-	if (!currentTeam) return <div role="alert">Select a team to view Browser Privacy Guard.</div>;
+	const t = useT();
+	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
+	if (!currentTeam) return <div role="alert">{t("pg.noTeam")}</div>;
 	return (
 		<TenantPrivacyGuardPage
 			key={currentTeam.id}
@@ -108,6 +110,7 @@ function numberText(value: number | undefined): string {
 }
 
 function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; canDecide: boolean }) {
+	const t = useT();
 	const [windowDays, setWindowDays] = useState<PrivacyWindow>(30);
 	// null = not loaded yet; a failed read is kept as an error, never as zeros.
 	const [summaryRead, setSummaryRead] = useState<Read<PrivacySummary> | null>(null);
@@ -125,8 +128,8 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 			inFlight = true;
 			try {
 				const [summaryRead, recentRead, installRead] = await Promise.all([
-					readSummary(tenantId, windowDays),
-					readRecent(tenantId),
+					readSummary(tenantId, windowDays, t),
+					readRecent(tenantId, t),
 					readInstalls(tenantId),
 				]);
 				if (cancelled) return;
@@ -162,15 +165,10 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 			<section className="card">
 				<div className="row space-between" style={{ alignItems: "flex-start" }}>
 					<div>
-						<p className="eyebrow">Browser Guard</p>
-						<h1>Browser Privacy Guard</h1>
-						<p className="muted">
-							Sensitive data your browser installs masked, warned about or blocked before it reached
-							AI chat products. Only counts are reported: no prompt text, masked text, matched
-							values or page addresses leave the browser.
-						</p>
+						<h1 lang="en">{t("nav.browserGuard")}</h1>
+						<p className="muted">{t("pg.intro")}</p>
 					</div>
-					<div className="row" role="group" aria-label="Reporting window">
+					<div className="row" role="group" aria-label={t("pg.window")}>
 						{PRIVACY_WINDOWS.map((days) => (
 							<button
 								key={days}
@@ -182,7 +180,7 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 									setWindowDays(days);
 								}}
 							>
-								{days} days
+								{t("pg.days", { days })}
 							</button>
 						))}
 						<button
@@ -190,7 +188,7 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 							className="button button-secondary button-sm"
 							onClick={() => setRefreshTick((tick) => tick + 1)}
 						>
-							Refresh
+							{t("common.refresh")}
 						</button>
 					</div>
 				</div>
@@ -201,56 +199,60 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 				) : null}
 			</section>
 
-			<section className="grid" aria-label="Browser privacy counters">
+			<section className="grid" aria-label={t("pg.counters")}>
 				<div className="card stat-card">
-					<div className="stat-label">Prompts protected</div>
+					<div className="stat-label">{t("pg.protected")}</div>
 					<div className="stat-value">{numberText(totals?.promptsProtected)}</div>
-					<div className="stat-hint">masked, warned or blocked · {windowDays} days</div>
+					<div className="stat-hint">{t("pg.protectedHint", { days: windowDays })}</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Items masked</div>
+					<div className="stat-label">{t("pg.masked")}</div>
 					<div className="stat-value">{numberText(totals?.itemsMasked)}</div>
-					<div className="stat-hint">values replaced by placeholders</div>
+					<div className="stat-hint">{t("pg.maskedHint")}</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Blocked sends</div>
+					<div className="stat-label">{t("pg.blocked")}</div>
 					<div className="stat-value">{numberText(totals?.blockedSends)}</div>
-					<div className="stat-hint">stopped before submission</div>
+					<div className="stat-hint">{t("pg.blockedHint")}</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Active browser installs</div>
+					<div className="stat-label">{t("pg.installs")}</div>
 					<div className="stat-value">{numberText(summary?.installs.active)}</div>
 					<div className="stat-hint">
 						{summary
-							? `of ${summary.installs.enrolled.toLocaleString()} enrolled`
-							: "enrolled installs"}
+							? t("pg.installsOf", { count: summary.installs.enrolled.toLocaleString() })
+							: t("pg.installsHint")}
 					</div>
 				</div>
 			</section>
 
 			<section className="cols">
 				<BreakdownCard
-					title="By entity type"
-					description="Detected items by type, across masked, warned and blocked sends."
+					title={t("pg.byEntity")}
+					description={t("pg.byEntityDesc")}
 					unavailable={summary === null}
 					loaded={loaded}
 					rows={(summary?.byEntity ?? []).map((row) => ({
 						key: row.entityType,
-						label: entityLabel(row.entityType),
+						label: entityLabel(row.entityType, t),
 						value: row.items,
-						detail: `${row.items.toLocaleString()} item(s)`,
+						detail: t("pg.items", { count: row.items.toLocaleString() }),
 					}))}
 				/>
 				<BreakdownCard
-					title="By AI site"
-					description="Scanned sends per AI product."
+					title={t("pg.bySite")}
+					description={t("pg.bySiteDesc")}
 					unavailable={summary === null}
 					loaded={loaded}
 					rows={(summary?.bySite ?? []).map((row) => ({
 						key: row.site,
-						label: siteLabel(row.site),
+						label: siteLabel(row.site, t),
 						value: row.scans,
-						detail: `${row.scans.toLocaleString()} send(s) · ${row.items.toLocaleString()} item(s) · ${row.blocked.toLocaleString()} blocked`,
+						detail: t("pg.siteDetail", {
+							scans: row.scans.toLocaleString(),
+							items: row.items.toLocaleString(),
+							blocked: row.blocked.toLocaleString(),
+						}),
 					}))}
 				/>
 			</section>
@@ -268,22 +270,22 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 
 			<section className="card" aria-labelledby="privacy-recent-heading">
 				<div className="panel-head">
-					<h2 id="privacy-recent-heading">Recent privacy events</h2>
+					<h2 id="privacy-recent-heading">{t("pg.recent")}</h2>
 					<Link className="view-all" to="/events">
-						All events
+						{t("pg.allEvents")}
 					</Link>
 				</div>
-				<p className="muted small">The latest {RECENT_LIMIT} scans. Counts only.</p>
+				<p className="muted small">{t("pg.recentNote", { count: RECENT_LIMIT })}</p>
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Time</th>
-								<th>Browser install</th>
-								<th>AI site</th>
-								<th>Channel</th>
-								<th>Action</th>
-								<th>Detected items</th>
+								<th>{t("activity.time")}</th>
+								<th>{t("pg.col.install")}</th>
+								<th>{t("pg.col.site")}</th>
+								<th>{t("pg.col.channel")}</th>
+								<th>{t("pg.col.action")}</th>
+								<th>{t("pg.col.items")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -297,7 +299,7 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 												install?.iid.slice(0, 12) ??
 												event.agentId.slice(0, 12)}
 										</td>
-										<td>{siteLabel(event.site)}</td>
+										<td>{siteLabel(event.site, t)}</td>
 										<td>{event.channel}</td>
 										<td>
 											<span className={actionBadge(event.action)}>{event.action}</span>
@@ -305,15 +307,15 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 										<td>
 											{event.entityCounts.length > 0
 												? event.entityCounts
-														.map(([type, amount]) => `${entityLabel(type)} ×${amount}`)
+														.map(([type, amount]) => `${entityLabel(type, t)} ×${amount}`)
 														.join(", ")
 												: event.findingsCount !== null
-													? `${event.findingsCount} item(s)`
+													? t("pg.items", { count: event.findingsCount })
 													: "—"}
 											{event.nativeNer === "unavailable" ? (
 												<>
 													{" "}
-													<span className="badge badge-ask">not NER-checked</span>
+													<span className="badge badge-ask">{t("pg.notNer")}</span>
 												</>
 											) : null}
 										</td>
@@ -325,9 +327,9 @@ function TenantPrivacyGuardPage({ tenantId, canDecide }: { tenantId: string; can
 									<td colSpan={6} className="muted">
 										{recent === null
 											? loaded
-												? "Recent privacy events are unavailable right now."
-												: "Loading privacy events…"
-											: "No privacy events yet. Enroll browsers below to start reporting."}
+												? t("pg.recentUnavailableNow")
+												: t("pg.loadingEvents")
+											: t("pg.noEvents")}
 									</td>
 								</tr>
 							) : null}
@@ -348,15 +350,16 @@ function BreakdownCard(props: {
 	loaded: boolean;
 	rows: Array<{ key: string; label: string; value: number; detail: string }>;
 }) {
+	const t = useT();
 	const max = Math.max(1, ...props.rows.map((row) => row.value));
 	return (
 		<section className="card" aria-label={props.title}>
 			<h2>{props.title}</h2>
 			<p className="muted small">{props.description}</p>
 			{props.unavailable ? (
-				<p className="muted">{props.loaded ? "Unavailable right now." : "Loading…"}</p>
+				<p className="muted">{props.loaded ? t("pg.unavailableNow") : t("common.loading")}</p>
 			) : props.rows.length === 0 ? (
-				<p className="muted">No detections in this window.</p>
+				<p className="muted">{t("pg.noDetections")}</p>
 			) : (
 				<ul className="privacy-breakdown">
 					{props.rows.map((row) => (
@@ -385,29 +388,34 @@ function SeriesCard({
 	loaded: boolean;
 	windowDays: PrivacyWindow;
 }) {
+	const t = useT();
 	const series = summary?.series ?? [];
 	const max = Math.max(1, ...series.map((day) => day.scans));
 	const totalScans = series.reduce((sum, day) => sum + day.scans, 0);
 	return (
-		<section className="card" aria-label="Daily privacy activity">
-			<h2>Daily activity</h2>
-			<p className="muted small">
-				Scanned sends per UTC day over the last {windowDays} days, split by guard action.
-			</p>
+		<section className="card" aria-label={t("pg.daily")}>
+			<h2>{t("pg.dailyTitle")}</h2>
+			<p className="muted small">{t("pg.dailyDesc", { days: windowDays })}</p>
 			{summary === null ? (
-				<p className="muted">{loaded ? "Unavailable right now." : "Loading…"}</p>
+				<p className="muted">{loaded ? t("pg.unavailableNow") : t("common.loading")}</p>
 			) : (
 				<>
 					<div
 						className="privacy-series"
 						role="img"
-						aria-label={`${totalScans} scanned sends over ${windowDays} days`}
+						aria-label={t("pg.seriesLabel", { count: totalScans, days: windowDays })}
 					>
 						{series.map((day) => (
 							<div
 								key={day.day}
 								className="privacy-series-day"
-								title={`${day.day}: ${day.scans} scans, ${day.masked} masked, ${day.warned} warned, ${day.blocked} blocked`}
+								title={t("pg.dayTitle", {
+									day: day.day,
+									scans: day.scans,
+									masked: day.masked,
+									warned: day.warned,
+									blocked: day.blocked,
+								})}
 							>
 								<div
 									className="privacy-series-stack"
@@ -428,29 +436,29 @@ function SeriesCard({
 					</div>
 					<div className="row small muted" style={{ marginTop: 8 }}>
 						<span>
-							<span className="privacy-key privacy-series-masked" /> masked
+							<span className="privacy-key privacy-series-masked" /> {t("pg.key.masked")}
 						</span>
 						<span>
-							<span className="privacy-key privacy-series-warned" /> warned
+							<span className="privacy-key privacy-series-warned" /> {t("pg.key.warned")}
 						</span>
 						<span>
-							<span className="privacy-key privacy-series-blocked" /> blocked
+							<span className="privacy-key privacy-series-blocked" /> {t("pg.key.blocked")}
 						</span>
 						<span>
-							<span className="privacy-key privacy-series-allowed" /> allowed
+							<span className="privacy-key privacy-series-allowed" /> {t("pg.key.allowed")}
 						</span>
 					</div>
 					<details style={{ marginTop: 10 }}>
-						<summary className="small">Daily table</summary>
+						<summary className="small">{t("pg.dailyTable")}</summary>
 						<div className="table-wrap">
 							<table className="table">
 								<thead>
 									<tr>
-										<th>Day (UTC)</th>
-										<th>Scans</th>
-										<th>Masked</th>
-										<th>Warned</th>
-										<th>Blocked</th>
+										<th>{t("pg.col.day")}</th>
+										<th>{t("pg.col.scans")}</th>
+										<th>{t("pg.col.masked")}</th>
+										<th>{t("pg.col.warned")}</th>
+										<th>{t("pg.col.blocked")}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -473,13 +481,14 @@ function SeriesCard({
 	);
 }
 
-const SHADOW_UNAVAILABLE = "Shadow AI summary is unavailable.";
 const TOP_SERVICES = 12;
 
 async function readShadowAi(
 	tenantId: string,
 	windowDays: PrivacyWindow,
+	t: Translate,
 ): Promise<Read<ShadowAiSummary>> {
+	const SHADOW_UNAVAILABLE = t("pg.shadowUnavailable");
 	try {
 		const { data, error } = await supabase.rpc("shadow_ai_summary", {
 			p_tenant_id: tenantId,
@@ -492,7 +501,6 @@ async function readShadowAi(
 	}
 }
 
-const DECISIONS_UNAVAILABLE = "Allow/block decisions are unavailable.";
 const SHADOW_AI_SERVICE_IDS = Object.keys(SHADOW_AI_SERVICES);
 
 /**
@@ -504,7 +512,9 @@ const SHADOW_AI_SERVICE_IDS = Object.keys(SHADOW_AI_SERVICES);
  */
 async function readShadowAiDecisions(
 	tenantId: string,
+	t: Translate,
 ): Promise<Read<Map<string, ShadowAiDecisionRow>>> {
+	const DECISIONS_UNAVAILABLE = t("pg.decisionsUnavailable");
 	try {
 		const { data, error } = await supabase
 			.from("ai_assets")
@@ -522,6 +532,7 @@ async function readShadowAiDecisions(
 type DecisionNotice = { tone: "ok" | "error"; text: string; stepUp?: boolean };
 
 function DecisionNoticeLine({ notice, tenantId }: { notice: DecisionNotice; tenantId: string }) {
+	const t = useT();
 	const ok = notice.tone === "ok";
 	return (
 		<p
@@ -532,7 +543,7 @@ function DecisionNoticeLine({ notice, tenantId }: { notice: DecisionNotice; tena
 			{notice.stepUp ? (
 				<>
 					{" "}
-					<Link to={stepUpPath(tenantId)}>Verify now</Link>
+					<Link to={stepUpPath(tenantId)}>{t("pg.verifyNow")}</Link>
 				</>
 			) : null}
 		</p>
@@ -541,6 +552,7 @@ function DecisionNoticeLine({ notice, tenantId }: { notice: DecisionNotice; tena
 
 /** Register-backed allow/block decisions and the `upsert_asset` action that changes one. */
 function useShadowAiDecisions(tenantId: string, refreshTick: number) {
+	const t = useT();
 	const [decisions, setDecisions] = useState<Read<Map<string, ShadowAiDecisionRow>> | null>(null);
 	const [busy, setBusy] = useState<string | null>(null);
 	const [notice, setNotice] = useState<DecisionNotice | null>(null);
@@ -548,7 +560,7 @@ function useShadowAiDecisions(tenantId: string, refreshTick: number) {
 
 	useEffect(() => {
 		let cancelled = false;
-		void readShadowAiDecisions(tenantId).then((next) => {
+		void readShadowAiDecisions(tenantId, t).then((next) => {
 			if (!cancelled) setDecisions(next);
 		});
 		return () => {
@@ -573,26 +585,28 @@ function useShadowAiDecisions(tenantId: string, refreshTick: number) {
 				result.ok
 					? {
 							tone: "ok",
-							text: `${serviceName(serviceId)} ${decision}. Enrolled browsers apply it at their next policy refresh (within about 15 minutes).`,
+							text: t(decision === "allowed" ? "pg.decided.allowed" : "pg.decided.blocked", {
+								service: serviceName(serviceId),
+							}),
 						}
 					: {
 							tone: "error",
-							text: governanceErrorMessage(result.error),
+							text: governanceErrorMessage(result.error, t),
 							stepUp: result.error === "mfa_required",
 						},
 			);
 		},
-		[tenantId, decisions],
+		[tenantId, decisions, t],
 	);
 
 	return { decisions, busy, notice, decide };
 }
 
-const NATIVE_NER_UNAVAILABLE = "The native NER setting is unavailable.";
-
 async function readBrowserGuardSettings(
 	tenantId: string,
+	t: Translate,
 ): Promise<Read<{ requireNativeNer: boolean }>> {
+	const NATIVE_NER_UNAVAILABLE = t("pg.nerUnavailable");
 	try {
 		const { data, error } = await supabase
 			.from("tenant_ai_governance_settings")
@@ -620,6 +634,8 @@ function NativeNerPanel({
 	refreshTick: number;
 	canDecide: boolean;
 }) {
+	const t = useT();
+	const richT = useRichT();
 	const [read, setRead] = useState<Read<{ requireNativeNer: boolean }> | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [notice, setNotice] = useState<DecisionNotice | null>(null);
@@ -627,7 +643,7 @@ function NativeNerPanel({
 
 	useEffect(() => {
 		let cancelled = false;
-		void readBrowserGuardSettings(tenantId).then((next) => {
+		void readBrowserGuardSettings(tenantId, t).then((next) => {
 			if (!cancelled) setRead(next);
 		});
 		return () => {
@@ -650,13 +666,11 @@ function NativeNerPanel({
 			result.ok
 				? {
 						tone: "ok",
-						text: next
-							? "Native NER is now required. Enrolled browsers apply it at their next policy refresh (within about 15 minutes)."
-							: "Native NER is no longer required by the dashboard. Browsers whose management (MDM/GPO) policy sets requireNativeNer keep requiring it.",
+						text: next ? t("pg.ner.required") : t("pg.ner.notRequired"),
 					}
 				: {
 						tone: "error",
-						text: governanceErrorMessage(result.error),
+						text: governanceErrorMessage(result.error, t),
 						stepUp: result.error === "mfa_required",
 					},
 		);
@@ -665,22 +679,14 @@ function NativeNerPanel({
 	return (
 		<section className="card" aria-labelledby="native-ner-heading">
 			<div className="panel-head">
-				<h2 id="native-ner-heading">Require native NER</h2>
+				<h2 id="native-ner-heading">{t("pg.ner.title")}</h2>
 				{current === null ? null : (
 					<span className={current ? "badge badge-deny" : "badge badge-allow"}>
-						{current ? "required" : "not required"}
+						{current ? t("pg.ner.badgeRequired") : t("pg.ner.badgeNot")}
 					</span>
 				)}
 			</div>
-			<p className="muted small">
-				When required, a prompt, paste or file upload that the Browser Guard native host could not
-				check for names, addresses and locations (host not installed, crashed or timed out,
-				rules-only host, text over the host limit) is blocked instead of being sent after the
-				built-in rules only; in monitor mode it is reported as not NER-checked. It needs the native
-				messaging host on every browser, and large uploads wait for the host's answer. Your browser
-				management (MDM/GPO) <code>requireNativeNer</code> policy still wins where it is stricter:
-				the dashboard can switch the requirement on, never off for those browsers.
-			</p>
+			<p className="muted small">{richT("pg.ner.body", { code: <code>requireNativeNer</code> })}</p>
 			{read && !read.ok ? (
 				<p className="muted" role="status">
 					{read.error}
@@ -695,10 +701,10 @@ function NativeNerPanel({
 						disabled={current === null || busy}
 						onChange={(event) => void change(event.target.checked)}
 					/>
-					Require native NER for every enrolled browser
+					{t("pg.ner.checkbox")}
 				</label>
 			) : (
-				<p className="muted small">Owners and administrators can change this setting.</p>
+				<p className="muted small">{t("pg.ownersCanChange")}</p>
 			)}
 		</section>
 	);
@@ -721,6 +727,8 @@ function ShadowAiPanel({
 	refreshTick: number;
 	canDecide: boolean;
 }) {
+	const t = useT();
+	const richT = useRichT();
 	const [read, setRead] = useState<Read<ShadowAiSummary> | null>(null);
 	const { decisions, busy, notice, decide } = useShadowAiDecisions(tenantId, refreshTick);
 	const [policyMode, setPolicyMode] = useState<"monitor" | "block-unsanctioned">("monitor");
@@ -728,7 +736,7 @@ function ShadowAiPanel({
 	useEffect(() => {
 		let cancelled = false;
 		const load = async () => {
-			const next = await readShadowAi(tenantId, windowDays);
+			const next = await readShadowAi(tenantId, windowDays, t);
 			if (!cancelled) setRead(next);
 		};
 		setRead(null);
@@ -757,47 +765,46 @@ function ShadowAiPanel({
 	return (
 		<section className="card" aria-labelledby="shadow-ai-heading">
 			<div className="panel-head">
-				<h2 id="shadow-ai-heading">Shadow AI</h2>
+				<h2 id="shadow-ai-heading">{t("pg.shadow.title")}</h2>
 			</div>
-			<p className="muted small">
-				Generative-AI services your managed browsers opened, whether your policy sanctions them, and
-				navigations the Shadow AI policy blocked. Browsers report a catalog service id and counts
-				per day only: never page addresses, titles or content.
-			</p>
+			<p className="muted small">{t("pg.shadow.intro")}</p>
 			{read && !read.ok ? (
 				<p className="muted" role="status">
 					{read.error}
 				</p>
 			) : null}
-			<div className="grid" role="group" aria-label="Shadow AI counters">
+			<div className="grid" role="group" aria-label={t("pg.shadow.counters")}>
 				<div className="card stat-card">
-					<div className="stat-label">AI service visits</div>
+					<div className="stat-label">{t("pg.shadow.visits")}</div>
 					<div className="stat-value">{numberText(totals?.visits)}</div>
 					<div className="stat-hint">
-						{totals ? `${totals.services.toLocaleString()} service(s) · ${windowDays} days` : "—"}
+						{totals
+							? t("pg.shadow.servicesHint", {
+									count: totals.services.toLocaleString(),
+									days: windowDays,
+								})
+							: "—"}
 					</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Unsanctioned visits</div>
+					<div className="stat-label">{t("pg.shadow.unsanctioned")}</div>
 					<div className="stat-value">{numberText(totals?.unsanctionedVisits)}</div>
 					<div className="stat-hint">
 						{sanctionedShare === null
-							? "no visits yet"
-							: `${sanctionedShare}% of visits sanctioned`}
+							? t("pg.shadow.noVisits")
+							: t("pg.shadow.share", { percent: sanctionedShare })}
 					</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Blocked attempts</div>
+					<div className="stat-label">{t("pg.shadow.blocked")}</div>
 					<div className="stat-value">{numberText(totals?.blockedAttempts)}</div>
-					<div className="stat-hint">navigations refused by policy</div>
+					<div className="stat-hint">{t("pg.shadow.blockedHint")}</div>
 				</div>
 			</div>
 
-			<h3 style={{ marginTop: 16 }}>Top AI services</h3>
+			<h3 style={{ marginTop: 16 }}>{t("pg.shadow.top")}</h3>
 			<p className="muted small">
-				{canDecide
-					? "Allow or block a service for every enrolled browser. Decisions are recorded in the AI governance register (audited, multi-factor verification required) and delivered to Browser Guard as a signed policy. Your browser management (MDM/GPO) policy still wins where it is stricter: a dashboard allow never unblocks a service it blocks."
-					: "Owners and administrators can allow or block a service here; enrolled browsers apply it from a signed policy."}
+				{canDecide ? t("pg.shadow.canDecide") : t("pg.shadow.cannotDecide")}
 			</p>
 			{decisions && !decisions.ok ? (
 				<p className="muted" role="status">
@@ -806,7 +813,7 @@ function ShadowAiPanel({
 			) : null}
 			{notice ? <DecisionNoticeLine notice={notice} tenantId={tenantId} /> : null}
 			{summary === null ? (
-				<p className="muted">{read ? "Unavailable right now." : "Loading…"}</p>
+				<p className="muted">{read ? t("pg.unavailableNow") : t("common.loading")}</p>
 			) : (
 				<ShadowAiServicesTable
 					summary={summary}
@@ -820,20 +827,18 @@ function ShadowAiPanel({
 			{summary ? <ShadowAiTrend summary={summary} /> : null}
 
 			<details style={{ marginTop: 12 }}>
-				<summary className="small">Configure Shadow AI and internal AI sites</summary>
+				<summary className="small">{t("pg.shadow.configure")}</summary>
 				<p className="muted small">
-					Alternative to dashboard decisions, or for browsers without a control plane: add these
-					keys to the Browser Guard managed policy. To apply dashboard decisions, the managed policy
-					also needs <code>telemetry</code> and <code>dashboardPolicy</code> (the control plane's
-					policy signing public key). <code>sanctioned</code> lists the catalog ids you approve
-					(prefilled from the services reported as sanctioned);
-					<code> block-unsanctioned</code> blocks every other catalogued AI service. Each user
-					grants the extension access to the AI service sites and internal hosts once, on its
-					options page.
+					{richT("pg.shadow.configureBody", {
+						telemetry: <code>telemetry</code>,
+						dashboardPolicy: <code>dashboardPolicy</code>,
+						sanctioned: <code>sanctioned</code>,
+						block: <code>block-unsanctioned</code>,
+					})}
 				</p>
 				<div className="row" style={{ alignItems: "center" }}>
 					<label className="label" htmlFor="shadow-ai-mode">
-						Shadow AI mode
+						{t("pg.shadow.mode")}
 					</label>
 					<select
 						id="shadow-ai-mode"
@@ -846,15 +851,11 @@ function ShadowAiPanel({
 							)
 						}
 					>
-						<option value="monitor">Monitor (count only)</option>
-						<option value="block-unsanctioned">Block unsanctioned</option>
+						<option value="monitor">{t("pg.shadow.monitor")}</option>
+						<option value="block-unsanctioned">{t("pg.shadow.blockUnsanctioned")}</option>
 					</select>
 				</div>
-				<pre
-					className="mono small"
-					aria-label="Shadow AI policy JSON"
-					style={{ overflowX: "auto" }}
-				>
+				<pre className="mono small" aria-label={t("pg.shadow.json")} style={{ overflowX: "auto" }}>
 					{snippet}
 				</pre>
 			</details>
@@ -862,11 +863,12 @@ function ShadowAiPanel({
 	);
 }
 
-function decisionBadge(row: ShadowAiDecisionRow | undefined) {
+function DecisionBadge({ row }: { row: ShadowAiDecisionRow | undefined }) {
+	const t = useT();
 	if (!row?.decision) return <span className="muted">—</span>;
 	return (
 		<span className={row.decision === "allowed" ? "badge badge-allow" : "badge badge-deny"}>
-			{row.decision}
+			{row.decision === "allowed" ? t("pg.decision.allowed") : t("pg.decision.blocked")}
 		</span>
 	);
 }
@@ -884,29 +886,26 @@ function ShadowAiServicesTable({
 	busy: string | null;
 	onDecide: (serviceId: string, decision: ShadowAiDecision) => void;
 }) {
+	const t = useT();
+	const richT = useRichT();
 	const services = summary.byService.slice(0, TOP_SERVICES);
 	if (services.length === 0) {
-		return (
-			<p className="muted">
-				No Shadow AI activity in this window. Set <code>shadowAi</code> in the Browser Guard managed
-				policy (monitor or block-unsanctioned) to start reporting.
-			</p>
-		);
+		return <p className="muted">{richT("pg.shadow.none", { key: <code>shadowAi</code> })}</p>;
 	}
 	const max = Math.max(1, ...services.map((row) => row.visits + row.blocked));
 	return (
 		<div className="table-wrap">
-			<table className="table" aria-label="Top AI services">
+			<table className="table" aria-label={t("pg.shadow.top")}>
 				<thead>
 					<tr>
-						<th>AI service</th>
-						<th>Category</th>
-						<th>Status</th>
-						<th>Visits</th>
-						<th>Blocked</th>
+						<th>{t("pg.col.service")}</th>
+						<th>{t("pg.col.category")}</th>
+						<th>{t("common.status")}</th>
+						<th>{t("pg.col.visits")}</th>
+						<th>{t("pg.col.blocked")}</th>
 						<th aria-hidden="true" />
-						<th>Dashboard decision</th>
-						{canDecide ? <th>Change</th> : null}
+						<th>{t("pg.col.decision")}</th>
+						{canDecide ? <th>{t("pg.col.change")}</th> : null}
 					</tr>
 				</thead>
 				<tbody>
@@ -918,10 +917,10 @@ function ShadowAiServicesTable({
 						return (
 							<tr key={row.serviceId}>
 								<td>{name}</td>
-								<td>{categoryLabel(row.category)}</td>
+								<td>{categoryLabel(row.category, t)}</td>
 								<td>
 									<span className={row.sanctioned ? "badge badge-allow" : "badge badge-ask"}>
-										{row.sanctioned ? "sanctioned" : "unsanctioned"}
+										{row.sanctioned ? t("pg.sanctioned") : t("pg.unsanctioned")}
 									</span>
 								</td>
 								<td>{row.visits.toLocaleString()}</td>
@@ -934,7 +933,7 @@ function ShadowAiServicesTable({
 										/>
 									</div>
 								</td>
-								<td>{decisions && decidable ? decisionBadge(current) : "—"}</td>
+								<td>{decisions && decidable ? <DecisionBadge row={current} /> : "—"}</td>
 								{canDecide ? (
 									<td>
 										{decidable ? (
@@ -942,20 +941,20 @@ function ShadowAiServicesTable({
 												<button
 													type="button"
 													className="btn btn-sm"
-													aria-label={`Allow ${name}`}
+													aria-label={t("pg.allowLabel", { name })}
 													disabled={busy !== null || current?.decision === "allowed"}
 													onClick={() => onDecide(row.serviceId, "allowed")}
 												>
-													Allow
+													{t("pg.allow")}
 												</button>
 												<button
 													type="button"
 													className="btn btn-sm btn-danger"
-													aria-label={`Block ${name}`}
+													aria-label={t("pg.blockLabel", { name })}
 													disabled={busy !== null || current?.decision === "blocked"}
 													onClick={() => onDecide(row.serviceId, "blocked")}
 												>
-													Block
+													{t("pg.block")}
 												</button>
 											</div>
 										) : null}
@@ -971,21 +970,31 @@ function ShadowAiServicesTable({
 }
 
 function ShadowAiTrend({ summary }: { summary: ShadowAiSummary }) {
+	const t = useT();
 	const { series, totals, windowDays } = summary;
 	const max = Math.max(1, ...series.map((day) => day.visits + day.blocked));
 	return (
 		<>
-			<h3 style={{ marginTop: 16 }}>Daily trend</h3>
+			<h3 style={{ marginTop: 16 }}>{t("pg.trend")}</h3>
 			<div
 				className="privacy-series"
 				role="img"
-				aria-label={`${totals.visits} AI service visits and ${totals.blockedAttempts} blocked attempts over ${windowDays} days`}
+				aria-label={t("pg.trendLabel", {
+					visits: totals.visits,
+					blocked: totals.blockedAttempts,
+					days: windowDays,
+				})}
 			>
 				{series.map((day) => (
 					<div
 						key={day.day}
 						className="privacy-series-day"
-						title={`${day.day}: ${day.visits} visits (${day.unsanctionedVisits} unsanctioned), ${day.blocked} blocked`}
+						title={t("pg.trendDay", {
+							day: day.day,
+							visits: day.visits,
+							unsanctioned: day.unsanctionedVisits,
+							blocked: day.blocked,
+						})}
 					>
 						<div
 							className="privacy-series-stack"
@@ -1006,13 +1015,13 @@ function ShadowAiTrend({ summary }: { summary: ShadowAiSummary }) {
 			</div>
 			<div className="row small muted" style={{ marginTop: 8 }}>
 				<span>
-					<span className="privacy-key privacy-series-masked" /> sanctioned visits
+					<span className="privacy-key privacy-series-masked" /> {t("pg.key.sanctionedVisits")}
 				</span>
 				<span>
-					<span className="privacy-key privacy-series-warned" /> unsanctioned visits
+					<span className="privacy-key privacy-series-warned" /> {t("pg.key.unsanctionedVisits")}
 				</span>
 				<span>
-					<span className="privacy-key privacy-series-blocked" /> blocked
+					<span className="privacy-key privacy-series-blocked" /> {t("pg.key.blocked")}
 				</span>
 			</div>
 		</>
@@ -1020,6 +1029,8 @@ function ShadowAiTrend({ summary }: { summary: ShadowAiSummary }) {
 }
 
 function EnrollBrowsersPanel() {
+	const t = useT();
+	const richT = useRichT();
 	const [mode, setMode] = useState<GuardModeValue>("auto");
 	const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 	const [noticeOn, setNoticeOn] = useState(false);
@@ -1031,8 +1042,8 @@ function EnrollBrowsersPanel() {
 		url: "",
 	});
 	const noticeResult = useMemo(
-		() => (noticeOn ? acceptableUseNotice(notice) : null),
-		[noticeOn, notice],
+		() => (noticeOn ? acceptableUseNotice(notice, t) : null),
+		[noticeOn, notice, t],
 	);
 	const snippet = useMemo(
 		() =>
@@ -1058,34 +1069,26 @@ function EnrollBrowsersPanel() {
 
 	return (
 		<section className="card" aria-labelledby="enroll-browsers-heading">
-			<h2 id="enroll-browsers-heading">Enroll browsers</h2>
-			<p className="muted small">
-				Each enrolled browser profile is a protected agent seat. Detection and masking run locally
-				in the browser whether or not it is enrolled; enrollment only adds reporting to this page.
-			</p>
+			<h2 id="enroll-browsers-heading">{t("pg.enroll.title")}</h2>
+			<p className="muted small">{t("pg.enroll.intro")}</p>
 			<ol className="stack" style={{ paddingLeft: 20 }}>
 				<li>
-					<b>Install the extension.</b> Deploy the Singularity AIDR Browser Guard package from your
-					AIDR release to Chrome, Edge or Firefox, either per user or force-installed through your
-					browser management policy.
+					<b>{t("pg.enroll.step1Title")}</b> {t("pg.enroll.step1")}
 				</li>
 				<li>
-					<b>Create a Browser Guard ingest-only key.</b> On the{" "}
-					<Link to="/api-keys?type=browser_guard">API Keys</Link> page, choose{" "}
-					<i>Browser Guard ingest-only key</i> and set an installation limit that fits your fleet.
-					Anyone using a managed browser can read its policy, so do not deploy a tenant key here: an
-					ingest-only key can only report counts-only privacy scans, from at most that many
-					browsers, and cannot read policy, packs or reputation data. The key is shown once; paste
-					it into the policy below. Owners and admins can create it.
+					<b>{t("pg.enroll.step2Title")}</b>{" "}
+					{richT("pg.enroll.step2", {
+						link: <Link to="/api-keys?type=browser_guard">{t("nav.apiKeys")}</Link>,
+						option: <i>{t("keys.option.bg")}</i>,
+					})}
 				</li>
 				<li>
-					<b>Push the managed policy.</b> Managed values override the user's settings and lock those
-					fields in the extension.
+					<b>{t("pg.enroll.step3Title")}</b> {t("pg.enroll.step3")}
 				</li>
 			</ol>
 			<div className="row" style={{ alignItems: "center", marginTop: 8 }}>
 				<label className="label" htmlFor="privacy-guard-mode">
-					Guard mode
+					{t("pg.enroll.mode")}
 				</label>
 				<select
 					id="privacy-guard-mode"
@@ -1099,18 +1102,17 @@ function EnrollBrowsersPanel() {
 				>
 					{GUARD_MODES.map((option) => (
 						<option key={option.value} value={option.value}>
-							{option.label}
+							{t(option.label)}
 						</option>
 					))}
 				</select>
 				<span className="muted small">
-					{GUARD_MODES.find((option) => option.value === mode)?.hint}
+					{t(GUARD_MODES.find((option) => option.value === mode)?.hint ?? "pg.mode.autoHint")}
 				</span>
 			</div>
 			<fieldset className="stack" style={{ border: 0, padding: 0, marginTop: 12 }}>
 				<legend>
-					<b>AI acceptable-use notice</b>{" "}
-					<span className="muted small">(optional; AI literacy)</span>
+					<b>{t("pg.aup.legend")}</b> <span className="muted small">{t("pg.aup.optional")}</span>
 				</legend>
 				<label className="row" style={{ alignItems: "center", gap: 8 }}>
 					<input
@@ -1121,19 +1123,14 @@ function EnrollBrowsersPanel() {
 							setCopyState("idle");
 						}}
 					/>
-					Show an acceptable-use notice on protected AI sites
+					{t("pg.aup.checkbox")}
 				</label>
-				<p className="muted small">
-					Each browser shows the notice once per version, on the first visit to a protected AI site,
-					with an "I understand" button. Only acknowledgement counts per version are reported (see
-					Governance); the text stays in the browser. Raise the version to show a changed notice
-					again.
-				</p>
+				<p className="muted small">{t("pg.aup.body")}</p>
 				{noticeOn ? (
 					<>
 						<div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
 							<label className="label">
-								Notice ID
+								{t("pg.aup.id")}
 								<input
 									className="input"
 									value={notice.id}
@@ -1141,7 +1138,7 @@ function EnrollBrowsersPanel() {
 								/>
 							</label>
 							<label className="label">
-								Version
+								{t("pg.aup.version")}
 								<input
 									className="input"
 									type="number"
@@ -1151,7 +1148,7 @@ function EnrollBrowsersPanel() {
 								/>
 							</label>
 							<label className="label">
-								Policy link (https, optional)
+								{t("pg.aup.url")}
 								<input
 									className="input"
 									value={notice.url}
@@ -1160,7 +1157,7 @@ function EnrollBrowsersPanel() {
 							</label>
 						</div>
 						<label className="label">
-							Title
+							{t("pg.aup.title")}
 							<input
 								className="input"
 								maxLength={120}
@@ -1169,7 +1166,7 @@ function EnrollBrowsersPanel() {
 							/>
 						</label>
 						<label className="label">
-							Notice text (plain text; blank lines separate paragraphs)
+							{t("pg.aup.text")}
 							<textarea
 								className="input"
 								rows={5}
@@ -1180,24 +1177,24 @@ function EnrollBrowsersPanel() {
 						</label>
 						{noticeResult && !noticeResult.ok ? (
 							<div className="notice" role="alert">
-								{noticeResult.error} The notice is left out of the policy below until this is fixed.
+								{noticeResult.error} {t("pg.aup.leftOut")}
 							</div>
 						) : null}
 					</>
 				) : null}
 			</fieldset>
-			<pre className="mono small" aria-label="Managed policy JSON" style={{ overflowX: "auto" }}>
+			<pre className="mono small" aria-label={t("pg.policyJson")} style={{ overflowX: "auto" }}>
 				{snippet}
 			</pre>
 			<div className="row" style={{ alignItems: "center" }}>
 				<button className="button button-secondary button-sm" type="button" onClick={copy}>
-					Copy policy JSON
+					{t("pg.copyJson")}
 				</button>
 				<span className="muted small" role="status">
 					{copyState === "copied"
-						? "Copied. Replace the apiKey placeholder before deploying."
+						? t("pg.copied")
 						: copyState === "failed"
-							? "Copy failed. Select the JSON and copy it manually."
+							? t("pg.copyFailed")
 							: ""}
 				</span>
 			</div>

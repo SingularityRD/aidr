@@ -600,67 +600,67 @@ export async function governanceAction(
 	}
 }
 
-export function governanceErrorMessage(code: string): string {
+export function governanceErrorMessage(code: string, t: Translate = englishT): string {
 	switch (code) {
 		case "mfa_required":
-			return "Multi-factor verification (AAL2) is required for this action. Verify with your authenticator, then try again.";
+			return t("gov.err.mfa");
 		case "sso_required":
-			return "This workspace requires single sign-on. Sign in with your identity provider, then try again.";
+			return t("gov.err.sso");
 		case "four_eyes_self_approval":
-			return "You filed this request, so someone else must decide it (four-eyes).";
+			return t("gov.err.selfApproval");
 		case "governance_four_eyes_required":
-			return "Four-eyes change control is on: relaxing a ban or restriction needs an intake request decided by another person.";
+			return t("gov.err.fourEyes");
 		case "browser_guard_four_eyes_required":
-			return "Four-eyes change control is on: switching off required native NER needs four-eyes to be turned off first, which another owner or administrator must approve.";
+			return t("gov.err.bgFourEyes");
 		case "governance_reviewer_scope":
-			return "Designated reviewers cannot lift a ban or restriction; an owner or administrator must decide this request.";
+			return t("gov.err.reviewerScope");
 		case "governance_role_insufficient":
 		case "ai_governance_forbidden":
 		case "governance_forbidden":
 		case "policy_forbidden":
-			return "Your role cannot perform this action in this workspace.";
+			return t("gov.err.role");
 		case "workspace_forbidden":
-			return "You are not an active member of this workspace.";
+			return t("gov.err.notMember");
 		case "ai_asset_exists":
-			return "This AI system is already in the register.";
+			return t("gov.err.assetExists");
 		case "ai_asset_version_conflict":
-			return "Someone else changed this entry. Reload and try again.";
+			return t("gov.err.versionConflict");
 		case "ai_asset_owner_not_member":
-			return "The owner must be an active member of this workspace.";
+			return t("gov.err.ownerNotMember");
 		case "ai_asset_prohibited":
-			return "A prohibited-tier system cannot be approved or waived; it must stay banned or retired.";
+			return t("gov.err.prohibited");
 		case "ai_asset_already_approved":
-			return "This AI system is already approved.";
+			return t("gov.err.alreadyApproved");
 		case "ai_intake_request_pending":
-			return "A request for this AI system is already pending.";
+			return t("gov.err.intakePending");
 		case "ai_governance_exception_not_restricted":
-			return "Exceptions apply only to banned or restricted systems.";
+			return t("gov.err.notRestricted");
 		case "four_eyes_requires_two_approvers":
-			return "Four-eyes needs at least two active owners or administrators in this workspace.";
+			return t("gov.err.twoApprovers");
 		case "ai_governance_enforcement_quota":
-			return "At most 500 MCP servers can be banned or restricted.";
+			return t("gov.err.quota");
 		case "request_final":
-			return "This request was already decided.";
+			return t("gov.err.final");
 		case "request_expired":
-			return "This request expired before it was decided.";
+			return t("gov.err.expired");
 		case "exception_not_active":
-			return "This exception is no longer active.";
+			return t("gov.err.exceptionInactive");
 		case "policy_change_superseded":
-			return "The policy changed after this request was filed, so nothing was applied. The author must file a new change.";
+			return t("gov.err.superseded");
 		case "policy_change_failed":
-			return "The change could not be applied (for example the author is no longer an administrator). Nothing was published.";
+			return t("gov.err.changeFailed");
 		case "rate_limited":
-			return "Too many requests. Wait a minute and try again.";
+			return t("gov.err.rateLimited");
 		case "invalid_fields":
 		case "invalid_request":
 		case "invalid_reason":
 		case "invalid_ai_governance_field":
-			return "Check the form: a field is missing, too long or not allowed.";
+			return t("gov.err.invalid");
 		case "session_revoked":
 		case "invalid_access_token":
-			return "Your session is no longer valid. Sign in again.";
+			return t("common.sessionInvalid");
 		default:
-			return "The governance service did not confirm the request. Nothing changed.";
+			return t("gov.err.generic");
 	}
 }
 

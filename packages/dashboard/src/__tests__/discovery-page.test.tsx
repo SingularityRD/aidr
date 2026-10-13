@@ -183,7 +183,7 @@ describe("tenant discovery dashboard", () => {
 		});
 		renderPage();
 		expect(await screen.findByText("arn:aws:s3:::approved-bucket")).toBeInTheDocument();
-		expect(screen.getByText("collection_partial")).toBeInTheDocument();
+		expect(screen.getByText("collection partial")).toBeInTheDocument();
 		expect(screen.queryByText("healthy")).not.toBeInTheDocument();
 		expect(screen.getByText(/Only the configured scope is reported/)).toBeInTheDocument();
 		expect(vi.mocked(supabase.functions.invoke)).toHaveBeenCalledWith("discovery", {

@@ -7,12 +7,16 @@ import { billingMessages } from "./billing";
 import { billingPlanMessages } from "./billing-plan";
 import { commonMessages } from "./common";
 import { dashboardMessages } from "./dashboard";
+import { discoveryMessages } from "./discovery";
 import { downloadCenterMessages } from "./download-center";
+import { governanceErrorsMessages } from "./governance-errors";
 import { notificationsMessages } from "./notifications";
 import { onboardingMessages } from "./onboarding";
 import { policyMessages } from "./policy";
 import { policyRolloutMessages } from "./policy-rollout";
 import { policyRuntimeMessages } from "./policy-runtime";
+import { postureMessages } from "./posture";
+import { privacyGuardMessages } from "./privacy-guard";
 import { settingsMessages } from "./settings";
 import { teamMessages } from "./team";
 import { usageMessages } from "./usage";
@@ -28,12 +32,16 @@ export const pageMessages = {
 	...billingMessages,
 	...billingPlanMessages,
 	...dashboardMessages,
+	...discoveryMessages,
 	...downloadCenterMessages,
+	...governanceErrorsMessages,
 	...notificationsMessages,
 	...onboardingMessages,
 	...policyMessages,
 	...policyRolloutMessages,
 	...policyRuntimeMessages,
+	...postureMessages,
+	...privacyGuardMessages,
 	...settingsMessages,
 	...teamMessages,
 	...usageMessages,
@@ -50,12 +58,16 @@ export const messageModules = [
 	billingMessages,
 	billingPlanMessages,
 	dashboardMessages,
+	discoveryMessages,
 	downloadCenterMessages,
+	governanceErrorsMessages,
 	notificationsMessages,
 	onboardingMessages,
 	policyMessages,
 	policyRolloutMessages,
 	policyRuntimeMessages,
+	postureMessages,
+	privacyGuardMessages,
 	settingsMessages,
 	teamMessages,
 	usageMessages,

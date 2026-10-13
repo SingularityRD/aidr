@@ -7,6 +7,8 @@
  * or partial answer is shown as unavailable, never as zeros.
  */
 
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import type { PrivacyWindow } from "./privacy-guard";
 
 /**
@@ -92,15 +94,15 @@ export const SHADOW_AI_SERVICES: Readonly<Record<string, { name: string; categor
 	"read-ai": { name: "Read AI", category: "meeting" },
 };
 
-const CATEGORY_LABELS: Readonly<Record<string, string>> = {
-	chat: "Chat assistant",
-	coding: "Coding",
-	image: "Image, video & voice",
-	meeting: "Meeting assistant",
-	writing: "Writing",
-	search: "Search & research",
-	agent: "Autonomous agent",
-	other: "Other",
+const CATEGORY_LABELS: Readonly<Record<string, DashboardMessageKey>> = {
+	chat: "pg.cat.chat",
+	coding: "pg.cat.coding",
+	image: "pg.cat.image",
+	meeting: "pg.cat.meeting",
+	writing: "pg.cat.writing",
+	search: "pg.cat.search",
+	agent: "pg.cat.agent",
+	other: "pg.cat.other",
 };
 
 export interface ShadowAiSummary {
@@ -200,8 +202,9 @@ export function serviceName(serviceId: string): string {
 	return SHADOW_AI_SERVICES[serviceId]?.name ?? serviceId;
 }
 
-export function categoryLabel(category: string): string {
-	return CATEGORY_LABELS[category] ?? category;
+export function categoryLabel(category: string, t: Translate = englishT): string {
+	const key = CATEGORY_LABELS[category];
+	return key ? t(key) : category;
 }
 
 /** One-line, counts-only summary used by the generic event feeds. */
