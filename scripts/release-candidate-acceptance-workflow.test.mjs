@@ -23,7 +23,7 @@ test("exact RC requires packaged native Claude acceptance on Windows before sign
 	assert.match(native, /sign-windows-response-payload\.ps1 -CheckOnly[\s\S]*-ExpectedThumbprint \$env:WINDOWS_CODE_SIGNING_THUMBPRINT/);
 	assert.ok(native.indexOf("Final packaged Authenticode verification failed") < native.indexOf("Verify packaged native AMSI and hook decisions on Windows"));
 	assert.doesNotMatch(native, /continue-on-error:/);
-	assert.match(job("final-sign-publish"), /needs: \[build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native, installers-linux, installers-windows\]/);
+	assert.match(job("final-sign-publish"), /needs: \[build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native, installers-linux, installers-windows, installers-sea-sign\]/);
 });
 
 test("protected acceptance runner requires the installed loopback control plane and binds its smoke to the exact RC", () => {

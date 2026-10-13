@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Optional Singularity AIDR setup EXE (WiX Toolset 5 Burn bootstrapper), built
+  by build-msi.ps1 -Bundle around the signed MSI it just built. It adds nothing
+  to the product: the chain is that one MSI, and the internal-UI bootstrapper
+  shows the MSI's own wizard (English or Turkish, the same pages, the same
+  company connection page), so a per-customer EXE installs exactly what the
+  per-customer MSI installs. Some admins and download portals only accept an
+  EXE; the MSI stays the format for Intune, SCCM and GPO.
+
+  Signing (build-msi.ps1): the Burn engine is detached, Authenticode-signed and
+  reattached, then the EXE itself is signed, and both are verified with
+  signtool /pa. Every $(var.*) value comes from msi-inputs.mjs.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle Name="$(var.ProductName)"
+          Manufacturer="Singularity R&amp;D"
+          Version="$(var.ProductVersion)"
+          UpgradeCode="$(var.BundleUpgradeCode)"
+          AboutUrl="https://singularityrd.com"
+          Compressed="yes">
+    <BootstrapperApplication>
+      <bal:WixInternalUIBootstrapperApplication />
+    </BootstrapperApplication>
+    <Chain>
+      <MsiPackage Id="AidrMsi" SourceFile="$(var.MsiPath)" Vital="yes" bal:PrimaryPackageType="default" />
+    </Chain>
+  </Bundle>
+</Wix>

@@ -7,6 +7,14 @@
 //   node deploy/installers/windows/msi-inputs.mjs --sea-dir <dir> \
 //     --trust-key <pem> --trust-key-fingerprint <sha256> --version 0.6.0[-rc.N] \
 //     --signing signed|unsigned [--catalog-key <pem>]
+//     [--customer-packet <customer-packet.json> [--customer-id <id>]]
+//
+// A per-customer build carries the vendor-signed customer packet
+// (docs/operations/customer-builds.md): the product is named
+// "Singularity AIDR (<CUSTOMER>)" and the files
+// SingularityAIDR-<CUSTOMER>-<version>-<arch>.msi / .exe. The UpgradeCode is
+// the same as the generic MSI's, so customer and generic installs upgrade
+// each other.
 
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
@@ -14,8 +22,11 @@ import { pathToFileURL } from "node:url";
 import {
 	checkCatalogKey,
 	checkSeaBundle,
+	checkCustomerPacket,
 	checkTrustKey,
 	checkVersion,
+	customerArtifactName,
+	customerLabel,
 	InstallerInputError,
 	PACKAGE_NAME,
 	parseFlags,
@@ -23,6 +34,9 @@ import {
 
 /** Stable across versions: MajorUpgrade replaces any earlier AIDR MSI. */
 const UPGRADE_CODE = "6B3E5F0A-4C1D-4E8B-9A57-2D0C7E1F4A93";
+/** Stable across versions: the optional Burn bootstrapper EXE (build-msi.ps1 -Bundle). */
+const BUNDLE_UPGRADE_CODE = "3A8D1F6C-5B2E-4C7A-9E14-0F6B2D8C3A57";
+const PRODUCT_NAME = "Singularity AIDR";
 /** Active Setup component id (per-user `aidr setup` at each user's next logon). */
 const ACTIVE_SETUP_ID = "{0D9B6C2E-7A41-4F35-B8E2-5C3A91D0E6F4}";
 /**
@@ -34,7 +48,7 @@ export const MSI_CULTURES = Object.freeze([
 	Object.freeze({ culture: "tr-TR", lcid: 1055 }),
 ]);
 
-export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, signing, catalogKey }) {
+export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, signing, catalogKey, customerPacket, customerId }) {
 	checkVersion(version);
 	if (signing !== "signed" && signing !== "unsigned") {
 		throw new InstallerInputError("--signing must be 'signed' or 'unsigned'");
@@ -51,6 +65,15 @@ export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, sign
 	const arch = manifest.sea.arch;
 	// Optional `aidr update` catalog key, installed as config\installer-catalog-public.pem.
 	const catalogKeyFingerprint = catalogKey ? checkCatalogKey(catalogKey).fingerprint : null;
+	if (customerId !== undefined && !customerPacket) throw new InstallerInputError("--customer-id needs --customer-packet");
+	// Optional customer packet, installed as config\customer-packet.json and (per-machine) the ProgramData copy.
+	const packet = customerPacket ? checkCustomerPacket(customerPacket, { expectedCustomerId: customerId }) : null;
+	// An unsigned build says so in its file name; it is never published as signed.
+	const unsignedMark = signing === "unsigned" ? "-UNSIGNED" : "";
+	const fileStem = (ext) =>
+		packet
+			? customerArtifactName({ customerId: packet.customerId, version, arch, ext, suffix: unsignedMark })
+			: `${PACKAGE_NAME}-${version}-windows-${arch}${unsignedMark}.${ext}`;
 	return {
 		productVersion: `${major}.${minor}.${patch}`,
 		activeSetupVersion: `${major},${minor},${patch}`,
@@ -59,9 +82,14 @@ export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, sign
 		hasCatalogKey: catalogKeyFingerprint ? "1" : "0",
 		catalogKeyFingerprint,
 		seaManifestVersion: manifest.artifact_version,
-		// An unsigned build says so in its file name; it is never published as signed.
-		outputName: `${PACKAGE_NAME}-${version}-windows-${arch}${signing === "unsigned" ? "-UNSIGNED" : ""}.msi`,
+		outputName: fileStem("msi"),
+		bundleOutputName: fileStem("exe"),
+		productName: packet ? `${PRODUCT_NAME} (${customerLabel(packet.customerId)})` : PRODUCT_NAME,
+		hasCustomerPacket: packet ? "1" : "0",
+		customerId: packet?.customerId ?? null,
+		customerPacketSha256: packet?.sha256 ?? null,
 		upgradeCode: UPGRADE_CODE,
+		bundleUpgradeCode: BUNDLE_UPGRADE_CODE,
 		activeSetupId: ACTIVE_SETUP_ID,
 		// New for every build, as WiX's default was; shared by the culture builds
 		// so the Turkish one is a language transform of the English one.
@@ -72,7 +100,16 @@ export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, sign
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
 	try {
-		const flags = parseFlags(process.argv.slice(2), ["sea-dir", "trust-key", "trust-key-fingerprint", "version", "signing", "catalog-key"]);
+		const flags = parseFlags(process.argv.slice(2), [
+			"sea-dir",
+			"trust-key",
+			"trust-key-fingerprint",
+			"version",
+			"signing",
+			"catalog-key",
+			"customer-packet",
+			"customer-id",
+		]);
 		for (const required of ["sea-dir", "trust-key", "trust-key-fingerprint", "version", "signing"]) {
 			if (!flags[required]) throw new InstallerInputError(`--${required} is required`);
 		}
@@ -83,6 +120,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
 			version: flags.version,
 			signing: flags.signing,
 			catalogKey: flags["catalog-key"],
+			customerPacket: flags["customer-packet"],
+			customerId: flags["customer-id"],
 		});
 		console.log(JSON.stringify(inputs));
 	} catch (error) {

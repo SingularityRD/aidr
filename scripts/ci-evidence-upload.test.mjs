@@ -125,7 +125,7 @@ test("Windows fleet lifecycle gates use native Windows runners and remain requir
 	assert.match(native, /if \(\$LASTEXITCODE -ne 0\) \{ throw "Windows fleet lifecycle verification failed" \}/u);
 	assert.ok(native.indexOf("Windows fleet lifecycle verification failed") < native.indexOf("Upload Windows native package receipt"));
 	assert.doesNotMatch(native, /continue-on-error:/u);
-	assert.match(job(rc, "final-sign-publish"), /needs: \[build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native, installers-linux, installers-windows\]/u);
+	assert.match(job(rc, "final-sign-publish"), /needs: \[build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native, installers-linux, installers-windows, installers-sea-sign\]/u);
 });
 
 test("VSIX packaging keeps runtime rules inside the manifest-covered dist tree", () => {
@@ -212,6 +212,34 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 		]],
 		["release-rc.yml::Upload Linux installers (pinned)", ["${{ runner.temp }}/installers-linux/"]],
 		["release-rc.yml::Upload Windows installer (pinned)", ["${{ runner.temp }}/installers-windows/"]],
+		// Per-customer installers: the verified packet (never a secret), then the signed
+		// packages under SingularityAIDR-<CUSTOMER>-<version>-<arch>.<ext>.
+		["customer-installer.yml::Hand the verified packet to the build jobs (pinned)", ["${{ runner.temp }}/packet/customer-packet.json"]],
+		["customer-installer.yml::Upload unsigned customer Linux packages (pinned)", ["${{ runner.temp }}/installers-linux/"]],
+		["customer-installer.yml::Upload the customer .deb (pinned)", [
+			"${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.deb",
+			"${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.deb.asc",
+			"${{ runner.temp }}/installers-linux/linux-package-signing-key.asc",
+		]],
+		["customer-installer.yml::Upload the customer .rpm (pinned)", [
+			"${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.rpm",
+			"${{ runner.temp }}/installers-linux/linux-package-signing-key.asc",
+		]],
+		["customer-installer.yml::Upload the customer .tar.gz (pinned)", [
+			"${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.tar.gz",
+			"${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.tar.gz.asc",
+			"${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}-linux.SHA256SUMS",
+			"${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}-linux.SHA256SUMS.asc",
+			"${{ runner.temp }}/installers-linux/linux-package-signing-key.asc",
+		]],
+		["customer-installer.yml::Upload the customer .msi (pinned)", [
+			"${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}.msi",
+			"${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}-windows.SHA256SUMS",
+		]],
+		["customer-installer.yml::Upload the customer .exe (pinned)", [
+			"${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}.exe",
+			"${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}-windows.SHA256SUMS",
+		]],
 	]);
 	const actual = allArtifactUploads();
 	assert.deepEqual(actual.map(({ key }) => key).sort(), [...expected.keys()].sort());

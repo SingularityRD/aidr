@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { embeddedBuildFlavors } from "../lib/release-minify.mjs";
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CRASH_HOOK = path.join(REPO_ROOT, "scripts", "real-host-e2e", "crash-hook.mjs");
@@ -477,6 +478,7 @@ const FLAVOR_FILES = Object.freeze({
 export function artifactFlavor(connector) {
 	const file = path.join(REPO_ROOT, FLAVOR_FILES[connector]);
 	if (!existsSync(file)) return null;
-	const match = /EMBEDDED_BUILD_FLAVOR = "([a-z_]+)"/u.exec(readFileSync(file, "utf8"));
-	return match ? match[1] : "unknown";
+	// Release bundles are minified; this reads the flavour from either form.
+	const flavors = embeddedBuildFlavors(readFileSync(file, "utf8"));
+	return flavors.length === 1 ? flavors[0] : "unknown";
 }

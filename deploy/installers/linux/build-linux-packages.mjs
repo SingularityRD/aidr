@@ -12,11 +12,21 @@
 //   /usr/share/applications/singularity-aidr-assistant.desktop  menu entry for
 //                                                     `aidr assistant` (.deb / .rpm)
 //
+// A per-customer build (--customer-packet <file>, docs/operations/customer-builds.md)
+// adds the vendor-signed customer packet: in the .deb / .rpm as
+// /etc/singularity-aidr/customer-packet.json, a dpkg conffile / RPM
+// %config(noreplace) that a later generic package upgrade keeps; in the tarball as
+// config/customer-packet.json (installed to <prefix>/config). Its files are named
+// SingularityAIDR-<CUSTOMER>-<version>-<arch>.{deb,rpm,tar.gz}; the package
+// itself stays `singularity-aidr`, so generic and customer packages upgrade
+// each other.
+//
 // Usage:
 //   node deploy/installers/linux/build-linux-packages.mjs \
 //     --sea-dir bin/aidr-sea --trust-key release-public.pem \
 //     --trust-key-fingerprint <sha256> --version 0.6.0 --out dist-installers \
 //     [--formats deb,rpm,tar] [--maintainer "Name <address>"] [--catalog-key catalog-public.pem]
+//     [--customer-packet customer-packet.json [--customer-id <id>]]
 //
 // .deb needs dpkg-deb and .rpm needs rpmbuild on PATH; a requested format whose
 // tool is missing fails the build. Signing is a separate step (CI signs the
@@ -40,11 +50,15 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	CATALOG_KEY_FILE,
+	CUSTOMER_PACKET_FILE,
 	checkCatalogKey,
+	checkCustomerPacket,
 	checkSeaBundle,
 	checkTrustKey,
 	checkVersion,
+	customerArtifactName,
 	InstallerInputError,
+	LINUX_CUSTOMER_PACKET,
 	LINUX_PREFIX,
 	MAINTAINER,
 	PACKAGE_NAME,
@@ -102,10 +116,11 @@ function setModes(root) {
 }
 
 /**
- * Stage the file tree every format shares under `<root>`.
+ * Stage the file tree every format shares under `<root>`. A customer packet
+ * goes to /etc for the .deb / .rpm (`withUsrBin`), to <prefix>/config for the tarball.
  * @returns {{ prefix: string }} the staged prefix directory
  */
-export function stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, withUsrBin = true }) {
+export function stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, customerPacket, withUsrBin = true }) {
 	const prefix = join(root, LINUX_PREFIX.slice(1));
 	mkdirSync(join(prefix, "config"), { recursive: true });
 	mkdirSync(join(prefix, "libexec"), { recursive: true });
@@ -123,6 +138,13 @@ export function stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, withU
 		mkdirSync(applications, { recursive: true });
 		for (const dir of [join(root, "usr", "share"), applications]) chmodSync(dir, 0o755);
 		writeFileSync(join(root, ASSISTANT_DESKTOP_FILE.slice(1)), ASSISTANT_DESKTOP, { mode: 0o644 });
+	}
+	if (customerPacket) {
+		const target = withUsrBin ? join(root, LINUX_CUSTOMER_PACKET.slice(1)) : join(prefix, "config", CUSTOMER_PACKET_FILE);
+		mkdirSync(dirname(target), { recursive: true });
+		if (withUsrBin) for (const dir of [join(root, "etc"), dirname(target)]) chmodSync(dir, 0o755);
+		writeFileSync(target, customerPacket.bytes);
+		chmodSync(target, 0o644);
 	}
 	return { prefix };
 }
@@ -176,15 +198,20 @@ function run(command, args, options = {}) {
 	if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited with ${result.status}`);
 }
 
-export function buildDeb({ seaDir, trustKeyPem, catalogKeyPem, version, arch, out, work, maintainer }) {
+/** dpkg conffiles: once installed the customer packet is the admin's file (kept on upgrade and removal). */
+export const debConffiles = (customerPacket) => (customerPacket ? `${LINUX_CUSTOMER_PACKET}\n` : null);
+
+export function buildDeb({ seaDir, trustKeyPem, catalogKeyPem, customerPacket, version, arch, out, work, maintainer, fileName }) {
 	if (!tool("dpkg-deb")) throw new InstallerInputError("dpkg-deb is required to build the .deb");
 	const root = join(work, "deb-root");
-	stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem });
+	stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, customerPacket });
 	mkdirSync(join(root, "DEBIAN"), { mode: 0o755 });
 	writeFileSync(join(root, "DEBIAN", "control"), debControl({ version, arch, maintainer, installedSizeKb: duKb(root) }));
 	writeFileSync(join(root, "DEBIAN", "postinst"), DEB_POSTINST, { mode: 0o755 });
 	writeFileSync(join(root, "DEBIAN", "prerm"), DEB_PRERM, { mode: 0o755 });
-	const file = join(out, `${PACKAGE_NAME}_${packageVersion(version)}_${arch}.deb`);
+	const conffiles = debConffiles(customerPacket);
+	if (conffiles) writeFileSync(join(root, "DEBIAN", "conffiles"), conffiles, { mode: 0o644 });
+	const file = join(out, fileName ?? `${PACKAGE_NAME}_${packageVersion(version)}_${arch}.deb`);
 	run("dpkg-deb", ["--root-owner-group", "-Zxz", "--build", root, file]);
 	return file;
 }
@@ -193,8 +220,12 @@ export function buildDeb({ seaDir, trustKeyPem, catalogKeyPem, version, arch, ou
  * RPM spec. rpmbuild's post-install processing (strip, build-id links,
  * debuginfo, automatic dependencies) would rewrite or misdescribe the SEA
  * binaries, so all of it is off: the payload is the verified bundle as built.
+ *
+ * The customer packet is %config(noreplace). A generic package (no packet)
+ * still owns the path as %ghost, so upgrading a customer install to a generic
+ * package keeps the packet instead of erasing it with the old package's files.
  */
-export function rpmSpec({ version, arch, stagedRoot, maintainer = MAINTAINER }) {
+export function rpmSpec({ version, arch, stagedRoot, maintainer = MAINTAINER, customerPacket = false }) {
 	const rpmVersion = packageVersion(version);
 	return `%global __os_install_post %{nil}
 %global debug_package %{nil}
@@ -229,21 +260,23 @@ if [ "$1" = "0" ]; then "${LINUX_PREFIX}/libexec/package-hook.sh" preremove 1; f
 ${LINUX_PREFIX}
 /usr/bin/aidr
 ${ASSISTANT_DESKTOP_FILE}
+%dir ${dirname(LINUX_CUSTOMER_PACKET)}
+${customerPacket ? "" : "%ghost "}%config(noreplace) %attr(0644,root,root) ${LINUX_CUSTOMER_PACKET}
 `;
 }
 
-export function buildRpm({ seaDir, trustKeyPem, catalogKeyPem, version, arch, out, work, maintainer }) {
+export function buildRpm({ seaDir, trustKeyPem, catalogKeyPem, customerPacket, version, arch, out, work, maintainer, fileName }) {
 	if (!tool("rpmbuild")) throw new InstallerInputError("rpmbuild is required to build the .rpm");
 	const root = join(work, "rpm-root");
-	stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem });
+	stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, customerPacket });
 	const top = join(work, "rpmbuild");
 	for (const dir of ["BUILD", "RPMS", "SOURCES", "SPECS", "SRPMS", "BUILDROOT"]) mkdirSync(join(top, dir), { recursive: true });
 	const spec = join(top, "SPECS", `${PACKAGE_NAME}.spec`);
-	writeFileSync(spec, rpmSpec({ version, arch, stagedRoot: root, maintainer }));
+	writeFileSync(spec, rpmSpec({ version, arch, stagedRoot: root, maintainer, customerPacket: Boolean(customerPacket) }));
 	run("rpmbuild", ["-bb", "--define", `_topdir ${top}`, "--target", arch, spec]);
 	const built = join(top, "RPMS", arch, `${PACKAGE_NAME}-${packageVersion(version)}-1.${arch}.rpm`);
 	if (!existsSync(built)) throw new Error(`rpmbuild did not produce ${built}`);
-	const file = join(out, basename(built));
+	const file = join(out, fileName ?? basename(built));
 	copyFileSync(built, file);
 	return file;
 }
@@ -274,11 +307,11 @@ rm -rf "$PREFIX/bundle" "$PREFIX/config" "$PREFIX/libexec"
 rmdir "$PREFIX" 2>/dev/null || true
 `;
 
-export function buildTarball({ seaDir, trustKeyPem, catalogKeyPem, version, arch, out, work }) {
-	const name = `${PACKAGE_NAME}-${version}-linux-${arch}`;
+export function buildTarball({ seaDir, trustKeyPem, catalogKeyPem, customerPacket, version, arch, out, work, fileName }) {
+	const name = fileName ? fileName.replace(/\.tar\.gz$/u, "") : `${PACKAGE_NAME}-${version}-linux-${arch}`;
 	const stage = join(work, "tar-root");
 	const root = join(stage, "staged");
-	const { prefix } = stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, withUsrBin: false });
+	const { prefix } = stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, customerPacket, withUsrBin: false });
 	const top = join(stage, name);
 	cpSync(prefix, top, { recursive: true });
 	writeFileSync(join(top, "install.sh"), TAR_INSTALL, { mode: 0o755 });
@@ -322,14 +355,18 @@ export function buildLinuxPackages(options) {
 	mkdirSync(out, { recursive: true });
 	const work = mkdtempSync(join(options.workRoot ?? tmpdir(), "aidr-linux-installers-"));
 	const catalogKeyPem = options.catalogKey ? checkCatalogKey(options.catalogKey).pem : undefined;
-	const common = { seaDir, trustKeyPem: pem, catalogKeyPem, version, out, work, maintainer: options.maintainer };
+	if (options.customerId !== undefined && !options.customerPacket) throw new InstallerInputError("--customer-id needs --customer-packet");
+	const customerPacket = options.customerPacket ? checkCustomerPacket(options.customerPacket, { expectedCustomerId: options.customerId }) : undefined;
+	// Per-customer builds: SingularityAIDR-<CUSTOMER>-<version>-<arch>.<ext>.
+	const fileName = (ext) => (customerPacket ? customerArtifactName({ customerId: customerPacket.customerId, version, arch: manifest.sea.arch, ext }) : undefined);
+	const common = { seaDir, trustKeyPem: pem, catalogKeyPem, customerPacket, version, out, work, maintainer: options.maintainer };
 	try {
 		const files = [];
-		if (formats.includes("deb")) files.push(buildDeb({ ...common, arch: names.deb }));
-		if (formats.includes("rpm")) files.push(buildRpm({ ...common, arch: names.rpm }));
-		if (formats.includes("tar")) files.push(buildTarball({ ...common, arch: names.tar }));
+		if (formats.includes("deb")) files.push(buildDeb({ ...common, arch: names.deb, fileName: fileName("deb") }));
+		if (formats.includes("rpm")) files.push(buildRpm({ ...common, arch: names.rpm, fileName: fileName("rpm") }));
+		if (formats.includes("tar")) files.push(buildTarball({ ...common, arch: names.tar, fileName: fileName("tar.gz") }));
 		const sums = writeSha256Sums(out, files);
-		return { files, sums, manifest };
+		return { files, sums, manifest, customerPacket };
 	} finally {
 		rmSync(work, { recursive: true, force: true });
 	}
@@ -337,7 +374,18 @@ export function buildLinuxPackages(options) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
 	try {
-		const flags = parseFlags(process.argv.slice(2), ["sea-dir", "trust-key", "trust-key-fingerprint", "version", "out", "formats", "maintainer", "catalog-key"]);
+		const flags = parseFlags(process.argv.slice(2), [
+			"sea-dir",
+			"trust-key",
+			"trust-key-fingerprint",
+			"version",
+			"out",
+			"formats",
+			"maintainer",
+			"catalog-key",
+			"customer-packet",
+			"customer-id",
+		]);
 		for (const required of ["sea-dir", "trust-key", "trust-key-fingerprint", "version", "out"]) {
 			if (!flags[required]) throw new InstallerInputError(`--${required} is required`);
 		}
@@ -350,6 +398,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
 			formats: flags.formats,
 			maintainer: flags.maintainer,
 			catalogKey: flags["catalog-key"],
+			customerPacket: flags["customer-packet"],
+			customerId: flags["customer-id"],
 		});
 		for (const file of [...files, sums]) console.log(`built ${file}`);
 		console.log("UNSIGNED: sign the packages (rpm --addsign, detached .asc for .deb/.tar.gz) before distribution.");

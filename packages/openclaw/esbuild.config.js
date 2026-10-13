@@ -2,6 +2,7 @@ import * as esbuild from "esbuild";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RELEASE_MINIFY } from "../../scripts/lib/release-minify.mjs";
 import { stageWindowsKoffi } from "../../scripts/stage-windows-koffi.mjs";
 
 /**
@@ -110,6 +111,21 @@ await esbuild.build({
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
 	plugins: [stripYamlProcessRefs],
 });
+
+// Release: minify with function/class names kept (scripts/lib/release-minify.mjs).
+// It runs as a second pass so the yaml debug stripping above still matches the
+// readable bundle it was written against.
+if (isRelease) {
+	const outPath = join(packageRoot, "dist", "index.cjs");
+	const { code } = await esbuild.transform(readFileSync(outPath, "utf8"), {
+		...RELEASE_MINIFY,
+		loader: "js",
+		format: "cjs",
+		target: "node18",
+		legalComments: "none",
+	});
+	writeFileSync(outPath, code);
+}
 
 stripSourceMappingUrl(join(packageRoot, "dist", "index.cjs"));
 removeReleaseSourceMaps(join(packageRoot, "dist"));

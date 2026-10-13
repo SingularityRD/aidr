@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildHookBootstraps, hookBundleName } from "../../scripts/hook-bootstrap.mjs";
+import { releaseMinifyOptions } from "../../scripts/lib/release-minify.mjs";
 import { stageWindowsKoffi } from "../../scripts/stage-windows-koffi.mjs";
 
 const pkg = JSON.parse(readFileSync("../core/package.json", "utf-8"));
@@ -68,6 +69,8 @@ const shared = {
 	sourceRoot: "",
 	// Avoid carrying third-party license/debug banners into closed-source bundles.
 	legalComments: isRelease ? "none" : "eof",
+	// Release: minified with function/class names kept (error.name checks, stack frames).
+	...releaseMinifyOptions(isRelease),
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version) },
 };
 

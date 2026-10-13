@@ -420,3 +420,108 @@ describe("build-sea release flavour", () => {
 		);
 	}, 60_000);
 });
+
+describe("release minify (minified bundles, names kept)", () => {
+	const coreSrc = resolve(__dirname, "../../../core/src");
+	/** Bundle a probe of core's flavour, integrity-error and init-failure code, as a release build would. */
+	async function probe(
+		options: Record<string, unknown>,
+	): Promise<{ text: string; result: unknown }> {
+		const dir = mkdtempSync(join(tmpdir(), "aidr-release-minify-"));
+		scratchDirs.push(dir);
+		const entry = join(dir, "entry.ts");
+		const imp = (path: string) => JSON.stringify(join(coreSrc, path));
+		writeFileSync(
+			entry,
+			[
+				`import { isCommercialBuild } from ${imp("build-flavor.ts")};`,
+				`import { ArtifactIntegrityError, isReleaseKeyMissing } from ${imp("integrity/runtime.ts")};`,
+				`import { RELEASE_KEY_MISSING_REASON } from ${imp("integrity/standalone.ts")};`,
+				`import { formatInitFailureMessage, initFailureCode } from ${imp("init-failure.ts")};`,
+				'const error = new ArtifactIntegrityError("sea/dist", { status: "invalid_manifest" });',
+				// The same error from another bundle copy of the class: recognised by its name only.
+				'const foreign = Object.assign(new Error("x"), { name: error.name, result: { status: "invalid_manifest" } });',
+				"console.log(JSON.stringify({",
+				"\tcommercial: isCommercialBuild(),",
+				"\tclassName: ArtifactIntegrityError.name,",
+				"\tname: error.name,",
+				'\tkeyMissing: isReleaseKeyMissing(new ArtifactIntegrityError("sea/dist", { status: "missing_signature", reason: RELEASE_KEY_MISSING_REASON })),',
+				"\tcode: initFailureCode(error),",
+				'\tmessage: formatInitFailureMessage("x", foreign),',
+				"}));",
+			].join("\n"),
+		);
+		const outfile = join(dir, "probe.cjs");
+		await esbuild.build({
+			entryPoints: [entry],
+			outfile,
+			bundle: true,
+			platform: "node",
+			target: "node18",
+			format: "cjs",
+			external: ["koffi"],
+			logLevel: "silent",
+			define: { __AIDR_VERSION__: '"0.0.0-test"' },
+			plugins: [
+				{
+					// What core's build:release does to dist/build-flavor.js.
+					name: "embed-commercial-flavour",
+					setup(build) {
+						build.onLoad({ filter: /build-flavor\.ts$/ }, (args) => ({
+							contents: readFileSync(args.path, "utf8").replace(
+								"__AIDR_EMBEDDED_BUILD_FLAVOR__",
+								"commercial",
+							),
+							loader: "ts",
+						}));
+					},
+				},
+			],
+			...options,
+		});
+		const run = spawnSync(process.execPath, [outfile], {
+			encoding: "utf8",
+			env: { ...process.env, AIDR_LOCALE: "en" },
+		});
+		expect(run.status, run.stderr).toBe(0);
+		return { text: readFileSync(outfile, "utf8"), result: JSON.parse(run.stdout) };
+	}
+
+	it("keeps the build flavour readable and error names and messages identical to the readable build", async () => {
+		const { RELEASE_MINIFY, releaseMinifyOptions } = await import(
+			"../../../../scripts/lib/release-minify.mjs"
+		);
+		expect(RELEASE_MINIFY).toEqual({ minify: true, keepNames: true });
+		expect(releaseMinifyOptions(false)).toEqual({});
+		const readable = await probe({});
+		const minified = await probe(releaseMinifyOptions(true));
+		// Minified for real: identifiers renamed, so only the minify-aware reader finds the flavour.
+		expect(minified.text).not.toMatch(/EMBEDDED_BUILD_FLAVOR = "commercial"/);
+		expect(minified.text.length).toBeLessThan(readable.text.length * 0.7);
+		expect(embeddedFlavor(minified.text)).toBe("release");
+		expect(embeddedFlavor(readable.text)).toBe("release");
+		expect(minified.result).toEqual(readable.result);
+		expect(minified.result).toMatchObject({
+			commercial: true,
+			className: "ArtifactIntegrityError",
+			name: "ArtifactIntegrityError",
+			keyMissing: true,
+			code: "integrity_invalid_manifest",
+		});
+		expect((minified.result as { message: string }).message).toMatch(
+			/cannot verify its own installation/,
+		);
+	}, 60_000);
+
+	it("finds no flavour, never a guess, when the minified marker is incomplete or ambiguous", () => {
+		const fn = 'function wn(){return UJe==="commercial"?!0:kB()}s(wn,"isCommercialBuild");';
+		expect(embeddedFlavor(`var UJe="commercial";${fn}`)).toBe("release");
+		expect(embeddedFlavor(`var UJe,d=_(()=>{UJe="development";${fn}})`)).toBe("development");
+		// Without keepNames the comparing function cannot be identified.
+		expect(
+			embeddedFlavor('var UJe="commercial";function wn(){return UJe==="commercial"}'),
+		).toBeNull();
+		// Two copies that disagree.
+		expect(embeddedFlavor(`var UJe="commercial";${fn}UJe="development";`)).toBeNull();
+	});
+});

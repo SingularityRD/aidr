@@ -2,7 +2,8 @@
 // Build a relocatable Single Executable Application (SEA) distribution of
 // Singularity AIDR, using the documented Node.js SEA flow:
 //
-//   1. bundle the entry points (esbuild.config.js --release: no source maps)
+//   1. bundle the entry points (esbuild.config.js --release: no source maps;
+//      a release-flavour build is minified with names kept)
 //   2. node --experimental-sea-config sea-config.json  -> sea-prep.blob
 //   3. copy process.execPath to the output binary
 //   4. (macOS) strip the signature, inject the blob with postject, re-sign ad hoc
@@ -81,6 +82,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { embeddedBuildFlavors, releaseMinifyOptions } from "../../../scripts/lib/release-minify.mjs";
 
 export const SEA_SENTINEL_FUSE = "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2";
 /** SEA assets (one binary, many entries) need Node >= 21.7 / 20.12; the repo targets >= 22.12. */
@@ -641,7 +643,7 @@ function relocatedCliSmoke(binary, command, { cwd, env }) {
  * itself inside a SEA; the CLI locates `dist/resources` next to it
  * (packages/cli/src/utils/test-protection.ts).
  */
-export async function bundleCli({ cliDist, outfile, version, esbuild }) {
+export async function bundleCli({ cliDist, outfile, version, esbuild, release = false }) {
 	const entry = join(cliDist, "index.js");
 	if (!existsSync(entry)) throw new Error(`${entry} is missing; build the CLI first (pnpm --filter @singularityrd/aidr-cli build)`);
 	await esbuild.build({
@@ -655,6 +657,8 @@ export async function bundleCli({ cliDist, outfile, version, esbuild }) {
 		sourcemap: false,
 		legalComments: "none",
 		logLevel: "warning",
+		// Release flavour: minified, names kept (scripts/lib/release-minify.mjs).
+		...releaseMinifyOptions(release),
 		define: { "import.meta.url": "__aidrImportMetaUrl", __AIDR_VERSION__: JSON.stringify(version) },
 		banner: { js: 'var __aidrImportMetaUrl = require("node:url").pathToFileURL(__filename).href;' },
 	});
@@ -669,8 +673,8 @@ export async function bundleCli({ cliDist, outfile, version, esbuild }) {
 
 /** The build flavour a bundle embeds (core's EMBEDDED_BUILD_FLAVOR), or null when none is found. */
 export function embeddedFlavor(source) {
-	const flavors = new Set([...source.matchAll(/EMBEDDED_BUILD_FLAVOR\d* = "([a-z]+)"/gu)].map((match) => match[1]));
-	if (flavors.size !== 1) return null;
+	const flavors = embeddedBuildFlavors(source);
+	if (flavors.length !== 1) return null;
 	const [flavor] = flavors;
 	return flavor === "commercial" ? "release" : flavor === "development" ? "development" : null;
 }
@@ -823,7 +827,7 @@ async function main() {
 	const stage = mkdtempSync(join(tmpdir(), "aidr-sea-stage-"));
 	try {
 		const esbuild = await import("esbuild");
-		const cliBundle = await bundleCli({ cliDist, outfile: join(stage, "aidr-cli.bundle.cjs"), version, esbuild });
+		const cliBundle = await bundleCli({ cliDist, outfile: join(stage, "aidr-cli.bundle.cjs"), version, esbuild, release: flavor === "release" });
 		const sources = { [CLI_ASSET]: cliBundle };
 		for (const { name, pkg, main } of HOOKS) {
 			const source = join(pkg === "codex" ? join(codexDir, "dist") : distDir, main);

@@ -1,0 +1,609 @@
+name: Customer Installer Build
+
+# Per-customer installers (docs/operations/customer-builds.md). Every customer
+# gets the SAME signed product as a promoted release; only a vendor-signed
+# customer packet (customer id, license, server URL, optional preset and display
+# name) is added. This workflow builds nothing from source: it takes the
+# release-key-signed SEA bundles a promoted release published (attested by
+# release-rc.yml), verifies the packet with scripts/customer-packet-verify.mjs
+# against the license public-key registry, and packages:
+#
+#   SingularityAIDR-<CUSTOMER>-<version>-x64.msi / .exe   (windows-2022, Authenticode)
+#   SingularityAIDR-<CUSTOMER>-<version>-x64.deb / .rpm / .tar.gz   (ubuntu, GPG)
+#
+# The packet comes from the environment secret AIDR_CUSTOMER_PACKET_<ID>
+# (base64 of the packet file; <ID> is the customer id upper-cased with '-' as
+# '_') or from an artifact named customer-packet-<customer id> uploaded by an
+# earlier run of this repository (packet_run_id). It never holds a secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Promoted release tag (vX.Y.Z-rc.N) whose signed bundles to package"
+        required: true
+        type: string
+      customer_id:
+        description: "Customer id (as in the packet), e.g. bilgem"
+        required: true
+        type: string
+      packet_source:
+        description: "Where the customer packet comes from"
+        required: true
+        type: choice
+        options: [secret, artifact]
+        default: secret
+      packet_run_id:
+        description: "Run id that uploaded the customer-packet-<customer id> artifact (packet_source=artifact)"
+        required: false
+        type: string
+      build_exe:
+        description: "Also build the Windows setup EXE around the MSI"
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: customer-installer-${{ inputs.customer_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22.12.0
+  GH_CLI_VERSION: "2.101.0"
+  GH_CLI_SHA256_LINUX_AMD64: 9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8
+
+jobs:
+  prepare:
+    name: Verify the promoted release bundles and the customer packet
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    environment: release-candidate
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+    outputs:
+      version: ${{ steps.inputs.outputs.version }}
+      stem: ${{ steps.inputs.outputs.stem }}
+      linux_sha256: ${{ steps.bundles.outputs.linux_sha256 }}
+      windows_sha256: ${{ steps.bundles.outputs.windows_sha256 }}
+      packet_sha256: ${{ steps.packet.outputs.packet_sha256 }}
+    steps:
+      - name: Validate customer build inputs
+        id: inputs
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CUSTOMER_ID: ${{ inputs.customer_id }}
+          PACKET_SOURCE: ${{ inputs.packet_source }}
+          PACKET_RUN_ID: ${{ inputs.packet_run_id }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "${WORKFLOW_REF}" == "refs/heads/${DEFAULT_BRANCH}" ]] || {
+            echo "Customer installers are built only from the protected default branch." >&2
+            exit 1
+          }
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.(0|[1-9][0-9]{0,3})$ ]] || {
+            echo "release_tag must be a promoted vX.Y.Z-rc.N tag." >&2
+            exit 1
+          }
+          [[ "${CUSTOMER_ID}" =~ ^[a-z0-9][a-z0-9-]{1,31}$ ]] || {
+            echo "customer_id must be 2 to 32 lower-case letters, digits or '-', starting with a letter or digit." >&2
+            exit 1
+          }
+          case "${PACKET_SOURCE}" in
+            secret) [[ -z "${PACKET_RUN_ID}" ]] || { echo "packet_run_id is only for packet_source=artifact." >&2; exit 1; } ;;
+            artifact) [[ "${PACKET_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "packet_source=artifact needs a numeric packet_run_id." >&2; exit 1; } ;;
+            *) echo "packet_source must be secret or artifact." >&2; exit 1 ;;
+          esac
+          version="${RELEASE_TAG#v}"
+          version="${version%-rc.*}"
+          label="${CUSTOMER_ID^^}"
+          {
+            echo "version=${version}"
+            echo "stem=SingularityAIDR-${label}-${version}-x64"
+            echo "secret_name=AIDR_CUSTOMER_PACKET_${label//-/_}"
+          } >> "${GITHUB_OUTPUT}"
+
+      # Trusted tooling: the protected default branch this workflow runs from,
+      # never the release tag. Nothing is installed or built from it.
+      - name: Checkout trusted packaging tools (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pinned GitHub CLI for attestation verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz" \
+            --output "${archive}"
+          printf '%s  %s\n' "${GH_CLI_SHA256_LINUX_AMD64}" "${archive}" | sha256sum --check -
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}"
+          gh_dir="${RUNNER_TEMP}/gh_${GH_CLI_VERSION}_linux_amd64/bin"
+          [[ "$("${gh_dir}/gh" version | sed -n '1p')" == "gh version ${GH_CLI_VERSION}" ]] || {
+            echo "Pinned GitHub CLI version mismatch." >&2
+            exit 1
+          }
+          echo "${gh_dir}" >> "${GITHUB_PATH}"
+
+      - name: Verify the promoted release and its signed SEA bundles
+        id: bundles
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+          SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PUBLIC_KEY}" && -n "${SIGNING_PUBLIC_KEY_FINGERPRINT}" ]] || {
+            echo "The release trust public key and its fingerprint are required." >&2
+            exit 1
+          }
+          # Only a promoted release: published, and no longer a draft or prerelease.
+          state="$(gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')"
+          [[ "${state}" == "false false" ]] || {
+            echo "${RELEASE_TAG} is not a promoted release (draft/prerelease: ${state})." >&2
+            exit 1
+          }
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq .sha)"
+          [[ "${tag_sha}" =~ ^[0-9a-f]{40}$ ]] || { echo "Could not resolve ${RELEASE_TAG}." >&2; exit 1; }
+          sea="${RUNNER_TEMP}/sea"
+          mkdir -p "${sea}"
+          gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --dir "${sea}" \
+            --pattern aidr-sea-linux-signed.tgz --pattern aidr-sea-windows-signed.tgz
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${RUNNER_TEMP}/release-public.pem"
+          fingerprint="${SIGNING_PUBLIC_KEY_FINGERPRINT,,}"
+          for platform in linux windows; do
+            archive="${sea}/aidr-sea-${platform}-signed.tgz"
+            # Built and attested by release-rc.yml for exactly this tag's commit.
+            gh attestation verify "${archive}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-rc.yml" \
+              --predicate-type "https://slsa.dev/provenance/v1" \
+              --source-ref "refs/tags/${RELEASE_TAG}" \
+              --source-digest "${tag_sha}" \
+              --hostname "${GITHUB_SERVER_URL#https://}" >/dev/null
+            dir="${sea}/${platform}"
+            mkdir -p "${dir}"
+            tar -xzf "${archive}" -C "${dir}"
+            # Manifests, release flavour and Ed25519 signatures against the pinned release key
+            # (the Linux bundle also runs its relocated deny canary here).
+            node packages/claude-code/scripts/build-sea.mjs --verify "${dir}" --public-key "${RUNNER_TEMP}/release-public.pem" \
+              | tee "${RUNNER_TEMP}/verify-${platform}.log"
+            grep -q "sha256:${fingerprint#sha256:}" "${RUNNER_TEMP}/verify-${platform}.log" || {
+              echo "The release key does not match its pinned fingerprint." >&2
+              exit 1
+            }
+            echo "${platform}_sha256=$(sha256sum "${archive}" | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          done
+
+      - name: Download the customer packet artifact (pinned)
+        if: inputs.packet_source == 'artifact'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: customer-packet-${{ inputs.customer_id }}
+          path: ${{ runner.temp }}/packet-artifact
+          run-id: ${{ inputs.packet_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify the customer packet before it is embedded
+        id: packet
+        shell: bash
+        env:
+          CUSTOMER_ID: ${{ inputs.customer_id }}
+          PACKET_SOURCE: ${{ inputs.packet_source }}
+          PACKET_B64: ${{ inputs.packet_source == 'secret' && secrets[steps.inputs.outputs.secret_name] || '' }}
+          SECRET_NAME: ${{ steps.inputs.outputs.secret_name }}
+        run: |
+          set -euo pipefail
+          packet_dir="${RUNNER_TEMP}/packet"
+          mkdir -p "${packet_dir}"
+          packet="${packet_dir}/customer-packet.json"
+          if [[ "${PACKET_SOURCE}" == "secret" ]]; then
+            [[ -n "${PACKET_B64}" ]] || { echo "The secret ${SECRET_NAME} is empty or missing." >&2; exit 1; }
+            printf '%s' "${PACKET_B64}" | base64 --decode > "${packet}"
+            unset PACKET_B64
+          else
+            mapfile -t found < <(find "${RUNNER_TEMP}/packet-artifact" -type f -name '*.json')
+            [[ "${#found[@]}" -eq 1 ]] || { echo "The packet artifact must hold exactly one .json file." >&2; exit 1; }
+            cp "${found[0]}" "${packet}"
+          fi
+          # Signature against the license public-key registry, the embedded license, and the
+          # customer this build is for. A refused packet stops the build: nothing is embedded.
+          node scripts/customer-packet-verify.mjs \
+            --packet-file "${packet}" \
+            --public-keys deploy/onprem/license-public-keys.json \
+            --expect-customer-id "${CUSTOMER_ID}" > "${RUNNER_TEMP}/packet-verify.json"
+          node --input-type=module - "${RUNNER_TEMP}/packet-verify.json" "${packet}" "${CUSTOMER_ID}" <<'NODE'
+          import { createHash } from "node:crypto";
+          import { appendFileSync, readFileSync } from "node:fs";
+          const [report, packet, customerId] = process.argv.slice(2);
+          const result = JSON.parse(readFileSync(report, "utf8"));
+          const sha256 = createHash("sha256").update(readFileSync(packet)).digest("hex");
+          if (result.customer_id !== customerId) throw new Error(`the packet is for ${result.customer_id}, not ${customerId}`);
+          if (result.document_sha256 !== sha256) throw new Error("the verified packet is not the file that will be embedded");
+          console.log(`Customer ${result.customer_id}, packet ${result.packet_id}: license ${result.license_state}, updates until ${result.updates_until}.`);
+          if (result.license_state !== "active" && result.license_state !== "grace") {
+            console.log(`::warning::The license in this packet is ${result.license_state}: the installer still installs local detection, but this customer receives no new updates.`);
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `packet_sha256=${sha256}\n`);
+          NODE
+
+      - name: Hand the verified packet to the build jobs (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: customer-packet-verified-${{ github.run_id }}
+          path: ${{ runner.temp }}/packet/customer-packet.json
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-build:
+    name: Build the customer's Linux packages
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    environment: release-candidate
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted packaging tools (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download the verified customer packet (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: customer-packet-verified-${{ github.run_id }}
+          path: ${{ runner.temp }}/packet
+
+      - name: Installer builder contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends rpm
+          node --test deploy/installers/installers.test.mjs
+
+      - name: Build the customer's Linux packages from the verified bundle
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CUSTOMER_ID: ${{ inputs.customer_id }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          EXPECTED_SEA_SHA256: ${{ needs.prepare.outputs.linux_sha256 }}
+          EXPECTED_PACKET_SHA256: ${{ needs.prepare.outputs.packet_sha256 }}
+          CATALOG_PUBLIC_KEY: ${{ vars.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM || secrets.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM }}
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+          SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          packet="${RUNNER_TEMP}/packet/customer-packet.json"
+          echo "${EXPECTED_PACKET_SHA256}  ${packet}" | sha256sum --check --strict
+          gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --dir "${RUNNER_TEMP}/sea-signed" --pattern aidr-sea-linux-signed.tgz
+          echo "${EXPECTED_SEA_SHA256}  ${RUNNER_TEMP}/sea-signed/aidr-sea-linux-signed.tgz" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/aidr-sea"
+          tar -xzf "${RUNNER_TEMP}/sea-signed/aidr-sea-linux-signed.tgz" -C "${RUNNER_TEMP}/aidr-sea"
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${RUNNER_TEMP}/release-public.pem"
+          catalog_args=()
+          if [[ -n "${CATALOG_PUBLIC_KEY}" ]]; then
+            printf '%s\n' "${CATALOG_PUBLIC_KEY}" > "${RUNNER_TEMP}/installer-catalog-public.pem"
+            catalog_args=(--catalog-key "${RUNNER_TEMP}/installer-catalog-public.pem")
+          fi
+          out="${RUNNER_TEMP}/installers-linux"
+          node deploy/installers/linux/build-linux-packages.mjs \
+            --sea-dir "${RUNNER_TEMP}/aidr-sea" \
+            --trust-key "${RUNNER_TEMP}/release-public.pem" \
+            --trust-key-fingerprint "${SIGNING_PUBLIC_KEY_FINGERPRINT}" \
+            --version "${VERSION}" \
+            --out "${out}" \
+            --formats deb,rpm,tar \
+            --customer-packet "${packet}" \
+            --customer-id "${CUSTOMER_ID}" \
+            "${catalog_args[@]}"
+
+      - name: Upload unsigned customer Linux packages (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: customer-linux-unsigned-${{ github.run_id }}
+          path: ${{ runner.temp }}/installers-linux/
+          if-no-files-found: error
+          retention-days: 1
+
+  linux-sign:
+    name: Sign the customer's Linux packages
+    needs: [prepare, linux-build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    environment: release-candidate
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download unsigned customer Linux packages (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: customer-linux-unsigned-${{ github.run_id }}
+          path: ${{ runner.temp }}/installers-linux
+
+      - name: Sign Linux packages with ephemeral GPG custody
+        shell: bash
+        env:
+          STEM: ${{ needs.prepare.outputs.stem }}
+          LINUX_PACKAGE_GPG_PRIVATE_KEY: ${{ secrets.AIDR_LINUX_PACKAGE_GPG_PRIVATE_KEY }}
+          LINUX_PACKAGE_GPG_PASSPHRASE: ${{ secrets.AIDR_LINUX_PACKAGE_GPG_PASSPHRASE }}
+          LINUX_PACKAGE_GPG_FINGERPRINT: ${{ secrets.AIDR_LINUX_PACKAGE_GPG_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${LINUX_PACKAGE_GPG_PRIVATE_KEY}" && -n "${LINUX_PACKAGE_GPG_PASSPHRASE}" && "${LINUX_PACKAGE_GPG_FINGERPRINT}" =~ ^[0-9A-F]{40}$ ]] || {
+            echo "Linux package signing key, passphrase and 40-hex fingerprint are required; no unsigned package is delivered." >&2
+            exit 1
+          }
+          out="${RUNNER_TEMP}/installers-linux"
+          cd "${out}"
+          sha256sum --check --strict SHA256SUMS
+          for ext in deb rpm tar.gz; do [[ -f "${STEM}.${ext}" ]] || { echo "${STEM}.${ext} was not built." >&2; exit 1; }; done
+          rm -f SHA256SUMS
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends rpm
+          export GNUPGHOME="$(mktemp -d)"
+          cleanup() { gpgconf --kill gpg-agent || true; rm -rf "${GNUPGHOME}"; }
+          trap cleanup EXIT
+          printf '%s\n' "${LINUX_PACKAGE_GPG_PRIVATE_KEY}" | gpg --batch --import
+          unset LINUX_PACKAGE_GPG_PRIVATE_KEY
+          gpg --batch --list-secret-keys --with-colons | grep -q "^fpr:::::::::${LINUX_PACKAGE_GPG_FINGERPRINT}:" || {
+            echo "Imported key does not match the pinned fingerprint." >&2
+            exit 1
+          }
+          passfile="${GNUPGHOME}/passphrase"
+          printf '%s' "${LINUX_PACKAGE_GPG_PASSPHRASE}" > "${passfile}"
+          unset LINUX_PACKAGE_GPG_PASSPHRASE
+          rpm --define "_gpg_name ${LINUX_PACKAGE_GPG_FINGERPRINT}" \
+            --define "__gpg_sign_cmd %{__gpg} gpg --batch --pinentry-mode loopback --passphrase-file ${passfile} --no-armor -u %{_gpg_name} -sbo %{__signature_filename} %{__plaintext_filename}" \
+            --addsign "./${STEM}.rpm"
+          gpg --batch --armor --export "${LINUX_PACKAGE_GPG_FINGERPRINT}" > linux-package-signing-key.asc
+          rpmdb="$(mktemp -d)"
+          rpmkeys --dbpath "${rpmdb}" --import linux-package-signing-key.asc
+          rpmkeys --dbpath "${rpmdb}" --checksig "./${STEM}.rpm"
+          rm -rf "${rpmdb}"
+          # rpm signing changed the .rpm bytes: the checksums are taken afterwards.
+          sha256sum "${STEM}.deb" "${STEM}.rpm" "${STEM}.tar.gz" > SHA256SUMS
+          for file in "${STEM}.deb" "${STEM}.tar.gz" SHA256SUMS; do
+            gpg --batch --pinentry-mode loopback --passphrase-file "${passfile}" -u "${LINUX_PACKAGE_GPG_FINGERPRINT}" --armor --detach-sign --output "${file}.asc" "${file}"
+            gpg --batch --verify "${file}.asc" "${file}"
+          done
+          sha256sum --check --strict SHA256SUMS
+          mv SHA256SUMS "${STEM}-linux.SHA256SUMS"
+          mv SHA256SUMS.asc "${STEM}-linux.SHA256SUMS.asc"
+
+      - name: Attest the customer's Linux packages (pinned)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.deb
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.rpm
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.tar.gz
+
+      - name: Upload the customer .deb (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ needs.prepare.outputs.stem }}.deb
+          path: |
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.deb
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.deb.asc
+            ${{ runner.temp }}/installers-linux/linux-package-signing-key.asc
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload the customer .rpm (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ needs.prepare.outputs.stem }}.rpm
+          path: |
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.rpm
+            ${{ runner.temp }}/installers-linux/linux-package-signing-key.asc
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload the customer .tar.gz (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ needs.prepare.outputs.stem }}.tar.gz
+          path: |
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.tar.gz
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}.tar.gz.asc
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}-linux.SHA256SUMS
+            ${{ runner.temp }}/installers-linux/${{ needs.prepare.outputs.stem }}-linux.SHA256SUMS.asc
+            ${{ runner.temp }}/installers-linux/linux-package-signing-key.asc
+          if-no-files-found: error
+          retention-days: 90
+
+  windows:
+    name: Build and Authenticode-sign the customer's MSI and setup EXE
+    needs: prepare
+    runs-on: windows-2022
+    timeout-minutes: 45
+    environment: release-candidate
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Checkout trusted packaging tools (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pinned WiX Toolset
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { throw "WiX install failed" }
+          foreach ($extension in @("WixToolset.UI.wixext/5.0.2", "WixToolset.Bal.wixext/5.0.2")) {
+            wix extension add -g $extension
+            if ($LASTEXITCODE -ne 0) { throw "WiX extension $extension install failed" }
+          }
+
+      - name: Download the verified customer packet (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: customer-packet-verified-${{ github.run_id }}
+          path: ${{ runner.temp }}/packet
+
+      - name: Build and Authenticode-sign with ephemeral runner certificate custody
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          CUSTOMER_ID: ${{ inputs.customer_id }}
+          BUILD_EXE: ${{ inputs.build_exe }}
+          STEM: ${{ needs.prepare.outputs.stem }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          EXPECTED_SEA_SHA256: ${{ needs.prepare.outputs.windows_sha256 }}
+          EXPECTED_PACKET_SHA256: ${{ needs.prepare.outputs.packet_sha256 }}
+          WINDOWS_CODE_SIGNING_PFX_B64: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 }}
+          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD }}
+          WINDOWS_CODE_SIGNING_THUMBPRINT: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_SERVER: ${{ vars.AIDR_WINDOWS_TIMESTAMP_SERVER }}
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+          SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+          CATALOG_PUBLIC_KEY: ${{ vars.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM || secrets.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "PFX import requires an ephemeral GitHub-hosted runner" }
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PUBLIC_KEY) -or [string]::IsNullOrWhiteSpace($env:SIGNING_PUBLIC_KEY_FINGERPRINT)) { throw "The release trust public key and its fingerprint are required to build installers" }
+          $thumbprint = $env:WINDOWS_CODE_SIGNING_THUMBPRINT
+          $timestamp = $env:WINDOWS_TIMESTAMP_SERVER
+          if ($thumbprint -cnotmatch '^[0-9A-F]{40}$' -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_B64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD)) { throw "Protected Windows signing certificate, password and thumbprint are required; no unsigned MSI is delivered" }
+          $timestampUri = $null
+          if (-not [Uri]::TryCreate($timestamp, [UriKind]::Absolute, [ref]$timestampUri) -or $timestampUri.Scheme -cne 'https' -or $timestampUri.UserInfo -or $timestampUri.Query -or $timestampUri.Fragment) { throw "An approved protected HTTPS timestamp server is required" }
+          $packet = Join-Path $env:RUNNER_TEMP "packet/customer-packet.json"
+          if ($env:EXPECTED_PACKET_SHA256 -notmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $packet -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:EXPECTED_PACKET_SHA256) { throw "Verified customer packet hash mismatch" }
+          $seaSigned = Join-Path $env:RUNNER_TEMP "sea-signed"
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $seaSigned --pattern aidr-sea-windows-signed.tgz
+          if ($LASTEXITCODE -ne 0) { throw "Signed SEA download failed" }
+          $archive = Join-Path $seaSigned "aidr-sea-windows-signed.tgz"
+          if ($env:EXPECTED_SEA_SHA256 -notmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:EXPECTED_SEA_SHA256) { throw "Signed SEA archive hash mismatch" }
+          $sea = Join-Path $env:RUNNER_TEMP "aidr-sea"
+          New-Item -ItemType Directory -Path $sea | Out-Null
+          & tar -xzf $archive -C $sea
+          if ($LASTEXITCODE -ne 0) { throw "SEA extraction failed" }
+          $trustKey = Join-Path $env:RUNNER_TEMP "release-public.pem"
+          Set-Content -LiteralPath $trustKey -Value $env:SIGNING_PUBLIC_KEY -NoNewline
+          $catalogKey = ''
+          if (-not [string]::IsNullOrWhiteSpace($env:CATALOG_PUBLIC_KEY)) {
+            $catalogKey = Join-Path $env:RUNNER_TEMP "installer-catalog-public.pem"
+            Set-Content -LiteralPath $catalogKey -Value $env:CATALOG_PUBLIC_KEY -NoNewline
+          }
+          $out = Join-Path $env:RUNNER_TEMP "installers-windows"
+          $certificatePath = "Cert:\CurrentUser\My\$thumbprint"
+          if (Test-Path -LiteralPath $certificatePath) { throw "Signing certificate already exists; refusing to replace runner custody" }
+          $privateDirectory = Join-Path $env:RUNNER_TEMP "aidr-msi-signing-private"
+          $pfxPath = Join-Path $privateDirectory "publisher.pfx"
+          $imported = $false
+          $collection = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+          try {
+            New-Item -ItemType Directory -Path $privateDirectory -ErrorAction Stop | Out-Null
+            $acl = [System.Security.AccessControl.DirectorySecurity]::new()
+            $acl.SetAccessRuleProtection($true, $false)
+            $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+            $acl.SetOwner($sid)
+            foreach ($identity in @($sid, [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'), [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))) {
+              $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+            }
+            Set-Acl -LiteralPath $privateDirectory -AclObject $acl
+            $pfxBytes = [Convert]::FromBase64String($env:WINDOWS_CODE_SIGNING_PFX_B64)
+            $passwordText = $env:WINDOWS_CODE_SIGNING_PFX_PASSWORD
+            $password = ConvertTo-SecureString -String $passwordText -AsPlainText -Force
+            Remove-Item Env:WINDOWS_CODE_SIGNING_PFX_B64, Env:WINDOWS_CODE_SIGNING_PFX_PASSWORD
+            try {
+              $collection.Import($pfxBytes, $passwordText, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet)
+            } finally {
+              $passwordText = $null
+            }
+            if ($collection.Count -ne 1 -or $collection[0].Thumbprint -cne $thumbprint -or -not $collection[0].HasPrivateKey) { throw "PFX must contain exactly the independently pinned publisher certificate and private key" }
+            [System.IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+            [Array]::Clear($pfxBytes, 0, $pfxBytes.Length)
+            $importedCertificates = @(Import-PfxCertificate -FilePath $pfxPath -Password $password -CertStoreLocation 'Cert:\CurrentUser\My' -ErrorAction Stop)
+            $imported = Test-Path -LiteralPath $certificatePath
+            if ($importedCertificates.Count -ne 1 -or $importedCertificates[0].Thumbprint -cne $thumbprint -or -not $imported) { throw "Runner certificate import did not preserve the approved identity" }
+            Remove-Item -LiteralPath $pfxPath -Force
+            $bundleArgs = @{}
+            if ($env:BUILD_EXE -eq 'true') { $bundleArgs = @{ Bundle = $true } }
+            & ./deploy/installers/windows/build-msi.ps1 -SeaDir $sea -TrustKey $trustKey -TrustKeyFingerprint $env:SIGNING_PUBLIC_KEY_FINGERPRINT -Version $env:VERSION -OutDir $out -SignThumbprint $thumbprint -TimestampServer $timestamp -CatalogKey $catalogKey -CustomerPacket $packet -CustomerId $env:CUSTOMER_ID @bundleArgs
+          } finally {
+            $passwordText = $null
+            Remove-Item Env:WINDOWS_CODE_SIGNING_PFX_B64, Env:WINDOWS_CODE_SIGNING_PFX_PASSWORD -ErrorAction SilentlyContinue
+            foreach ($certificate in $collection) { $certificate.Dispose() }
+            if ($password) { $password.Dispose() }
+            if ($imported -or (Test-Path -LiteralPath $certificatePath)) { Remove-Item -LiteralPath $certificatePath -DeleteKey -Force -ErrorAction Stop }
+            if (Test-Path -LiteralPath $pfxPath) { Remove-Item -LiteralPath $pfxPath -Force }
+            if (Test-Path -LiteralPath $privateDirectory) { Remove-Item -LiteralPath $privateDirectory -Force }
+          }
+          $expected = @("$env:STEM.msi")
+          if ($env:BUILD_EXE -eq 'true') { $expected += "$env:STEM.exe" }
+          $built = @(Get-ChildItem -LiteralPath $out -File | ForEach-Object { $_.Name } | Sort-Object)
+          if (($built -join '|') -cne (($expected | Sort-Object) -join '|')) { throw "Expected exactly $($expected -join ', '), built $($built -join ', ')" }
+          $lines = foreach ($name in $built) { "$((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $out $name)).Hash.ToLowerInvariant())  $name" }
+          [System.IO.File]::WriteAllText((Join-Path $out "$env:STEM-windows.SHA256SUMS"), (($lines -join "`n") + "`n"))
+
+      - name: Attest the customer's Windows installers (pinned)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/installers-windows/*.msi
+            ${{ runner.temp }}/installers-windows/*.exe
+
+      - name: Upload the customer .msi (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ needs.prepare.outputs.stem }}.msi
+          path: |
+            ${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}.msi
+            ${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}-windows.SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload the customer .exe (pinned)
+        if: inputs.build_exe
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ needs.prepare.outputs.stem }}.exe
+          path: |
+            ${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}.exe
+            ${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}-windows.SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90
