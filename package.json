@@ -110,6 +110,7 @@
 		"test:perf:analyze": "node scripts/track-test-perf.mjs",
 		"audit:prod": "node scripts/audit-production-deps.mjs",
 		"audit:build": "node scripts/audit-build-deps.mjs",
+		"audit:vendored": "node scripts/audit-vendored-aig.mjs",
 		"sbom": "node scripts/generate-sbom.mjs",
 		"license:report": "node scripts/generate-license-report.mjs",
 		"package:consumers": "node scripts/check-package-consumers.mjs",

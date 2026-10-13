@@ -64,6 +64,18 @@ export const CI_ONLY_STEPS = Object.freeze([
 			"Runner provisioning: installs apt packages with sudo and a hash-locked parser venv into RUNNER_TEMP; a developer host supplies its own AIDR_PYTHON instead of ci:local mutating the system.",
 	},
 	{
+		job: "posture-scanner-supply-chain",
+		step: "govulncheck the vendored Go module (pinned)",
+		reason:
+			"Needs the Go toolchain (GOTOOLCHAIN-fetched go1.27.2) and vuln.go.dev; locally run it from vendor/ai-infra-guard with the same GOTOOLCHAIN and go run golang.org/x/vuln/cmd/govulncheck@<GOVULNCHECK_VERSION> ./...",
+	},
+	{
+		job: "posture-scanner-supply-chain",
+		step: "Trivy scan and SBOM of the vendored tree (pinned)",
+		reason:
+			"Downloads the sha256-pinned Trivy release and its vulnerability DB into RUNNER_TEMP; ci:local provisions no Trivy. Run the step's trivy fs commands by hand with the same pinned release.",
+	},
+	{
 		job: "fleet-windows",
 		step: "Build native Claude fleet payload",
 		reason:
@@ -384,6 +396,14 @@ export const STEPS = Object.freeze([
 	// ── audit ───────────────────────────────────────────────────────────────
 	step({ id: "audit-prod", group: "audit", name: "Production dependency audit", run: "pnpm audit:prod", requires: ["network"], timeoutMs: 5 * MIN }),
 	step({ id: "audit-build", group: "audit", name: "Build dependency audit", run: "pnpm audit:build", requires: ["network"], timeoutMs: 5 * MIN }),
+	step({
+		id: "audit-vendored",
+		group: "audit",
+		name: "Vendored posture scanner audit and image base pin contract",
+		ci: ["posture-scanner-supply-chain", "Vendored frontend audit, Go toolchain and image base pin contract"],
+		requires: ["network"],
+		timeoutMs: 5 * MIN,
+	}),
 
 	// ── build ───────────────────────────────────────────────────────────────
 	step({ id: "build", group: "build", name: "Build all packages", run: "pnpm build", timeoutMs: 30 * MIN }),
