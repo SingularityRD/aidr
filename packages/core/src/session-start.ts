@@ -131,7 +131,6 @@ export interface SessionStartResult {
 	coverageFindings?: SessionStartCoverageFinding[];
 }
 
-/** Coverage gaps are visibility failures: verification could not be established. */
 /** Host name for the device-code request; the control plane drops a malformed one. */
 function deviceHostname(): string | undefined {
 	try {
@@ -142,6 +141,7 @@ function deviceHostname(): string | undefined {
 	}
 }
 
+/** Coverage gaps are visibility failures: verification could not be established. */
 const COVERAGE_SEVERITY: Record<McpDiscoveryAttestationStatus, "medium" | "high"> = {
 	approved: "medium",
 	quarantined: "medium",

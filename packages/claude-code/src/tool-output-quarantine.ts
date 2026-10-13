@@ -228,16 +228,6 @@ function withReplacement(
 	};
 }
 
-/** Attach `replacement`, or say plainly that no replacement could be made. */
-function replacedOrUnavailable(
-	inspection: Record<string, unknown>,
-	replacement: unknown,
-): Record<string, unknown> {
-	return replacement === undefined
-		? unavailableReplacement(inspection)
-		: withReplacement(inspection, replacement);
-}
-
 function unavailableReplacement(inspection: Record<string, unknown>): Record<string, unknown> {
 	const specificOutput = inspection.hookSpecificOutput;
 	const fields =
@@ -327,10 +317,10 @@ export function quarantineInspectedToolOutput(
 		}
 	} catch {
 		// Unknown shape: a guessed built-in shape would be rejected by the host.
-		updatedToolOutput = undefined;
 	}
-	return replacedOrUnavailable(
-		inspection,
-		updatedToolOutput ?? fallbackToolOutputReplacement(toolName),
-	);
+	const replacement = updatedToolOutput ?? fallbackToolOutputReplacement(toolName);
+	// Attach the replacement, or say plainly that none could be made.
+	return replacement === undefined
+		? unavailableReplacement(inspection)
+		: withReplacement(inspection, replacement);
 }

@@ -101,10 +101,9 @@ async function loadApprovalKey(keyFile, approvalKeys) {
 		throw new Error("approval key permissions too open");
 	const pem = await readFile(keyFile, "utf8");
 	// An unencrypted key loads without a passphrase; the operator key must not.
-	let loadsWithoutPassphrase = false;
+	let loadsWithoutPassphrase = true;
 	try {
 		createPrivateKey({ key: pem, format: "pem" });
-		loadsWithoutPassphrase = true;
 	} catch {
 		loadsWithoutPassphrase = false;
 	}
