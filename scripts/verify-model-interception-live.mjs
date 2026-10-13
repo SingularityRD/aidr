@@ -134,7 +134,7 @@ writeFileSync(
 		hooks: {
 			PreToolUse: [
 				{
-					matcher: "^(Bash|apply_patch)$",
+					matcher: "^(Bash|apply_patch|mcp__.+)$",
 					hooks: [{ type: "command", command: `node "${hookPath}" --managed-by aidr-codex`, timeout: 10 }],
 				},
 			],

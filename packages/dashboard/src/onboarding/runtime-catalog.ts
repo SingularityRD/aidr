@@ -51,7 +51,7 @@ const REGISTRY_STEP: InstallStep = {
  */
 export const CODEX_HOOKS_TOML = [
 	"[[hooks.PreToolUse]]",
-	'matcher = "^(Bash|apply_patch)$"',
+	'matcher = "^(Bash|apply_patch|mcp__.+)$"',
 	"",
 	"[[hooks.PreToolUse.hooks]]",
 	'type = "command"',

@@ -84,7 +84,7 @@ command, configuration key and file path below was taken from the repository.
 | VS Code | same extension package | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (Claude-style hooks) | `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete`, `editFiles` | `PostToolUse` (after execution, no byte replacement) | Host-dependent |
 | OpenClaw | `@singularityrd/aidr-openclaw` | In-process `before_tool_call` and `before_agent_run` plugin hooks | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` | Transcript and outbound-message replacement | No, operator approval via `aidr approve` |
 | OpenCode | `@singularityrd/aidr-opencode` | `tool.execute.before` and `chat.message` plugin hooks | `bash`, `webfetch`, `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `tool.execute.after` replacement | No, operator approval via `aidr approve` |
-| Codex CLI | `@singularityrd/aidr-codex` | Native `PreToolUse` and `UserPromptSubmit` command hooks | `Bash`, `apply_patch` (matcher `^(Bash|apply_patch)$`) | Not inspected | No, `ask` becomes `deny`, operator approval via `aidr approve` |
+| Codex CLI | `@singularityrd/aidr-codex` | Native `PreToolUse`, `UserPromptSubmit` and `PostToolUse` command hooks | `Bash`, `apply_patch`, MCP calls (matcher `^(Bash|apply_patch|mcp__.+)$`) | `PostToolUse` block for `Bash` and MCP results (after execution) | No, `ask` becomes `deny`, operator approval via `aidr approve` |
 
 Every connector also inspects the user's prompt before it reaches the model; see
 [Prompt protection](#prompt-protection).
@@ -437,9 +437,26 @@ codex (PreToolUse) ──stdin JSON──▶ aidr-codex-hook ──▶ AIDR core
 
    ```toml
    [[hooks.PreToolUse]]
-   matcher = "^(Bash|apply_patch)$"
+   matcher = "^(Bash|apply_patch|mcp__.+)$"
 
    [[hooks.PreToolUse.hooks]]
+   type = "command"
+   command = "aidr-codex-hook"
+   timeout = 10
+
+   # Prompt protection. No matcher: Codex ignores matchers for this event.
+   [[hooks.UserPromptSubmit]]
+
+   [[hooks.UserPromptSubmit.hooks]]
+   type = "command"
+   command = "aidr-codex-hook"
+   timeout = 10
+
+   # Tool-output inspection.
+   [[hooks.PostToolUse]]
+   matcher = "^(Bash|mcp__.+)$"
+
+   [[hooks.PostToolUse.hooks]]
    type = "command"
    command = "aidr-codex-hook"
    timeout = 10

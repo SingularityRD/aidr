@@ -36,7 +36,7 @@ describe("Codex onboarding snippet", () => {
 			expect(lines).toContain(table);
 			expect(lines).toContain(table.replace("]]", ".hooks]]"));
 		}
-		expect(lines).toContain('matcher = "^(Bash|apply_patch)$"');
+		expect(lines).toContain('matcher = "^(Bash|apply_patch|mcp__.+)$"');
 		expect(lines).toContain('matcher = "^(Bash|mcp__.+)$"');
 		expect(lines.filter((line) => line === 'command = "aidr-codex-hook"')).toHaveLength(3);
 	});

@@ -87,7 +87,7 @@ doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği me
 | VS Code | aynı eklenti paketi | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (Claude tarzı hook'lar) | `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete`, `editFiles` | `PostToolUse` (çalıştıktan sonra, içerik değiştirmez) | Host'a bağlı |
 | OpenClaw | `@singularityrd/aidr-openclaw` | Süreç içi `before_tool_call` ve `before_agent_run` plugin hook'ları | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` | Transkript ve giden mesaj değiştirme | Yok, `aidr approve` ile operatör onayı |
 | OpenCode | `@singularityrd/aidr-opencode` | `tool.execute.before` ve `chat.message` plugin hook'ları | `bash`, `webfetch`, `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `tool.execute.after` ile değiştirme | Yok, `aidr approve` ile operatör onayı |
-| Codex CLI | `@singularityrd/aidr-codex` | Yerel `PreToolUse` ve `UserPromptSubmit` komut hook'ları | `Bash`, `apply_patch` (matcher `^(Bash|apply_patch)$`) | Denetlenmez | Yok, `ask` → `deny`, `aidr approve` ile operatör onayı |
+| Codex CLI | `@singularityrd/aidr-codex` | Yerel `PreToolUse`, `UserPromptSubmit` ve `PostToolUse` komut hook'ları | `Bash`, `apply_patch`, MCP çağrıları (matcher `^(Bash|apply_patch|mcp__.+)$`) | `Bash` ve MCP sonuçları için `PostToolUse` engeli (çalıştıktan sonra) | Yok, `ask` → `deny`, `aidr approve` ile operatör onayı |
 
 Her connector ayrıca kullanıcının prompt'unu modele ulaşmadan önce denetler; bkz.
 [Prompt koruması](#prompt-koruması).
@@ -447,9 +447,26 @@ codex (PreToolUse) ──stdin JSON──▶ aidr-codex-hook ──▶ AIDR core
 
    ```toml
    [[hooks.PreToolUse]]
-   matcher = "^(Bash|apply_patch)$"
+   matcher = "^(Bash|apply_patch|mcp__.+)$"
 
    [[hooks.PreToolUse.hooks]]
+   type = "command"
+   command = "aidr-codex-hook"
+   timeout = 10
+
+   # İstem koruması. Matcher yok: Codex bu olayda matcher'ı yok sayar.
+   [[hooks.UserPromptSubmit]]
+
+   [[hooks.UserPromptSubmit.hooks]]
+   type = "command"
+   command = "aidr-codex-hook"
+   timeout = 10
+
+   # Araç çıktısı denetimi.
+   [[hooks.PostToolUse]]
+   matcher = "^(Bash|mcp__.+)$"
+
+   [[hooks.PostToolUse.hooks]]
    type = "command"
    command = "aidr-codex-hook"
    timeout = 10
