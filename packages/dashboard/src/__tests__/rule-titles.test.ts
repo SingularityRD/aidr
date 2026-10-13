@@ -38,10 +38,16 @@ describe("describeRule", () => {
 		});
 	});
 
-	it("uses the Turkish category label and keeps the English title until the rule has title_tr", () => {
+	it("uses the Turkish category label and the rule's title_tr", () => {
 		const rule = describeRule("CLT-CRED-004", "tr", tr);
 		expect(rule.category).toBe("Gizli bilgiler ve kimlik bilgileri");
-		expect(rule.title).toBe("Reading credential or secret file");
+		expect(rule.title).toBe("Kimlik bilgisi ya da gizli bilgi içeren dosyayı okuma");
+	});
+
+	it("keeps the English title until the rule has title_tr", () => {
+		const rule = describeRule("CLT-MAC-CRED-001", "tr", tr);
+		expect(rule.category).toBe("Gizli bilgiler ve kimlik bilgileri");
+		expect(rule.title).toBe("Keychain password extraction via security find-generic-password");
 	});
 
 	it("knows nothing about an unknown id instead of guessing", () => {
