@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	editorAccess,
 	findEditor,
+	findEditorNear,
 	findSendButton,
 	insertAtSelection,
 	isSyntheticEditorEvent,
@@ -352,6 +353,72 @@ describe("findEditor", () => {
 			isVisible: (element) => element.id === "b",
 		});
 		expect(found?.element.id).toBe("b");
+	});
+});
+
+describe("findEditor in open shadow roots", () => {
+	it("finds a shadow-DOM editor when the light DOM has none and follows focus into it", () => {
+		mount('<x-chat id="host"></x-chat>');
+		const root = byId("host").attachShadow({ mode: "open" });
+		root.innerHTML = '<textarea id="a"></textarea><textarea id="b"></textarea>';
+		(root.getElementById("b") as HTMLTextAreaElement).focus();
+		expect(findEditor(adapter(), document)?.element.id).toBe("b");
+	});
+});
+
+describe("findEditorNear", () => {
+	it("resolves the composer of a button from its position, not from focus", () => {
+		mount(`
+			<input type="search" id="q">
+			<form><textarea id="composer"></textarea><button id="send">Send</button></form>`);
+		byId("q").focus();
+		const match = findEditorNear(adapter(), byId("send"));
+		expect(match?.editor?.element.id).toBe("composer");
+		expect(match?.container).toBe(document.querySelector("form"));
+	});
+
+	it("prefers the editor holding text, and the nearest one when none does", () => {
+		mount(`
+			<div id="box"><div><textarea id="far"></textarea></div><textarea id="near"></textarea><button id="b">x</button></div>`);
+		expect(findEditorNear(adapter(), byId("b"))?.editor?.element.id).toBe("near");
+		byId<HTMLTextAreaElement>("far").value = "typed";
+		expect(findEditorNear(adapter(), byId("b"))?.editor?.element.id).toBe("far");
+	});
+
+	it("reports ambiguity (editor null) when several editors in the container hold text", () => {
+		mount(
+			'<form id="f"><textarea id="a">one</textarea><textarea id="b">two</textarea><button id="s">s</button></form>',
+		);
+		const match = findEditorNear(adapter(), byId("s"));
+		expect(match?.editor).toBeNull();
+		expect(match?.container).toBe(byId("f"));
+	});
+
+	it("returns the editor an anchor is inside, also inside an open shadow root", () => {
+		mount('<x-chat id="host"></x-chat>');
+		const root = byId("host").attachShadow({ mode: "open" });
+		root.innerHTML =
+			'<div id="ce" contenteditable="true"><p id="p">hi</p></div><button id="go">Go</button>';
+		const inner = root.getElementById("p") as HTMLElement;
+		expect(findEditorNear(adapter(), inner)?.editor?.element.id).toBe("ce");
+		const viaButton = findEditorNear(adapter(), root.getElementById("go") as HTMLElement);
+		expect(viaButton?.editor?.element.id).toBe("ce");
+		expect(viaButton?.container).toBe(root);
+	});
+
+	it("crosses from a light-DOM button into a shadow-DOM editor and returns null without editors", () => {
+		mount('<div id="wrap"><x-editor id="host"></x-editor><button id="go">Go</button></div>');
+		const root = byId("host").attachShadow({ mode: "open" });
+		root.innerHTML = '<textarea id="t"></textarea>';
+		expect(findEditorNear(adapter(), byId("go"))?.editor?.element.id).toBe("t");
+		mount('<button id="lonely">Send</button>');
+		expect(findEditorNear(adapter(), byId("lonely"))).toBeNull();
+	});
+
+	it("does not treat a read-only or disabled field as the anchor's editor", () => {
+		mount('<textarea id="ro" readonly></textarea><textarea id="dis" disabled></textarea>');
+		expect(findEditorNear(adapter(), byId("ro"))).toBeNull();
+		expect(findEditorNear(adapter(), byId("dis"))).toBeNull();
 	});
 });
 

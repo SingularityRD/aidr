@@ -16,7 +16,7 @@
  * content it did not verify.
  */
 
-import type { EditorAccess, EditorKind, SiteAdapter } from "../types";
+import type { EditorAccess, EditorKind, EditorMatch, SiteAdapter } from "../types";
 import { isDisabled, isVisible, type VisibilityCheck } from "./visibility";
 
 export interface EditorLookupOptions {
@@ -569,8 +569,26 @@ function queryAll(root: ParentNode, selector: string): Element[] {
 	}
 }
 
+/**
+ * Every open shadow root below `root`, nested ones included. Closed roots are not
+ * reachable from a content script's DOM view and are not returned.
+ */
+function openShadowRoots(root: ParentNode): ShadowRoot[] {
+	const out: ShadowRoot[] = [];
+	const visit = (scope: ParentNode): void => {
+		for (const element of queryAll(scope, "*")) {
+			const shadow = element.shadowRoot;
+			if (!shadow) continue;
+			out.push(shadow);
+			visit(shadow);
+		}
+	};
+	visit(root);
+	return out;
+}
+
 function collectEditors(
-	root: Document,
+	root: ParentNode,
 	selectors: readonly string[],
 	visible: VisibilityCheck,
 	seen: Set<Element>,
@@ -585,6 +603,43 @@ function collectEditors(
 		}
 	}
 	return out;
+}
+
+interface Candidates {
+	/** Matches of the adapter's own selectors. */
+	readonly specific: HTMLElement[];
+	/** Matches of the generic fallbacks only. */
+	readonly generic: HTMLElement[];
+}
+
+/**
+ * Usable editors below `root`. Open shadow roots are searched only when the light DOM
+ * holds none (web-component UIs, custom sites), so ordinary pages pay no deep walk.
+ */
+function collectCandidates(
+	root: ParentNode,
+	adapter: SiteAdapter,
+	visible: VisibilityCheck,
+): Candidates {
+	const seen = new Set<Element>();
+	const specific = collectEditors(root, adapter.editorSelectors, visible, seen);
+	const generic = collectEditors(root, GENERIC_EDITOR_SELECTORS, visible, seen);
+	if (specific.length + generic.length === 0) {
+		for (const shadow of openShadowRoots(root)) {
+			specific.push(...collectEditors(shadow, adapter.editorSelectors, visible, seen));
+			generic.push(...collectEditors(shadow, GENERIC_EDITOR_SELECTORS, visible, seen));
+		}
+	}
+	return { specific, generic };
+}
+
+/** The focused element, followed into open shadow roots. */
+function deepActiveElement(root: Document): Element | null {
+	let active = root.activeElement;
+	for (let depth = 0; active?.shadowRoot?.activeElement && depth < 32; depth++) {
+		active = active.shadowRoot.activeElement;
+	}
+	return active;
 }
 
 function candidateContaining(
@@ -608,6 +663,9 @@ function inComposer(element: Element): boolean {
  *
  * Candidates: adapter selectors first, then generic fallbacks; each must be
  * visible (see ./visibility), enabled, writable and not a password field.
+ * Open shadow roots are searched when the light DOM holds no candidate, and
+ * focus is followed into them. Send gestures resolve their editor with
+ * `findEditorNear` instead, which does not depend on focus.
  * Preference: the focused element (or `lastFocused`) when it is, or is inside,
  * a candidate; otherwise among adapter matches (or generic matches when the
  * adapter matched nothing): the single candidate; else the last candidate
@@ -622,14 +680,12 @@ export function findEditor(
 	options: EditorLookupOptions = {},
 ): EditorAccess | null {
 	const visible = options.isVisible ?? isVisible;
-	const seen = new Set<Element>();
-	const specific = collectEditors(root, adapter.editorSelectors, visible, seen);
-	const generic = collectEditors(root, GENERIC_EDITOR_SELECTORS, visible, seen);
+	const { specific, generic } = collectCandidates(root, adapter, visible);
 	const all = [...specific, ...generic];
 	if (all.length === 0) return null;
 
 	const focused =
-		candidateContaining(root.activeElement, all) ?? candidateContaining(lastFocused, all);
+		candidateContaining(deepActiveElement(root), all) ?? candidateContaining(lastFocused, all);
 	if (focused) return editorAccess(focused);
 
 	const pool = specific.length > 0 ? specific : generic;
@@ -637,6 +693,85 @@ export function findEditor(
 	const composed = pool.filter(inComposer);
 	const chosen = composed.length > 0 ? composed[composed.length - 1] : pool[0];
 	return chosen ? editorAccess(chosen) : null;
+}
+
+/** The textarea, text input or contenteditable host `element` is or is inside; null otherwise. */
+function editableOf(element: Element): HTMLElement | null {
+	if (element.tagName === "TEXTAREA") return element as HTMLTextAreaElement;
+	if (element.tagName === "INPUT") return isTextInput(element) ? element : null;
+	return editingHost(element);
+}
+
+function isWritable(element: HTMLElement): boolean {
+	if (isDisabled(element)) return false;
+	return !(isTextControl(element) && element.readOnly);
+}
+
+function holdsText(element: HTMLElement): boolean {
+	try {
+		return (
+			editorAccess(element)
+				.read()
+				.replace(/\u00a0/g, " ")
+				.trim() !== ""
+		);
+	} catch {
+		// Unreadable: count it as holding text so it is never skipped as "empty".
+		return true;
+	}
+}
+
+/** The parent node, stepping from a shadow root to its host. */
+function composedParent(node: Node): Node | null {
+	return node.parentNode ?? (node as ShadowRoot).host ?? null;
+}
+
+/**
+ * Resolve the editor a send gesture belongs to from the gesture's own element (the
+ * clicked send button, the submitted form, the key target), never from focus: a click
+ * that leaves focus in a search box, or an edit form beside the composer, must not
+ * make the guard read a different field than the one the site sends.
+ *
+ * An anchor inside an editor (also inside an open shadow root) resolves to that
+ * editor. Otherwise the anchor's ancestors are walked outwards (across shadow-root
+ * boundaries) and the first one containing usable editors decides: adapter matches
+ * win over generic ones; the single editor holding text is chosen, the nearest one
+ * when none holds text, and `editor: null` (ambiguous) when several hold text.
+ * Returns null when no editor exists anywhere above the anchor.
+ */
+export function findEditorNear(
+	adapter: SiteAdapter,
+	anchor: Element,
+	options: EditorLookupOptions = {},
+): EditorMatch | null {
+	const own = editableOf(anchor);
+	if (own) return isWritable(own) ? { editor: editorAccess(own), container: own } : null;
+	const visible = options.isVisible ?? isVisible;
+	for (let scope: Node | null = anchor; scope; scope = composedParent(scope)) {
+		if (typeof (scope as Partial<ParentNode>).querySelectorAll !== "function") continue;
+		const { specific, generic } = collectCandidates(scope as ParentNode, adapter, visible);
+		const pool = specific.length > 0 ? specific : generic;
+		if (pool.length === 0) continue;
+		const filled = pool.filter(holdsText);
+		if (filled.length > 1) return { editor: null, container: scope };
+		const chosen = filled[0] ?? nearestTo(anchor, pool);
+		return { editor: editorAccess(chosen), container: scope };
+	}
+	return null;
+}
+
+/** The candidate with the shortest tree distance to `anchor` (the first one on a tie). */
+function nearestTo(anchor: Node, candidates: readonly HTMLElement[]): HTMLElement {
+	let chosen = candidates[0] as HTMLElement;
+	let best = treeDistance(anchor, chosen);
+	for (const candidate of candidates) {
+		const distance = treeDistance(anchor, candidate);
+		if (distance < best) {
+			chosen = candidate;
+			best = distance;
+		}
+	}
+	return chosen;
 }
 
 function asButton(element: Element): HTMLElement | null {

@@ -165,10 +165,26 @@ bir yapıştırma tarama sınırını aşıyor olabilir. Bu durumların hepsinde
 
 **Nasıl çalışır** — İçerik betiği, olayları sitenin dinleyicilerinden önce (capture
 aşamasında) yakalar: Enter tuşu (Shift+Enter ve giriş yöntemi yazımı sürerken hariç;
-Ctrl/Cmd+Enter da gönderim sayılır), gönder düğmesine tıklama ve form gönderimi. Karardan
-sonra gönderim yalnızca bir kez ve yalnızca düzenleyicide hâlâ denetlenen metin duruyorsa
-yeniden tetiklenir. Kullanıcı yazarken metin arka planda önceden taranır. Temiz olduğu
-bilinen bir istem, kullanıcının orijinal olayına dokunulmadan gönderilir.
+Ctrl/Cmd+Enter da gönderim sayılır), gönderim denetimlerine tıklama ve form gönderimi. Bir
+tıklama şu durumlarda gönderim sayılır: düğmeyi site bağdaştırıcısı tanımlıyorsa, düğme
+istem kutusunun gönder düğmesiyse ya da denetim formunu gönderiyorsa veya bir gönderim
+eylemiyle etiketliyse ("Send", "Save", "Update", "Gönder", "Kaydet", "Güncelle"...) ve bir
+düzenleyiciyle aynı formda, mesaj bloğunda ya da panelde duruyorsa. Son kural, gönderilmiş
+mesajlardaki düzenle-ve-yeniden-gönder formlarını (ChatGPT, Claude, Gemini, Copilot)
+kapsar. Denetlenen metin, hareketin ait olduğu düzenleyicidir: tuşa basılan düzenleyici
+(açık bir shadow root içinde de olsa) ya da tıklanan düğmenin veya gönderilen formun
+bulunduğu kaptaki düzenleyici. Metin hiçbir zaman odaktaki alandan alınmaz; odaktaki bir
+arama kutusu istem kutusunun yerine geçemez. O kapta birden fazla düzenleyicide metin
+varsa, sitenin hangisini göndereceği belli olmadığı için gönderim engellenir.
+
+Karardan sonra gönderim yalnızca bir kez ve yalnızca düzenleyicide hâlâ denetlenen metin
+duruyorsa yeniden tetiklenir. Enter, Enter olarak yeniden tetiklenir. Site bunu işlemezse
+(Enter'ın yalnızca yeni satır açtığı siteler ya da yerleşimler), çok satırlı düzenleyiciye
+kullanıcının istediği yeni satır eklenir ve hiçbir şey gönderilmez; tek satırlı bir giriş
+alanında tarayıcının örtük form gönderimi (formun varsayılan düğmesi) uygulanır. Bir Enter
+için başka hiçbir gönder düğmesine tıklanmaz.
+Kullanıcı yazarken metin arka planda önceden taranır. Temiz olduğu bilinen bir istem,
+kullanıcının orijinal olayına dokunulmadan gönderilir.
 
 ```
 Enter / tıklama / form gönderimi
@@ -192,6 +208,7 @@ Hata durumunda engelleme halleri ve ekranda görünen metinler (`src/content/str
 | Politika henüz alınmadı | AIDR koruması henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. | AIDR protection is still loading. Nothing was sent; try again in a moment. |
 | Tarama başarısız ya da eksik | AIDR bu istemi kontrol etmeyi tamamlayamadı; gönderilmedi. | AIDR could not finish checking this prompt, so it was not sent. |
 | İstem kutusu bulunamadı | AIDR bu sayfadaki istem alanını bulamadı; hiçbir şey gönderilmedi. | AIDR could not find the prompt box on this page, so nothing was sent. |
+| Birden fazla metin alanında metin var | AIDR bu gönderimin hangi metin alanına ait olduğunu belirleyemedi (birden fazla alanda metin var); hiçbir şey gönderilmedi. | AIDR could not tell which text box this send belongs to (several hold text), so nothing was sent. |
 | Yeniden yazma doğrulanamadı | AIDR istemi güvenli biçimde yeniden yazamadı. Hiçbir şey gönderilmedi. | AIDR could not safely rewrite the prompt. Nothing was sent. |
 | Metin denetim sırasında değişti | İstem kontrol edilirken değişti. Yeniden gönderin. | The prompt changed while it was being checked. Press send again. |
 | Önceki denetim sürüyor | AIDR önceki işlemi kontrol etmeye devam ediyor. | AIDR is still checking the previous action. |
@@ -202,9 +219,10 @@ bütçesi dolduğunda ya da kodlanmış içerik çözücünün açabildiğinden 
 yerleştirildiğinde. O ana kadarki bulgular korunur, ancak sonuç hiçbir zaman "temiz"
 olarak raporlanmaz.
 
-**Nasıl kullanılır** — Her zaman açıktır. Metnin maskelenmeden geçtiği tek durumlar hiç
-engellemeyen `monitor` modu ve aynı biçimde izlenen `disabledSites` listesindeki sitelerdir
-(metin yine taranır ve sayılır).
+**Nasıl kullanılır** — Her zaman açıktır. Politika gereği metin, hiç engellemeyen
+`monitor` modunda ve aynı biçimde izlenen `disabledSites` listesindeki sitelerde maskelenmeden
+geçer (metin yine taranır ve sayılır). Metnin denetlenmeden çıkabildiği yolların tamamı bu
+değildir: korumanın tanımadığı gönderim yolları için aşağıdaki sınırlamalara bakın.
 
 **Örnek** — `auto` modunda kullanıcı 300.000 karakterlik bir log yapıştırıp Enter'a basar.
 Siteye hiçbir şey gitmez. **Gönderim engellendi** başlıklı kırmızı balonda "AIDR bu istemi
@@ -220,8 +238,14 @@ kontrol etmeyi tamamlayamadı; gönderilmedi." yazar.
 
 **Sınırlamalar**
 - `monitor` modunda istem kutusunun bulunamaması gönderimi engellemez.
-- Denetim, sitenin sayfa yapısına ve olay akışına bağlıdır (bkz. özellik 1). Bağdaştırıcının
-  tanımadığı bir yoldan gönderim yapan bir site denetlenemez.
+- Denetim, sitenin sayfa yapısına ve olay akışına bağlıdır (bkz. özellik 1). Korumanın
+  tanımadığı bir yoldan yapılan gönderim denetlenemez: bağdaştırıcı seçicilerinin dışında
+  kalan, form göndermeyen, yalnızca simgeli ya da etiketsiz bir düğme; Enter dışındaki bir
+  tuşla tetiklenen gönderim ya da kapalı (closed) bir shadow root içindeki düzenleyici.
+  Düzenle-ve-yeniden-gönder formları, modellenmiş bir DOM'da (jsdom testleri ve ChatGPT
+  fixture'ı) etiketleri ve konumlarıyla tanınır; canlı sitelerde henüz doğrulanmadı.
+- Enter'ın yalnızca yeni satır açtığı bir sitede, bulgu içeren bir istemde basılan Enter
+  yine önce denetlenir: `confirm` modunda yeni satır eklenmeden önce kullanıcıya sorulur.
 - 200.000 karakterden uzun istemler engelleyen modlarda gönderilemez. Bu tür içeriği bölün
   ya da onaylı bir kanal kullanın.
 

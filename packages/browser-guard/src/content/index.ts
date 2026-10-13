@@ -7,6 +7,7 @@
  */
 import {
 	findEditor,
+	findEditorNear,
 	findSendButton,
 	insertAtSelection,
 	isSyntheticEditorEvent,
@@ -32,6 +33,7 @@ export function bootContentScript(runtime: RuntimeLike): BootedGuard {
 		createDetectionEngine,
 		createVault,
 		findEditor,
+		findEditorNear,
 		findSendButton,
 		insertAtSelection,
 		isSyntheticEvent: isSyntheticEditorEvent,

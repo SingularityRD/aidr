@@ -156,10 +156,25 @@ why", not "sent unchecked".
 
 **How it works** — The content script listens in the capture phase for Enter (not
 Shift+Enter, and not while an input method is composing text; Ctrl/Cmd+Enter is also
-treated as send), for clicks on the send button and for form submits. After the decision
-it replays the send exactly once, and only if the editor still holds the checked text.
-Text is pre-scanned in the background while the user types. A prompt already known to be
-clean then passes with the original, trusted event untouched.
+treated as send), for clicks on send controls and for form submits. A click counts as a
+send when the site adapter names the button, when it is the composer's send button, or
+when the control submits its form or is labelled as a send action ("Send", "Save",
+"Update", "Gönder", "Kaydet", "Güncelle"...) and sits in the same form, message turn or
+panel as an editor. That last rule covers the edit-and-resend forms on sent messages
+(ChatGPT, Claude, Gemini, Copilot). The text that is checked is the editor the gesture
+belongs to: the editor the key was pressed in (also inside an open shadow root), or the
+editor in the clicked button's or submitted form's container. It is never taken from
+whichever field has focus, so a focused search box cannot stand in for the composer. When
+several editors in that container hold text, the send is refused because it is not clear
+which one the site sends.
+
+After the decision the send is replayed exactly once, and only if the editor still holds
+the checked text. An Enter is replayed as an Enter. If the site does not handle it (sites
+or layouts where Enter only starts a new line), a multi-line editor gets the new line the
+user asked for and nothing is sent; a single-line input gets the browser's implicit form
+submission (its form's default button), and no other send button is ever clicked for an
+Enter. Text is pre-scanned in the background while the user types. A prompt already known to be clean then passes with the
+original, trusted event untouched.
 
 ```
 Enter / click / submit
@@ -183,6 +198,7 @@ Fail-closed cases and the exact messages (English / Turkish, from `src/content/s
 | Policy not received yet | AIDR protection is still loading. Nothing was sent; try again in a moment. | AIDR koruması henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. |
 | Scan failed or incomplete | AIDR could not finish checking this prompt, so it was not sent. | AIDR bu istemi kontrol etmeyi tamamlayamadı; gönderilmedi. |
 | Prompt box not found | AIDR could not find the prompt box on this page, so nothing was sent. | AIDR bu sayfadaki istem alanını bulamadı; hiçbir şey gönderilmedi. |
+| Several text boxes hold text | AIDR could not tell which text box this send belongs to (several hold text), so nothing was sent. | AIDR bu gönderimin hangi metin alanına ait olduğunu belirleyemedi (birden fazla alanda metin var); hiçbir şey gönderilmedi. |
 | Rewrite could not be verified | AIDR could not safely rewrite the prompt. Nothing was sent. | AIDR istemi güvenli biçimde yeniden yazamadı. Hiçbir şey gönderilmedi. |
 | Text changed during the check | The prompt changed while it was being checked. Press send again. | İstem kontrol edilirken değişti. Yeniden gönderin. |
 | Previous check still running | AIDR is still checking the previous action. | AIDR önceki işlemi kontrol etmeye devam ediyor. |
@@ -192,9 +208,10 @@ A scan is marked incomplete when the prompt exceeds 200,000 characters, when the
 time budget runs out, or when encoded content is nested deeper than the decoder unwraps.
 Findings gathered so far are kept, but the result is never reported as clean.
 
-**How to use** — Always on. The only ways to let text through unmasked are `monitor` mode,
-which never blocks, and a site in `disabledSites`, which is monitored the same way (the
-text is still scanned and counted).
+**How to use** — Always on. By policy, text goes through unmasked in `monitor` mode, which
+never blocks, and on a site in `disabledSites`, which is monitored the same way (the text
+is still scanned and counted). This is not the full list of ways text can leave unchecked:
+see the limitations below for send paths the guard does not recognise.
 
 **Example** — A user pastes a 300,000-character log and presses Enter in `auto` mode. The site
 receives nothing. A red bubble titled **Sending blocked** says "AIDR could not finish
@@ -211,7 +228,14 @@ checking this prompt, so it was not sent."
 **Limitations**
 - In `monitor` mode a missing prompt box does not block the send.
 - Interception depends on the site's DOM and event handling (see feature 1). A site that
-  sends through a path the adapter does not recognise is not intercepted.
+  sends through a path the guard does not recognise is not intercepted: an icon-only or
+  unlabelled button outside the adapter's selectors that does not submit a form, a send
+  triggered by a key other than Enter, or an editor inside a closed shadow root. The
+  edit-and-resend forms are recognised by their labels and position in a modelled DOM
+  (jsdom tests and the ChatGPT fixture); they are not yet verified on the live sites.
+- On a site where Enter only starts a new line, an Enter in a prompt that holds findings
+  is still checked first: in `confirm` mode the user is asked before the new line is
+  inserted.
 - Very large prompts (over 200,000 characters) cannot be sent in any blocking mode. Split
   them, or send them through an approved channel.
 

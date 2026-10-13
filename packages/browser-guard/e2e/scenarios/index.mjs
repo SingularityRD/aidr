@@ -3,6 +3,7 @@
 
 import autoMask from "./auto-mask.mjs";
 import blockedSite from "./blocked-site.mjs";
+import editResend from "./edit-resend.mjs";
 import editing from "./editing.mjs";
 import fileUpload from "./file-upload.mjs";
 import managedAiSites from "./managed-ai-sites.mjs";
@@ -23,6 +24,7 @@ export const SCENARIOS = [
 	...fileUpload,
 	...popup,
 	...editing,
+	...editResend,
 	...blockedSite,
 	...managedAiSites,
 ];
