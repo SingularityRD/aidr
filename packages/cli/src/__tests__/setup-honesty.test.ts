@@ -84,16 +84,74 @@ describe("setup reports what it actually did", () => {
 
 	it("writes the config with owner-only permissions", async () => {
 		const result = await createConfig(env, false);
-		// The config holds a credential; a world-readable file would leak it.
 		if (process.platform !== "win32") {
 			const mode = statSync(result.path).mode & 0o777;
 			expect(mode & 0o077).toBe(0);
 		}
-		const parsed = JSON.parse(readFileSync(result.path, "utf-8"));
-		expect(typeof parsed.apiKey).toBe("string");
+	});
+
+	it("needs no credential and no vault in local mode (PRD-4, MSC-13)", async () => {
+		rmSync(join(testHome, ".singularity-aidr"), { recursive: true, force: true });
+		const previous = process.env.AIDR_SECRET_STORE;
+		delete process.env.AIDR_SECRET_STORE;
+		// Any attempt to probe or use a vault would fail: there is none.
+		const noVault = () => ({ status: 127, stdout: "", stderr: "secret-tool: command not found" });
+		try {
+			const result = await createConfig({ ...env, projectRoot: "/some/repo" }, false, {
+				secretStoreRunner: noVault,
+			});
+			expect(result.outcome).toBe("created");
+			expect(result.credential).toBe("none");
+			const parsed = JSON.parse(readFileSync(result.path, "utf-8"));
+			expect(parsed.apiKey).toBeUndefined();
+			expect(parsed.secret_ref).toBeUndefined();
+			expect(parsed.secret_store).toBeUndefined();
+			// The global config no longer records the directory setup ran in.
+			expect(parsed.environment.projectRoot).toBeUndefined();
+			expect(readFileSync(result.path, "utf-8")).not.toMatch(/aidr_[A-Za-z0-9]/);
+		} finally {
+			if (previous === undefined) delete process.env.AIDR_SECRET_STORE;
+			else process.env.AIDR_SECRET_STORE = previous;
+		}
+	});
+
+	it("seals a needed (managed) credential in the encrypted file store when no vault exists", async () => {
+		rmSync(join(testHome, ".singularity-aidr"), { recursive: true, force: true });
+		await createConfig(env, false);
+		updateConfig({ mode: "managed" } as unknown as Partial<
+			import("../utils/config-manager.js").Config
+		>);
+		const previous = process.env.AIDR_SECRET_STORE;
+		delete process.env.AIDR_SECRET_STORE;
+		const noVault = () => ({ status: 127, stdout: "", stderr: "secret-tool: command not found" });
+		try {
+			const result = await createConfig(env, false, { secretStoreRunner: noVault });
+			expect(result.credential).toBe("encrypted-file");
+			const raw = readFileSync(result.path, "utf-8");
+			const parsed = JSON.parse(raw);
+			// Never plaintext: config.json holds only a reference.
+			expect(parsed.apiKey).toBeUndefined();
+			expect(parsed.secret_ref.store).toBe("encrypted-file");
+			const key = getConfig({ secretStoreRunner: noVault })?.apiKey ?? "";
+			expect(key).toMatch(/^aidr_/);
+			const sealed = readFileSync(
+				join(testHome, ".singularity-aidr", "sealed", `${parsed.secret_ref.id}.sealed.json`),
+				"utf-8",
+			);
+			expect(sealed).not.toContain(key);
+			expect(raw).not.toContain(key);
+		} finally {
+			if (previous === undefined) delete process.env.AIDR_SECRET_STORE;
+			else process.env.AIDR_SECRET_STORE = previous;
+			rmSync(join(testHome, ".singularity-aidr"), { recursive: true, force: true });
+		}
 	});
 
 	it("does not rotate the credential on a rerun", async () => {
+		await createConfig(env, false);
+		updateConfig({ mode: "managed" } as unknown as Partial<
+			import("../utils/config-manager.js").Config
+		>);
 		const first = await createConfig(env, false);
 		const originalKey = getConfig()?.apiKey;
 		expect(originalKey).toBeTruthy();
@@ -145,9 +203,7 @@ describe("setup reports what it actually did", () => {
  * visible to the matcher.
  */
 function codeOnly(source: string): string {
-	return source
-		.replace(/\/\*[\s\S]*?\*\//g, "")
-		.replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+	return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 }
 
 describe("setup output does not contradict itself", () => {
@@ -190,7 +246,9 @@ describe("no module rewrites the user's editor settings", () => {
 		expect(code).toMatch(/verified release bundle/i);
 		// The guidance pins the CLI's own release version, never a literal
 		// `VERSION` placeholder the user has to substitute.
-		expect(code).toMatch(/openclaw plugins install npm:@singularityrd\/aidr-openclaw@\$\{VERSION\}/);
+		expect(code).toMatch(
+			/openclaw plugins install npm:@singularityrd\/aidr-openclaw@\$\{VERSION\}/,
+		);
 		expect(code).not.toMatch(/@singularityrd\/aidr-[a-z]+@VERSION\b/);
 		expect(code).not.toMatch(/"VERSION"/);
 		expect(code).toMatch(/confirm it against the approved release record/i);

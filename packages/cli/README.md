@@ -5,8 +5,8 @@ does not deploy a control plane or create a cloud account.
 
 This is not a one-command customer download. The release operator must first
 grant access to a signed, approved version in the private registry. `aidr setup`
-only configures local AIDR state and prints connector setup guidance; it does
-not install or activate the connector.
+configures local AIDR state and installs or updates the connector of every agent
+host it finds in your home directory (see [Setup](#setup)).
 
 Install the exact approved version from the private registry using
 [Package Installation](../../docs/package-installation.md), then inspect the
@@ -16,11 +16,45 @@ available commands:
 aidr --help
 ```
 
-Run `aidr setup` only after the operator has supplied the approved runtime
-configuration and selected a supported secret store. It may write local
-configuration and record detected runtime state; it does not install hooks or
-activate the connector, and it is not a substitute for the customer acceptance
-procedure.
+## Setup
+
+Run `aidr setup` after the operator has supplied any approved runtime
+configuration (commercial builds need the release verification key in
+`~/.singularity-aidr/config.json`). It is idempotent: a rerun changes nothing
+that is already in place.
+
+- **No credential in local mode.** The default local mode needs no account, no
+  credential and no OS vault, so setup works on headless Linux, WSL, containers
+  and CI. Only a managed configuration gets a CLI credential, kept in the OS
+  vault or, on a host without one, in the machine-bound encrypted file store
+  (`~/.singularity-aidr/sealed`); `--secret-store file-acl` (plaintext) is used
+  only when chosen explicitly.
+- **Host detection** uses the same home-directory measurement as `aidr status`
+  (never the current directory).
+- **Connector install / update** for every detected host, or only `--host
+  codex,opencode,...`:
+
+  | Host | What setup does |
+  | --- | --- |
+  | Codex | Registers `aidr-codex-hook` for `PreToolUse`, `UserPromptSubmit` and `PostToolUse` in `~/.codex/hooks.json`, preserving other hooks. Requires `@singularityrd/aidr-codex` to be installed (the command on PATH); trust the hooks with `/hooks` afterwards. |
+  | OpenCode | Pins `@singularityrd/aidr-opencode@<this CLI's version>` in `~/.config/opencode/package.json` and lists it in `opencode.json`; OpenCode installs it at its next start. An `opencode.jsonc` is left to you. |
+  | OpenClaw | Runs `openclaw plugins install npm:@singularityrd/aidr-openclaw@<version>` when `openclaw` is on PATH. |
+  | Cursor / VS Code | Runs `cursor` / `code --install-extension <file> --force` for the verified VSIX you pass with `--cursor-vsix` / `--vscode-vsix`. |
+  | Claude Code | Runs `claude plugin marketplace add <dir>` and `claude plugin install aidr@aidr` for the verified, extracted plugin you pass with `--claude-plugin-dir`. |
+
+  A host whose CLI or artifact is missing is reported as a manual step with the
+  exact commands; a config file AIDR cannot parse is never rewritten; a changed
+  file is backed up next to itself first. Every result is re-measured, so setup
+  reports a host as installed only when `aidr status` would. `--dry-run` shows
+  the plan without writing anything; `--no-install` only configures and prints
+  the manual steps. Setup exits `1` when an install failed. Installing a plugin
+  directory or VSIX loads code into the host, so `--claude-plugin-dir`,
+  `--cursor-vsix` and `--vscode-vsix` need the same operator confirmation as
+  `aidr uninstall` (type `install`, or `--yes` with
+  `AIDR_OPERATOR_NONINTERACTIVE=1`).
+
+Setup is not a substitute for the customer acceptance procedure: a registration
+does not prove the host executes it, so run a host-side deny canary.
 
 ## Explicit behavioral learning
 
@@ -94,7 +128,7 @@ signed approval for ingestion on the execution host.
 
 | Command | What it does |
 |---------|--------------|
-| `aidr setup` | Write local configuration and print connector setup guidance |
+| `aidr setup [--dry-run] [--host <ids>] [--no-install]` | Write local configuration and install or update the connector of every detected host (see [Setup](#setup)) |
 | `aidr status [--json]` | Measured installation state (detection self-test, connectors, data loss) |
 | `aidr doctor [--json]` | Hosts detected, hooks registered, rule count, core version, mode, DLP policy status, agent permission profiles, approval store and last verdict; exits `1` when any check fails |
 | `aidr support-bundle [--out <path>] [--audit-entries <n>] [--json]` | Write a redacted `.tar.gz` diagnostic bundle (versions, doctor checks, hook registrations, config, recent verdict metadata, threat-rule hashes) and list its contents; never overwrites, uploads nothing, aborts if a redaction check fails. See [docs/support-diagnostics.md](../../docs/support-diagnostics.md) |
@@ -109,7 +143,8 @@ signed approval for ingestion on the execution host.
 | `aidr privacy scan [file] [--json] [--mask] [--types <list>] [--fail-on none\|any\|secret]` | Local TR/EN personal-data and secret scan of a file or stdin; see [Privacy scan](#privacy-scan) |
 | `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles; `aidr profile show <template> --template` prints a shipped template. See `docs/agent-profiles.md` |
 | `aidr aibom [--format cyclonedx-json\|json] [-o file] [--path <project>] [--config <paths…>] [--scan-report <file>]` | AI Bill of Materials (CycloneDX 1.6): agents and their protection state, MCP servers with the 14 risk-category flags, AI SDKs/frameworks/models from the project's manifests, model files, skills/plugins and known vulnerabilities. Secrets are redacted; exits `1` when a source could not be read. See [AI-BOM](../../docs/ai-bom.md) |
-| `aidr config`, `aidr scan`, `aidr collect`, `aidr discover`, `aidr uninstall` | See `aidr <command> --help` |
+| `aidr uninstall [--dry-run] [--keep-data] [--host <ids>] [--hooks-only]` | **Operator only.** Remove the connector of every host, the AIDR-managed hooks, `~/.singularity-aidr` and the AIDR vault items; see [Uninstall](../../docs/getting-started.md#uninstall) |
+| `aidr config`, `aidr scan`, `aidr collect`, `aidr discover` | See `aidr <command> --help` |
 
 ### Operator-only commands
 
@@ -118,11 +153,13 @@ out-of-band, human-only actions. They print what will be allowed and require the
 operator to type a confirmation word (`approve` / `allow`) in an interactive
 terminal. Automation may pass `--yes`, which is honoured only when
 `AIDR_OPERATOR_NONINTERACTIVE=1` is also set. Approvals are HMAC-protected with a
-per-install key kept in the OS credential vault; without a vault, approvals are
-disabled (asks stay blocked) unless the operator explicitly opts into a key file
-with `operator_approvals.key_storage: "file"`. Single use is enforced through a
-ledger in the same vault, so restoring an old `approvals.json` does not replay an
-approval. This stops a prompt-injected agent from approving its own block through
+per-install key kept in the OS credential vault. On a Linux host with no vault
+(headless server, WSL, container) the default `operator_approvals.key_storage:
+"auto"` keeps the key in the machine-bound encrypted file store
+(`~/.singularity-aidr/sealed`, AES-256-GCM, owner-only) instead, so asks can still
+be approved there; `"os-vault"` makes the vault mandatory (no vault: approvals
+disabled, asks stay blocked). Single use is enforced through a ledger stored next
+to the key, so restoring an old `approvals.json` does not replay an approval. This stops a prompt-injected agent from approving its own block through
 its tools; it is not a boundary against code running as the same OS user with
 full shell access. The self-defense rules `CLT-SELF-007`..`009` deny an agent
 that tries to run these commands or touch the AIDR state directory.

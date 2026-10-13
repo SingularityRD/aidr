@@ -117,9 +117,14 @@ open if the host does not run them; the connector is not endpoint isolation.
 ## AIDR CLI
 
 The CLI is a separate setup and diagnostics package. Install it from the private
-registry using [Package Installation](package-installation.md); run `aidr setup`
-only after the operator has provided the approved runtime configuration and
-secret-store requirements.
+registry using [Package Installation](package-installation.md), then run
+`aidr setup --dry-run` to see what it would do and `aidr setup` to configure AIDR
+and install or update the connector of every agent host found in your home
+directory. Local mode (the default) needs no account, credential or OS credential
+vault, so this works on headless Linux, WSL and containers too; only a managed
+configuration stores a credential (in the OS vault, or the machine-bound
+encrypted file store `~/.singularity-aidr/sealed` where there is none). Commercial
+builds additionally need the operator-provided release verification key.
 
 ## Verify It Works
 
@@ -144,29 +149,34 @@ OpenClaw and OpenCode an `ask` blocks the call until an operator approves it.
 
 ## Uninstall
 
-How AIDR is removed depends on how it was installed:
+`aidr uninstall` removes AIDR completely and asks for confirmation first (type
+`uninstall`; automation passes `--yes` with `AIDR_OPERATOR_NONINTERACTIVE=1`):
 
-- **Endpoint / fleet install** (the endpoint installer or the Windows/Unix fleet
-  scripts): run `aidr uninstall` (add `--json` for a machine-readable report).
-  It removes only the AIDR-managed hook registrations from
-  `~/.claude/settings.json` and leaves your own hooks, configuration, connector
-  files and receipt in place. It **requires the installation receipt**
-  `~/.singularity-aidr/installation.json` written by that installer; if the
-  receipt is missing or does not verify, it refuses to change anything and
-  reports a reason code such as `receipt_missing`. Managed fleets should use the
-  fleet uninstall script (for Windows, `Uninstall-Aidr.ps1`; see
-  [deploy/fleet/windows/README.md](../deploy/fleet/windows/README.md)).
-- **Claude Code marketplace install** (`/plugin marketplace add` +
-  `/plugin install`): there is no receipt, so `aidr uninstall` refuses with
-  `receipt_missing`. Remove it from the Claude Code prompt instead:
+1. the receipt-managed Claude Code hooks written by the endpoint/fleet installer
+   (only entries carrying the installer marker; your own hooks stay);
+2. the connector of every agent host — the Claude Code marketplace plugin
+   (`claude plugin uninstall aidr@aidr` and `claude plugin marketplace remove
+   aidr`), the Cursor / VS Code extension (`cursor` / `code
+   --uninstall-extension`), the OpenClaw plugin (`openclaw plugins uninstall
+   aidr-openclaw`), the OpenCode plugin entry and package pin, and the Codex
+   `aidr-codex-hook` handlers in `~/.codex/hooks.json` and `config.toml`;
+3. the local data directory `~/.singularity-aidr` (configuration, allowlist,
+   audit log, approvals, quarantined files, keys) and the AIDR items in the OS
+   credential vault (operator-approval key and ledger, audit-chain root keys,
+   CLI and managed credential references).
 
-  ```
-  /plugin uninstall aidr@aidr
-  /plugin marketplace remove aidr
-  ```
+Options: `--dry-run` shows what would be removed, `--keep-data` keeps step 3,
+`--host codex,opencode` limits step 2, `--json` prints a machine-readable report
+and `--hooks-only` keeps the previous behaviour (step 1 only).
 
-  then restart Claude Code. `~/.singularity-aidr/` (configuration, allowlists,
-  audit log) is kept; delete it yourself only if you no longer need it.
-- **Cursor / VS Code**: uninstall the extension from the Extensions panel.
-- **OpenClaw / OpenCode / Codex**: remove the package and its entry from the
-  host's plugin or hook configuration.
+Changed host files are backed up next to themselves. A host whose CLI is not on
+PATH is reported with the exact manual command, and while any connector is still
+registered the data directory is kept (a hook must not be left pointing at
+deleted files); the command then exits `1`. It does not uninstall global npm
+packages (`npm uninstall --global @singularityrd/aidr-codex`) or the CLI itself,
+and it cannot find vault items behind behavioral-learning authority keys
+(`aidr learning keygen`): their references live in the operator's own directory,
+so the operator who holds them revokes them. Browser Guard is
+a browser extension: remove it from the browser or the enterprise browser policy.
+Managed fleets should use the fleet uninstall script (for Windows,
+`Uninstall-Aidr.ps1`; see [deploy/fleet/windows/README.md](../deploy/fleet/windows/README.md)).

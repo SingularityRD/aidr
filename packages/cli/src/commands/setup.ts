@@ -1,6 +1,15 @@
+import { resolvePath, VERSION } from "@singularityrd/aidr-core";
 import { createConfig } from "../utils/config-manager.js";
+import {
+	type ConnectorInstallOptions,
+	HOST_IDS,
+	type HostCommandRunner,
+	type HostId,
+	type HostInstallResult,
+	installConnectors,
+} from "../utils/connector-install.js";
 import { detectEnvironment } from "../utils/detect-env.js";
-import { installHooks } from "../utils/install-hooks.js";
+import { installHooks, recordHooksInstalled } from "../utils/install-hooks.js";
 import {
 	confirmOperatorAction,
 	type OperatorCommandDeps,
@@ -8,58 +17,168 @@ import {
 } from "../utils/operator-confirm.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 
-async function setupCommand(
-	options: { force?: boolean; secretStore?: string; yes?: boolean },
-	deps: OperatorCommandDeps = {},
-): Promise<void> {
-	console.log("\n🛡️  AIDR Setup\n");
+export interface SetupOptions {
+	force?: boolean;
+	secretStore?: string;
+	yes?: boolean;
+	/** Show what would be installed; change nothing. */
+	dryRun?: boolean;
+	/** `--no-install`: configure only and print the manual connector steps. */
+	install?: boolean;
+	/** Comma-separated host ids (`--host codex,opencode`); default: every detected host. */
+	host?: string;
+	claudePluginDir?: string;
+	cursorVsix?: string;
+	vscodeVsix?: string;
+}
 
-	if (options.force) {
-		// --force replaces the existing configuration and credential and resets
-		// the recorded hook state, so it is an operator-only action confirmed like
-		// `aidr allowlist add`. A plain `aidr setup` reuses the config unchanged.
-		try {
-			await confirmOperatorAction({
-				prompt: [
-					"Singularity AIDR — forced re-setup",
-					"The existing local configuration and CLI credential will be replaced.",
-				].join("\n"),
-				word: "replace",
-				yes: options.yes,
-				env: deps.env,
-				streams: deps.streams,
-			});
-		} catch (error) {
-			console.error(
-				`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was changed.`,
-			);
-			process.exitCode = 1;
-			return;
-		}
+export interface SetupDeps extends OperatorCommandDeps {
+	/** Home whose hosts are detected and configured (tests). */
+	home?: string;
+	/** Host CLI runner (tests). */
+	run?: HostCommandRunner;
+}
+
+const ACTION_TEXT: Record<HostInstallResult["action"], string> = {
+	already_installed: "already installed",
+	installed: "installed",
+	updated: "updated",
+	would_install: "would install",
+	would_update: "would update",
+	manual: "manual step needed",
+	failed: "FAILED",
+	skipped_not_detected: "not detected",
+};
+
+/** Parse `--host a,b`; unknown ids are an error, never silently ignored. */
+export function parseHosts(value: string | undefined): HostId[] | undefined {
+	if (value === undefined) return undefined;
+	const aliases: Record<string, HostId> = { claude: "claude-code", code: "vscode" };
+	const hosts = value
+		.split(",")
+		.map((entry) => entry.trim().toLowerCase())
+		.filter(Boolean)
+		.map((entry) => aliases[entry] ?? entry);
+	const unknown = hosts.filter((entry) => !(HOST_IDS as readonly string[]).includes(entry));
+	if (unknown.length > 0 || hosts.length === 0) {
+		throw new Error(
+			`Unknown host ${unknown.join(", ") || "(none)"}. Valid hosts: ${HOST_IDS.join(", ")}.`,
+		);
 	}
+	return [...new Set(hosts)] as HostId[];
+}
+
+function printHostResults(results: HostInstallResult[]): void {
+	console.log("Connectors:");
+	for (const entry of results) {
+		console.log(`  ${entry.label.padEnd(12)} ${ACTION_TEXT[entry.action]} — ${entry.detail}`);
+		for (const change of entry.changes) console.log(`               ${change}`);
+	}
+}
+
+async function confirmForce(options: SetupOptions, deps: OperatorCommandDeps): Promise<boolean> {
+	// --force replaces the existing configuration and credential and resets
+	// the recorded hook state, so it is an operator-only action confirmed like
+	// `aidr allowlist add`. A plain `aidr setup` reuses the config unchanged.
+	try {
+		await confirmOperatorAction({
+			prompt: [
+				"Singularity AIDR — forced re-setup",
+				"The existing local configuration and CLI credential will be replaced.",
+			].join("\n"),
+			word: "replace",
+			yes: options.yes,
+			env: deps.env,
+			streams: deps.streams,
+		});
+		return true;
+	} catch (error) {
+		console.error(
+			`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was changed.`,
+		);
+		process.exitCode = 1;
+		return false;
+	}
+}
+
+/**
+ * A plugin directory or VSIX is code the host will run. Installing one is an
+ * operator action: without this, an agent could run `aidr setup
+ * --claude-plugin-dir <its own directory>` to load arbitrary code into its host.
+ * Host-registry installs with a fixed package spec need no confirmation.
+ */
+async function confirmArtifacts(
+	options: SetupOptions,
+	deps: OperatorCommandDeps,
+): Promise<boolean> {
+	const artifacts = [
+		options.claudePluginDir && `  Claude Code plugin directory: ${options.claudePluginDir}`,
+		options.cursorVsix && `  Cursor extension: ${options.cursorVsix}`,
+		options.vscodeVsix && `  VS Code extension: ${options.vscodeVsix}`,
+	].filter((line): line is string => typeof line === "string");
+	if (artifacts.length === 0) return true;
+	try {
+		await confirmOperatorAction({
+			prompt: [
+				"Singularity AIDR — install connector artifacts",
+				...artifacts,
+				"Install only artifacts you verified against the signed release bundle.",
+			].join("\n"),
+			word: "install",
+			yes: options.yes,
+			env: deps.env,
+			streams: deps.streams,
+		});
+		return true;
+	} catch (error) {
+		console.error(
+			`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was changed.`,
+		);
+		process.exitCode = 1;
+		return false;
+	}
+}
+
+async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): Promise<void> {
+	console.log(`\n🛡️  AIDR Setup${options.dryRun ? " (dry run — nothing will be changed)" : ""}\n`);
+
+	if (options.force && !options.dryRun && !(await confirmForce(options, deps))) return;
+	if (!options.dryRun && !(await confirmArtifacts(options, deps))) return;
 
 	try {
+		const hosts = parseHosts(options.host);
+		const home = deps.home ?? resolvePath("~");
+		const hostEnv = deps.env ?? process.env;
+
 		console.error("Detecting environment...");
-		const env = await detectEnvironment();
-		console.error(`✓ ${env.agent} detected`);
-
-		console.error("Creating config...");
-		// The credential store is resolved before anything is written: with no
-		// vault available and no explicit fallback this throws, and setup fails
-		// closed instead of leaving a plaintext credential behind.
-		const config = await createConfig(env, options.force || false, {
-			secretStoreSelection: options.secretStore,
-		});
+		// Home-based only, the same measurement `aidr status` prints (PRD-14).
+		const env = await detectEnvironment(home, hostEnv);
 		console.error(
-			config.outcome === "reused"
-				? `✓ Config already present: ${config.path}`
-				: `✓ Config: ${config.path}`,
+			env.detectedHosts && env.detectedHosts.length > 0
+				? `✓ Agent hosts found: ${env.detectedHosts.join(", ")}`
+				: "✓ No supported agent host found in this home directory",
 		);
-		if (config.warning) console.warn(`⚠ ${config.warning}`);
 
-		console.error("Preparing connector setup guidance...");
-		const hookResult = await installHooks(env);
-		console.error(`✓ ${hookResult.summary}`);
+		if (options.dryRun) {
+			console.error("Skipping config creation (dry run).");
+		} else {
+			console.error("Creating config...");
+			// Local mode needs no credential, so no vault either; a managed config's
+			// credential goes to the OS vault or the encrypted file store.
+			const config = await createConfig(env, options.force || false, {
+				secretStoreSelection: options.secretStore,
+			});
+			console.error(
+				config.outcome === "reused"
+					? `✓ Config already present: ${config.path}`
+					: `✓ Config: ${config.path}`,
+			);
+			if (config.warning) console.warn(`⚠ ${config.warning}`);
+			if (config.outcome === "reused") {
+				console.log("\n✅ Setup verified — no changes were needed to the configuration.");
+				console.log(`  Existing config reused: ${config.path}`);
+			}
+		}
 
 		console.error("Loading threat database...");
 		const ruleCount = await loadBundledThreatCount();
@@ -79,30 +198,64 @@ async function setupCommand(
 		}
 		console.error(`✓ Detection verified (${detection.detail})`);
 
-		// Report what actually happened this run. A rerun that reused the existing
-		// config previously printed the same "Setup complete!" as a first install,
-		// so the user could not tell a no-op from a real setup (AIDR-007).
-		if (config.outcome === "reused") {
-			console.log("\n✅ Setup verified — no changes were needed.\n");
-			console.log(`  Existing config reused: ${config.path}`);
+		if (options.install === false) {
+			// Guidance only: the previous behaviour, for operators who install by hand.
+			const guidance = await installHooks(env);
+			console.log("\n✅ Setup complete (connector install skipped: --no-install).\n");
+			console.log("Next steps:");
+			console.log("  1. Install the connector below — until you do, tool calls are NOT inspected");
+			console.log("  2. View status:  aidr status");
+			console.log("");
+			for (const line of guidance.followUp) console.log(line);
+			return;
+		}
+
+		console.error(options.dryRun ? "Planning connector installs..." : "Installing connectors...");
+		const installOptions: ConnectorInstallOptions = {
+			hosts,
+			dryRun: options.dryRun,
+			claudePluginDir: options.claudePluginDir,
+			cursorVsix: options.cursorVsix,
+			vscodeVsix: options.vscodeVsix,
+		};
+		const results = installConnectors(
+			{ home, env: hostEnv, run: deps.run, version: VERSION },
+			installOptions,
+		);
+		const active = results.filter((entry) => entry.state === "installed");
+		if (!options.dryRun) {
+			try {
+				recordHooksInstalled(active.length > 0);
+			} catch {
+				// The measured connector state below is what the user sees either way.
+			}
+		}
+
+		console.log("");
+		printHostResults(results);
+		const failed = results.filter((entry) => entry.action === "failed");
+		const pending = results.filter((entry) => entry.followUp.length > 0);
+		console.log("");
+		if (options.dryRun) {
+			console.log("Dry run: no file was written and no host command was run.");
+		} else if (active.length > 0 && failed.length === 0) {
+			console.log("✅ Setup complete!");
+			console.log(
+				`  Registered for: ${active.map((entry) => entry.label).join(", ")} (host execution not yet verified).`,
+			);
 		} else {
-			console.log("\n✅ Setup complete!\n");
+			console.log("⚠ Setup finished, but Protection is NOT yet active for every agent:");
+			console.log("  tool calls of a host without a registered connector are NOT inspected.");
 		}
-
-		// The next steps must not contradict the warning that follows them. The
-		// previous text said "Start using your AI agent normally" on the same
-		// screen that said "Protection is NOT yet active for your agent" — an
-		// unqualified all-clear printed by a security product.
-		console.log("Next steps:");
-		console.log("  1. Install the connector below — until you do, tool calls are NOT inspected");
-		console.log("  2. View status:  aidr status");
-		console.log("  3. Adjust policy: aidr config --list");
-		console.log("");
-
-		for (const line of hookResult.followUp) {
-			console.log(line);
+		if (pending.length > 0) {
+			console.log("");
+			console.log("Next steps:");
+			for (const entry of pending) for (const line of entry.followUp) console.log(line);
 		}
 		console.log("");
+		console.log("Verify with: aidr status   (then run a host-side deny canary)");
+		console.log("");
+		if (failed.length > 0) process.exitCode = 1;
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(`Setup failed: ${message}`);

@@ -138,7 +138,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
   "package_check": {
@@ -396,7 +396,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
   "package_check": {
@@ -657,7 +657,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
   "package_check": {
@@ -918,7 +918,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
   "package_check": {
@@ -1176,7 +1176,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
   "package_check": {

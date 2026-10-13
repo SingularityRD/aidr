@@ -691,12 +691,31 @@ export function buildReport(input: {
 		score: scoreValue,
 		falsePositiveRate: fpRate,
 		minScore,
-		passed: scoreValue >= minScore,
+		// A run that scored nothing (every fixture aborted, or an empty suite)
+		// proves nothing and must not pass.
+		passed: totals.counted > 0 && scoreValue >= minScore,
 	};
 }
 
+/**
+ * The pass threshold when `--min-score` is not given. It used to be 0, so every
+ * run printed PASS and exited 0 whatever the score (MSC-12). The shipped corpus
+ * scores 100% on a default local install; 90 leaves room for an operator's own
+ * disabled rules or a relaxed preset while still failing a badly degraded
+ * engine. `--min-score 0` restores "report only".
+ */
+export const DEFAULT_MIN_SCORE = 90;
+
+function verdictLine(report: SimulationReport): string {
+	if (report.totals.counted === 0)
+		return "FAIL — no fixture could be scored, so nothing was verified";
+	return report.passed
+		? `PASS — score ${report.score}% >= minimum ${report.minScore}%`
+		: `FAIL — score ${report.score}% < minimum ${report.minScore}%`;
+}
+
 function clampScore(value: string | undefined): number {
-	if (value === undefined) return 0;
+	if (value === undefined) return DEFAULT_MIN_SCORE;
 	const parsed = Number(value);
 	if (!Number.isFinite(parsed)) {
 		throw new Error(`--min-score must be a number between 0 and 100 (got: ${value})`);
@@ -786,11 +805,7 @@ export function formatTable(report: SimulationReport): string {
 		}
 	}
 	lines.push("");
-	lines.push(
-		report.passed
-			? `PASS — score ${report.score}% >= minimum ${report.minScore}%`
-			: `FAIL — score ${report.score}% < minimum ${report.minScore}%`,
-	);
+	lines.push(verdictLine(report));
 	return lines.join("\n");
 }
 

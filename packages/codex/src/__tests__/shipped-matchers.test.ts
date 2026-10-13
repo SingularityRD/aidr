@@ -65,6 +65,13 @@ describe("Codex shipped matchers", () => {
 		expect(text).not.toContain('"^(Bash|apply_patch)$"');
 	});
 
+	it("aidr setup's connector installer registers the shipped matchers", () => {
+		const text = read("packages/cli/src/utils/connector-install.ts");
+		expect(text).toContain(`matcher: "${CODEX_SHIPPED_MATCHERS.PreToolUse}"`);
+		expect(text).toContain(`matcher: "${CODEX_SHIPPED_MATCHERS.PostToolUse}"`);
+		expect(text).not.toContain('"^(Bash|apply_patch)$"');
+	});
+
 	it("the README's hooks.json form matches the TOML form", () => {
 		const readme = read("packages/codex/README.md");
 		expect(readme).toContain(`"matcher": "${CODEX_SHIPPED_MATCHERS.PreToolUse}"`);

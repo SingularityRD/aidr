@@ -66,13 +66,13 @@ versions, and the [upgrade notes](docs/upgrade-notes.md) when moving between rel
 | Runtime | Install |
 | --- | --- |
 | **Claude Code** | Extract the signed `aidr-claude-plugin-<version>.tar.gz`, then run `/plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin` and `/plugin install aidr@aidr`. Requires Node.js >= 22.12.0. [Guide](docs/platform-guides/claude-code.md) |
-| **Cursor / VS Code** (preview — no real-host acceptance evidence yet) | Install the signed `aidr-cursor.vsix` via `Extensions > Install from VSIX`, then run `Singularity AIDR: Enable protection`. No Cursor or VS Code version has been accepted on a real host. [Guide](docs/platform-guides/cursor.md) |
+| **Cursor / VS Code** (preview — no real-host acceptance evidence yet) | Install the signed `aidr-cursor.vsix` (Cursor) or `aidr-vscode.vsix` (VS Code) via `Extensions > Install from VSIX`, then run `Singularity AIDR: Enable protection`. No Cursor or VS Code version has been accepted on a real host. [Guide](docs/platform-guides/cursor.md) |
 | **OpenClaw** | Install the approved `@singularityrd/aidr-openclaw` version from the private registry. [Guide](docs/platform-guides/openclaw.md) |
 | **OpenCode** | Install the approved `@singularityrd/aidr-opencode` version from the private registry. [Guide](docs/platform-guides/opencode.md) |
 | **Codex CLI** | Install `@singularityrd/aidr-codex`, register `aidr-codex-hook` as a `PreToolUse` and a `UserPromptSubmit` (prompt protection) hook and trust both with `/hooks`. [Guide](docs/platform-guides/codex.md) |
 | **MCP Gateway** | Run the loopback gateway with a signed configuration and point MCP clients at it. [Gateway README](packages/mcp-gateway/README.md) |
 | **Browser Guard** | Deploy the extension to Chrome, Edge or Firefox, or push it with enterprise browser policy using [`managed_schema.json`](packages/browser-guard/static/managed_schema.json). [Browser Guard](packages/browser-guard/README.md) |
-| **CLI** | `aidr setup`, `aidr status`, `aidr scan --target <url>`. [Package Installation](docs/package-installation.md) |
+| **CLI** | `aidr setup` (detects the installed agent hosts and installs or updates their connectors; `--dry-run` to preview), `aidr status`, `aidr uninstall`, `aidr scan --target <url>`. [Package Installation](docs/package-installation.md) |
 
 Private registry credentials and versioned setup are in
 [Package Installation](docs/package-installation.md); the full flow is in

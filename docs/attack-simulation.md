@@ -83,8 +83,10 @@ detection nor a clean pass, so `aidr simulate` **excludes it from the score**
 - **Misses** — malicious fixtures that were not flagged to their expected level,
   listed with their actual verdict.
 
-`--min-score N` makes the command exit non-zero when the detection score is below
-`N`, which is useful as a regression gate in CI.
+The command exits non-zero when the detection score is below the minimum:
+`--min-score N`, or **90** when the flag is not given (the shipped corpus scores
+100% on a default local install). A run in which no fixture could be scored
+always fails. `--min-score 0` turns the gate into a report only.
 
 ## Options
 
@@ -100,7 +102,7 @@ aidr simulate [--suite <names>] [--sensitivity <level>]
 | `--sensitivity` | Override sensitivity: `paranoid`, `balanced`, `relaxed`. Default: your config. A stricter preset can turn some `deny` results into `ask` and vice-versa. |
 | `--format` | `table` (default), `json`, or a self-contained, shareable `html` report. |
 | `--output` | Write the report to a file instead of stdout. |
-| `--min-score` | Exit non-zero when the detection score is below this value (0–100). |
+| `--min-score` | Exit non-zero when the detection score is below this value (0–100). Default: 90. A run that scored no fixture always fails. |
 | `--connector` | Drive a **built connector entry point** instead of the in-process evaluator: `claude-code`, `codex`, `cursor`, or `vscode`. Tool-call fixtures run through the connector's real `dist` binary; prompt and output fixtures fall back to the in-process scanners because those are separate connector surfaces. The entry points are located from the CLI's own source checkout (`<repo>/packages/cli`), never from the current directory; an installed CLI refuses connector mode. |
 
 ### Connector mode

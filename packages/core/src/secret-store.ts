@@ -31,8 +31,19 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import {
+	closeSync,
+	fstatSync,
+	lstatSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+	writeSync,
+} from "node:fs";
 import { join } from "node:path";
 import { resolvePath } from "./config.js";
 
@@ -40,12 +51,14 @@ export type SecretStoreKind =
 	| "windows-dpapi"
 	| "macos-keychain"
 	| "linux-secret-service"
+	| "encrypted-file"
 	| "file-acl";
 
 export const SECRET_STORE_KINDS: readonly SecretStoreKind[] = [
 	"windows-dpapi",
 	"macos-keychain",
 	"linux-secret-service",
+	"encrypted-file",
 	"file-acl",
 ];
 
@@ -120,14 +133,18 @@ export class SecretStoreSelectionError extends SecretStoreError {
  * `location` is the honest part of the contract:
  * - `os-vault` — the credential is kept by the platform vault; `config.json` only
  *   holds a reference.
+ * - `encrypted-file` — the headless fallback ({@link createEncryptedFileStore}):
+ *   the credential is AES-256-GCM encrypted in an owner-only file under a key
+ *   bound to this machine; `config.json` only holds a reference. It is NOT an OS
+ *   vault (`osProtected` is false), so callers that require one still refuse it.
  * - `config-file` — the `file-acl` fallback; the credential lives in the
  *   ACL-hardened config document, which the config manager writes directly. Its
  *   vault methods therefore refuse rather than pretend to isolate anything.
  */
 export interface SecretStore {
 	readonly kind: SecretStoreKind;
-	readonly location: "os-vault" | "config-file";
-	/** True only for the platform vaults; false for the ACL-hardened file fallback. */
+	readonly location: "os-vault" | "encrypted-file" | "config-file";
+	/** True only for the platform vaults; false for both file-based fallbacks. */
 	readonly osProtected: boolean;
 	isAvailable(): boolean;
 	put(id: string, secret: string): void;
@@ -576,6 +593,267 @@ export function createLinuxSecretServiceStore(
 }
 
 // ---------------------------------------------------------------------------
+// Headless fallback — machine-bound, AES-256-GCM encrypted owner-only files
+// ---------------------------------------------------------------------------
+
+/** Files that may hold this host's machine identifier, most authoritative first. */
+const MACHINE_ID_PATHS = ["/etc/machine-id", "/var/lib/dbus/machine-id"];
+const SEALED_FILE_VERSION = 1;
+const SEALED_FILE_DOMAIN = "singularity-aidr/encrypted-file-store/v1";
+const SEALED_FILE_SUFFIX = ".sealed.json";
+const SALT_FILE = "store.salt";
+
+export interface EncryptedFileStoreOptions {
+	/** Where sealed files live; defaults to `~/.singularity-aidr/sealed`. */
+	directory?: string;
+	/**
+	 * The machine-bound secret (tests). Defaults to the host's machine id
+	 * (`/etc/machine-id`, then `/var/lib/dbus/machine-id`); `null` means the
+	 * host has none (for example a minimal container image).
+	 */
+	machineId?: string | null;
+	/** Numeric user id mixed into the key (tests); defaults to the current user. */
+	uid?: number;
+}
+
+/** The host's machine identifier, or null when it has none. */
+export function readMachineId(paths: readonly string[] = MACHINE_ID_PATHS): string | null {
+	for (const path of paths) {
+		try {
+			const value = readFileSync(path, "utf8").trim();
+			if (/^[A-Za-z0-9-]{16,128}$/.test(value)) return value;
+		} catch {
+			// Absent or unreadable: try the next candidate.
+		}
+	}
+	return null;
+}
+
+function sealedFileError(message: string, cause?: unknown): SecretStoreError {
+	return new SecretStoreError(`The encrypted file store ${message}`, { cause });
+}
+
+/** True for an owner-only regular file, false when absent; throws for anything else. */
+function privateRegularFile(path: string): boolean {
+	let info: ReturnType<typeof lstatSync>;
+	try {
+		info = lstatSync(path);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw sealedFileError("could not inspect its file.", error);
+	}
+	if (info.isSymbolicLink() || !info.isFile()) {
+		throw sealedFileError(`refuses ${path}: it is not a regular file.`);
+	}
+	if (process.platform !== "win32") {
+		if (process.getuid && info.uid !== process.getuid()) {
+			throw sealedFileError(`refuses ${path}: it is not owned by the current user.`);
+		}
+		if ((info.mode & 0o077) !== 0) {
+			throw sealedFileError(`refuses ${path}: it is accessible to other users.`);
+		}
+	}
+	return true;
+}
+
+function ensurePrivateDirectory(directory: string): void {
+	mkdirSync(directory, { recursive: true, mode: 0o700 });
+	const info = lstatSync(directory);
+	if (info.isSymbolicLink() || !info.isDirectory()) {
+		throw sealedFileError(`refuses ${directory}: it is not a regular directory.`);
+	}
+	if (process.platform !== "win32" && process.getuid && info.uid !== process.getuid()) {
+		throw sealedFileError(`refuses ${directory}: it is not owned by the current user.`);
+	}
+}
+
+/** Owner-only write through an exclusive temporary file and an atomic rename. */
+function writePrivateAtomic(path: string, content: string, exclusive = false): void {
+	if (exclusive) {
+		const fd = openSync(path, "wx", 0o600);
+		try {
+			writeSync(fd, content);
+		} finally {
+			closeSync(fd);
+		}
+		return;
+	}
+	const temporary = `${path}.${randomBytes(6).toString("hex")}.tmp`;
+	const fd = openSync(temporary, "wx", 0o600);
+	try {
+		if (process.platform !== "win32" && (fstatSync(fd).mode & 0o077) !== 0) {
+			throw sealedFileError("could not create an owner-only file.");
+		}
+		writeSync(fd, content);
+		closeSync(fd);
+		renameSync(temporary, path);
+	} catch (error) {
+		try {
+			closeSync(fd);
+		} catch {
+			/* Already closed. */
+		}
+		try {
+			unlinkSync(temporary);
+		} catch {
+			/* Nothing left behind, or not removable; the error below is what matters. */
+		}
+		throw error;
+	}
+}
+
+/**
+ * A store for hosts with no OS credential vault: see {@link createEncryptedFileStore}.
+ */
+export interface EncryptedFileStore extends SecretStore {
+	readonly kind: "encrypted-file";
+	readonly location: "encrypted-file";
+	/** False when the host has no machine id, so the files are not bound to this machine. */
+	readonly machineBound: boolean;
+	readonly directory: string;
+}
+
+/**
+ * The fallback for hosts with no OS credential vault (headless Linux servers,
+ * WSL without a keyring, containers, CI runners).
+ *
+ * Each secret is AES-256-GCM encrypted in its own owner-only (`0600`) file under
+ * an owner-only (`0700`) directory. The per-secret key is
+ * HKDF-SHA256(machine id, per-install random salt, domain ‖ uid ‖ secret id), and
+ * the secret id is bound as additional authenticated data, so:
+ *
+ * - nothing is ever written in plaintext: a backup, a support bundle, a synced
+ *   folder or a copy on another machine (different machine id) yields nothing;
+ * - a file that was edited, swapped between ids or truncated fails
+ *   authentication and is refused — never returned as a secret.
+ *
+ * Its limit is the same one libsecret has on Linux: any process running as the
+ * same user on the same machine can read the machine id and the salt, and so the
+ * secret. It is therefore not presented as an OS vault (`osProtected: false`).
+ * On a host with no machine id the key is derived from the salt alone;
+ * {@link EncryptedFileStore.machineBound} is then false and `aidr doctor` says so.
+ */
+export function createEncryptedFileStore(
+	options: EncryptedFileStoreOptions = {},
+): EncryptedFileStore {
+	const directory = options.directory ?? resolvePath("~/.singularity-aidr/sealed");
+	const machineId = options.machineId === undefined ? readMachineId() : options.machineId;
+	const uid = options.uid ?? (process.getuid ? process.getuid() : 0);
+	const pathFor = (id: string): string => {
+		assertSafeId(id);
+		return join(directory, `${id}${SEALED_FILE_SUFFIX}`);
+	};
+
+	const readSalt = (create: boolean): Buffer | null => {
+		const path = join(directory, SALT_FILE);
+		if (privateRegularFile(path)) {
+			const value = Buffer.from(readFileSync(path, "utf8").trim(), "hex");
+			if (value.length !== 32) throw sealedFileError("salt is corrupt; refusing to derive a key.");
+			return value;
+		}
+		if (!create) return null;
+		ensurePrivateDirectory(directory);
+		const fresh = randomBytes(32);
+		try {
+			writePrivateAtomic(path, `${fresh.toString("hex")}\n`, true);
+			return fresh;
+		} catch (error) {
+			// Another process created it first: use theirs.
+			if ((error as NodeJS.ErrnoException).code === "EEXIST") return readSalt(false);
+			throw error;
+		}
+	};
+
+	const keyFor = (id: string, salt: Buffer): Buffer =>
+		Buffer.from(
+			hkdfSync(
+				"sha256",
+				Buffer.from(machineId ?? "", "utf8"),
+				salt,
+				Buffer.from(`${SEALED_FILE_DOMAIN}\nuid=${uid}\nid=${id}`, "utf8"),
+				32,
+			),
+		);
+
+	return {
+		kind: "encrypted-file",
+		location: "encrypted-file",
+		osProtected: false,
+		machineBound: machineId !== null,
+		directory,
+		isAvailable: () => true,
+		put: (id, secret) => {
+			const path = pathFor(id);
+			const salt = readSalt(true) as Buffer;
+			privateRegularFile(path); // refuses a planted link or a foreign file
+			const iv = randomBytes(12);
+			const cipher = createCipheriv("aes-256-gcm", keyFor(id, salt), iv);
+			cipher.setAAD(Buffer.from(id, "utf8"));
+			const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+			const document = {
+				version: SEALED_FILE_VERSION,
+				alg: "A256GCM",
+				kdf: "HKDF-SHA256",
+				machine_bound: machineId !== null,
+				iv: iv.toString("base64"),
+				tag: cipher.getAuthTag().toString("base64"),
+				ciphertext: ciphertext.toString("base64"),
+			};
+			writePrivateAtomic(path, `${JSON.stringify(document)}\n`);
+		},
+		get: (id) => {
+			const path = pathFor(id);
+			if (!privateRegularFile(path)) return null;
+			const salt = readSalt(false);
+			if (!salt) throw sealedFileError("salt is missing; the sealed secret cannot be opened.");
+			let document: Record<string, unknown>;
+			try {
+				document = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+			} catch (error) {
+				throw sealedFileError("holds an unreadable sealed file.", error);
+			}
+			if (
+				document?.version !== SEALED_FILE_VERSION ||
+				document.alg !== "A256GCM" ||
+				typeof document.iv !== "string" ||
+				typeof document.tag !== "string" ||
+				typeof document.ciphertext !== "string"
+			) {
+				throw sealedFileError("holds a sealed file in an unknown format.");
+			}
+			try {
+				const decipher = createDecipheriv(
+					"aes-256-gcm",
+					keyFor(id, salt),
+					Buffer.from(document.iv, "base64"),
+				);
+				decipher.setAAD(Buffer.from(id, "utf8"));
+				decipher.setAuthTag(Buffer.from(document.tag, "base64"));
+				return Buffer.concat([
+					decipher.update(Buffer.from(document.ciphertext, "base64")),
+					decipher.final(),
+				]).toString("utf8");
+			} catch (error) {
+				// Another machine or user, a swapped or edited file: never a secret.
+				throw sealedFileError(
+					"could not authenticate a sealed secret (edited, or sealed on another machine, user or salt).",
+					error,
+				);
+			}
+		},
+		revoke: (id) => {
+			const path = pathFor(id);
+			try {
+				unlinkSync(path);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+				throw sealedFileError("could not delete the sealed secret.", error);
+			}
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Resolution
 // ---------------------------------------------------------------------------
 
@@ -584,7 +862,7 @@ export function isSecretStoreKind(value: string): value is SecretStoreKind {
 }
 
 /** Store kinds that keep the credential in a platform vault. */
-export type PlatformSecretStoreKind = Exclude<SecretStoreKind, "file-acl">;
+export type PlatformSecretStoreKind = Exclude<SecretStoreKind, "file-acl" | "encrypted-file">;
 
 export function platformSecretStoreKind(
 	platform: NodeJS.Platform = process.platform,
@@ -602,10 +880,21 @@ export interface ResolveSecretStoreOptions {
 	runner?: CommandRunner;
 	/** Override for the DPAPI blob directory (tests). */
 	directory?: string;
+	/** Override for the encrypted-file store directory (tests). */
+	encryptedFileDirectory?: string;
+	/** Machine id for the encrypted-file store (tests); see {@link EncryptedFileStoreOptions}. */
+	machineId?: string | null;
+}
+
+function encryptedFileOptions(options: ResolveSecretStoreOptions): EncryptedFileStoreOptions {
+	return {
+		...(options.encryptedFileDirectory ? { directory: options.encryptedFileDirectory } : {}),
+		...(options.machineId !== undefined ? { machineId: options.machineId } : {}),
+	};
 }
 
 function createStoreForKind(
-	kind: Exclude<SecretStoreKind, "file-acl">,
+	kind: PlatformSecretStoreKind,
 	options: ResolveSecretStoreOptions,
 ): SecretStore {
 	const runner = options.runner ?? defaultCommandRunner;
@@ -648,6 +937,8 @@ export function resolveSecretStore(options: ResolveSecretStoreOptions = {}): Sec
 	}
 
 	if (selection === "file-acl") return createFileAclStore();
+	if (selection === "encrypted-file")
+		return createEncryptedFileStore(encryptedFileOptions(options));
 
 	const store = createStoreForKind(selection, options);
 	if (!store.isAvailable()) {
@@ -658,6 +949,29 @@ export function resolveSecretStore(options: ResolveSecretStoreOptions = {}): Sec
 		);
 	}
 	return store;
+}
+
+/**
+ * The store for a credential that IS needed: the platform vault when one answers,
+ * otherwise — on a host with no vault, and only when nothing was selected
+ * explicitly — the machine-bound {@link createEncryptedFileStore}, never a
+ * plaintext file. An explicit selection (including a vault that is not
+ * available) behaves exactly like {@link resolveSecretStore}.
+ *
+ * Callers that require an OS vault (`osProtected`) must keep using
+ * {@link resolveSecretStore}; this is for credentials whose only alternative on
+ * a headless host would otherwise be a plaintext file or no credential at all.
+ */
+export function resolveCredentialStore(options: ResolveSecretStoreOptions = {}): SecretStore {
+	const env = options.env ?? process.env;
+	const selection = (options.selection ?? env[SECRET_STORE_ENV] ?? "").trim().toLowerCase();
+	try {
+		return resolveSecretStore(options);
+	} catch (error) {
+		const automatic = selection === "" || selection === SECRET_STORE_AUTO;
+		if (!(error instanceof SecretStoreUnavailableError) || !automatic) throw error;
+		return createEncryptedFileStore(encryptedFileOptions(options));
+	}
 }
 
 /**
