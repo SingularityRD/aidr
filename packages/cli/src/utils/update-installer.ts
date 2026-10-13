@@ -92,10 +92,25 @@ export function detectInstallKind(
 	return "tar";
 }
 
+/**
+ * The catalog formats that update this kind of installation, in order of
+ * preference. A new installer format becomes installable by adding it here (and
+ * an apply step for it below).
+ */
+const KIND_FORMATS: Record<InstallKind, readonly string[]> = {
+	msi: ["msi"],
+	deb: ["deb"],
+	rpm: ["rpm"],
+	tar: ["tar.gz", "tgz"],
+};
+
+export function installerFormats(kind: InstallKind): readonly string[] {
+	return KIND_FORMATS[kind];
+}
+
 /** Does the catalog's installer format update this kind of installation? */
 export function formatMatches(kind: InstallKind, format: string): boolean {
-	if (kind === "tar") return format === "tar.gz" || format === "tgz";
-	return format === kind;
+	return KIND_FORMATS[kind].includes(format);
 }
 
 /**

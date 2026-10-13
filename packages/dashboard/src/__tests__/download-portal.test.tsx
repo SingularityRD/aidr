@@ -17,9 +17,11 @@ vi.mock("../enterprise/team-provider", () => ({ useTeam }));
 import { I18nProvider } from "../i18n/I18nProvider";
 import {
 	checksumCommand,
+	detectLinuxFamily,
 	detectVisitorPlatform,
+	groupInstallers,
 	readInstallerCatalog,
-	recommendedInstaller,
+	recommendedPlatform,
 	requestInstallerDownload,
 } from "../lib/installers";
 import { BROWSER_GUARD_FIREFOX_ID, browserGuardLinks } from "../onboarding/BrowserGuardDownloads";
@@ -29,6 +31,22 @@ import { OnboardingPage } from "../ui/pages/OnboardingPage";
 const TEAM = { id: "22222222-2222-4222-8222-222222222222", name: "Acme" };
 const WIN_SHA = "a".repeat(64);
 const LINUX_SHA = "b".repeat(64);
+const DEB_SHA = "d".repeat(64);
+const RPM_SHA = "e".repeat(64);
+const TARBALL = "singularity-aidr-1.4.0-linux-x64.tar.gz";
+
+function linuxFile(file: string, format: string, sha256: string) {
+	return {
+		platform: "linux-x64",
+		os: "linux",
+		arch: "x64",
+		file,
+		size: 40 * 1024 * 1024,
+		sha256,
+		minimum_os: "glibc 2.28",
+		format,
+	};
+}
 
 function catalogResponse(overrides: Record<string, unknown> = {}) {
 	return {
@@ -49,16 +67,9 @@ function catalogResponse(overrides: Record<string, unknown> = {}) {
 					minimum_os: "Windows 10",
 					format: "msi",
 				},
-				{
-					platform: "linux-x64",
-					os: "linux",
-					arch: "x64",
-					file: "aidr-install-1.4.0-linux-x64.sh",
-					size: 40 * 1024 * 1024,
-					sha256: LINUX_SHA,
-					minimum_os: "glibc 2.28",
-					format: "sh",
-				},
+				linuxFile("singularity-aidr_1.4.0_amd64.deb", "deb", DEB_SHA),
+				linuxFile("singularity-aidr-1.4.0-1.x86_64.rpm", "rpm", RPM_SHA),
+				linuxFile(TARBALL, "tar.gz", LINUX_SHA),
 			],
 		},
 		managed_enrollment: { available: true, control_plane_url: "https://api.customer.example" },
@@ -177,9 +188,9 @@ describe("download page", () => {
 				? {
 						data: {
 							ok: true,
-							url: "https://api.customer.example/storage/v1/object/sign/aidr-installers/1.4.0/linux-x64/x.sh?token=t",
+							url: "https://api.customer.example/storage/v1/object/sign/aidr-installers/1.4.0/linux-x64/x.tar.gz?token=t",
 							expires_at: "2026-10-13T10:05:00.000Z",
-							file: "aidr-install-1.4.0-linux-x64.sh",
+							file: TARBALL,
 							sha256: LINUX_SHA,
 						},
 						error: null,
@@ -187,21 +198,83 @@ describe("download page", () => {
 				: { data: catalogResponse(), error: null },
 		);
 		renderPage({ visitorOs: { os: "linux", arch: "x64" } });
-		const button = await screen.findByRole("button", {
-			name: "Download aidr-install-1.4.0-linux-x64.sh",
-		});
+		const button = await screen.findByRole("button", { name: `Download ${TARBALL}` });
 		expect(invoke).toHaveBeenCalledTimes(1);
 		fireEvent.click(button);
 		await waitFor(() =>
 			expect(invoke).toHaveBeenCalledWith("installer-download", {
 				method: "POST",
-				body: { tenant_id: TEAM.id, version: "1.4.0", platform: "linux-x64" },
+				body: { tenant_id: TEAM.id, version: "1.4.0", platform: "linux-x64", format: "tar.gz" },
 			}),
 		);
 		expect(await screen.findByRole("link", { name: "use this direct link" })).toHaveAttribute(
 			"href",
-			"https://api.customer.example/storage/v1/object/sign/aidr-installers/1.4.0/linux-x64/x.sh?token=t",
+			"https://api.customer.example/storage/v1/object/sign/aidr-installers/1.4.0/linux-x64/x.tar.gz?token=t",
 		);
+	});
+
+	it("recommends the Linux format for the visitor's distribution and lists the others", async () => {
+		const formats = (region: HTMLElement) =>
+			Array.from(region.querySelectorAll("[data-format]")).map((node) =>
+				node.getAttribute("data-format"),
+			);
+		renderPage({ visitorOs: { os: "linux", arch: "x64", linux: "debian" } });
+		const ubuntu = await screen.findByRole("region", { name: "Linux (x64)" });
+		expect(within(ubuntu).getByText("Recommended for this computer")).toBeInTheDocument();
+		expect(formats(ubuntu)).toEqual(["deb", "rpm", "tar.gz"]);
+		expect(within(ubuntu).getByText("Debian, Ubuntu (.deb)")).toBeInTheDocument();
+		expect(
+			within(ubuntu).getByRole("heading", { name: "Other formats for Linux (x64)" }),
+		).toBeInTheDocument();
+		expect(within(ubuntu).getByText("RHEL, Fedora (.rpm)")).toBeInTheDocument();
+		expect(within(ubuntu).getByText("Other Linux distributions (.tar.gz)")).toBeInTheDocument();
+		expect(within(ubuntu).getByText(DEB_SHA)).toBeInTheDocument();
+		cleanup();
+		renderPage({ visitorOs: { os: "linux", arch: "x64", linux: "rhel" } });
+		expect(formats(await screen.findByRole("region", { name: "Linux (x64)" }))).toEqual([
+			"rpm",
+			"deb",
+			"tar.gz",
+		]);
+		cleanup();
+		renderPage({ visitorOs: { os: "linux", arch: "x64" } });
+		expect(formats(await screen.findByRole("region", { name: "Linux (x64)" }))).toEqual([
+			"tar.gz",
+			"deb",
+			"rpm",
+		]);
+		// Windows has one format: no "other formats" list.
+		expect(
+			within(screen.getByRole("region", { name: "Windows (x64)" })).queryByRole("heading"),
+		).toBeNull();
+	});
+
+	it("asks for the chosen format of a multi-format platform", async () => {
+		invoke.mockImplementation(async (_name: string, options: { method: string }) =>
+			options.method === "POST"
+				? {
+						data: {
+							ok: true,
+							url: "https://api.customer.example/x.rpm?token=t",
+							expires_at: "2026-10-13T10:05:00.000Z",
+							file: "singularity-aidr-1.4.0-1.x86_64.rpm",
+							sha256: RPM_SHA,
+						},
+						error: null,
+					}
+				: { data: catalogResponse(), error: null },
+		);
+		renderPage({ visitorOs: { os: "linux", arch: "x64", linux: "debian" } });
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Download singularity-aidr-1.4.0-1.x86_64.rpm" }),
+		);
+		await waitFor(() =>
+			expect(invoke).toHaveBeenCalledWith("installer-download", {
+				method: "POST",
+				body: { tenant_id: TEAM.id, version: "1.4.0", platform: "linux-x64", format: "rpm" },
+			}),
+		);
+		expect(await screen.findByRole("link", { name: "use this direct link" })).toBeInTheDocument();
 	});
 
 	it("refuses a link whose checksum disagrees with the listed installer", async () => {
@@ -308,6 +381,10 @@ describe("download page", () => {
 		expect(
 			screen.getByRole("button", { name: "AIDR-Setup-1.4.0-x64.msi dosyasını indir" }),
 		).toBeInTheDocument();
+		expect(screen.getByText("Diğer Linux dağıtımları (.tar.gz)")).toBeInTheDocument();
+		expect(
+			screen.getByRole("heading", { name: "Linux (x64) için diğer biçimler" }),
+		).toBeInTheDocument();
 		expect(screen.getByRole("heading", { name: "BT / MDM dağıtımı" })).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Chrome'a ekle" })).toBeInTheDocument();
 	});
@@ -332,7 +409,8 @@ describe("onboarding", () => {
 			.map((heading) => heading.textContent);
 		expect(headings[0]).toBe("1) Download and run the installer");
 		const install = screen.getByRole("region", { name: "1) Download and run the installer" });
-		expect(await within(install).findAllByRole("button", { name: /^Download / })).toHaveLength(2);
+		// Windows .msi and Linux .deb, .rpm and .tar.gz.
+		expect(await within(install).findAllByRole("button", { name: /^Download / })).toHaveLength(4);
 		const manual = screen
 			.getByRole("heading", { name: "1) Choose your AI tool" })
 			.closest("details");
@@ -351,7 +429,12 @@ describe("onboarding", () => {
 describe("installer client", () => {
 	it("reads only well-formed catalogs and skips platforms it does not know", () => {
 		const catalog = readInstallerCatalog(catalogResponse());
-		expect(catalog?.files.map((file) => file.platform)).toEqual(["windows-x64", "linux-x64"]);
+		expect(catalog?.files.map((file) => `${file.platform}:${file.format}`)).toEqual([
+			"windows-x64:msi",
+			"linux-x64:deb",
+			"linux-x64:rpm",
+			"linux-x64:tar.gz",
+		]);
 		expect(catalog?.controlPlaneUrl).toBe("https://api.customer.example");
 		const future = catalogResponse();
 		future.catalog.files.push({
@@ -364,7 +447,7 @@ describe("installer client", () => {
 			minimum_os: "macOS 12",
 			format: "pkg",
 		});
-		expect(readInstallerCatalog(future)?.files).toHaveLength(2);
+		expect(readInstallerCatalog(future)?.files).toHaveLength(4);
 		const bad = catalogResponse();
 		bad.catalog.files = bad.catalog.files.map((file, index) =>
 			index === 0 ? { ...file, sha256: "not-a-digest" } : file,
@@ -408,10 +491,26 @@ describe("installer client", () => {
 		expect(ua("Mozilla/5.0 (Linux; Android 14)")).toEqual({ os: "unknown", arch: "x64" });
 		expect(ua("", "Windows").os).toBe("windows");
 		const files = readInstallerCatalog(catalogResponse())?.files ?? [];
-		expect(recommendedInstaller(files, { os: "linux", arch: "arm64" })?.platform).toBe("linux-x64");
-		expect(recommendedInstaller(files, { os: "macos", arch: "arm64" })).toBeNull();
-		expect(checksumCommand(files[1] as (typeof files)[number])).toBe(
-			`echo "${LINUX_SHA}  aidr-install-1.4.0-linux-x64.sh" | sha256sum --check -`,
+		const groups = groupInstallers(files, "rhel");
+		expect(groups.map((group) => group.files.map((file) => file.format))).toEqual([
+			["msi"],
+			["rpm", "deb", "tar.gz"],
+		]);
+		expect(recommendedPlatform(groups, { os: "linux", arch: "arm64" })?.platform).toBe("linux-x64");
+		expect(recommendedPlatform(groups, { os: "macos", arch: "arm64" })).toBeNull();
+		// A platform without the preferred format starts with the tarball, else its first file.
+		const debOnly = groupInstallers(files.slice(0, 2), "rhel");
+		expect(debOnly[1]?.files.map((file) => file.format)).toEqual(["deb"]);
+		const family = (userAgent: string) => detectLinuxFamily({ userAgent });
+		expect(
+			family("Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"),
+		).toBe("debian");
+		expect(
+			family("Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"),
+		).toBe("rhel");
+		expect(family("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/129.0")).toBe("other");
+		expect(checksumCommand(files[3] as (typeof files)[number])).toBe(
+			`echo "${LINUX_SHA}  ${TARBALL}" | sha256sum --check -`,
 		);
 	});
 

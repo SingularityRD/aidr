@@ -4,11 +4,15 @@ import type { DashboardMessageKey } from "../i18n/en";
 import { useRichT, useT } from "../i18n/I18nProvider";
 import {
 	checksumCommand,
+	detectLinuxFamily,
 	detectVisitorPlatform,
+	groupInstallers,
 	type InstallerCatalog,
 	type InstallerFile,
+	type InstallerPlatformGroup,
+	type LinuxFamily,
 	loadInstallerCatalog,
-	recommendedInstaller,
+	recommendedPlatform,
 	requestInstallerDownload,
 	type VisitorOs,
 } from "../lib/installers";
@@ -114,21 +118,38 @@ function CopyCommand({ command, file }: { command: string; file: string }) {
 	);
 }
 
-function platformLabel(t: ReturnType<typeof useT>, file: InstallerFile): string {
-	const os = file.os === "windows" ? t("downloads.os.windows") : t("downloads.os.linux");
-	return `${os} (${file.arch})`;
+function platformLabel(
+	t: ReturnType<typeof useT>,
+	group: Pick<InstallerFile, "os" | "arch">,
+): string {
+	const os = group.os === "windows" ? t("downloads.os.windows") : t("downloads.os.linux");
+	return `${os} (${group.arch})`;
 }
 
-function InstallerEntry({
+/** What each format is for, in words; an unknown format is named by its extension. */
+const FORMAT_LABELS: Record<string, DashboardMessageKey> = {
+	msi: "downloads.format.msi",
+	deb: "downloads.format.deb",
+	rpm: "downloads.format.rpm",
+	"tar.gz": "downloads.format.tarball",
+};
+
+function formatLabel(t: ReturnType<typeof useT>, format: string): string {
+	const key = FORMAT_LABELS[format];
+	return key ? t(key) : t("downloads.format.other", { format });
+}
+
+/** One installer file: download button, size, SHA-256 and the command that checks it. */
+function FormatEntry({
 	teamId,
 	version,
 	file,
-	recommended,
+	primary,
 }: {
 	teamId: string;
 	version: string;
 	file: InstallerFile;
-	recommended: boolean;
+	primary: boolean;
 }) {
 	const t = useT();
 	const richT = useRichT();
@@ -136,7 +157,7 @@ function InstallerEntry({
 
 	async function start() {
 		setDownload({ state: "preparing" });
-		const result = await requestInstallerDownload(teamId, version, file.platform);
+		const result = await requestInstallerDownload(teamId, version, file.platform, file.format);
 		if (!result.ok || result.value.sha256 !== file.sha256) {
 			setDownload({ state: "error" });
 			return;
@@ -150,21 +171,13 @@ function InstallerEntry({
 	}
 
 	return (
-		<section
-			className={recommended ? "notice notice-success" : "notice"}
-			aria-label={platformLabel(t, file)}
-			data-platform={file.platform}
-			style={{ marginTop: 10 }}
-		>
-			<div className="row" style={{ flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-				<b>{platformLabel(t, file)}</b>
-				{recommended ? (
-					<span className="pill pill-success">{t("downloads.installer.recommended")}</span>
-				) : null}
+		<div data-format={file.format} style={{ marginTop: 8 }}>
+			<div className="small">
+				<b>{formatLabel(t, file.format)}</b>
 			</div>
-			<div className="row" style={{ flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+			<div className="row" style={{ flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
 				<button
-					className={recommended ? "button" : "button button-secondary"}
+					className={primary ? "button" : "button button-secondary"}
 					type="button"
 					disabled={download.state === "preparing"}
 					onClick={start}
@@ -204,6 +217,59 @@ function InstallerEntry({
 				{t("downloads.installer.verify")}
 			</div>
 			<CopyCommand command={checksumCommand(file)} file={file.file} />
+		</div>
+	);
+}
+
+/**
+ * One platform: the format recommended for it first (.msi; on Linux .deb for
+ * Debian/Ubuntu, .rpm for RHEL/Fedora, otherwise the tarball), the others below.
+ */
+function PlatformSection({
+	teamId,
+	version,
+	group,
+	recommended,
+}: {
+	teamId: string;
+	version: string;
+	group: InstallerPlatformGroup;
+	recommended: boolean;
+}) {
+	const t = useT();
+	const [first, ...others] = group.files;
+	if (!first) return null;
+	const label = platformLabel(t, group);
+	return (
+		<section
+			className={recommended ? "notice notice-success" : "notice"}
+			aria-label={label}
+			data-platform={group.platform}
+			style={{ marginTop: 10 }}
+		>
+			<div className="row" style={{ flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+				<b>{label}</b>
+				{recommended ? (
+					<span className="pill pill-success">{t("downloads.installer.recommended")}</span>
+				) : null}
+			</div>
+			<FormatEntry teamId={teamId} version={version} file={first} primary={recommended} />
+			{others.length > 0 ? (
+				<>
+					<h4 className="small" style={{ margin: "14px 0 0" }}>
+						{t("downloads.installer.otherFormats", { platform: label })}
+					</h4>
+					{others.map((file) => (
+						<FormatEntry
+							key={file.format}
+							teamId={teamId}
+							version={version}
+							file={file}
+							primary={false}
+						/>
+					))}
+				</>
+			) : null}
 			<p className="muted small">{t("downloads.installer.verifyNote")}</p>
 		</section>
 	);
@@ -246,7 +312,8 @@ function ManagedEnrollment({
 }
 
 /**
- * The installer for the visitor's OS, highlighted, with the other platforms listed.
+ * The installer for the visitor's OS, highlighted, with the other platforms listed;
+ * each platform shows its recommended format first and its other formats below.
  * Links are minted one at a time by the `installer-download` function (entitlement
  * checked and audited); nothing here is downloadable without it.
  */
@@ -256,12 +323,15 @@ export function InstallerDownloads({
 }: {
 	teamId: string;
 	/** Test seam; the browser is asked when absent. */
-	visitorOs?: { os: VisitorOs; arch: "x64" | "arm64" };
+	visitorOs?: { os: VisitorOs; arch: "x64" | "arm64"; linux?: LinuxFamily };
 }) {
 	const t = useT();
 	const [reload, setReload] = useState(0);
 	const catalog = useCatalog(teamId, reload);
-	const visitor = useMemo(() => visitorOs ?? detectVisitorPlatform(), [visitorOs]);
+	const visitor = useMemo(
+		() => visitorOs ?? { ...detectVisitorPlatform(), linux: detectLinuxFamily() },
+		[visitorOs],
+	);
 
 	if (catalog.state === "loading") {
 		return (
@@ -279,8 +349,9 @@ export function InstallerDownloads({
 		);
 	}
 	const { version, publishedAt, releaseNotesUrl, files, controlPlaneUrl } = catalog.catalog;
-	const recommended = recommendedInstaller(files, visitor);
-	const others = files.filter((file) => file !== recommended);
+	const groups = groupInstallers(files, visitor.linux ?? "other");
+	const recommended = recommendedPlatform(groups, visitor);
+	const others = groups.filter((group) => group !== recommended);
 	return (
 		<div>
 			<p className="muted small">
@@ -302,17 +373,17 @@ export function InstallerDownloads({
 				<p className="notice notice-warning small">{t("downloads.installer.noMatch")}</p>
 			) : null}
 			{recommended ? (
-				<InstallerEntry teamId={teamId} version={version} file={recommended} recommended />
+				<PlatformSection teamId={teamId} version={version} group={recommended} recommended />
 			) : null}
 			{others.length > 0 ? (
 				<>
 					<h3 style={{ marginBottom: 0 }}>{t("downloads.installer.other")}</h3>
-					{others.map((file) => (
-						<InstallerEntry
-							key={file.platform}
+					{others.map((group) => (
+						<PlatformSection
+							key={group.platform}
 							teamId={teamId}
 							version={version}
-							file={file}
+							group={group}
 							recommended={false}
 						/>
 					))}

@@ -45,8 +45,13 @@ export type UpdateCheck =
 			current: string;
 			latest: string;
 			catalog: InstallerCatalog;
-			/** This platform's installer; null when the catalog has none for it. */
+			/**
+			 * This platform's installer in one of the wanted formats; null when the
+			 * catalog has none (see `platformFiles` for what it does offer).
+			 */
 			file: InstallerCatalogFile | null;
+			/** Every installer the catalog lists for this platform, in any format. */
+			platformFiles: InstallerCatalogFile[];
 	  }
 	| { ok: false; error: string; status?: number; detail?: string };
 
@@ -105,12 +110,33 @@ export async function resolveManagedApiKey(config: Config): Promise<string | und
 	}
 }
 
-/** Verify the source's catalog and compare it with the running version. */
+/** A provided installer by name; else the first file in a wanted format; else the first file. */
+function pickInstaller(
+	files: InstallerCatalogFile[],
+	provided: string | undefined,
+	formats: readonly string[] | undefined,
+): InstallerCatalogFile | undefined {
+	if (provided) return files.find((entry) => entry.file === provided);
+	if (!formats) return files[0];
+	for (const format of formats) {
+		const match = files.find((entry) => entry.format === format);
+		if (match) return match;
+	}
+	return undefined;
+}
+
+/**
+ * Verify the source's catalog and compare it with the running version. `formats`
+ * (in order of preference) picks the installer that matches how this machine was
+ * installed (msi, deb, rpm, tar.gz); without it the platform's first file is taken.
+ * An installer the administrator provides (`--from <file>`) is matched by name.
+ */
 export async function checkInstallerUpdate(params: {
 	currentVersion: string;
 	platform: InstallerPlatform;
 	source: UpdateSource;
 	keys: readonly KeyObject[];
+	formats?: readonly string[];
 	deps?: SourceDeps;
 }): Promise<UpdateCheck> {
 	const loaded = await loadCatalog(params.source, params.keys, params.deps);
@@ -123,13 +149,11 @@ export async function checkInstallerUpdate(params: {
 		};
 	}
 	const { catalog } = loaded;
-	const file = catalog.files.find((entry) => entry.platform === params.platform) ?? null;
-	if ("providedFile" in loaded && loaded.providedFile && file?.file !== loaded.providedFile) {
-		return {
-			ok: false,
-			error: "installer_not_in_catalog",
-			detail: loaded.providedFile,
-		};
+	const platformFiles = catalog.files.filter((entry) => entry.platform === params.platform);
+	const provided = "providedFile" in loaded ? loaded.providedFile : undefined;
+	const file = pickInstaller(platformFiles, provided, params.formats);
+	if (provided && !file) {
+		return { ok: false, error: "installer_not_in_catalog", detail: provided };
 	}
 	const order = compareReleaseVersions(params.currentVersion, catalog.version);
 	return {
@@ -138,7 +162,8 @@ export async function checkInstallerUpdate(params: {
 		current: params.currentVersion,
 		latest: catalog.version,
 		catalog,
-		file,
+		file: file ?? null,
+		platformFiles,
 	};
 }
 

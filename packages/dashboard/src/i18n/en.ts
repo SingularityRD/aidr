@@ -154,6 +154,12 @@ const base = {
 	"downloads.installer.releaseNotes": "Release notes",
 	"downloads.installer.recommended": "Recommended for this computer",
 	"downloads.installer.other": "Other platforms",
+	"downloads.installer.otherFormats": "Other formats for {platform}",
+	"downloads.format.msi": "Windows installer (.msi)",
+	"downloads.format.deb": "Debian, Ubuntu (.deb)",
+	"downloads.format.rpm": "RHEL, Fedora (.rpm)",
+	"downloads.format.tarball": "Other Linux distributions (.tar.gz)",
+	"downloads.format.other": ".{format} file",
 	"downloads.installer.download": "Download {file}",
 	"downloads.installer.preparing": "Preparing download…",
 	"downloads.installer.started":
@@ -176,7 +182,7 @@ const base = {
 	"downloads.installer.step1":
 		"Download the installer for your operating system and check its SHA-256.",
 	"downloads.installer.step2":
-		"Run it: double-click it on Windows, or run the script with sh on Linux.",
+		"Run it: double-click the .msi on Windows. On Linux, install the .deb with sudo apt install ./<file> or the .rpm with sudo dnf install ./<file>; for the .tar.gz, unpack it and run its install.sh with sudo.",
 	"downloads.installer.step3":
 		"Restart your AI tools. Running aidr status shows that protection is on.",
 	"downloads.error.entitlement":

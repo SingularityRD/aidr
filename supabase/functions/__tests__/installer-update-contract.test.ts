@@ -34,9 +34,15 @@ function signed(value: unknown, privateKey: KeyObject = keys.privateKey) {
 	return { raw, sig };
 }
 
-function catalogDoc() {
+const LINUX_FILES = [
+	{ file: "singularity-aidr_1.4.0_amd64.deb", format: "deb" },
+	{ file: "singularity-aidr-1.4.0-1.x86_64.rpm", format: "rpm" },
+	{ file: "singularity-aidr-1.4.0-linux-x64.tar.gz", format: "tar.gz" },
+];
+
+function catalogDoc(multiFormat = false) {
 	return {
-		schema_version: 1,
+		schema_version: multiFormat ? 2 : 1,
 		type: "aidr-installer-catalog",
 		product_id: "singularity-aidr",
 		channel: "stable",
@@ -46,12 +52,15 @@ function catalogDoc() {
 		release: { tag: "v1.4.0", git_sha: "a".repeat(40), release_sequence: 7 },
 		files: [
 			{ platform: "windows-x64", os: "windows", arch: "x64", file: "singularity-aidr-1.4.0-windows-x64.msi", path: "1.4.0/windows-x64/singularity-aidr-1.4.0-windows-x64.msi", size: 4096, sha256: SHA("win"), minimum_os: "Windows 10", format: "msi" },
+			...(multiFormat
+				? LINUX_FILES.map(({ file, format }) => ({ platform: "linux-x64", os: "linux", arch: "x64", file, path: `1.4.0/linux-x64/${file}`, size: 2048, sha256: SHA(format), minimum_os: "glibc 2.28", format }))
+				: []),
 		],
 	};
 }
 
-function bucketObjects(catalogKey: KeyObject = keys.privateKey) {
-	const manifest = signed(catalogDoc(), catalogKey);
+function bucketObjects(catalogKey: KeyObject = keys.privateKey, multiFormat = false) {
+	const manifest = signed(catalogDoc(multiFormat), catalogKey);
 	const pointer = signed({
 		schema_version: 1, type: "aidr-installer-latest", product_id: "singularity-aidr", version: "1.4.0",
 		release_sequence: 7, manifest_path: "1.4.0/manifest.json",
@@ -229,13 +238,32 @@ describe("installer-update download URL (device credential)", () => {
 		expect(signCalls).toEqual(["1.4.0/windows-x64/singularity-aidr-1.4.0-windows-x64.msi"]);
 		expect(rpcCalls.find((call) => call.name === "record_installer_download")?.args).toEqual({
 			p_actor_user_id: USER, p_tenant_id: TENANT, p_version: "1.4.0", p_platform: "windows-x64",
-			p_file_name: "singularity-aidr-1.4.0-windows-x64.msi", p_sha256: SHA("win"),
+			p_format: "msi", p_file_name: "singularity-aidr-1.4.0-windows-x64.msi", p_sha256: SHA("win"),
 		});
+		expect(body.format).toBe("msi");
 		expect(rpcCalls.find((call) => call.name === "consume_tenant_rate_limit")?.args).toMatchObject({ p_endpoint: "installer-update-download" });
+	});
+
+	it("hands out the installer in the format the endpoint was installed with", async () => {
+		const objects = bucketObjects(keys.privateKey, true);
+		for (const { file, format } of LINUX_FILES) {
+			const { handle, rpcCalls, signCalls } = await handlerWith({ objects });
+			const body = await (await handle(post({ version: "1.4.0", platform: "linux-x64", format }))).json();
+			expect(body).toMatchObject({ ok: true, format, file, sha256: SHA(format) });
+			expect(signCalls).toEqual([`1.4.0/linux-x64/${file}`]);
+			expect(rpcCalls.find((call) => call.name === "record_installer_download")?.args).toMatchObject({ p_format: format, p_file_name: file });
+			vi.resetModules();
+		}
+		// An endpoint that does not send a format (released before formats existed) gets the tarball.
+		const { handle } = await handlerWith({ objects });
+		expect(await (await handle(post({ version: "1.4.0", platform: "linux-x64" }))).json()).toMatchObject({ format: "tar.gz" });
 	});
 
 	it("refuses other versions, unknown fields and unpublished platforms, and an unaudited URL", async () => {
 		const cases: Array<[Options, unknown, number, string]> = [
+			[{ objects: bucketObjects(keys.privateKey, true) }, { version: "1.4.0", platform: "linux-x64", format: "msi" }, 404, "installer_not_found"],
+			[{ objects: bucketObjects(keys.privateKey, true) }, { version: "1.4.0", platform: "linux-x64", format: "DEB" }, 400, "invalid_request"],
+			[{}, { version: "1.4.0", platform: "windows-x64", format: "deb" }, 404, "installer_not_found"],
 			[{}, { version: "1.3.0", platform: "windows-x64" }, 404, "installer_not_found"],
 			[{}, { version: "1.4.0", platform: "linux-x64" }, 404, "installer_not_found"],
 			[{}, { version: "1.4.0", platform: "macos-arm64" }, 400, "invalid_request"],

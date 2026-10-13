@@ -10,9 +10,12 @@
 //       envelopes (base64). The endpoint verifies both signatures and the pointer
 //       digest itself with the installer-catalog key its installer pinned; this
 //       function verifies them too and serves nothing that does not verify.
-// POST  { version, platform }. Returns a short-lived signed Storage URL for that
-//       one installer of the CURRENT version and records the same audit row as a
-//       dashboard download (action installer.download, actor = the key's owner).
+// POST  { version, platform, format? }. Returns a short-lived signed Storage URL
+//       for that one installer of the CURRENT version and records the same audit
+//       row as a dashboard download (action installer.download, actor = the key's
+//       owner). `format` names the installer matching how the endpoint was
+//       installed (msi, deb, rpm, tar.gz) and must be one the catalog lists for
+//       that platform; without it the platform's default format is served.
 //       The endpoint checks the downloaded bytes against the SHA-256 and size of
 //       the catalog it verified, never against this response.
 //
@@ -35,6 +38,8 @@ import {
 	loadVerifiedCatalog,
 	type ObjectReader,
 	publicInstallerUrl,
+	requestedFormat,
+	selectInstallerFile,
 } from "../_shared/installer-catalog.ts";
 import { publicPackDownloadOrigin } from "../_shared/pack-download-grant.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
@@ -81,15 +86,17 @@ function base64(bytes: Uint8Array): string {
 	return btoa(binary);
 }
 
-type DownloadRequest = { version: string; platform: string };
+type DownloadRequest = { version: string; platform: string; format: string | null };
 
 function parseDownloadRequest(value: unknown): DownloadRequest | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const body = value as Record<string, unknown>;
-	if (Object.keys(body).some((key) => key !== "version" && key !== "platform")) return null;
+	if (Object.keys(body).some((key) => !["version", "platform", "format"].includes(key))) return null;
 	if (typeof body.version !== "string" || body.version.length < 1 || body.version.length > 96) return null;
 	if (typeof body.platform !== "string" || !(INSTALLER_PLATFORMS as readonly string[]).includes(body.platform)) return null;
-	return { version: body.version, platform: body.platform };
+	const format = requestedFormat(body.format);
+	if (format === undefined) return null;
+	return { version: body.version, platform: body.platform, format };
 }
 
 function storageReader(db: DatabaseClient, bucket: string): ObjectReader {
@@ -178,7 +185,7 @@ export function createInstallerUpdateHandler(deps: InstallerUpdateDeps = {}) {
 			}
 
 			const file = download.version === catalog.version
-				? catalog.files.find((entry) => entry.platform === download.platform)
+				? selectInstallerFile(catalog, download.platform, download.format)
 				: undefined;
 			if (!file) return json(404, { error: "installer_not_found" });
 			const ttl = installerUrlTtlSeconds(runtimeEnv("AIDR_INSTALLER_URL_TTL_SECONDS"));
@@ -194,6 +201,7 @@ export function createInstallerUpdateHandler(deps: InstallerUpdateDeps = {}) {
 				p_tenant_id: auth.tenantId,
 				p_version: catalog.version,
 				p_platform: file.platform,
+				p_format: file.format,
 				p_file_name: file.file,
 				p_sha256: file.sha256,
 			});
@@ -208,6 +216,7 @@ export function createInstallerUpdateHandler(deps: InstallerUpdateDeps = {}) {
 				expires_at: new Date(now() + ttl * 1000).toISOString(),
 				version: catalog.version,
 				platform: file.platform,
+				format: file.format,
 				file: file.file,
 				size: file.size,
 				sha256: file.sha256,

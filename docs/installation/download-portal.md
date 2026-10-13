@@ -4,9 +4,16 @@ Türkçe: [download-portal.tr.md](download-portal.tr.md)
 
 Customers download the AIDR installer from the dashboard **Download** page
 (`/downloads`, also step 1 of onboarding). The page detects the visitor's
-operating system, highlights the matching installer, lists the other platforms
+operating system, highlights the matching platform, lists the other platforms
 with size, SHA-256 and a copyable checksum command, and shows the Browser Guard
 store links and the IT / MDM deployment notes.
+
+A platform can be published in several **formats**: Windows `.msi`; Linux
+`.deb`, `.rpm` and `.tar.gz`. Each platform shows its recommended format first
+and the others below it: `.msi` on Windows; on Linux `.deb` for Debian/Ubuntu,
+`.rpm` for RHEL/Fedora and the `.tar.gz` tarball for any other distribution (and
+when the browser does not name the distribution). Each format is labelled with
+the distributions it is for.
 
 Installers are offered for **Windows and Linux**. There is no macOS installer;
 a macOS visitor sees a short note saying so, and Browser Guard (Chrome, Edge,
@@ -14,7 +21,10 @@ Firefox) still works on macOS. The platform list is data
 (`INSTALLER_PLATFORMS` in `supabase/functions/_shared/installer-catalog.ts`,
 `PLATFORMS` in `scripts/publish-installers.mjs` and the platform check in
 `public.record_installer_download`), so a platform can be added later without
-changing the page.
+changing the page. The format list is data too (`INSTALLER_FORMATS` in
+`_shared/installer-catalog.ts`, `FORMATS` in `scripts/publish-installers.mjs`;
+for `aidr update` to install a new format, `KIND_FORMATS` in
+`packages/cli/src/utils/update-installer.ts`).
 
 ## How it fits together
 
@@ -22,7 +32,7 @@ changing the page.
 release-promote ──► scripts/publish-installers.mjs ──► private bucket (aidr-installers)
                      verify signed release                 latest.json (+ .sig)
                      check SHA256SUMS                       <version>/manifest.json (+ .sig)
-                     sign catalog, upload                   <version>/<platform>/<file>
+                     sign catalog, upload                   <version>/<platform>/<file>  (one per format)
                                                                  │
 dashboard /downloads ──► installer-download Edge Function ──────┘
                           session + identity barrier + active membership
@@ -37,7 +47,7 @@ dashboard /downloads ──► installer-download Edge Function ─────�
   does not verify: 503 and nothing is listed. A URL is returned only after its
   audit row is written.
 - **Audit.** Every URL writes `admin_audit_logs` action `installer.download`
-  with tenant, user, version, platform, file name and SHA-256. No IP address or
+  with tenant, user, version, platform, format, file name and SHA-256. No IP address or
   user agent is stored. Owners and admins see these rows in the audit trail and
   the audit export.
 - **Rate limits.** Per user and tenant per minute: catalog 60 / 3000, download
@@ -52,7 +62,8 @@ dashboard /downloads ──► installer-download Edge Function ─────�
   session): an active owner/admin/member key of an active tenant with an
   ACTIVE admission. It returns the exact signed `latest.json` and catalog
   bytes, which `aidr update` verifies again with its pinned catalog key, and
-  then one signed URL for the current version with the same
+  then one signed URL for the current version, in the format the endpoint was
+  installed with (`.msi`, `.deb`, `.rpm` or `.tar.gz`), with the same
   `installer.download` audit row (actor: the key's owner). Rate limits per key
   and tenant per minute: catalog 30 / 6000, download links 10 / 3000. See
   [Updating](desktop-installers.md#updating).
@@ -61,11 +72,14 @@ dashboard /downloads ──► installer-download Edge Function ─────�
 
 Private bucket, default name `aidr-installers` (created by migration
 `20261013000600_installer_download_portal.sql`; set `AIDR_INSTALLERS_BUCKET` to
-use another name and create that bucket private, without client policies).
+use another name and create that bucket private, without client policies). The
+audit function gained its optional `p_format` argument in
+`20261013000610_installer_download_format.sql`; a caller that passes the six
+original arguments still works.
 
 | Object | Content | Written |
 |---|---|---|
-| `<version>/<platform>/<file>` | installer bytes, exactly the signed release artifact | once, never replaced |
+| `<version>/<platform>/<file>` | installer bytes, exactly the signed release artifact; one file per platform and format | once, never replaced |
 | `<version>/SHA256SUMS` | `<sha256>  <platform>/<file>` per installer | once |
 | `<version>/release/aidr-release.manifest.json` / `.sig` | the signed release manifest the installers came from (chain of trust) | once |
 | `<version>/manifest.json` | installer catalog: version, channel, `published_at`, `release_notes_url`, release tag/commit/sequence, signed-manifest digest and signer, and per file `platform`, `os`, `arch`, `file`, `path`, `size`, `sha256`, `minimum_os`, `format` | once |
@@ -74,6 +88,35 @@ use another name and create that bucket private, without client policies).
 | `latest.json.sig` | Ed25519 signature over the exact `latest.json` bytes | each publish, last |
 
 Platforms: `windows-x64`, `windows-arm64`, `linux-x64`, `linux-arm64`.
+Formats: `msi` (Windows); `deb`, `rpm`, `tar.gz` (Linux). A file's extension
+names its format.
+
+### Catalog schema versions
+
+| `schema_version` | Files | Written when |
+|---|---|---|
+| `1` | at most one per platform | every platform has a single file (as before formats existed) |
+| `2` | one per platform **and** format; each file name ends in `.<format>` | at least one platform has more than one format |
+
+The pointer (`latest.json`, `schema_version` 1) and the signature envelope are
+unchanged, so a schema 1 catalog published earlier still verifies and parses.
+Readers of schema 2 are the `installer-download` / `installer-update` functions
+and `aidr update` from this release on. Endpoints with an older `aidr` read only
+schema 1: until they are updated, either publish one file per platform (pass
+`--installer` once per platform, which writes schema 1), or update them once
+with the package manager or installer (`apt install ./….deb`, `dnf install
+./….rpm`, the MSI). Deploy the migrations and Edge Functions before the first
+schema 2 publish; an older function refuses a schema 2 catalog and lists
+nothing.
+
+### Choosing a format
+
+The download request (`POST`) takes an optional `format`. It must be a format
+the catalog lists for that platform, otherwise the answer is 404
+`installer_not_found` and no URL is minted; a malformed value is 400
+`invalid_request`. A request without `format` (the shape before formats existed)
+gets the platform's only file, else its default format (`msi` on Windows,
+`tar.gz` on Linux). The audit row records the format that was handed out.
 
 Signatures use the release signature envelope of
 `scripts/release-signing-lib.mjs` (`{ schema_version: 1, algorithm: "Ed25519",
@@ -90,10 +133,14 @@ promoted release. It:
 1. verifies the release bundle with the trusted signer policy (signature, signer
    window, expiry, metadata/inventory bindings, every artifact digest and size),
    exactly like `scripts/release-verify.mjs`;
-2. selects installers (`installers/<platform>/<file>` in the bundle, or explicit
-   `--installer <platform>=<path>`), requires each to be a signed artifact and to
-   appear in `SHA256SUMS` with the same digest, and hashes the bytes it uploads;
-3. builds and signs `manifest.json` and `latest.json`;
+2. selects installers by extension: every `installers/<platform>/<file>` in the
+   bundle whose extension is a format of that platform (`.msi`; `.deb`, `.rpm`,
+   `.tar.gz`; other files there are skipped and reported as `skipped`), or
+   explicit `--installer <platform>=<path>` (repeat it once per format). Two files
+   of the same platform and format stop the publish. It requires each to be a
+   signed artifact and to appear in `SHA256SUMS` with the same digest, and hashes
+   the bytes it uploads;
+3. builds and signs `manifest.json` (schema 1 or 2, above) and `latest.json`;
 4. uploads with the service-role key: versioned objects without upsert (an
    existing object is accepted only if byte-identical), `latest.json` last, and
    never back to a lower release sequence (`--allow-downgrade` overrides for a

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
 import { useRichT, useT } from "../../i18n/I18nProvider";
-import type { VisitorOs } from "../../lib/installers";
+import type { LinuxFamily, VisitorOs } from "../../lib/installers";
 import {
 	BrowserGuardCard,
 	type BrowserGuardLinks,
@@ -17,7 +17,7 @@ export function DownloadsPage({
 }: {
 	/** Test seams; build configuration and the browser are used when absent. */
 	links?: BrowserGuardLinks;
-	visitorOs?: { os: VisitorOs; arch: "x64" | "arm64" };
+	visitorOs?: { os: VisitorOs; arch: "x64" | "arm64"; linux?: LinuxFamily };
 } = {}) {
 	const t = useT();
 	const richT = useRichT();

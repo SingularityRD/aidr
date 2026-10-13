@@ -6,7 +6,9 @@
  *   latest.json / latest.json.sig                signed pointer to the current catalog
  *   <version>/manifest.json / manifest.json.sig  signed catalog (files, sizes, SHA-256)
  *
- * Both are signed over their exact bytes with the release signature envelope
+ * The catalog is schema 1 (one installer per platform) or schema 2 (one per
+ * platform AND format: Windows .msi; Linux .deb, .rpm, .tar.gz), and both are
+ * read here. Both are signed over their exact bytes with the release signature envelope
  * `{ schema_version: 1, algorithm: "Ed25519", key_id, signature_b64 }` and the
  * dedicated installer-catalog key. The rules mirror the portal's own verifier
  * (supabase/functions/_shared/installer-catalog.ts), but the endpoint verifies
@@ -37,6 +39,8 @@ export interface InstallerCatalogFile {
 }
 
 export interface InstallerCatalog {
+	/** 1: one file per platform; 2: one file per platform and format. */
+	schema_version: 1 | 2;
 	version: string;
 	published_at: string;
 	release_notes_url: string | null;
@@ -65,6 +69,9 @@ const PRODUCT_ID = "singularity-aidr";
 const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,64})?$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$/;
+const FORMAT = /^[a-z0-9.]{1,16}$/;
+/** Schema 2 bound, as on the portal: at most this many formats per platform. */
+const MAX_FORMATS_PER_PLATFORM = 8;
 /** Same bounds as the portal: a larger document is refused before parsing. */
 export const MAX_POINTER_BYTES = 16 * 1024;
 export const MAX_CATALOG_BYTES = 256 * 1024;
@@ -197,7 +204,7 @@ function parseFile(value: unknown, version: string): InstallerCatalogFile | null
 		entry.minimum_os.length < 1 ||
 		entry.minimum_os.length > 120 ||
 		typeof entry.format !== "string" ||
-		!/^[a-z0-9.]{1,16}$/.test(entry.format)
+		!FORMAT.test(entry.format)
 	)
 		return null;
 	return {
@@ -224,14 +231,37 @@ function httpsOrNull(value: unknown): string | null | undefined {
 	}
 }
 
+/**
+ * The catalog's files: schema 1 has at most one per platform; schema 2 one per
+ * platform and format, each named by its format. Null when any entry is invalid.
+ */
+function parseFiles(value: unknown, version: string, schema: 1 | 2): InstallerCatalogFile[] | null {
+	const maxFiles = INSTALLER_PLATFORMS.length * (schema === 1 ? 1 : MAX_FORMATS_PER_PLATFORM);
+	if (!Array.isArray(value) || value.length < 1 || value.length > maxFiles) return null;
+	const files: InstallerCatalogFile[] = [];
+	for (const candidate of value) {
+		const file = parseFile(candidate, version);
+		if (!file) return null;
+		if (schema === 2 && !file.file.toLowerCase().endsWith(`.${file.format}`)) return null;
+		const duplicate = files.some(
+			(existing) =>
+				existing.platform === file.platform && (schema === 1 || existing.format === file.format),
+		);
+		if (duplicate) return null;
+		files.push(file);
+	}
+	return files;
+}
+
 /** Strictly parse a verified catalog; `version` pins it to the pointer when there is one. */
 function parseCatalog(
 	value: Record<string, unknown> | null,
 	version?: string,
 ): InstallerCatalog | null {
+	const schema = value?.schema_version;
 	if (
 		!value ||
-		value.schema_version !== 1 ||
+		(schema !== 1 && schema !== 2) ||
 		value.type !== "aidr-installer-catalog" ||
 		value.product_id !== PRODUCT_ID ||
 		typeof value.version !== "string" ||
@@ -245,19 +275,10 @@ function parseCatalog(
 	const release = record(value.release);
 	if (notes === undefined || !release || !Number.isSafeInteger(release.release_sequence))
 		return null;
-	if (
-		!Array.isArray(value.files) ||
-		value.files.length < 1 ||
-		value.files.length > INSTALLER_PLATFORMS.length
-	)
-		return null;
-	const files: InstallerCatalogFile[] = [];
-	for (const candidate of value.files) {
-		const file = parseFile(candidate, value.version);
-		if (!file || files.some((existing) => existing.platform === file.platform)) return null;
-		files.push(file);
-	}
+	const files = parseFiles(value.files, value.version, schema);
+	if (!files) return null;
 	return {
+		schema_version: schema,
 		version: value.version,
 		published_at: value.published_at,
 		release_notes_url: notes,
