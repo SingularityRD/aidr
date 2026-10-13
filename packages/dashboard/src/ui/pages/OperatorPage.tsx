@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import {
 	callOperatorAdmin,
@@ -30,12 +31,13 @@ import { useSessionSnapshot } from "../use-session";
  * `mfa_required`). No client flag opens this screen.
  */
 export function OperatorPage() {
+	const t = useT();
 	const { snapshot, generation, refresh } = useSessionSnapshot();
 	const session = snapshot?.session ?? null;
 	return (
 		<div className="app">
 			<a className="skip-link" href="#page-content">
-				Skip to content
+				{t("op.skip")}
 			</a>
 			<header className="console-topbar">
 				<Link to="/dashboard" className="brand-link">
@@ -43,9 +45,9 @@ export function OperatorPage() {
 						AIDR
 					</span>
 					<span className="brand-sub" aria-hidden="true">
-						Operator console
+						{t("op.brand")}
 					</span>
-					<span className="sr-only">Singularity AIDR operator console</span>
+					<span className="sr-only">{t("op.brandSr")}</span>
 				</Link>
 				<div className="header-actions">
 					<ThemeToggle />
@@ -54,17 +56,15 @@ export function OperatorPage() {
 			<main className="main" id="page-content" tabIndex={-1}>
 				{!snapshot ? (
 					<div className="card" role="status" aria-live="polite">
-						<h1>Verifying session</h1>
-						<p className="muted">
-							Reading the signed-in session before contacting the operator service.
-						</p>
+						<h1>{t("op.verifying")}</h1>
+						<p className="muted">{t("op.verifyingLead")}</p>
 					</div>
 				) : !session ? (
 					<div className="card">
-						<h1>Sign in required</h1>
-						<p className="muted">The operator console needs a signed-in session.</p>
+						<h1>{t("op.signInRequired")}</h1>
+						<p className="muted">{t("op.signInLead")}</p>
 						<Link className="button" to="/login?returnTo=%2Foperator">
-							Sign in
+							{t("op.signIn")}
 						</Link>
 					</div>
 				) : (
@@ -100,11 +100,11 @@ function gateFor(status: number | null, code: string | null): Gate | null {
 	return null;
 }
 
-function licenceLabel(tenant: OperatorTenant): { text: string; badge: string } {
+function licenceLabel(tenant: OperatorTenant, t: Translate): { text: string; badge: string } {
 	const admission = tenant.admission;
-	if (!admission) return { text: "No admission", badge: "badge-neutral" };
-	if (admission.active) return { text: "Active", badge: "badge-success" };
-	return { text: "Inactive", badge: "badge-warning" };
+	if (!admission) return { text: t("op.noAdmission"), badge: "badge-neutral" };
+	if (admission.active) return { text: t("op.active"), badge: "badge-success" };
+	return { text: t("op.inactive"), badge: "badge-warning" };
 }
 
 function OperatorConsole({
@@ -114,6 +114,10 @@ function OperatorConsole({
 	accessToken: string;
 	refreshSession: () => Promise<void>;
 }) {
+	const t = useT();
+	// The loader reads the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [gate, setGate] = useState<Gate>({ kind: "checking" });
 	const [tenants, setTenants] = useState<OperatorTenant[]>([]);
 	const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -132,6 +136,7 @@ function OperatorConsole({
 
 	const loadPage = useCallback(
 		async (after: string | null) => {
+			const t = translator.current;
 			setLoading(true);
 			setListError(null);
 			const response = await callOperatorAdmin(accessToken, {
@@ -143,10 +148,7 @@ function OperatorConsole({
 			setLoading(false);
 			if (!response.ok) {
 				const forced = gateFor(response.status, response.code);
-				const message = operatorErrorMessage(
-					response.code,
-					"The operator service is unavailable. No tenant data is shown.",
-				);
+				const message = operatorErrorMessage(response.code, t("op.listUnavailable"), t);
 				if (forced) setGate(forced);
 				else
 					setGate((current) =>
@@ -157,8 +159,7 @@ function OperatorConsole({
 			}
 			const page = parseTenantPage(response.result);
 			if (!page) {
-				const message =
-					"The operator service returned an unexpected tenant list. No tenant data is shown.";
+				const message = t("op.listUnexpected");
 				setGate((current) =>
 					current.kind === "ready" ? current : { kind: "unavailable", message },
 				);
@@ -197,24 +198,18 @@ function OperatorConsole({
 		case "checking":
 			return (
 				<div className="card" role="status" aria-live="polite">
-					<h1>Checking operator access</h1>
-					<p className="muted">
-						The operator service decides access. Nothing is shown until it answers.
-					</p>
+					<h1>{t("op.checking")}</h1>
+					<p className="muted">{t("op.checkingLead")}</p>
 				</div>
 			);
 		case "forbidden":
 			return (
 				<div className="card" role="alert">
-					<p className="eyebrow">403 · Forbidden</p>
-					<h1>Operator access required</h1>
-					<p className="muted">
-						This account has no active platform-operator grant, so the operator service refused the
-						request. Platform-operator access is provisioned by a database administrator through
-						change control; it cannot be requested from this page.
-					</p>
+					<p className="eyebrow">{t("op.forbidden")}</p>
+					<h1>{t("op.accessRequired")}</h1>
+					<p className="muted">{t("op.accessRequiredLead")}</p>
 					<Link className="button button-secondary" to="/dashboard">
-						Return to dashboard
+						{t("op.returnDashboard")}
 					</Link>
 				</div>
 			);
@@ -223,17 +218,17 @@ function OperatorConsole({
 		case "signed_out":
 			return (
 				<div className="card" role="alert">
-					<h1>Session no longer valid</h1>
-					<p className="muted">The operator service rejected this session. Sign in again.</p>
+					<h1>{t("op.sessionInvalid")}</h1>
+					<p className="muted">{t("op.sessionInvalidLead")}</p>
 					<Link className="button" to="/login?returnTo=%2Foperator">
-						Sign in
+						{t("op.signIn")}
 					</Link>
 				</div>
 			);
 		case "unavailable":
 			return (
 				<div className="card" role="alert">
-					<h1>Operator service unavailable</h1>
+					<h1>{t("op.unavailable")}</h1>
 					<p className="muted">{gate.message}</p>
 					<button
 						className="button button-secondary"
@@ -244,7 +239,7 @@ function OperatorConsole({
 							void loadPage(null);
 						}}
 					>
-						Retry
+						{t("common.retry")}
 					</button>
 				</div>
 			);
@@ -255,25 +250,21 @@ function OperatorConsole({
 	return (
 		<div className="stack">
 			<header className="card">
-				<p className="eyebrow">Platform operator</p>
-				<h1>Tenant licences and usage</h1>
-				<p className="muted">
-					Grant, renew and revoke tenant licences and read seat and agent usage. Every call is
-					re-authorized by the operator service at AAL2 and recorded in the administrative audit log
-					with your user id — including reads.
-				</p>
+				<p className="eyebrow">{t("op.eyebrow")}</p>
+				<h1>{t("op.title")}</h1>
+				<p className="muted">{t("op.lead")}</p>
 			</header>
 
 			<section className="card" aria-labelledby="tenants-heading">
 				<div className="row space-between">
-					<h2 id="tenants-heading">Tenants</h2>
+					<h2 id="tenants-heading">{t("op.tenants")}</h2>
 					<button
 						className="button button-secondary button-sm"
 						type="button"
 						disabled={loading}
 						onClick={() => void refreshList()}
 					>
-						Refresh
+						{t("common.refresh")}
 					</button>
 				</div>
 				{listError ? (
@@ -281,36 +272,32 @@ function OperatorConsole({
 						{listError}
 					</div>
 				) : null}
-				{loading ? <p role="status">Loading…</p> : null}
-				{!loading && tenants.length === 0 ? (
-					<p className="muted">No tenants exist on this control plane yet.</p>
-				) : null}
+				{loading ? <p role="status">{t("common.loading")}</p> : null}
+				{!loading && tenants.length === 0 ? <p className="muted">{t("op.noTenants")}</p> : null}
 				{tenants.length > 0 ? (
 					<div className="table-wrap">
 						<table className="table">
-							<caption className="sr-only">Tenants and licence status</caption>
+							<caption className="sr-only">{t("op.tenantsCaption")}</caption>
 							<thead>
 								<tr>
-									<th scope="col">Tenant</th>
-									<th scope="col">Kind</th>
-									<th scope="col">Status</th>
-									<th scope="col">Licence</th>
-									<th scope="col">Plan</th>
-									<th scope="col">Seats</th>
-									<th scope="col">Expires</th>
-									<th scope="col">Actions</th>
+									<th scope="col">{t("op.col.tenant")}</th>
+									<th scope="col">{t("op.col.kind")}</th>
+									<th scope="col">{t("common.status")}</th>
+									<th scope="col">{t("op.col.licence")}</th>
+									<th scope="col">{t("op.col.plan")}</th>
+									<th scope="col">{t("op.col.seats")}</th>
+									<th scope="col">{t("op.col.expires")}</th>
+									<th scope="col">{t("op.col.actions")}</th>
 								</tr>
 							</thead>
 							<tbody>
 								{tenants.map((tenant) => {
-									const licence = licenceLabel(tenant);
+									const licence = licenceLabel(tenant, t);
 									return (
 										<tr key={tenant.id} aria-selected={selected?.id === tenant.id}>
 											<td>
 												<div>
-													{tenant.name ?? (
-														<span className="muted">Personal workspace (name withheld)</span>
-													)}
+													{tenant.name ?? <span className="muted">{t("op.personalWithheld")}</span>}
 												</div>
 												<code className="mono small">{tenant.id}</code>
 											</td>
@@ -329,10 +316,10 @@ function OperatorConsole({
 												<button
 													className="button button-secondary button-sm"
 													type="button"
-													aria-label={`Manage ${tenant.name ?? tenant.id}`}
+													aria-label={t("op.manageLabel", { name: tenant.name ?? tenant.id })}
 													onClick={() => setSelected(tenant)}
 												>
-													Manage
+													{t("op.manage")}
 												</button>
 											</td>
 										</tr>
@@ -349,7 +336,7 @@ function OperatorConsole({
 						disabled={loading || cursors.length < 2}
 						onClick={() => void goPrevious()}
 					>
-						Previous page
+						{t("op.previous")}
 					</button>
 					<button
 						className="button button-secondary button-sm"
@@ -357,9 +344,9 @@ function OperatorConsole({
 						disabled={loading || !nextCursor}
 						onClick={() => void goNext()}
 					>
-						Next page
+						{t("op.next")}
 					</button>
-					<span className="muted small">Page {cursors.length}</span>
+					<span className="muted small">{t("op.page", { page: cursors.length })}</span>
 				</div>
 			</section>
 
@@ -390,6 +377,11 @@ function TenantPanel({
 	onChanged: () => Promise<boolean>;
 	onClose: () => void;
 }) {
+	const t = useT();
+	const richT = useRichT();
+	// The usage loader reads the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [usage, setUsage] = useState<TenantUsage | null>(null);
 	const [usageError, setUsageError] = useState<string | null>(null);
 	const [usageLoading, setUsageLoading] = useState(true);
@@ -416,6 +408,7 @@ function TenantPanel({
 	);
 
 	const loadUsage = useCallback(async () => {
+		const t = translator.current;
 		setUsageLoading(true);
 		setUsageError(null);
 		const response = await callOperatorAdmin(accessToken, {
@@ -428,18 +421,13 @@ function TenantPanel({
 			const forced = gateFor(response.status, response.code);
 			if (forced) return onGate(forced);
 			setUsage(null);
-			setUsageError(
-				operatorErrorMessage(
-					response.code,
-					"Usage is unavailable for this tenant. No figures are shown.",
-				),
-			);
+			setUsageError(operatorErrorMessage(response.code, t("op.usageUnavailable"), t));
 			return;
 		}
 		const parsed = parseTenantUsage(response.result, tenant.id);
 		if (!parsed) {
 			setUsage(null);
-			setUsageError("The operator service returned unexpected usage data. No figures are shown.");
+			setUsageError(t("op.usageUnexpected"));
 			return;
 		}
 		setUsage(parsed);
@@ -456,15 +444,13 @@ function TenantPanel({
 		const ownerId = owner.trim();
 		const expiry = /^\d{4}-\d{2}-\d{2}$/.test(expiryDate) ? `${expiryDate}T23:59:59.000Z` : "";
 		let problem: string | null = null;
-		if (!PLAN_ID.test(planId)) problem = "Enter a plan id (lowercase letters, digits, - or _).";
+		if (!PLAN_ID.test(planId)) problem = t("op.badPlan");
 		else if (!Number.isInteger(seatCount) || seatCount < 1 || seatCount > MAX_SEATS)
-			problem = operatorErrorMessage("invalid_seats", "");
+			problem = operatorErrorMessage("invalid_seats", "", t);
 		else if (!expiry || !(Date.parse(expiry) > Date.now()))
-			problem = operatorErrorMessage("invalid_expiry", "");
-		else if (!validReference(reference))
-			problem =
-				"Enter the contract or purchase-order reference (single line, up to 200 characters).";
-		else if (ownerId && !isUuid(ownerId)) problem = operatorErrorMessage("invalid_owner", "");
+			problem = operatorErrorMessage("invalid_expiry", "", t);
+		else if (!validReference(reference)) problem = t("op.badReference");
+		else if (ownerId && !isUuid(ownerId)) problem = operatorErrorMessage("invalid_owner", "", t);
 		if (problem) {
 			setNotice({ tone: "error", message: problem });
 			return;
@@ -494,10 +480,7 @@ function TenantPanel({
 				if (forced) return onGate(forced);
 				setNotice({
 					tone: "error",
-					message: operatorErrorMessage(
-						response.code,
-						"The licence grant was not confirmed. Refresh before retrying.",
-					),
+					message: operatorErrorMessage(response.code, t("op.grantUnconfirmed"), t),
 				});
 				return;
 			}
@@ -505,13 +488,17 @@ function TenantPanel({
 			setReference("");
 			setNotice({
 				tone: "success",
-				message: `Licence granted: ${grantReview.plan_id}, ${grantReview.seats} seats, expires ${formatDate(grantReview.expires_at)}.`,
+				message: t("op.granted", {
+					plan: grantReview.plan_id,
+					seats: grantReview.seats,
+					time: formatDate(grantReview.expires_at),
+				}),
 			});
 			await Promise.all([onChanged(), loadUsage()]);
 		} catch (cause) {
 			setNotice({
 				tone: "error",
-				message: readErrorMessage(cause, "The licence grant was not confirmed."),
+				message: readErrorMessage(cause, t("op.grantNotConfirmed")),
 			});
 		} finally {
 			if (live.current) setBusy(false);
@@ -521,7 +508,7 @@ function TenantPanel({
 	function reviewRevoke() {
 		setNotice(null);
 		if (!validReference(reason)) {
-			setNotice({ tone: "error", message: operatorErrorMessage("invalid_reason", "") });
+			setNotice({ tone: "error", message: operatorErrorMessage("invalid_reason", "", t) });
 			return;
 		}
 		setConfirmRevoke(true);
@@ -544,37 +531,34 @@ function TenantPanel({
 				if (forced) return onGate(forced);
 				setNotice({
 					tone: "error",
-					message: operatorErrorMessage(
-						response.code,
-						"The revocation was not confirmed. Refresh before retrying.",
-					),
+					message: operatorErrorMessage(response.code, t("op.revokeUnconfirmed"), t),
 				});
 				return;
 			}
 			setReason("");
 			setNotice(
 				response.result.status === "not_active"
-					? { tone: "success", message: "This tenant had no active licence. Nothing was revoked." }
-					: { tone: "success", message: "Licence revoked." },
+					? { tone: "success", message: t("op.nothingToRevoke") }
+					: { tone: "success", message: t("op.revoked") },
 			);
 			await Promise.all([onChanged(), loadUsage()]);
 		} catch (cause) {
 			setNotice({
 				tone: "error",
-				message: readErrorMessage(cause, "The revocation was not confirmed."),
+				message: readErrorMessage(cause, t("op.revokeNotConfirmed")),
 			});
 		} finally {
 			if (live.current) setBusy(false);
 		}
 	}
 
-	const title = tenant.name ?? "Personal workspace";
+	const title = tenant.name ?? t("op.personal");
 	return (
 		<section className="card" aria-labelledby="tenant-panel-heading">
 			<div className="row space-between">
 				<h2 id="tenant-panel-heading">{title}</h2>
 				<button className="button button-ghost button-sm" type="button" onClick={onClose}>
-					Close
+					{t("op.close")}
 				</button>
 			</div>
 			<code className="mono small">{tenant.id}</code>
@@ -589,9 +573,9 @@ function TenantPanel({
 				</div>
 			) : null}
 
-			<h3>Usage and seats</h3>
+			<h3>{t("op.usage")}</h3>
 			{usageLoading ? (
-				<p role="status">Loading usage…</p>
+				<p role="status">{t("op.loadingUsage")}</p>
 			) : usageError ? (
 				<div className="notice notice-danger" role="alert">
 					{usageError}{" "}
@@ -600,46 +584,49 @@ function TenantPanel({
 						type="button"
 						onClick={() => void loadUsage()}
 					>
-						Retry
+						{t("common.retry")}
 					</button>
 				</div>
 			) : usage ? (
-				<dl className="kv" aria-label="Tenant usage">
-					<dt>Deployment admission mode</dt>
+				<dl className="kv" aria-label={t("op.usageLabel")}>
+					<dt>{t("op.admissionMode")}</dt>
 					<dd>{usage.admissionMode}</dd>
-					<dt>Licence</dt>
+					<dt>{t("op.col.licence")}</dt>
 					<dd>
 						{usage.admission
-							? `${usage.admission.kind} · ${usage.admission.planId ?? "no plan"} · ${usage.admission.active ? "active" : usage.admission.revokedAt ? `revoked ${formatDate(usage.admission.revokedAt)}` : "inactive"}`
-							: "No admission recorded"}
+							? `${usage.admission.kind} · ${usage.admission.planId ?? t("op.noPlan")} · ${
+									usage.admission.active
+										? t("op.activeLower")
+										: usage.admission.revokedAt
+											? t("op.revokedAt", { time: formatDate(usage.admission.revokedAt) })
+											: t("op.inactiveLower")
+								}`
+							: t("op.noAdmissionRecorded")}
 					</dd>
-					<dt>Licensed seats</dt>
+					<dt>{t("op.licensedSeats")}</dt>
 					<dd>{usage.admission?.seats ?? "—"}</dd>
-					<dt>Licence period</dt>
+					<dt>{t("op.period")}</dt>
 					<dd>
 						{usage.admission
 							? `${formatDate(usage.admission.startsAt)} → ${formatDate(usage.admission.expiresAt)}`
 							: "—"}
 					</dd>
-					<dt>Agent capacity</dt>
-					<dd>{usage.allowedAgents ?? "Not reported"}</dd>
-					<dt>Agents enrolled</dt>
+					<dt>{t("op.capacity")}</dt>
+					<dd>{usage.allowedAgents ?? t("op.notReported")}</dd>
+					<dt>{t("op.enrolled")}</dt>
 					<dd>{usage.agents.enrolled}</dd>
-					<dt>Agents active (7 days)</dt>
+					<dt>{t("op.active7d")}</dt>
 					<dd>{usage.agents.active7d}</dd>
-					<dt>Current members</dt>
+					<dt>{t("op.members")}</dt>
 					<dd>{usage.members}</dd>
 				</dl>
 			) : null}
 
-			<h3>{admission ? "Renew or change licence" : "Grant licence"}</h3>
-			<p className="muted small">
-				A grant replaces the tenant's current licence terms. It also requires a separate, unexpired
-				admission-operator grant for this tenant, and you must not be a member of it.
-			</p>
-			<form onSubmit={reviewGrant} aria-label="Grant licence" noValidate>
+			<h3>{admission ? t("op.renew") : t("op.grant")}</h3>
+			<p className="muted small">{t("op.grantLead")}</p>
+			<form onSubmit={reviewGrant} aria-label={t("op.grant")} noValidate>
 				<label className="label" htmlFor="grant-plan">
-					Plan id
+					{t("op.planId")}
 				</label>
 				<input
 					id="grant-plan"
@@ -653,7 +640,7 @@ function TenantPanel({
 					autoComplete="off"
 				/>
 				<label className="label" htmlFor="grant-seats">
-					Seats
+					{t("op.col.seats")}
 				</label>
 				<input
 					id="grant-seats"
@@ -668,7 +655,7 @@ function TenantPanel({
 					}}
 				/>
 				<label className="label" htmlFor="grant-expiry">
-					Expiry date (ends 23:59:59 UTC)
+					{t("op.expiry")}
 				</label>
 				<input
 					id="grant-expiry"
@@ -681,7 +668,7 @@ function TenantPanel({
 					}}
 				/>
 				<label className="label" htmlFor="grant-reference">
-					Contract reference
+					{t("op.contract")}
 				</label>
 				<input
 					id="grant-reference"
@@ -692,11 +679,12 @@ function TenantPanel({
 						setReference(event.target.value);
 						setGrantReview(null);
 					}}
+					// i18n-exempt: sample reference
 					placeholder="PO-2026-001"
 					autoComplete="off"
 				/>
 				<label className="label" htmlFor="grant-owner">
-					Owner user id (optional)
+					{t("op.ownerOptional")}
 				</label>
 				<input
 					id="grant-owner"
@@ -707,20 +695,24 @@ function TenantPanel({
 						setOwner(event.target.value);
 						setGrantReview(null);
 					}}
-					placeholder="Inferred when the tenant has exactly one owner"
+					placeholder={t("op.ownerPlaceholder")}
 					autoComplete="off"
 				/>
 				{grantReview ? (
 					<div
 						className="notice notice-warning"
 						role="region"
-						aria-label="Review licence grant"
+						aria-label={t("op.reviewLabel")}
 						style={{ marginTop: 12 }}
 					>
 						<p>
-							Grant <strong>{grantReview.plan_id}</strong> with <strong>{grantReview.seats}</strong>{" "}
-							seats to {title}, expiring {formatDate(grantReview.expires_at)} (reference{" "}
-							{grantReview.reference}).
+							{richT("op.reviewLine", {
+								plan: <strong>{grantReview.plan_id}</strong>,
+								seats: <strong>{grantReview.seats}</strong>,
+								tenant: title,
+								time: formatDate(grantReview.expires_at),
+								reference: grantReview.reference,
+							})}
 						</p>
 						<div className="row">
 							<button
@@ -729,7 +721,7 @@ function TenantPanel({
 								disabled={busy}
 								onClick={() => void submitGrant()}
 							>
-								{busy ? "Granting…" : "Confirm grant"}
+								{busy ? t("op.granting") : t("op.confirmGrant")}
 							</button>
 							<button
 								className="button button-secondary"
@@ -737,14 +729,14 @@ function TenantPanel({
 								disabled={busy}
 								onClick={() => setGrantReview(null)}
 							>
-								Cancel
+								{t("common.cancel")}
 							</button>
 						</div>
 					</div>
 				) : (
 					<div className="row" style={{ marginTop: 12 }}>
 						<button className="button" type="submit" disabled={busy}>
-							Review grant
+							{t("op.reviewGrant")}
 						</button>
 					</div>
 				)}
@@ -752,13 +744,10 @@ function TenantPanel({
 
 			{admission?.kind === "licensed" ? (
 				<>
-					<h3>Revoke licence</h3>
-					<p className="muted small">
-						Revocation ends the licensed admission and increments the tenant's entitlement
-						revocation epoch. It takes effect immediately and is recorded in the audit log.
-					</p>
+					<h3>{t("op.revoke")}</h3>
+					<p className="muted small">{t("op.revokeLead")}</p>
 					<label className="label" htmlFor="revoke-reason">
-						Revocation reason
+						{t("op.revokeReason")}
 					</label>
 					<input
 						id="revoke-reason"
@@ -780,7 +769,7 @@ function TenantPanel({
 									disabled={busy}
 									onClick={() => void submitRevoke()}
 								>
-									{busy ? "Revoking…" : `Confirm: revoke licence for ${title}`}
+									{busy ? t("op.revoking") : t("op.confirmRevoke", { tenant: title })}
 								</button>
 								<button
 									className="button button-secondary"
@@ -788,7 +777,7 @@ function TenantPanel({
 									disabled={busy}
 									onClick={() => setConfirmRevoke(false)}
 								>
-									Cancel
+									{t("common.cancel")}
 								</button>
 							</>
 						) : (
@@ -798,7 +787,7 @@ function TenantPanel({
 								disabled={busy || reason.trim() === ""}
 								onClick={reviewRevoke}
 							>
-								Revoke licence
+								{t("op.revoke")}
 							</button>
 						)}
 					</div>
@@ -817,6 +806,7 @@ function TenantPanel({
  * service re-checks AAL2 itself.
  */
 function OperatorStepUp({ onVerified }: { onVerified: () => Promise<void> }) {
+	const t = useT();
 	const [factorId, setFactorId] = useState<string | null>(null);
 	const [factorState, setFactorState] = useState<"loading" | "ready" | "none" | "error">("loading");
 	const [enrollment, setEnrollment] = useState<{
@@ -864,7 +854,7 @@ function OperatorStepUp({ onVerified }: { onVerified: () => Promise<void> }) {
 				throw new Error("The authentication service did not start a TOTP enrollment.");
 			setEnrollment({ factorId: data.id, secret: data.totp.secret, uri: data.totp.uri });
 		} catch (cause) {
-			setError(readErrorMessage(cause, "Authenticator enrollment could not be started."));
+			setError(readErrorMessage(cause, t("ea.enrollFailed")));
 		} finally {
 			setBusy(false);
 		}
@@ -893,9 +883,7 @@ function OperatorStepUp({ onVerified }: { onVerified: () => Promise<void> }) {
 			await onVerified();
 		} catch (cause) {
 			setCode("");
-			setError(
-				readErrorMessage(cause, "The verification code was rejected. The console was not opened."),
-			);
+			setError(readErrorMessage(cause, t("op.codeRejected")));
 		} finally {
 			setBusy(false);
 		}
@@ -904,37 +892,33 @@ function OperatorStepUp({ onVerified }: { onVerified: () => Promise<void> }) {
 	const canVerify = Boolean(enrollment) || factorState === "ready";
 	return (
 		<div className="card">
-			<p className="eyebrow">Step-up required</p>
-			<h1>Multi-factor authentication required</h1>
-			<p className="muted">
-				The operator service confirmed operator access but reports this session below AAL2. Verify
-				with your authenticator app to continue. Platform administration always requires a second
-				factor.
-			</p>
-			{factorState === "loading" ? <p role="status">Reading enrolled factors…</p> : null}
+			<p className="eyebrow">{t("op.stepUp")}</p>
+			<h1>{t("ea.mfaRequired")}</h1>
+			<p className="muted">{t("op.stepUpLead")}</p>
+			{factorState === "loading" ? <p role="status">{t("op.readingFactors")}</p> : null}
 			{factorState === "error" ? (
 				<div className="notice notice-danger" role="alert">
-					Enrolled factors could not be read. Reload the page to try again.
+					{t("op.factorsFailed")}
 				</div>
 			) : null}
 			{factorState === "none" && !enrollment ? (
 				<div style={{ marginTop: 12 }}>
-					<p className="muted">No verified authenticator factor is enrolled for this account.</p>
+					<p className="muted">{t("op.noFactor")}</p>
 					<button
 						className="button"
 						type="button"
 						disabled={busy}
 						onClick={() => void startEnrollment()}
 					>
-						{busy ? "Starting…" : "Set up authenticator app"}
+						{busy ? t("ea.starting") : t("ea.setUp")}
 					</button>
 				</div>
 			) : null}
 			{enrollment ? (
 				<div style={{ marginTop: 12 }}>
-					<p className="muted">Add this secret to your authenticator app:</p>
+					<p className="muted">{t("ea.addThisSecret")}</p>
 					<code className="mono" style={{ display: "block", wordBreak: "break-all" }}>
-						{enrollment.secret ?? "The Auth service returned no secret; use the enrollment URI."}
+						{enrollment.secret ?? t("ea.noSecret")}
 					</code>
 					{enrollment.uri ? (
 						<p className="muted" style={{ wordBreak: "break-all" }}>
@@ -946,7 +930,7 @@ function OperatorStepUp({ onVerified }: { onVerified: () => Promise<void> }) {
 			{canVerify ? (
 				<form onSubmit={verify} style={{ marginTop: 12 }}>
 					<label className="label" htmlFor="operator-mfa-code">
-						Authenticator code
+						{t("ea.code")}
 					</label>
 					<input
 						id="operator-mfa-code"
@@ -964,7 +948,7 @@ function OperatorStepUp({ onVerified }: { onVerified: () => Promise<void> }) {
 						disabled={busy || !code.trim()}
 						style={{ marginTop: 12 }}
 					>
-						{busy ? "Verifying…" : "Verify and continue"}
+						{busy ? t("ea.verifying") : t("ea.verify")}
 					</button>
 				</form>
 			) : null}

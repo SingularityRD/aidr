@@ -1,6 +1,8 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { readFunctionError, redirectToIdp, startOidcFlow } from "../../auth/oidc-sso";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { useRichT, useT } from "../../i18n/I18nProvider";
 import { supabase } from "../../lib/supabase";
 
 type Kind = "entra" | "okta" | "generic";
@@ -28,46 +30,38 @@ type Snapshot = {
 	break_glass_enabled: boolean;
 };
 
-const SAFE_ERRORS: Record<string, string> = {
-	owner_required: "Only an active tenant owner can manage single sign-on.",
-	mfa_required: "Complete multi-factor verification (AAL2) to change single sign-on settings.",
-	invalid_provider: "The provider settings were rejected. Check each field.",
-	discovery_failed: "The identity provider's discovery document could not be fetched or validated.",
-	client_secret_not_configured:
-		"The client secret is not configured in the Edge function secrets yet.",
-	provider_locked_by_enforcement: "Disable enforcement before changing the provider.",
-	provider_changed:
-		"The provider was changed by someone else while discovery was refreshing. Reload and try again.",
-	invalid_domain: "Enter a valid domain such as example.com.",
-	dns_lookup_failed:
-		"The verification record could not be looked up yet. DNS changes can take time.",
-	verification_record_not_found: "The verification record was not found. Check the name and value.",
-	domain_verified_by_another_tenant: "Another workspace has already verified this domain.",
-	last_verified_domain_locked_by_enforcement:
-		"Disable enforcement before removing the last verified domain.",
-	oidc_verified_owners_required:
-		"Every owner must link an identity first, and at least two owners are required.",
-	oidc_actor_session_required:
-		"Sign in through single sign-on first, so enforcement cannot lock you out.",
-	oidc_existing_identity_conflict:
-		"Some provisioned users are bound to other accounts. They must link their identity first.",
-	oidc_saml_enforcement_active: "SAML enforcement is active; a tenant cannot enforce both.",
-	oidc_provider_unavailable: "The provider must be enabled before it can be enforced.",
-	invalid_request: "The request was rejected. Check the fields.",
-	sso_unavailable:
-		"Single sign-on administration is temporarily unavailable. No change was confirmed.",
+const SAFE_ERRORS: Record<string, DashboardMessageKey> = {
+	owner_required: "sso.err.owner",
+	mfa_required: "sso.err.mfa",
+	invalid_provider: "sso.err.provider",
+	discovery_failed: "sso.err.discovery",
+	client_secret_not_configured: "sso.err.secret",
+	provider_locked_by_enforcement: "sso.err.locked",
+	provider_changed: "sso.err.changed",
+	invalid_domain: "sso.err.domain",
+	dns_lookup_failed: "sso.err.dns",
+	verification_record_not_found: "sso.err.recordMissing",
+	domain_verified_by_another_tenant: "sso.err.otherTenant",
+	last_verified_domain_locked_by_enforcement: "sso.err.lastDomain",
+	oidc_verified_owners_required: "sso.err.owners",
+	oidc_actor_session_required: "sso.err.actorSession",
+	oidc_existing_identity_conflict: "sso.err.identityConflict",
+	oidc_saml_enforcement_active: "sso.err.saml",
+	oidc_provider_unavailable: "sso.err.providerDisabled",
+	invalid_request: "sso.err.invalid",
+	sso_unavailable: "sso.err.unavailable",
 };
 
-const PRESETS: Record<Kind, { issuer: string; hint: string }> = {
+const PRESETS: Record<Kind, { issuer: string; hint: DashboardMessageKey }> = {
 	entra: {
 		issuer: "https://login.microsoftonline.com/<directory-tenant-id>/v2.0",
-		hint: "Use your directory (tenant) ID, never common or organizations.",
+		hint: "sso.hint.entra",
 	},
 	okta: {
 		issuer: "https://<your-org>.okta.com/oauth2/default",
-		hint: "The issuer of the authorization server that issues your ID tokens.",
+		hint: "sso.hint.okta",
 	},
-	generic: { issuer: "https://", hint: "Any OpenID Connect provider with a discovery document." },
+	generic: { issuer: "https://", hint: "sso.hint.generic" },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,13 +69,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function OidcSsoPage() {
+	const t = useT();
 	const { currentTeam, currentRole } = useTeam();
-	if (!currentTeam) return <div className="card">Select a tenant to manage single sign-on.</div>;
+	if (!currentTeam) return <div className="card">{t("sso.selectTenant")}</div>;
 	if (currentRole !== "owner")
 		return (
 			<div className="card">
-				<h1>Single sign-on</h1>
-				<p className="muted">OIDC single sign-on is available to active tenant owners only.</p>
+				<h1>{t("nav.sso")}</h1>
+				<p className="muted">{t("sso.ownersOnly")}</p>
 			</div>
 		);
 	return (
@@ -94,6 +89,11 @@ export function OidcSsoPage() {
 }
 
 function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string }) {
+	const t = useT();
+	const richT = useRichT();
+	// Loaders read the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
@@ -121,7 +121,9 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 			});
 			if (invokeError || !isRecord(data) || data.ok !== true) {
 				const details = await readFunctionError(invokeError, data);
-				throw new Error(SAFE_ERRORS[details.error ?? ""] ?? "The request was not confirmed.");
+				const code = details.error ?? "";
+				const key = Object.hasOwn(SAFE_ERRORS, code) ? SAFE_ERRORS[code] : undefined;
+				throw new Error(translator.current(key ?? "sso.err.notConfirmed"));
 			}
 			return data;
 		},
@@ -147,7 +149,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 				}));
 			setError(null);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Unable to load single sign-on settings.");
+			setError(cause instanceof Error ? cause.message : translator.current("sso.err.load"));
 		}
 	}, [invoke]);
 
@@ -163,7 +165,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 			setNotice(await action());
 			await load();
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "The request was not confirmed.");
+			setError(cause instanceof Error ? cause.message : t("sso.err.notConfirmed"));
 		} finally {
 			setBusy(false);
 		}
@@ -184,7 +186,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 				groups_mode: form.groups_mode,
 				enabled: form.enabled,
 			});
-			return "Provider saved and discovery validated.";
+			return t("sso.saved");
 		});
 	}
 
@@ -193,20 +195,16 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 	return (
 		<div className="stack">
 			<header className="card">
-				<h1>Single sign-on (OIDC)</h1>
-				<p className="muted">
-					Configure OpenID Connect sign-in for <strong>{teamName}</strong> with Microsoft Entra ID,
-					Okta or another provider. SCIM still provisions users and roles; this page controls how
-					they sign in.
-				</p>
+				<h1>{t("sso.title")}</h1>
+				<p className="muted">{richT("sso.lead", { team: <strong>{teamName}</strong> })}</p>
 				{snapshot ? (
 					<p className="muted small">
-						Register this redirect URI at your provider: <code>{snapshot.redirect_uri}</code>
+						{richT("sso.redirect", { uri: <code>{snapshot.redirect_uri}</code> })}
 					</p>
 				) : null}
 				{snapshot?.saml_enforced ? (
 					<p className="notice notice-warning" role="note">
-						SAML enforcement is active for this workspace; OIDC cannot be enforced at the same time.
+						{t("sso.samlActive")}
 					</p>
 				) : null}
 			</header>
@@ -222,9 +220,9 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 			) : null}
 
 			<form className="card" onSubmit={saveProvider} aria-labelledby="oidc-provider-heading">
-				<h2 id="oidc-provider-heading">Provider</h2>
+				<h2 id="oidc-provider-heading">{t("sso.provider")}</h2>
 				<label className="label" htmlFor="oidc-kind">
-					Provider type
+					{t("sso.providerType")}
 				</label>
 				<select
 					id="oidc-kind"
@@ -233,10 +231,10 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 				>
 					<option value="entra">Microsoft Entra ID</option>
 					<option value="okta">Okta</option>
-					<option value="generic">Generic OpenID Connect</option>
+					<option value="generic">{t("sso.generic")}</option>
 				</select>
 				<label className="label" htmlFor="oidc-name">
-					Display name
+					{t("sso.displayName")}
 				</label>
 				<input
 					id="oidc-name"
@@ -245,7 +243,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 					onChange={(event) => setForm({ ...form, display_name: event.target.value })}
 				/>
 				<label className="label" htmlFor="oidc-issuer">
-					Issuer
+					{t("sso.issuer")}
 				</label>
 				<input
 					id="oidc-issuer"
@@ -253,9 +251,9 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 					placeholder={PRESETS[form.kind].issuer}
 					onChange={(event) => setForm({ ...form, issuer: event.target.value })}
 				/>
-				<p className="muted small">{PRESETS[form.kind].hint}</p>
+				<p className="muted small">{t(PRESETS[form.kind].hint)}</p>
 				<label className="label" htmlFor="oidc-client-id">
-					Client (application) ID
+					{t("sso.clientId")}
 				</label>
 				<input
 					id="oidc-client-id"
@@ -263,59 +261,59 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 					onChange={(event) => setForm({ ...form, client_id: event.target.value })}
 				/>
 				<label className="label" htmlFor="oidc-auth-method">
-					Client authentication
+					{t("sso.clientAuth")}
 				</label>
 				<select
 					id="oidc-auth-method"
 					value={form.token_auth_method}
 					onChange={(event) => setForm({ ...form, token_auth_method: event.target.value })}
 				>
-					<option value="client_secret_basic">Client secret (HTTP Basic)</option>
-					<option value="client_secret_post">Client secret (request body)</option>
-					<option value="none">None (public client, PKCE only)</option>
+					<option value="client_secret_basic">{t("sso.basic")}</option>
+					<option value="client_secret_post">{t("sso.post")}</option>
+					<option value="none">{t("sso.none")}</option>
 				</select>
 				{form.token_auth_method !== "none" ? (
 					<>
 						<label className="label" htmlFor="oidc-secret-ref">
-							Client secret reference
+							{t("sso.secretRef")}
 						</label>
 						<input
 							id="oidc-secret-ref"
 							value={form.client_secret_ref}
+							// i18n-exempt: sample secret reference
 							placeholder="CONTOSO"
 							onChange={(event) =>
 								setForm({ ...form, client_secret_ref: event.target.value.toUpperCase() })
 							}
 						/>
 						<p className="muted small">
-							Store the secret as the Edge function secret{" "}
-							<code>AIDR_OIDC_CLIENT_SECRET_{form.client_secret_ref || "REF"}</code>; it is never
-							saved in the database or shown here.
-							{provider?.client_secret_configured === false ? " It is not configured yet." : null}
+							{richT("sso.secretHint", {
+								name: <code>AIDR_OIDC_CLIENT_SECRET_{form.client_secret_ref || "REF"}</code>,
+							})}
+							{provider?.client_secret_configured === false ? t("sso.secretMissing") : null}
 						</p>
 					</>
 				) : null}
 				<label className="label" htmlFor="oidc-groups-claim">
-					Groups claim (optional)
+					{t("sso.groupsClaim")}
 				</label>
 				<input
 					id="oidc-groups-claim"
 					value={form.groups_claim}
+					// i18n-exempt: claim name
 					placeholder="groups"
 					onChange={(event) => setForm({ ...form, groups_claim: event.target.value })}
 				/>
 				<label className="label" htmlFor="oidc-groups-mode">
-					Group requirement
+					{t("sso.groupRequirement")}
 				</label>
 				<select
 					id="oidc-groups-mode"
 					value={form.groups_mode}
 					onChange={(event) => setForm({ ...form, groups_mode: event.target.value })}
 				>
-					<option value="ignore">Ignore groups (SCIM decides access)</option>
-					<option value="require_mapped">
-						Require a mapped group (exact group IDs from SCIM mappings)
-					</option>
+					<option value="ignore">{t("sso.ignoreGroups")}</option>
+					<option value="require_mapped">{t("sso.requireGroup")}</option>
 				</select>
 				<label className="label">
 					<input
@@ -323,23 +321,21 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 						checked={form.enabled}
 						onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
 					/>{" "}
-					Enable sign-in
+					{t("sso.enable")}
 				</label>
 				<button className="button" type="submit" disabled={busy}>
-					Save and validate
+					{t("sso.save")}
 				</button>
 			</form>
 
 			<section className="card" aria-labelledby="oidc-domains-heading">
-				<h2 id="oidc-domains-heading">Verified email domains</h2>
-				<p className="muted">
-					Sign-in is accepted only for email addresses on a domain this workspace has verified with
-					a DNS TXT record.
-				</p>
+				<h2 id="oidc-domains-heading">{t("sso.domains")}</h2>
+				<p className="muted">{t("sso.domainsLead")}</p>
 				<ul>
 					{snapshot?.domains.map((entry) => (
 						<li key={entry.domain}>
-							<strong>{entry.domain}</strong> — {entry.verified ? "verified" : "pending"}
+							<strong>{entry.domain}</strong> —{" "}
+							{entry.verified ? t("sso.verified") : t("sso.pending")}
 							{!entry.verified && entry.txt_value ? (
 								<div>
 									<code>
@@ -352,11 +348,11 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 										onClick={() =>
 											void run(async () => {
 												await invoke({ action: "verify_domain", domain: entry.domain });
-												return `${entry.domain} verified.`;
+												return t("sso.domainVerified", { domain: entry.domain });
 											})
 										}
 									>
-										Verify {entry.domain}
+										{t("sso.verifyDomain", { domain: entry.domain })}
 									</button>
 								</div>
 							) : null}
@@ -367,17 +363,17 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 								onClick={() =>
 									void run(async () => {
 										await invoke({ action: "remove_domain", domain: entry.domain });
-										return `${entry.domain} removed.`;
+										return t("sso.domainRemoved", { domain: entry.domain });
 									})
 								}
 							>
-								Remove {entry.domain}
+								{t("sso.removeDomain", { domain: entry.domain })}
 							</button>
 						</li>
 					))}
 				</ul>
 				<label className="label" htmlFor="oidc-domain">
-					Add a domain
+					{t("sso.addDomainLabel")}
 				</label>
 				<input
 					id="oidc-domain"
@@ -393,21 +389,17 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 						void run(async () => {
 							await invoke({ action: "add_domain", domain: domain.trim() });
 							setDomain("");
-							return "Domain added. Publish the TXT record, then verify.";
+							return t("sso.domainAdded");
 						})
 					}
 				>
-					Add domain
+					{t("sso.addDomain")}
 				</button>
 			</section>
 
 			<section className="card" aria-labelledby="oidc-enforce-heading">
-				<h2 id="oidc-enforce-heading">Enforcement</h2>
-				<p className="muted">
-					Link your own account first, then have every other owner do the same. Enforcement requires
-					you to be signed in through this provider, at least two linked owners and no unlinked
-					owner. Email, password and other sessions are refused for this workspace once it is on.
-				</p>
+				<h2 id="oidc-enforce-heading">{t("sso.enforcement")}</h2>
+				<p className="muted">{t("sso.enforcementLead")}</p>
 				<button
 					type="button"
 					className="button button-secondary"
@@ -418,17 +410,18 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 								providerId: provider?.id,
 								mode: "link",
 								returnTo: "/sso",
+								t,
 							});
 							if (!started.ok) throw new Error(started.message);
 							redirectToIdp(started.url);
-							return "Redirecting to your identity provider…";
+							return t("sso.redirecting");
 						})
 					}
 				>
-					Link my account
+					{t("sso.link")}
 				</button>
 				<label className="label" htmlFor="oidc-reason">
-					Reason (recorded in the audit log)
+					{t("gov.reason")}
 				</label>
 				<input
 					id="oidc-reason"
@@ -436,11 +429,12 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 					onChange={(event) => setReason(event.target.value)}
 				/>
 				<label className="label" htmlFor="oidc-change-ref">
-					Change reference
+					{t("sso.changeRef")}
 				</label>
 				<input
 					id="oidc-change-ref"
 					value={changeRef}
+					// i18n-exempt: sample change reference
 					placeholder="CHG-1042"
 					onChange={(event) => setChangeRef(event.target.value)}
 				/>
@@ -457,11 +451,11 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 									reason,
 									change_ref: changeRef,
 								});
-								return "Enforcement disabled.";
+								return t("sso.disabled");
 							})
 						}
 					>
-						Disable enforcement
+						{t("sso.disable")}
 					</button>
 				) : (
 					<button
@@ -482,18 +476,15 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 									reason,
 									change_ref: changeRef,
 								});
-								return "Enforcement enabled.";
+								return t("sso.enabled");
 							})
 						}
 					>
-						Enforce single sign-on
+						{t("sso.enforce")}
 					</button>
 				)}
 				<p className="muted small">
-					Break-glass:{" "}
-					{snapshot?.break_glass_enabled
-						? "enabled. An owner's single-use recovery code can suspend enforcement if the identity provider is unavailable."
-						: "disabled. Enable break-glass recovery in identity policy before enforcing, so an identity provider outage is recoverable."}
+					{snapshot?.break_glass_enabled ? t("sso.breakGlassOn") : t("sso.breakGlassOff")}
 				</p>
 			</section>
 		</div>

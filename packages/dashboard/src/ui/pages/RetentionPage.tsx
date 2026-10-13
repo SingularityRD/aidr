@@ -1,5 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
@@ -30,40 +32,37 @@ type Snapshot = { holds: Hold[]; policies: Policy[]; next: HoldCursor | null };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CASE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/ #-]*$/;
-const CLASS_LABELS: Record<string, string> = {
-	telemetry: "Agent telemetry and incidents",
-	endpoint_identity: "Endpoint and agent identity",
-	security_intelligence: "Tenant reputation records",
-	policy_configuration: "Policy configuration",
-	identity_membership: "Membership and invitations",
-	commercial_records: "Commercial and billing records",
-	security_audit: "Security and administrative audit",
-	temporary_exports: "Temporary exports",
-	access_credentials: "Access credentials",
-	operational_ephemera: "Operational ephemera",
+const CLASS_LABELS: Record<string, DashboardMessageKey> = {
+	telemetry: "ret.class.telemetry",
+	endpoint_identity: "ret.class.endpointIdentity",
+	security_intelligence: "ret.class.securityIntelligence",
+	policy_configuration: "ret.class.policyConfiguration",
+	identity_membership: "ret.class.identityMembership",
+	commercial_records: "ret.class.commercialRecords",
+	security_audit: "ret.class.securityAudit",
+	temporary_exports: "ret.class.temporaryExports",
+	access_credentials: "ret.class.accessCredentials",
+	operational_ephemera: "ret.class.operationalEphemera",
 };
-const SAFE_ERRORS: Record<string, string> = {
-	owner_required: "Only an active tenant owner can change legal holds or retention periods.",
-	admin_required:
-		"Only an active tenant owner or admin can view legal hold and retention settings.",
-	hold_already_active:
-		"This tenant already has an active legal hold. Release it before placing another.",
-	hold_refused_pending_deletion:
-		"Hold NOT placed: a Storage deletion is already in flight for this tenant. Escalate to your AIDR operator now; the tenant is unprotected.",
-	hold_not_found_or_released:
-		"That hold no longer exists or was already released. Refresh the list.",
-	retention_days_out_of_bounds:
-		"That retention period is outside the allowed range for this data class.",
-	retention_days_exceeds_plan:
-		"That event retention period is longer than your plan includes. Choose a shorter period or upgrade.",
-	retention_class_not_configurable:
-		"That data class is controlled by the platform and cannot be changed.",
-	retention_change_refused_offboarding:
-		"Retention cannot change while tenant offboarding is in progress.",
-	invalid_request: "The request was rejected. Check each field.",
-	retention_management_unavailable:
-		"Retention management is temporarily unavailable. No change was confirmed.",
+const SAFE_ERRORS: Record<string, DashboardMessageKey> = {
+	owner_required: "ret.err.ownerRequired",
+	admin_required: "ret.err.adminRequired",
+	hold_already_active: "ret.err.holdActive",
+	hold_refused_pending_deletion: "ret.err.pendingDeletion",
+	hold_not_found_or_released: "ret.err.holdGone",
+	retention_days_out_of_bounds: "ret.err.outOfBounds",
+	retention_days_exceeds_plan: "ret.err.exceedsPlan",
+	retention_class_not_configurable: "ret.err.notConfigurable",
+	retention_change_refused_offboarding: "ret.err.offboarding",
+	invalid_request: "ret.err.invalid",
+	retention_management_unavailable: "ret.err.unavailable",
 };
+
+/** A data class in the viewer's language; an unknown class is shown as stored. */
+function classLabel(dataClass: string, t: Translate): string {
+	const key = Object.hasOwn(CLASS_LABELS, dataClass) ? CLASS_LABELS[dataClass] : undefined;
+	return key ? t(key) : dataClass;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -114,18 +113,18 @@ function parsePolicy(value: unknown): Policy | null {
 	};
 }
 
-function parseSnapshot(value: unknown): Snapshot {
+function parseSnapshot(value: unknown, t: Translate): Snapshot {
 	if (
 		!isRecord(value) ||
 		value.ok !== true ||
 		!Array.isArray(value.holds) ||
 		!Array.isArray(value.retention_policies)
 	)
-		throw new Error("Retention management returned an invalid response.");
+		throw new Error(t("ret.err.invalidResponse"));
 	const holds = value.holds.map(parseHold);
 	const policies = value.retention_policies.map(parsePolicy);
 	if (holds.some((row) => row === null) || policies.some((row) => row === null))
-		throw new Error("Retention management returned an invalid record.");
+		throw new Error(t("ret.err.invalidRecord"));
 	let next: HoldCursor | null = null;
 	if (value.next_hold_cursor !== null && value.next_hold_cursor !== undefined) {
 		const cursor = value.next_hold_cursor;
@@ -136,15 +135,25 @@ function parseSnapshot(value: unknown): Snapshot {
 			typeof cursor.placed_at !== "string" ||
 			!validDate(cursor.placed_at)
 		)
-			throw new Error("Retention management returned an invalid pagination cursor.");
+			throw new Error(t("ret.err.invalidCursor"));
 		next = { id: cursor.id, placed_at: cursor.placed_at };
 	}
 	return { holds: holds as Hold[], policies: policies as Policy[], next };
 }
 
-async function responseError(error: unknown, data: unknown, fallback: string): Promise<string> {
-	const safe = (value: unknown) =>
-		isRecord(value) && typeof value.error === "string" ? SAFE_ERRORS[value.error] : undefined;
+async function responseError(
+	error: unknown,
+	data: unknown,
+	fallback: string,
+	t: Translate,
+): Promise<string> {
+	const safe = (value: unknown) => {
+		const key =
+			isRecord(value) && typeof value.error === "string" && Object.hasOwn(SAFE_ERRORS, value.error)
+				? SAFE_ERRORS[value.error]
+				: undefined;
+		return key ? t(key) : undefined;
+	};
 	const direct = safe(data);
 	if (direct) return direct;
 	if (isRecord(error) && error.context instanceof Response) {
@@ -166,16 +175,14 @@ const clean = (value: string, max: number) =>
 	!/[\u0000-\u001f\u007f]/.test(value);
 
 export function RetentionPage() {
+	const t = useT();
 	const { currentTeam, currentRole } = useTeam();
-	if (!currentTeam)
-		return <div className="card">Select a tenant to manage legal holds and retention.</div>;
+	if (!currentTeam) return <div className="card">{t("ret.selectTenant")}</div>;
 	if (currentRole !== "owner" && currentRole !== "admin")
 		return (
 			<div className="card">
-				<h1>Legal holds and retention</h1>
-				<p className="muted">
-					Legal holds and retention periods are available to tenant owners and admins only.
-				</p>
+				<h1>{t("ret.title")}</h1>
+				<p className="muted">{t("ret.ownersOnly")}</p>
 			</div>
 		);
 	return (
@@ -197,6 +204,11 @@ function TenantRetention({
 	teamName: string;
 	isOwner: boolean;
 }) {
+	const t = useT();
+	const richT = useRichT();
+	// Read the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [holds, setHolds] = useState<Hold[]>([]);
 	const [policies, setPolicies] = useState<Policy[]>([]);
 	const [next, setNext] = useState<HoldCursor | null>(null);
@@ -220,6 +232,7 @@ function TenantRetention({
 
 	const load = useCallback(
 		async (append = false) => {
+			const t = translator.current;
 			setLoading(!append);
 			setError(null);
 			try {
@@ -234,10 +247,8 @@ function TenantRetention({
 					{ method: "GET", headers: { "X-AIDR-Tenant-ID": tenantId } },
 				);
 				if (invokeError)
-					throw new Error(
-						await responseError(invokeError, data, "Unable to load retention settings."),
-					);
-				const snapshot = parseSnapshot(data);
+					throw new Error(await responseError(invokeError, data, t("ret.loadFailed"), t));
+				const snapshot = parseSnapshot(data, t);
 				setHolds((previous) => {
 					if (!append) return snapshot.holds;
 					const rows = new Map(previous.map((row) => [row.id, row]));
@@ -248,7 +259,7 @@ function TenantRetention({
 				cursor.current = snapshot.next;
 				setNext(snapshot.next);
 			} catch (cause) {
-				setError(readErrorMessage(cause, "Unable to load retention settings."));
+				setError(readErrorMessage(cause, t("ret.loadFailed")));
 			} finally {
 				setLoading(false);
 			}
@@ -272,16 +283,16 @@ function TenantRetention({
 				body: { ...body, tenant_id: tenantId },
 			},
 		);
-		if (invokeError) throw new Error(await responseError(invokeError, data, fallback));
+		if (invokeError) throw new Error(await responseError(invokeError, data, fallback, t));
 		if (!isRecord(data) || data.ok !== true)
-			throw new Error(await responseError(null, data, fallback));
+			throw new Error(await responseError(null, data, fallback, t));
 		return data;
 	}
 
 	async function placeHold(event: FormEvent) {
 		event.preventDefault();
 		if (!clean(caseId, 100) || !CASE_ID.test(caseId)) {
-			setError("Enter the case ID (letters, digits and . _ : / # - only, up to 100 characters).");
+			setError(t("ret.badCase"));
 			return;
 		}
 		if (
@@ -289,9 +300,7 @@ function TenantRetention({
 			!clean(reason, 2000) ||
 			(reference !== "" && !clean(reference, 200))
 		) {
-			setError(
-				"Owner, reason and the optional reference must be non-empty, trimmed text without control characters.",
-			);
+			setError(t("ret.badText"));
 			return;
 		}
 		if (!confirmPlace) {
@@ -310,23 +319,21 @@ function TenantRetention({
 					reason,
 					...(reference ? { reference } : {}),
 				},
-				"The legal hold was not confirmed.",
+				t("ret.holdUnconfirmed"),
 			);
 			setCaseId("");
 			setHoldOwner("");
 			setReason("");
 			setReference("");
 			setConfirmPlace(false);
-			setNotice(
-				"Legal hold placed. Retention and offboarding will not delete this tenant's data until it is released.",
-			);
+			setNotice(t("ret.holdPlaced"));
 			await load();
 		} catch (cause) {
 			setConfirmPlace(false);
 			// Refresh first: a failed placement may still have committed, and the
 			// refresh clears any previous message.
 			await load();
-			setError(readErrorMessage(cause, "The legal hold was not confirmed."));
+			setError(readErrorMessage(cause, t("ret.holdUnconfirmed")));
 		} finally {
 			setBusy(false);
 		}
@@ -334,7 +341,7 @@ function TenantRetention({
 
 	async function releaseHold(hold: Hold) {
 		if (!clean(releaseReason, 2000)) {
-			setError("Enter a release reason (non-empty, trimmed text).");
+			setError(t("ret.badRelease"));
 			return;
 		}
 		setBusy(true);
@@ -343,16 +350,14 @@ function TenantRetention({
 		try {
 			await write(
 				{ action: "release_hold", hold_id: hold.id, reason: releaseReason },
-				"The release was not confirmed.",
+				t("ret.releaseUnconfirmed"),
 			);
 			setReleaseReason("");
 			setConfirmRelease(false);
-			setNotice(
-				"Legal hold released. Data past its retention period becomes eligible for deletion on the next scheduled run.",
-			);
+			setNotice(t("ret.released"));
 			await load();
 		} catch (cause) {
-			setError(readErrorMessage(cause, "The release was not confirmed."));
+			setError(readErrorMessage(cause, t("ret.releaseUnconfirmed")));
 		} finally {
 			setBusy(false);
 		}
@@ -366,11 +371,11 @@ function TenantRetention({
 			days < (policy.min_days ?? 0) ||
 			days > (policy.max_days ?? 3650)
 		) {
-			setError(`Enter a whole number of days between ${policy.min_days} and ${policy.max_days}.`);
+			setError(t("ret.badDays", { min: String(policy.min_days), max: String(policy.max_days) }));
 			return;
 		}
 		if (!clean(edit.reason, 500)) {
-			setError("Enter a reason for this change (non-empty, trimmed text, up to 500 characters).");
+			setError(t("ret.badChangeReason"));
 			return;
 		}
 		setBusy(true);
@@ -384,17 +389,13 @@ function TenantRetention({
 					retention_days: days,
 					reason: edit.reason,
 				},
-				"The retention change was not confirmed.",
+				t("ret.changeUnconfirmed"),
 			);
 			setEdit(null);
-			setNotice(
-				result.changed === true
-					? "Retention period saved and audited."
-					: "That is already the configured retention period; nothing changed.",
-			);
+			setNotice(result.changed === true ? t("ret.saved") : t("ret.unchanged"));
 			await load();
 		} catch (cause) {
-			setError(readErrorMessage(cause, "The retention change was not confirmed."));
+			setError(readErrorMessage(cause, t("ret.changeUnconfirmed")));
 		} finally {
 			setBusy(false);
 		}
@@ -403,16 +404,9 @@ function TenantRetention({
 	return (
 		<div className="stack">
 			<header className="card">
-				<h1>Legal holds and retention</h1>
-				<p className="muted">
-					Manage legal holds and data retention periods for <strong>{teamName}</strong>. Every
-					change is recorded in the administrative audit log.
-				</p>
-				{!isOwner ? (
-					<p className="muted small">
-						Admins can view these settings. Only a tenant owner can change them.
-					</p>
-				) : null}
+				<h1>{t("ret.title")}</h1>
+				<p className="muted">{richT("ret.lead", { team: <strong>{teamName}</strong> })}</p>
+				{!isOwner ? <p className="muted small">{t("ret.adminView")}</p> : null}
 			</header>
 
 			{error ? (
@@ -427,21 +421,28 @@ function TenantRetention({
 			) : null}
 
 			<section className="card" aria-labelledby="hold-heading">
-				<h2 id="hold-heading">Legal hold</h2>
+				<h2 id="hold-heading">{t("ret.hold")}</h2>
 				{loading ? (
-					<p role="status">Loading…</p>
+					<p role="status">{t("common.loading")}</p>
 				) : activeHold ? (
-					<div className="notice notice-warning" role="region" aria-label="Active legal hold">
+					<div
+						className="notice notice-warning"
+						role="region"
+						aria-label={t("ret.activeHoldLabel")}
+					>
 						<p>
-							<strong>Active hold</strong> — case {activeHold.case_id ?? activeHold.hold_reference},
-							owner {activeHold.hold_owner ?? "not recorded"}, placed{" "}
-							{formatDate(activeHold.placed_at)}.
+							<strong>{t("ret.activeHold")}</strong>
+							{t("ret.activeHoldLine", {
+								case: activeHold.case_id ?? activeHold.hold_reference,
+								owner: activeHold.hold_owner ?? t("ret.notRecorded"),
+								time: formatDate(activeHold.placed_at),
+							})}
 						</p>
 						<p className="small">{activeHold.reason}</p>
 						{isOwner ? (
 							<>
 								<label className="label" htmlFor="release-reason">
-									Release reason
+									{t("ret.releaseReason")}
 								</label>
 								<input
 									id="release-reason"
@@ -460,14 +461,14 @@ function TenantRetention({
 												disabled={busy}
 												onClick={() => void releaseHold(activeHold)}
 											>
-												Confirm release
+												{t("ret.confirmRelease")}
 											</button>
 											<button
 												className="button button-secondary"
 												type="button"
 												onClick={() => setConfirmRelease(false)}
 											>
-												Cancel
+												{t("common.cancel")}
 											</button>
 										</>
 									) : (
@@ -477,7 +478,7 @@ function TenantRetention({
 											disabled={busy || releaseReason.trim() === ""}
 											onClick={() => setConfirmRelease(true)}
 										>
-											Release hold
+											{t("ret.release")}
 										</button>
 									)}
 								</div>
@@ -485,16 +486,14 @@ function TenantRetention({
 						) : null}
 					</div>
 				) : (
-					<p className="muted">
-						No active legal hold. Retention and offboarding follow the periods below.
-					</p>
+					<p className="muted">{t("ret.noHold")}</p>
 				)}
 
 				{isOwner && !activeHold && !loading ? (
-					<form onSubmit={placeHold} style={{ marginTop: 14 }} aria-label="Place legal hold">
-						<h3>Place a hold</h3>
+					<form onSubmit={placeHold} style={{ marginTop: 14 }} aria-label={t("ret.placeLabel")}>
+						<h3>{t("ret.placeTitle")}</h3>
 						<label className="label" htmlFor="hold-case">
-							Case ID
+							{t("ret.caseId")}
 						</label>
 						<input
 							id="hold-case"
@@ -502,11 +501,12 @@ function TenantRetention({
 							maxLength={100}
 							value={caseId}
 							onChange={(e) => setCaseId(e.target.value)}
+							// i18n-exempt: sample case id
 							placeholder="CASE-2026-001"
 							autoComplete="off"
 						/>
 						<label className="label" htmlFor="hold-owner">
-							Hold owner
+							{t("ret.holdOwner")}
 						</label>
 						<input
 							id="hold-owner"
@@ -514,11 +514,11 @@ function TenantRetention({
 							maxLength={200}
 							value={holdOwner}
 							onChange={(e) => setHoldOwner(e.target.value)}
-							placeholder="Responsible counsel or custodian"
+							placeholder={t("ret.holdOwnerPlaceholder")}
 							autoComplete="off"
 						/>
 						<label className="label" htmlFor="hold-reason">
-							Reason
+							{t("ret.reason")}
 						</label>
 						<input
 							id="hold-reason"
@@ -529,7 +529,7 @@ function TenantRetention({
 							autoComplete="off"
 						/>
 						<label className="label" htmlFor="hold-reference">
-							Reference (optional)
+							{t("ret.reference")}
 						</label>
 						<input
 							id="hold-reference"
@@ -539,17 +539,14 @@ function TenantRetention({
 							onChange={(e) => setReference(e.target.value)}
 							autoComplete="off"
 						/>
-						<p className="muted small">
-							While a hold is active, routine retention, audit export deletion and offboarding do
-							not delete this tenant's data.
-						</p>
+						<p className="muted small">{t("ret.holdEffect")}</p>
 						<div className="row" style={{ marginTop: 10 }}>
 							<button
 								className={confirmPlace ? "button button-danger" : "button"}
 								type="submit"
 								disabled={busy}
 							>
-								{confirmPlace ? "Confirm: place legal hold" : "Place legal hold"}
+								{confirmPlace ? t("ret.confirmPlace") : t("ret.placeLabel")}
 							</button>
 							{confirmPlace ? (
 								<button
@@ -557,7 +554,7 @@ function TenantRetention({
 									type="button"
 									onClick={() => setConfirmPlace(false)}
 								>
-									Cancel
+									{t("common.cancel")}
 								</button>
 							) : null}
 						</div>
@@ -566,42 +563,40 @@ function TenantRetention({
 			</section>
 
 			<section className="card" aria-labelledby="retention-heading">
-				<h2 id="retention-heading">Retention periods</h2>
-				<p className="muted">
-					Periods are bounded per data class. Shortening a period lets the next scheduled run delete
-					data already older than the new period unless a legal hold is active. Backup copies follow
-					separate backup retention.
-				</p>
+				<h2 id="retention-heading">{t("ret.periods")}</h2>
+				<p className="muted">{t("ret.periodsLead")}</p>
 				{loading ? (
-					<p role="status">Loading…</p>
+					<p role="status">{t("common.loading")}</p>
 				) : (
 					<div className="table-wrap">
 						<table className="table">
-							<caption className="sr-only">Retention periods by data class</caption>
+							<caption className="sr-only">{t("ret.periodsCaption")}</caption>
 							<thead>
 								<tr>
-									<th scope="col">Data class</th>
-									<th scope="col">Days</th>
-									<th scope="col">Effective</th>
-									<th scope="col">Allowed</th>
-									<th scope="col">Actions</th>
+									<th scope="col">{t("ret.col.class")}</th>
+									<th scope="col">{t("ret.col.days")}</th>
+									<th scope="col">{t("ret.col.effective")}</th>
+									<th scope="col">{t("ret.col.allowed")}</th>
+									<th scope="col">{t("ret.col.actions")}</th>
 								</tr>
 							</thead>
 							<tbody>
 								{policies.map((policy) => (
 									<tr key={policy.data_class}>
-										<td>{CLASS_LABELS[policy.data_class] ?? policy.data_class}</td>
+										<td>{classLabel(policy.data_class, t)}</td>
 										<td>{policy.retention_days}</td>
 										<td>
 											{policy.effective_retention_days}
 											{policy.plan_max_days !== null ? (
-												<span className="muted"> (plan max {policy.plan_max_days})</span>
+												<span className="muted">
+													{t("ret.planMax", { days: policy.plan_max_days })}
+												</span>
 											) : null}
 										</td>
 										<td>
 											{policy.configurable
 												? `${policy.min_days}–${policy.max_days}`
-												: "Platform controlled"}
+												: t("ret.platform")}
 										</td>
 										<td>
 											{isOwner && policy.configurable ? (
@@ -610,7 +605,9 @@ function TenantRetention({
 														<input
 															className="input"
 															type="number"
-															aria-label={`Retention days for ${CLASS_LABELS[policy.data_class] ?? policy.data_class}`}
+															aria-label={t("ret.daysFor", {
+																class: classLabel(policy.data_class, t),
+															})}
 															min={policy.min_days ?? 0}
 															max={policy.max_days ?? 3650}
 															value={edit.days}
@@ -619,9 +616,9 @@ function TenantRetention({
 														/>
 														<input
 															className="input"
-															aria-label="Reason for change"
+															aria-label={t("ret.changeReason")}
 															maxLength={500}
-															placeholder="Reason"
+															placeholder={t("ret.reason")}
 															value={edit.reason}
 															onChange={(e) => setEdit({ ...edit, reason: e.target.value })}
 														/>
@@ -631,14 +628,14 @@ function TenantRetention({
 															disabled={busy}
 															onClick={() => void saveRetention(policy)}
 														>
-															Save
+															{t("ret.save")}
 														</button>
 														<button
 															className="button button-secondary"
 															type="button"
 															onClick={() => setEdit(null)}
 														>
-															Cancel
+															{t("common.cancel")}
 														</button>
 													</div>
 												) : (
@@ -654,7 +651,7 @@ function TenantRetention({
 															})
 														}
 													>
-														Change
+														{t("ret.change")}
 													</button>
 												)
 											) : null}
@@ -668,20 +665,20 @@ function TenantRetention({
 			</section>
 
 			<section className="card" aria-labelledby="history-heading">
-				<h2 id="history-heading">Hold history</h2>
+				<h2 id="history-heading">{t("ret.history")}</h2>
 				{loading ? null : holds.length === 0 ? (
-					<p className="muted">No legal holds have been recorded for this tenant.</p>
+					<p className="muted">{t("ret.noHistory")}</p>
 				) : (
 					<div className="table-wrap">
 						<table className="table">
-							<caption className="sr-only">Legal hold history</caption>
+							<caption className="sr-only">{t("ret.historyCaption")}</caption>
 							<thead>
 								<tr>
-									<th scope="col">Case</th>
-									<th scope="col">Owner</th>
-									<th scope="col">Placed</th>
-									<th scope="col">Released</th>
-									<th scope="col">Release reason</th>
+									<th scope="col">{t("ret.col.case")}</th>
+									<th scope="col">{t("ret.col.owner")}</th>
+									<th scope="col">{t("ret.col.placed")}</th>
+									<th scope="col">{t("ret.col.released")}</th>
+									<th scope="col">{t("ret.releaseReason")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -690,7 +687,7 @@ function TenantRetention({
 										<td>{hold.case_id ?? hold.hold_reference}</td>
 										<td>{hold.hold_owner ?? "—"}</td>
 										<td>{formatDate(hold.placed_at)}</td>
-										<td>{hold.released_at ? formatDate(hold.released_at) : "Active"}</td>
+										<td>{hold.released_at ? formatDate(hold.released_at) : t("ret.active")}</td>
 										<td>{hold.release_reason ?? "—"}</td>
 									</tr>
 								))}
@@ -706,7 +703,7 @@ function TenantRetention({
 							disabled={busy}
 							onClick={() => void load(true)}
 						>
-							Load more
+							{t("ret.loadMore")}
 						</button>
 					) : null}
 					<button
@@ -715,7 +712,7 @@ function TenantRetention({
 						disabled={busy}
 						onClick={() => void load()}
 					>
-						Refresh
+						{t("common.refresh")}
 					</button>
 				</div>
 			</section>

@@ -114,7 +114,7 @@ describe("billing plan card", () => {
 			"4",
 		);
 		expect(
-			card.getByText(/Card subscription: Team · 5 seats · monthly · active/),
+			card.getByText(/Card subscription: Team · 5 seats · Monthly · active/),
 		).toBeInTheDocument();
 	});
 

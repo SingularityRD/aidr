@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import {
@@ -17,9 +18,10 @@ import {
 	latestCheckIn,
 	RUNTIME_CATALOG,
 	type RuntimeCatalogEntry,
+	runtimeLabel,
 } from "./runtime-catalog";
 
-type ManifestState =
+export type ManifestState =
 	| { state: "not-configured" }
 	| { state: "loading" }
 	| { state: "error"; message: string }
@@ -40,7 +42,12 @@ function isCheckInRow(value: unknown): value is AgentCheckIn {
 	);
 }
 
-function useReleaseManifest(): ManifestState {
+/**
+ * The validated release manifest of this deployment (onboarding also uses it to
+ * pin versions). `skip` leaves the fetch to a parent that already loads it.
+ */
+export function useReleaseManifest(skip = false): ManifestState {
+	const t = useT();
 	const source = useMemo(() => resolveReleaseManifestSource(), []);
 	const [state, setState] = useState<ManifestState>(() =>
 		!source.configured
@@ -50,7 +57,7 @@ function useReleaseManifest(): ManifestState {
 				: { state: "loading" },
 	);
 	useEffect(() => {
-		if (!source.configured || "error" in source) return;
+		if (skip || !source.configured || "error" in source) return;
 		const controller = new AbortController();
 		fetchReleaseManifest(source.url, fetch, controller.signal)
 			.then((manifest) => {
@@ -60,11 +67,11 @@ function useReleaseManifest(): ManifestState {
 				if (controller.signal.aborted) return;
 				setState({
 					state: "error",
-					message: readErrorMessage(cause, "The release manifest could not be loaded."),
+					message: readErrorMessage(cause, t("dc.manifestFailed")),
 				});
 			});
 		return () => controller.abort();
-	}, [source]);
+	}, [source, skip]);
 	return state;
 }
 
@@ -104,6 +111,7 @@ function useAgentCheckIns(teamId: string | null): CheckInState {
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
+	const t = useT();
 	const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
 	return (
 		<>
@@ -120,40 +128,40 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 					}
 				}}
 			>
-				{status === "copied" ? "Copied" : "Copy"}
+				{status === "copied" ? t("dc.copied") : t("dc.copy")}
 			</button>
-			{status === "error" ? (
-				<span className="muted small">Clipboard blocked. Select the text and copy it.</span>
-			) : null}
+			{status === "error" ? <span className="muted small">{t("dc.copyBlocked")}</span> : null}
 		</>
 	);
 }
 
 function CheckInBadge({ entry, checkIns }: { entry: RuntimeCatalogEntry; checkIns: CheckInState }) {
+	const t = useT();
 	if (!entry.detection) {
-		return <span className="pill">No control-plane check-in</span>;
+		return <span className="pill">{t("dc.noCheckIn")}</span>;
 	}
-	if (checkIns.state === "loading") return <span className="muted small">Checking check-ins…</span>;
+	if (checkIns.state === "loading") return <span className="muted small">{t("dc.checking")}</span>;
 	if (checkIns.state === "unavailable") {
-		return <span className="muted small">Check-in status unavailable</span>;
+		return <span className="muted small">{t("dc.checkInUnavailable")}</span>;
 	}
 	const lastSeen = latestCheckIn(entry, checkIns.agents);
 	return lastSeen ? (
 		<span className="pill pill-success">
-			Detected · last check-in {new Date(lastSeen).toLocaleString()}
+			{t("dc.detected", { time: new Date(lastSeen).toLocaleString() })}
 		</span>
 	) : (
-		<span className="pill pill-warning">Not detected yet</span>
+		<span className="pill pill-warning">{t("dc.notDetected")}</span>
 	);
 }
 
 function ArtifactDownload({ artifact, label }: { artifact: ReleaseArtifact; label: string }) {
+	const t = useT();
 	const file = artifactFileName(artifact);
 	return (
 		<div className="notice" style={{ marginTop: 10 }}>
 			<div className="row" style={{ flexWrap: "wrap", alignItems: "center" }}>
 				<a className="button" href={artifact.url} download={file} rel="noopener noreferrer">
-					Download {file}
+					{t("dc.download", { file })}
 				</a>
 				<span className="muted small">
 					v{artifact.version} · {formatBytes(artifact.size)} · {artifact.platforms.join(", ")}
@@ -166,14 +174,14 @@ function ArtifactDownload({ artifact, label }: { artifact: ReleaseArtifact; labe
 				<code
 					className="mono"
 					style={{ overflowWrap: "anywhere" }}
-					aria-label={`SHA-256 for ${label} ${file}`}
+					aria-label={t("dc.shaFor", { label, file })}
 				>
 					{artifact.sha256}
 				</code>
-				<CopyButton value={artifact.sha256} label={`Copy SHA-256 for ${file}`} />
+				<CopyButton value={artifact.sha256} label={t("dc.copySha", { file })} />
 			</div>
 			<details style={{ marginTop: 8 }}>
-				<summary>Verify the download before installing</summary>
+				<summary>{t("dc.verifySummary")}</summary>
 				{verifyCommands(artifact).map((command) => (
 					<div key={command.label} style={{ marginTop: 6 }}>
 						<div className="muted small">{command.label}</div>
@@ -182,19 +190,18 @@ function ArtifactDownload({ artifact, label }: { artifact: ReleaseArtifact; labe
 						</pre>
 					</div>
 				))}
-				<p className="muted small">Do not install the file if the check fails.</p>
+				<p className="muted small">{t("dc.verifyFail")}</p>
 			</details>
 			{artifact.signature ? (
 				<div className="muted small" style={{ marginTop: 8 }}>
 					<a href={artifact.signature} rel="noopener noreferrer">
-						Detached signature for {file}
+						{t("dc.signature", { file })}
 					</a>
-					. Verify it with the publisher key your release operator delivered separately.
+					{t("dc.signatureNote")}
 				</div>
 			) : (
 				<div className="muted small" style={{ marginTop: 8 }}>
-					No detached signature is published for this file. Check the SHA-256 against your approved
-					release record.
+					{t("dc.noSignature")}
 				</div>
 			)}
 		</div>
@@ -202,53 +209,37 @@ function ArtifactDownload({ artifact, label }: { artifact: ReleaseArtifact; labe
 }
 
 function Enrollment({ entry, teamId }: { entry: RuntimeCatalogEntry; teamId: string | null }) {
+	const t = useT();
+	const label = runtimeLabel(entry, t);
 	const verifyHref = teamId ? `/verify?team=${encodeURIComponent(teamId)}` : "/verify";
 	if (entry.enrollment === "device") {
 		return (
 			<>
-				<p className="small">
-					Start {entry.label} once after installing. In managed mode it shows a short code and a
-					verification URL; approve the code for this team. Restart the agent afterwards.
-				</p>
+				<p className="small">{t("dc.device", { label })}</p>
 				<div className="row" style={{ flexWrap: "wrap" }}>
 					<Link className="button button-secondary button-sm" to={verifyHref}>
-						Verify a device code
+						{t("dc.verifyCode")}
 					</Link>
 				</div>
 			</>
 		);
 	}
 	if (entry.enrollment === "managed-config") {
-		return (
-			<p className="small">
-				{entry.label} has no device-code prompt. It enrolls through the signed runtime configuration
-				your operator deploys to ~/.singularity-aidr/config.json.
-			</p>
-		);
+		return <p className="small">{t("dc.managedConfig", { label })}</p>;
 	}
 	if (entry.enrollment === "api-key") {
 		return (
 			<>
-				<p className="small">
-					Create a Browser Guard ingest-only key, then set the managed policy keys controlPlaneUrl
-					and apiKey (or enter them in the extension options). Managed policy wins. The key can only
-					report counts, never prompt text, for a capped number of browsers; do not use a tenant key
-					here, because users of a managed browser can read its policy.
-				</p>
+				<p className="small">{t("dc.apiKey")}</p>
 				<div className="row" style={{ flexWrap: "wrap" }}>
 					<Link className="button button-secondary button-sm" to="/api-keys?type=browser_guard">
-						Create a Browser Guard key
+						{t("dc.createBgKey")}
 					</Link>
 				</div>
 			</>
 		);
 	}
-	return (
-		<p className="small">
-			{entry.label} does not check in with the control plane, so the dashboard cannot confirm it is
-			installed.
-		</p>
-	);
+	return <p className="small">{t("dc.noCheckInBody", { label })}</p>;
 }
 
 function RuntimeCard({
@@ -264,6 +255,8 @@ function RuntimeCard({
 	teamId: string | null;
 	headingLevel: 2 | 3;
 }) {
+	const t = useT();
+	const label = runtimeLabel(entry, t);
 	const artifacts =
 		manifest.state === "ready"
 			? manifest.manifest.artifacts.filter((artifact) => artifact.id === entry.id)
@@ -271,37 +264,37 @@ function RuntimeCard({
 	const Heading = headingLevel === 2 ? "h2" : "h3";
 	const SubHeading = headingLevel === 2 ? "h3" : "h4";
 	return (
-		<section className="card" aria-label={entry.label} data-runtime={entry.id}>
+		<section className="card" aria-label={label} data-runtime={entry.id}>
 			<div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-				<Heading style={{ margin: 0 }}>{entry.label}</Heading>
+				<Heading style={{ margin: 0 }}>{label}</Heading>
 				<CheckInBadge entry={entry} checkIns={checkIns} />
 			</div>
-			<p className="muted small">{entry.summary}</p>
+			<p className="muted small">{t(entry.summary)}</p>
 
-			<SubHeading>Download</SubHeading>
+			<SubHeading>{t("dc.downloadTitle")}</SubHeading>
 			{manifest.state === "ready" ? (
 				artifacts.length > 0 ? (
 					artifacts.map((artifact) => (
 						<ArtifactDownload
 							key={`${artifact.id}-${artifact.platforms.join("-")}`}
 							artifact={artifact}
-							label={entry.label}
+							label={label}
 						/>
 					))
 				) : (
 					<p className="muted small">
-						Release {manifest.manifest.version} does not include a {entry.label} artifact.
+						{t("dc.noArtifact", { version: manifest.manifest.version, label })}
 					</p>
 				)
 			) : manifest.state === "loading" ? (
-				<p className="muted small">Loading the release manifest…</p>
+				<p className="muted small">{t("dc.loadingManifest")}</p>
 			) : (
-				<p className="muted small">No verified download is available for this deployment.</p>
+				<p className="muted small">{t("dc.noDownload")}</p>
 			)}
 
-			<SubHeading>Install</SubHeading>
+			<SubHeading>{t("dc.installTitle")}</SubHeading>
 			<ol className="small">
-				{entry.installSteps(artifacts[0] ?? null).map((step) => (
+				{entry.installSteps(artifacts[0] ?? null, t).map((step) => (
 					<li key={step.text} style={{ marginBottom: 6 }}>
 						{step.text}
 						{step.command ? (
@@ -312,9 +305,9 @@ function RuntimeCard({
 					</li>
 				))}
 			</ol>
-			<p className="muted small">Full guide: {entry.guide}</p>
+			<p className="muted small">{t("dc.guide", { guide: entry.guide })}</p>
 
-			<SubHeading>Connect</SubHeading>
+			<SubHeading>{t("dc.connectTitle")}</SubHeading>
 			<Enrollment entry={entry} teamId={teamId} />
 		</section>
 	);
@@ -332,12 +325,17 @@ export function DownloadCenter({
 	teamId,
 	only,
 	headingLevel = 2,
+	manifestState,
 }: {
 	teamId: string | null;
 	only?: ReleaseArtifactId[];
 	headingLevel?: 2 | 3;
+	/** The manifest a parent already loaded; fetched here when absent. */
+	manifestState?: ManifestState;
 }) {
-	const manifest = useReleaseManifest();
+	const t = useT();
+	const ownManifest = useReleaseManifest(manifestState !== undefined);
+	const manifest = manifestState ?? ownManifest;
 	const checkIns = useAgentCheckIns(teamId);
 	const entries = only
 		? RUNTIME_CATALOG.filter((entry) => only.includes(entry.id))
@@ -346,21 +344,20 @@ export function DownloadCenter({
 		<div className="stack">
 			{manifest.state === "not-configured" ? (
 				<div className="notice notice-warning">
-					<b>No release manifest is published for this deployment.</b> Download links appear here
-					once your release operator publishes one (AIDR_RELEASE_MANIFEST_PATH on the dashboard
-					server, or VITE_AIDR_RELEASE_MANIFEST_URL). Until then, get installers from your approved
-					release bundle.
+					<b>{t("dc.notConfigured")}</b> {t("dc.notConfiguredBody")}
 				</div>
 			) : null}
 			{manifest.state === "error" ? (
 				<div className="notice notice-danger" role="alert">
-					<b>Downloads are withheld.</b> {manifest.message}
+					<b>{t("dc.withheld")}</b> {manifest.message}
 				</div>
 			) : null}
 			{manifest.state === "ready" ? (
 				<div className="muted small">
-					Release {manifest.manifest.version} · published{" "}
-					{new Date(manifest.manifest.publishedAt).toLocaleString()}
+					{t("dc.release", {
+						version: manifest.manifest.version,
+						time: new Date(manifest.manifest.publishedAt).toLocaleString(),
+					})}
 				</div>
 			) : null}
 			{entries.map((entry) => (

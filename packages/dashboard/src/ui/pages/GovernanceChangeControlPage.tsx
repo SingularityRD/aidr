@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { useRichT, useT } from "../../i18n/I18nProvider";
 import {
 	type ChangeKind,
 	governanceAction,
@@ -18,19 +20,20 @@ import {
 	type Notice,
 	NoticeBanner,
 	ReasonField,
+	requestStatus,
 	useGovernanceData,
 	validText,
 } from "../governance/common";
 
-const KIND_LABEL: Record<ChangeKind, string> = {
-	runtime_publish: "Publish runtime policy",
-	runtime_publish_document: "Publish compiled policy YAML",
-	runtime_restore: "Roll back runtime policy",
-	runtime_stage: "Stage runtime policy for selected agents",
-	runtime_rollout: "Ordered canary rollout",
-	dlp_publish: "Save DLP policy",
-	agent_profiles_stage: "Stage agent permission profiles",
-	disable_four_eyes: "Turn off four-eyes change control",
+const KIND_LABEL: Record<ChangeKind, DashboardMessageKey> = {
+	runtime_publish: "gov.chg.kind.runtimePublish",
+	runtime_publish_document: "gov.chg.kind.runtimePublishDocument",
+	runtime_restore: "gov.chg.kind.runtimeRestore",
+	runtime_stage: "gov.chg.kind.runtimeStage",
+	runtime_rollout: "gov.chg.kind.runtimeRollout",
+	dlp_publish: "gov.chg.kind.dlpPublish",
+	agent_profiles_stage: "gov.chg.kind.agentProfilesStage",
+	disable_four_eyes: "gov.chg.kind.disableFourEyes",
 };
 
 interface ChangeDetail {
@@ -59,6 +62,7 @@ function PendingChange({
 	onCancel: () => void;
 	onNotice: (notice: Notice) => void;
 }) {
+	const t = useT();
 	const [detail, setDetail] = useState<ChangeDetail | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [reason, setReason] = useState("");
@@ -71,7 +75,7 @@ function PendingChange({
 		if (!result.ok) {
 			onNotice({
 				tone: "error",
-				message: governanceErrorMessage(result.error),
+				message: governanceErrorMessage(result.error, t),
 				code: result.error,
 			});
 			return;
@@ -79,7 +83,7 @@ function PendingChange({
 		const proposed = result.value.proposed;
 		const current = result.value.current;
 		if (!proposed || typeof proposed !== "object") {
-			onNotice({ tone: "error", message: governanceErrorMessage("governance_unavailable") });
+			onNotice({ tone: "error", message: governanceErrorMessage("governance_unavailable", t) });
 			return;
 		}
 		setDetail({
@@ -93,28 +97,41 @@ function PendingChange({
 	const stats = lines ? diffStats(lines) : null;
 	return (
 		<li className="card" data-testid="change-pending">
-			<h3 style={{ margin: 0 }}>{KIND_LABEL[change.changeKind]}</h3>
+			<h3 style={{ margin: 0 }}>{t(KIND_LABEL[change.changeKind])}</h3>
 			<p className="small">
-				Filed by {requester} on {formatTime(change.createdAt)} against version {change.baseVersion}
-				{change.targetVersion !== null ? ` (restores revision ${change.targetVersion})` : ""};
-				expires {formatTime(change.expiresAt)}.
+				{t("gov.chg.filed", {
+					member: requester,
+					time: formatTime(change.createdAt),
+					version: change.baseVersion,
+					restores:
+						change.targetVersion !== null
+							? t("gov.chg.restores", { version: change.targetVersion })
+							: "",
+					expires: formatTime(change.expiresAt),
+				})}
 			</p>
 			<p className="muted small mono">sha256 {change.payloadSha256.slice(0, 16)}…</p>
 			{change.changeKind !== "disable_four_eyes" ? (
 				detail ? (
 					<>
 						<p className="small">
-							Current version {detail.current?.version ?? 0} → proposed: {stats?.added ?? 0} line(s)
-							added, {stats?.removed ?? 0} removed.
+							{t("gov.chg.diffSummary", {
+								version: detail.current?.version ?? 0,
+								added: stats?.added ?? 0,
+								removed: stats?.removed ?? 0,
+							})}
 							{Array.isArray(detail.proposed.agent_ids)
-								? ` Targets ${detail.proposed.agent_ids.length} agent(s).`
+								? t("gov.chg.targets", { count: detail.proposed.agent_ids.length })
 								: ""}
 							{Array.isArray(detail.proposed.rings)
-								? ` ${detail.proposed.rings.length} rollout ring(s).`
+								? t("gov.chg.rings", { count: detail.proposed.rings.length })
 								: ""}
 						</p>
 						{lines ? (
-							<DiffView lines={lines} label={`Diff for ${KIND_LABEL[change.changeKind]}`} />
+							<DiffView
+								lines={lines}
+								label={t("gov.chg.diffFor", { kind: t(KIND_LABEL[change.changeKind]) })}
+							/>
 						) : null}
 					</>
 				) : canDecide ? (
@@ -124,22 +141,20 @@ function PendingChange({
 						disabled={loading}
 						onClick={() => void loadDetail()}
 					>
-						{loading ? "Loading…" : "Review diff"}
+						{loading ? t("common.loading") : t("gov.chg.reviewDiff")}
 					</button>
 				) : null
 			) : null}
 			{own ? (
 				<div className="row" style={{ gap: 8, marginTop: 8 }}>
-					<span className="muted small">
-						You filed this change, so another owner or administrator must approve it.
-					</span>
+					<span className="muted small">{t("gov.chg.own")}</span>
 					<button
 						className="button button-secondary button-sm"
 						type="button"
 						disabled={busy}
 						onClick={onCancel}
 					>
-						Withdraw
+						{t("gov.chg.withdraw")}
 					</button>
 				</div>
 			) : canDecide ? (
@@ -156,7 +171,7 @@ function PendingChange({
 							}
 							onClick={() => onDecide("approve", reason.trim())}
 						>
-							Approve and apply
+							{t("gov.chg.approveApply")}
 						</button>
 						<button
 							className="button button-danger"
@@ -164,15 +179,15 @@ function PendingChange({
 							disabled={busy || !validText(reason, REASON_MAX)}
 							onClick={() => onDecide("reject", reason.trim())}
 						>
-							Reject
+							{t("gov.req.reject")}
 						</button>
 					</div>
 					{change.changeKind !== "disable_four_eyes" && !detail ? (
-						<p className="muted small">Review the diff before approving.</p>
+						<p className="muted small">{t("gov.chg.reviewFirst")}</p>
 					) : null}
 				</div>
 			) : (
-				<p className="muted small">Owners and administrators decide policy changes.</p>
+				<p className="muted small">{t("gov.chg.ownersDecide")}</p>
 			)}
 		</li>
 	);
@@ -189,6 +204,10 @@ function RevisionHistory({
 	canManage: boolean;
 	onNotice: (notice: Notice) => void;
 }) {
+	const t = useT();
+	// Read the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [revisions, setRevisions] = useState<Revision[] | null>(null);
 	const [current, setCurrent] = useState<number | null>(null);
 	const [open, setOpen] = useState<number | null>(null);
@@ -216,7 +235,7 @@ function RevisionHistory({
 			setCurrent(read.data.version as number);
 		} catch {
 			setRevisions(null);
-			onNotice({ tone: "error", message: "Runtime policy history could not be loaded." });
+			onNotice({ tone: "error", message: translator.current("gov.chg.historyFailed") });
 		}
 	}, [tenantId, onNotice]);
 	useEffect(() => {
@@ -235,29 +254,27 @@ function RevisionHistory({
 				},
 			});
 			if (error) throw error;
-			const pending = pendingPolicyChangeNotice(data);
+			const pending = pendingPolicyChangeNotice(data, t);
 			if (pending)
-				onNotice({ tone: "success", message: `Rollback to revision ${version} filed. ${pending}` });
+				onNotice({ tone: "success", message: t("gov.chg.rollbackFiled", { version, pending }) });
 			else if (data?.ok === true && Number.isSafeInteger(data.version))
 				onNotice({
 					tone: "success",
-					message: `Revision ${version} republished as version ${data.version}.`,
+					message: t("gov.chg.republished", { version, next: data.version }),
 				});
 			else throw new Error("rollback");
 			await load();
 		} catch {
 			onNotice({
 				tone: "error",
-				message:
-					"The rollback was not confirmed. Refresh if another administrator changed the policy.",
+				message: t("gov.chg.rollbackUnconfirmed"),
 			});
 		} finally {
 			setBusy(false);
 		}
 	}
-	if (!revisions) return <p className="muted small">No runtime policy history available.</p>;
-	if (revisions.length === 0)
-		return <p className="muted small">No runtime policy has been published yet.</p>;
+	if (!revisions) return <p className="muted small">{t("gov.chg.noHistory")}</p>;
+	if (revisions.length === 0) return <p className="muted small">{t("gov.chg.nothingPublished")}</p>;
 	return (
 		<ul
 			className="stack"
@@ -270,8 +287,8 @@ function RevisionHistory({
 					<li key={revision.version} className="stack" style={{ gap: 4 }}>
 						<div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
 							<span>
-								Version {revision.version}
-								{revision.version === current ? " (published)" : ""} ·{" "}
+								{t("gov.chg.version", { version: revision.version })}
+								{revision.version === current ? t("gov.chg.published") : ""} ·{" "}
 								{formatTime(revision.created_at)}
 							</span>
 							<button
@@ -280,10 +297,10 @@ function RevisionHistory({
 								onClick={() => setOpen(open === revision.version ? null : revision.version)}
 							>
 								{open === revision.version
-									? "Hide diff"
+									? t("gov.chg.hideDiff")
 									: previous
-										? `Diff vs version ${previous.version}`
-										: "Show content"}
+										? t("gov.chg.diffVs", { version: previous.version })
+										: t("gov.chg.showContent")}
 							</button>
 							{canManage && revision.version !== current ? (
 								<button
@@ -292,14 +309,14 @@ function RevisionHistory({
 									disabled={busy}
 									onClick={() => void rollback(revision.version)}
 								>
-									Roll back to version {revision.version}
+									{t("gov.chg.rollBackTo", { version: revision.version })}
 								</button>
 							) : null}
 						</div>
 						{open === revision.version ? (
 							<DiffView
 								lines={diffDocuments(previous?.policy ?? null, revision.policy)}
-								label={`Diff of version ${revision.version}`}
+								label={t("gov.chg.diffOf", { version: revision.version })}
 							/>
 						) : null}
 					</li>
@@ -319,6 +336,8 @@ export function GovernanceChangeControlPage() {
 }
 
 function TenantGovernanceChangeControlPage() {
+	const t = useT();
+	const richT = useRichT();
 	const { currentTeam, currentRole, roleResolved, members, currentUserId } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const { data, error, reload } = useGovernanceData(tenantId, 15_000);
@@ -347,7 +366,7 @@ function TenantGovernanceChangeControlPage() {
 		if (!result.ok) {
 			setNotice({
 				tone: "error",
-				message: governanceErrorMessage(result.error),
+				message: governanceErrorMessage(result.error, t),
 				code: result.error,
 			});
 			return;
@@ -356,8 +375,7 @@ function TenantGovernanceChangeControlPage() {
 		await reload();
 	}
 
-	if (!currentTeam || !tenantId)
-		return <div role="alert">Select a team to view change control.</div>;
+	if (!currentTeam || !tenantId) return <div role="alert">{t("gov.chg.selectTeam")}</div>;
 	const pending = data?.changes.filter((change) => change.status === "pending") ?? [];
 	const closed = data?.changes.filter((change) => change.status !== "pending") ?? [];
 	const fourEyes = data?.settings.policyFourEyes ?? false;
@@ -369,31 +387,33 @@ function TenantGovernanceChangeControlPage() {
 	return (
 		<div className="stack">
 			<div className="card">
-				<p className="eyebrow">AI governance</p>
-				<h1>Policy change control</h1>
+				<p className="eyebrow">{t("gov.eyebrow")}</p>
+				<h1>{t("gov.chg.title")}</h1>
 				<p className="muted" style={{ maxWidth: 820 }}>
-					With four-eyes on, publishing runtime or DLP policy — including rollbacks, staged and
-					canary rollouts — files a change request that a second owner or administrator must approve
-					after reviewing the diff. The database refuses any publication that is not such an
-					approval, and nobody can approve their own change.
+					{t("gov.chg.lead")}
 				</p>
 				<GovernanceTabs />
 			</div>
 			{notice ? <NoticeBanner notice={notice} tenantId={tenantId} /> : null}
 			{error ? (
 				<div className="notice notice-danger" role="alert">
-					{governanceErrorMessage(error)}
+					{governanceErrorMessage(error, t)}
 				</div>
 			) : null}
-			{!data && !error ? <div role="status">Loading change control…</div> : null}
+			{!data && !error ? <div role="status">{t("gov.chg.loading")}</div> : null}
 			{data ? (
 				<>
 					<section className="card stack" aria-labelledby="four-eyes-heading">
-						<h2 id="four-eyes-heading">Settings</h2>
+						<h2 id="four-eyes-heading">{t("gov.chg.settings")}</h2>
 						<p>
-							Four-eyes change control is{" "}
-							<b data-testid="four-eyes-state">{fourEyes ? "on" : "off"}</b>.
-							{disablePending ? " A request to turn it off is waiting for a second approver." : ""}
+							{richT("gov.chg.fourEyesIs", {
+								state: (
+									<b data-testid="four-eyes-state">
+										{fourEyes ? t("gov.chg.on") : t("gov.chg.off")}
+									</b>
+								),
+							})}
+							{disablePending ? t("gov.chg.disablePending") : ""}
 						</p>
 						{canManage ? (
 							<div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
@@ -403,15 +423,12 @@ function TenantGovernanceChangeControlPage() {
 										type="button"
 										disabled={busy || disablePending}
 										onClick={() =>
-											void run(
-												"update_settings",
-												{ policy_four_eyes: false },
-												() =>
-													"Request to turn off four-eyes filed; another owner or administrator must approve it.",
+											void run("update_settings", { policy_four_eyes: false }, () =>
+												t("gov.chg.disableFiled"),
 											)
 										}
 									>
-										Request to turn off four-eyes
+										{t("gov.chg.requestDisable")}
 									</button>
 								) : (
 									<button
@@ -419,18 +436,16 @@ function TenantGovernanceChangeControlPage() {
 										type="button"
 										disabled={busy}
 										onClick={() =>
-											void run(
-												"update_settings",
-												{ policy_four_eyes: true },
-												() => "Four-eyes change control is on.",
+											void run("update_settings", { policy_four_eyes: true }, () =>
+												t("gov.chg.enabled"),
 											)
 										}
 									>
-										Turn on four-eyes
+										{t("gov.chg.enable")}
 									</button>
 								)}
 								<label className="label" htmlFor="review-days">
-									Review interval (days)
+									{t("gov.chg.reviewInterval")}
 								</label>
 								<input
 									id="review-days"
@@ -447,27 +462,21 @@ function TenantGovernanceChangeControlPage() {
 										busy || !daysValid || Number(reviewDays) === data.settings.defaultReviewDays
 									}
 									onClick={() =>
-										void run(
-											"update_settings",
-											{ default_review_days: Number(reviewDays) },
-											() => "Review interval saved.",
+										void run("update_settings", { default_review_days: Number(reviewDays) }, () =>
+											t("gov.chg.intervalSaved"),
 										)
 									}
 								>
-									Save interval
+									{t("gov.chg.saveInterval")}
 								</button>
 							</div>
 						) : (
-							<p className="muted small">Only owners and administrators change these settings.</p>
+							<p className="muted small">{t("gov.chg.settingsReadOnly")}</p>
 						)}
-						<h3>Designated AI governance reviewers</h3>
-						<p className="muted small">
-							Members you designate can decide intake requests and record periodic reviews (at
-							AAL2). They cannot lift a ban or restriction, decide exceptions or approve policy
-							changes.
-						</p>
+						<h3>{t("gov.chg.reviewers")}</h3>
+						<p className="muted small">{t("gov.chg.reviewersLead")}</p>
 						{reviewerCandidates.length === 0 ? (
-							<p className="muted small">No members with the member role.</p>
+							<p className="muted small">{t("gov.chg.noMembers")}</p>
 						) : (
 							<ul className="stack" style={{ gap: 4, paddingLeft: 18 }}>
 								{reviewerCandidates.map((member) => {
@@ -475,7 +484,9 @@ function TenantGovernanceChangeControlPage() {
 									return (
 										<li key={member.user_id} className="small">
 											{member.email || member.user_id}{" "}
-											{designated ? <span className="badge badge-success">Reviewer</span> : null}
+											{designated ? (
+												<span className="badge badge-success">{t("gov.chg.reviewer")}</span>
+											) : null}
 											{canManage ? (
 												<button
 													className="button button-ghost button-sm"
@@ -487,12 +498,12 @@ function TenantGovernanceChangeControlPage() {
 															{ user_id: member.user_id, designated: !designated },
 															() =>
 																designated
-																	? "Reviewer designation removed."
-																	: "Reviewer designated.",
+																	? t("gov.chg.reviewerRemoved")
+																	: t("gov.chg.reviewerAdded"),
 														)
 													}
 												>
-													{designated ? "Remove" : "Designate"}
+													{designated ? t("gov.chg.remove") : t("gov.chg.designate")}
 												</button>
 											) : null}
 										</li>
@@ -502,9 +513,9 @@ function TenantGovernanceChangeControlPage() {
 						)}
 					</section>
 					<section className="card stack" aria-labelledby="pending-changes">
-						<h2 id="pending-changes">Pending changes</h2>
+						<h2 id="pending-changes">{t("gov.chg.pending")}</h2>
 						{pending.length === 0 ? (
-							<p className="muted">No changes are waiting for approval.</p>
+							<p className="muted">{t("gov.chg.noPending")}</p>
 						) : (
 							<ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
 								{pending.map((change) => (
@@ -515,13 +526,13 @@ function TenantGovernanceChangeControlPage() {
 										own={change.requestedBy === currentUserId}
 										canDecide={canManage}
 										busy={busy}
-										requester={memberLabel(members, change.requestedBy, currentUserId)}
+										requester={memberLabel(members, change.requestedBy, currentUserId, t)}
 										onNotice={setNotice}
 										onCancel={() =>
 											void run(
 												"cancel_request",
 												{ kind: "policy_change", request_id: change.id },
-												() => "Change withdrawn.",
+												() => t("gov.chg.withdrawn"),
 											)
 										}
 										onDecide={(decision, reason) =>
@@ -530,41 +541,43 @@ function TenantGovernanceChangeControlPage() {
 												{ request_id: change.id, decision, reason },
 												(value) =>
 													decision === "reject"
-														? "Change rejected; nothing was published."
-														: `Change approved and applied${Number.isSafeInteger(value.applied_version) ? ` as version ${value.applied_version}` : ""}.`,
+														? t("gov.chg.rejected")
+														: Number.isSafeInteger(value.applied_version)
+															? t("gov.chg.appliedAs", { version: String(value.applied_version) })
+															: t("gov.chg.applied"),
 											)
 										}
 									/>
 								))}
 							</ul>
 						)}
-						<h3>Decided changes</h3>
+						<h3>{t("gov.chg.decided")}</h3>
 						{closed.length === 0 ? (
-							<p className="muted small">None yet.</p>
+							<p className="muted small">{t("gov.req.noneYet")}</p>
 						) : (
 							<div className="table-wrap">
 								<table className="table" data-testid="change-history">
 									<thead>
 										<tr>
-											<th scope="col">Change</th>
-											<th scope="col">Author</th>
-											<th scope="col">Outcome</th>
-											<th scope="col">Decided by</th>
-											<th scope="col">Applied</th>
-											<th scope="col">Reason</th>
+											<th scope="col">{t("gov.chg.col.change")}</th>
+											<th scope="col">{t("gov.chg.col.author")}</th>
+											<th scope="col">{t("gov.req.col.outcome")}</th>
+											<th scope="col">{t("gov.req.col.decidedBy")}</th>
+											<th scope="col">{t("gov.chg.col.applied")}</th>
+											<th scope="col">{t("gov.req.col.reason")}</th>
 										</tr>
 									</thead>
 									<tbody>
 										{closed.map((change) => (
 											<tr key={change.id}>
-												<td>{KIND_LABEL[change.changeKind]}</td>
-												<td>{memberLabel(members, change.requestedBy, currentUserId)}</td>
+												<td>{t(KIND_LABEL[change.changeKind])}</td>
+												<td>{memberLabel(members, change.requestedBy, currentUserId, t)}</td>
 												<td>
-													{change.status}
+													{requestStatus(change.status, t)}
 													{change.outcomeCode ? ` (${change.outcomeCode})` : ""}
 												</td>
 												<td>
-													{memberLabel(members, change.decidedBy, currentUserId)}
+													{memberLabel(members, change.decidedBy, currentUserId, t)}
 													{change.decidedAt ? ` · ${formatTime(change.decidedAt)}` : ""}
 												</td>
 												<td>{change.appliedVersion ?? "—"}</td>
@@ -577,12 +590,9 @@ function TenantGovernanceChangeControlPage() {
 						)}
 					</section>
 					<section className="card stack" aria-labelledby="history-heading">
-						<h2 id="history-heading">Runtime policy history</h2>
-						<p className="muted small">
-							Every published and staged revision, with a diff against the one before it. Rolling
-							back republishes the chosen revision through the normal publication path, so four-eyes
-							applies to it too.
-						</p>
+						<h2 id="history-heading">{t("gov.chg.history")}</h2>
+						<p className="muted small">{t("gov.chg.historyLead")}</p>
+
 						<RevisionHistory tenantId={tenantId} canManage={canManage} onNotice={setNotice} />
 					</section>
 				</>

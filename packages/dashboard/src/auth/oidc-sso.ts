@@ -4,6 +4,8 @@
 // The secret's hash is registered at start, so a callback URL replayed into a
 // different browser (login CSRF) cannot complete the flow.
 
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import { supabase } from "../lib/supabase";
 
 const BINDING_KEY = "aidr.oidc.binding.v1";
@@ -17,36 +19,32 @@ export type OidcCallbackResult =
 	| { ok: true; mode: OidcFlowMode; returnTo: string }
 	| { ok: false; message: string };
 
-const SAFE_MESSAGES: Record<string, string> = {
-	sso_not_available:
-		"Single sign-on is not available for this address. Check the spelling or contact your administrator.",
-	rate_limited: "Too many attempts. Wait a minute and try again.",
-	tenant_not_authorized: "Your account is not a member of this workspace.",
-	mfa_required: "Complete multi-factor verification, then try again.",
-	sso_required: "This workspace requires single sign-on.",
+const SAFE_MESSAGES: Record<string, DashboardMessageKey> = {
+	sso_not_available: "of.notAvailable",
+	rate_limited: "of.rateLimited",
+	tenant_not_authorized: "of.notMember",
+	mfa_required: "saml.err.mfa",
+	sso_required: "of.ssoRequired",
 };
 
-const LOGIN_FAILURES: Record<string, string> = {
-	request_invalid:
-		"This sign-in link has expired or was already used. Start again from the sign-in page.",
-	binding_mismatch:
-		"This sign-in was started in a different browser. Start again from the sign-in page.",
-	token_invalid:
-		"The identity provider's response could not be verified. Contact your administrator.",
-	token_exchange_failed: "The identity provider rejected the sign-in. Contact your administrator.",
-	domain_not_verified:
-		"Your email domain is not verified for this workspace. Contact your administrator.",
-	email_claim_missing:
-		"The identity provider did not return an email address. Contact your administrator.",
-	not_provisioned:
-		"Your account has not been provisioned for this workspace yet. Contact your administrator.",
-	group_not_mapped: "None of your directory groups grants access to this workspace.",
-	groups_overage: "Your directory group list is too large to evaluate. Contact your administrator.",
-	identity_conflict:
-		"This identity is already linked to a different account. Contact your administrator.",
-	provider_unavailable: "Single sign-on is temporarily unavailable. Try again later.",
-	session_unavailable: "A session could not be created. Try again later.",
+const LOGIN_FAILURES: Record<string, DashboardMessageKey> = {
+	request_invalid: "of.requestInvalid",
+	binding_mismatch: "of.bindingMismatch",
+	token_invalid: "of.tokenInvalid",
+	token_exchange_failed: "of.exchangeFailed",
+	domain_not_verified: "of.domain",
+	email_claim_missing: "of.noEmail",
+	not_provisioned: "of.notProvisioned",
+	group_not_mapped: "of.groupNotMapped",
+	groups_overage: "of.groupsOverage",
+	identity_conflict: "of.identityConflict",
+	provider_unavailable: "of.providerUnavailable",
+	session_unavailable: "of.sessionUnavailable",
 };
+
+function lookup(map: Record<string, DashboardMessageKey>, code: string | undefined | null) {
+	return code && Object.hasOwn(map, code) ? map[code] : undefined;
+}
 
 function randomVerifier(): string {
 	const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -138,7 +136,10 @@ export async function startOidcFlow(input: {
 	providerId?: string;
 	mode?: OidcFlowMode;
 	returnTo: string;
+	/** Message language; English when omitted. */
+	t?: Translate;
 }): Promise<OidcStartResult> {
+	const t = input.t ?? englishT;
 	const mode = input.mode ?? "login";
 	const verifier = randomVerifier();
 	try {
@@ -154,7 +155,7 @@ export async function startOidcFlow(input: {
 	} catch {
 		return {
 			ok: false,
-			message: "This browser blocks the storage single sign-on needs. Enable it and try again.",
+			message: t("of.storageBlocked"),
 		};
 	}
 	const { data, error } = await supabase.functions.invoke("oidc-sso", {
@@ -173,14 +174,17 @@ export async function startOidcFlow(input: {
 		const code = (await readFunctionError(error, data)).error;
 		return {
 			ok: false,
-			message: (code && SAFE_MESSAGES[code]) || "Single sign-on is unavailable. Try again later.",
+			message: t(lookup(SAFE_MESSAGES, code) ?? "of.unavailable"),
 		};
 	}
 	return { ok: true, url };
 }
 
 /** Finish the flow at /auth/oidc/callback. */
-export async function completeOidcFlow(search: string): Promise<OidcCallbackResult> {
+export async function completeOidcFlow(
+	search: string,
+	t: Translate = englishT,
+): Promise<OidcCallbackResult> {
 	const params = new URLSearchParams(search);
 	const binding = readBinding();
 	// The binding is single-use whether or not the flow succeeds.
@@ -188,7 +192,7 @@ export async function completeOidcFlow(search: string): Promise<OidcCallbackResu
 	const code = params.get("code");
 	const state = params.get("state");
 	if (params.get("error") || !code || !state || !binding)
-		return { ok: false, message: LOGIN_FAILURES.request_invalid as string };
+		return { ok: false, message: t("of.requestInvalid") };
 
 	const { data, error } = await supabase.functions.invoke("oidc-sso", {
 		body: { action: "callback", code, state, binding_verifier: binding.verifier },
@@ -198,10 +202,11 @@ export async function completeOidcFlow(search: string): Promise<OidcCallbackResu
 		const details = await readFunctionError(error, data);
 		return {
 			ok: false,
-			message:
-				LOGIN_FAILURES[details.reason ?? ""] ??
-				SAFE_MESSAGES[details.error ?? ""] ??
-				"Single sign-on failed. Try again.",
+			message: t(
+				lookup(LOGIN_FAILURES, details.reason) ??
+					lookup(SAFE_MESSAGES, details.error) ??
+					"oidc.failed",
+			),
 		};
 	}
 	if (binding.mode === "link") return { ok: true, mode: "link", returnTo: binding.returnTo };
@@ -209,20 +214,21 @@ export async function completeOidcFlow(search: string): Promise<OidcCallbackResu
 	const tokenHash = typeof result.token_hash === "string" ? result.token_hash : "";
 	const ticket = typeof result.login_ticket === "string" ? result.login_ticket : "";
 	if (!/^[0-9a-f]{64}$/i.test(tokenHash) || !/^[A-Za-z0-9_-]{32,128}$/.test(ticket))
-		return { ok: false, message: LOGIN_FAILURES.session_unavailable as string };
+		return { ok: false, message: t("of.sessionUnavailable") };
 
 	// Redeem the one-time Auth token, then prove possession of the login ticket so
 	// the server binds THIS session to the provider. Until it does, tenant data
 	// stays locked for an enforcing workspace.
 	const verified = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "magiclink" });
 	if (verified.error || !verified.data.session)
-		return { ok: false, message: LOGIN_FAILURES.session_unavailable as string };
+		return { ok: false, message: t("of.sessionUnavailable") };
+
 	const bound = await supabase.functions.invoke("oidc-sso", {
 		body: { action: "bind_session", login_ticket: ticket },
 	});
 	if (bound.error || (bound.data as { ok?: unknown } | null)?.ok !== true) {
 		await supabase.auth.signOut();
-		return { ok: false, message: LOGIN_FAILURES.session_unavailable as string };
+		return { ok: false, message: t("of.sessionUnavailable") };
 	}
 	return { ok: true, mode: "login", returnTo: binding.returnTo };
 }

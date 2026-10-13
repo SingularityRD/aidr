@@ -85,7 +85,7 @@ describe("canary incidents", () => {
 				<IncidentsPage />
 			</MemoryRouter>,
 		);
-		expect(await screen.findByText("Read: deny (critical)")).toBeInTheDocument();
+		expect(await screen.findByText("Read: blocked (critical)")).toBeInTheDocument();
 		expect(screen.getAllByText("Canary triggered")).toHaveLength(1);
 	});
 });

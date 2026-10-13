@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import { englishT, type Translate, useT } from "../../i18n/I18nProvider";
 import {
 	type AiAsset,
 	ASSET_TYPE_LABEL,
@@ -27,6 +28,7 @@ import {
 	type Notice,
 	NoticeBanner,
 	ReasonField,
+	requestStatus,
 	useGovernanceData,
 	useNow,
 	validText,
@@ -45,6 +47,7 @@ function IntakeForm({
 	busy: boolean;
 	onSubmit: (fields: Record<string, unknown>) => Promise<boolean>;
 }) {
+	const t = useT();
 	const [assetId, setAssetId] = useState("");
 	const [assetType, setAssetType] = useState<AssetType>("mcp_server");
 	const [identifier, setIdentifier] = useState("");
@@ -55,13 +58,13 @@ function IntakeForm({
 	const [requestedStatus, setRequestedStatus] = useState<"approved" | "restricted">("approved");
 	const existing = assets.find((asset) => asset.id === assetId) ?? null;
 	const problem = !validText(purpose, TEXT_MAX)
-		? "Describe the business purpose (up to 1000 characters)."
+		? t("gov.req.problem.purpose")
 		: existing
 			? null
 			: !/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$/.test(identifier.trim())
-				? "Enter an identifier (for an MCP server, the server name used in tool calls)."
+				? t("gov.req.problem.identifier")
 				: !validText(name, 120)
-					? "Enter a name."
+					? t("gov.req.problem.name")
 					: null;
 	async function submit() {
 		const fields: Record<string, unknown> = {
@@ -97,7 +100,7 @@ function IntakeForm({
 		>
 			<div className="stack" style={{ gap: 4 }}>
 				<label className="label" htmlFor="intake-existing">
-					AI system
+					{t("gov.req.aiSystem")}
 				</label>
 				<select
 					id="intake-existing"
@@ -105,12 +108,12 @@ function IntakeForm({
 					value={assetId}
 					onChange={(event) => setAssetId(event.target.value)}
 				>
-					<option value="">Something not in the register yet</option>
+					<option value="">{t("gov.req.notInRegister")}</option>
 					{assets
 						.filter((asset) => asset.status !== "approved")
 						.map((asset) => (
 							<option key={asset.id} value={asset.id}>
-								{asset.name} ({STATUS_LABEL[asset.status]})
+								{asset.name} ({t(STATUS_LABEL[asset.status])})
 							</option>
 						))}
 				</select>
@@ -119,7 +122,7 @@ function IntakeForm({
 				<div className="cols">
 					<div className="stack" style={{ gap: 4 }}>
 						<label className="label" htmlFor="intake-type">
-							Type
+							{t("gov.reg.type")}
 						</label>
 						<select
 							id="intake-type"
@@ -129,14 +132,14 @@ function IntakeForm({
 						>
 							{ASSET_TYPES.map((type) => (
 								<option key={type} value={type}>
-									{ASSET_TYPE_LABEL[type]}
+									{t(ASSET_TYPE_LABEL[type])}
 								</option>
 							))}
 						</select>
 					</div>
 					<div className="stack" style={{ gap: 4 }}>
 						<label className="label" htmlFor="intake-identifier">
-							Identifier
+							{t("gov.reg.identifier")}
 						</label>
 						<input
 							id="intake-identifier"
@@ -148,7 +151,7 @@ function IntakeForm({
 					</div>
 					<div className="stack" style={{ gap: 4 }}>
 						<label className="label" htmlFor="intake-name">
-							Name
+							{t("common.name")}
 						</label>
 						<input
 							id="intake-name"
@@ -160,7 +163,7 @@ function IntakeForm({
 					</div>
 					<div className="stack" style={{ gap: 4 }}>
 						<label className="label" htmlFor="intake-vendor">
-							Vendor (optional)
+							{t("gov.req.vendorOptional")}
 						</label>
 						<input
 							id="intake-vendor"
@@ -174,7 +177,7 @@ function IntakeForm({
 			)}
 			<div className="stack" style={{ gap: 4 }}>
 				<label className="label" htmlFor="intake-purpose">
-					Why do you need it? (business purpose)
+					{t("gov.req.why")}
 				</label>
 				<textarea
 					id="intake-purpose"
@@ -186,7 +189,7 @@ function IntakeForm({
 				/>
 			</div>
 			<fieldset className="stack" style={{ gap: 4, border: 0, padding: 0, margin: 0 }}>
-				<legend className="label">Data it will process</legend>
+				<legend className="label">{t("gov.req.dataProcessed")}</legend>
 				<div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
 					{DATA_CATEGORIES.map((category) => (
 						<label key={category} className="row small" style={{ gap: 4 }}>
@@ -201,14 +204,14 @@ function IntakeForm({
 									)
 								}
 							/>
-							{CATEGORY_LABEL[category]}
+							{t(CATEGORY_LABEL[category])}
 						</label>
 					))}
 				</div>
 			</fieldset>
 			<div className="stack" style={{ gap: 4, maxWidth: 320 }}>
 				<label className="label" htmlFor="intake-status">
-					Requested outcome
+					{t("gov.req.outcome")}
 				</label>
 				<select
 					id="intake-status"
@@ -216,14 +219,14 @@ function IntakeForm({
 					value={requestedStatus}
 					onChange={(event) => setRequestedStatus(event.target.value as "approved" | "restricted")}
 				>
-					<option value="approved">Approved for use</option>
-					<option value="restricted">Restricted use (each use needs approval)</option>
+					<option value="approved">{t("gov.req.approvedForUse")}</option>
+					<option value="restricted">{t("gov.req.restrictedUseLong")}</option>
 				</select>
 			</div>
 			{problem ? <p className="muted small">{problem}</p> : null}
 			<div>
 				<button className="button" type="submit" disabled={busy || problem !== null}>
-					Submit request
+					{t("gov.req.submit")}
 				</button>
 			</div>
 		</form>
@@ -239,6 +242,7 @@ function DecisionForm({
 	busy: boolean;
 	onDecide: (decision: "approve" | "reject", reason: string) => void;
 }) {
+	const t = useT();
 	const [reason, setReason] = useState("");
 	const valid = validText(reason, REASON_MAX);
 	return (
@@ -251,7 +255,7 @@ function DecisionForm({
 					disabled={busy || !valid}
 					onClick={() => onDecide("approve", reason.trim())}
 				>
-					Approve
+					{t("gov.req.approve")}
 				</button>
 				<button
 					className="button button-danger"
@@ -259,7 +263,7 @@ function DecisionForm({
 					disabled={busy || !valid}
 					onClick={() => onDecide("reject", reason.trim())}
 				>
-					Reject
+					{t("gov.req.reject")}
 				</button>
 			</div>
 		</div>
@@ -281,13 +285,14 @@ function IntakeSection({
 	busy: boolean;
 	run: Run;
 }) {
+	const t = useT();
 	const pending = intake.filter((request) => request.status === "pending");
 	const closed = intake.filter((request) => request.status !== "pending");
 	return (
 		<section className="card stack" aria-labelledby="intake-queue">
-			<h2 id="intake-queue">Pending intake requests</h2>
+			<h2 id="intake-queue">{t("gov.req.pendingIntake")}</h2>
 			{pending.length === 0 ? (
-				<p className="muted">No pending requests.</p>
+				<p className="muted">{t("gov.req.noPending")}</p>
 			) : (
 				<ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
 					{pending.map((request) => {
@@ -298,29 +303,32 @@ function IntakeSection({
 									{request.name} <span className="mono muted small">{request.identifier}</span>
 								</h3>
 								<dl className="kv">
-									<dt>Type</dt>
-									<dd>{ASSET_TYPE_LABEL[request.assetType]}</dd>
-									<dt>Requested</dt>
+									<dt>{t("gov.reg.type")}</dt>
+									<dd>{t(ASSET_TYPE_LABEL[request.assetType])}</dd>
+									<dt>{t("gov.req.requested")}</dt>
 									<dd>
-										{request.requestedStatus === "approved" ? "Approved for use" : "Restricted use"}{" "}
-										by {memberLabel(members, request.requestedBy, currentUserId)} on{" "}
-										{formatDate(request.createdAt)}
+										{t("gov.req.requestedLine", {
+											outcome:
+												request.requestedStatus === "approved"
+													? t("gov.req.approvedForUse")
+													: t("gov.req.restrictedUse"),
+											member: memberLabel(members, request.requestedBy, currentUserId, t),
+											date: formatDate(request.createdAt),
+										})}
 									</dd>
-									<dt>Purpose</dt>
+									<dt>{t("gov.req.purpose")}</dt>
 									<dd>{request.businessPurpose}</dd>
-									<dt>Data</dt>
+									<dt>{t("gov.reg.col.data")}</dt>
 									<dd>
-										{request.dataCategories.map((c) => CATEGORY_LABEL[c]).join(", ") ||
-											"None declared"}
+										{request.dataCategories.map((c) => t(CATEGORY_LABEL[c])).join(", ") ||
+											t("gov.req.noneDeclared")}
 									</dd>
-									<dt>Expires</dt>
+									<dt>{t("gov.req.expires")}</dt>
 									<dd>{formatDate(request.expiresAt)}</dd>
 								</dl>
 								{own ? (
 									<div className="row" style={{ gap: 8 }}>
-										<span className="muted small">
-											You filed this request, so someone else must decide it.
-										</span>
+										<span className="muted small">{t("gov.req.ownRequest")}</span>
 										<button
 											className="button button-secondary button-sm"
 											type="button"
@@ -329,11 +337,11 @@ function IntakeSection({
 												void run(
 													"cancel_request",
 													{ kind: "intake", request_id: request.id },
-													"Request cancelled.",
+													t("gov.req.cancelled"),
 												)
 											}
 										>
-											Cancel request
+											{t("gov.req.cancel")}
 										</button>
 									</div>
 								) : canDecide ? (
@@ -345,35 +353,32 @@ function IntakeSection({
 												"decide_intake",
 												{ request_id: request.id, decision, reason },
 												decision === "approve"
-													? `${request.name} approved and recorded in the register.`
-													: `Request for ${request.name} rejected.`,
+													? t("gov.req.intakeApproved", { name: request.name })
+													: t("gov.req.intakeRejected", { name: request.name }),
 											)
 										}
 									/>
 								) : (
-									<p className="muted small">
-										An owner, administrator or designated AI governance reviewer decides this
-										request.
-									</p>
+									<p className="muted small">{t("gov.req.whoDecides")}</p>
 								)}
 							</li>
 						);
 					})}
 				</ul>
 			)}
-			<h3>Decided requests</h3>
+			<h3>{t("gov.req.decided")}</h3>
 			{closed.length === 0 ? (
-				<p className="muted small">None yet.</p>
+				<p className="muted small">{t("gov.req.noneYet")}</p>
 			) : (
 				<div className="table-wrap">
 					<table className="table" data-testid="intake-history">
 						<thead>
 							<tr>
-								<th scope="col">AI system</th>
-								<th scope="col">Requested by</th>
-								<th scope="col">Outcome</th>
-								<th scope="col">Decided by</th>
-								<th scope="col">Reason</th>
+								<th scope="col">{t("gov.req.aiSystem")}</th>
+								<th scope="col">{t("gov.req.col.requestedBy")}</th>
+								<th scope="col">{t("gov.req.col.outcome")}</th>
+								<th scope="col">{t("gov.req.col.decidedBy")}</th>
+								<th scope="col">{t("gov.req.col.reason")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -382,10 +387,10 @@ function IntakeSection({
 									<td>
 										{request.name} <span className="mono muted small">{request.identifier}</span>
 									</td>
-									<td>{memberLabel(members, request.requestedBy, currentUserId)}</td>
-									<td>{request.status}</td>
+									<td>{memberLabel(members, request.requestedBy, currentUserId, t)}</td>
+									<td>{requestStatus(request.status, t)}</td>
 									<td>
-										{memberLabel(members, request.decidedBy, currentUserId)}
+										{memberLabel(members, request.decidedBy, currentUserId, t)}
 										{request.decidedAt ? ` · ${formatDate(request.decidedAt)}` : ""}
 									</td>
 									<td>{request.decisionReason ?? "—"}</td>
@@ -412,6 +417,7 @@ function ExceptionForm({
 	busy: boolean;
 	onSubmit: (fields: Record<string, unknown>) => Promise<boolean>;
 }) {
+	const t = useT();
 	const restricted = assets.filter(
 		(asset) =>
 			(asset.status === "banned" || asset.status === "restricted") &&
@@ -426,17 +432,17 @@ function ExceptionForm({
 	const asset = restricted.find((item) => item.id === assetId) ?? null;
 	const expiresAt = until ? new Date(`${until}T23:59:59Z`) : null;
 	const problem = !asset
-		? "Choose a banned or restricted AI system."
+		? t("gov.req.problem.asset")
 		: scope === "members" && userIds.length === 0
-			? "Choose at least one member."
+			? t("gov.req.problem.member")
 			: scope === "agents" && agentIds.length === 0
-				? "Choose at least one agent."
+				? t("gov.req.problem.agent")
 				: !validText(justification, TEXT_MAX)
-					? "Give a justification (up to 1000 characters)."
+					? t("gov.req.problem.justification")
 					: !expiresAt ||
 							!(expiresAt.getTime() > Date.now() + 3_600_000) ||
 							expiresAt.getTime() > Date.now() + 365 * DAY_MS
-						? "Choose an end date within the next 365 days."
+						? t("gov.req.problem.until")
 						: null;
 	async function submit() {
 		if (!asset || !expiresAt) return;
@@ -470,7 +476,7 @@ function ExceptionForm({
 			<div className="cols">
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor="exception-asset">
-						Banned or restricted AI system
+						{t("gov.req.exceptionAsset")}
 					</label>
 					<select
 						id="exception-asset"
@@ -478,17 +484,17 @@ function ExceptionForm({
 						value={assetId}
 						onChange={(event) => setAssetId(event.target.value)}
 					>
-						<option value="">Choose…</option>
+						<option value="">{t("gov.req.choose")}</option>
 						{restricted.map((item) => (
 							<option key={item.id} value={item.id}>
-								{item.name} ({STATUS_LABEL[item.status]})
+								{item.name} ({t(STATUS_LABEL[item.status])})
 							</option>
 						))}
 					</select>
 				</div>
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor="exception-scope">
-						Applies to
+						{t("gov.req.appliesTo")}
 					</label>
 					<select
 						id="exception-scope"
@@ -496,14 +502,14 @@ function ExceptionForm({
 						value={scope}
 						onChange={(event) => setScope(event.target.value as "tenant" | "members" | "agents")}
 					>
-						<option value="members">Selected members</option>
-						<option value="agents">Selected agents</option>
-						<option value="tenant">Everyone in this workspace</option>
+						<option value="members">{t("gov.req.selectedMembers")}</option>
+						<option value="agents">{t("gov.req.selectedAgents")}</option>
+						<option value="tenant">{t("gov.req.everyone")}</option>
 					</select>
 				</div>
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor="exception-until">
-						Until (inclusive, UTC)
+						{t("gov.req.until")}
 					</label>
 					<input
 						id="exception-until"
@@ -516,18 +522,16 @@ function ExceptionForm({
 			</div>
 			{asset ? (
 				<p className="muted small">
-					Effect:{" "}
 					{enforcementOf(asset) === "connector_deny" || enforcementOf(asset) === "connector_ask"
-						? "lifts the connector restriction for this scope until the end date"
+						? t("gov.req.effectConnector")
 						: enforcementOf(asset) === "browser_block"
-							? "a tenant-wide exception lifts the Browser Guard block until the end date (browsers carry no member identity, so member-scoped exceptions do not reach them)"
-							: `recorded only (${ENFORCEMENT_LABEL[enforcementOf(asset)]})`}
-					.
+							? t("gov.req.effectBrowser")
+							: t("gov.req.effectRecorded", { effect: t(ENFORCEMENT_LABEL[enforcementOf(asset)]) })}
 				</p>
 			) : null}
 			{scope === "members" ? (
 				<fieldset className="stack" style={{ gap: 4, border: 0, padding: 0, margin: 0 }}>
-					<legend className="label">Members</legend>
+					<legend className="label">{t("gov.req.members")}</legend>
 					<div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
 						{members.map((member) => (
 							<label key={member.user_id} className="row small" style={{ gap: 4 }}>
@@ -546,10 +550,10 @@ function ExceptionForm({
 			) : null}
 			{scope === "agents" ? (
 				<fieldset className="stack" style={{ gap: 4, border: 0, padding: 0, margin: 0 }}>
-					<legend className="label">Agents</legend>
+					<legend className="label">{t("gov.req.agents")}</legend>
 					<div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
 						{agents.length === 0 ? (
-							<span className="muted small">No enrolled agents.</span>
+							<span className="muted small">{t("gov.req.noAgents")}</span>
 						) : (
 							agents.map((agent) => (
 								<label key={agent.id} className="row small" style={{ gap: 4 }}>
@@ -569,7 +573,7 @@ function ExceptionForm({
 			) : null}
 			<div className="stack" style={{ gap: 4 }}>
 				<label className="label" htmlFor="exception-justification">
-					Justification
+					{t("gov.req.justification")}
 				</label>
 				<textarea
 					id="exception-justification"
@@ -583,7 +587,7 @@ function ExceptionForm({
 			{problem ? <p className="muted small">{problem}</p> : null}
 			<div>
 				<button className="button" type="submit" disabled={busy || problem !== null}>
-					Request exception
+					{t("gov.req.requestException")}
 				</button>
 			</div>
 		</form>
@@ -599,6 +603,7 @@ function RevokeForm({
 	busy: boolean;
 	onRevoke: (reason: string) => void;
 }) {
+	const t = useT();
 	const [reason, setReason] = useState("");
 	return (
 		<div className="stack" style={{ gap: 6, maxWidth: 480 }}>
@@ -606,7 +611,7 @@ function RevokeForm({
 				id={`revoke-${id}`}
 				value={reason}
 				onChange={setReason}
-				label="Revocation reason"
+				label={t("gov.req.revocationReason")}
 			/>
 			<div>
 				<button
@@ -615,7 +620,7 @@ function RevokeForm({
 					disabled={busy || !validText(reason, REASON_MAX)}
 					onClick={() => onRevoke(reason.trim())}
 				>
-					Revoke now
+					{t("gov.req.revokeNow")}
 				</button>
 			</div>
 		</div>
@@ -627,10 +632,13 @@ function scopeText(
 	members: ReturnType<typeof useTeam>["members"],
 	agents: Array<{ id: string; label: string }>,
 	currentUserId: string,
+	t: Translate = englishT,
 ): string {
-	if (exception.scopeKind === "tenant") return "Everyone in this workspace";
+	if (exception.scopeKind === "tenant") return t("gov.req.everyone");
 	if (exception.scopeKind === "members")
-		return exception.scopeUserIds.map((id) => memberLabel(members, id, currentUserId)).join(", ");
+		return exception.scopeUserIds
+			.map((id) => memberLabel(members, id, currentUserId, t))
+			.join(", ");
 	return exception.scopeAgentIds
 		.map((id) => agents.find((agent) => agent.id === id)?.label ?? `${id.slice(0, 8)}…`)
 		.join(", ");
@@ -646,6 +654,7 @@ export function GovernanceRequestsPage() {
 }
 
 function TenantGovernanceRequestsPage() {
+	const t = useT();
 	const { currentTeam, currentRole, roleResolved, members, currentUserId } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const { data, error, reload } = useGovernanceData(tenantId);
@@ -713,7 +722,7 @@ function TenantGovernanceRequestsPage() {
 		if (!result.ok) {
 			setNotice({
 				tone: "error",
-				message: governanceErrorMessage(result.error),
+				message: governanceErrorMessage(result.error, t),
 				code: result.error,
 			});
 			return false;
@@ -723,44 +732,38 @@ function TenantGovernanceRequestsPage() {
 		return true;
 	};
 
-	if (!currentTeam || !tenantId)
-		return <div role="alert">Select a team to view AI governance requests.</div>;
+	if (!currentTeam || !tenantId) return <div role="alert">{t("gov.req.selectTeam")}</div>;
 
 	return (
 		<div className="stack">
 			<div className="card">
-				<p className="eyebrow">AI governance</p>
-				<h1>Requests &amp; exceptions</h1>
+				<p className="eyebrow">{t("gov.eyebrow")}</p>
+				<h1>{t("gov.tab.requests")}</h1>
 				<p className="muted" style={{ maxWidth: 820 }}>
-					Anyone in the workspace can ask to use a new AI tool, MCP server or site. Owners,
-					administrators and designated AI governance reviewers decide, never the person who asked.
-					Exceptions waive a ban or restriction for named members, agents or the whole workspace
-					until an end date, and stop applying automatically when it passes.
+					{t("gov.req.lead")}
 				</p>
 				<GovernanceTabs />
 			</div>
 			{notice ? <NoticeBanner notice={notice} tenantId={tenantId} /> : null}
 			{error ? (
 				<div className="notice notice-danger" role="alert">
-					{governanceErrorMessage(error)}
+					{governanceErrorMessage(error, t)}
 				</div>
 			) : null}
-			{!data && !error ? <div role="status">Loading requests…</div> : null}
+			{!data && !error ? <div role="status">{t("gov.req.loading")}</div> : null}
 			{data ? (
 				<>
 					{canRequest ? (
 						<section className="card stack">
-							<h2>Request an AI system</h2>
+							<h2>{t("gov.req.requestSystem")}</h2>
 							<IntakeForm
 								assets={data.assets}
 								busy={busy}
-								onSubmit={(fields) =>
-									run("submit_intake", { fields }, "Request submitted for review.")
-								}
+								onSubmit={(fields) => run("submit_intake", { fields }, t("gov.req.submitted"))}
 							/>
 						</section>
 					) : (
-						<p className="muted">Viewers can follow requests but cannot file them.</p>
+						<p className="muted">{t("gov.req.viewerNote")}</p>
 					)}
 					<IntakeSection
 						intake={data.intake}
@@ -771,7 +774,7 @@ function TenantGovernanceRequestsPage() {
 						run={run}
 					/>
 					<section className="card stack" aria-labelledby="exceptions-heading">
-						<h2 id="exceptions-heading">Exceptions</h2>
+						<h2 id="exceptions-heading">{t("gov.req.exceptions")}</h2>
 						{canRequest ? (
 							<ExceptionForm
 								assets={data.assets}
@@ -779,17 +782,13 @@ function TenantGovernanceRequestsPage() {
 								agents={agents}
 								busy={busy}
 								onSubmit={(fields) =>
-									run(
-										"request_exception",
-										{ fields },
-										"Exception requested. An owner or administrator must approve it.",
-									)
+									run("request_exception", { fields }, t("gov.req.exceptionRequested"))
 								}
 							/>
 						) : null}
-						<h3>Pending</h3>
+						<h3>{t("gov.req.pending")}</h3>
 						{pendingExceptions.length === 0 ? (
-							<p className="muted small">No pending exceptions.</p>
+							<p className="muted small">{t("gov.req.noPendingExceptions")}</p>
 						) : (
 							<ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
 								{pendingExceptions.map((item) => {
@@ -798,11 +797,16 @@ function TenantGovernanceRequestsPage() {
 									return (
 										<li key={item.id} className="card" data-testid="exception-pending">
 											<h4 style={{ margin: 0 }}>
-												{asset?.name ?? "AI system"} until {formatDate(item.expiresAt)}
+												{t("gov.req.untilDate", {
+													name: asset?.name ?? t("gov.req.aiSystem"),
+													date: formatDate(item.expiresAt),
+												})}
 											</h4>
 											<p className="small">
-												{scopeText(item, members, agents, currentUserId)} · requested by{" "}
-												{memberLabel(members, item.requestedBy, currentUserId)}
+												{t("gov.req.requestedBy", {
+													scope: scopeText(item, members, agents, currentUserId, t),
+													member: memberLabel(members, item.requestedBy, currentUserId, t),
+												})}
 											</p>
 											<p className="small">{item.justification}</p>
 											{own ? (
@@ -814,11 +818,11 @@ function TenantGovernanceRequestsPage() {
 														void run(
 															"cancel_request",
 															{ kind: "exception", request_id: item.id },
-															"Exception request cancelled.",
+															t("gov.req.exceptionCancelled"),
 														)
 													}
 												>
-													Cancel request
+													{t("gov.req.cancel")}
 												</button>
 											) : ownerAdmin ? (
 												<DecisionForm
@@ -829,22 +833,22 @@ function TenantGovernanceRequestsPage() {
 															"decide_exception",
 															{ exception_id: item.id, decision, reason },
 															decision === "approve"
-																? "Exception approved."
-																: "Exception rejected.",
+																? t("gov.req.exceptionApproved")
+																: t("gov.req.exceptionRejected"),
 														)
 													}
 												/>
 											) : (
-												<p className="muted small">An owner or administrator decides exceptions.</p>
+												<p className="muted small">{t("gov.req.ownerDecides")}</p>
 											)}
 										</li>
 									);
 								})}
 							</ul>
 						)}
-						<h3>Active</h3>
+						<h3>{t("gov.req.active")}</h3>
 						{activeExceptions.length === 0 ? (
-							<p className="muted small">No active exceptions.</p>
+							<p className="muted small">{t("gov.req.noActive")}</p>
 						) : (
 							<ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
 								{activeExceptions.map((item) => {
@@ -856,15 +860,19 @@ function TenantGovernanceRequestsPage() {
 									return (
 										<li key={item.id} className="card" data-testid="exception-active">
 											<h4 style={{ margin: 0 }}>
-												{asset?.name ?? "AI system"}{" "}
+												{asset?.name ?? t("gov.req.aiSystem")}{" "}
 												<span className="badge badge-warning">
-													{daysLeft} day{daysLeft === 1 ? "" : "s"} left
+													{daysLeft === 1
+														? t("gov.req.dayLeft")
+														: t("gov.req.daysLeft", { count: daysLeft })}
 												</span>
 											</h4>
 											<p className="small">
-												{scopeText(item, members, agents, currentUserId)} · until{" "}
-												{formatTime(item.expiresAt)} · approved by{" "}
-												{memberLabel(members, item.decidedBy, currentUserId)}
+												{t("gov.req.activeLine", {
+													scope: scopeText(item, members, agents, currentUserId, t),
+													time: formatTime(item.expiresAt),
+													member: memberLabel(members, item.decidedBy, currentUserId, t),
+												})}
 											</p>
 											<p className="small">{item.justification}</p>
 											{ownerAdmin ? (
@@ -875,7 +883,7 @@ function TenantGovernanceRequestsPage() {
 														void run(
 															"revoke_exception",
 															{ exception_id: item.id, reason },
-															"Exception revoked.",
+															t("gov.req.exceptionRevoked"),
 														)
 													}
 												/>
@@ -885,27 +893,30 @@ function TenantGovernanceRequestsPage() {
 								})}
 							</ul>
 						)}
-						<h3>Closed</h3>
+						<h3>{t("gov.req.closed")}</h3>
 						{closedExceptions.length === 0 ? (
-							<p className="muted small">None yet.</p>
+							<p className="muted small">{t("gov.req.noneYet")}</p>
 						) : (
 							<div className="table-wrap">
 								<table className="table" data-testid="exception-history">
 									<thead>
 										<tr>
-											<th scope="col">AI system</th>
-											<th scope="col">Scope</th>
-											<th scope="col">Outcome</th>
-											<th scope="col">Ended</th>
-											<th scope="col">Reason</th>
+											<th scope="col">{t("gov.req.aiSystem")}</th>
+											<th scope="col">{t("gov.req.col.scope")}</th>
+											<th scope="col">{t("gov.req.col.outcome")}</th>
+											<th scope="col">{t("gov.req.col.ended")}</th>
+											<th scope="col">{t("gov.req.col.reason")}</th>
 										</tr>
 									</thead>
 									<tbody>
 										{closedExceptions.map((item) => (
 											<tr key={item.id}>
-												<td>{assetsById.get(item.assetId)?.name ?? "AI system"}</td>
-												<td className="small">{scopeText(item, members, agents, currentUserId)}</td>
-												<td>{item.status}</td>
+												<td>{assetsById.get(item.assetId)?.name ?? t("gov.req.aiSystem")}</td>
+												<td className="small">
+													{scopeText(item, members, agents, currentUserId, t)}
+												</td>
+												<td>{requestStatus(item.status, t)}</td>
+
 												<td>{formatDate(item.expiresAt)}</td>
 												<td className="small">{item.revokeReason ?? item.decisionReason ?? "—"}</td>
 											</tr>

@@ -1,8 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import type { TeamMember } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { englishT, type Translate, useT } from "../../i18n/I18nProvider";
 import { type GovernanceData, loadGovernance, stepUpPath } from "../../lib/ai-governance";
 import type { DiffLine } from "../../lib/json-diff";
+
+const REQUEST_STATUS: Record<string, DashboardMessageKey> = {
+	pending: "gov.req.status.pending",
+	approved: "gov.req.status.approved",
+	rejected: "gov.req.status.rejected",
+	cancelled: "gov.req.status.cancelled",
+	revoked: "gov.req.status.revoked",
+	expired: "gov.req.status.expired",
+	superseded: "gov.req.status.superseded",
+	failed: "gov.req.status.failed",
+};
+
+/** A request, exception or change status in the viewer's language. */
+export function requestStatus(status: string, t: Translate): string {
+	const key = Object.hasOwn(REQUEST_STATUS, status) ? REQUEST_STATUS[status] : undefined;
+	return key ? t(key) : status;
+}
 
 export interface Notice {
 	tone: "success" | "error";
@@ -12,22 +31,24 @@ export interface Notice {
 
 /** Shared tab bar for the three governance pages. */
 export function GovernanceTabs() {
+	const t = useT();
 	return (
-		<nav className="row" aria-label="AI governance" style={{ gap: 8, flexWrap: "wrap" }}>
+		<nav className="row" aria-label={t("gov.tabs")} style={{ gap: 8, flexWrap: "wrap" }}>
 			<NavLink className="button button-secondary button-sm" to="/governance/register">
-				Asset register
+				{t("gov.tab.register")}
 			</NavLink>
 			<NavLink className="button button-secondary button-sm" to="/governance/requests">
-				Requests &amp; exceptions
+				{t("gov.tab.requests")}
 			</NavLink>
 			<NavLink className="button button-secondary button-sm" to="/governance/change-control">
-				Change control
+				{t("gov.tab.changeControl")}
 			</NavLink>
 		</nav>
 	);
 }
 
 export function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: string }) {
+	const t = useT();
 	const error = notice.tone === "error";
 	return (
 		<div
@@ -38,7 +59,7 @@ export function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: s
 			{notice.code === "mfa_required" ? (
 				<div style={{ marginTop: 8 }}>
 					<Link className="button button-sm" to={stepUpPath(tenantId)}>
-						Verify with authenticator
+						{t("common.verifyMfa")}
 					</Link>
 				</div>
 			) : null}
@@ -107,16 +128,18 @@ export function memberLabel(
 	members: TeamMember[],
 	userId: string | null,
 	currentUserId?: string,
+	t: Translate = englishT,
 ): string {
 	if (!userId) return "—";
-	if (userId === currentUserId) return "You";
+	if (userId === currentUserId) return t("gov.you");
 	const member = members.find((item) => item.user_id === userId);
 	return member?.email || `${userId.slice(0, 8)}…`;
 }
 
 export function DiffView({ lines, label }: { lines: DiffLine[]; label: string }) {
+	const t = useT();
 	if (lines.every((line) => line.kind === "same")) {
-		return <p className="muted small">No differences.</p>;
+		return <p className="muted small">{t("gov.noDiff")}</p>;
 	}
 	return (
 		<pre className="diff-view" aria-label={label} data-testid="policy-diff">
@@ -141,7 +164,7 @@ export function ReasonField({
 	id,
 	value,
 	onChange,
-	label = "Reason (recorded in the audit log)",
+	label,
 	max = 500,
 }: {
 	id: string;
@@ -150,10 +173,11 @@ export function ReasonField({
 	label?: string;
 	max?: number;
 }) {
+	const t = useT();
 	return (
 		<>
 			<label className="label" htmlFor={id}>
-				{label}
+				{label ?? t("gov.reason")}
 			</label>
 			<textarea
 				id={id}

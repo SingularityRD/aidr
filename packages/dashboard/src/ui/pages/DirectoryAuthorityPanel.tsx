@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { englishT, type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 
 export type DirectoryAuthority = {
 	enabled: boolean;
@@ -32,9 +33,14 @@ type Props = {
 // pick a subset that the database would refuse.
 const MAX_BREAK_GLASS_OWNERS = 2;
 
-function ownerLabel(owner: Owner | undefined, userId: string, currentUserId: string): string {
+function ownerLabel(
+	owner: Owner | undefined,
+	userId: string,
+	currentUserId: string,
+	t: Translate = englishT,
+): string {
 	const name = owner?.email || userId;
-	return userId === currentUserId ? `${name} (you)` : name;
+	return userId === currentUserId ? t("da.you", { name }) : name;
 }
 
 /** Tenant toggle for directory-authoritative membership (off by default). */
@@ -46,6 +52,8 @@ export function DirectoryAuthorityPanel({
 	busy,
 	onChange,
 }: Props) {
+	const t = useT();
+	const richT = useRichT();
 	const [selected, setSelected] = useState("");
 	const [adoptExisting, setAdoptExisting] = useState(false);
 	const [removeUnmanaged, setRemoveUnmanaged] = useState(false);
@@ -68,21 +76,18 @@ export function DirectoryAuthorityPanel({
 
 	return (
 		<section className="card" aria-labelledby="directory-authority-heading">
-			<h2 id="directory-authority-heading">Directory-authoritative membership</h2>
-			<p className="muted">
-				When on, a membership in this workspace grants access only if the selected SCIM directory
-				provisions it with the same role. Manually added members, invitations and credentials for
-				any other directory stop granting access. Owners are kept as named break-glass accounts so a
-				directory outage or mass deprovisioning cannot lock the workspace out.
-			</p>
+			<h2 id="directory-authority-heading">{t("da.title")}</h2>
+			<p className="muted">{t("da.lead")}</p>
 
 			{authority.enabled ? (
 				<>
 					<p role="status">
-						<strong>On</strong> — authoritative directory{" "}
-						<span className="mono">{authority.directory_id}</span>.
+						{richT("da.onLine", {
+							state: <strong>{t("da.on")}</strong>,
+							directory: <span className="mono">{authority.directory_id}</span>,
+						})}
 					</p>
-					<p className="small">Break-glass owners:</p>
+					<p className="small">{t("da.breakGlass")}</p>
 					<ul className="small">
 						{authority.break_glass_user_ids.map((userId) => (
 							<li key={userId}>
@@ -90,19 +95,16 @@ export function DirectoryAuthorityPanel({
 									owners.find((owner) => owner.userId === userId),
 									userId,
 									currentUserId,
+									t,
 								)}
 							</li>
 						))}
 					</ul>
-					<p className="muted small">
-						While the mode is on, owners cannot be added, removed or demoted. Turn it off first,
-						make the owner change, then turn it on again. Turning it off is audited and requires
-						multi-factor verification.
-					</p>
+					<p className="muted small">{t("da.locked")}</p>
 					{confirming ? (
 						<div className="row">
 							<span className="small" role="status">
-								Turn off? Manually added members could be granted access again.
+								{t("da.confirmOff")}
 							</span>
 							<button
 								className="button button-danger button-sm"
@@ -110,7 +112,7 @@ export function DirectoryAuthorityPanel({
 								disabled={busy}
 								onClick={() => void submit({ action: "disable" })}
 							>
-								Confirm turn off
+								{t("da.confirmOffButton")}
 							</button>
 							<button
 								className="button button-secondary button-sm"
@@ -118,7 +120,7 @@ export function DirectoryAuthorityPanel({
 								disabled={busy}
 								onClick={() => setConfirming(false)}
 							>
-								Cancel
+								{t("common.cancel")}
 							</button>
 						</div>
 					) : (
@@ -128,24 +130,19 @@ export function DirectoryAuthorityPanel({
 							disabled={busy}
 							onClick={() => setConfirming(true)}
 						>
-							Turn off directory-authoritative mode
+							{t("da.turnOff")}
 						</button>
 					)}
 				</>
 			) : (
 				<>
-					<p role="status">
-						<strong>Off</strong> — manual memberships and every directory's credentials grant
-						access.
-					</p>
+					<p role="status">{richT("da.offLine", { state: <strong>{t("da.off")}</strong> })}</p>
 					{directories.length === 0 ? (
-						<p className="muted small">
-							Create an active provisioning credential with a directory identifier first.
-						</p>
+						<p className="muted small">{t("da.noDirectory")}</p>
 					) : (
 						<>
 							<label className="label" htmlFor="directory-authority-directory">
-								Authoritative directory
+								{t("da.directory")}
 							</label>
 							<select
 								id="directory-authority-directory"
@@ -165,7 +162,7 @@ export function DirectoryAuthorityPanel({
 						</>
 					)}
 					<p className="small" style={{ marginTop: 10 }}>
-						Break-glass owners (every active owner, at most two):
+						{t("da.breakGlassAll")}
 					</p>
 					<ul className="small">
 						{breakGlass.map((userId) => (
@@ -174,14 +171,14 @@ export function DirectoryAuthorityPanel({
 									owners.find((owner) => owner.userId === userId),
 									userId,
 									currentUserId,
+									t,
 								)}
 							</li>
 						))}
 					</ul>
 					{tooManyOwners ? (
 						<p className="notice notice-warning" role="note">
-							This workspace has more than two owners. Remove or demote owners until at most two
-							remain; they become the break-glass accounts.
+							{t("da.tooMany")}
 						</p>
 					) : null}
 					<label className="label">
@@ -190,28 +187,22 @@ export function DirectoryAuthorityPanel({
 							checked={adoptExisting}
 							onChange={(event) => setAdoptExisting(event.target.checked)}
 						/>{" "}
-						Treat existing SCIM-provisioned memberships as coming from this directory
+						{t("da.adopt")}
 					</label>
-					<p className="muted small">
-						Only choose this if no other directory ever provisioned this workspace. Otherwise leave
-						it off and let the directory re-provision its users.
-					</p>
+					<p className="muted small">{t("da.adoptHint")}</p>
 					<label className="label">
 						<input
 							type="checkbox"
 							checked={removeUnmanaged}
 							onChange={(event) => setRemoveUnmanaged(event.target.checked)}
 						/>{" "}
-						Remove members this directory does not provision
+						{t("da.remove")}
 					</label>
-					<p className="muted small">
-						Removal is permanent and audited, and revokes their API keys and enrollments. If left
-						off, enabling is refused while such members exist and nothing changes.
-					</p>
+					<p className="muted small">{t("da.removeHint")}</p>
 					{confirming ? (
 						<div className="row">
 							<span className="small" role="status">
-								Make <span className="mono">{directory}</span> authoritative?
+								{richT("da.confirmOn", { directory: <span className="mono">{directory}</span> })}
 							</span>
 							<button
 								className="button button-danger button-sm"
@@ -227,7 +218,7 @@ export function DirectoryAuthorityPanel({
 									})
 								}
 							>
-								Confirm turn on
+								{t("da.confirmOnButton")}
 							</button>
 							<button
 								className="button button-secondary button-sm"
@@ -235,7 +226,7 @@ export function DirectoryAuthorityPanel({
 								disabled={busy}
 								onClick={() => setConfirming(false)}
 							>
-								Cancel
+								{t("common.cancel")}
 							</button>
 						</div>
 					) : (
@@ -245,7 +236,7 @@ export function DirectoryAuthorityPanel({
 							disabled={!canEnable}
 							onClick={() => setConfirming(true)}
 						>
-							Turn on directory-authoritative mode
+							{t("da.turnOn")}
 						</button>
 					)}
 				</>

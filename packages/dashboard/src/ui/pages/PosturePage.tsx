@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { aiBomFileName, buildTenantAiBom, type FleetAgentRow } from "../../lib/aibom";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
@@ -48,56 +50,57 @@ const SEVERITY_ORDER: PostureSeverity[] = ["critical", "high", "medium", "low", 
 const SEVERITY_RANK = new Map(SEVERITY_ORDER.map((severity, index) => [severity, index]));
 
 /** Skill and plugin scan taxonomy (T01-T09), mirrored from `threats/skill-scan.yaml`. */
-export const SKILL_RISK_TYPES: Record<string, string> = {
-	T01: "Skill instruction hijacking",
-	T02: "Agent memory poisoning",
-	T03: "Remote payload retrieval and execution",
-	T04: "Embedded malicious code",
-	T05: "Unauthorized access and privilege escalation",
-	T06: "System persistence",
-	T07: "Tool hijacking and spoofing",
-	T08: "Insecure dependencies",
-	T09: "Insecure skill coding practices",
+export const SKILL_RISK_TYPES: Record<string, DashboardMessageKey> = {
+	T01: "posture.skill.T01",
+	T02: "posture.skill.T02",
+	T03: "posture.skill.T03",
+	T04: "posture.skill.T04",
+	T05: "posture.skill.T05",
+	T06: "posture.skill.T06",
+	T07: "posture.skill.T07",
+	T08: "posture.skill.T08",
+	T09: "posture.skill.T09",
 };
 
 /** MCP risk categories (`mcp-01`..`mcp-14`) and the local configuration indicators. */
-const MCP_CATEGORY_LABELS: Record<string, string> = {
-	remote_mcp_url: "Remote endpoint",
-	shell_wrapper_command: "Shell wrapper",
-	broad_filesystem_access_arg: "Broad filesystem access",
-	"mcp-01": "Token mismanagement & secret exposure",
-	"mcp-02": "Privilege escalation via scope creep",
-	"mcp-03": "Tool poisoning",
-	"mcp-04": "Software supply chain",
-	"mcp-05": "Command injection & execution",
-	"mcp-06": "Prompt injection via context",
-	"mcp-07": "Insufficient auth",
-	"mcp-08": "Lack of audit & telemetry",
-	"mcp-09": "Shadow MCP server",
-	"mcp-10": "Context over-sharing",
-	"mcp-11": "Name confusion",
-	"mcp-12": "Rug pull",
-	"mcp-13": "Tool shadowing",
-	"mcp-14": "CORS misconfiguration",
+const MCP_CATEGORY_LABELS: Record<string, DashboardMessageKey> = {
+	remote_mcp_url: "posture.mcp.remote",
+	shell_wrapper_command: "posture.mcp.shell",
+	broad_filesystem_access_arg: "posture.mcp.fs",
+	"mcp-01": "posture.mcp.01",
+	"mcp-02": "posture.mcp.02",
+	"mcp-03": "posture.mcp.03",
+	"mcp-04": "posture.mcp.04",
+	"mcp-05": "posture.mcp.05",
+	"mcp-06": "posture.mcp.06",
+	"mcp-07": "posture.mcp.07",
+	"mcp-08": "posture.mcp.08",
+	"mcp-09": "posture.mcp.09",
+	"mcp-10": "posture.mcp.10",
+	"mcp-11": "posture.mcp.11",
+	"mcp-12": "posture.mcp.12",
+	"mcp-13": "posture.mcp.13",
+	"mcp-14": "posture.mcp.14",
 };
 
 /** Agent environment checks (`aidr discover --agents --upload`), see docs/agent-environment-posture.md. */
-export const AGENT_CHECK_LABELS: Record<string, string> = {
-	permission_bypass_mode: "Permission prompts bypassed",
-	broad_shell_allow_rule: "Every shell command pre-approved",
-	hooks_disabled: "Agent hooks disabled",
-	aidr_hook_missing: "AIDR hook not registered",
-	no_aidr_connector: "Agent without an AIDR connector",
-	approval_policy_never: "Approvals turned off",
-	sandbox_full_access: "Sandbox disabled",
-	permission_allow_all: "Shell or edit pre-approved",
-	running_as_root: "Agent runs as root",
-	docker_socket_writable: "Docker socket writable",
-	cloud_credentials_in_env: "Cloud credentials in environment",
-	no_devcontainer: "No devcontainer isolation",
-	mcp_plaintext_secret: "MCP config holds plaintext credentials",
+export const AGENT_CHECK_LABELS: Record<string, DashboardMessageKey> = {
+	permission_bypass_mode: "posture.check.bypass",
+	broad_shell_allow_rule: "posture.check.broadShell",
+	hooks_disabled: "posture.check.hooksDisabled",
+	aidr_hook_missing: "posture.check.hookMissing",
+	no_aidr_connector: "posture.check.noConnector",
+	approval_policy_never: "posture.check.approvalNever",
+	sandbox_full_access: "posture.check.sandbox",
+	permission_allow_all: "posture.check.allowAll",
+	running_as_root: "posture.check.root",
+	docker_socket_writable: "posture.check.docker",
+	cloud_credentials_in_env: "posture.check.cloudCreds",
+	no_devcontainer: "posture.check.devcontainer",
+	mcp_plaintext_secret: "posture.check.mcpSecret",
 };
 
+/** AI tool names (product names, shown as-is); the host environment is translated. */
 const AGENT_HOST_LABELS: Record<string, string> = {
 	"claude-code": "Claude Code",
 	cursor: "Cursor",
@@ -107,8 +110,31 @@ const AGENT_HOST_LABELS: Record<string, string> = {
 	openclaw: "OpenClaw",
 	"gemini-cli": "Gemini CLI",
 	aider: "Aider",
-	environment: "Host environment",
 };
+
+const SEVERITY_LABELS: Record<PostureSeverity, DashboardMessageKey> = {
+	critical: "common.severity.critical",
+	high: "common.severity.high",
+	medium: "common.severity.medium",
+	low: "common.severity.low",
+	info: "common.severity.info",
+	unknown: "common.unknown",
+};
+
+function hostLabel(host: string | null | undefined, t: Translate): string {
+	if (host === "environment") return t("posture.host.environment");
+	return AGENT_HOST_LABELS[host ?? ""] ?? host ?? t("posture.notReported");
+}
+
+function labelOf(
+	labels: Record<string, DashboardMessageKey>,
+	value: string | null | undefined,
+	t: Translate,
+	fallback: string,
+): string {
+	const key = labels[value ?? ""];
+	return key ? t(key) : (value ?? fallback);
+}
 
 function severityBadge(severity: PostureSeverity): string {
 	if (severity === "critical") return "badge badge-critical";
@@ -294,6 +320,7 @@ function countSkillTypes(skills: PostureFindingRow[]): [string, number][] {
 /** The tenant's findings in the posture window; `rows` is null when they could not be read. */
 async function fetchPostureFindings(
 	tenantId: string,
+	t: Translate,
 ): Promise<{ rows: PostureFindingRow[] | null; error: string | null }> {
 	const since = new Date(Date.now() - POSTURE_WINDOW_DAYS * DAY_MS).toISOString();
 	try {
@@ -307,12 +334,12 @@ async function fetchPostureFindings(
 		if (result.error || !Array.isArray(result.data)) {
 			return {
 				rows: null,
-				error: readErrorMessage(result.error, "Failed to load posture findings"),
+				error: readErrorMessage(result.error, t("posture.loadFailed")),
 			};
 		}
 		return { rows: result.data as unknown as PostureFindingRow[], error: null };
 	} catch {
-		return { rows: null, error: "Failed to load posture findings" };
+		return { rows: null, error: t("posture.loadFailed") };
 	}
 }
 
@@ -322,15 +349,22 @@ function trendColor(day: TrendDay): string {
 	return day.high > 0 ? "var(--sev-high)" : "var(--sev-medium)";
 }
 
-function riskCategoriesText(row: PostureFindingRow): string {
+function riskCategoriesText(row: PostureFindingRow, t: Translate): string {
 	const categories = row.risk_categories ?? [];
-	if (categories.length === 0) return "No configured risk indicator";
-	return categories.map((category) => MCP_CATEGORY_LABELS[category] ?? category).join(", ");
+	if (categories.length === 0) return t("posture.noIndicator");
+	return categories
+		.map((category) => labelOf(MCP_CATEGORY_LABELS, category, t, category))
+		.join(", ");
 }
 
-function skillCategoryText(row: PostureFindingRow): string {
-	if (!row.skill_risk_type) return "Command rule";
-	return `${row.skill_risk_type} ${SKILL_RISK_TYPES[row.skill_risk_type] ?? ""}`;
+function skillTypeText(type: string, t: Translate): string {
+	const key = SKILL_RISK_TYPES[type];
+	return key ? t(key) : "";
+}
+
+function skillCategoryText(row: PostureFindingRow, t: Translate): string {
+	if (!row.skill_risk_type) return t("posture.commandRule");
+	return `${row.skill_risk_type} ${skillTypeText(row.skill_risk_type, t)}`;
 }
 
 const FLEET_PAGE_SIZE = 1000;
@@ -411,6 +445,7 @@ function AiBomExport({
 	findings: PostureFindingRow[] | null;
 	truncated: boolean;
 }) {
+	const t = useT();
 	const [exporting, setExporting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [ready, setReady] = useState<ReadyAiBom | null>(null);
@@ -430,9 +465,7 @@ function AiBomExport({
 		try {
 			const agents = await fetchFleetAgents(tenantId);
 			if (agents === null) {
-				setError(
-					"AI-BOM export failed: the fleet inventory could not be read. No file was produced.",
-				);
+				setError(t("posture.bom.fleetFailed"));
 				return;
 			}
 			const generatedAt = new Date().toISOString();
@@ -454,17 +487,21 @@ function AiBomExport({
 			setReady({
 				url,
 				fileName: aiBomFileName(tenantName, generatedAt),
-				summary: `${bom.components.length} component(s), ${bom.services.length} MCP server(s), ${bom.vulnerabilities.length} vulnerability record(s)`,
+				summary: t("posture.bom.summary", {
+					components: bom.components.length,
+					services: bom.services.length,
+					vulnerabilities: bom.vulnerabilities.length,
+				}),
 			});
 		} catch {
-			setError("AI-BOM export failed. No file was produced.");
+			setError(t("posture.bom.failed"));
 		} finally {
 			setExporting(false);
 		}
 	}
 
 	return (
-		<div className="stack" aria-label="AI-BOM export">
+		<div className="stack" aria-label={t("posture.bom.label")}>
 			<div className="row">
 				<button
 					type="button"
@@ -472,12 +509,9 @@ function AiBomExport({
 					disabled={exporting || findings === null}
 					onClick={() => void exportAiBom()}
 				>
-					{exporting ? "Preparing AI-BOM…" : "Export AI-BOM"}
+					{exporting ? t("posture.bom.preparing") : t("posture.bom.export")}
 				</button>
-				<span className="muted small">
-					CycloneDX 1.6 JSON of the agents, MCP servers, AI components and vulnerabilities reported
-					for this team.
-				</span>
+				<span className="muted small">{t("posture.bom.note")}</span>
 			</div>
 			{error ? (
 				<div className="notice notice-danger" role="alert">
@@ -486,13 +520,11 @@ function AiBomExport({
 			) : null}
 			{ready ? (
 				<p role="status">
-					AI-BOM ready: {ready.summary}.{" "}
+					{t("posture.bom.ready", { summary: ready.summary })}{" "}
 					<a href={ready.url} download={ready.fileName}>
-						Save {ready.fileName}
+						{t("posture.bom.save", { file: ready.fileName })}
 					</a>
-					{truncated
-						? ` Only the latest ${MAX_ROWS} posture observations were read; the BOM records this.`
-						: ""}
+					{truncated ? t("posture.bom.truncated", { count: MAX_ROWS }) : ""}
 				</p>
 			) : null}
 		</div>
@@ -500,14 +532,11 @@ function AiBomExport({
 }
 
 function NoPostureData() {
+	const t = useT();
 	return (
-		<section className="card" aria-label="No posture data">
-			<h2>No posture findings reported yet</h2>
-			<p className="muted">
-				Nothing has been uploaded for this team. That means no scan has reported here — not that the
-				environment is clean. Run a scan from an enrolled machine (the CLI uses that installation's
-				enrolled API key):
-			</p>
+		<section className="card" aria-label={t("posture.none.label")}>
+			<h2>{t("posture.none.title")}</h2>
+			<p className="muted">{t("posture.none.body")}</p>
 			<pre className="mono">
 				{[
 					"aidr scan --target http://10.0.0.5:11434 --upload   # AI infrastructure CVEs",
@@ -527,14 +556,16 @@ function SkillSection({
 	skills: PostureFindingRow[];
 	skillTypes: [string, number][];
 }) {
+	const t = useT();
+	const richT = useRichT();
 	return (
-		<section className="card" aria-label="Skill and plugin findings">
-			<h2>Skill and plugin findings</h2>
+		<section className="card" aria-label={t("posture.skills")}>
+			<h2>{t("posture.skills")}</h2>
 			{skillTypes.length > 0 ? (
 				<div className="row" style={{ marginTop: 8 }}>
 					{skillTypes.map(([type, count]) => (
 						<span key={type} className="badge badge-neutral">
-							{type} {SKILL_RISK_TYPES[type] ?? ""}: {count}
+							{type} {skillTypeText(type, t)}: {count}
 						</span>
 					))}
 				</div>
@@ -543,21 +574,23 @@ function SkillSection({
 				<table className="table">
 					<thead>
 						<tr>
-							<th>Package</th>
-							<th>Rule</th>
-							<th>Category</th>
-							<th>Severity</th>
-							<th>Last seen</th>
+							<th>{t("posture.col.package")}</th>
+							<th>{t("posture.col.rule")}</th>
+							<th>{t("posture.col.category")}</th>
+							<th>{t("posture.col.severity")}</th>
+							<th>{t("posture.col.lastSeen")}</th>
 						</tr>
 					</thead>
 					<tbody>
 						{skills.map((row) => (
 							<tr key={row.id}>
-								<td className="mono">{row.plugin_key ?? "(name withheld)"}</td>
+								<td className="mono">{row.plugin_key ?? t("posture.withheld")}</td>
 								<td className="mono">{row.rule_id ?? "—"}</td>
-								<td>{skillCategoryText(row)}</td>
+								<td>{skillCategoryText(row, t)}</td>
 								<td>
-									<span className={severityBadge(row.severity)}>{row.severity}</span>
+									<span className={severityBadge(row.severity)}>
+										{t(SEVERITY_LABELS[row.severity])}
+									</span>
 								</td>
 								<td className="mono">{new Date(row.observed_at).toLocaleString()}</td>
 							</tr>
@@ -565,8 +598,9 @@ function SkillSection({
 						{skills.length === 0 ? (
 							<tr>
 								<td colSpan={5} className="muted">
-									No skill or plugin findings uploaded. Run{" "}
-									<span className="mono">aidr scan --skill &lt;dir&gt; --upload</span>.
+									{richT("posture.noSkills", {
+										command: <span className="mono">aidr scan --skill &lt;dir&gt; --upload</span>,
+									})}
 								</td>
 							</tr>
 						) : null}
@@ -578,38 +612,37 @@ function SkillSection({
 }
 
 function AgentEnvironmentSection({ groups }: { groups: AgentCheckGroup[] }) {
+	const t = useT();
+	const richT = useRichT();
 	return (
-		<section className="card" aria-label="Agent environment">
-			<h2>Agent environment and autonomy</h2>
+		<section className="card" aria-label={t("posture.agentEnv")}>
+			<h2>{t("posture.agentEnvTitle")}</h2>
 			<p className="muted small">
-				Static checks of agent host settings and of the environment agents inherit. Only the host,
-				check, severity and a count are uploaded; configuration values and variable names stay on
-				the machine. Run <span className="mono">aidr discover --agents</span> on the machine for the
-				remediation steps.
+				{richT("posture.agentEnvBody", {
+					command: <span className="mono">aidr discover --agents</span>,
+				})}
 			</p>
 			<div className="table-wrap" style={{ marginTop: 12 }}>
 				<table className="table">
 					<thead>
 						<tr>
-							<th>Host</th>
-							<th>Check</th>
-							<th>Severity</th>
-							<th>Installations</th>
-							<th>Items</th>
-							<th>Last seen</th>
+							<th>{t("posture.col.host")}</th>
+							<th>{t("posture.col.check")}</th>
+							<th>{t("posture.col.severity")}</th>
+							<th>{t("posture.col.installations")}</th>
+							<th>{t("posture.col.items")}</th>
+							<th>{t("posture.col.lastSeen")}</th>
 						</tr>
 					</thead>
 					<tbody>
 						{groups.map(({ key, row, installations, lastSeen }) => (
 							<tr key={key}>
+								<td>{hostLabel(row.agent_host, t)}</td>
+								<td>{labelOf(AGENT_CHECK_LABELS, row.check_id, t, t("posture.notReported"))}</td>
 								<td>
-									{AGENT_HOST_LABELS[row.agent_host ?? ""] ?? row.agent_host ?? "(not reported)"}
-								</td>
-								<td>
-									{AGENT_CHECK_LABELS[row.check_id ?? ""] ?? row.check_id ?? "(not reported)"}
-								</td>
-								<td>
-									<span className={severityBadge(row.severity)}>{row.severity}</span>
+									<span className={severityBadge(row.severity)}>
+										{t(SEVERITY_LABELS[row.severity])}
+									</span>
 								</td>
 								<td className="mono">{installations}</td>
 								<td className="mono">{row.finding_count ?? "—"}</td>
@@ -619,9 +652,9 @@ function AgentEnvironmentSection({ groups }: { groups: AgentCheckGroup[] }) {
 						{groups.length === 0 ? (
 							<tr>
 								<td colSpan={6} className="muted">
-									No agent environment findings uploaded. Run{" "}
-									<span className="mono">aidr discover --agents --upload</span>; an empty table
-									means nothing was reported, not that agents are configured safely.
+									{richT("posture.noAgentFindings", {
+										command: <span className="mono">aidr discover --agents --upload</span>,
+									})}
 								</td>
 							</tr>
 						) : null}
@@ -633,20 +666,19 @@ function AgentEnvironmentSection({ groups }: { groups: AgentCheckGroup[] }) {
 }
 
 function TrendSection({ trend, trendMax }: { trend: TrendDay[]; trendMax: number }) {
+	const t = useT();
 	return (
-		<section className="card" aria-label="Posture trend">
-			<h2>Trend (last {TREND_DAYS} days)</h2>
-			<p className="muted small">
-				Findings reported per day (every upload is counted as an observation).
-			</p>
+		<section className="card" aria-label={t("posture.trend")}>
+			<h2>{t("posture.trendTitle", { days: TREND_DAYS })}</h2>
+			<p className="muted small">{t("posture.trendNote")}</p>
 			<div className="table-wrap" style={{ marginTop: 12 }}>
 				<table className="table">
 					<thead>
 						<tr>
-							<th>Day (UTC)</th>
-							<th>Critical</th>
-							<th>High</th>
-							<th>Medium / low / unknown</th>
+							<th>{t("posture.col.day")}</th>
+							<th>{t("posture.col.critical")}</th>
+							<th>{t("posture.col.high")}</th>
+							<th>{t("posture.col.other")}</th>
 							<th aria-hidden="true" />
 						</tr>
 					</thead>
@@ -675,7 +707,7 @@ function TrendSection({ trend, trendMax }: { trend: TrendDay[]; trendMax: number
 						{trend.every((day) => day.critical + day.high + day.other === 0) ? (
 							<tr>
 								<td colSpan={5} className="muted">
-									No non-informational findings reported in the last {TREND_DAYS} days.
+									{t("posture.noTrend", { days: TREND_DAYS })}
 								</td>
 							</tr>
 						) : null}
@@ -688,8 +720,9 @@ function TrendSection({ trend, trendMax }: { trend: TrendDay[]; trendMax: number
 
 export function PosturePage() {
 	const { currentTeam, isLoading } = useTeam();
-	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
-	if (!currentTeam) return <div role="alert">Select a team to view AI security posture.</div>;
+	const t = useT();
+	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
+	if (!currentTeam) return <div role="alert">{t("posture.noTeam")}</div>;
 	return (
 		<TenantPosturePage
 			key={currentTeam.id}
@@ -700,6 +733,8 @@ export function PosturePage() {
 }
 
 function TenantPosturePage({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
+	const t = useT();
+	const richT = useRichT();
 	// null = not loaded / unavailable (fail closed); [] = a real, empty posture.
 	const [rows, setRows] = useState<PostureFindingRow[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -709,7 +744,7 @@ function TenantPosturePage({ tenantId, tenantName }: { tenantId: string; tenantN
 	useEffect(() => {
 		let cancelled = false;
 		async function load() {
-			const next = await fetchPostureFindings(tenantId);
+			const next = await fetchPostureFindings(tenantId, t);
 			if (cancelled) return;
 			setRows(next.rows);
 			setError(next.error);
@@ -757,20 +792,20 @@ function TenantPosturePage({ tenantId, tenantName }: { tenantId: string; tenantN
 	return (
 		<div className="stack">
 			<section className="card">
-				<h1>AI security posture</h1>
+				<h1>{t("nav.posture")}</h1>
 				<p className="muted">
-					Infrastructure exposure, MCP server inventory, skill/plugin package and agent environment
-					findings reported by <span className="mono">aidr scan --upload</span> and{" "}
-					<span className="mono">aidr discover --upload</span> over the last {POSTURE_WINDOW_DAYS}{" "}
-					days. Only identifiers, severities and digests are stored; target hosts, file paths and
-					matched text never leave the scanning machine.
+					{richT("posture.intro", {
+						scan: <span className="mono">aidr scan --upload</span>,
+						discover: <span className="mono">aidr discover --upload</span>,
+						days: POSTURE_WINDOW_DAYS,
+					})}
 				</p>
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
-						{error}. Posture data is unavailable; this is not a clean result.
+						{t("posture.unavailable", { error })}
 					</div>
 				) : null}
-				{!loaded && rows === null ? <div role="status">Loading posture findings…</div> : null}
+				{!loaded && rows === null ? <div role="status">{t("posture.loading")}</div> : null}
 				<AiBomExport
 					tenantId={tenantId}
 					tenantName={tenantName}
@@ -783,68 +818,72 @@ function TenantPosturePage({ tenantId, tenantName }: { tenantId: string; tenantN
 
 			{rows !== null && rows.length > 0 ? (
 				<>
-					<section className="grid" aria-label="Posture counters">
+					<section className="grid" aria-label={t("posture.counters")}>
 						<div className="card stat-card">
-							<div className="stat-label">Critical CVEs</div>
+							<div className="stat-label">{t("posture.criticalCves")}</div>
 							<div className="stat-value">{infraCounts.critical}</div>
 						</div>
 						<div className="card stat-card">
-							<div className="stat-label">High CVEs</div>
+							<div className="stat-label">{t("posture.highCves")}</div>
 							<div className="stat-value">{infraCounts.high}</div>
 						</div>
 						<div className="card stat-card">
-							<div className="stat-label">MCP servers</div>
+							<div className="stat-label">{t("posture.mcpServers")}</div>
 							<div className="stat-value">{mcp.length}</div>
 						</div>
 						<div className="card stat-card">
-							<div className="stat-label">Skill findings</div>
+							<div className="stat-label">{t("posture.skillFindings")}</div>
 							<div className="stat-value">{skills.length}</div>
 						</div>
 						<div className="card stat-card">
-							<div className="stat-label">Agent settings at risk</div>
+							<div className="stat-label">{t("posture.agentRisk")}</div>
 							<div className="stat-value">{agentGroups.length}</div>
 						</div>
 					</section>
 
-					<section className="card" aria-label="Infrastructure exposure">
-						<h2>Infrastructure exposure</h2>
+					<section className="card" aria-label={t("posture.infra")}>
+						<h2>{t("posture.infra")}</h2>
 						<div className="row" style={{ marginTop: 8 }}>
 							{SEVERITY_ORDER.filter((severity) => infraCounts[severity] > 0).map((severity) => (
 								<span key={severity} className={severityBadge(severity)}>
-									{infraCounts[severity]} {severity}
+									{`${infraCounts[severity]} ${t(SEVERITY_LABELS[severity])}`}
 								</span>
 							))}
 							<span className="badge badge-neutral">
-								{exposedComponents.length} identified component(s) without a matched CVE
+								{t("posture.components", { count: exposedComponents.length })}
 							</span>
 						</div>
 						<div className="table-wrap" style={{ marginTop: 12 }}>
 							<table className="table">
 								<thead>
 									<tr>
-										<th>Vulnerability</th>
-										<th>Component</th>
-										<th>Severity</th>
+										<th>{t("posture.col.vuln")}</th>
+										<th>{t("posture.col.component")}</th>
+										<th>{t("posture.col.severity")}</th>
 										<th>CVSS</th>
-										<th>Applicability</th>
-										<th>Targets</th>
-										<th>Last seen</th>
+										<th>{t("posture.col.applicability")}</th>
+										<th>{t("posture.col.targets")}</th>
+										<th>{t("posture.col.lastSeen")}</th>
 									</tr>
 								</thead>
 								<tbody>
 									{vulnerabilities.map(({ key, row, targets, lastSeen }) => (
 										<tr key={key}>
-											<td className="mono">{row.vuln_id ?? "Advisory (no CVE id)"}</td>
+											<td className="mono">{row.vuln_id ?? t("posture.advisory")}</td>
 											<td className="mono">
-												{row.component ?? "unknown"}
+												{row.component ?? t("common.unknown")}
 												{row.component_version ? ` ${row.component_version}` : ""}
 											</td>
 											<td>
-												<span className={severityBadge(row.severity)}>{row.severity}</span>
+												<span className={severityBadge(row.severity)}>
+													{t(SEVERITY_LABELS[row.severity])}
+												</span>
 											</td>
 											<td className="mono">{cvssOf(row)?.toFixed(1) ?? "—"}</td>
 											<td>
-												{row.applicability === "confirmed" ? "version confirmed" : "unconfirmed"}
+												{row.applicability === "confirmed"
+													? t("posture.confirmed")
+													: t("posture.unconfirmed")}
 											</td>
 											<td className="mono">{targets}</td>
 											<td className="mono">{new Date(lastSeen).toLocaleString()}</td>
@@ -853,9 +892,7 @@ function TenantPosturePage({ tenantId, tenantName }: { tenantId: string; tenantN
 									{vulnerabilities.length === 0 ? (
 										<tr>
 											<td colSpan={7} className="muted">
-												No CVE matched in the uploaded infrastructure scans. This reflects only the
-												bundled AI component fingerprint and CVE dataset for the targets that were
-												scanned.
+												{t("posture.noCve")}
 											</td>
 										</tr>
 									) : null}
@@ -864,38 +901,41 @@ function TenantPosturePage({ tenantId, tenantName }: { tenantId: string; tenantN
 						</div>
 					</section>
 
-					<section className="card" aria-label="MCP inventory risks">
-						<h2>MCP inventory risks</h2>
+					<section className="card" aria-label={t("posture.mcp")}>
+						<h2>{t("posture.mcp")}</h2>
 						<div className="table-wrap" style={{ marginTop: 12 }}>
 							<table className="table">
 								<thead>
 									<tr>
-										<th>Server</th>
-										<th>Transport</th>
-										<th>Severity</th>
-										<th>Risk categories</th>
-										<th>Tool-manifest attestation</th>
-										<th>Last seen</th>
+										<th>{t("posture.col.server")}</th>
+										<th>{t("posture.col.transport")}</th>
+										<th>{t("posture.col.severity")}</th>
+										<th>{t("posture.col.risks")}</th>
+										<th>{t("posture.col.attestation")}</th>
+										<th>{t("posture.col.lastSeen")}</th>
 									</tr>
 								</thead>
 								<tbody>
 									{mcp.map((row) => (
 										<tr key={row.id}>
-											<td className="mono">{row.mcp_server_name ?? "(name withheld)"}</td>
+											<td className="mono">{row.mcp_server_name ?? t("posture.withheld")}</td>
 											<td>{row.mcp_transport ?? "—"}</td>
 											<td>
-												<span className={severityBadge(row.severity)}>{row.severity}</span>
+												<span className={severityBadge(row.severity)}>
+													{t(SEVERITY_LABELS[row.severity])}
+												</span>
 											</td>
-											<td>{riskCategoriesText(row)}</td>
-											<td>{row.attestation_status ?? "not reported"}</td>
+											<td>{riskCategoriesText(row, t)}</td>
+											<td>{row.attestation_status ?? t("posture.attestationNotReported")}</td>
 											<td className="mono">{new Date(row.observed_at).toLocaleString()}</td>
 										</tr>
 									))}
 									{mcp.length === 0 ? (
 										<tr>
 											<td colSpan={6} className="muted">
-												No MCP inventory uploaded. Run{" "}
-												<span className="mono">aidr discover --upload</span>.
+												{richT("posture.noMcp", {
+													command: <span className="mono">aidr discover --upload</span>,
+												})}
 											</td>
 										</tr>
 									) : null}

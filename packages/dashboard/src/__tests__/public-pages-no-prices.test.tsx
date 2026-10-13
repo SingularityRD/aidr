@@ -29,6 +29,7 @@ vi.mock("../lib/supabase", () => ({
 }));
 vi.mock("../ui/session", () => ({ getSession: vi.fn().mockResolvedValue(null) }));
 
+import { type DashboardLocale, I18nProvider } from "../i18n/I18nProvider";
 import { PublicLayout } from "../ui/PublicLayout";
 import { LandingPage } from "../ui/pages/public/LandingPage";
 import { PilotPage } from "../ui/pages/public/PilotPage";
@@ -55,19 +56,25 @@ const PUBLIC_ROUTES: Array<[string, ReactElement]> = [
 	["/terms", <PublicInfoPage key="terms" kind="terms" />],
 ];
 
-async function renderedText(path: string, page: ReactElement): Promise<string> {
+async function renderedText(
+	path: string,
+	page: ReactElement,
+	locale: DashboardLocale = "en",
+): Promise<string> {
 	const { container } = render(
-		<MemoryRouter initialEntries={[path]}>
-			<Routes>
-				<Route path="/" element={<PublicLayout />}>
-					<Route
-						path={path === "/" ? undefined : path.slice(1)}
-						index={path === "/"}
-						element={page}
-					/>
-				</Route>
-			</Routes>
-		</MemoryRouter>,
+		<I18nProvider initialLocale={locale}>
+			<MemoryRouter initialEntries={[path]}>
+				<Routes>
+					<Route path="/" element={<PublicLayout />}>
+						<Route
+							path={path === "/" ? undefined : path.slice(1)}
+							index={path === "/"}
+							element={page}
+						/>
+					</Route>
+				</Routes>
+			</MemoryRouter>
+		</I18nProvider>,
 	);
 	await waitFor(() => expect(screen.getByRole("contentinfo")).toBeInTheDocument());
 	// Let async effects (pilot/verify lookups) settle before reading the text.
@@ -101,18 +108,20 @@ describe("public pages never publish prices", () => {
 		}
 	});
 
-	for (const selfService of [false, true]) {
-		describe(selfService ? "self-service build" : "invoice build", () => {
-			for (const [path, page] of PUBLIC_ROUTES) {
-				it(`renders ${path} without price or currency text`, async () => {
-					commercial.selfService = selfService;
-					vi.stubEnv("VITE_SALES_EMAIL", "sales@example.test");
-					const text = await renderedText(path, page);
-					expect(text.length).toBeGreaterThan(0);
-					expect(text.match(CURRENCY_OR_PRICE)?.[0] ?? null).toBeNull();
-				});
-			}
-		});
+	for (const locale of ["en", "tr"] as const) {
+		for (const selfService of [false, true]) {
+			describe(`${locale} ${selfService ? "self-service build" : "invoice build"}`, () => {
+				for (const [path, page] of PUBLIC_ROUTES) {
+					it(`renders ${path} without price or currency text`, async () => {
+						commercial.selfService = selfService;
+						vi.stubEnv("VITE_SALES_EMAIL", "sales@example.test");
+						const text = await renderedText(path, page, locale);
+						expect(text.length).toBeGreaterThan(0);
+						expect(text.match(CURRENCY_OR_PRICE)?.[0] ?? null).toBeNull();
+					});
+				}
+			});
+		}
 	}
 
 	it("labels the /pricing navigation link Editions", async () => {

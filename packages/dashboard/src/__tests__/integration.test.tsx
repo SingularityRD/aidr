@@ -594,13 +594,13 @@ describe("Dashboard integration", () => {
 			</MemoryRouter>,
 		);
 
-		await waitFor(() => expect(screen.getByText("bash: deny (critical)")).toBeInTheDocument());
+		await waitFor(() => expect(screen.getByText("bash: blocked (critical)")).toBeInTheDocument());
 		expect(
-			screen.getByText(/Potential incidents derived from received blocked/),
+			screen.getByText(/Possible security incidents built from the blocked/),
 		).toBeInTheDocument();
 		expect(screen.getAllByText("Demo OpenCode agent")).toHaveLength(2);
-		expect(screen.getByText("bash: deny (critical)")).toBeInTheDocument();
-		expect(screen.getByText("write: ask (warning)")).toBeInTheDocument();
+		expect(screen.getByText("bash: blocked (critical)")).toBeInTheDocument();
+		expect(screen.getByText("write: needs approval (warning)")).toBeInTheDocument();
 		expect(screen.queryByText("git: allow (info)")).not.toBeInTheDocument();
 		expect(mockedSupabase.from).toHaveBeenCalledWith("incident_events");
 	});
@@ -690,7 +690,7 @@ describe("Dashboard integration", () => {
 		await waitFor(() => expect(screen.getByText("overview-agent")).toBeInTheDocument());
 		expect(screen.getByText("Live agents")).toBeInTheDocument();
 		expect(screen.getByText("Recent events")).toBeInTheDocument();
-		expect(screen.getByText("bash: deny")).toBeInTheDocument();
+		expect(screen.getByText("bash: blocked")).toBeInTheDocument();
 		expect(screen.getByText("connected")).toBeInTheDocument();
 	});
 
@@ -745,7 +745,7 @@ describe("Dashboard integration", () => {
 		await waitFor(() =>
 			expect(screen.getByText("Event data is unavailable right now.")).toBeInTheDocument(),
 		);
-		expect(screen.queryByText("0 deny")).not.toBeInTheDocument();
+		expect(screen.queryByText("0 blocked")).not.toBeInTheDocument();
 		expect(screen.getByRole("alert")).toHaveTextContent("Failed to load events");
 	});
 
@@ -795,8 +795,8 @@ describe("Dashboard integration", () => {
 			screen.getByText(/The latest 500 events received from this team's agents/),
 		).toBeInTheDocument();
 		expect(screen.getByText("git (info)")).toBeInTheDocument();
-		expect(screen.getByText("1 deny")).toBeInTheDocument();
-		expect(screen.getByText("1 allow")).toBeInTheDocument();
+		expect(screen.getByText("1 blocked")).toBeInTheDocument();
+		expect(screen.getByText("1 allowed")).toBeInTheDocument();
 		expect(mockedSupabase.from).toHaveBeenCalledWith("events");
 	});
 

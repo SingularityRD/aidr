@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import type { DashboardMessageKey } from "../../../i18n/en";
+import { englishT, type Translate, useRichT, useT } from "../../../i18n/I18nProvider";
 import { readErrorMessage } from "../../../lib/errors";
 import { supabase } from "../../../lib/supabase";
 import { getSession } from "../../session";
@@ -31,14 +34,15 @@ type FunctionsResponse = { data?: unknown; error?: { message?: string } | null }
  * Parses the `device-verify` response. A durable success requires a usable
  * expiry: without one the page cannot say when the code dies.
  */
-function verifyOutcome(res: FunctionsResponse): { expiresAt: string } | { error: string } {
-	if (res.error) return { error: readErrorMessage(res.error, "Verification failed.") };
+function verifyOutcome(
+	res: FunctionsResponse,
+	t: Translate = englishT,
+): { expiresAt: string } | { error: string } {
+	if (res.error) return { error: readErrorMessage(res.error, t("vf.failed")) };
 	const data = (res.data ?? {}) as Record<string, unknown>;
-	if (data.ok !== true) return { error: "Verification failed." };
+	if (data.ok !== true) return { error: t("vf.failed") };
 	const expiresAt = usableExpiry(data.expires_at);
-	return expiresAt
-		? { expiresAt }
-		: { error: "The authorization service did not report a usable code expiry. Retry." };
+	return expiresAt ? { expiresAt } : { error: t("vf.noExpiry") };
 }
 
 /** What device-start recorded about the device that asked for this code. */
@@ -92,27 +96,31 @@ function parseDeviceRequest(data: unknown): DeviceRequest | null {
 	};
 }
 
-function minutesAgo(iso: string): string {
+function minutesAgo(iso: string, t: Translate): string {
 	const minutes = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
-	return minutes === 0
-		? "less than a minute ago"
-		: `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+	if (minutes === 0) return t("vf.justNow");
+	return minutes === 1 ? t("vf.minuteAgo") : t("vf.minutesAgo", { count: minutes });
 }
 
-const SCOPE_LABEL: Record<string, string> = {
-	tenant: "Enroll this device as an agent and issue it a tenant API key (tenant scope)",
+const SCOPE_LABEL: Record<string, DashboardMessageKey> = {
+	tenant: "vf.scopeTenant",
 };
 
-function deviceDescription(device: DeviceRequest): string {
+function scopeLabel(scope: string, t: Translate): string {
+	const key = Object.hasOwn(SCOPE_LABEL, scope) ? SCOPE_LABEL[scope] : undefined;
+	return key ? t(key) : scope;
+}
+
+function deviceDescription(device: DeviceRequest, t: Translate): string {
 	const runtime = device.runtime
 		? `${device.runtime}${device.runtimeVersion ? ` ${device.runtimeVersion}` : ""}`
 		: null;
 	const parts = [
-		device.hostname ? `host ${device.hostname}` : null,
-		device.os ? `OS ${device.os}` : null,
+		device.hostname ? t("vf.host", { name: device.hostname }) : null,
+		device.os ? t("vf.os", { name: device.os }) : null,
 		runtime,
 	].filter(Boolean);
-	return parts.length > 0 ? parts.join(" · ") : "not reported";
+	return parts.length > 0 ? parts.join(" · ") : t("vf.notReported");
 }
 
 /** Step 2: what the user reviews before binding the device (CP-1). */
@@ -135,33 +143,33 @@ function DeviceRequestPanel({
 	onAuthorize: () => void;
 	onCancel: () => void;
 }) {
+	const t = useT();
+	const richT = useRichT();
 	return (
 		<div className="stack" data-testid="device-request">
 			<div className="notice notice-danger">
-				<b>Only approve a code you started on your own device.</b> If someone sent you this link or
-				code, asked you to approve it, or you do not recognise the device below, stop: approving
-				gives that device an API key for {teamName || "this team"}.
+				{richT("vf.warning", {
+					lead: <b>{t("vf.warningLead")}</b>,
+					team: teamName || t("vf.thisTeam"),
+				})}
 			</div>
 			{linkCode && linkCode !== device.userCode ? (
-				<div className="notice notice-warning">
-					The code you typed differs from the code in the link. Only the code you typed will be
-					authorized.
-				</div>
+				<div className="notice notice-warning">{t("vf.codeMismatch")}</div>
 			) : null}
 			<dl className="small">
-				<dt>Code</dt>
+				<dt>{t("vf.code")}</dt>
 				<dd className="mono">{device.userCode}</dd>
-				<dt>Requested</dt>
+				<dt>{t("vf.requested")}</dt>
 				<dd>
-					{new Date(device.requestedAt).toLocaleString()} ({minutesAgo(device.requestedAt)})
+					{new Date(device.requestedAt).toLocaleString()} ({minutesAgo(device.requestedAt, t)})
 				</dd>
-				<dt>Requested from IP address</dt>
-				<dd className="mono">{device.requesterIp ?? "not recorded"}</dd>
-				<dt>Device (as reported by the device)</dt>
-				<dd>{deviceDescription(device)}</dd>
-				<dt>Access requested</dt>
-				<dd>{SCOPE_LABEL[device.requestedScope] ?? device.requestedScope}</dd>
-				<dt>Team</dt>
+				<dt>{t("vf.ip")}</dt>
+				<dd className="mono">{device.requesterIp ?? t("vf.notRecorded")}</dd>
+				<dt>{t("vf.device")}</dt>
+				<dd>{deviceDescription(device, t)}</dd>
+				<dt>{t("vf.access")}</dt>
+				<dd>{scopeLabel(device.requestedScope, t)}</dd>
+				<dt>{t("vf.team")}</dt>
 				<dd>{teamName}</dd>
 			</dl>
 			<label className="label" style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -171,7 +179,7 @@ function DeviceRequestPanel({
 					disabled={busy}
 					onChange={(e) => onConfirm(e.target.checked)}
 				/>
-				I started this request on my own device and these details match it.
+				{t("vf.confirm")}
 			</label>
 			<div className="row">
 				<button
@@ -180,7 +188,7 @@ function DeviceRequestPanel({
 					disabled={busy || !confirmed}
 					onClick={onAuthorize}
 				>
-					Authorize device
+					{t("vf.authorize")}
 				</button>
 				<button
 					className="button button-secondary"
@@ -188,7 +196,7 @@ function DeviceRequestPanel({
 					disabled={busy}
 					onClick={onCancel}
 				>
-					Cancel
+					{t("common.cancel")}
 				</button>
 			</div>
 		</div>
@@ -196,6 +204,11 @@ function DeviceRequestPanel({
 }
 
 export function VerifyPage() {
+	const t = useT();
+	const richT = useRichT();
+	// The session loader reads the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const navigate = useNavigate();
 	const [params] = useSearchParams();
 	// A code in the link is never trusted on its own: the user must type the code
@@ -218,6 +231,7 @@ export function VerifyPage() {
 
 	useEffect(() => {
 		let cancelled = false;
+		const t = translator.current;
 		async function load() {
 			let signedIn = false;
 			try {
@@ -226,14 +240,13 @@ export function VerifyPage() {
 				if (!cancelled) setHasSession(signedIn);
 				if (!sess || cancelled) return;
 				const identity = await supabase.auth.getUser();
-				if (identity.error || !identity.data.user)
-					throw new Error("Your session could not be verified.");
+				if (identity.error || !identity.data.user) throw new Error(t("vf.sessionUnverified"));
 				const result = await supabase
 					.from("team_members")
 					.select("role,teams!inner(id,name)")
 					.eq("user_id", identity.data.user.id);
 				if (cancelled) return;
-				if (result.error) throw new Error("Your teams could not be loaded. Refresh to retry.");
+				if (result.error) throw new Error(t("vf.teamsFailed"));
 				const available = (
 					(result.data ?? []) as unknown as {
 						role: string;
@@ -254,7 +267,7 @@ export function VerifyPage() {
 			} catch (cause) {
 				if (!cancelled) {
 					setHasSession(signedIn);
-					setError(readErrorMessage(cause, "Unable to check your session."));
+					setError(readErrorMessage(cause, t("vf.sessionCheckFailed")));
 				}
 			}
 		}
@@ -321,24 +334,24 @@ export function VerifyPage() {
 		resetDecision();
 		try {
 			if (!(await signedInOrRedirect())) return;
-			if (!teamId) throw new Error("Select the team receiving this device.");
+			if (!teamId) throw new Error(t("vf.selectTeamError"));
 			const res = (await supabase.functions.invoke("device-verify", {
 				method: "POST",
 				headers: { "X-AIDR-Tenant-ID": teamId },
 				body: { action: "lookup", user_code: typed },
 			})) as FunctionsResponse;
 			if (res.error) {
-				setError(readErrorMessage(res.error, "This code could not be checked."));
+				setError(readErrorMessage(res.error, t("vf.notChecked")));
 				return;
 			}
 			const found = parseDeviceRequest(res.data);
 			if (!found || found.userCode !== typed) {
-				setError("The authorization service did not describe this device. Nothing was authorized.");
+				setError(t("vf.notDescribed"));
 				return;
 			}
 			setDevice(found);
 		} catch (cause) {
-			setError(readErrorMessage(cause, "Device authorization is unavailable."));
+			setError(readErrorMessage(cause, t("vf.unavailable")));
 		} finally {
 			setBusy(false);
 		}
@@ -362,6 +375,7 @@ export function VerifyPage() {
 						confirmed: true,
 					},
 				}),
+				t,
 			);
 			if ("error" in outcome) {
 				setError(outcome.error);
@@ -371,7 +385,7 @@ export function VerifyPage() {
 			setExpiresAt(outcome.expiresAt);
 			setOk(true);
 		} catch (cause) {
-			setError(readErrorMessage(cause, "Device authorization is unavailable."));
+			setError(readErrorMessage(cause, t("vf.unavailable")));
 		} finally {
 			setBusy(false);
 		}
@@ -380,22 +394,17 @@ export function VerifyPage() {
 	return (
 		<div className="stack">
 			<div className="card">
-				<h1>Authorize device</h1>
-				<p className="muted">
-					Type the short code your agent runtime shows on your own device. Approving links that
-					device to your team and gives it an API key.
-				</p>
+				<h1>{t("vf.authorize")}</h1>
+				<p className="muted">{t("vf.lead")}</p>
 
 				{linkCode && !ok ? (
 					<div className="notice notice-warning" data-testid="link-code-notice">
-						This page was opened from a link that carries a code. Do not copy the code from the
-						link: type the code shown on the device you are setting up. If you did not start a
-						sign-in on your own device in the last few minutes, close this page.
+						{t("vf.linkNotice")}
 					</div>
 				) : null}
 
 				<label className="label" htmlFor="device-user-code">
-					Code
+					{t("vf.code")}
 					<input
 						id="device-user-code"
 						className="input mono"
@@ -404,6 +413,7 @@ export function VerifyPage() {
 							setUserCode(e.target.value);
 							resetDecision();
 						}}
+						// i18n-exempt: sample code format
 						placeholder="ABCD-EFGH"
 						autoCapitalize="characters"
 						autoCorrect="off"
@@ -413,7 +423,7 @@ export function VerifyPage() {
 				</label>
 				{hasSession && (
 					<label className="label" htmlFor="enrollment-team">
-						Team receiving this device
+						{t("vf.teamReceiving")}
 						<select
 							id="enrollment-team"
 							className="input"
@@ -424,7 +434,7 @@ export function VerifyPage() {
 								resetDecision();
 							}}
 						>
-							<option value="">Select a team</option>
+							<option value="">{t("vf.selectTeam")}</option>
 							{teams.map((team) => (
 								<option key={team.id} value={team.id}>
 									{team.name}
@@ -442,12 +452,12 @@ export function VerifyPage() {
 							disabled={busy || ok || typed.length !== 8 || (hasSession === true && !teamId)}
 							onClick={lookup}
 						>
-							Continue
+							{t("vf.continue")}
 						</button>
 
 						{hasSession ? null : (
 							<Link className="button button-secondary" to={signInPath}>
-								Sign in
+								{t("vf.signIn")}
 							</Link>
 						)}
 					</div>
@@ -468,31 +478,25 @@ export function VerifyPage() {
 
 				{ok ? (
 					<div className="notice">
-						<div>
-							<b>Authorized.</b> Return to your agent. It should complete enrollment automatically.
-						</div>
+						<div>{richT("vf.authorized", { lead: <b>{t("vf.authorizedLead")}</b> })}</div>
 						<div className="muted small" role="status" aria-live="polite" style={{ marginTop: 8 }}>
-							Code expires in {formatRemaining(remainingMs)}
+							{t("vf.expiresIn", { time: formatRemaining(remainingMs) })}
 						</div>
 					</div>
 				) : null}
 
 				{!ok && (expired || error) ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
-						<div className="mono">
-							{expired
-								? "This code expired before enrollment finished. Start authorization again in your agent and enter its new code."
-								: error}
-						</div>
+						<div className="mono">{expired ? t("vf.expired") : error}</div>
 						<div className="muted small" style={{ marginTop: 8 }}>
-							Need help? Start again in your agent or contact support.
+							{t("vf.help")}
 						</div>
 						<div className="row" style={{ marginTop: 12 }}>
 							<Link className="button button-secondary" to="/onboarding">
-								Return to onboarding
+								{t("vf.returnOnboarding")}
 							</Link>
 							<Link className="button button-secondary" to="/support">
-								Contact support
+								{t("vf.contactSupport")}
 							</Link>
 						</div>
 					</div>

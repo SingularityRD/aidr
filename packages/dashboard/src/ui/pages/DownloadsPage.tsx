@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
-import { useT } from "../../i18n/I18nProvider";
+import { useRichT, useT } from "../../i18n/I18nProvider";
 import type { VisitorOs } from "../../lib/installers";
 import {
 	BrowserGuardCard,
@@ -20,6 +20,7 @@ export function DownloadsPage({
 	visitorOs?: { os: VisitorOs; arch: "x64" | "arm64" };
 } = {}) {
 	const t = useT();
+	const richT = useRichT();
 	const { currentTeam, isLoading } = useTeam();
 	const config = links ?? browserGuardLinks();
 	if (isLoading) {
@@ -32,7 +33,7 @@ export function DownloadsPage({
 	return (
 		<div className="stack">
 			<div className="card">
-				<h1>{t("downloads.title")}</h1>
+				<h1>{t("nav.downloads")}</h1>
 				<p className="muted">
 					{t("downloads.intro", { team: currentTeam?.name ?? t("downloads.yourTeam") })}
 				</p>
@@ -60,6 +61,11 @@ export function DownloadsPage({
 				<summary>
 					<b>{t("downloads.advanced.title")}</b>
 				</summary>
+				<div className="notice notice-warning" role="note" style={{ marginTop: 12 }}>
+					{richT("onb.manual.releaseKey", {
+						command: <code>aidr setup --release-key &lt;key.pem&gt;</code>,
+					})}
+				</div>
 				<div style={{ marginTop: 12 }}>
 					<DownloadCenter teamId={currentTeam?.id ?? null} />
 				</div>

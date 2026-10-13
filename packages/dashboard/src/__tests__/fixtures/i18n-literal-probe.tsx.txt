@@ -1,0 +1,24 @@
+// Fixture for i18n-literals.test.ts: each English literal below must be flagged,
+// and each allowed form (code, product names, errors, catalog keys) must not.
+declare const t: (key: string) => string;
+declare const count: number;
+
+// i18n-exempt: instructions for an AI agent stay in English.
+const agentPrompt = ["You are installing the product now.", "Stop if the version is unknown."];
+
+export function Probe() {
+	void agentPrompt;
+	const message = "Approval signing key rotated.";
+	if (count < 0) throw new Error("Count must not be negative here");
+	return (
+		<div>
+			<h2>Pending approvals</h2>
+			<input placeholder="Search agents" aria-label={t("agents.search")} />
+			<p>{message}</p>
+			<p>{`Showing the newest requests (${count})`}</p>
+			<code>aidr status --json</code>
+			<span>Browser Guard</span>
+			<span>{t("approvals.empty")}</span>
+		</div>
+	);
+}

@@ -7,6 +7,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useT } from "../i18n/I18nProvider";
 import type { Database } from "../lib/database.types";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
@@ -204,6 +205,7 @@ function ProtectedTeamProvider({
 	onSwitchTeam: (teamId: string) => void;
 	refreshMemberships: (tenantId: string) => Promise<void>;
 }) {
+	const t = useT();
 	const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
 	const [teams, setTeams] = useState<Team[]>([]);
 	const [members, setMembers] = useState<TeamMember[]>([]);
@@ -290,7 +292,7 @@ function ProtectedTeamProvider({
 					}
 				}
 			} catch (err) {
-				if (!cancelled) setError(readErrorMessage(err, "Failed to load teams"));
+				if (!cancelled) setError(readErrorMessage(err, t("team.p.loadTeams")));
 			} finally {
 				if (!cancelled) {
 					setIsLoading(false);
@@ -336,7 +338,7 @@ function ProtectedTeamProvider({
 					if (!isMissingMemberDirectory(directory.error)) {
 						setMembers([]);
 						setMemberEmailsAvailable(false);
-						setMembersError(readErrorMessage(directory.error, "Failed to load members"));
+						setMembersError(readErrorMessage(directory.error, t("team.p.loadMembers")));
 						return;
 					}
 				}
@@ -350,7 +352,7 @@ function ProtectedTeamProvider({
 				if (plain.error) {
 					setMembers([]);
 					setMemberEmailsAvailable(false);
-					setMembersError(readErrorMessage(plain.error, "Failed to load members"));
+					setMembersError(readErrorMessage(plain.error, t("team.p.loadMembers")));
 					return;
 				}
 
@@ -361,7 +363,7 @@ function ProtectedTeamProvider({
 				if (!isIdentityCurrent() || selectedTeam.current !== currentTeam.id) return;
 				setMembers([]);
 				setMemberEmailsAvailable(false);
-				setMembersError(readErrorMessage(err, "Failed to load members"));
+				setMembersError(readErrorMessage(err, t("team.p.loadMembers")));
 			}
 		}
 
@@ -395,7 +397,7 @@ function ProtectedTeamProvider({
 			setAuditLoaded(true);
 		} catch (err) {
 			if (!isIdentityCurrent() || selectedTeam.current !== teamId) return;
-			setAuditError(readErrorMessage(err, "Failed to load audit logs"));
+			setAuditError(readErrorMessage(err, t("team.p.loadAudit")));
 			setAuditLoaded(true);
 		}
 	}, [currentTeam, isIdentityCurrent]);
@@ -423,7 +425,7 @@ function ProtectedTeamProvider({
 			if (!isIdentityCurrent())
 				throw new Error("The session changed before team creation completed.");
 			if (teamError) throw teamError;
-			if (!team) throw new Error("Failed to create team");
+			if (!team) throw new Error(t("team.createFailed"));
 
 			const typedTeam = team as Database["public"]["Tables"]["teams"]["Row"];
 
@@ -433,7 +435,7 @@ function ProtectedTeamProvider({
 			// Mutation failures are surfaced once, by the caller that rendered the
 			// action, so they are not mirrored into the load-error channel where a
 			// stale message could outlive the action that caused it.
-			throw new Error(readErrorMessage(err, "Failed to create team"));
+			throw new Error(readErrorMessage(err, t("team.createFailed")));
 		}
 	}
 
@@ -473,7 +475,7 @@ function ProtectedTeamProvider({
 			}
 			return readInvitationDelivery(response);
 		} catch (err) {
-			const message = readErrorMessage(err, "Failed to invite member");
+			const message = readErrorMessage(err, t("team.p.invite"));
 			throw new Error(message);
 		}
 	}
@@ -501,7 +503,7 @@ function ProtectedTeamProvider({
 			if (userId === currentUserId) await refreshMemberships(currentTeam.tenant_id);
 			setMembers((prev) => prev.filter((m) => m.user_id !== userId));
 		} catch (err) {
-			const message = readErrorMessage(err, "Failed to remove member");
+			const message = readErrorMessage(err, t("team.removeFailed"));
 			throw new Error(message);
 		}
 	}
@@ -526,7 +528,7 @@ function ProtectedTeamProvider({
 			if (userId === currentUserId) await refreshMemberships(currentTeam.tenant_id);
 			setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role } : m)));
 		} catch (err) {
-			const message = readErrorMessage(err, "Failed to update role");
+			const message = readErrorMessage(err, t("team.roleFailed"));
 			throw new Error(message);
 		}
 	}
@@ -570,7 +572,7 @@ function ProtectedTeamProvider({
 			}
 			return URL.createObjectURL(file);
 		} catch (err) {
-			setError(readErrorMessage(err, "Failed to export audit logs"));
+			setError(readErrorMessage(err, t("team.p.export")));
 			throw err;
 		}
 	}

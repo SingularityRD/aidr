@@ -1,5 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import {
@@ -46,48 +48,36 @@ const AUTHORITY_OFF: DirectoryAuthority = {
 	directory_id: null,
 	break_glass_user_ids: [],
 };
-const SAFE_SCIM_ERRORS: Record<string, string> = {
-	owner_required: "Only an active tenant owner can view or manage directory provisioning.",
-	mfa_required: "Complete multi-factor verification, then try again.",
-	scim_admin_directory_required:
-		"Enter the directory identifier this credential provisions for. Legacy credentials must be bound when rotated.",
-	scim_admin_directory_mismatch:
-		"A rotation keeps its credential's directory. Leave the directory identifier empty or use the same one.",
-	scim_admin_directory_not_authoritative:
-		"Directory-authoritative mode is on. Only the configured directory can receive credentials.",
-	directory_authority_already_enabled:
-		"Directory-authoritative mode is already on. Refresh to see its configuration.",
-	directory_authority_directory_token_required:
-		"Create an active credential for this directory before making it authoritative.",
-	directory_authority_foreign_token_active:
-		"Revoke every active credential for other directories (including unbound legacy credentials) first.",
-	directory_authority_adoption_ambiguous:
-		"Credentials for another directory existed, so existing SCIM memberships cannot be attributed to this directory. Leave adoption off and let the directory re-provision them.",
-	directory_authority_break_glass_mismatch:
-		"Every active owner must be listed as a break-glass account (at most two). Remove or demote extra owners first, then refresh.",
-	directory_authority_break_glass_invalid:
-		"A break-glass owner is unavailable or directory-provisioned. Use active, manually managed owner accounts.",
-	directory_authority_would_remove_all_administrators:
-		"Enabling would leave no owner or admin with access. No change was made.",
-	directory_authority_tenant_unsupported:
-		"Directory-authoritative mode is available only for active team workspaces.",
-	directory_authority_membership_required:
-		"That change would give access to someone the configured directory does not provision.",
-	directory_authority_break_glass_owner_required:
-		"At least one break-glass owner must keep owner access while the mode is on.",
-	assurance_unavailable: "Multi-factor status could not be verified. No change was confirmed.",
-	mapping_conflicts_with_manual_membership:
-		"This group would take over a manually assigned team membership. Resolve that membership explicitly, then retry.",
-	token_not_found_or_inactive:
-		"The selected credential is no longer active. Refresh the list and retry.",
-	token_not_found_or_revoked: "The credential is already revoked or no longer exists.",
-	group_mapping_not_found: "The group mapping no longer exists. Refresh the list and retry.",
-	scim_resource_conflict:
-		"A conflicting directory resource already exists. Refresh the list and review it before retrying.",
-	invalid_request:
-		"The request was rejected. Check the selected role, label, and exact group identifier.",
-	scim_management_unavailable:
-		"Directory management is temporarily unavailable. No change was confirmed.",
+const SAFE_SCIM_ERRORS: Record<string, DashboardMessageKey> = {
+	owner_required: "scim.err.owner",
+	mfa_required: "saml.err.mfa",
+	scim_admin_directory_required: "scim.err.directoryRequired",
+	scim_admin_directory_mismatch: "scim.err.directoryMismatch",
+	scim_admin_directory_not_authoritative: "scim.err.notAuthoritative",
+	directory_authority_already_enabled: "scim.err.alreadyOn",
+	directory_authority_directory_token_required: "scim.err.tokenRequired",
+	directory_authority_foreign_token_active: "scim.err.foreignToken",
+	directory_authority_adoption_ambiguous: "scim.err.adoptionAmbiguous",
+	directory_authority_break_glass_mismatch: "scim.err.breakGlassMismatch",
+	directory_authority_break_glass_invalid: "scim.err.breakGlassInvalid",
+	directory_authority_would_remove_all_administrators: "scim.err.noAdmins",
+	directory_authority_tenant_unsupported: "scim.err.unsupported",
+	directory_authority_membership_required: "scim.err.membershipRequired",
+	directory_authority_break_glass_owner_required: "scim.err.breakGlassOwner",
+	assurance_unavailable: "scim.err.assurance",
+	mapping_conflicts_with_manual_membership: "scim.err.manualConflict",
+	token_not_found_or_inactive: "scim.err.tokenInactive",
+	token_not_found_or_revoked: "scim.err.tokenRevoked",
+	group_mapping_not_found: "scim.err.mappingMissing",
+	scim_resource_conflict: "scim.err.conflict",
+	invalid_request: "scim.err.invalid",
+	scim_management_unavailable: "scim.err.unavailable",
+};
+
+const ROLE_LABELS: Record<ScimRole, DashboardMessageKey> = {
+	admin: "common.role.admin",
+	member: "common.role.member",
+	viewer: "common.role.viewer",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -130,7 +120,7 @@ function parseToken(value: unknown): ScimToken | null {
 	};
 }
 
-function parseAuthority(value: unknown): DirectoryAuthority {
+function parseAuthority(value: unknown, t: Translate): DirectoryAuthority {
 	// Older deployments omit the field; the mode does not exist there (off).
 	if (value === undefined) return AUTHORITY_OFF;
 	if (
@@ -143,12 +133,11 @@ function parseAuthority(value: unknown): DirectoryAuthority {
 		!Array.isArray(value.break_glass_owners) ||
 		(value.enabled && value.directory_id === null)
 	)
-		throw new Error("Directory management returned an invalid membership mode.");
+		throw new Error(t("scim.err.invalidMode"));
 	const owners = value.break_glass_owners.map((row) =>
 		isRecord(row) && typeof row.user_id === "string" && UUID.test(row.user_id) ? row.user_id : null,
 	);
-	if (owners.some((id) => id === null))
-		throw new Error("Directory management returned an invalid membership mode.");
+	if (owners.some((id) => id === null)) throw new Error(t("scim.err.invalidMode"));
 	return {
 		enabled: value.enabled,
 		directory_id: value.directory_id as string | null,
@@ -176,18 +165,18 @@ function parseMapping(value: unknown): GroupMapping | null {
 	};
 }
 
-function parseSnapshot(value: unknown): ScimSnapshot {
+function parseSnapshot(value: unknown, t: Translate): ScimSnapshot {
 	if (
 		!isRecord(value) ||
 		value.ok !== true ||
 		!Array.isArray(value.tokens) ||
 		!Array.isArray(value.group_role_mappings)
 	)
-		throw new Error("Directory management returned an invalid response.");
+		throw new Error(t("scim.err.invalidResponse"));
 	const tokens = value.tokens.map(parseToken);
 	const mappings = value.group_role_mappings.map(parseMapping);
 	if (tokens.some((row) => row === null) || mappings.some((row) => row === null))
-		throw new Error("Directory management returned an invalid record.");
+		throw new Error(t("scim.err.invalidRecord"));
 	const rawTokenCursor = value.next_token_cursor;
 	let nextTokenCursor: TokenCursor | null = null;
 	if (rawTokenCursor !== null && rawTokenCursor !== undefined) {
@@ -198,7 +187,7 @@ function parseSnapshot(value: unknown): ScimSnapshot {
 			typeof rawTokenCursor.created_at !== "string" ||
 			!Number.isFinite(Date.parse(rawTokenCursor.created_at))
 		)
-			throw new Error("Directory management returned an invalid pagination cursor.");
+			throw new Error(t("scim.err.invalidCursor"));
 		nextTokenCursor = { id: rawTokenCursor.id, created_at: rawTokenCursor.created_at };
 	}
 	const nextMappingCursor = value.next_mapping_cursor;
@@ -209,28 +198,34 @@ function parseSnapshot(value: unknown): ScimSnapshot {
 			nextMappingCursor.length < 1 ||
 			nextMappingCursor.length > 255)
 	)
-		throw new Error("Directory management returned an invalid pagination cursor.");
+		throw new Error(t("scim.err.invalidCursor"));
 	return {
 		tokens: tokens as ScimToken[],
 		group_role_mappings: mappings as GroupMapping[],
 		next_token_cursor: nextTokenCursor,
 		next_mapping_cursor: typeof nextMappingCursor === "string" ? nextMappingCursor : null,
-		directory_authority: parseAuthority(value.directory_authority),
+		directory_authority: parseAuthority(value.directory_authority, t),
 	};
 }
 
-async function responseError(error: unknown, data: unknown, fallback: string): Promise<string> {
+async function responseError(
+	error: unknown,
+	data: unknown,
+	fallback: string,
+	t: Translate,
+): Promise<string> {
 	const getSafeCode = (value: unknown) => {
 		if (!isRecord(value) || typeof value.error !== "string") return undefined;
 		if (value.error === "directory_authority_unmanaged_members") {
 			const count = value.unmanaged_member_count;
-			const who =
-				typeof count === "number" && Number.isSafeInteger(count) && count > 0
-					? `${count} active ${count === 1 ? "member is" : "members are"}`
-					: "Some active members are";
-			return `${who} not provisioned by this directory. Adopt existing SCIM memberships, or explicitly choose to remove unprovisioned members, then retry. No change was made.`;
+			if (typeof count !== "number" || !Number.isSafeInteger(count) || count <= 0)
+				return t("scim.err.unmanagedSome");
+			return count === 1 ? t("scim.err.unmanagedOne") : t("scim.err.unmanagedMany", { count });
 		}
-		return SAFE_SCIM_ERRORS[value.error];
+		const key = Object.hasOwn(SAFE_SCIM_ERRORS, value.error)
+			? SAFE_SCIM_ERRORS[value.error]
+			: undefined;
+		return key ? t(key) : undefined;
 	};
 	const direct = getSafeCode(data);
 	if (direct) return direct;
@@ -274,12 +269,9 @@ function isActiveToken(token: ScimToken): boolean {
 	return !token.revoked_at && (!token.expires_at || Date.parse(token.expires_at) > Date.now());
 }
 
-function formatDate(value: string | null): string {
-	return value ? new Date(value).toLocaleString() : "Never";
+function formatDate(value: string | null, t: Translate): string {
+	return value ? new Date(value).toLocaleString() : t("scim.never");
 }
-
-const INVALID_DIRECTORY_MESSAGE =
-	"Enter the directory identifier (1–128 letters, digits, dot, underscore, colon or hyphen; starting with a letter or digit).";
 
 /**
  * The directory_id to send: a new credential always names its directory, a
@@ -308,17 +300,19 @@ function tokenRequestBody(
 	return directory === null ? base : { ...base, directory_id: directory };
 }
 
-function directoryLabel(token: ScimToken): string {
-	return token.directory_id ?? "Unbound (legacy)";
+function directoryLabel(token: ScimToken, t: Translate): string {
+	return token.directory_id ?? t("scim.unbound");
 }
 
-function enabledNotice(directoryId: string, removedCount: unknown): string {
+function enabledNotice(directoryId: string, removedCount: unknown, t: Translate): string {
 	const removed = typeof removedCount === "number" ? removedCount : 0;
 	const removal =
 		removed > 0
-			? `${removed} unprovisioned ${removed === 1 ? "member was" : "members were"} removed. `
+			? removed === 1
+				? t("scim.removedOne")
+				: t("scim.removedMany", { count: removed })
 			: "";
-	return `Directory-authoritative mode is on for ${directoryId}. ${removal}Only memberships this directory provisions, and the break-glass owners, grant access.`;
+	return t("scim.enabledNotice", { directory: directoryId, removal });
 }
 
 function activeDirectories(tokens: ScimToken[]): string[] {
@@ -338,9 +332,9 @@ function validGroupId(value: string): boolean {
 }
 
 export function ScimPage() {
+	const t = useT();
 	const { currentTeam, currentRole, currentUserId, members } = useTeam();
-	if (!currentTeam)
-		return <div className="card">Select a tenant to manage directory provisioning.</div>;
+	if (!currentTeam) return <div className="card">{t("scim.selectTenant")}</div>;
 	const owners = (members ?? [])
 		.filter((member) => member.role === "owner")
 		.map((member) => ({ userId: member.user_id, email: member.email }));
@@ -369,6 +363,11 @@ function TenantScimPage({
 	currentUserId: string;
 	owners: { userId: string; email: string }[];
 }) {
+	const t = useT();
+	const richT = useRichT();
+	// The loader reads the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [tokens, setTokens] = useState<ScimToken[]>([]);
 	const [mappings, setMappings] = useState<GroupMapping[]>([]);
 	const [authority, setAuthority] = useState<DirectoryAuthority>(AUTHORITY_OFF);
@@ -411,6 +410,7 @@ function TenantScimPage({
 	const load = useCallback(
 		async (append = false) => {
 			if (!isOwner) return;
+			const t = translator.current;
 			if (append) setLoadingMore(true);
 			else setLoading(true);
 			setError(null);
@@ -421,10 +421,8 @@ function TenantScimPage({
 					{ method: "GET", headers: { "X-AIDR-Tenant-ID": tenantId } },
 				);
 				if (invokeError)
-					throw new Error(
-						await responseError(invokeError, data, "Unable to load directory settings."),
-					);
-				const snapshot = parseSnapshot(data);
+					throw new Error(await responseError(invokeError, data, t("scim.loadFailed"), t));
+				const snapshot = parseSnapshot(data, t);
 				setTokens((previous) =>
 					append ? mergeBy(previous, snapshot.tokens, (item) => item.id) : snapshot.tokens,
 				);
@@ -441,7 +439,7 @@ function TenantScimPage({
 				setTokenCursor(snapshot.next_token_cursor);
 				setMappingCursor(snapshot.next_mapping_cursor);
 			} catch (cause) {
-				setError(readErrorMessage(cause, "Unable to load directory settings."));
+				setError(readErrorMessage(cause, t("scim.loadFailed")));
 			} finally {
 				setLoading(false);
 				setLoadingMore(false);
@@ -464,25 +462,25 @@ function TenantScimPage({
 			body: { ...body, tenant_id: tenantId },
 		});
 		if (invokeError) {
-			const message = await responseError(invokeError, data, fallback);
+			const message = await responseError(invokeError, data, fallback, t);
 			throw Object.assign(new Error(message), {
 				scimMutationMayHaveCommitted: mutationMayHaveCommitted(invokeError),
 			});
 		}
 		if (!isRecord(data) || data.ok !== true)
-			throw new Error(await responseError(null, data, fallback));
+			throw new Error(await responseError(null, data, fallback, t));
 		return data;
 	}
 
 	async function createToken(action: "create_token" | "rotate_token", token?: ScimToken) {
 		const label = tokenLabel.trim() || (token ? `${token.label} rotation`.slice(0, 120) : "");
 		if (!label) {
-			setError("Enter a descriptive credential label.");
+			setError(t("scim.labelRequired"));
 			return;
 		}
 		const directory = tokenDirectory(action, token, directoryId);
 		if (directory === undefined) {
-			setError(INVALID_DIRECTORY_MESSAGE);
+			setError(t("scim.invalidDirectory"));
 			return;
 		}
 		setBusy(true);
@@ -491,7 +489,7 @@ function TenantScimPage({
 		try {
 			const data = await invokeWrite(
 				tokenRequestBody(action, token, label, directory),
-				"Credential creation was not confirmed.",
+				t("scim.createUnconfirmed"),
 			);
 			if (
 				typeof data.scim_token !== "string" ||
@@ -499,25 +497,19 @@ function TenantScimPage({
 				typeof data.expires_at !== "string" ||
 				!Number.isFinite(Date.parse(data.expires_at))
 			)
-				throw new Error("The credential service returned an invalid one-time secret response.");
+				throw new Error(t("scim.invalidSecret"));
 			setSecret({ value: data.scim_token, label, expiresAt: data.expires_at });
 			setShowSecret(false);
 			setCopied(false);
 			setTokenLabel("");
-			setNotice(
-				action === "rotate_token"
-					? "Replacement created. The previous credential remains valid; verify the new secret with your provider, then revoke the old credential."
-					: "Credential created. Copy it into your approved secret manager now; it cannot be shown again.",
-			);
+			setNotice(action === "rotate_token" ? t("scim.rotated") : t("scim.created"));
 			await load();
 		} catch (cause) {
-			const message = readErrorMessage(cause, "Credential creation was not confirmed.");
+			const message = readErrorMessage(cause, t("scim.createUnconfirmed"));
 			if (mutationMayHaveCommitted(cause)) {
 				await load();
 				setTokenLabel("");
-				setError(
-					`${message} The request may have reached AIDR before the connection failed. If a new active credential is listed but its secret was not shown, revoke it before retrying.`,
-				);
+				setError(t("scim.mayHaveCommitted", { message }));
 			} else setError(message);
 		} finally {
 			setBusy(false);
@@ -531,13 +523,13 @@ function TenantScimPage({
 		try {
 			await invokeWrite(
 				{ action: "revoke_token", token_id: token.id },
-				"Credential revocation was not confirmed.",
+				t("scim.revokeUnconfirmed"),
 			);
 			setConfirmRevoke(null);
-			setNotice("Credential revoked. Its secret can no longer provision directory changes.");
+			setNotice(t("scim.revoked"));
 			await load();
 		} catch (cause) {
-			setError(readErrorMessage(cause, "Credential revocation was not confirmed."));
+			setError(readErrorMessage(cause, t("scim.revokeUnconfirmed")));
 		} finally {
 			setBusy(false);
 		}
@@ -557,27 +549,20 @@ function TenantScimPage({
 						adopt_existing_memberships: request.adoptExisting,
 						remove_unmanaged_members: request.removeUnmanaged,
 					},
-					"Directory-authoritative mode was not confirmed.",
+					t("scim.enableUnconfirmed"),
 				);
-				setNotice(enabledNotice(request.directoryId, data.removed_count));
+				setNotice(enabledNotice(request.directoryId, data.removed_count, t));
 			} else {
-				await invokeWrite(
-					{ action: "disable_directory_authority" },
-					"Disabling directory-authoritative mode was not confirmed.",
-				);
-				setNotice(
-					"Directory-authoritative mode is off. Manually added members can be granted access again.",
-				);
+				await invokeWrite({ action: "disable_directory_authority" }, t("scim.disableUnconfirmed"));
+				setNotice(t("scim.disabled"));
 			}
 			await load();
 			return true;
 		} catch (cause) {
-			const message = readErrorMessage(cause, "The membership mode change was not confirmed.");
+			const message = readErrorMessage(cause, t("scim.modeUnconfirmed"));
 			if (mutationMayHaveCommitted(cause)) {
 				await load();
-				setError(
-					`${message} Refresh shows the current mode; it may have changed before the connection failed.`,
-				);
+				setError(t("scim.modeMayHaveChanged", { message }));
 			} else setError(message);
 			return false;
 		} finally {
@@ -588,9 +573,7 @@ function TenantScimPage({
 	async function saveMapping(event: FormEvent) {
 		event.preventDefault();
 		if (!validGroupId(groupId)) {
-			setError(
-				"Enter the exact immutable SCIM Group.externalId (1–255 characters, without surrounding whitespace or control characters).",
-			);
+			setError(t("scim.badGroup"));
 			return;
 		}
 		setBusy(true);
@@ -599,16 +582,14 @@ function TenantScimPage({
 		try {
 			await invokeWrite(
 				{ action: "set_group_mapping", external_group_id: groupId, role: groupRole },
-				"Group-role mapping was not confirmed.",
+				t("scim.mappingUnconfirmed"),
 			);
 			setGroupId("");
 			setGroupRole("viewer");
-			setNotice(
-				"Group-role mapping saved. Only the exact immutable external ID is used; SCIM cannot grant owner.",
-			);
+			setNotice(t("scim.mappingSaved"));
 			await load();
 		} catch (cause) {
-			setError(readErrorMessage(cause, "Group-role mapping was not confirmed."));
+			setError(readErrorMessage(cause, t("scim.mappingUnconfirmed")));
 		} finally {
 			setBusy(false);
 		}
@@ -621,15 +602,13 @@ function TenantScimPage({
 		try {
 			await invokeWrite(
 				{ action: "remove_group_mapping", external_group_id: mapping.external_group_id },
-				"Group-role mapping removal was not confirmed.",
+				t("scim.removeUnconfirmed"),
 			);
 			setConfirmMappingRemoval(null);
-			setNotice(
-				"Group-role mapping removed. SCIM-managed memberships were reconciled by the service.",
-			);
+			setNotice(t("scim.mappingRemoved"));
 			await load();
 		} catch (cause) {
-			setError(readErrorMessage(cause, "Group-role mapping removal was not confirmed."));
+			setError(readErrorMessage(cause, t("scim.removeUnconfirmed")));
 		} finally {
 			setBusy(false);
 		}
@@ -638,25 +617,17 @@ function TenantScimPage({
 	if (!isOwner)
 		return (
 			<div className="card">
-				<h1>Directory provisioning</h1>
-				<p className="muted">
-					SCIM credentials and group-role mappings are available to active tenant owners only.
-				</p>
+				<h1>{t("scim.title")}</h1>
+				<p className="muted">{t("scim.ownersOnly")}</p>
 			</div>
 		);
 
 	return (
 		<div className="stack">
 			<header className="card">
-				<h1>Directory provisioning</h1>
-				<p className="muted">
-					Configure inbound SCIM for <strong>{teamName}</strong>. The service verifies owner access
-					on every request.
-				</p>
-				<p className="muted small">
-					SCIM provisions users and roles. SAML sign-in enforcement is managed separately below,
-					with approval from two owners.
-				</p>
+				<h1>{t("scim.title")}</h1>
+				<p className="muted">{richT("scim.lead", { team: <strong>{teamName}</strong> })}</p>
+				<p className="muted small">{t("scim.leadSaml")}</p>
 			</header>
 
 			<SamlPolicyPanel key={currentUserId} tenantId={tenantId} currentUserId={currentUserId} />
@@ -673,13 +644,10 @@ function TenantScimPage({
 			) : null}
 
 			<section className="card" aria-labelledby="scim-credentials-heading">
-				<h2 id="scim-credentials-heading">Provisioning credentials</h2>
-				<p className="muted">
-					New credentials expire after 90 days by default. Rotation keeps the previous credential
-					active until you verify the replacement and revoke the old one.
-				</p>
+				<h2 id="scim-credentials-heading">{t("scim.credentials")}</h2>
+				<p className="muted">{t("scim.credentialsLead")}</p>
 				<label className="label" htmlFor="scim-token-label">
-					Credential label
+					{t("scim.credentialLabel")}
 				</label>
 				<input
 					id="scim-token-label"
@@ -687,11 +655,12 @@ function TenantScimPage({
 					maxLength={120}
 					value={tokenLabel}
 					onChange={(event) => setTokenLabel(event.target.value)}
+					// i18n-exempt: sample label
 					placeholder="Entra production"
 					autoComplete="off"
 				/>
 				<label className="label" htmlFor="scim-directory-id" style={{ marginTop: 10 }}>
-					Directory identifier
+					{t("scim.directoryId")}
 				</label>
 				<input
 					id="scim-directory-id"
@@ -699,14 +668,13 @@ function TenantScimPage({
 					maxLength={128}
 					value={directoryId}
 					onChange={(event) => setDirectoryId(event.target.value)}
+					// i18n-exempt: sample identifier
 					placeholder="entra-production"
 					autoComplete="off"
 					aria-describedby="scim-directory-id-help"
 				/>
 				<p id="scim-directory-id-help" className="muted small">
-					A stable name for the identity directory this credential provisions from. It is recorded
-					on the credential and cannot be changed. Rotations keep it; enter it only to bind an
-					unbound legacy credential when rotating.
+					{t("scim.directoryHelp")}
 				</p>
 				<div className="row" style={{ marginTop: 10 }}>
 					<button
@@ -715,7 +683,7 @@ function TenantScimPage({
 						disabled={busy || loading || Boolean(secret)}
 						onClick={() => void createToken("create_token")}
 					>
-						Create credential
+						{t("scim.create")}
 					</button>
 					<button
 						className="button button-secondary"
@@ -723,7 +691,7 @@ function TenantScimPage({
 						disabled={busy}
 						onClick={() => void load()}
 					>
-						Refresh
+						{t("common.refresh")}
 					</button>
 				</div>
 				{secret ? (
@@ -733,10 +701,9 @@ function TenantScimPage({
 						aria-labelledby="scim-secret-heading"
 						style={{ marginTop: 14 }}
 					>
-						<h3 id="scim-secret-heading">Copy this credential now</h3>
+						<h3 id="scim-secret-heading">{t("scim.copyNow")}</h3>
 						<p className="small">
-							Shown once. Store it only in your approved secret manager and configure the IdP with
-							that value. Expires {formatDate(secret.expiresAt)}.
+							{t("scim.shownOnce", { time: formatDate(secret.expiresAt, t) })}
 						</p>
 						<div className="row">
 							<input
@@ -745,7 +712,7 @@ function TenantScimPage({
 								readOnly
 								type={showSecret ? "text" : "password"}
 								value={showSecret ? secret.value : "•".repeat(32)}
-								aria-label="New SCIM credential"
+								aria-label={t("scim.newCredential")}
 								autoComplete="off"
 							/>
 							<button
@@ -753,7 +720,7 @@ function TenantScimPage({
 								type="button"
 								onClick={() => setShowSecret((value) => !value)}
 							>
-								{showSecret ? "Hide" : "Reveal"}
+								{showSecret ? t("scim.hide") : t("scim.reveal")}
 							</button>
 							<button
 								className="button button-secondary"
@@ -763,13 +730,11 @@ function TenantScimPage({
 										await navigator.clipboard.writeText(secret.value);
 										setCopied(true);
 									} catch {
-										setError(
-											"Clipboard access was blocked. Reveal the credential and copy it manually.",
-										);
+										setError(t("scim.clipboard"));
 									}
 								}}
 							>
-								{copied ? "Copied" : "Copy"}
+								{copied ? t("scim.copied") : t("scim.copy")}
 							</button>
 							<button
 								className="button button-secondary"
@@ -780,27 +745,27 @@ function TenantScimPage({
 									setCopied(false);
 								}}
 							>
-								Clear secret
+								{t("scim.clearSecret")}
 							</button>
 						</div>
 					</div>
 				) : null}
 				{loading ? (
-					<p role="status">Loading credentials…</p>
+					<p role="status">{t("scim.loadingCredentials")}</p>
 				) : tokens.length === 0 ? (
-					<p className="muted">No SCIM credentials have been issued.</p>
+					<p className="muted">{t("scim.noCredentials")}</p>
 				) : (
 					<div className="table-wrap" style={{ marginTop: 14 }}>
 						<table className="table">
-							<caption className="sr-only">SCIM provisioning credentials</caption>
+							<caption className="sr-only">{t("scim.credentialsCaption")}</caption>
 							<thead>
 								<tr>
-									<th scope="col">Label</th>
-									<th scope="col">Status</th>
-									<th scope="col">Directory</th>
-									<th scope="col">Expires</th>
-									<th scope="col">Last used</th>
-									<th scope="col">Actions</th>
+									<th scope="col">{t("scim.col.label")}</th>
+									<th scope="col">{t("common.status")}</th>
+									<th scope="col">{t("scim.col.directory")}</th>
+									<th scope="col">{t("scim.col.expires")}</th>
+									<th scope="col">{t("scim.col.lastUsed")}</th>
+									<th scope="col">{t("scim.col.actions")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -809,10 +774,16 @@ function TenantScimPage({
 									return (
 										<tr key={token.id}>
 											<td>{token.label}</td>
-											<td>{token.revoked_at ? "Revoked" : active ? "Active" : "Expired"}</td>
-											<td className="mono">{directoryLabel(token)}</td>
-											<td>{formatDate(token.expires_at)}</td>
-											<td>{formatDate(token.last_used_at)}</td>
+											<td>
+												{token.revoked_at
+													? t("scim.revokedState")
+													: active
+														? t("scim.activeState")
+														: t("scim.expiredState")}
+											</td>
+											<td className="mono">{directoryLabel(token, t)}</td>
+											<td>{formatDate(token.expires_at, t)}</td>
+											<td>{formatDate(token.last_used_at, t)}</td>
 											<td>
 												<div className="row">
 													{active ? (
@@ -822,7 +793,7 @@ function TenantScimPage({
 															disabled={busy || Boolean(secret)}
 															onClick={() => void createToken("rotate_token", token)}
 														>
-															Rotate
+															{t("scim.rotate")}
 														</button>
 													) : null}
 													{!token.revoked_at && confirmRevoke !== token.id ? (
@@ -832,13 +803,13 @@ function TenantScimPage({
 															disabled={busy}
 															onClick={() => setConfirmRevoke(token.id)}
 														>
-															Revoke
+															{t("scim.revoke")}
 														</button>
 													) : null}
 													{confirmRevoke === token.id ? (
 														<>
 															<span className="small" role="status">
-																Revoke permanently?
+																{t("scim.revokeConfirm")}
 															</span>
 															<button
 																className="button button-danger button-sm"
@@ -846,7 +817,7 @@ function TenantScimPage({
 																disabled={busy}
 																onClick={() => void revokeToken(token)}
 															>
-																Confirm revoke
+																{t("scim.confirmRevoke")}
 															</button>
 															<button
 																className="button button-secondary button-sm"
@@ -854,7 +825,7 @@ function TenantScimPage({
 																disabled={busy}
 																onClick={() => setConfirmRevoke(null)}
 															>
-																Cancel
+																{t("common.cancel")}
 															</button>
 														</>
 													) : null}
@@ -870,14 +841,13 @@ function TenantScimPage({
 			</section>
 
 			<section className="card" aria-labelledby="scim-mappings-heading">
-				<h2 id="scim-mappings-heading">Group-to-role mappings</h2>
+				<h2 id="scim-mappings-heading">{t("scim.mappings")}</h2>
 				<p className="muted">
-					Use the exact immutable SCIM <code>Group.externalId</code>; display names and user
-					metadata never grant roles. SCIM cannot grant owner.
+					{richT("scim.mappingsLead", { field: <code>Group.externalId</code> })}
 				</p>
 				<form onSubmit={(event) => void saveMapping(event)}>
 					<label className="label" htmlFor="scim-external-group-id">
-						Exact external group ID
+						{t("scim.groupId")}
 					</label>
 					<input
 						id="scim-external-group-id"
@@ -886,10 +856,10 @@ function TenantScimPage({
 						value={groupId}
 						onChange={(event) => setGroupId(event.target.value)}
 						autoComplete="off"
-						placeholder="Immutable Group.externalId"
+						placeholder={t("scim.groupPlaceholder")}
 					/>
 					<label className="label" htmlFor="scim-group-role" style={{ marginTop: 10 }}>
-						AIDR role
+						{t("scim.role")}
 					</label>
 					<select
 						id="scim-group-role"
@@ -897,13 +867,13 @@ function TenantScimPage({
 						value={groupRole}
 						onChange={(event) => setGroupRole(event.target.value as ScimRole)}
 					>
-						<option value="admin">Admin</option>
-						<option value="member">Member</option>
-						<option value="viewer">Viewer</option>
+						<option value="admin">{t("common.role.admin")}</option>
+						<option value="member">{t("common.role.member")}</option>
+						<option value="viewer">{t("common.role.viewer")}</option>
 					</select>
 					<div className="row" style={{ marginTop: 10 }}>
 						<button className="button" type="submit" disabled={busy || loading}>
-							Save mapping
+							{t("scim.saveMapping")}
 						</button>
 						<button
 							className="button button-secondary"
@@ -914,23 +884,23 @@ function TenantScimPage({
 								setGroupRole("viewer");
 							}}
 						>
-							Clear
+							{t("scim.clear")}
 						</button>
 					</div>
 				</form>
 				{loading ? (
-					<p role="status">Loading mappings…</p>
+					<p role="status">{t("scim.loadingMappings")}</p>
 				) : mappings.length === 0 ? (
-					<p className="muted">No group-role mappings have been configured.</p>
+					<p className="muted">{t("scim.noMappings")}</p>
 				) : (
 					<div className="table-wrap" style={{ marginTop: 14 }}>
 						<table className="table">
-							<caption className="sr-only">SCIM group-role mappings</caption>
+							<caption className="sr-only">{t("scim.mappingsCaption")}</caption>
 							<thead>
 								<tr>
-									<th scope="col">Exact external group ID</th>
-									<th scope="col">AIDR role</th>
-									<th scope="col">Actions</th>
+									<th scope="col">{t("scim.groupId")}</th>
+									<th scope="col">{t("scim.role")}</th>
+									<th scope="col">{t("scim.col.actions")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -939,7 +909,7 @@ function TenantScimPage({
 										<td className="mono" style={{ overflowWrap: "anywhere" }}>
 											{mapping.external_group_id}
 										</td>
-										<td>{mapping.role}</td>
+										<td>{t(ROLE_LABELS[mapping.role])}</td>
 										<td>
 											<div className="row">
 												<button
@@ -952,7 +922,7 @@ function TenantScimPage({
 														document.getElementById("scim-external-group-id")?.focus();
 													}}
 												>
-													Edit
+													{t("scim.edit")}
 												</button>
 												{confirmMappingRemoval !== mapping.external_group_id ? (
 													<button
@@ -961,12 +931,12 @@ function TenantScimPage({
 														disabled={busy}
 														onClick={() => setConfirmMappingRemoval(mapping.external_group_id)}
 													>
-														Remove
+														{t("scim.remove")}
 													</button>
 												) : (
 													<>
 														<span className="small" role="status">
-															Remove mapping?
+															{t("scim.removeConfirm")}
 														</span>
 														<button
 															className="button button-danger button-sm"
@@ -974,7 +944,7 @@ function TenantScimPage({
 															disabled={busy}
 															onClick={() => void removeMapping(mapping)}
 														>
-															Confirm remove
+															{t("scim.confirmRemove")}
 														</button>
 														<button
 															className="button button-secondary button-sm"
@@ -982,7 +952,7 @@ function TenantScimPage({
 															disabled={busy}
 															onClick={() => setConfirmMappingRemoval(null)}
 														>
-															Cancel
+															{t("common.cancel")}
 														</button>
 													</>
 												)}
@@ -1004,7 +974,7 @@ function TenantScimPage({
 						disabled={busy || loadingMore}
 						onClick={() => void load(true)}
 					>
-						{loadingMore ? "Loading…" : "Load more"}
+						{loadingMore ? t("common.loading") : t("scim.loadMore")}
 					</button>
 				</div>
 			) : null}

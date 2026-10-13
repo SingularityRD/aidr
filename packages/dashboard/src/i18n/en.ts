@@ -3,7 +3,11 @@
  * Values are the exact text the dashboard showed before localization.
  * `{name}` marks a parameter. Product and plan names stay untranslated.
  */
-export const en = {
+
+import { pageMessages } from "./messages";
+import { english } from "./messages/define";
+
+const base = {
 	"language.switchToLabel": "Switch the dashboard to Turkish",
 	"theme.toDark": "Switch to dark mode",
 	"theme.toLight": "Switch to light mode",
@@ -17,30 +21,37 @@ export const en = {
 	"layout.signOut": "Sign out",
 	"layout.envIncomplete": "Dashboard environment is incomplete.",
 	"layout.pendingCount": ", pending: ",
-	"nav.connect": "Connect",
+	"nav.section.overview": "Overview",
+	"nav.section.protection": "Protection",
+	"nav.section.response": "Approvals & incidents",
+	"nav.section.devices": "Devices & downloads",
+	"nav.section.governance": "Governance & compliance",
+	"nav.section.admin": "Administration",
+	// Navigation labels double as the heading of the page they open.
+	"nav.onboarding": "Onboarding",
 	"nav.downloads": "Downloads",
 	"nav.dashboard": "Dashboard",
 	"nav.billing": "Billing",
-	"nav.apiKeys": "API Keys",
+	"nav.apiKeys": "API keys",
 	"nav.agents": "Agents",
-	"nav.events": "Events",
+	"nav.events": "Activity feed",
 	"nav.discovery": "Discovery",
-	"nav.posture": "Posture",
-	"nav.incidents": "Incidents",
+	"nav.posture": "Security posture",
+	"nav.incidents": "Security incidents",
 	"nav.approvals": "Approvals",
-	"nav.browserPrivacy": "Browser Privacy",
+	"nav.browserGuard": "Browser Guard",
 	"nav.autosecops": "AutoSecOps",
 	"nav.settings": "Settings",
 	"nav.team": "Team",
 	"nav.scim": "Directory provisioning",
-	"nav.retention": "Legal holds & retention",
+	"nav.retention": "Legal holds and retention",
 	"nav.sso": "Single sign-on",
-	"nav.policies": "Policies",
+	"nav.policies": "Team policy",
 	"nav.siem": "SIEM export",
-	"nav.compliance": "Compliance",
-	"nav.governance": "Governance",
+	"nav.compliance": "Compliance report",
+	"nav.governance": "AI governance",
 	"nav.detectionExceptions": "Detection exceptions",
-	"nav.aiRegister": "AI register",
+	"nav.aiRegister": "AI asset register",
 
 	"public.navLabel": "Public",
 	"public.editions": "Editions",
@@ -125,7 +136,6 @@ export const en = {
 	"login.companyUnavailable": "Company sign-in is unavailable. Contact your administrator.",
 	"login.providerUnavailable": "This sign-in provider is unavailable. Contact your administrator.",
 
-	"downloads.title": "Download",
 	"downloads.intro":
 		"Install AIDR for {team} in three steps: download the installer, run it, and restart your AI tools.",
 	"downloads.yourTeam": "your team",
@@ -211,5 +221,10 @@ export const en = {
 	"onboarding.advanced.body":
 		"Use these steps only when you cannot run the installer, or to enroll a single connector by hand.",
 } as const;
+
+/** Keys of the shell strings above; tr.ts translates them in the same order. */
+export type BaseMessageKey = keyof typeof base;
+
+export const en = { ...base, ...english(pageMessages) };
 
 export type DashboardMessageKey = keyof typeof en;

@@ -2,6 +2,7 @@ import { AgentProfilesPanel } from "../../enterprise/agent-profiles-panel";
 import { DlpPolicyEditor } from "../../enterprise/dlp-editor";
 import { PolicyEditor } from "../../enterprise/policy-editor";
 import { RuntimePolicyEditor } from "../../enterprise/runtime-policy-editor";
+import { useT } from "../../i18n/I18nProvider";
 
 /**
  * Team policy authoring surface (AIDR-009).
@@ -16,22 +17,22 @@ import { RuntimePolicyEditor } from "../../enterprise/runtime-policy-editor";
  * runtime policy. Agent receipts remain the separate adoption signal.
  */
 export function PolicyPage() {
+	const t = useT();
 	return (
 		<div className="stack">
 			<div className="card">
 				<div className="pill" style={{ marginBottom: 8 }}>
-					Policy as code
+					{t("policy.pill")}
 				</div>
-				<h1>Team policy</h1>
+				<h1>{t("nav.policies")}</h1>
 				<p className="muted" style={{ maxWidth: 760 }}>
-					Write and validate strict team policy documents, run a dry-run compilation, then publish the compiled controls to enrolled agents.
+					{t("policy.intro")}
 				</p>
 			</div>
 			<div className="notice notice-warning" role="status">
-				<b>Saved YAML is compiled before it can become runtime policy.</b>
+				<b>{t("policy.compiledNotice")}</b>
 				<div className="muted small" style={{ marginTop: 6 }}>
-					Unsupported fields fail compilation. Use the dry-run or compile-and-publish action below; connected agents fetch the published controls on their next refresh.
-					Publication alone does not confirm every agent has adopted the version.
+					{t("policy.compiledBody")}
 				</div>
 			</div>
 			<PolicyEditor />

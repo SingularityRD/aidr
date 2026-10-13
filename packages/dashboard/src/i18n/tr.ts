@@ -1,7 +1,9 @@
-import type { DashboardMessageKey } from "./en";
+import type { BaseMessageKey, DashboardMessageKey } from "./en";
+import { pageMessages } from "./messages";
+import { turkish } from "./messages/define";
 
-/** Turkish dashboard strings; the type makes a missing or extra key a compile error. */
-export const tr: Record<DashboardMessageKey, string> = {
+/** Turkish shell strings; the type makes a missing or extra key a compile error. */
+const base: Record<BaseMessageKey, string> = {
 	"language.switchToLabel": "Paneli İngilizceye geçir",
 	"theme.toDark": "Koyu temaya geç",
 	"theme.toLight": "Açık temaya geç",
@@ -15,30 +17,36 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"layout.signOut": "Oturumu kapat",
 	"layout.envIncomplete": "Panel ortam yapılandırması eksik.",
 	"layout.pendingCount": ", bekleyen: ",
-	"nav.connect": "Bağlan",
+	"nav.section.overview": "Genel bakış",
+	"nav.section.protection": "Koruma",
+	"nav.section.response": "Onaylar ve vakalar",
+	"nav.section.devices": "Cihazlar ve indirmeler",
+	"nav.section.governance": "Yönetişim ve uyum",
+	"nav.section.admin": "Yönetim",
+	"nav.onboarding": "İlk kurulum",
 	"nav.downloads": "İndirmeler",
-	"nav.dashboard": "Panel",
+	"nav.dashboard": "Genel durum",
 	"nav.billing": "Faturalandırma",
-	"nav.apiKeys": "API Anahtarları",
-	"nav.agents": "Ajanlar",
-	"nav.events": "Olaylar",
+	"nav.apiKeys": "API anahtarları",
+	"nav.agents": "Yapay zekâ araçları",
+	"nav.events": "Etkinlik akışı",
 	"nav.discovery": "Keşif",
-	"nav.posture": "Güvenlik Duruşu",
-	"nav.incidents": "Olay Kayıtları",
+	"nav.posture": "Güvenlik durumu",
+	"nav.incidents": "Güvenlik vakaları",
 	"nav.approvals": "Onaylar",
-	"nav.browserPrivacy": "Tarayıcı Gizliliği",
+	"nav.browserGuard": "Browser Guard",
 	"nav.autosecops": "AutoSecOps",
 	"nav.settings": "Ayarlar",
 	"nav.team": "Ekip",
 	"nav.scim": "Dizin senkronizasyonu",
 	"nav.retention": "Yasal saklama ve veri saklama",
 	"nav.sso": "Çoklu oturum açma (SSO)",
-	"nav.policies": "Politikalar",
+	"nav.policies": "Ekip politikası",
 	"nav.siem": "SIEM aktarımı",
-	"nav.compliance": "Uyum",
-	"nav.governance": "Yönetişim",
+	"nav.compliance": "Uyum raporu",
+	"nav.governance": "Yapay zekâ yönetişimi",
 	"nav.detectionExceptions": "Tespit istisnaları",
-	"nav.aiRegister": "Yapay zekâ envanteri",
+	"nav.aiRegister": "Yapay zekâ varlık envanteri",
 
 	"public.navLabel": "Genel",
 	"public.editions": "Sürümler",
@@ -46,7 +54,7 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"public.dashboard": "Panel",
 	"public.signIn": "Oturum aç",
 	"public.noCredentials": "Panel, Supabase kimlik bilgileri olmadan çalışıyor.",
-	"public.footer": "Singularity AIDR. Yerel öncelikli yapay zekâ ajanı tespit ve müdahale.",
+	"public.footer": "Singularity AIDR. Yerel öncelikli yapay zekâ aracı tespit ve müdahale.",
 	"public.footerLabel": "Destek ve yasal bilgiler",
 	"public.support": "Destek",
 	"public.status": "Durum",
@@ -76,8 +84,8 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"plan.upgrade": "Planları görüntüle ve yükselt",
 
 	"login.welcome": "AIDR'ye hoş geldiniz",
-	"login.subtitleRegister": "Yapay zekâ ajanlarınızı korumak için bir hesap oluşturun",
-	"login.subtitleSignIn": "Yapay zekâ ajanlarınızı korumak için oturum açın",
+	"login.subtitleRegister": "Yapay zekâ araçlarınızı korumak için bir hesap oluşturun",
+	"login.subtitleSignIn": "Yapay zekâ araçlarınızı korumak için oturum açın",
 	"login.revocationUnconfirmed":
 		"Bu tarayıcıda oturum kapatıldı ancak diğer oturumların iptali doğrulanamadı. Bu oturumların sonlandırılması gerekiyorsa yöneticinizle iletişime geçin.",
 	"login.localSignOutFailed":
@@ -126,14 +134,13 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"login.providerUnavailable":
 		"Bu oturum açma sağlayıcısı kullanılamıyor. Yöneticinizle iletişime geçin.",
 
-	"downloads.title": "İndir",
 	"downloads.intro":
 		"AIDR'yi {team} için üç adımda kurun: yükleyiciyi indirin, çalıştırın ve yapay zekâ araçlarınızı yeniden başlatın.",
 	"downloads.yourTeam": "ekibiniz",
 	"downloads.checkingTeam": "Ekip erişimi denetleniyor…",
 	"downloads.noTeam": "Yükleyicileri indirmek için bir çalışma alanı seçin veya oluşturun.",
 	"downloads.backToOnboarding": "Kuruluma dön",
-	"downloads.viewAgents": "Ajanları görüntüle",
+	"downloads.viewAgents": "Yapay zekâ araçlarını görüntüle",
 	"downloads.retry": "Yeniden dene",
 	"downloads.os.windows": "Windows",
 	"downloads.os.linux": "Linux",
@@ -186,7 +193,7 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"downloads.managed.advanced": "Elle kayıt (gelişmiş)",
 	"downloads.bg.title": "Browser Guard uzantısı",
 	"downloads.bg.body":
-		"Windows, macOS ve Linux üzerinde Chrome, Edge ve Firefox'ta istemler yapay zekâ sohbet sitelerine ulaşmadan önce kişisel verileri ve gizli bilgileri maskeler.",
+		"Windows, macOS ve Linux üzerinde Chrome, Edge ve Firefox'ta mesajlar yapay zekâ sohbet sitelerine ulaşmadan önce kişisel verileri ve gizli bilgileri maskeler.",
 	"downloads.bg.chrome": "Chrome'a ekle",
 	"downloads.bg.edge": "Edge'e ekle",
 	"downloads.bg.firefox": "Firefox'a ekle",
@@ -211,3 +218,6 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"onboarding.advanced.body":
 		"Bu adımları yalnızca yükleyiciyi çalıştıramıyorsanız ya da tek bir bağlayıcıyı elle kaydetmek için kullanın.",
 };
+
+/** Turkish dashboard strings: the shell above plus every page message module. */
+export const tr: Record<DashboardMessageKey, string> = { ...base, ...turkish(pageMessages) };

@@ -9,8 +9,9 @@
  * with one command that pulls exactly that revision. History, diff and
  * rollback work like the runtime and DLP policies.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useRichT, useT } from "../i18n/I18nProvider";
 import { pendingPolicyChangeNotice } from "../lib/ai-governance";
 import { diffDocuments } from "../lib/json-diff";
 import { invokePolicyManagement, policyManagementMessage } from "../lib/policy-management";
@@ -133,10 +134,11 @@ function parseRevisionList(revisions: unknown): ProfileRevision[] | null {
 }
 
 function ValidationResult({ validation }: { validation: Validation }) {
+	const t = useT();
 	if (validation.kind === "valid") {
 		return (
 			<div className="notice notice-success" role="status">
-				Valid: {validation.profiles.join(", ")}.
+				{t("ap.valid", { profiles: validation.profiles.join(", ") })}
 				{validation.diagnostics.length > 0 ? (
 					<ul className="small" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
 						{validation.diagnostics.map((item) => (
@@ -150,7 +152,7 @@ function ValidationResult({ validation }: { validation: Validation }) {
 	if (validation.kind === "invalid") {
 		return (
 			<div className="notice notice-danger" role="alert">
-				<b>The profile document is not valid.</b>
+				<b>{t("ap.invalid")}</b>
 				<ul className="small" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
 					{validation.errors.map((item) => (
 						<li key={item}>{item}</li>
@@ -174,20 +176,19 @@ function RevisionTable({
 	currentVersion,
 	...actions
 }: RevisionActions & { revisions: ProfileRevision[] | null; currentVersion: number }) {
-	if (revisions === null)
-		return <p className="muted small">The revision history is unavailable.</p>;
-	if (revisions.length === 0)
-		return <p className="muted small">No revision has been staged yet.</p>;
+	const t = useT();
+	if (revisions === null) return <p className="muted small">{t("ap.historyUnavailable")}</p>;
+	if (revisions.length === 0) return <p className="muted small">{t("ap.noRevision")}</p>;
 	return (
 		<div className="table-wrap">
-			<table className="table" aria-label="Staged agent profile revisions">
+			<table className="table" aria-label={t("ap.revisionsLabel")}>
 				<thead>
 					<tr>
-						<th>Revision</th>
-						<th>Staged</th>
-						<th>Profiles</th>
-						<th>Digest</th>
-						<th>Actions</th>
+						<th>{t("ap.col.revision")}</th>
+						<th>{t("ap.col.staged")}</th>
+						<th>{t("ap.col.profiles")}</th>
+						<th>{t("ap.col.digest")}</th>
+						<th>{t("ap.col.actions")}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -206,29 +207,21 @@ function RevisionTable({
 }
 
 function PublishInstructions({ command }: { command: string | null }) {
+	const t = useT();
+	const richT = useRichT();
 	if (!command) {
 		return (
-			<p className="muted small" aria-label="Signed profile publishing commands">
-				Stage a document first; the operator then signs that exact revision with
-				provision-agent-profiles.mjs and the publisher key.
+			<p className="muted small" aria-label={t("ap.publishLabel")}>
+				{t("ap.stageFirst")}
 			</p>
 		);
 	}
 	return (
 		<>
-			<pre
-				className="mono small"
-				aria-label="Signed profile publishing commands"
-				style={{ overflowX: "auto" }}
-			>
+			<pre className="mono small" aria-label={t("ap.publishLabel")} style={{ overflowX: "auto" }}>
 				{command}
 			</pre>
-			<p className="muted small">
-				Run on the publishing host for each connector runtime, with an owner or administrator access
-				token verified at AAL2. The command refuses anything but the current staged revision and
-				checks its digest before signing; the bundle keeps any DLP policy already signed for this
-				tenant. Confirm adoption on the agent with <code>aidr doctor</code>.
-			</p>
+			<p className="muted small">{richT("ap.publishHint", { doctor: <code>aidr doctor</code> })}</p>
 		</>
 	);
 }
@@ -241,17 +234,20 @@ function RevisionRow({
 	onDiff,
 	onRestore,
 }: RevisionActions & { revision: ProfileRevision; current: boolean }) {
+	const t = useT();
 	return (
 		<tr>
 			<td>
 				r{revision.version}
 				{current ? (
 					<span className="pill" style={{ marginLeft: 6 }}>
-						current
+						{t("ap.current")}
 					</span>
 				) : null}
 				{revision.restoredFrom ? (
-					<div className="muted small">restored from r{revision.restoredFrom}</div>
+					<div className="muted small">
+						{t("ap.restoredFrom", { version: revision.restoredFrom })}
+					</div>
 				) : null}
 			</td>
 			<td className="small">{new Date(revision.createdAt).toLocaleString()}</td>
@@ -263,20 +259,20 @@ function RevisionRow({
 						<button
 							type="button"
 							className="btn btn-secondary btn-sm"
-							aria-label={`Compare revision ${revision.version} with current`}
+							aria-label={t("ap.compareLabel", { version: revision.version })}
 							onClick={() => onDiff(revision.version)}
 						>
-							Diff vs current
+							{t("ap.diffCurrent")}
 						</button>
 						{canManage ? (
 							<button
 								type="button"
 								className="btn btn-secondary btn-sm"
 								disabled={busy}
-								aria-label={`Roll back profiles to revision ${revision.version}`}
+								aria-label={t("ap.rollBackLabel", { version: revision.version })}
 								onClick={() => onRestore(revision.version)}
 							>
-								Roll back
+								{t("ap.rollBack")}
 							</button>
 						) : null}
 					</div>
@@ -293,6 +289,10 @@ export function AgentProfileEditor({
 	tenantId: string;
 	canManage: boolean;
 }) {
+	const t = useT();
+	// The loader reads the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [load, setLoad] = useState<Load>({ kind: "loading" });
 	const [source, setSource] = useState("");
 	const [validation, setValidation] = useState<Validation>({ kind: "idle" });
@@ -305,6 +305,7 @@ export function AgentProfileEditor({
 	} | null>(null);
 
 	const refresh = useCallback(async () => {
+		const t = translator.current;
 		const [current, history] = await Promise.all([
 			invokePolicyManagement(
 				{ action: "read_agent_profiles", tenant_id: tenantId },
@@ -319,13 +320,13 @@ export function AgentProfileEditor({
 			setLoad(
 				current.code === "mfa_required"
 					? { kind: "mfa_required" }
-					: { kind: "error", message: policyManagementMessage(current.code) },
+					: { kind: "error", message: policyManagementMessage(current.code, t) },
 			);
 			return;
 		}
 		const staged = parseStagedProfiles(current.data);
 		if (!staged) {
-			setLoad({ kind: "error", message: "The staged profiles could not be verified." });
+			setLoad({ kind: "error", message: t("ap.stagedUnverified") });
 			return;
 		}
 		setLoad({ kind: "ready", staged });
@@ -351,7 +352,7 @@ export function AgentProfileEditor({
 			"agent_profiles_unavailable",
 		);
 		if (!result.ok) {
-			setValidation({ kind: "invalid", errors: [policyManagementMessage(result.code)] });
+			setValidation({ kind: "invalid", errors: [policyManagementMessage(result.code, t)] });
 			return false;
 		}
 		if (result.data.valid === true) {
@@ -383,21 +384,21 @@ export function AgentProfileEditor({
 		if (!result.ok) {
 			const errors = stringList(result.body?.errors, 8);
 			if (errors.length > 0) setValidation({ kind: "invalid", errors });
-			setNotice({ tone: "error", message: policyManagementMessage(result.code) });
+			setNotice({ tone: "error", message: policyManagementMessage(result.code, t) });
 			return;
 		}
-		const pending = pendingPolicyChangeNotice(result.data);
+		const pending = pendingPolicyChangeNotice(result.data, t);
 		if (pending) {
-			setNotice({ tone: "success", message: `Profiles filed for approval. ${pending}` });
+			setNotice({ tone: "success", message: t("ap.filed", { pending }) });
 			return;
 		}
 		if (result.data.staged !== true || result.data.version !== load.staged.version + 1) {
-			setNotice({ tone: "error", message: "Staging was not confirmed." });
+			setNotice({ tone: "error", message: t("ap.stagingUnconfirmed") });
 			return;
 		}
 		setNotice({
 			tone: "success",
-			message: `Profiles staged as revision ${result.data.version}. Not enforced until an operator publishes that revision.`,
+			message: t("ap.staged", { version: String(result.data.version) }),
 		});
 		await refresh();
 	}
@@ -415,11 +416,11 @@ export function AgentProfileEditor({
 		};
 		const before = await read(version);
 		if (before === undefined) {
-			setNotice({ tone: "error", message: "That revision could not be read." });
+			setNotice({ tone: "error", message: t("ap.readFailed") });
 			return;
 		}
 		setDiff({
-			title: `Revision ${version} → current staged revision ${load.staged.version}`,
+			title: t("ap.diffTitle", { version, current: load.staged.version }),
 			lines: diffDocuments(before, load.staged.policy),
 		});
 	}
@@ -439,20 +440,17 @@ export function AgentProfileEditor({
 		);
 		setBusy(false);
 		if (!result.ok) {
-			setNotice({ tone: "error", message: policyManagementMessage(result.code) });
+			setNotice({ tone: "error", message: policyManagementMessage(result.code, t) });
 			return;
 		}
-		const pending = pendingPolicyChangeNotice(result.data);
+		const pending = pendingPolicyChangeNotice(result.data, t);
 		if (pending) {
-			setNotice({
-				tone: "success",
-				message: `Rollback to revision ${version} filed for approval. ${pending}`,
-			});
+			setNotice({ tone: "success", message: t("ap.rollbackFiled", { version, pending }) });
 			return;
 		}
 		setNotice({
 			tone: "success",
-			message: `Revision ${version} restored as revision ${String(result.data.version)}. Publish it to enforce it.`,
+			message: t("ap.restored", { version, next: String(result.data.version) }),
 		});
 		await refresh();
 	}
@@ -465,14 +463,13 @@ export function AgentProfileEditor({
 		[load, tenantId],
 	);
 
-	if (load.kind === "loading") return <p role="status">Loading staged profiles…</p>;
+	if (load.kind === "loading") return <p role="status">{t("ap.loading")}</p>;
 	if (load.kind === "mfa_required") {
 		return (
 			<div className="notice notice-warning" role="alert">
-				Profiles describe the commands, paths and hosts your agents may use, so reading and staging
-				them requires multi-factor verification.{" "}
+				{t("ap.mfa")}{" "}
 				<Link to={`/auth/dlp-step-up?tenant=${encodeURIComponent(tenantId)}`}>
-					Verify with authenticator
+					{t("common.verifyMfa")}
 				</Link>
 			</div>
 		);
@@ -484,14 +481,14 @@ export function AgentProfileEditor({
 			<div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
 				<span className="muted small">
 					{load.staged.version > 0
-						? `Staged revision ${load.staged.version}${load.staged.sha256 ? ` · sha256 ${load.staged.sha256.slice(0, 12)}…` : ""}`
-						: "Nothing staged yet."}
+						? `${t("ap.stagedRevision", { version: load.staged.version })}${load.staged.sha256 ? ` · sha256 ${load.staged.sha256.slice(0, 12)}…` : ""}`
+						: t("ap.nothingStaged")}
 				</span>
 				<label className="row small" style={{ gap: 6 }}>
-					<span>Start from template</span>
+					<span>{t("ap.startTemplate")}</span>
 					<select
 						className="input"
-						aria-label="Profile template"
+						aria-label={t("ap.templateLabel")}
 						style={{ width: "auto" }}
 						defaultValue=""
 						disabled={!canManage}
@@ -502,7 +499,7 @@ export function AgentProfileEditor({
 							event.target.value = "";
 						}}
 					>
-						<option value="">Choose…</option>
+						<option value="">{t("ap.choose")}</option>
 						{PROFILE_TEMPLATE_SUMMARIES.map((template) => (
 							<option key={template.name} value={template.name}>
 								{template.name}
@@ -513,7 +510,7 @@ export function AgentProfileEditor({
 			</div>
 			<textarea
 				className="input mono small"
-				aria-label="Agent profile document (JSON or YAML)"
+				aria-label={t("ap.documentLabel")}
 				rows={18}
 				spellCheck={false}
 				value={source}
@@ -530,7 +527,7 @@ export function AgentProfileEditor({
 					disabled={busy || source.trim() === ""}
 					onClick={() => void validate()}
 				>
-					Validate
+					{t("ap.validate")}
 				</button>
 				{canManage ? (
 					<button
@@ -539,7 +536,7 @@ export function AgentProfileEditor({
 						disabled={busy || source.trim() === ""}
 						onClick={() => void stage()}
 					>
-						Stage for publication
+						{t("ap.stage")}
 					</button>
 				) : null}
 			</div>
@@ -554,12 +551,13 @@ export function AgentProfileEditor({
 			) : null}
 
 			<div>
-				<h3>Publish the staged revision</h3>
+				<h3>{t("ap.publishTitle")}</h3>
 				<PublishInstructions command={stagedCommand} />
 			</div>
 
 			<div>
-				<h3>Staged revisions</h3>
+				<h3>{t("ap.revisions")}</h3>
+
 				<RevisionTable
 					revisions={revisions}
 					currentVersion={load.staged.version}

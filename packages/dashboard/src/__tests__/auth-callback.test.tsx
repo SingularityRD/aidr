@@ -215,7 +215,7 @@ describe("authentication callback ownership", () => {
 		expect(window.location.search).toBe("");
 		expect(screen.getByText("invitee@example.com")).toBeInTheDocument();
 		expect(screen.getByRole("listitem")).toHaveTextContent(
-			"You are joining workspace Acme Security as role viewer.",
+			"You are joining workspace Acme Security as role Viewer.",
 		);
 		// Not yet confirmed: the session is gated and the protected route is not reached.
 		expect(isInvitePending("invitee-id")).toBe(true);

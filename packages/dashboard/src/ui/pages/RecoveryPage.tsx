@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useT } from "../../i18n/I18nProvider";
 import { supabase } from "../../lib/supabase";
 import { ShieldIcon } from "../icons";
 
@@ -191,6 +192,10 @@ export function isRecoveryOtpSession(value: unknown): boolean {
 }
 
 export function RecoveryPage() {
+	const t = useT();
+	// Read the translator through a ref so the one-time URL handling never re-runs.
+	const translator = useRef(t);
+	translator.current = t;
 	const navigate = useNavigate();
 	const [mode, setMode] = useState<Mode>("email");
 	const [hasSession, setHasSession] = useState(false);
@@ -206,6 +211,7 @@ export function RecoveryPage() {
 	const [recoveryVerifier, setRecoveryVerifier] = useState<string | null>(null);
 
 	useEffect(() => {
+		const t = translator.current;
 		let cancelled = false;
 		const incoming = new URL(window.location.href);
 		if (
@@ -221,7 +227,7 @@ export function RecoveryPage() {
 			window.history.replaceState(window.history.state, "", clean.toString());
 			purgeRecoveryTransaction();
 			void clearLocalRecoverySession();
-			setStatus("Enter the one-time code from your recovery email to continue.");
+			setStatus(t("rec.enterCode"));
 			return;
 		}
 
@@ -230,7 +236,7 @@ export function RecoveryPage() {
 		setEmail(transaction.email);
 		setRecoveryVerifier(transaction.verifier);
 		setEmailRequested(true);
-		setStatus("Enter the one-time code from your recovery email to continue.");
+		setStatus(t("rec.enterCode"));
 		void (async () => {
 			const current = await supabase.auth.getSession();
 			if (cancelled || current.error || !current.data.session) return;
@@ -253,9 +259,9 @@ export function RecoveryPage() {
 					if (isTerminalRecoveryError(error)) {
 						setRecoveryVerifier(null);
 						setEmailRequested(false);
-						setStatus("This recovery session is invalid or expired. Request a new recovery link.");
+						setStatus(t("rec.sessionInvalid"));
 					} else {
-						setStatus("Recovery is temporarily unavailable. Reload this tab to retry safely.");
+						setStatus(t("rec.reload"));
 					}
 				}
 			}
@@ -271,8 +277,7 @@ export function RecoveryPage() {
 			...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
 		});
 		if (result.error) throw result.error;
-		if (result.data?.ok !== true)
-			throw terminalRecoveryError("Identity operation was not confirmed.");
+		if (result.data?.ok !== true) throw terminalRecoveryError(t("rec.notConfirmed"));
 		return result.data as Record<string, unknown> | null;
 	}
 
@@ -317,15 +322,13 @@ export function RecoveryPage() {
 			setRecoveryVerifier(proof.verifier);
 			setEmailRequested(true);
 			setSuccess(true);
-			setStatus(
-				"If this account is enabled, the configured authentication provider will send a one-time recovery code. Keep this browser tab open; it can be reloaded for 10 minutes.",
-			);
+			setStatus(t("rec.sent"));
 		} catch (error) {
 			if (isTerminalRecoveryError(error)) {
 				purgeRecoveryTransaction();
 				setRecoveryVerifier(null);
 			}
-			setStatus("Password recovery is temporarily unavailable. Contact your administrator.");
+			setStatus(t("rec.requestUnavailable"));
 		} finally {
 			setBusy(false);
 		}
@@ -349,7 +352,7 @@ export function RecoveryPage() {
 		} catch {
 			await clearLocalRecoverySession();
 			setEmailCode("");
-			setStatus("The recovery code is invalid or expired.");
+			setStatus(t("bg.invalidCode"));
 			setBusy(false);
 			return;
 		}
@@ -363,9 +366,9 @@ export function RecoveryPage() {
 				setRecoveryVerifier(null);
 				setEmailRequested(false);
 				await clearLocalRecoverySession();
-				setStatus("The recovery session is invalid or expired.");
+				setStatus(t("rec.sessionExpired"));
 			} else {
-				setStatus("Recovery is temporarily unavailable. Reload this tab to retry safely.");
+				setStatus(t("rec.reload"));
 			}
 		} finally {
 			setBusy(false);
@@ -410,9 +413,9 @@ export function RecoveryPage() {
 				purgeRecoveryTransaction();
 				setRecoveryCode("");
 				setRecoveryVerifier(null);
-				setStatus("The recovery code is invalid or expired.");
+				setStatus(t("bg.invalidCode"));
 			} else {
-				setStatus("Recovery is temporarily unavailable. Retry to resume safely.");
+				setStatus(t("rec.retry"));
 			}
 		} finally {
 			setBusy(false);
@@ -421,7 +424,7 @@ export function RecoveryPage() {
 
 	async function completeRecovery() {
 		if (busy || !recoveryVerifier || !newPassword || newPassword !== confirmPassword) {
-			if (newPassword !== confirmPassword) setStatus("The password confirmation does not match.");
+			if (newPassword !== confirmPassword) setStatus(t("rec.mismatch"));
 			return;
 		}
 		setBusy(true);
@@ -439,7 +442,7 @@ export function RecoveryPage() {
 			setNewPassword("");
 			setConfirmPassword("");
 			setSuccess(true);
-			setStatus("Password updated and sessions revoked. Sign in again with the new password.");
+			setStatus(t("rec.updated"));
 			window.setTimeout(() => navigate("/login", { replace: true }), 800);
 		} catch (error) {
 			if (isTerminalRecoveryError(error)) {
@@ -448,9 +451,9 @@ export function RecoveryPage() {
 				setRecoveryVerifier(null);
 				setNewPassword("");
 				setConfirmPassword("");
-				setStatus("This recovery session is invalid or expired. Request a new recovery link.");
+				setStatus(t("rec.sessionInvalid"));
 			} else {
-				setStatus("Recovery is temporarily unavailable. Retry to resume safely.");
+				setStatus(t("rec.retry"));
 			}
 		} finally {
 			setBusy(false);
@@ -465,8 +468,8 @@ export function RecoveryPage() {
 						<ShieldIcon size={26} />
 					</span>
 					<div>
-						<h1 className="auth-title">Recover your AIDR account</h1>
-						<p className="auth-subtitle">Use provider recovery or a pre-issued break-glass code.</p>
+						<h1 className="auth-title">{t("rec.title")}</h1>
+						<p className="auth-subtitle">{t("rec.subtitle")}</p>
 					</div>
 				</div>
 
@@ -478,7 +481,7 @@ export function RecoveryPage() {
 						}}
 					>
 						<label className="label" htmlFor="recovery-password">
-							New password
+							{t("rec.newPassword")}
 						</label>
 						<input
 							id="recovery-password"
@@ -492,7 +495,7 @@ export function RecoveryPage() {
 							onChange={(event) => setNewPassword(event.target.value)}
 						/>
 						<label className="label" htmlFor="recovery-password-confirm">
-							Confirm new password
+							{t("rec.confirmPassword")}
 						</label>
 						<input
 							id="recovery-password-confirm"
@@ -510,7 +513,7 @@ export function RecoveryPage() {
 							type="submit"
 							disabled={busy || !newPassword || !confirmPassword}
 						>
-							{busy ? "Updating…" : "Update password and revoke sessions"}
+							{busy ? t("rec.updating") : t("rec.update")}
 						</button>
 					</form>
 				) : (
@@ -528,7 +531,7 @@ export function RecoveryPage() {
 									setStatus(null);
 								}}
 							>
-								Email recovery
+								{t("rec.emailMode")}
 							</button>
 							<button
 								className={`button ${mode === "break-glass" ? "" : "button-secondary"}`}
@@ -542,7 +545,7 @@ export function RecoveryPage() {
 									setStatus(null);
 								}}
 							>
-								Break-glass code
+								{t("rec.breakGlassMode")}
 							</button>
 						</div>
 						<form
@@ -556,7 +559,7 @@ export function RecoveryPage() {
 							}}
 						>
 							<label className="label" htmlFor="recovery-email">
-								Email address
+								{t("rec.email")}
 							</label>
 							<input
 								id="recovery-email"
@@ -570,7 +573,7 @@ export function RecoveryPage() {
 							{mode === "break-glass" ? (
 								<>
 									<label className="label" htmlFor="recovery-code">
-										One-time recovery code
+										{t("rec.code")}
 									</label>
 									<input
 										id="recovery-code"
@@ -586,7 +589,7 @@ export function RecoveryPage() {
 							) : emailRequested ? (
 								<>
 									<label className="label" htmlFor="email-recovery-code">
-										One-time recovery code
+										{t("rec.code")}
 									</label>
 									<input
 										id="email-recovery-code"
@@ -611,12 +614,12 @@ export function RecoveryPage() {
 								}
 							>
 								{busy
-									? "Please wait…"
+									? t("rec.wait")
 									: mode === "email"
 										? emailRequested
-											? "Verify recovery code"
-											: "Request recovery"
-										: "Use one-time code"}
+											? t("rec.verify")
+											: t("rec.request")
+										: t("rec.useCode")}
 							</button>
 						</form>
 					</>
@@ -631,10 +634,10 @@ export function RecoveryPage() {
 					</div>
 				) : null}
 				<div className="auth-footer">
-					<Link to="/login">← Return to sign in</Link>
+					<Link to="/login">{t("rec.back")}</Link>
 				</div>
 				<div className="auth-note">
-					<ShieldIcon size={13} /> Break-glass codes are single-use and are never retrievable again.
+					<ShieldIcon size={13} /> {t("rec.note")}
 				</div>
 			</div>
 		</div>

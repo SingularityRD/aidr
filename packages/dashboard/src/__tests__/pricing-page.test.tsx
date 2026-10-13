@@ -51,7 +51,7 @@ describe("public editions page (/pricing)", () => {
 		const team = within(planSection("Team"));
 		expect(team.getByText("Quote-based")).toBeInTheDocument();
 		expect(team.getByText("Minimum 3 developers")).toBeInTheDocument();
-		expect(team.getByText("Browser Privacy Guard")).toBeInTheDocument();
+		expect(team.getByText("Browser Guard")).toBeInTheDocument();
 		expect(team.getByText("90-day event retention")).toBeInTheDocument();
 		const business = within(planSection("Business"));
 		expect(business.getByText("Minimum 25 developers")).toBeInTheDocument();

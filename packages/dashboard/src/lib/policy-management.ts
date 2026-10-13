@@ -1,3 +1,4 @@
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import { supabase } from "./supabase";
 
 /**
@@ -47,31 +48,31 @@ export async function invokePolicyManagement(
 }
 
 /** Operator copy for the policy-management error codes these views surface. */
-export function policyManagementMessage(code: string): string {
+export function policyManagementMessage(code: string, t: Translate = englishT): string {
 	switch (code) {
 		case "mfa_required":
-			return "Multi-factor verification (AAL2) is required. Verify with your authenticator, then try again.";
+			return t("pm.err.mfa");
 		case "policy_forbidden":
-			return "Only workspace owners and administrators can make this change.";
+			return t("pm.err.forbidden");
 		case "policy_version_conflict":
-			return "Someone else changed this policy in the meantime. Reload and try again.";
+			return t("pm.err.conflict");
 		case "policy_four_eyes_required":
-			return "Four-eyes change control is on: the change needs a second owner or administrator.";
+			return t("pm.err.fourEyes");
 		case "policy_change_request_quota":
-			return "Too many change requests are pending. Resolve some under AI governance → Change control.";
+			return t("pm.err.quota");
 		case "revision_not_found":
-			return "That revision no longer exists.";
+			return t("pm.err.revisionMissing");
 		case "restore_target_not_older":
-			return "Only an earlier revision can be restored.";
+			return t("pm.err.notOlder");
 		case "invalid_dlp_policy":
-			return "That revision is no longer valid under today's rules (for example an exception has expired), so it cannot be restored as is.";
+			return t("pm.err.invalidDlp");
 		case "invalid_agent_profiles":
-			return "The profile document is not valid.";
+			return t("pm.err.invalidProfiles");
 		case "rate_limited":
-			return "Too many requests. Wait a minute and try again.";
+			return t("gov.err.rateLimited");
 		case "tenant_access_denied":
-			return "You no longer have access to this workspace.";
+			return t("pm.err.noAccess");
 		default:
-			return "The policy service did not confirm the request.";
+			return t("pm.err.generic");
 	}
 }

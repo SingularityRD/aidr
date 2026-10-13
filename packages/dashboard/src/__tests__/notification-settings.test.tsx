@@ -183,7 +183,7 @@ describe("Settings → Notifications", () => {
 		// Once in the channel table and once in the recent-deliveries table.
 		expect(await screen.findAllByText("SOC Slack")).toHaveLength(2);
 		expect(screen.getByText("hooks.slack.com · #a1b2c3")).toBeInTheDocument();
-		expect(screen.getByText("Incidents ≥ high · Critical denies")).toBeInTheDocument();
+		expect(screen.getByText("Incidents ≥ High · Critical denies")).toBeInTheDocument();
 		expect(screen.getByText(/receiver_unavailable · HTTP 503 · 8 attempts/)).toBeInTheDocument();
 	});
 
@@ -199,7 +199,7 @@ describe("Settings → Notifications", () => {
 		fireEvent.change(within(form).getByLabelText("Slack incoming-webhook URL"), {
 			target: { value: SLACK_URL },
 		});
-		fireEvent.click(within(form).getByLabelText("Actions awaiting out-of-band approval"));
+		fireEvent.click(within(form).getByLabelText("Actions waiting for a person's approval"));
 		fireEvent.change(within(form).getByLabelText("Minimum incident severity"), {
 			target: { value: "critical" },
 		});
@@ -313,7 +313,7 @@ describe("Settings → Notifications", () => {
 		install({ channels: [channel()] });
 		renderSection();
 		fireEvent.click(await screen.findByRole("button", { name: "Disable SOC Slack" }));
-		expect(await screen.findByText("disabled")).toBeInTheDocument();
+		expect(await screen.findByText("Disabled")).toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "Edit events for SOC Slack" }));
 		const row = screen.getByRole("button", { name: "Save events" }).closest("tr") as HTMLElement;
 		fireEvent.click(within(row).getByLabelText("Critical runtime denies"));

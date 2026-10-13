@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type MessageParams, type Translate, useRichT, useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { useTeam } from "./team-provider";
@@ -10,7 +12,9 @@ interface PolicyDocument {
 	default_action: "allow" | "deny" | "ask";
 	unknown_action?: "allow" | "deny" | "ask";
 	risky_action?: "allow" | "deny" | "ask";
-	category_defaults?: Partial<Record<"command" | "file" | "url" | "package" | "output", "allow" | "deny" | "ask">>;
+	category_defaults?: Partial<
+		Record<"command" | "file" | "url" | "package" | "output", "allow" | "deny" | "ask">
+	>;
 	rules: PolicyRule[];
 }
 
@@ -30,6 +34,7 @@ const LEGACY_TOOL = /^[A-Za-z0-9][A-Za-z0-9_:/-]{0,255}\.[A-Za-z0-9][A-Za-z0-9_:
 
 const DEFAULT_POLICY: PolicyDocument = {
 	version: "1.0",
+	// i18n-exempt: the default policy is stored document content, not UI text.
 	description: "Team security policy",
 	default_action: "ask",
 	unknown_action: "ask",
@@ -37,12 +42,14 @@ const DEFAULT_POLICY: PolicyDocument = {
 	category_defaults: { command: "ask", file: "ask", url: "ask", package: "ask", output: "ask" },
 	rules: [
 		{
+			// i18n-exempt: stored document content.
 			name: "Block repository deletion",
 			condition: { mcp_tool: "github.delete_repository" },
 			action: "deny",
 			priority: 100,
 		},
 		{
+			// i18n-exempt: stored document content.
 			name: "Approve filesystem server calls",
 			condition: { mcp_server: "filesystem" },
 			action: "ask",
@@ -68,14 +75,20 @@ interface PolicyRow extends PolicySource {
 function readRevision(value: unknown): PolicyDocumentRevision | null {
 	if (!value || typeof value !== "object") return null;
 	const row = value as Partial<PolicyDocumentRevision>;
-	if (typeof row.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.id) ||
-		!Number.isSafeInteger(row.version) || Number(row.version) < 1 ||
-		typeof row.source_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(row.source_sha256)) return null;
+	if (
+		typeof row.id !== "string" ||
+		!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.id) ||
+		!Number.isSafeInteger(row.version) ||
+		Number(row.version) < 1 ||
+		typeof row.source_sha256 !== "string" ||
+		!/^[a-f0-9]{64}$/.test(row.source_sha256)
+	)
+		return null;
 	return { id: row.id, version: row.version as number, source_sha256: row.source_sha256 };
 }
 
 async function sourceHash(content: string): Promise<string> {
-	if (!globalThis.crypto?.subtle) throw new Error("Secure browser SHA-256 verification is unavailable; no save was attempted.");
+	if (!globalThis.crypto?.subtle) throw new Error(englishT("policy.v.hashUnavailable"));
 	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
 	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -107,9 +120,7 @@ function objectToYaml(obj: unknown, indent = 0): string {
 	if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
 	if (Array.isArray(obj)) {
 		if (obj.length === 0) return "[]";
-		return obj
-			.map((item) => `${spaces}- ${objectToYaml(item, indent + 2).trimStart()}`)
-			.join("\n");
+		return obj.map((item) => `${spaces}- ${objectToYaml(item, indent + 2).trimStart()}`).join("\n");
 	}
 	if (typeof obj === "object") {
 		const entries = Object.entries(obj as Record<string, unknown>);
@@ -148,13 +159,23 @@ interface ParseState {
 	index: number;
 }
 
+/** A YAML syntax problem, translated where it is shown. */
+class YamlSyntaxError extends Error {
+	constructor(
+		readonly key: DashboardMessageKey,
+		readonly params?: MessageParams,
+	) {
+		super(englishT(key, params));
+	}
+}
+
 function splitMappingLine(text: string): { key: string; value: string } {
 	const separator = text.endsWith(":") ? text.length - 1 : text.indexOf(": ");
 	if (separator < 0) {
-		throw new Error(`Line "${text}" is not a "key: value" mapping entry.`);
+		throw new YamlSyntaxError("policy.v.notMapping", { text });
 	}
 	const key = text.slice(0, separator).trim();
-	if (!key) throw new Error(`Line "${text}" has no key before ":".`);
+	if (!key) throw new YamlSyntaxError("policy.v.noKey", { text });
 	return { key, value: text.slice(separator + 1).trim() };
 }
 
@@ -267,7 +288,7 @@ function parseYaml(yaml: string): unknown {
 		if (trimmedEnd.trim().startsWith("#")) continue;
 		const indent = trimmedEnd.search(/\S/);
 		if (trimmedEnd.includes("\t")) {
-			throw new Error("Tabs are not supported for indentation; use spaces.");
+			throw new YamlSyntaxError("policy.v.tabs");
 		}
 		lines.push({ indent, text: trimmedEnd.trim() });
 	}
@@ -292,80 +313,132 @@ function unsupportedKey(value: Record<string, unknown>, allowed: readonly string
  * server compiler in `supabase/functions/_shared/policy-document.ts`, and the
  * suite compares the two rather than restating either one.
  */
-export function validateDocument(yaml: string): { ok: true; document: PolicyDocument } | { ok: false; message: string } {
+export function validateDocument(
+	yaml: string,
+	t: Translate = englishT,
+): { ok: true; document: PolicyDocument } | { ok: false; message: string } {
+	const fail = (key: DashboardMessageKey, params?: MessageParams) =>
+		({ ok: false, message: t(key, params) }) as const;
 	let parsed: unknown;
 	try {
 		parsed = parseYaml(yaml);
 	} catch (err) {
-		return { ok: false, message: readErrorMessage(err, "Invalid YAML") };
+		if (err instanceof YamlSyntaxError) return fail(err.key, err.params);
+		return { ok: false, message: readErrorMessage(err, t("policy.v.invalidYaml")) };
 	}
 
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		return { ok: false, message: "The policy must be a mapping with version, default_action and rules." };
+		return fail("policy.v.mapping");
 	}
 
 	const document = parsed as Record<string, unknown>;
-	const unsupportedDocumentField = unsupportedKey(document, ["version", "description", "default_action", "unknown_action", "risky_action", "category_defaults", "rules"]);
-	if (unsupportedDocumentField) return { ok: false, message: `Unsupported policy field: ${unsupportedDocumentField}.` };
+	const unsupportedDocumentField = unsupportedKey(document, [
+		"version",
+		"description",
+		"default_action",
+		"unknown_action",
+		"risky_action",
+		"category_defaults",
+		"rules",
+	]);
+	if (unsupportedDocumentField)
+		return fail("policy.v.unsupportedField", { field: unsupportedDocumentField });
 	if (document.version !== "1.0" && document.version !== 1) {
-		return { ok: false, message: "The policy must use supported version 1.0." };
+		return fail("policy.v.version");
 	}
 	if (!isPolicyAction(document.default_action)) {
-		return {
-			ok: false,
-			message: 'The policy must set default_action to "allow", "deny" or "ask".',
-		};
+		return fail("policy.v.defaultAction");
 	}
 	for (const key of ["unknown_action", "risky_action"] as const) {
-		if (document[key] !== undefined && !isPolicyAction(document[key])) return { ok: false, message: `${key} must be "allow", "deny" or "ask".` };
+		if (document[key] !== undefined && !isPolicyAction(document[key]))
+			return fail("policy.v.actionValue", { key });
 	}
 	if (document.category_defaults !== undefined) {
-		if (!document.category_defaults || typeof document.category_defaults !== "object" || Array.isArray(document.category_defaults)) return { ok: false, message: "category_defaults must be a mapping." };
+		if (
+			!document.category_defaults ||
+			typeof document.category_defaults !== "object" ||
+			Array.isArray(document.category_defaults)
+		)
+			return fail("policy.v.categoryMapping");
 		const defaults = document.category_defaults as Record<string, unknown>;
-		const unsupportedCategory = unsupportedKey(defaults, ["command", "file", "url", "package", "output"]);
-		if (unsupportedCategory) return { ok: false, message: `Unsupported category default: ${unsupportedCategory}.` };
-		for (const [key, value] of Object.entries(defaults)) if (!isPolicyAction(value)) return { ok: false, message: `category_defaults.${key} must be "allow", "deny" or "ask".` };
+		const unsupportedCategory = unsupportedKey(defaults, [
+			"command",
+			"file",
+			"url",
+			"package",
+			"output",
+		]);
+		if (unsupportedCategory)
+			return fail("policy.v.unsupportedCategory", { field: unsupportedCategory });
+		for (const [key, value] of Object.entries(defaults))
+			if (!isPolicyAction(value)) return fail("policy.v.categoryValue", { key });
 	}
 	if (!Array.isArray(document.rules)) {
-		return { ok: false, message: "The policy must declare a rules list." };
+		return fail("policy.v.rules");
 	}
 	for (const [index, rule] of document.rules.entries()) {
+		const n = index + 1;
 		if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
-			return { ok: false, message: `Rule ${index + 1} must be a mapping.` };
+			return fail("policy.v.ruleMapping", { n });
 		}
 		const candidate = rule as Record<string, unknown>;
-		const unsupportedRuleField = unsupportedKey(candidate, ["name", "condition", "action", "priority"]);
-		if (unsupportedRuleField) return { ok: false, message: `Rule ${index + 1} has unsupported field: ${unsupportedRuleField}.` };
+		const unsupportedRuleField = unsupportedKey(candidate, [
+			"name",
+			"condition",
+			"action",
+			"priority",
+		]);
+		if (unsupportedRuleField) return fail("policy.v.ruleField", { n, field: unsupportedRuleField });
 		if (typeof candidate.name !== "string" || candidate.name.trim() === "") {
-			return { ok: false, message: `Rule ${index + 1} must have a name.` };
+			return fail("policy.v.ruleName", { n });
 		}
 		if (!isPolicyAction(candidate.action)) {
-			return {
-				ok: false,
-				message: `Rule ${index + 1} must set action to "allow", "deny" or "ask".`,
-			};
+			return fail("policy.v.ruleAction", { n });
 		}
-		if (!candidate.condition || typeof candidate.condition !== "object" || Array.isArray(candidate.condition)) {
-			return { ok: false, message: `Rule ${index + 1} condition must be a mapping.` };
+		if (
+			!candidate.condition ||
+			typeof candidate.condition !== "object" ||
+			Array.isArray(candidate.condition)
+		) {
+			return fail("policy.v.conditionMapping", { n });
 		}
 		const condition = candidate.condition as Record<string, unknown>;
 		const unsupportedCondition = unsupportedKey(condition, ["mcp_server", "mcp_tool"]);
-		if (unsupportedCondition) return { ok: false, message: `Rule ${index + 1} condition has unsupported field: ${unsupportedCondition}.` };
-		if (Number(condition.mcp_server !== undefined) + Number(condition.mcp_tool !== undefined) !== 1) return { ok: false, message: `Rule ${index + 1} condition must contain exactly one of mcp_server or mcp_tool.` };
-		if (condition.mcp_server !== undefined && (typeof condition.mcp_server !== "string" || !MCP_ID.test(condition.mcp_server))) return { ok: false, message: `Rule ${index + 1} mcp_server must be an MCP identifier of 1 to 256 characters.` };
+		if (unsupportedCondition)
+			return fail("policy.v.conditionField", { n, field: unsupportedCondition });
+		if (Number(condition.mcp_server !== undefined) + Number(condition.mcp_tool !== undefined) !== 1)
+			return fail("policy.v.conditionOne", { n });
+		if (
+			condition.mcp_server !== undefined &&
+			(typeof condition.mcp_server !== "string" || !MCP_ID.test(condition.mcp_server))
+		)
+			return fail("policy.v.server", { n });
 		if (condition.mcp_tool !== undefined) {
 			const tool = condition.mcp_tool;
 			if (typeof tool === "string") {
-				if (!LEGACY_TOOL.test(tool)) return { ok: false, message: `Rule ${index + 1} mcp_tool must use server.tool with no dots inside either name; use a server/tool mapping for dotted names.` };
+				if (!LEGACY_TOOL.test(tool)) return fail("policy.v.legacyTool", { n });
 			} else {
-				if (!tool || typeof tool !== "object" || Array.isArray(tool)) return { ok: false, message: `Rule ${index + 1} mcp_tool must be a server.tool selector or a server/tool mapping.` };
+				if (!tool || typeof tool !== "object" || Array.isArray(tool))
+					return fail("policy.v.toolSelector", { n });
 				const identity = tool as Record<string, unknown>;
 				const unsupportedToolField = unsupportedKey(identity, ["server", "tool"]);
-				if (unsupportedToolField) return { ok: false, message: `Rule ${index + 1} mcp_tool has unsupported field: ${unsupportedToolField}.` };
-				if (typeof identity.server !== "string" || !MCP_ID.test(identity.server) || typeof identity.tool !== "string" || !MCP_ID.test(identity.tool)) return { ok: false, message: `Rule ${index + 1} mcp_tool server and tool must be MCP identifiers of 1 to 256 characters.` };
+				if (unsupportedToolField)
+					return fail("policy.v.toolField", { n, field: unsupportedToolField });
+				if (
+					typeof identity.server !== "string" ||
+					!MCP_ID.test(identity.server) ||
+					typeof identity.tool !== "string" ||
+					!MCP_ID.test(identity.tool)
+				)
+					return fail("policy.v.toolIds", { n });
 			}
 		}
-		if (!Number.isInteger(candidate.priority) || Number(candidate.priority) < 0 || Number(candidate.priority) > 1_000) return { ok: false, message: `Rule ${index + 1} priority must be an integer from 0 to 1000.` };
+		if (
+			!Number.isInteger(candidate.priority) ||
+			Number(candidate.priority) < 0 ||
+			Number(candidate.priority) > 1_000
+		)
+			return fail("policy.v.priority", { n });
 	}
 
 	return { ok: true, document: document as unknown as PolicyDocument };
@@ -501,11 +574,18 @@ export async function saveDocumentDraft(
 	if (!error && !payload.error && payload.ok === true) {
 		const revision = readRevision(payload.source);
 		const updatedAt = (payload.source as Partial<PolicySource> | null)?.updated_at;
-		if (!revision || revision.source_sha256 !== submittedHash ||
+		if (
+			!revision ||
+			revision.source_sha256 !== submittedHash ||
 			revision.version !== (expectedDocument?.version ?? 0) + 1 ||
 			(expectedDocument && revision.id !== expectedDocument.id) ||
-			typeof updatedAt !== "string" || !Number.isFinite(Date.parse(updatedAt))) {
-			return { verdict: { status: "unavailable", code: "policy_document_save_unconfirmed" }, source: null };
+			typeof updatedAt !== "string" ||
+			!Number.isFinite(Date.parse(updatedAt))
+		) {
+			return {
+				verdict: { status: "unavailable", code: "policy_document_save_unconfirmed" },
+				source: null,
+			};
 		}
 		return {
 			source: { ...revision, updated_at: updatedAt },
@@ -525,33 +605,42 @@ export async function saveDocumentDraft(
 		code === "policy_document_empty" ||
 		code === "policy_document_too_large"
 	) {
-		return { verdict: { status: "refused", unsupported: unsupportedFieldsFrom(code), code }, source: null };
+		return {
+			verdict: { status: "refused", unsupported: unsupportedFieldsFrom(code), code },
+			source: null,
+		};
 	}
 	return { verdict: { status: "unavailable", code }, source: null };
 }
 
 /** One line naming exactly what the server said, for the save status. */
-function describeDryRun(verdict: PolicyDryRun): string {
+function describeDryRun(verdict: PolicyDryRun, t: Translate): string {
 	if (verdict.status === "refused") {
 		const fields = verdict.unsupported.map((entry) => `${entry.field} (${entry.path})`).join(", ");
 		return fields
-			? `the runtime compiler rejected unsupported field(s): ${fields}.`
-			: `the runtime compiler rejected the document (${verdict.code}).`;
+			? t("policy.dry.unsupported", { fields })
+			: t("policy.dry.rejected", { code: verdict.code });
 	}
 	if (verdict.status === "unavailable") {
 		if (verdict.code === "policy_document_conflict") {
-			return "the stored policy changed (policy_document_conflict). Keep a copy of your draft, then reload and review the latest revision before saving.";
+			return t("policy.dry.conflict");
 		}
 		if (verdict.code === "policy_document_save_unconfirmed") {
-			return "the server did not confirm the exact submitted content and revision (policy_document_save_unconfirmed). Reload and review the stored policy before retrying.";
+			return t("policy.dry.unconfirmed");
 		}
-		return `the server could not save the draft (${verdict.code}).`;
+		return t("policy.dry.saveFailed", { code: verdict.code });
 	}
-	return "the server compiled the document.";
+	return t("policy.dry.compiled");
 }
 
 export function PolicyEditor() {
 	const { currentTeam, canEditPolicy, isLoading: teamLoading, error: teamError } = useTeam();
+	const t = useT();
+	const richT = useRichT();
+	// Read through a ref so a language switch does not re-run the load effect
+	// (which would discard an unsaved draft).
+	const translator = useRef(t);
+	translator.current = t;
 	const [policyYaml, setPolicyYaml] = useState("");
 	const [parsedPolicy, setParsedPolicy] = useState<PolicyDocument | null>(null);
 	const [isValid, setIsValid] = useState(true);
@@ -576,7 +665,7 @@ export function PolicyEditor() {
 	const awaitingPolicy = Boolean(teamId) && loadedTeamId !== teamId;
 
 	const validateAndParse = useCallback((yaml: string): boolean => {
-		const validation = validateDocument(yaml);
+		const validation = validateDocument(yaml, translator.current);
 		if (!validation.ok) {
 			setIsValid(false);
 			setParsedPolicy(null);
@@ -643,10 +732,10 @@ export function PolicyEditor() {
 				}
 			} catch (err) {
 				if (!cancelled) {
-					const message = readErrorMessage(err, "Failed to load policy");
+					const message = readErrorMessage(err, translator.current("policy.loadFailed"));
 					setLoadError(
 						message === "stored_policy_revision_invalid"
-							? "Stored policy revision is invalid; reload before saving."
+							? translator.current("policy.revisionInvalid")
 							: message,
 					);
 				}
@@ -666,13 +755,24 @@ export function PolicyEditor() {
 	}, [teamId, validateAndParse]);
 
 	async function handleSave() {
-		if (!currentTeam || !canEditPolicy || awaitingPolicy || isLoading || loadError || saving.current) return;
+		if (
+			!currentTeam ||
+			!canEditPolicy ||
+			awaitingPolicy ||
+			isLoading ||
+			loadError ||
+			saving.current
+		)
+			return;
 
-		const validation = validateDocument(policyYaml);
+		const validation = validateDocument(policyYaml, t);
 		if (!validation.ok) {
 			setIsValid(false);
 			setError(validation.message);
-			setSaveStatus({ tone: "error", message: `Policy was not saved: ${validation.message}` });
+			setSaveStatus({
+				tone: "error",
+				message: t("policy.notSaved", { reason: validation.message }),
+			});
 			return;
 		}
 		setIsValid(true);
@@ -686,12 +786,17 @@ export function PolicyEditor() {
 		const requestedTeam = currentTeam.id;
 		const generation = ++saveGeneration.current;
 		const submittedEdit = editGeneration.current;
-		const isCurrentRequest = () => selectedTeam.current === requestedTeam && saveGeneration.current === generation;
+		const isCurrentRequest = () =>
+			selectedTeam.current === requestedTeam && saveGeneration.current === generation;
 
 		try {
 			// Never refresh the precondition at save time: it identifies the row the
 			// operator actually loaded, not someone else's intervening edit.
-			const { verdict, source } = await saveDocumentDraft(requestedTeam, policyYaml, expectedDocument);
+			const { verdict, source } = await saveDocumentDraft(
+				requestedTeam,
+				policyYaml,
+				expectedDocument,
+			);
 			if (!isCurrentRequest()) return;
 			if (source) setExpectedDocument(readRevision(source));
 			// A confirmed save advances our revision even if typing continued, but
@@ -699,15 +804,20 @@ export function PolicyEditor() {
 			if (editGeneration.current !== submittedEdit) return;
 			setDryRun(verdict);
 			if (verdict.status !== "compiled") {
-				setSaveStatus({ tone: "error", message: `Policy was not saved: ${describeDryRun(verdict)}` });
+				setSaveStatus({
+					tone: "error",
+					message: t("policy.notSaved", { reason: describeDryRun(verdict, t) }),
+				});
 				return;
 			}
-			setSaveStatus({ tone: "success", message: "Policy saved successfully" });
+			setSaveStatus({ tone: "success", message: t("policy.saved") });
 		} catch (err) {
 			if (isCurrentRequest() && editGeneration.current === submittedEdit) {
 				setSaveStatus({
 					tone: "error",
-					message: `Policy was not saved: ${readErrorMessage(err, "unknown error")}`,
+					message: t("policy.notSaved", {
+						reason: readErrorMessage(err, t("policy.unknownError")),
+					}),
 				});
 			}
 		} finally {
@@ -730,7 +840,7 @@ export function PolicyEditor() {
 	if (teamLoading || isLoading || awaitingPolicy) {
 		return (
 			<div className="card">
-				<p className="muted">Loading policy...</p>
+				<p className="muted">{t("policy.loading")}</p>
 			</div>
 		);
 	}
@@ -738,24 +848,22 @@ export function PolicyEditor() {
 	if (!currentTeam) {
 		return (
 			<div className="card">
-				<h2>Security Policy Editor</h2>
+				<h2>{t("policy.editor.title")}</h2>
 				{teamError ? (
 					<>
 						<div className="notice notice-danger" role="alert" aria-live="assertive">
-							<b>Your team could not be loaded.</b>
+							<b>{t("policy.teamFailed")}</b>
 							<div className="muted small" style={{ marginTop: 6 }}>
 								{teamError}
 							</div>
 						</div>
-						<p className="muted">
-							The editor is unavailable because the team membership query failed — this is not a
-							confirmed &quot;no team&quot; state.
-						</p>
+						<p className="muted">{t("policy.teamFailedBody")}</p>
 					</>
 				) : (
 					<p className="muted">
-						You are not part of a team yet, so there is no team policy to author.{" "}
-						<Link to="/team">Create or join a team</Link> first.
+						{richT("policy.noTeam", {
+							link: <Link to="/team">{t("policy.noTeamLink")}</Link>,
+						})}
 					</p>
 				)}
 			</div>
@@ -765,11 +873,8 @@ export function PolicyEditor() {
 	if (!canEditPolicy) {
 		return (
 			<div className="card">
-				<h2>Security Policy Editor</h2>
-				<p className="muted">
-					You don&apos;t have permission to edit team policies. A team owner, administrator or member
-					can edit the policy for {currentTeam.name}; viewers have read-only access.
-				</p>
+				<h2>{t("policy.editor.title")}</h2>
+				<p className="muted">{t("policy.noPermission", { team: currentTeam.name })}</p>
 			</div>
 		);
 	}
@@ -779,9 +884,9 @@ export function PolicyEditor() {
 			<div className="card">
 				<div className="row space-between">
 					<div>
-						<h2 style={{ margin: 0 }}>Security Policy Editor</h2>
+						<h2 style={{ margin: 0 }}>{t("policy.editor.title")}</h2>
 						<p className="muted" style={{ margin: "6px 0 0" }}>
-							Define team-level security rules as code
+							{t("policy.editor.subtitle")}
 						</p>
 					</div>
 					<div className="row">
@@ -791,7 +896,7 @@ export function PolicyEditor() {
 							onClick={handleReset}
 							disabled={isSaving}
 						>
-							Reset to Default
+							{t("policy.reset")}
 						</button>
 						<button
 							type="button"
@@ -799,7 +904,7 @@ export function PolicyEditor() {
 							onClick={() => void handleSave()}
 							disabled={isSaving || !isValid || Boolean(loadError)}
 						>
-							{isSaving ? "Saving..." : "Save Policy"}
+							{isSaving ? t("policy.savingDots") : t("policy.save")}
 						</button>
 					</div>
 				</div>
@@ -807,13 +912,12 @@ export function PolicyEditor() {
 
 			{loadError ? (
 				<div className="notice notice-danger" role="alert" aria-live="assertive">
-					<b>Stored policy could not be loaded.</b>
+					<b>{t("policy.storedFailed")}</b>
 					<div className="muted small" style={{ marginTop: 6 }}>
 						{loadError}
 					</div>
 					<div className="muted small" style={{ marginTop: 6 }}>
-						The editor is not showing a stored policy because the query failed. Saving is disabled
-						until the stored policy can be read, so a failed read cannot overwrite it.
+						{t("policy.storedFailedBody")}
 					</div>
 				</div>
 			) : null}
@@ -821,7 +925,7 @@ export function PolicyEditor() {
 			<div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
 				<div className="card">
 					<label className="label" style={{ marginTop: 0 }}>
-						Policy (YAML)
+						{t("policy.yaml")}
 						<textarea
 							className="input"
 							value={policyYaml}
@@ -844,35 +948,40 @@ export function PolicyEditor() {
 						/>
 					</label>
 					<p className="muted small">
-						Supported rule selectors are exact, case-sensitive <span className="mono">mcp_server</span> and <span className="mono">mcp_tool</span> values. Use a server/tool mapping for dotted MCP names. Category defaults support command, file, url, package and output. Conflicts use priority first, then deny &gt; ask &gt; allow.
+						{richT("policy.selectors", {
+							server: <span className="mono">mcp_server</span>,
+							tool: <span className="mono">mcp_tool</span>,
+						})}
 					</p>
 					<div className="row" style={{ justifyContent: "space-between" }}>
 						<span className={`pill ${isValid ? "" : "notice-danger"}`}>
-							{isValid ? "✓ Valid policy" : "✗ Invalid policy"}
+							{isValid ? t("policy.valid") : t("policy.invalid")}
 						</span>
-						<span className="muted small">{policyYaml.length} chars</span>
+						<span className="muted small">{t("policy.chars", { count: policyYaml.length })}</span>
 					</div>
 				</div>
 
 				<div className="card">
-					<h4 style={{ marginTop: 0 }}>Parsed Policy</h4>
+					<h4 style={{ marginTop: 0 }}>{t("policy.parsed")}</h4>
 					{parsedPolicy ? (
 						<div className="mono" style={{ fontSize: "13px", overflow: "auto" }}>
 							<div style={{ marginBottom: "12px" }}>
-								<strong>Version:</strong> {parsedPolicy.version}
+								<strong>{t("policy.version")}</strong> {parsedPolicy.version}
 							</div>
 							<div style={{ marginBottom: "12px" }}>
-								<strong>Default Action:</strong>{" "}
+								<strong>{t("policy.defaultAction")}</strong>{" "}
 								<span className="pill">{parsedPolicy.default_action}</span>
 							</div>
 							<div style={{ marginBottom: "12px" }}>
-								<strong>Unknown MCP:</strong>{" "}
+								<strong>{t("policy.unknownMcp")}</strong>{" "}
 								<span className="pill">{parsedPolicy.unknown_action ?? "ask"}</span>{" "}
-								<strong>Risky MCP:</strong>{" "}
+								<strong>{t("policy.riskyMcp")}</strong>{" "}
 								<span className="pill">{parsedPolicy.risky_action ?? "deny"}</span>
 							</div>
 							<div style={{ marginBottom: "12px" }}>
-								<strong>Rules ({parsedPolicy.rules?.length || 0}):</strong>
+								<strong>
+									{t("policy.rulesCount", { count: parsedPolicy.rules?.length || 0 })}
+								</strong>
 							</div>
 							{parsedPolicy.rules?.map((rule) => (
 								<div
@@ -901,54 +1010,66 @@ export function PolicyEditor() {
 										</span>
 									</div>
 									<div className="muted small" style={{ marginTop: "6px" }}>
-										Priority: {rule.priority}
-										{rule.condition.mcp_server && ` • MCP server: ${rule.condition.mcp_server}`}
-										{rule.condition.mcp_tool && ` • MCP tool: ${typeof rule.condition.mcp_tool === "string" ? rule.condition.mcp_tool : JSON.stringify([rule.condition.mcp_tool.server, rule.condition.mcp_tool.tool])}`}
+										{t("policy.ruleMeta.priority", { priority: rule.priority })}
+										{rule.condition.mcp_server &&
+											t("policy.ruleMeta.server", { server: rule.condition.mcp_server })}
+										{rule.condition.mcp_tool &&
+											t("policy.ruleMeta.tool", {
+												tool:
+													typeof rule.condition.mcp_tool === "string"
+														? rule.condition.mcp_tool
+														: JSON.stringify([
+																rule.condition.mcp_tool.server,
+																rule.condition.mcp_tool.tool,
+															]),
+											})}
 									</div>
 								</div>
 							))}
 						</div>
 					) : (
-						<p className="muted">No valid policy document to preview yet.</p>
+						<p className="muted">{t("policy.noPreview")}</p>
 					)}
 
-					<div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid var(--border)" }}>
-						<h4 style={{ marginTop: 0 }}>Server dry run</h4>
+					<div
+						style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid var(--border)" }}
+					>
+						<h4 style={{ marginTop: 0 }}>{t("policy.dryTitle")}</h4>
 						{!dryRun ? (
 							<p className="muted small" style={{ margin: 0 }}>
-								Saving asks <span className="mono">policy-management</span> to compile the exact
-								submitted draft before atomically saving it. Unsupported fields and simulation appear here;
-								an intervening edit causes a conflict, not an overwrite.
+								{richT("policy.dryIntro", { fn: <span className="mono">policy-management</span> })}
 							</p>
 						) : dryRun.status === "compiled" ? (
 							<div className="muted small">
 								<div>
-									<strong>Compiled by the server compiler.</strong>
+									<strong>{t("policy.dryCompiled")}</strong>
 								</div>
-								<div>Unsupported fields: none.</div>
+								<div>{t("policy.dryNoUnsupported")}</div>
 								{dryRun.precedence.length > 0 && (
-									<div>Conflict precedence: {dryRun.precedence.join(" > ")}.</div>
+									<div>{t("policy.dryPrecedence", { order: dryRun.precedence.join(" > ") })}</div>
 								)}
 								{dryRun.simulation && (
 									<div>
-										Simulated unknown MCP call: {dryRun.simulation.action} (
-										{dryRun.simulation.source}).
+										{t("policy.drySimulated", {
+											action: dryRun.simulation.action,
+											source: dryRun.simulation.source,
+										})}
 									</div>
 								)}
 								{dryRun.diagnostics > 0 && (
-									<div>{dryRun.diagnostics} shadowed rule warning(s).</div>
+									<div>{t("policy.dryShadowed", { count: dryRun.diagnostics })}</div>
 								)}
 							</div>
 						) : dryRun.status === "refused" ? (
 							<div>
-								<strong>The runtime compiler refused the submitted draft.</strong>
+								<strong>{t("policy.dryRefused")}</strong>
 								<div className="mono small" style={{ marginTop: 6 }}>
 									{dryRun.code}
 								</div>
 								{dryRun.unsupported.length > 0 && (
 									<>
 										<div className="muted small" style={{ marginTop: 6 }}>
-											Unsupported fields reported by the server:
+											{t("policy.dryUnsupportedList")}
 										</div>
 										<ul className="muted small" style={{ margin: "4px 0 0" }}>
 											{dryRun.unsupported.map((entry) => (
@@ -962,7 +1083,7 @@ export function PolicyEditor() {
 							</div>
 						) : (
 							<p className="muted small" style={{ margin: 0 }}>
-								{`The server could not confirm the draft save (${dryRun.code}).`}
+								{t("policy.dryUnavailable", { code: dryRun.code })}
 							</p>
 						)}
 					</div>
@@ -971,7 +1092,7 @@ export function PolicyEditor() {
 
 			{error && (
 				<div className="notice notice-danger" role="alert">
-					<strong>Policy validation error:</strong> {error}
+					<strong>{t("policy.validationError")}</strong> {error}
 				</div>
 			)}
 

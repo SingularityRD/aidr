@@ -34,9 +34,13 @@ export function LoginPage() {
 	);
 	const samlProviderId = window.__AIDR_CONFIG__?.samlProviderId;
 	const samlDomain = window.__AIDR_CONFIG__?.samlDomain;
-	const samlProviders: SamlLoginProvider[] = window.__AIDR_CONFIG__?.samlProviders ?? (samlProviderId
-		? [{ providerId: samlProviderId, label: t("login.companySso") }]
-		: samlDomain ? [{ domain: samlDomain, label: t("login.companySso") }] : []);
+	const samlProviders: SamlLoginProvider[] =
+		window.__AIDR_CONFIG__?.samlProviders ??
+		(samlProviderId
+			? [{ providerId: samlProviderId, label: t("login.companySso") }]
+			: samlDomain
+				? [{ domain: samlDomain, label: t("login.companySso") }]
+				: []);
 	const samlEnabled = samlProviders.length > 0;
 	const oidcEnabled = window.__AIDR_CONFIG__?.oidcSso === true;
 	const [ssoEmail, setSsoEmail] = useState("");
@@ -93,11 +97,7 @@ export function LoginPage() {
 					options: { emailRedirectTo: redirectTo, captchaToken: token, shouldCreateUser: false },
 				});
 				if (error) {
-					setStatus(
-						error.status === 429
-							? t("login.emailLimited")
-							: t("login.linkFailed"),
-					);
+					setStatus(error.status === 429 ? t("login.emailLimited") : t("login.linkFailed"));
 					return;
 				}
 				setSent(true);
@@ -138,11 +138,7 @@ export function LoginPage() {
 				},
 			});
 			if (error || !data.user) {
-				setStatus(
-					error?.status === 429
-						? t("login.emailLimited")
-						: t("login.registerFailed"),
-				);
+				setStatus(error?.status === 429 ? t("login.emailLimited") : t("login.registerFailed"));
 				return;
 			}
 			if (data.session) {
@@ -151,9 +147,7 @@ export function LoginPage() {
 				return;
 			}
 			setSent(true);
-			setStatus(
-				t("login.registerSent"),
-			);
+			setStatus(t("login.registerSent"));
 		} catch {
 			setStatus(t("login.registerUnavailable"));
 		} finally {
@@ -169,7 +163,7 @@ export function LoginPage() {
 		setBusy(true);
 		setStatus(null);
 		try {
-			const started = await startOidcFlow({ email: ssoEmail, returnTo });
+			const started = await startOidcFlow({ email: ssoEmail, returnTo, t });
 			if (!started.ok) {
 				setStatus(started.message);
 				return;
@@ -197,7 +191,8 @@ export function LoginPage() {
 			const target = data?.url ? new URL(data.url) : null;
 			const safeProtocol =
 				target?.protocol === "https:" ||
-				(target?.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname));
+				(target?.protocol === "http:" &&
+					["localhost", "127.0.0.1", "[::1]"].includes(target.hostname));
 			if (error || !target || !safeProtocol || target.username || target.password) {
 				setStatus(t("login.companyUnavailable"));
 				return;
@@ -249,8 +244,7 @@ export function LoginPage() {
 											...(provider === "azure" ? { scopes: "openid profile email" } : {}),
 										},
 									});
-									if (error)
-										setStatus(t("login.providerUnavailable"));
+									if (error) setStatus(t("login.providerUnavailable"));
 								} catch {
 									setStatus(t("login.unavailable"));
 								} finally {

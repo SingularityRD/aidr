@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { readFunctionError } from "../../auth/oidc-sso";
+import { useRichT, useT } from "../../i18n/I18nProvider";
 import { supabase } from "../../lib/supabase";
 import { ShieldIcon } from "../icons";
 
@@ -10,6 +11,8 @@ import { ShieldIcon } from "../icons";
  * a password (and MFA, when required) and repairs the provider settings.
  */
 export function OidcBreakGlassPage() {
+	const t = useT();
+	const richT = useRichT();
 	const [email, setEmail] = useState("");
 	const [code, setCode] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -30,11 +33,7 @@ export function OidcBreakGlassPage() {
 			});
 			if (!error && (data as { ok?: unknown } | null)?.ok === true) {
 				setCode("");
-				setStatus({
-					kind: "ok",
-					message:
-						"Single sign-on enforcement was suspended and the event was audited. Sign in with your password to repair the identity provider settings.",
-				});
+				setStatus({ kind: "ok", message: t("bg.suspended") });
 				return;
 			}
 			const details = await readFunctionError(error, data);
@@ -42,16 +41,13 @@ export function OidcBreakGlassPage() {
 				kind: "error",
 				message:
 					details.error === "rate_limited"
-						? "Too many attempts. Wait ten minutes and try again."
+						? t("bg.rateLimited")
 						: details.error === "recovery_unavailable"
-							? "Recovery is temporarily unavailable. Try again later."
-							: "The recovery code is invalid or expired.",
+							? t("bg.unavailable")
+							: t("bg.invalidCode"),
 			});
 		} catch {
-			setStatus({
-				kind: "error",
-				message: "Recovery is temporarily unavailable. Try again later.",
-			});
+			setStatus({ kind: "error", message: t("bg.unavailable") });
 		} finally {
 			setBusy(false);
 		}
@@ -65,15 +61,13 @@ export function OidcBreakGlassPage() {
 						<ShieldIcon size={26} />
 					</span>
 					<div>
-						<h1 className="auth-title">Suspend SSO enforcement</h1>
-						<p className="auth-subtitle">
-							For tenant owners when the identity provider is unavailable.
-						</p>
+						<h1 className="auth-title">{t("bg.title")}</h1>
+						<p className="auth-subtitle">{t("bg.subtitle")}</p>
 					</div>
 				</div>
 				<form onSubmit={(event) => void submit(event)}>
 					<label className="label" htmlFor="sso-bg-email">
-						Owner email
+						{t("bg.email")}
 					</label>
 					<input
 						id="sso-bg-email"
@@ -83,7 +77,7 @@ export function OidcBreakGlassPage() {
 						onChange={(event) => setEmail(event.target.value)}
 					/>
 					<label className="label" htmlFor="sso-bg-code">
-						Recovery code
+						{t("bg.code")}
 					</label>
 					<input
 						id="sso-bg-code"
@@ -92,14 +86,14 @@ export function OidcBreakGlassPage() {
 						onChange={(event) => setCode(event.target.value)}
 					/>
 					<button className="button" type="submit" disabled={busy || !email.trim() || !code.trim()}>
-						Suspend enforcement
+						{t("bg.submit")}
 					</button>
 				</form>
 				{status ? (
 					<p role={status.kind === "error" ? "alert" : "status"}>{status.message}</p>
 				) : null}
 				<p className="muted small">
-					The code is single-use and the action is audited. <Link to="/login">Back to sign-in</Link>
+					{richT("bg.note", { link: <Link to="/login">{t("oidc.backToSignIn")}</Link> })}
 				</p>
 			</div>
 		</div>

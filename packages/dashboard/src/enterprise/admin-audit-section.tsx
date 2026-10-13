@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { useTeam } from "./team-provider";
@@ -62,6 +63,7 @@ function summarize(detail: Record<string, unknown>): string {
  */
 export function AdminAuditSection() {
 	const { currentTeam, canManageTeam, exportAuditLogs } = useTeam();
+	const t = useT();
 	const tenantId = currentTeam?.tenant_id ?? null;
 	const [rows, setRows] = useState<AdminAuditRow[]>([]);
 	const [hasMore, setHasMore] = useState(false);
@@ -90,14 +92,14 @@ export function AdminAuditSection() {
 				if (selected.current !== requested) return;
 				if (rpcError) throw rpcError;
 				const page = readAdminAuditPage(data);
-				if (!page) throw new Error("The administrative audit response was malformed.");
+				if (!page) throw new Error(t("adminAudit.malformed"));
 				setRows(page.slice(0, ADMIN_AUDIT_PAGE_SIZE));
 				setHasMore(page.length > ADMIN_AUDIT_PAGE_SIZE);
 			} catch (err) {
 				if (selected.current !== requested) return;
 				setRows([]);
 				setHasMore(false);
-				setError(readErrorMessage(err, "Administrative audit records are unavailable."));
+				setError(readErrorMessage(err, t("adminAudit.unavailable")));
 			} finally {
 				if (selected.current === requested) setLoading(false);
 			}
@@ -133,27 +135,24 @@ export function AdminAuditSection() {
 			setExportState({ url });
 		} catch (err) {
 			setExportState({
-				error: readErrorMessage(err, "Administrative audit export is unavailable."),
+				error: readErrorMessage(err, t("adminAudit.exportUnavailable")),
 			});
 		}
 	};
 
 	return (
 		<section aria-labelledby="admin-audit-heading">
-			<h3 id="admin-audit-heading">Administrative actions</h3>
-			<p className="muted">
-				Configuration and access changes (policies, SSO, SCIM, retention, roles) for this team.
-				Visible to owners and admins only.
-			</p>
+			<h3 id="admin-audit-heading">{t("adminAudit.title")}</h3>
+			<p className="muted">{t("adminAudit.intro")}</p>
 			<div className="button-row">
 				<button type="button" onClick={() => void load(history[pageIndex] ?? null)}>
-					Refresh administrative audit
+					{t("adminAudit.refresh")}
 				</button>
 				<button type="button" disabled={exportState.busy} onClick={() => void exportAdmin("csv")}>
-					Export administrative CSV
+					{t("adminAudit.csv")}
 				</button>
 				<button type="button" disabled={exportState.busy} onClick={() => void exportAdmin("json")}>
-					Export administrative JSON
+					{t("adminAudit.json")}
 				</button>
 			</div>
 			{exportState.error && (
@@ -164,34 +163,34 @@ export function AdminAuditSection() {
 			{exportState.url && (
 				<p role="status">
 					<a href={exportState.url} download={`aidr-admin-audit-${currentTeam.id}`}>
-						Save administrative audit export
+						{t("adminAudit.save")}
 					</a>
 				</p>
 			)}
 			{loading ? (
-				<p className="muted">Loading administrative actions…</p>
+				<p className="muted">{t("adminAudit.loading")}</p>
 			) : error ? (
 				<div className="notice notice-danger" role="status">
-					Administrative audit records are unavailable. {error}
+					{t("adminAudit.unavailable")} {error}
 				</div>
 			) : rows.length === 0 ? (
-				<p className="muted">No administrative actions recorded for this team.</p>
+				<p className="muted">{t("adminAudit.empty")}</p>
 			) : (
 				<table>
 					<thead>
 						<tr>
-							<th>Time</th>
-							<th>Actor</th>
-							<th>Action</th>
-							<th>Target</th>
-							<th>Detail</th>
+							<th>{t("audit.time")}</th>
+							<th>{t("audit.actor")}</th>
+							<th>{t("audit.action")}</th>
+							<th>{t("adminAudit.target")}</th>
+							<th>{t("adminAudit.detail")}</th>
 						</tr>
 					</thead>
 					<tbody>
 						{rows.map((row) => (
 							<tr key={row.id}>
 								<td>{new Date(row.createdAt).toLocaleString()}</td>
-								<td>{row.actorUserId ?? "System"}</td>
+								<td>{row.actorUserId ?? t("adminAudit.system")}</td>
 								<td>{row.action}</td>
 								<td>{row.targetUserId ?? ""}</td>
 								<td>
@@ -204,11 +203,11 @@ export function AdminAuditSection() {
 			)}
 			<div className="button-row">
 				<button type="button" disabled={loading || pageIndex === 0} onClick={newer}>
-					Newer administrative actions
+					{t("adminAudit.newer")}
 				</button>
-				<span>Page {pageIndex + 1}</span>
+				<span>{t("adminAudit.page", { page: pageIndex + 1 })}</span>
 				<button type="button" disabled={loading || !hasMore} onClick={older}>
-					Older administrative actions
+					{t("adminAudit.older")}
 				</button>
 			</div>
 		</section>

@@ -25,9 +25,13 @@ vi.mock("../lib/supabase", () => ({
 }));
 vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
 
-import { PROFILE_TEMPLATE_SUMMARIES } from "../enterprise/agent-profile-templates";
+import {
+	PROFILE_TEMPLATE_DESCRIPTIONS,
+	PROFILE_TEMPLATE_SUMMARIES,
+} from "../enterprise/agent-profile-templates";
 import { AgentProfilesPanel, parseProfileDecisionRow } from "../enterprise/agent-profiles-panel";
 import { useTeam } from "../enterprise/team-provider";
+import { en } from "../i18n/en";
 import { installDashboardMocks, mockedSupabase, TEAM_ID } from "./helpers/dashboard-mocks";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
@@ -112,6 +116,14 @@ describe("agent permission profiles panel", () => {
 			tools: template.tools,
 		}));
 		expect(PROFILE_TEMPLATE_SUMMARIES).toEqual(shipped);
+	});
+
+	it("translates every shipped template description without changing its English text", () => {
+		for (const template of PROFILE_TEMPLATE_SUMMARIES) {
+			const key = PROFILE_TEMPLATE_DESCRIPTIONS[template.name];
+			expect(key, template.name).toBeDefined();
+			if (key) expect(en[key]).toBe(template.description);
+		}
 	});
 
 	it("shows templates, publishing steps and the tenant's reported profile decisions", async () => {
