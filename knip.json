@@ -84,7 +84,9 @@
 				"src/post-tool-use.ts",
 				"src/mcp-server.ts",
 				"src/session-start.ts",
-				"src/health.ts"
+				"src/health.ts",
+				"src/user-prompt-submit.ts",
+				"src/response-worker.ts"
 			],
 			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
 		},
