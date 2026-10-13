@@ -87,6 +87,12 @@ artifact.
 | `Singularity AIDR: Open audit log` | View the verdict audit trail |
 | `Singularity AIDR: Show hook health` | Check hook installation status |
 
+Command titles, settings and notifications follow the editor's display language
+(English or Turkish; `package.nls*.json` and `l10n/`). The block and approval
+messages written by the hook follow `AIDR_LOCALE`, the `locale` configuration
+key or the shell locale, as described in
+[configuration](../../docs/configuration.md#locale).
+
 ## Provisioned tenant detector policy
 
 The hooks can also evaluate a tool call against an operator-delivered, signed

@@ -41,6 +41,7 @@ export async function packageVsixVariant(variant) {
 	await cp(join(extensionRoot, "aidr-icon.png"), join(stageDir, "aidr-icon.png"), {
 		force: true,
 	});
+	await copyLocalizationFiles(extensionRoot, stageDir);
 	await writeFile(
 		join(stageDir, "package.json"),
 		`${JSON.stringify(stagedManifest, null, 2)}\n`,
@@ -52,6 +53,14 @@ export async function packageVsixVariant(variant) {
 	await runVscePackage(stageDir, outputVsix);
 }
 
+/** Manifest translations and runtime l10n bundles; package.json refers to them by key. */
+export async function copyLocalizationFiles(fromDir, toDir) {
+	for (const file of ["package.nls.json", "package.nls.tr.json"]) {
+		await cp(join(fromDir, file), join(toDir, file), { force: true });
+	}
+	await cp(join(fromDir, "l10n"), join(toDir, "l10n"), { recursive: true, force: true });
+}
+
 export function buildCursorManifest(base) {
 	return { ...base, files: [...VSIX_PACKAGE_FILES] };
 }
@@ -60,8 +69,7 @@ export function buildVsCodeManifest(base) {
 	const manifest = { ...base };
 	manifest.name = "aidr-vscode";
 	manifest.displayName = "Singularity AIDR";
-	manifest.description =
-		"Singularity AIDR — protects AI agent tool calls against dangerous commands, malicious URLs, and harmful file writes.";
+	manifest.description = "%extension.description%";
 	manifest.main = "./dist/vscode_extension.js";
 	manifest.files = [...VSIX_PACKAGE_FILES];
 	manifest.contributes = {
@@ -73,13 +81,13 @@ export function buildVsCodeManifest(base) {
 					type: "string",
 					default: "user",
 					enum: ["workspace", "user"],
-					description: "Where Singularity AIDR installs VS Code hooks.",
+					description: "%config.vscodeScope.description%",
 				},
 				"aidr.hookRunnerPath": {
 					type: "string",
 					scope: "application",
 					default: "",
-					description: "Optional absolute path to an aidr-hook runner script.",
+					description: "%config.hookRunnerPath.description%",
 				},
 			},
 		},
