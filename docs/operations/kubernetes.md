@@ -35,8 +35,8 @@ covers operation.
 - A container registry the cluster can pull from.
 - For production: a Supabase-compatible Postgres 15+ (see below) with backups/PITR, and
   optionally an S3-compatible bucket for storage.
-- A workstation with Node 22+, Docker and this repository to build images and generate
-  credentials.
+- A workstation with Node 22+ and this repository to generate credentials, plus Docker when
+  building the images from source instead of using the signed release images.
 
 ## Images
 
@@ -47,7 +47,40 @@ Upstream images are used unchanged. Three AIDR images are built from this reposi
 |---|---|
 | `aidr/dashboard` | `deploy/dashboard/Dockerfile` + `packages/dashboard/dist` + `supabase/templates` |
 | `aidr/edge-functions` | `deploy/helm/images/edge-functions.Dockerfile`: `supabase/edge-runtime:v1.77.4` (digest-pinned), the reviewed upstream router `docker/volumes/functions/main` (from `deploy/upstream` at the pinned commit; the `hello` sample is dropped) and `supabase/functions` |
-| `aidr/migrations` | `deploy/helm/images/migrations.Dockerfile`: `postgres:17.6-alpine3.22` client, `migrate.sql` and `aidr-migrate.sh` |
+| `aidr/migrations` | `deploy/helm/images/migrations.Dockerfile`: `postgres:17.11-alpine3.24` client (digest-pinned, matching the 17.11 server), `migrate.sql` and `aidr-migrate.sh` |
+
+### Vendor-built, signed images and chart
+
+`.github/workflows/release-images.yml` builds the three images above plus
+`aidr/privacy-gateway` and the three posture scanner images from a protected, signed
+`vX.Y.Z-rc.N` tag, pushes them to `ghcr.io/singularityrd/aidr/<name>:<X.Y.Z-rc.N>`,
+scans each digest with Trivy (a CRITICAL finding with a fix fails the run), signs it
+keyless with cosign, attaches a CycloneDX SBOM attestation and a GitHub build-provenance
+attestation, and pushes the chart as `oci://ghcr.io/singularityrd/charts/aidr` with every
+AIDR image already pinned to `tag@sha256:digest` in its default values. The run's
+`release-images-<run id>` artifact holds `release-images.json` (every digest), the scan
+summary, the SBOMs and the packaged chart. Until GitHub Actions is enabled for the
+repository (OPS-1) and a candidate tag has gone through it, no such images exist; build
+from source as below.
+
+Verify before installing (replace the tag and digest with the release values):
+
+```bash
+identity='https://github.com/SingularityRD/aidr/.github/workflows/release-images.yml@refs/tags/v0.6.0-rc.0'
+cosign verify --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/singularityrd/aidr/dashboard@sha256:<digest>
+cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/singularityrd/aidr/dashboard@sha256:<digest>
+gh attestation verify oci://ghcr.io/singularityrd/aidr/dashboard@sha256:<digest> --repo SingularityRD/aidr
+helm pull oci://ghcr.io/singularityrd/charts/aidr --version 0.6.0-rc.0
+```
+
+When `global.imageRegistry` points at an internal mirror, the pinned digests still apply,
+so a mirrored image that differs from the signed one does not start.
+
+### Building from source
 
 ```bash
 pnpm -C packages/dashboard build

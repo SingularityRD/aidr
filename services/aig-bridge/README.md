@@ -37,6 +37,7 @@ are safe; any dependency change must rerun the bridge and MCP contract tests.
 | `GET` | `/api/v1/health` | **Authenticated** detailed readiness report (gate reasons, dataset provenance, `scan_ready`) |
 | `GET` | `/api/v1/livez` | Process liveness (public; does not contact AIG or any store) |
 | `GET` | `/api/v1/readyz` | Public readiness probe: `{"status":"ready"}` (200) or `{"status":"not_ready"}` (503) only |
+| `GET` | `/metrics` | Prometheus metrics; Bearer `BRIDGE_METRICS_TOKEN` (`404` when unset or equal to `BRIDGE_API_KEY`, `401` otherwise). See [deploy/monitoring](../../deploy/monitoring/README.md) |
 | `POST` | `/api/v1/uploads` | Store a validated tenant-scoped ZIP or tar.gz archive; return an opaque upload ID |
 | `POST` | `/api/v1/scan/infra` | Submit AI infrastructure CVE scan |
 | `GET` | `/api/v1/scan/infra/{task_id}` | Poll infra scan results |

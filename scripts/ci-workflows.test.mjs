@@ -228,6 +228,61 @@ test("release-rc packages, signs and verifies the same dist set the manifests co
 	assert.match(bundle, /const archiveOnlyDirs = \["packages\/privacy"\]/u);
 });
 
+test("release-images: signed RC tag first, every image pushed, scanned, signed and attested by digest", () => {
+	const release = workflow("release-images.yml");
+	assert.deepEqual(release.permissions, { contents: "read" });
+	const build = release.jobs["build-sign"];
+	assert.deepEqual(build.permissions, { contents: "read", packages: "write", "id-token": "write" });
+	const names = build.steps.map((step) => step.name);
+	const firstTool = build.steps.findIndex((step) => /(?:^|[\s;&|(])(?:pnpm|node|go|docker|helm|cosign|trivy|curl)\s/mu.test(step.run ?? ""));
+	const identity = names.indexOf("Resolve and verify immutable release identity");
+	assert.ok(identity >= 0 && identity < firstTool, "the signed-tag identity check must run before any tag code or tool");
+	assert.match(stepNamed(build, "Resolve and verify immutable release identity").run, /verify-tag --raw/u);
+
+	const components = release.env.IMAGE_COMPONENTS.split(",");
+	const buildImages = readFileSync(path.join(root, "deploy/helm/build-images.mjs"), "utf8");
+	const declared = JSON.parse(/export const COMPONENTS = (\[[^\]]+\])/u.exec(buildImages)[1]);
+	assert.deepEqual([...components].sort(), [...declared].sort(), "release-images must build every build-images.mjs component");
+
+	const push = stepNamed(build, "Build and push images under the immutable candidate tag").run;
+	assert.match(push, /build-images\.mjs [^\n]*--only "\$\{IMAGE_COMPONENTS\}"/u);
+	assert.match(push, /--build --push/u);
+	assert.match(push, /release-images\.mjs digests/u);
+	assert.doesNotMatch(raw("release-images.yml"), /:latest\b/u);
+	assert.match(stepNamed(build, "Scan every pushed digest (fixable CRITICAL fails)").run, /release-images\.mjs gate --summary/u);
+	const sign = stepNamed(build, "SBOM, keyless signature and SBOM attestation for every digest").run;
+	assert.ok(sign.includes("@sha256:[0-9a-f]{64}$"), "signing must refuse non-digest refs");
+	for (const command of [/cosign sign --yes "\$\{ref\}"/u, /cosign attest --yes --type cyclonedx/u, /cosign verify --certificate-identity/u]) assert.match(sign, command);
+	const chart = stepNamed(build, "Package, push and sign the digest-pinned Helm chart").run;
+	assert.ok(chart.indexOf("release-images.mjs pin-chart") < chart.indexOf("helm package"), "the packaged chart must carry the digest pins");
+	assert.match(chart, /cosign sign --yes "\$\{REGISTRY\}\/charts\/aidr@\$\{chart_digest\}"/u);
+	assert.equal(stepNamed(build, "Install Helm 3.19.0 (pinned, signature and checksum verified)").env.HELM_VERSION, "v3.19.0");
+	const tools = stepNamed(build, "Install pinned Trivy and cosign").run;
+	assert.ok(tools.indexOf("sha256sum --check --strict") < tools.indexOf("tar -xzf"), "Trivy must be verified before it is unpacked");
+
+	const provenance = release.jobs.provenance;
+	assert.equal(provenance.permissions.attestations, "write");
+	assert.equal(provenance.strategy.matrix.subject, "${{ fromJSON(needs.build-sign.outputs.subjects) }}");
+	const attest = stepNamed(provenance, "Attest build provenance for the pushed digest (pinned)");
+	assert.deepEqual(attest.with, { "subject-name": "${{ matrix.subject.name }}", "subject-digest": "${{ matrix.subject.digest }}", "push-to-registry": true });
+});
+
+test("posture scanner supply-chain job audits, govulnchecks and Trivy-scans the vendored tree", () => {
+	const job = workflow("ci.yml").jobs["posture-scanner-supply-chain"];
+	assert.match(stepNamed(job, "Vendored frontend audit, Go toolchain and image base pin contract").run, /pnpm audit:vendored\n\s*node --test scripts\/audit-vendored-aig\.test\.mjs/u);
+	const govuln = stepNamed(job, "govulncheck the vendored Go module (pinned)");
+	assert.equal(govuln["working-directory"], "vendor/ai-infra-guard");
+	assert.match(govuln.run, /go run "golang\.org\/x\/vuln\/cmd\/govulncheck@\$\{GOVULNCHECK_VERSION\}" \.\/\.\.\./u);
+	assert.match(job.env.GOVULNCHECK_VERSION, /^v\d+\.\d+\.\d+$/u);
+	const goMod = readFileSync(path.join(root, "vendor/ai-infra-guard/go.mod"), "utf8");
+	assert.ok(goMod.split(/\r?\n/u).includes(`toolchain ${job.env.GO_TOOLCHAIN}`), "CI must vet with the go.mod toolchain");
+	const trivy = stepNamed(job, "Trivy scan and SBOM of the vendored tree (pinned)").run;
+	assert.match(job.env.TRIVY_SHA256, /^[0-9a-f]{64}$/u);
+	assert.ok(trivy.indexOf("sha256sum --check --strict") < trivy.indexOf("tar -xzf"), "Trivy must be verified before it is unpacked");
+	assert.match(trivy, /--exit-code 1 vendor\/ai-infra-guard/u);
+	assert.match(trivy, /--format cyclonedx/u);
+});
+
 test("Browser Guard release: protected signed tag, least privilege, attested zips, no store credentials", () => {
 	const release = workflow("release-browser-guard.yml");
 	assert.deepEqual(release.on, { push: { tags: ["browser-guard-v*"] } });

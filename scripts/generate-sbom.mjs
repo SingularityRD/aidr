@@ -199,7 +199,7 @@ const payload = {
 				...privacyPythonSources.flatMap(pythonSourceProperties),
 			{
 				name: "aidr:sbom-limitations",
-				value: "Container base/OS layers, upstream Supabase images, and AI-Infra-Guard server components are not included; image SBOM acceptance remains open",
+				value: "Container base/OS layers, upstream Supabase images, and the vendored AI-Infra-Guard posture scanner are not included here; the vendored tree has its own CycloneDX SBOM (CI posture-scanner-supply-chain) and release-images.yml attests a per-image SBOM; image SBOM acceptance remains open until that workflow has run",
 			},
 			...(process.env.AIDR_RC_VERSION ? [{ name: "aidr:rc-version", value: process.env.AIDR_RC_VERSION }] : []),
 			...(process.env.AIDR_SOURCE_DIGEST ? [{ name: "aidr:source-digest", value: process.env.AIDR_SOURCE_DIGEST }] : []),

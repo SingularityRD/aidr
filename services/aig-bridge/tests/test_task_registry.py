@@ -181,6 +181,11 @@ def test_live_postgres_cross_instance_races():
     )
     assert results.count(True) == 1
 
+    # /metrics depth gauge: cross-tenant, fixed state keys, read-only.
+    depth = registry().active_counts_by_status()
+    assert set(depth) == {"reserved", "queued", "running"}
+    assert sum(depth.values()) >= 4
+
     with psycopg.connect(dsn) as connection:
         connection.execute(
             "DELETE FROM aig_bridge_tasks WHERE tenant_id = ANY(%s)",

@@ -67,6 +67,17 @@ test("Prometheus scrape template loads the colocated canonical alert file", asyn
 	assert.match(config, /credentials_file:\s*\/run\/secrets\/aidr_metrics_token/);
 });
 
+test("Prometheus scrape template scrapes the posture scanner bridge with its own bearer token", async () => {
+	const config = await readFile(resolve("deploy", "monitoring", "prometheus-scrape.yml.example"), "utf8");
+	const job = config.split(/^  - job_name: /m).find((block) => block.startsWith("aidr-posture-scanner-bridge"));
+	assert.ok(job, "bridge scrape job is missing");
+	assert.match(job, /metrics_path: \/metrics/);
+	assert.match(job, /type: Bearer\s+credentials_file: \/run\/secrets\/aidr_bridge_metrics_token/);
+	assert.match(job, /- aig-bridge:8099/);
+	const compose = await readFile(resolve("docker-compose.posture-scanner.yml"), "utf8");
+	assert.match(compose, /- BRIDGE_METRICS_TOKEN=\$\{BRIDGE_METRICS_TOKEN:-\}/);
+});
+
 test("request metrics expose bounded RED counters and a cumulative duration histogram", () => {
 	const metrics = createHttpRequestMetrics();
 	metrics.observe(200, 0.25);

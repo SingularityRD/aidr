@@ -1,6 +1,8 @@
 module github.com/Tencent/AI-Infra-Guard
 
-go 1.23.2
+go 1.26.0
+
+toolchain go1.27.2
 
 require (
 	github.com/PuerkitoBio/goquery v1.10.0

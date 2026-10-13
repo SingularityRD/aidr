@@ -102,11 +102,17 @@ updates:
       prefix: "deps"
       include: "scope"
 
-  # Container base images.
+  # Container base images: every Dockerfile AIDR builds, including the optional
+  # posture scanner images built from vendor/ai-infra-guard (Dockerfile,
+  # Dockerfile_Agent). scripts/audit-vendored-aig.mjs requires each base to stay
+  # digest-pinned and the golang tag to match the vendored go.mod toolchain.
   - package-ecosystem: "docker"
     directories:
       - "/services/aig-bridge"
       - "/deploy/dashboard"
+      - "/deploy/helm/images"
+      - "/deploy/privacy-gateway"
+      - "/vendor/ai-infra-guard"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 0
@@ -123,3 +129,57 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]
+
+  # Optional AI Security Posture scanner: the vendored AI-Infra-Guard sources
+  # that the posture-scanner-server and -agent images are built from. Version
+  # PRs stay paused like the rest of this file; security updates are not.
+  # After a bump, rerun pnpm audit:vendored and the posture-scanner-supply-chain
+  # CI job (govulncheck, Trivy).
+  - package-ecosystem: "npm"
+    directory: "/vendor/ai-infra-guard/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    reviewers:
+      - "SingularityRD"
+    commit-message:
+      prefix: "deps(posture-scanner)"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "gomod"
+    directory: "/vendor/ai-infra-guard"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    reviewers:
+      - "SingularityRD"
+    commit-message:
+      prefix: "deps(posture-scanner)"
+
+  - package-ecosystem: "uv"
+    directories:
+      - "/vendor/ai-infra-guard/AIG-PromptSecurity"
+      - "/vendor/ai-infra-guard/agent-scan"
+      - "/vendor/ai-infra-guard/skill-scan"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    reviewers:
+      - "SingularityRD"
+    commit-message:
+      prefix: "deps(posture-scanner)"
+
+  # Hash locks generated with the uv pip compile command in each lock header.
+  - package-ecosystem: "pip"
+    directories:
+      - "/vendor/ai-infra-guard/mcp-scan"
+      - "/vendor/ai-infra-guard/services/api_checker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    reviewers:
+      - "SingularityRD"
+    commit-message:
+      prefix: "deps(posture-scanner)"

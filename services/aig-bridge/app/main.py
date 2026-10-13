@@ -14,6 +14,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app import metrics
 from app.routers import health, scan, uploads
 from app.utils.aig_client import AIGClientError, close_aig_client
 
@@ -99,6 +100,7 @@ async def lifespan(app: FastAPI):
     logger.info("AIG Bridge shutting down")
 
 
+API_PREFIX = "/api/v1"
 docs_enabled = os.getenv("BRIDGE_DOCS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 app = FastAPI(
     title="AIG Bridge — AIDR × AI-Infra-Guard Integration",
@@ -118,6 +120,8 @@ app = FastAPI(
 # upload helper has its own 50 MiB streaming limit; this outer limit also covers
 # JSON, multipart framing, and chunked requests.
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=_max_body_bytes())
+# Wraps the body limit, so its 413 rejections are counted too.
+app.add_middleware(metrics.MetricsMiddleware, router_prefix=API_PREFIX)
 
 # ── CORS — allow AIDR dashboard and dev tools ──────────────────────────────
 configured_origins = [
@@ -150,6 +154,7 @@ app.add_middleware(
 async def aig_error_handler(_request: Request, exc: AIGClientError):
     """Return a stable upstream error without leaking request secrets."""
 
+    metrics.record_upstream_failure("unavailable")
     return JSONResponse(
         status_code=502,
         # AIG may echo target headers, model tokens, or task payloads in an
@@ -159,6 +164,11 @@ async def aig_error_handler(_request: Request, exc: AIGClientError):
     )
 
 # ── Routers ─────────────────────────────────────────────────────────────────
-app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(scan.router, prefix="/api/v1", tags=["scan"])
-app.include_router(uploads.router, prefix="/api/v1", tags=["uploads"])
+app.include_router(health.router, prefix=API_PREFIX, tags=["health"])
+app.include_router(scan.router, prefix=API_PREFIX, tags=["scan"])
+app.include_router(uploads.router, prefix=API_PREFIX, tags=["uploads"])
+
+# Bearer-protected Prometheus metrics (404 unless BRIDGE_METRICS_TOKEN is set).
+# The provider reads the scan router's registry at scrape time.
+metrics.task_registry_collector.provider = lambda: scan.task_registry
+app.add_route(metrics.METRICS_PATH, metrics.metrics_endpoint, methods=["GET", "HEAD"], include_in_schema=False)
