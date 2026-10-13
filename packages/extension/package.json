@@ -18,6 +18,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:aidr.enableProtection",
     "onCommand:aidr.disableProtection",
     "onCommand:aidr.openConfig",
@@ -29,6 +30,8 @@
     "dist/vscode_extension.js",
     "dist/aidr-hook.cjs",
     "dist/aidr-hook.bundle.cjs",
+    "dist/aidr-hook-launcher.cjs",
+    "dist/aidr-uninstall.cjs",
     "dist/aidr-artifact.manifest.json",
     "dist/aidr-artifact.manifest.sig",
     "dist/aidr-sbom.cdx.json",
@@ -95,6 +98,7 @@
     }
   },
   "scripts": {
+    "vscode:uninstall": "node ./dist/aidr-uninstall.cjs",
     "build": "node ../../scripts/ensure-core-build.mjs && npm run clean && npm run sync:assets && node esbuild.config.cjs",
     "build:release": "npm run clean && npm run sync:assets && node esbuild.config.cjs --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id extension/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist resources .vsce",

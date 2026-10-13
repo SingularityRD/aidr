@@ -42,6 +42,11 @@ import {
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import {
+	internalCursorResponse,
+	internalVsCodeResponse,
+	unansweredBlock as unansweredBlockFor,
+} from "./hook-responses.js";
+import {
 	auditOutputInspection,
 	inspectCachedProvisionedOutput,
 	inspectOutput,
@@ -1448,30 +1453,6 @@ export function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unk
 	};
 }
 
-function internalCursorResponse(
-	decision: "allow" | "deny",
-	reason: string,
-): Record<string, unknown> {
-	return {
-		decision,
-		permission: decision,
-		reason,
-		user_message: reason,
-		agent_message:
-			decision === "allow" ? undefined : "Singularity AIDR internal error policy applied.",
-	};
-}
-
-function internalVsCodeResponse(reason: string): Record<string, unknown> {
-	return {
-		hookSpecificOutput: {
-			hookEventName: "PreToolUse",
-			permissionDecision: "deny",
-			permissionDecisionReason: reason,
-		},
-	};
-}
-
 function truncateReason(verdict: Verdict): string {
 	if (verdict.reasons.length === 0) {
 		return `Singularity AIDR flagged this action (${verdict.category}).`;
@@ -1664,15 +1645,9 @@ function extensionHookDeadline() {
 	};
 }
 
-/**
- * Block for a run whose event is unknown or unanswered: it denies a tool call
- * and, through the prompt-event stop fields (`continue: false`), also stops a
- * prompt submission.
- */
+/** {@link unansweredBlockFor} in this run's host format. */
 function unansweredBlock(reason: string): Record<string, unknown> {
-	return process.argv[2] === "vscode"
-		? { ...internalVsCodeResponse(reason), continue: false, stopReason: reason }
-		: { ...internalCursorResponse("deny", reason), continue: false };
+	return unansweredBlockFor(process.argv[2], reason);
 }
 
 /**

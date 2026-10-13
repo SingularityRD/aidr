@@ -1,0 +1,278 @@
+/**
+ * Stable hook runtime shared by the Cursor and VS Code installers, the hook
+ * health check and the uninstall script. Free of `vscode` imports so the
+ * uninstall script (`dist/aidr-uninstall.cjs`) can run it in plain Node.
+ *
+ * Layout (no path depends on the extension version):
+ *
+ *   <host config dir>/hooks/aidr-hook[.cmd]   shim the managed hook command runs
+ *   ~/.singularity-aidr/extension-hooks/<host>/aidr-hook-launcher.cjs
+ *   ~/.singularity-aidr/extension-hooks/<host>/runner.json
+ *
+ * The shim itself answers with a deny (exit 0) when the editor runtime or the
+ * launcher is missing; the launcher answers with a deny when no runner exists.
+ */
+
+import { access, chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { atomicWriteJson } from "@singularityrd/aidr-core";
+
+import {
+	LAUNCHER_FILE_NAME,
+	type LauncherPointer,
+	POINTER_FILE_NAME,
+	readLauncherPointer,
+	resolveRunner,
+} from "./hook-launcher.js";
+import { type ExtensionHookHost, unansweredBlock } from "./hook-responses.js";
+
+export const SHIM_MARKER = "Singularity AIDR managed hook shim";
+const UNSAFE_SHIM_PATH_PATTERN = /["`$;&|<>\r\n\0%!]/;
+
+export const SHIM_FALLBACK_REASON =
+	"Singularity AIDR hook launcher or editor runtime was not found; execution was denied. Restart the editor so Singularity AIDR can repair its hooks, or run Singularity AIDR: Disable protection.";
+
+export function hookRuntimeDir(host: ExtensionHookHost): string {
+	return path.join(os.homedir(), ".singularity-aidr", "extension-hooks", host);
+}
+
+export function launcherPathFor(host: ExtensionHookHost): string {
+	return path.join(hookRuntimeDir(host), LAUNCHER_FILE_NAME);
+}
+
+export function readHostPointer(host: ExtensionHookHost): LauncherPointer {
+	return readLauncherPointer(hookRuntimeDir(host));
+}
+
+export interface HookRuntimeInstall {
+	host: ExtensionHookHost;
+	/** Runner the launcher should load (bundled `dist/aidr-hook.cjs` or the configured one). */
+	runnerPath: string;
+	/** `dist/aidr-hook-launcher.cjs` of the running extension. */
+	launcherSourcePath: string;
+	extensionsDir?: string;
+	extensionId?: string;
+	version?: string;
+	/** Hook file to remember for uninstall cleanup. */
+	configPath?: string;
+}
+
+/** Copy the launcher to the AIDR home and point it at the current runner. */
+export async function installHookRuntime(install: HookRuntimeInstall): Promise<string> {
+	const dir = hookRuntimeDir(install.host);
+	await mkdir(dir, { recursive: true });
+	const launcherPath = launcherPathFor(install.host);
+	const staged = `${launcherPath}.${process.pid}.tmp`;
+	await copyFile(install.launcherSourcePath, staged);
+	try {
+		// Atomic replace: a hook firing now sees the old or the new launcher, never none.
+		await rename(staged, launcherPath);
+	} catch {
+		// Windows refuses to rename over a file another process has open.
+		await copyFile(staged, launcherPath);
+		await rm(staged, { force: true });
+	}
+
+	const previous = readLauncherPointer(dir);
+	const configPaths = new Set(previous.config_paths ?? []);
+	if (install.configPath) configPaths.add(install.configPath);
+	const pointer: LauncherPointer = {
+		host: install.host,
+		runner_path: install.runnerPath,
+		...(install.extensionsDir ? { extensions_dir: install.extensionsDir } : {}),
+		...(install.extensionId ? { extension_id: install.extensionId } : {}),
+		...(install.version ? { version: install.version } : {}),
+		config_paths: [...configPaths],
+	};
+	await atomicWriteJson(path.join(dir, POINTER_FILE_NAME), pointer);
+	return launcherPath;
+}
+
+/** Stop remembering a hook file whose managed entries were removed. */
+export async function forgetConfigPath(host: ExtensionHookHost, configPath: string): Promise<void> {
+	const dir = hookRuntimeDir(host);
+	const pointer = readLauncherPointer(dir);
+	if (!pointer.config_paths?.includes(configPath)) return;
+	await atomicWriteJson(path.join(dir, POINTER_FILE_NAME), {
+		...pointer,
+		config_paths: pointer.config_paths.filter((entry) => entry !== configPath),
+	});
+}
+
+export function assertSafePathForShim(pathValue: string, label: string): void {
+	if (!pathValue) {
+		throw new Error(`${label} path is empty.`);
+	}
+	if (UNSAFE_SHIM_PATH_PATTERN.test(pathValue)) {
+		throw new Error(`${label} path contains unsupported characters for generated hook shims.`);
+	}
+}
+
+export function shimPathsFor(hooksDir: string): { posix: string; windows: string } {
+	return { posix: path.join(hooksDir, "aidr-hook"), windows: path.join(hooksDir, "aidr-hook.cmd") };
+}
+
+function fallbackJson(host: ExtensionHookHost): string {
+	return JSON.stringify(unansweredBlock(host, SHIM_FALLBACK_REASON));
+}
+
+export function posixShimSource(
+	host: ExtensionHookHost,
+	nodePath: string,
+	launcherPath: string,
+): string {
+	return [
+		"#!/usr/bin/env sh",
+		`# ${SHIM_MARKER} (${host}). Regenerated by the extension; do not edit.`,
+		`AIDR_NODE="${nodePath}"`,
+		`AIDR_LAUNCHER="${launcherPath}"`,
+		'if [ -x "$AIDR_NODE" ] && [ -f "$AIDR_LAUNCHER" ]; then',
+		"\tELECTRON_RUN_AS_NODE=1",
+		"\texport ELECTRON_RUN_AS_NODE",
+		'\texec "$AIDR_NODE" "$AIDR_LAUNCHER" "$@"',
+		"fi",
+		"# Fail closed: answer with a deny in the host's format, never a bare error exit.",
+		"cat >/dev/null 2>&1",
+		`printf '%s\\n' '${fallbackJson(host)}'`,
+		"exit 0",
+		"",
+	].join("\n");
+}
+
+export function windowsShimSource(
+	host: ExtensionHookHost,
+	nodePath: string,
+	launcherPath: string,
+): string {
+	return [
+		"@echo off",
+		`rem ${SHIM_MARKER} (${host}). Regenerated by the extension; do not edit.`,
+		"setlocal",
+		`set "AIDR_NODE=${nodePath}"`,
+		`set "AIDR_LAUNCHER=${launcherPath}"`,
+		'if exist "%AIDR_NODE%" if exist "%AIDR_LAUNCHER%" goto run',
+		`echo ${fallbackJson(host)}`,
+		"exit /b 0",
+		":run",
+		"set ELECTRON_RUN_AS_NODE=1",
+		'"%AIDR_NODE%" "%AIDR_LAUNCHER%" %*',
+		"exit /b %ERRORLEVEL%",
+		"",
+	].join("\r\n");
+}
+
+/** Write both shims into `hooksDir`; returns the one this platform runs. */
+export async function writeHookShims(
+	host: ExtensionHookHost,
+	hooksDir: string,
+	nodePath: string,
+	launcherPath: string,
+): Promise<string> {
+	assertSafePathForShim(nodePath, "Node runtime");
+	assertSafePathForShim(launcherPath, "Hook launcher");
+	const shims = shimPathsFor(hooksDir);
+	await mkdir(hooksDir, { recursive: true });
+	await writeFile(shims.posix, posixShimSource(host, nodePath, launcherPath), "utf8");
+	await chmod(shims.posix, 0o755);
+	await writeFile(shims.windows, windowsShimSource(host, nodePath, launcherPath), "utf8");
+	return process.platform === "win32" ? shims.windows : shims.posix;
+}
+
+/** Remove shims in `hooksDir` that this extension generated (never a customer file). */
+export async function removeHookShims(hooksDir: string): Promise<void> {
+	for (const shim of Object.values(shimPathsFor(hooksDir))) {
+		const content = await readFile(shim, "utf8").catch(() => undefined);
+		if (content === undefined) continue;
+		if (content.includes(SHIM_MARKER) || isLegacyShim(content)) {
+			await rm(shim, { force: true });
+		}
+	}
+}
+
+/** Shims written before the stable launcher: they run a versioned runner directly. */
+function isLegacyShim(content: string): boolean {
+	return /ELECTRON_RUN_AS_NODE/.test(content) && /aidr-hook\.cjs/.test(content);
+}
+
+export function buildShimCommand(
+	shimPath: string,
+	host: ExtensionHookHost,
+	marker: string,
+): string {
+	const quoted = `"${shimPath.replace(/"/g, '\\"')}"`;
+	// Hook commands can execute in PowerShell contexts on Windows; a quoted
+	// script path must be invoked with `&` to avoid parser errors.
+	return process.platform === "win32"
+		? `& ${quoted} ${host} ${marker}`
+		: `${quoted} ${host} ${marker}`;
+}
+
+/** The shim path a managed hook command runs. */
+export function shimPathFromCommand(command: string): string | undefined {
+	const match = /^(?:&\s+)?"((?:[^"\\]|\\.)*)"/.exec(command.trim());
+	return match?.[1]?.replace(/\\"/g, '"');
+}
+
+function shimVariable(content: string, name: string): string | undefined {
+	const posix = new RegExp(`^${name}="([^"]*)"`, "m").exec(content);
+	if (posix) return posix[1];
+	const windows = new RegExp(`^set "${name}=([^"]*)"`, "m").exec(content);
+	return windows?.[1];
+}
+
+async function exists(filePath: string): Promise<boolean> {
+	try {
+		await access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Problems of one shim: missing, legacy, no editor runtime, no launcher, no runner. */
+async function inspectShim(shimPath: string): Promise<string[]> {
+	const content = await readFile(shimPath, "utf8").catch(() => undefined);
+	if (content === undefined) return [`hook shim missing: ${shimPath}`];
+	if (!content.includes(SHIM_MARKER)) {
+		return [`hook shim ${shimPath} is a legacy shim pinned to a versioned extension directory`];
+	}
+	const problems: string[] = [];
+	const nodePath = shimVariable(content, "AIDR_NODE");
+	if (!nodePath || !(await exists(nodePath))) {
+		problems.push(`editor runtime used by ${shimPath} not found: ${nodePath ?? "unset"}`);
+	}
+	const launcherPath = shimVariable(content, "AIDR_LAUNCHER");
+	if (!launcherPath || !(await exists(launcherPath))) {
+		problems.push(`hook launcher used by ${shimPath} not found: ${launcherPath ?? "unset"}`);
+	} else if (!resolveRunner(readLauncherPointer(path.dirname(launcherPath)))) {
+		problems.push(`hook launcher ${launcherPath} has no hook runner to load (dangling shim)`);
+	}
+	return problems;
+}
+
+/**
+ * Problems that would make the managed hook commands fail to inspect a call.
+ * An empty list means every managed command reaches a runner.
+ */
+export async function inspectManagedCommands(commands: readonly string[]): Promise<string[]> {
+	const problems: string[] = [];
+	for (const command of commands) {
+		const shimPath = shimPathFromCommand(command);
+		problems.push(
+			...(shimPath
+				? await inspectShim(shimPath)
+				: [`hook command is not a managed shim: ${command}`]),
+		);
+	}
+	return [...new Set(problems)];
+}
+
+/** Hook runner the stable launcher for `host` currently resolves to. */
+export function resolvedRunnerFor(host: ExtensionHookHost): string | undefined {
+	return resolveRunner(readHostPointer(host));
+}
+
+export async function removeHookRuntime(host: ExtensionHookHost): Promise<void> {
+	await rm(hookRuntimeDir(host), { recursive: true, force: true });
+}

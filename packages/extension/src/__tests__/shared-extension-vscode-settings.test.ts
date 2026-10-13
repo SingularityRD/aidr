@@ -26,7 +26,8 @@ vi.mock("@singularityrd/aidr-core", () => ({
 }));
 
 vi.mock("vscode", () => ({
-	version: "1.99.0",
+	version: "1.137.0",
+	env: { appRoot: "" },
 	commands: {
 		registerCommand: (name: string, callback: () => Promise<void>) => {
 			mocks.commands.set(name, callback);
@@ -50,6 +51,7 @@ describe("VS Code Local hook setting prerequisite", () => {
 		installManagedHooks: vi.fn(),
 		removeManagedHooks: vi.fn(),
 		getHookHealth: vi.fn(),
+		repairManagedHooks: vi.fn(),
 	};
 	const context = {
 		extension: { packageJSON: { version: "0.6.0" } },
@@ -80,17 +82,22 @@ describe("VS Code Local hook setting prerequisite", () => {
 			logging: {},
 		});
 		mocks.getRecentEntries.mockResolvedValue([]);
+		installer.repairManagedHooks.mockResolvedValue([]);
 		installer.installManagedHooks.mockResolvedValue({
 			configPath: "/test/.claude/settings.json",
 			runnerPath: "/test/aidr-hook.cjs",
 			installedEvents: ["PreToolUse", "PostToolUse"],
 			managedCommands: ["aidr-hook vscode"],
+			problems: [],
+			healthy: true,
 		});
 		installer.getHookHealth.mockResolvedValue({
 			configPath: "/test/.claude/settings.json",
 			runnerPath: "/test/aidr-hook.cjs",
 			installedEvents: ["PreToolUse", "PostToolUse"],
 			managedCommands: ["aidr-hook vscode"],
+			problems: [],
+			healthy: true,
 		});
 	});
 

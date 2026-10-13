@@ -80,6 +80,39 @@ async function build() {
 		])),
 	);
 
+	// Stable hook launcher, copied to ~/.singularity-aidr/extension-hooks/<host>/
+	// so the managed hook command never names the versioned extension directory
+	// (src/hook-launcher.ts). Node built-ins only; no source map next to the copy.
+	await esbuild.build({
+		...shared,
+		sourcemap: false,
+		entryPoints: ["src/hook-launcher.ts"],
+		outfile: "dist/aidr-hook-launcher.cjs",
+	});
+	outputs.push("dist/aidr-hook-launcher.cjs");
+
+	// `vscode:uninstall` hook. It runs in plain Node with no `vscode` module, so
+	// the installers' `vscode` import resolves to an empty stub here.
+	await esbuild.build({
+		...shared,
+		entryPoints: ["src/uninstall.ts"],
+		outfile: "dist/aidr-uninstall.cjs",
+		external: ["koffi"],
+		plugins: [
+			{
+				name: "stub-vscode",
+				setup(build) {
+					build.onResolve({ filter: /^vscode$/ }, () => ({ path: "vscode", namespace: "stub" }));
+					build.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
+						contents: "module.exports = {};",
+						loader: "js",
+					}));
+				},
+			},
+		],
+	});
+	outputs.push("dist/aidr-uninstall.cjs");
+
 	for (const out of outputs) stripSourceMappingUrl(out);
 	removeReleaseSourceMaps("dist");
 
