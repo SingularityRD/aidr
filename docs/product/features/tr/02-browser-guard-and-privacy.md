@@ -751,16 +751,20 @@ duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır.
 | Maskelendi | "1 dosya yüklenmeden önce maskelendi: 2 e-posta adresi." / "1 file masked before upload: 2 email addresses." |
 | İkili, engellenmedi | `"report.pdf" denetlenemedi (ikili dosya). Göndermeden önce kontrol edin.` |
 | Eski Office tam okunamadı, engellenmedi | `"eski.doc" (eski .doc/.xls/.ppt biçimi) tam olarak denetlenemedi. .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
-| Hassas veri içeren eski Office dosyası | `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 e-posta adresi). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: bu biçimler maskelenir.` |
+| Hassas veri içeren eski Office dosyası | `"sozlesme.doc" kişisel veya gizli bilgi içeriyor (1 e-posta adresi), bu yüzden yüklenmedi. Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez: dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin (bu biçimler maskelenir) ya da BT ekibinize başvurun.` |
 | Görsel incelenmedi | `"ekran.png" denetlenmedi: görseller için AIDR Privacy yardımcı uygulaması gerekir. Göndermeden önce kontrol edin.` |
 | Belgedeki resimler incelenmedi | `"rapor.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
-| Hassas veri içeren görsel | `"ekran.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 e-posta adresi). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
-| Engellendi | **Yükleme engellendi**: `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
+| Hassas veri içeren görsel | `Bir görselde kişisel veya gizli bilgi görünüyor (1 e-posta adresi), bu yüzden "ekran.png" yüklenmedi. Görseller maskelenemez: yüklemeden önce o bölümü kırpın ya da karartın veya BT ekibinize başvurun.` |
+| Engellendi (çok büyük) | **Yükleme engellendi**: `"big.csv" yüklenmedi: dosya, kurumunuzun yapay zekâ hizmetleri için izin verdiği boyuttan büyük. Daha küçük bir dosya ya da yalnızca gereken bölümü yükleyin.` |
 | Yükleme politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
 | Belgeler politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
-| Hassas veri içeren PDF | `"sozlesme.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 e-posta adresi). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: yapıştırılan metin maskelenir.` |
+| Hassas veri içeren PDF | `"sozlesme.pdf" kişisel veya gizli bilgi içeriyor (1 e-posta adresi), bu yüzden yüklenmedi. PDF dosyaları maskelenemez: gereken metni kopyalayıp mesaja yapıştırın (yapıştırılan metin maskelenir) ya da BT ekibinize başvurun.` |
 | Dosya denetlenemedi | "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
 | Tarayıcı dosyayı değiştiremiyor | "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
+
+Yüklemeyi durdurabilecek her nedenin yukarıdakiler gibi sade bir cümlesi vardır (dosyaya ne
+oldu, ne yapılabilir), Türkçe ve İngilizce. İç neden kodları (`SENSITIVE_DATA_IN_PDF`,
+`FILE_TOO_LARGE`...) kararda kalır ve mesajda hiçbir zaman gösterilmez.
 
 **Nasıl kullanılır** — Yönetilen anahtarlar `fileHandling` (`scan` | `block` | `allow`,
 varsayılan `scan`), `documentHandling` (`mask` | `block` | `allow`, varsayılan `mask`;

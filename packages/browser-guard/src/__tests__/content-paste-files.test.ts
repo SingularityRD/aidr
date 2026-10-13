@@ -201,7 +201,8 @@ describe("content guard: file uploads", () => {
 		await expect
 			.poll(() => g.bubble()?.textContent ?? "")
 			.toContain('"sheet.csv" was not uploaded');
-		expect(g.bubble()?.textContent).toContain("FORMULA_CELL");
+		expect(g.bubble()?.textContent).toContain("could not be safely checked");
+		expect(g.bubble()?.textContent).not.toContain("FORMULA_CELL");
 		expect(pageSaw).toBe(0);
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", channel: "file" });
 	});
@@ -230,7 +231,9 @@ describe("content guard: file uploads", () => {
 		const input = document.getElementById("file") as HTMLInputElement;
 		makeFilesWritable(input, [new File(["0123456789"], "big.txt")]);
 		input.dispatchEvent(new Event("change", { bubbles: true }));
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("FILE_TOO_LARGE");
+		await expect
+			.poll(() => g.bubble()?.textContent ?? "")
+			.toContain("larger than your organisation allows");
 		expect(g.sanitizeFile).not.toHaveBeenCalled();
 	});
 

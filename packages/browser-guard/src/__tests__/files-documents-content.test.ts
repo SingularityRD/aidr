@@ -104,7 +104,7 @@ describe("content guard: document uploads", () => {
 		await expect
 			.poll(() => g.bubble()?.textContent ?? "")
 			.toContain("does not allow Office or PDF documents");
-		expect(g.bubble()?.textContent).toContain("DOCUMENT_BLOCKED_BY_POLICY");
+		expect(g.bubble()?.textContent).toContain("does not allow Office or PDF documents");
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", channel: "file" });
 		expect(replayed).toHaveLength(0); // never handed to the page
 	});
@@ -133,7 +133,7 @@ describe("content guard: document uploads", () => {
 		makeFilesWritable(input, [new File(["%PDF-1.7 renamed"], "notes.txt", { type: "text/plain" })]);
 		input.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
 		await expect.poll(() => g.records().at(-1)?.action).toBe("blocked");
-		expect(g.bubble()?.textContent).toContain("DOCUMENT_BLOCKED_BY_POLICY");
+		expect(g.bubble()?.textContent).toContain("does not allow Office or PDF documents");
 	});
 
 	it("tells the user to paste the text when a PDF is blocked for sensitive data", async () => {
@@ -147,8 +147,8 @@ describe("content guard: document uploads", () => {
 		const input = document.getElementById("file") as HTMLInputElement;
 		makeFilesWritable(input, [new File(["%PDF-1.7"], "rapor.pdf", { type: "application/pdf" })]);
 		input.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("SENSITIVE_DATA_IN_PDF");
-		expect(g.bubble()?.textContent).toContain("paste it instead");
+		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("PDFs cannot be masked");
+		expect(g.bubble()?.textContent).toContain("paste it into the message instead");
 	});
 
 	it("tells the user to save as .docx when a legacy file is blocked for sensitive data", async () => {
@@ -164,9 +164,9 @@ describe("content guard: document uploads", () => {
 		input.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
 		await expect
 			.poll(() => g.bubble()?.textContent ?? "")
-			.toContain("SENSITIVE_DATA_IN_LEGACY_OFFICE");
+			.toContain("Old Office files (.doc/.xls/.ppt) cannot be masked");
 		expect(g.bubble()?.textContent).toContain("cannot be masked");
-		expect(g.bubble()?.textContent).toContain("Save the file as .docx/.xlsx/.pptx");
+		expect(g.bubble()?.textContent).toContain("save it as .docx/.xlsx/.pptx");
 		expect(g.bubble()?.textContent).not.toContain("could not be fully checked");
 	});
 });
@@ -211,7 +211,7 @@ describe("content guard: documentHandling=block sniff of files over the scan lim
 		async (_k, make) => {
 			const result = await upload(await make(), "notes.txt");
 			expect(result.action).toBe("blocked");
-			expect(result.bubble).toContain("DOCUMENT_BLOCKED_BY_POLICY");
+			expect(result.bubble).toContain("does not allow Office or PDF documents");
 		},
 	);
 

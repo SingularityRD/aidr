@@ -93,13 +93,15 @@ describe("content guard: uploads that are not fully checked", () => {
 						},
 		});
 		const png = upload("ekran.png");
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("SENSITIVE_DATA_IN_IMAGE");
-		expect(g.bubble()?.textContent).toContain("Crop or redact it");
+		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("Pictures cannot be masked");
+		expect(g.bubble()?.textContent).toContain("crop or black out that part");
 		expect(png.pageSaw()).toBe(0);
 		g.bubbleButton("close")?.click();
 		upload("eski.xls");
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("LEGACY_OFFICE_FORMAT");
-		expect(g.bubble()?.textContent).toContain("Save the file as .docx/.xlsx/.pptx");
+		await expect
+			.poll(() => g.bubble()?.textContent ?? "")
+			.toContain("(old .doc/.xls/.ppt format) could not be fully checked");
+		expect(g.bubble()?.textContent).toContain("Save it as .docx/.xlsx/.pptx");
 	});
 });
 
@@ -129,7 +131,7 @@ describe("content guard: image OCR through the native host", () => {
 					: undefined,
 		});
 		const { pageSaw } = upload("ekran.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("SENSITIVE_DATA_IN_IMAGE");
+		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("Pictures cannot be masked");
 		expect(imageScans(g)).toEqual([{ type: "NATIVE_IMAGE_SCAN", data: "iVBORw==" }]);
 		expect(pageSaw()).toBe(0);
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", counts: { EMAIL: 1 } });

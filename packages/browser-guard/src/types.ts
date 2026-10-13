@@ -627,6 +627,66 @@ export interface FileDecision {
 }
 
 /**
+ * Reason codes that can stop an upload (`FileDecision.reasons` of a "block", or added by the
+ * content script), in the order the upload bubble explains them: the first one present picks
+ * the sentence the user reads. Every code has an EN and TR message in content/strings.ts
+ * (`fileReasons`); codes stay out of the visible text. Families not listed here are explained
+ * by their prefix: `SIGNAL_<SignalCode>` (risk-signal coaching) and `ARCHIVE_<code>` (a broken
+ * ZIP container, explained like DOCUMENT_MALFORMED); host `IMAGE_*` / `NATIVE_*` details always
+ * accompany IMAGE_NOT_INSPECTED or PDF_IMAGES_NOT_INSPECTED.
+ */
+export const FILE_BLOCK_REASONS = [
+	"FILE_BLOCKED_BY_POLICY",
+	"DOCUMENT_BLOCKED_BY_POLICY",
+	"NATIVE_NER_UNAVAILABLE",
+	"FILE_TOO_LARGE",
+	"SENSITIVE_DATA_IN_PDF",
+	"SENSITIVE_DATA_IN_LEGACY_OFFICE",
+	"SENSITIVE_DATA_IN_IMAGE",
+	"DOCUMENT_ENCRYPTED",
+	"PDF_ENCRYPTED",
+	"DOCUMENT_MACROS",
+	"DOCUMENT_EMBEDDED_OBJECT",
+	"DOCUMENT_EXTERNAL_LINKS",
+	"DOCUMENT_LIMIT_EXCEEDED",
+	"DOCUMENT_MALFORMED",
+	"TEXT_FILE_NOT_DECODABLE",
+	"SCAN_INCOMPLETE",
+	"FILE_SCAN_ERROR",
+	"PDF_IMAGE_OCR_UNAVAILABLE",
+	"PDF_IMAGES_NOT_INSPECTED",
+	"PDF_IMAGE_LIMIT",
+	"PDF_IMAGE_UNSUPPORTED",
+	"PDF_IMAGE_UNDECODABLE",
+	"PDF_IMAGE_OCR_INCOMPLETE",
+	"PDF_NO_TEXT",
+	"PDF_PARTIAL",
+	"PDF_EMBEDDED_FILES_NOT_INSPECTED",
+	"PDF_UNPARSEABLE",
+	"LEGACY_OFFICE_PARTIAL",
+	"LEGACY_OFFICE_UNSUPPORTED",
+	"LEGACY_OFFICE_FORMAT",
+	"DOCUMENT_UNPARSEABLE",
+	"IMAGE_NOT_INSPECTED",
+	"BINARY_FILE_UNSCANNABLE",
+] as const;
+
+export type FileBlockReason = (typeof FILE_BLOCK_REASONS)[number];
+
+/**
+ * Reason codes that only accompany an allowed or masked file (or a monitor-mode record); they
+ * never decide a block. Pass-through warnings for them are chosen in content/file-guard.ts.
+ */
+export const FILE_PASS_REASONS = [
+	"SENSITIVE_DATA",
+	"FORMULA_CELL",
+	"BINARY_FILE_UNSCANNED",
+	"DOCUMENT_IMAGES_NOT_INSPECTED",
+	"IMAGE_OCR_CLEAN",
+	"PDF_IMAGES_OCR_CLEAN",
+] as const;
+
+/**
  * Native-host OCR verdict for one image (packages/privacy `image-scan`): whether its text shows
  * sensitive data. Pixels are never masked; a "sensitive" image is blocked.
  *   clean       every OCR word was inspected and nothing sensitive was found;

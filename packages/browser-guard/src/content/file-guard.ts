@@ -22,17 +22,19 @@
  * did not check is blocked with `NATIVE_NER_UNAVAILABLE` (recorded, not blocked, in monitor).
  */
 
+import { coachingFor, isSignalCode } from "../engine/coaching.js";
 import { type Counts, mergeCounts } from "../engine/counts.js";
 import { isDocumentContent, isDocumentFile, isLargeDocumentContent } from "../engine/files.js";
-import type {
-	DetectionEngine,
-	FileDecision,
-	GuardPolicy,
-	ImageInspection,
-	NativeNerUse,
-	PlaceholderVault,
-	PrivacyScanEvent,
-	SiteAdapter,
+import {
+	type DetectionEngine,
+	FILE_BLOCK_REASONS,
+	type FileDecision,
+	type GuardPolicy,
+	type ImageInspection,
+	type NativeNerUse,
+	type PlaceholderVault,
+	type PrivacyScanEvent,
+	type SiteAdapter,
 } from "../types.js";
 import {
 	isDocumentRooted,
@@ -142,23 +144,28 @@ type Outcome =
 	  }
 	| { readonly kind: "error" };
 
-/** Bubble text for a blocked upload: reason codes, counts, and a hint for what to do instead. */
-function blockedMessage(
+const SIGNAL_PREFIX = "SIGNAL_";
+
+/**
+ * Bubble text for a blocked upload: one plain sentence saying what happened to the file and
+ * what to do, chosen by the most specific reason present (FILE_BLOCK_REASONS order). Reason
+ * codes stay in the decision (and tests) and never appear in the text.
+ */
+export function blockedMessage(
 	s: Strings,
 	outcome: { readonly name: string; readonly reasons: readonly string[]; readonly counts: Counts },
 ): string {
-	const summary = formatCounts(outcome.counts, s.lang);
-	const reasons = [...outcome.reasons, ...(summary ? [summary] : [])].join(", ");
-	const has = (code: string) => outcome.reasons.includes(code);
-	const hints = [
-		...(has("DOCUMENT_BLOCKED_BY_POLICY") ? [s.documentBlockedByPolicy] : []),
-		...(has(NATIVE_REASON) ? [s.nativeRequiredFileHint] : []),
-		...(has("SENSITIVE_DATA_IN_PDF") ? [s.pdfPasteHint] : []),
-		...(has("SENSITIVE_DATA_IN_IMAGE") ? [s.imageBlockedHint] : []),
-		...(has("LEGACY_OFFICE_FORMAT") ? [s.legacyOfficeHint] : []),
-		...(has("SENSITIVE_DATA_IN_LEGACY_OFFICE") ? [s.legacyOfficeSensitiveHint] : []),
-	];
-	return [s.fileBlockedBody(outcome.name, reasons), ...hints].join(" ");
+	const { name, reasons } = outcome;
+	const found = formatCounts(outcome.counts, s.lang);
+	const code = FILE_BLOCK_REASONS.find((r) => reasons.includes(r));
+	if (code) return s.fileReasons[code](name, found);
+	const signal = reasons.find((r) => r.startsWith(SIGNAL_PREFIX))?.slice(SIGNAL_PREFIX.length);
+	const coaching = signal && isSignalCode(signal) ? coachingFor(signal, s.lang) : "";
+	if (coaching) return s.fileBlockedSignal(name, coaching);
+	// A broken ZIP container (ARCHIVE_*) is explained like any other damaged document.
+	if (reasons.some((r) => r.startsWith("ARCHIVE_")))
+		return s.fileReasons.DOCUMENT_MALFORMED(name, found);
+	return s.fileBlockedGeneric(name, found);
 }
 
 /** Why an allowed/masked file was not fully checked, as a user message (null: fully checked). */

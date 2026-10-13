@@ -44,3 +44,8 @@ export function coachingFor(code: SignalCode, lang: "en" | "tr"): string {
 	const table = lang === "tr" ? TR : EN;
 	return table[code] ?? EN[code] ?? "";
 }
+
+/** True for a known risk-signal code (e.g. the part after `SIGNAL_` in a file reason). */
+export function isSignalCode(code: string): code is SignalCode {
+	return Object.hasOwn(EN, code);
+}

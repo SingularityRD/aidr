@@ -9,9 +9,17 @@
  * popup names it (ENTITY_NAMES mirrors the `entity_*` messages in _locales, checked by
  * ui-i18n.test.ts), and the brand is always "Singularity AIDR".
  */
-import { ENTITY_TYPES, type EntityType, PLACEHOLDER_PREFIX } from "../types.js";
+import {
+	ENTITY_TYPES,
+	type EntityType,
+	type FileBlockReason,
+	PLACEHOLDER_PREFIX,
+} from "../types.js";
 
 export type Lang = "en" | "tr";
+
+/** Sentence for a blocked upload: `name` is the file name, `found` the count summary or "". */
+type FileReasonMessage = (name: string, found: string) => string;
 
 export interface Strings {
 	/** Language of this table (for formatCounts). */
@@ -64,18 +72,19 @@ export interface Strings {
 	readonly pressSendAgain: string;
 	readonly busy: string;
 	readonly fileBlockedTitle: string;
-	fileBlockedBody(name: string, reasons: string): string;
+	/**
+	 * Why an upload was blocked and what to do, one entry per reason code (types.ts
+	 * FILE_BLOCK_REASONS). `found` is the plain count summary ("1 email address") or "".
+	 * Reason codes themselves never appear in these sentences.
+	 */
+	readonly fileReasons: Readonly<Record<FileBlockReason, FileReasonMessage>>;
+	/** An upload blocked by a risk signal; `coaching` is the signal's coaching sentence. */
+	fileBlockedSignal(name: string, coaching: string): string;
+	/** An upload blocked for a reason without its own sentence (never shows the code). */
+	fileBlockedGeneric(name: string, found: string): string;
 	readonly fileBlockedByPolicy: string;
 	/** documentHandling "block": Office/PDF uploads are not allowed. */
 	readonly documentBlockedByPolicy: string;
-	/** Appended when a PDF was blocked for sensitive data (PDFs cannot be masked in place). */
-	readonly pdfPasteHint: string;
-	/** Appended when an image (or a picture in a document) was blocked for sensitive text. */
-	readonly imageBlockedHint: string;
-	/** Appended when a legacy Office file was blocked because it could not be fully checked. */
-	readonly legacyOfficeHint: string;
-	/** Appended when a legacy Office file was blocked for sensitive data (it cannot be masked). */
-	readonly legacyOfficeSensitiveHint: string;
 	readonly fileScanFailed: string;
 	readonly fileReplaceUnsupported: string;
 	readonly fileInputUnguarded: string;
@@ -83,8 +92,6 @@ export interface Strings {
 	readonly nativeUnavailable: string;
 	/** policy.requireNativeNer: native NER gave no usable answer, so the send/paste was blocked. */
 	readonly nativeRequired: string;
-	/** Appended to a blocked upload whose text (or images) the required native NER did not check. */
-	readonly nativeRequiredFileHint: string;
 	/** Acceptable-use notice (administrator text is shown verbatim; these are the controls). */
 	readonly aupAcknowledge: string;
 	readonly aupLater: string;
@@ -96,6 +103,162 @@ export interface Strings {
 
 /** Brand name; never translated or upper-cased (the UI marks it lang="en"). */
 const BRAND = "Singularity AIDR";
+
+/** " (1 email address)" after a sentence's data, or "" when nothing was counted. */
+const paren = (found: string): string => (found ? ` (${found})` : "");
+
+const EN_NOT_FULLY_CHECKED = "and your organisation only allows files that can be fully checked";
+const EN_PASTE_INSTEAD =
+	"Copy the text you need into the message instead (pasted text is masked), or ask your IT team.";
+const EN_SAVE_MODERN = "Save it as .docx/.xlsx/.pptx and upload that instead.";
+const EN_SAVE_AGAIN =
+	'Open the file, save it again (for example with "Save as") and try again, or ask your IT team.';
+
+const EN_FILE_REASONS: Readonly<Record<FileBlockReason, FileReasonMessage>> = {
+	FILE_BLOCKED_BY_POLICY: (name) =>
+		`"${name}" was not uploaded: your organisation does not allow file uploads to AI services. Ask your IT team if you need to share files.`,
+	DOCUMENT_BLOCKED_BY_POLICY: (name) =>
+		`"${name}" was not uploaded: your organisation does not allow Office or PDF documents to be uploaded to AI services. ${EN_PASTE_INSTEAD}`,
+	NATIVE_NER_UNAVAILABLE: (name) =>
+		`"${name}" was not uploaded: your organisation requires the AIDR Privacy helper app to check uploads, and it could not check this file. Try again in a moment, or ask your IT team.`,
+	FILE_TOO_LARGE: (name) =>
+		`"${name}" was not uploaded: it is larger than your organisation allows for AI services. Upload a smaller file or only the part you need.`,
+	SENSITIVE_DATA_IN_PDF: (name, found) =>
+		`"${name}" contains personal or confidential data${paren(found)}, so it was not uploaded. PDFs cannot be masked: copy the text you need and paste it into the message instead (pasted text is masked), or ask your IT team.`,
+	SENSITIVE_DATA_IN_LEGACY_OFFICE: (name, found) =>
+		`"${name}" contains personal or confidential data${paren(found)}, so it was not uploaded. Old Office files (.doc/.xls/.ppt) cannot be masked: save it as .docx/.xlsx/.pptx and upload that instead (those are masked), or ask your IT team.`,
+	SENSITIVE_DATA_IN_IMAGE: (name, found) =>
+		`A picture shows personal or confidential data${paren(found)}, so "${name}" was not uploaded. Pictures cannot be masked: crop or black out that part before uploading, or ask your IT team.`,
+	DOCUMENT_ENCRYPTED: (name) =>
+		`"${name}" is password-protected, so it could not be checked and was not uploaded. Save a copy without the password and upload that, or ask your IT team.`,
+	PDF_ENCRYPTED: (name) =>
+		`"${name}" is a password-protected PDF, so it could not be checked and was not uploaded. Save a copy without the password and upload that, or ask your IT team.`,
+	DOCUMENT_MACROS: (name) =>
+		`"${name}" contains macros, which are not allowed in uploads to AI services, so it was not uploaded. Save a copy without macros (for example as .docx or .xlsx) and upload that, or ask your IT team.`,
+	DOCUMENT_EMBEDDED_OBJECT: (name) =>
+		`"${name}" has another file embedded in it that cannot be checked, so it was not uploaded. Remove the embedded file and try again, or ask your IT team.`,
+	DOCUMENT_EXTERNAL_LINKS: (name) =>
+		`"${name}" links to content outside the file (such as other workbooks or web pages) that cannot be checked, so it was not uploaded. Remove the links (for example by pasting values only) and try again, or ask your IT team.`,
+	DOCUMENT_LIMIT_EXCEEDED: (name) =>
+		`"${name}" is too large or complex to check, so it was not uploaded. Split it into smaller files or upload only the part you need.`,
+	DOCUMENT_MALFORMED: (name) =>
+		`"${name}" seems to be damaged or in an unusual format and could not be checked, so it was not uploaded. ${EN_SAVE_AGAIN}`,
+	TEXT_FILE_NOT_DECODABLE: (name) =>
+		`"${name}" looks like a text file, but its contents could not be read, so it was not uploaded. Save it again as UTF-8 text and try again, or ask your IT team.`,
+	SCAN_INCOMPLETE: (name) =>
+		`Checking "${name}" took too long and could not be finished, so it was not uploaded. Try a smaller file or only the part you need.`,
+	FILE_SCAN_ERROR: (name) =>
+		`Singularity AIDR could not check "${name}", so it was not uploaded. Try again; if it keeps happening, ask your IT team.`,
+	PDF_IMAGE_OCR_UNAVAILABLE: (name) =>
+		`Pictures in "${name}" could not be checked because the AIDR Privacy helper app is not available, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_PASTE_INSTEAD}`,
+	PDF_IMAGES_NOT_INSPECTED: (name) =>
+		`Pictures in "${name}" could not be fully checked, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_PASTE_INSTEAD}`,
+	PDF_IMAGE_LIMIT: (name) =>
+		`"${name}" has too many pictures to check, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. Upload only the pages you need, or ask your IT team.`,
+	PDF_IMAGE_UNSUPPORTED: (name) =>
+		`A picture in "${name}" is in a format that cannot be checked, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_PASTE_INSTEAD}`,
+	PDF_IMAGE_UNDECODABLE: (name) =>
+		`A picture in "${name}" could not be read, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_PASTE_INSTEAD}`,
+	PDF_IMAGE_OCR_INCOMPLETE: (name) =>
+		`The text in a picture in "${name}" could not be read reliably, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_PASTE_INSTEAD}`,
+	PDF_NO_TEXT: (name) =>
+		`"${name}" has no readable text (it may be a scanned document), ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. Type or paste the text you need into the message instead, or ask your IT team.`,
+	PDF_PARTIAL: (name) =>
+		`Part of the text in "${name}" could not be read, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_PASTE_INSTEAD}`,
+	PDF_EMBEDDED_FILES_NOT_INSPECTED: (name) =>
+		`"${name}" has files attached inside it that cannot be checked, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. Remove the attachments and try again, or ask your IT team.`,
+	PDF_UNPARSEABLE: (name) =>
+		`"${name}" could not be opened as a PDF (it may be damaged), so it could not be checked and was not uploaded. ${EN_SAVE_AGAIN}`,
+	LEGACY_OFFICE_PARTIAL: (name) =>
+		`Part of the text in "${name}" (old .doc/.xls/.ppt format) could not be read, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_SAVE_MODERN}`,
+	LEGACY_OFFICE_UNSUPPORTED: (name) =>
+		`"${name}" uses a part of the old .doc/.xls/.ppt format that cannot be checked, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_SAVE_MODERN}`,
+	LEGACY_OFFICE_FORMAT: (name) =>
+		`"${name}" (old .doc/.xls/.ppt format) could not be fully checked, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_SAVE_MODERN}`,
+	DOCUMENT_UNPARSEABLE: (name) =>
+		`"${name}" could not be opened (it may be damaged or in an unusual format), so it could not be checked and was not uploaded. ${EN_SAVE_AGAIN}`,
+	IMAGE_NOT_INSPECTED: (name) =>
+		`The picture "${name}" could not be checked (pictures need the AIDR Privacy helper app), ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. Describe what you need in the message instead, or ask your IT team.`,
+	BINARY_FILE_UNSCANNABLE: (name) =>
+		`"${name}" is a type of file that cannot be checked, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_PASTE_INSTEAD}`,
+};
+
+const TR_NOT_FULLY_CHECKED =
+	"kurumunuz yalnızca tamamen denetlenebilen dosyalara izin verdiği için dosya yüklenmedi";
+const TR_PASTE_INSTEAD =
+	"Gereken metni kopyalayıp mesaja yapıştırın (yapıştırılan metin maskelenir) ya da BT ekibinize başvurun.";
+const TR_SAVE_MODERN = "Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin.";
+const TR_SAVE_AGAIN =
+	'Dosyayı açıp yeniden kaydedin (ör. "Farklı kaydet" ile) ve yeniden deneyin ya da BT ekibinize başvurun.';
+
+const TR_FILE_REASONS: Readonly<Record<FileBlockReason, FileReasonMessage>> = {
+	FILE_BLOCKED_BY_POLICY: (name) =>
+		`"${name}" yüklenmedi: kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor. Dosya paylaşmanız gerekiyorsa BT ekibinize başvurun.`,
+	DOCUMENT_BLOCKED_BY_POLICY: (name) =>
+		`"${name}" yüklenmedi: kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor. ${TR_PASTE_INSTEAD}`,
+	NATIVE_NER_UNAVAILABLE: (name) =>
+		`"${name}" yüklenmedi: kurumunuz yüklemelerin AIDR Privacy yardımcı uygulamasıyla denetlenmesini zorunlu tutuyor ve bu dosya denetlenemedi. Biraz sonra yeniden deneyin ya da BT ekibinize başvurun.`,
+	FILE_TOO_LARGE: (name) =>
+		`"${name}" yüklenmedi: dosya, kurumunuzun yapay zekâ hizmetleri için izin verdiği boyuttan büyük. Daha küçük bir dosya ya da yalnızca gereken bölümü yükleyin.`,
+	SENSITIVE_DATA_IN_PDF: (name, found) =>
+		`"${name}" kişisel veya gizli bilgi içeriyor${paren(found)}, bu yüzden yüklenmedi. PDF dosyaları maskelenemez: gereken metni kopyalayıp mesaja yapıştırın (yapıştırılan metin maskelenir) ya da BT ekibinize başvurun.`,
+	SENSITIVE_DATA_IN_LEGACY_OFFICE: (name, found) =>
+		`"${name}" kişisel veya gizli bilgi içeriyor${paren(found)}, bu yüzden yüklenmedi. Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez: dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin (bu biçimler maskelenir) ya da BT ekibinize başvurun.`,
+	SENSITIVE_DATA_IN_IMAGE: (name, found) =>
+		`Bir görselde kişisel veya gizli bilgi görünüyor${paren(found)}, bu yüzden "${name}" yüklenmedi. Görseller maskelenemez: yüklemeden önce o bölümü kırpın ya da karartın veya BT ekibinize başvurun.`,
+	DOCUMENT_ENCRYPTED: (name) =>
+		`"${name}" parolayla korunuyor; denetlenemediği için yüklenmedi. Parolasız bir kopyasını kaydedip onu yükleyin ya da BT ekibinize başvurun.`,
+	PDF_ENCRYPTED: (name) =>
+		`"${name}" parolayla korunan bir PDF; denetlenemediği için yüklenmedi. Parolasız bir kopyasını kaydedip onu yükleyin ya da BT ekibinize başvurun.`,
+	DOCUMENT_MACROS: (name) =>
+		`"${name}" makro içeriyor; yapay zekâ hizmetlerine makrolu dosya yüklenmesine izin verilmediği için yüklenmedi. Makrosuz bir kopyasını (ör. .docx veya .xlsx olarak) kaydedip onu yükleyin ya da BT ekibinize başvurun.`,
+	DOCUMENT_EMBEDDED_OBJECT: (name) =>
+		`"${name}" içine denetlenemeyen başka bir dosya gömülü; bu yüzden yüklenmedi. Gömülü dosyayı kaldırıp yeniden deneyin ya da BT ekibinize başvurun.`,
+	DOCUMENT_EXTERNAL_LINKS: (name) =>
+		`"${name}" dosya dışındaki içeriğe (başka çalışma kitapları veya web sayfaları gibi) bağlantı veriyor ve bu içerik denetlenemiyor; bu yüzden yüklenmedi. Bağlantıları kaldırıp (ör. yalnızca değerleri yapıştırarak) yeniden deneyin ya da BT ekibinize başvurun.`,
+	DOCUMENT_LIMIT_EXCEEDED: (name) =>
+		`"${name}" denetlenemeyecek kadar büyük veya karmaşık; bu yüzden yüklenmedi. Dosyayı daha küçük parçalara bölün ya da yalnızca gereken bölümü yükleyin.`,
+	DOCUMENT_MALFORMED: (name) =>
+		`"${name}" bozuk ya da alışılmadık bir biçimde görünüyor ve denetlenemedi; bu yüzden yüklenmedi. ${TR_SAVE_AGAIN}`,
+	TEXT_FILE_NOT_DECODABLE: (name) =>
+		`"${name}" bir metin dosyasına benziyor ama içeriği okunamadı; bu yüzden yüklenmedi. Dosyayı UTF-8 metin olarak yeniden kaydedip deneyin ya da BT ekibinize başvurun.`,
+	SCAN_INCOMPLETE: (name) =>
+		`"${name}" denetimi çok uzun sürdü ve tamamlanamadı; bu yüzden dosya yüklenmedi. Daha küçük bir dosya ya da yalnızca gereken bölümü deneyin.`,
+	FILE_SCAN_ERROR: (name) =>
+		`Singularity AIDR "${name}" dosyasını denetleyemedi; bu yüzden dosya yüklenmedi. Yeniden deneyin; sorun sürerse BT ekibinize başvurun.`,
+	PDF_IMAGE_OCR_UNAVAILABLE: (name) =>
+		`"${name}" içindeki görseller, AIDR Privacy yardımcı uygulaması kullanılamadığı için denetlenemedi; ${TR_NOT_FULLY_CHECKED}. ${TR_PASTE_INSTEAD}`,
+	PDF_IMAGES_NOT_INSPECTED: (name) =>
+		`"${name}" içindeki görseller tam olarak denetlenemedi; ${TR_NOT_FULLY_CHECKED}. ${TR_PASTE_INSTEAD}`,
+	PDF_IMAGE_LIMIT: (name) =>
+		`"${name}" denetlenemeyecek kadar çok görsel içeriyor; ${TR_NOT_FULLY_CHECKED}. Yalnızca gereken sayfaları yükleyin ya da BT ekibinize başvurun.`,
+	PDF_IMAGE_UNSUPPORTED: (name) =>
+		`"${name}" içindeki bir görsel denetlenemeyen bir biçimde; ${TR_NOT_FULLY_CHECKED}. ${TR_PASTE_INSTEAD}`,
+	PDF_IMAGE_UNDECODABLE: (name) =>
+		`"${name}" içindeki bir görsel okunamadı; ${TR_NOT_FULLY_CHECKED}. ${TR_PASTE_INSTEAD}`,
+	PDF_IMAGE_OCR_INCOMPLETE: (name) =>
+		`"${name}" içindeki bir görseldeki yazı güvenilir biçimde okunamadı; ${TR_NOT_FULLY_CHECKED}. ${TR_PASTE_INSTEAD}`,
+	PDF_NO_TEXT: (name) =>
+		`"${name}" okunabilir metin içermiyor (taranmış bir belge olabilir); ${TR_NOT_FULLY_CHECKED}. Gereken metni mesaja yazın ya da yapıştırın veya BT ekibinize başvurun.`,
+	PDF_PARTIAL: (name) =>
+		`"${name}" içindeki metnin bir bölümü okunamadı; ${TR_NOT_FULLY_CHECKED}. ${TR_PASTE_INSTEAD}`,
+	PDF_EMBEDDED_FILES_NOT_INSPECTED: (name) =>
+		`"${name}" içinde denetlenemeyen ekli dosyalar var; ${TR_NOT_FULLY_CHECKED}. Ekleri kaldırıp yeniden deneyin ya da BT ekibinize başvurun.`,
+	PDF_UNPARSEABLE: (name) =>
+		`"${name}" PDF olarak açılamadı (bozuk olabilir); denetlenemediği için yüklenmedi. ${TR_SAVE_AGAIN}`,
+	LEGACY_OFFICE_PARTIAL: (name) =>
+		`"${name}" (eski .doc/.xls/.ppt biçimi) içindeki metnin bir bölümü okunamadı; ${TR_NOT_FULLY_CHECKED}. ${TR_SAVE_MODERN}`,
+	LEGACY_OFFICE_UNSUPPORTED: (name) =>
+		`"${name}", eski .doc/.xls/.ppt biçiminin denetlenemeyen bir bölümünü kullanıyor; ${TR_NOT_FULLY_CHECKED}. ${TR_SAVE_MODERN}`,
+	LEGACY_OFFICE_FORMAT: (name) =>
+		`"${name}" (eski .doc/.xls/.ppt biçimi) tam olarak denetlenemedi; ${TR_NOT_FULLY_CHECKED}. ${TR_SAVE_MODERN}`,
+	DOCUMENT_UNPARSEABLE: (name) =>
+		`"${name}" açılamadı (bozuk ya da alışılmadık bir biçimde olabilir); denetlenemediği için yüklenmedi. ${TR_SAVE_AGAIN}`,
+	IMAGE_NOT_INSPECTED: (name) =>
+		`"${name}" görseli denetlenemedi (görseller için AIDR Privacy yardımcı uygulaması gerekir); ${TR_NOT_FULLY_CHECKED}. Gerekeni mesajda anlatın ya da BT ekibinize başvurun.`,
+	BINARY_FILE_UNSCANNABLE: (name) =>
+		`"${name}" denetlenemeyen bir dosya türünde; ${TR_NOT_FULLY_CHECKED}. ${TR_PASTE_INSTEAD}`,
+};
 
 const EN: Strings = {
 	lang: "en",
@@ -148,18 +311,13 @@ const EN: Strings = {
 	pressSendAgain: "The message was masked. Press send to continue.",
 	busy: "Still checking the previous action.",
 	fileBlockedTitle: "Upload blocked",
-	fileBlockedBody: (name, reasons) => `"${name}" was not uploaded (${reasons}).`,
+	fileReasons: EN_FILE_REASONS,
+	fileBlockedSignal: (name, coaching) => `"${name}" was not uploaded. ${coaching}`,
+	fileBlockedGeneric: (name, found) =>
+		`"${name}" was not uploaded because it could not be safely checked${paren(found)}. Ask your IT team if you need to share it.`,
 	fileBlockedByPolicy: "Your organisation does not allow file uploads to AI services.",
 	documentBlockedByPolicy:
 		"Your organisation does not allow Office or PDF documents to be uploaded to AI services.",
-	pdfPasteHint:
-		"PDFs cannot be masked. Copy the text you need and paste it instead: pasted text is masked.",
-	imageBlockedHint:
-		"The image shows sensitive data and images cannot be masked. Crop or redact it before uploading.",
-	legacyOfficeHint:
-		"This old Office file could not be fully checked. Save the file as .docx/.xlsx/.pptx and upload that instead.",
-	legacyOfficeSensitiveHint:
-		"Old Office files (.doc/.xls/.ppt) cannot be masked. Save the file as .docx/.xlsx/.pptx and upload that instead: those are masked.",
 	fileScanFailed: "The file could not be checked, so it was not uploaded.",
 	fileReplaceUnsupported:
 		"This browser cannot replace the file with a masked copy, so it was not uploaded.",
@@ -169,8 +327,6 @@ const EN: Strings = {
 		"Names and addresses were checked with built-in rules only: the AIDR Privacy helper app could not be used.",
 	nativeRequired:
 		"Nothing was sent. Your organisation requires the AIDR Privacy helper app to check names and addresses, and it could not (not installed, not responding, no name detection, or the text is too long). Try again, shorten the text, or contact your IT team.",
-	nativeRequiredFileHint:
-		"Your organisation requires the AIDR Privacy helper app to check uploads, and it could not check this file. Try again in a moment or contact your IT team.",
 	aupAcknowledge: "I understand",
 	aupLater: "Remind me later",
 	aupPolicyLink: "Read the full policy",
@@ -230,18 +386,13 @@ const TR: Strings = {
 	pressSendAgain: "Mesaj maskelendi. Devam etmek için gönder düğmesine basın.",
 	busy: "Önceki işlem hâlâ kontrol ediliyor.",
 	fileBlockedTitle: "Yükleme engellendi",
-	fileBlockedBody: (name, reasons) => `"${name}" yüklenmedi (${reasons}).`,
+	fileReasons: TR_FILE_REASONS,
+	fileBlockedSignal: (name, coaching) => `"${name}" yüklenmedi. ${coaching}`,
+	fileBlockedGeneric: (name, found) =>
+		`"${name}" güvenli biçimde denetlenemediği için yüklenmedi${paren(found)}. Paylaşmanız gerekiyorsa BT ekibinize başvurun.`,
 	fileBlockedByPolicy: "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor.",
 	documentBlockedByPolicy:
 		"Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor.",
-	pdfPasteHint:
-		"PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: yapıştırılan metin maskelenir.",
-	imageBlockedHint:
-		"Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.",
-	legacyOfficeHint:
-		"Bu eski Office dosyası tam olarak denetlenemedi. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin.",
-	legacyOfficeSensitiveHint:
-		"Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: bu biçimler maskelenir.",
 	fileScanFailed: "Dosya kontrol edilemedi; yüklenmedi.",
 	fileReplaceUnsupported:
 		"Bu tarayıcı dosyayı maskelenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi.",
@@ -251,8 +402,6 @@ const TR: Strings = {
 		"Ad ve adresler yalnızca yerleşik kurallarla denetlendi: AIDR Privacy yardımcı uygulaması kullanılamadı.",
 	nativeRequired:
 		"Hiçbir şey gönderilmedi. Kurumunuz ad ve adres denetimi için AIDR Privacy yardımcı uygulamasını zorunlu tutuyor ve denetim yapılamadı (kurulu değil, yanıt vermiyor, ad algılaması yok ya da metin çok uzun). Yeniden deneyin, metni kısaltın ya da BT ekibinize başvurun.",
-	nativeRequiredFileHint:
-		"Kurumunuz yüklemelerin AIDR Privacy yardımcı uygulamasıyla denetlenmesini zorunlu tutuyor ve bu dosya denetlenemedi. Biraz sonra yeniden deneyin ya da BT ekibinize başvurun.",
 	aupAcknowledge: "Anladım",
 	aupLater: "Daha sonra hatırlat",
 	aupPolicyLink: "Politikanın tamamını okuyun",
