@@ -292,7 +292,10 @@ async function main() {
 	const started = await signedDeviceStart();
 	assert.equal(started.status, 200, "signed ingress must bootstrap the customer's device");
 	const device = started.data;
-	assert.equal((await request("/functions/v1/device-verify", token, { user_code: device.user_code }, { "X-AIDR-Tenant-ID": receipt.tenant_id })).status, 200);
+	// Two-step verification (CP-1): look up the requester context, then confirm that exact session.
+	const lookup = await request("/functions/v1/device-verify", token, { action: "lookup", user_code: device.user_code }, { "X-AIDR-Tenant-ID": receipt.tenant_id });
+	assert.equal(lookup.status, 200); assert.equal(lookup.data.device.user_code, device.user_code);
+	assert.equal((await request("/functions/v1/device-verify", token, { action: "authorize", user_code: device.user_code, device_session_id: lookup.data.device.device_session_id, confirmed: true }, { "X-AIDR-Tenant-ID": receipt.tenant_id })).status, 200);
 	await new Promise((done) => setTimeout(done, (device.interval_seconds + 1) * 1000));
 	const exchange = (await request("/functions/v1/device-poll", token, { device_code: device.device_code })).data;
 	const enrolled = await request("/functions/v1/enroll", exchange.enrollment_token, { iid: `customer-${randomBytes(8).toString("hex")}`, agent_runtime: "claude-code" });

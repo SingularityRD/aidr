@@ -20,6 +20,11 @@ function usableExpiry(value: unknown): string | null {
 	return Number.isFinite(parsed) && parsed > Date.now() ? value : null;
 }
 
+/** Canonical user code: upper-case without separators (ABCD-2345 == abcd2345). */
+export function canonicalUserCode(value: string): string {
+	return value.replace(/[\s-]/g, "").toUpperCase();
+}
+
 type FunctionsResponse = { data?: unknown; error?: { message?: string } | null };
 
 /**
@@ -36,14 +41,172 @@ function verifyOutcome(res: FunctionsResponse): { expiresAt: string } | { error:
 		: { error: "The authorization service did not report a usable code expiry. Retry." };
 }
 
+/** What device-start recorded about the device that asked for this code. */
+export type DeviceRequest = {
+	sessionId: string;
+	userCode: string;
+	requestedAt: string;
+	expiresAt: string;
+	requesterIp: string | null;
+	runtime: string | null;
+	runtimeVersion: string | null;
+	os: string | null;
+	hostname: string | null;
+	requestedScope: string;
+};
+
+function text(value: unknown): string | null {
+	return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** Strict parse of the `device-verify` lookup answer; null when unusable. */
+export function parseDeviceRequest(data: unknown): DeviceRequest | null {
+	if (!data || typeof data !== "object") return null;
+	const body = data as Record<string, unknown>;
+	const device = body.device as Record<string, unknown> | undefined;
+	if (body.ok !== true || !device || typeof device !== "object") return null;
+	const sessionId = text(device.device_session_id);
+	const userCode = text(device.user_code);
+	const requestedAt = text(device.requested_at);
+	const expiresAt = usableExpiry(device.expires_at);
+	if (
+		!sessionId ||
+		!userCode ||
+		!requestedAt ||
+		!Number.isFinite(Date.parse(requestedAt)) ||
+		!expiresAt
+	) {
+		return null;
+	}
+	return {
+		sessionId,
+		userCode,
+		requestedAt,
+		expiresAt,
+		requesterIp: text(device.requester_ip),
+		runtime: text(device.runtime),
+		runtimeVersion: text(device.runtime_version),
+		os: text(device.os),
+		hostname: text(device.hostname),
+		requestedScope: text(device.requested_scope) ?? "tenant",
+	};
+}
+
+function minutesAgo(iso: string): string {
+	const minutes = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+	return minutes === 0
+		? "less than a minute ago"
+		: `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+}
+
+const SCOPE_LABEL: Record<string, string> = {
+	tenant: "Enroll this device as an agent and issue it a tenant API key (tenant scope)",
+};
+
+function deviceDescription(device: DeviceRequest): string {
+	const runtime = device.runtime
+		? `${device.runtime}${device.runtimeVersion ? ` ${device.runtimeVersion}` : ""}`
+		: null;
+	const parts = [
+		device.hostname ? `host ${device.hostname}` : null,
+		device.os ? `OS ${device.os}` : null,
+		runtime,
+	].filter(Boolean);
+	return parts.length > 0 ? parts.join(" · ") : "not reported";
+}
+
+/** Step 2: what the user reviews before binding the device (CP-1). */
+function DeviceRequestPanel({
+	device,
+	linkCode,
+	teamName,
+	confirmed,
+	busy,
+	onConfirm,
+	onAuthorize,
+	onCancel,
+}: {
+	device: DeviceRequest;
+	linkCode: string;
+	teamName: string;
+	confirmed: boolean;
+	busy: boolean;
+	onConfirm: (value: boolean) => void;
+	onAuthorize: () => void;
+	onCancel: () => void;
+}) {
+	return (
+		<div className="stack" data-testid="device-request">
+			<div className="notice notice-danger">
+				<b>Only approve a code you started on your own device.</b> If someone sent you this link or
+				code, asked you to approve it, or you do not recognise the device below, stop: approving
+				gives that device an API key for {teamName || "this team"}.
+			</div>
+			{linkCode && linkCode !== device.userCode ? (
+				<div className="notice notice-warning">
+					The code you typed differs from the code in the link. Only the code you typed will be
+					authorized.
+				</div>
+			) : null}
+			<dl className="small">
+				<dt>Code</dt>
+				<dd className="mono">{device.userCode}</dd>
+				<dt>Requested</dt>
+				<dd>
+					{new Date(device.requestedAt).toLocaleString()} ({minutesAgo(device.requestedAt)})
+				</dd>
+				<dt>Requested from IP address</dt>
+				<dd className="mono">{device.requesterIp ?? "not recorded"}</dd>
+				<dt>Device (as reported by the device)</dt>
+				<dd>{deviceDescription(device)}</dd>
+				<dt>Access requested</dt>
+				<dd>{SCOPE_LABEL[device.requestedScope] ?? device.requestedScope}</dd>
+				<dt>Team</dt>
+				<dd>{teamName}</dd>
+			</dl>
+			<label className="label" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+				<input
+					type="checkbox"
+					checked={confirmed}
+					disabled={busy}
+					onChange={(e) => onConfirm(e.target.checked)}
+				/>
+				I started this request on my own device and these details match it.
+			</label>
+			<div className="row">
+				<button
+					className="button"
+					type="button"
+					disabled={busy || !confirmed}
+					onClick={onAuthorize}
+				>
+					Authorize device
+				</button>
+				<button
+					className="button button-secondary"
+					type="button"
+					disabled={busy}
+					onClick={onCancel}
+				>
+					Cancel
+				</button>
+			</div>
+		</div>
+	);
+}
+
 export function VerifyPage() {
 	const navigate = useNavigate();
 	const [params] = useSearchParams();
-	const initial = (params.get("code") ?? "").trim();
+	// A code in the link is never trusted on its own: the user must type the code
+	// their device shows (RFC 8628 §5.4 remote phishing).
+	const linkCode = canonicalUserCode(params.get("code") ?? "");
 
-	const [userCode, setUserCode] = useState(initial);
+	const [userCode, setUserCode] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [device, setDevice] = useState<DeviceRequest | null>(null);
+	const [confirmed, setConfirmed] = useState(false);
 	const [ok, setOk] = useState(false);
 	const [expired, setExpired] = useState(false);
 	const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -80,6 +243,7 @@ export function VerifyPage() {
 					row.teams && ["owner", "admin", "member"].includes(row.role) ? [row.teams] : [],
 				);
 				setTeams(available);
+				// The team stays visible and is restated in the confirmation step.
 				setTeamId(
 					available.some((team) => team.id === preferredTeam)
 						? preferredTeam
@@ -100,8 +264,9 @@ export function VerifyPage() {
 		};
 	}, [preferredTeam]);
 
-	const trimmed = useMemo(() => userCode.trim().toUpperCase(), [userCode]);
-	const signInReturnTo = trimmed ? `/verify?code=${encodeURIComponent(trimmed)}` : "/verify";
+	const typed = useMemo(() => canonicalUserCode(userCode), [userCode]);
+	const teamName = teams.find((team) => team.id === teamId)?.name ?? "";
+	const signInReturnTo = linkCode ? `/verify?code=${encodeURIComponent(linkCode)}` : "/verify";
 
 	// The authorization window is owned by the device session, not by this page.
 	// When it closes the agent can no longer finish enrollment with this code, so
@@ -133,33 +298,75 @@ export function VerifyPage() {
 		return () => window.clearInterval(timer);
 	}, [expiresAt]);
 
-	async function authorize() {
+	function resetDecision() {
+		setDevice(null);
+		setConfirmed(false);
+	}
+
+	async function signedInOrRedirect(): Promise<boolean> {
+		const sess = await getSession();
+		if (sess) return true;
+		navigate(`/login?returnTo=${encodeURIComponent(signInReturnTo)}`);
+		return false;
+	}
+
+	/** Step 1: show who asked for this code. Nothing is bound yet. */
+	async function lookup() {
 		setBusy(true);
 		setError(null);
 		setOk(false);
 		setExpired(false);
 		setExpiresAt(null);
-		setRemainingMs(null);
+		resetDecision();
 		try {
-			const sess = await getSession();
-			if (!sess) {
-				const rt = `/verify?code=${encodeURIComponent(trimmed)}`;
-				navigate(`/login?returnTo=${encodeURIComponent(rt)}`);
+			if (!(await signedInOrRedirect())) return;
+			if (!teamId) throw new Error("Select the team receiving this device.");
+			const res = (await supabase.functions.invoke("device-verify", {
+				method: "POST",
+				headers: { "X-AIDR-Tenant-ID": teamId },
+				body: { action: "lookup", user_code: typed },
+			})) as FunctionsResponse;
+			if (res.error) {
+				setError(readErrorMessage(res.error, "This code could not be checked."));
 				return;
 			}
-			if (!teamId) throw new Error("Select the team receiving this device.");
+			const found = parseDeviceRequest(res.data);
+			if (!found || found.userCode !== typed) {
+				setError("The authorization service did not describe this device. Nothing was authorized.");
+				return;
+			}
+			setDevice(found);
+		} catch (cause) {
+			setError(readErrorMessage(cause, "Device authorization is unavailable."));
+		} finally {
+			setBusy(false);
+		}
+	}
 
+	/** Step 2: bind exactly the session the user reviewed and confirmed. */
+	async function authorize() {
+		if (!device || !confirmed) return;
+		setBusy(true);
+		setError(null);
+		try {
+			if (!(await signedInOrRedirect())) return;
 			const outcome = verifyOutcome(
 				await supabase.functions.invoke("device-verify", {
 					method: "POST",
 					headers: { "X-AIDR-Tenant-ID": teamId },
-					body: { user_code: trimmed },
+					body: {
+						action: "authorize",
+						user_code: device.userCode,
+						device_session_id: device.sessionId,
+						confirmed: true,
+					},
 				}),
 			);
 			if ("error" in outcome) {
 				setError(outcome.error);
 				return;
 			}
+			resetDecision();
 			setExpiresAt(outcome.expiresAt);
 			setOk(true);
 		} catch (cause) {
@@ -174,9 +381,17 @@ export function VerifyPage() {
 			<div className="card">
 				<h1>Authorize device</h1>
 				<p className="muted">
-					Enter the short code shown by your agent runtime. This links your local installation to
-					your account.
+					Type the short code your agent runtime shows on your own device. Approving links that
+					device to your team and gives it an API key.
 				</p>
+
+				{linkCode && !ok ? (
+					<div className="notice notice-warning" data-testid="link-code-notice">
+						This page was opened from a link that carries a code. Do not copy the code from the
+						link: type the code shown on the device you are setting up. If you did not start a
+						sign-in on your own device in the last few minutes, close this page.
+					</div>
+				) : null}
 
 				<label className="label" htmlFor="device-user-code">
 					Code
@@ -184,10 +399,15 @@ export function VerifyPage() {
 						id="device-user-code"
 						className="input mono"
 						value={userCode}
-						onChange={(e) => setUserCode(e.target.value)}
+						onChange={(e) => {
+							setUserCode(e.target.value);
+							resetDecision();
+						}}
 						placeholder="ABCD-EFGH"
 						autoCapitalize="characters"
 						autoCorrect="off"
+						autoComplete="off"
+						disabled={busy || ok}
 					/>
 				</label>
 				{hasSession && (
@@ -198,7 +418,10 @@ export function VerifyPage() {
 							className="input"
 							value={teamId}
 							disabled={busy || ok}
-							onChange={(event) => setTeamId(event.target.value)}
+							onChange={(event) => {
+								setTeamId(event.target.value);
+								resetDecision();
+							}}
 						>
 							<option value="">Select a team</option>
 							{teams.map((team) => (
@@ -210,25 +433,40 @@ export function VerifyPage() {
 					</label>
 				)}
 
-				<div className="row">
-					<button
-						className="button"
-						type="button"
-						disabled={busy || ok || !trimmed || (hasSession === true && !teamId)}
-						onClick={authorize}
-					>
-						Authorize
-					</button>
-
-					{hasSession ? null : (
-						<Link
-							className="button button-secondary"
-							to={`/login?returnTo=${encodeURIComponent(signInReturnTo)}`}
+				{device ? null : (
+					<div className="row">
+						<button
+							className="button"
+							type="button"
+							disabled={busy || ok || typed.length !== 8 || (hasSession === true && !teamId)}
+							onClick={lookup}
 						>
-							Sign in
-						</Link>
-					)}
-				</div>
+							Continue
+						</button>
+
+						{hasSession ? null : (
+							<Link
+								className="button button-secondary"
+								to={`/login?returnTo=${encodeURIComponent(signInReturnTo)}`}
+							>
+								Sign in
+							</Link>
+						)}
+					</div>
+				)}
+
+				{device && !ok ? (
+					<DeviceRequestPanel
+						device={device}
+						linkCode={linkCode}
+						teamName={teamName}
+						confirmed={confirmed}
+						busy={busy}
+						onConfirm={setConfirmed}
+						onAuthorize={authorize}
+						onCancel={resetDecision}
+					/>
+				) : null}
 
 				{ok ? (
 					<div className="notice">

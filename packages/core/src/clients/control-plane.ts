@@ -203,6 +203,9 @@ export class ControlPlaneClient {
 		iid?: string;
 		agent_runtime?: string;
 		agent_runtime_version?: string;
+		/** Shown to the approving user on /verify (CP-1); never used for authorization. */
+		os?: string;
+		hostname?: string;
 	}): Promise<{ ok: boolean; status?: number; error?: string; body?: Record<string, unknown> }> {
 		if (!this.baseUrl) return { ok: false, error: "missing_endpoint" };
 		if (isDegradedSafeMode()) return { ok: false, error: "degraded_safe_mode" };
