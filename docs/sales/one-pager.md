@@ -23,8 +23,8 @@ Existing layers see different parts of this:
 
 ## What Singularity AIDR does
 
-**AIDR for AI coding agents.** Connectors for Claude Code, Cursor, VS Code, OpenClaw,
-OpenCode and Codex CLI pass observed tool calls to one local decision engine before the
+**AIDR for AI coding agents.** Connectors for Claude Code, OpenClaw, OpenCode and Codex
+CLI, plus Cursor and VS Code (preview — no real-host acceptance evidence yet), pass observed tool calls to one local decision engine before the
 host acts. The engine returns `allow`, `deny` or `ask`, naming the matched rule and
 artifact. The MCP Gateway inspects MCP tool results before the model reads them; the SDK
 applies the same checks inside your own applications.
@@ -73,7 +73,8 @@ AI agent tool call                     Prompt / paste / file in an AI chat
   default) and Browser Guard per-type counts. Prompts, file contents and masked values
   are not sent.
 - **Fails closed where it matters.** Connector entry points and Browser Guard's content
-  script block on an internal error. Detection internals skip a failing signal visibly;
+  script block on an internal error. A hook the host disabled, did not trust or killed
+  gives no verdict, and the host then decides. Detection internals skip a failing signal visibly;
   a skipped check is never a clean result.
 - **No self-approval.** `ask` blocks until a human approves out-of-band. No connector
   gives the agent an approval tool.
@@ -127,7 +128,7 @@ Singularity AIDR is not yet released for live pilots or production; the release 
 - Local engine with 507 YAML threat rules in 29 files; `aidr setup` refuses to report
   success if zero rules load or the self-test does not match.
 - Connector code for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI,
-  with cross-connector parity tests.
+  with cross-connector parity tests. Cursor and VS Code are a preview — no real-host acceptance evidence yet.
 - Browser Guard engine, reversible vault, site adapters, file sanitisation, managed
   policy, counts-only telemetry and a real-browser E2E harness against hermetic site
   fixtures.

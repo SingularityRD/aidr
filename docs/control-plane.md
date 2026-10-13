@@ -59,7 +59,12 @@ Failure handling is per layer, not a blanket "fail-open":
   bundle that is installed but cannot be verified blocks tool calls rather than being
   silently dropped.
 - **Connector entry points** (Claude Code, Cursor / VS Code, OpenClaw, OpenCode, Codex) fail
-  **closed**: an internal error produces a deny or block, not a silent allow.
+  **closed**: an internal error produces a deny or block, not a silent allow. The host still
+  decides what happens when the hook is disabled, untrusted, killed or timed out: Claude Code
+  was observed to run the call when its hook was disabled or killed, and Codex runs it when
+  its hook is untrusted, crashes or times out (see
+  [host failure behaviour](compatibility-matrix.md#host-failure-behaviour)).
+  Cursor and VS Code are a preview with no real-host acceptance evidence yet.
 - **Detection internals** (an erroring rule, an optional reputation lookup, a cache or policy
   load) skip that signal and log it; a skipped signal is never reported as a clean result.
 - **Security controls** on the control plane (authentication, tenant isolation, rate limits,
@@ -339,7 +344,8 @@ When at least one key is configured, a policy is applied only if all of these ho
 
 Unsigned, tampered, wrong-signer, expired, revoked-key and rolled-back policies are rejected.
 With `control_plane.remote_policy_required` the connector then fails closed (no policy applies
-and the call is blocked); otherwise the response is ignored and local policy stays in force.
+and the call is blocked, as far as the host honours the hook: a disabled, untrusted, killed or
+timed-out hook blocks nothing); otherwise the response is ignored and local policy stays in force.
 The last good signed policy is still cached and may be used inside the offline grace window, but
 never beyond its signed `expires_at`, and it is re-verified on every load, so a tampered cache
 file is rejected.

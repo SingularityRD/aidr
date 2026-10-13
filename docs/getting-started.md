@@ -14,13 +14,17 @@ a source build or an unapproved version.
 
 ## Installation flow after approval
 
-Local detection works without a cloud account. Managed features require a
-separately deployed control plane and an operator-provisioned runtime
-configuration; sign-in is not part of a local-only installation.
+Local detection works without a cloud account or enrollment. Release builds are
+managed-only, so every installation needs the release trust key
+(`integrity.public_keys_pem`, see [Integrity verification](integrity.md)) before the
+connector can inspect anything. Managed features require a separately deployed control
+plane and an operator-provisioned runtime configuration. Check the tested host versions
+in the [compatibility matrix](compatibility-matrix.md).
 
-1. Install the exact approved connector version using [Package Installation](package-installation.md).
-2. Complete that host's registration and trust steps.
-3. Use managed features only after the operator has deployed the control plane and supplied the signed tenant configuration.
+1. Provision the release trust key in `integrity.public_keys_pem`.
+2. Install the exact approved connector version using [Package Installation](package-installation.md).
+3. Complete that host's registration and trust steps.
+4. Use managed features only after the operator has deployed the control plane and supplied the signed tenant configuration.
 
 See [Device Auth](device-auth.md) for the managed-enrollment flow; use it only
 after the deployed authentication method has passed a live end-to-end check.
@@ -35,10 +39,18 @@ after the deployed authentication method has passed a live end-to-end check.
 Download the Claude plugin archive from a publisher-verified release bundle and
 verify the bundle's signature and artifact hashes before extracting it. Before
 installing, provision the independently distributed Ed25519 public key in
-`~/.singularity-aidr/config.json` (Windows:
-`%USERPROFILE%\.singularity-aidr\config.json`). Commercial builds fail closed
-when this trust configuration is missing or invalid; never put a signing
-private key on an endpoint. Then, from the Claude Code prompt:
+`integrity.public_keys_pem` in `~/.singularity-aidr/config.json` (Windows:
+`%USERPROFILE%\.singularity-aidr\config.json`):
+
+```json
+{ "integrity": { "enabled": true, "verify_on_start": true, "public_keys_pem": ["-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"] } }
+```
+
+Release builds are managed-only and verify their signed artifacts before they
+inspect anything; when this trust configuration is missing or invalid they block
+every tool call (`Singularity AIDR inspection unavailable`). See
+[Integrity verification](integrity.md). The same key is required for every
+connector below. Never put a signing private key on an endpoint. Then, from the Claude Code prompt:
 
 ```
 /plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin
@@ -50,15 +62,17 @@ Code before relying on it. Installation alone does not prove that the host loade
 the plugin or that a particular action was blocked; complete the host-side
 acceptance checks in the [first-customer runbook](../deploy/FIRST_CUSTOMER.md).
 
-## Cursor
+## Cursor (preview — no real-host acceptance evidence yet)
 
 Download the signed `aidr-cursor.vsix` from an approved release and install it
 via the Extensions panel (`Extensions > Install from VSIX`). Then run
 `Singularity AIDR: Enable protection` from the command palette (`Ctrl+Shift+P`).
 Cursor `preToolUse` ask verdicts are returned as explicit denies; Cursor's hook
-response does not provide an enforceable AIDR approval prompt.
+response does not provide an enforceable AIDR approval prompt. No Cursor version has
+been accepted on a real host: whether Cursor enforces the deny, and what it does when
+the hook is killed or times out, has not been observed.
 
-## VS Code
+## VS Code (preview — no real-host acceptance evidence yet)
 
 Download the signed `aidr-vscode.vsix` from an approved release and install it
 via the Extensions panel. For VS Code Local hooks, first enable

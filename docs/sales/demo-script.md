@@ -207,8 +207,11 @@ Read from the appendix of the [one-pager](one-pager.md):
 - Cloud and on-prem are not accepted; real-host and real-site acceptance is open.
 - Hooks can be bypassed by the host (disabled, untrusted, killed); Codex fails open in
   those cases.
-- Browser Guard: binary files are not inspected in the browser; site redesigns can need
-  adapter updates; names without cue words need the optional NER host.
+- Cursor and VS Code are a preview — no real-host acceptance evidence yet; demo on Claude Code, OpenClaw, OpenCode or Codex.
+- Browser Guard: Word, Excel, PowerPoint and OpenDocument files are masked in place, but
+  PDFs are only scanned (a PDF with findings is blocked) and pictures or scanned pages
+  need the optional OCR host; site redesigns can need adapter updates; names without cue
+  words need the optional NER host.
 
 ---
 

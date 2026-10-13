@@ -80,8 +80,10 @@ Verify timeout handling on each host version used for acceptance.
 
 ## Real-host acceptance
 
+Tested host versions for every connector, generated from these records: [compatibility matrix](../compatibility-matrix.md). Treat any other host version as unverified.
+
 Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-host-e2e-with-a-scripted-mock-model)): the real host binary on linux/x64, AIDR installed from the development build in a disposable HOME, and a scripted loopback mock model in place of a real one. It proves what the host does with AIDR's answer at each boundary, not how a real model behaves or how broad detection is. Record: [`docs/evidence/real-host/claude-code.json`](../evidence/real-host/claude-code.json)
-(Claude Code 2.1.282, `claude -p --plugin-dir <repo>`).
+(Claude Code 2.1.296 found on PATH, `claude -p --plugin-dir <repo>`; the runner's pinned install version is 2.1.282).
 
 | Boundary | Observed on the host |
 | --- | --- |
@@ -94,7 +96,7 @@ Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-
 PreToolUse, UserPromptSubmit (prompt protection, sold since 2026-09-30) and the PostToolUse
 replacement are part of the sold support matrix (`deploy/native/support-matrix.json`) and
 are `enforced` in `deploy/native/interception-matrix.json` on this record only: Claude Code
-2.1.282 on linux/x64, the development build and a scripted mock model. Other host
+2.1.296 on linux/x64, the development build and a scripted mock model. Other host
 versions, Windows, macOS, arm64, a signed release and a real model still need acceptance.
 
 In non-interactive `-p` mode an `ask` verdict is a refusal; the interactive approval

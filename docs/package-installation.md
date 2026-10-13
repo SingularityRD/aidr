@@ -61,7 +61,12 @@ GitHub's current access rule is documented in [package access control](https://d
 
 ## Install a connector
 
-Use the exact version named in the approved release record:
+Use the exact version named in the approved release record. Release builds are
+managed-only and verify their signed artifacts before they inspect anything: before
+installing any connector, put the independently distributed Ed25519 release public key in
+`integrity.public_keys_pem` in `~/.singularity-aidr/config.json` (see
+[Integrity verification](integrity.md)). Without it every tool call is blocked. Tested host
+versions are listed in the [compatibility matrix](compatibility-matrix.md).
 
 | Host | Install |
 | --- | --- |
@@ -76,9 +81,9 @@ These additional connectors are release-bundle files, not public npm packages:
 
 | Host | Release file | Install |
 | --- | --- | --- |
-| Claude Code | `aidr-claude-plugin-VERSION.tar.gz` | Verify the enclosing publisher-signed release bundle before extracting the archive. Provision the integrity public key separately, then add the verified plugin directory as a local marketplace; use the included `packages/claude-code/README.md` for host-specific steps. |
-| Cursor | `aidr-cursor.vsix` | `cursor --install-extension ./aidr-cursor.vsix` |
-| VS Code | `aidr-vscode.vsix` | `code --install-extension ./aidr-vscode.vsix` |
+| Claude Code | `aidr-claude-plugin-VERSION.tar.gz` | Verify the enclosing publisher-signed release bundle before extracting the archive. Provision the integrity public key separately in `integrity.public_keys_pem` ([Integrity verification](integrity.md)), then add the verified plugin directory as a local marketplace; use the included `packages/claude-code/README.md` for host-specific steps. |
+| Cursor (preview — no real-host acceptance evidence yet) | `aidr-cursor.vsix` | `cursor --install-extension ./aidr-cursor.vsix` |
+| VS Code (preview — no real-host acceptance evidence yet) | `aidr-vscode.vsix` | `code --install-extension ./aidr-vscode.vsix` |
 
 Use the exact Claude archive version from the approved release record. Install
 each VSIX only from the same verified release bundle, and confirm the host

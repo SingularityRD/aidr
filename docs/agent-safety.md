@@ -109,7 +109,7 @@ counters.
 **Failure policy.** The runaway guard is a detection signal. If its state cannot be read,
 written or trusted, the signal is skipped and logged, and an otherwise clean call is recorded in
 the audit log as `runaway_guard_unavailable` — never as a clean result. A tampered record is
-reset. Connector entry points remain fail-closed as always.
+reset. Connector entry points remain fail-closed as always; a hook the host disabled, did not trust, killed or timed out is outside that guarantee; see [host failure behaviour](compatibility-matrix.md#host-failure-behaviour).
 
 ## 2. Reward hacking and sabotage
 

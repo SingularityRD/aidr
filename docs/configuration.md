@@ -10,9 +10,17 @@ heuristics. This does not mean they are offline by default: enabled URL, file,
 and package checks can make outbound requests. Signed
 commercial connector packages are intentionally stricter: before first start,
 provision `config.json` with the independently delivered Ed25519 artifact
-verification public key produced by the deployment flow. They fail closed when
-that trust configuration, signed manifest, or a covered runtime file is missing
-or changed. The release signing private key never belongs in this file.
+verification public key produced by the deployment flow, in
+`integrity.public_keys_pem` (see [Integrity verification](integrity.md)):
+
+```json
+{ "integrity": { "enabled": true, "verify_on_start": true, "public_keys_pem": ["-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"] } }
+```
+
+They fail closed when that trust configuration, signed manifest, or a covered
+runtime file is missing or changed: every tool call is blocked (Claude Code reports
+`Singularity AIDR inspection unavailable`). The release signing private key never
+belongs in this file.
 
 For source/development builds, managed mode is an **opt-in additive layer**
 (dashboard telemetry, signed intel packs, remote policy, seat enforcement).
@@ -194,9 +202,10 @@ One of `"local"` or `"managed"`. Default: `"local"`.
 Commercial builds force `managed`; setting `local` does not bypass their
 artifact trust or entitlement requirements. If a managed installation has no
 valid enrollment credentials, managed-only features stay disabled and local
-detection continues. An enrolled commercial installation with invalid signed
-entitlement can instead return a blocking review verdict. The runtime reports
-these states rather than presenting an unverified check as clean.
+detection continues. An enrolled installation whose signed entitlement is missing,
+invalid or expired beyond its offline grace period also loses only its managed-only
+features; local detection keeps deciding every tool call. The runtime reports these
+states rather than presenting an unverified check as clean.
 
 > **Deployment requirement:** no control plane is currently deployed, so `managed`
 > cannot complete enrollment. Leave `mode` at its `local` default unless your
@@ -450,7 +459,8 @@ the model, and the model's own safety behaviour remains the primary control.
   For each category the effective action is the **stronger** of the local and tenant
   values: a tenant can tighten `warn` to `block` for its fleet, but it cannot relax a local
   setting. An unknown category in the signed payload makes the policy invalid, and the
-  connector then fails closed. A connector build that predates this field rejects a
+  connector then fails closed (denies the call; a hook the host disabled, did not trust,
+  killed or timed out cannot deny anything). A connector build that predates this field rejects a
   payload that contains it, so roll the connector out before provisioning `prompt_safety`.
 - Rule ids (for framework mapping and tests): `jailbreak.instruction_override`,
   `jailbreak.instruction_override_tr`, `jailbreak.persona_override`,

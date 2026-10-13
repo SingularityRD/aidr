@@ -74,6 +74,8 @@ configuration and outbound traffic before dismissing the warning.
 
 ## Real-host acceptance
 
+Tested host versions for every connector, generated from these records: [compatibility matrix](../compatibility-matrix.md). Treat any other host version as unverified.
+
 Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-host-e2e-with-a-scripted-mock-model)): the real host binary on linux/x64, AIDR installed from the development build in a disposable HOME, and a scripted loopback mock model in place of a real one. It proves what the host does with AIDR's answer at each boundary, not how a real model behaves or how broad detection is. Record: [`docs/evidence/real-host/openclaw.json`](../evidence/real-host/openclaw.json)
 (OpenClaw 2026.9.6 embedded runner, `openclaw agent --local`, on Node.js 24.21.0).
 

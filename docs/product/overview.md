@@ -21,17 +21,19 @@ released for customer use); nothing here replaces that record.
 ## 1. AIDR for AI coding agents
 
 Each connector hands observed tool calls to one shared local decision engine
-(`@singularityrd/aidr-core`), which returns `allow`, `deny` or `ask`.
+(`@singularityrd/aidr-core`), which returns `allow`, `deny` or `ask`. The host versions
+each connector has been tested on are in the
+[compatibility matrix](../compatibility-matrix.md).
 
 | Connector | Hook boundary | Guide |
 | --- | --- | --- |
 | Claude Code | `PreToolUse`, `PostToolUse`, `SessionStart` plugin hooks | [claude-code.md](../platform-guides/claude-code.md) |
-| Cursor / VS Code | Extension (`aidr-cursor`) with host hooks | [cursor.md](../platform-guides/cursor.md) |
+| Cursor / VS Code (preview — no real-host acceptance evidence yet) | Extension (`aidr-cursor`) with host hooks | [cursor.md](../platform-guides/cursor.md) |
 | OpenClaw | In-process `before_tool_call` plugin | [openclaw.md](../platform-guides/openclaw.md) |
 | OpenCode | `tool.execute.before` plugin | [opencode.md](../platform-guides/opencode.md) |
 | Codex CLI | Native `PreToolUse` command hook for `Bash` and `apply_patch` | [codex.md](../platform-guides/codex.md) |
 
-**Detection.** 494 YAML threat rules in 29 files under [`threats/`](../../threats/)
+**Detection.** 507 YAML threat rules in 29 files under [`threats/`](../../threats/)
 cover dangerous commands, credential access, persistence, obfuscation, crypto-mining,
 supply-chain and LLM-specific patterns for Linux, macOS and Windows. The rules are data,
 not code, and customers can add their own under `~/.singularity-aidr/threats/`. Package
@@ -63,14 +65,18 @@ scorecard ([ai-governance.md](../ai-governance.md)).
 
 **Failure behaviour, per layer:**
 
-- Connector entry points fail closed: an internal error becomes a deny.
+- Connector entry points fail closed: an internal error becomes a deny. The host still
+  decides when the hook is disabled, untrusted or killed (next point).
 - Detection internals skip a failing signal, log it and continue. The skip is visible;
   it is never reported as a clean result.
 - Security controls (authentication, tenant isolation, approvals, webhook signatures)
   fail closed.
-- The host decides what happens when a hook is disabled, untrusted or killed. Codex, for
-  example, proceeds in those cases. AIDR is a guardrail at the hook boundary, not
-  endpoint isolation.
+- The host decides what happens when a hook is disabled, untrusted or killed. Claude Code
+  was observed to run the call when its hook was disabled or killed, and Codex runs it
+  when its hook is untrusted, crashes or times out; Cursor and VS Code have not been
+  observed on a real host. AIDR is a guardrail at the hook boundary, not endpoint
+  isolation. Per-host behaviour:
+  [compatibility matrix](../compatibility-matrix.md#host-failure-behaviour).
 
 **MCP Gateway** ([README](../../packages/mcp-gateway/README.md)). A loopback HTTP
 gateway, plus a stdio bridge, that sits between an MCP client and its servers. It
@@ -108,16 +114,32 @@ use AI chat products directly.
   compares fingerprints and never receives the plaintext dataset.
 - **Channels.** Typed prompts, pastes and file uploads. Text-based files (plain text,
   source, CSV/TSV, JSON/JSONL, `.env`) are masked and replaced before upload, with
-  spreadsheet formula cells neutralised. Binary files such as PDF, DOCX, XLSX or images
-  cannot be inspected in the browser: `block` mode stops them, other modes let them
-  through with a warning and record them as unscanned. Administrators can also block or
-  allow every upload, and oversized files are blocked.
+  spreadsheet formula cells neutralised.
+- **Documents** (`documentHandling`, default `mask`), all inspected inside the browser:
+  - DOCX, XLSX and PPTX (and macro-enabled variants and templates) and OpenDocument
+    ODT/ODS/ODP/ODG are masked in place and re-uploaded under the same name and type.
+  - PDFs are text-extracted and scanned but never rewritten: a PDF with findings is
+    blocked and the user is asked to paste the text instead.
+  - Legacy `.doc`/`.xls`/`.ppt` files are scanned but not rewritten; findings block the
+    upload with a request to save as `.docx`/`.xlsx`/`.pptx`.
+  - Documents with macros, password protection, external links or unsupported embedded
+    objects are blocked with a reason.
+  - A document, picture or screenshot that could not be read completely (scanned PDF
+    without OCR, pictures without the optional native OCR host) is never reported as
+    clean: it is uploaded with a "not inspected" warning, or blocked in `block` mode.
+
+  Administrators can also block or allow every upload, and oversized files are blocked.
+  Details: [Browser Guard README](../../packages/browser-guard/README.md).
 - **Reversible placeholders.** Values are replaced with numbered placeholders such as
-  `[EMAIL_1]` or `[TCKN_2]` before sending. The mapping lives only in the page's
-  content-script memory; it is never written to extension storage or sent over the
-  network, so a reload forgets it and earlier placeholders stay as placeholders.
-  Placeholders in the AI's response are shown with the originals restored on the page.
-  Types such as secrets can be set to never restore.
+  `[EMAIL_1]` or `[TCKN_2]` before sending. The mapping (placeholder to original value)
+  lives in the content script's memory, and the background worker keeps a copy per tab
+  and page origin in `chrome.storage.session` so a reloaded tab can still restore answers.
+  That storage is memory-backed and readable only by the extension's trusted contexts;
+  the copy is deleted when the tab closes, after 4 hours without a save, or when the
+  browser exits. It is never written to disk or `storage.local` and never sent over the
+  network. Types in `neverRestore` (by default secrets and private keys) are not kept in
+  the copy and are never restored. Placeholders in the AI's response are shown with the
+  originals restored on the page.
 - **Modes.** `auto` (mask and send), `confirm`, `block` and `monitor`.
 - **Managed policy.** Administrators push settings through the browser's enterprise
   policy ([`managed_schema.json`](../../packages/browser-guard/static/managed_schema.json)).
@@ -192,18 +214,20 @@ before scanning customer systems.
 
 | Option | What you get | Guide |
 | --- | --- | --- |
-| Local mode (free) | Agent connectors and Browser Guard with local settings. No account or network needed for detection. | [configuration.md](../configuration.md) |
+| Local detection (no account) | Every connector evaluates every tool call on the device; detection needs no account, enrollment or network. Signed release builds run in managed mode and require the release trust key (`integrity.public_keys_pem`, see [integrity.md](../integrity.md)); detection still works before enrollment. Source builds default to `mode: "local"` and are for development. | [configuration.md](../configuration.md) |
 | Cloud (SaaS) | Hosted dashboard, device enrollment, central policy for agents and Browser Guard, telemetry, audit export, SSO/SCIM | [saas.md](../deployment/saas.md) |
 | On-premises | The same control plane, customer-operated on Docker Compose or Kubernetes (Helm); air-gapped with a signed offline license and signed packs | [onprem.md](../deployment/onprem.md) |
 
 The control plane is multi-tenant with row-level security. API keys are stored as
 hashes, devices enroll through a short-lived device-code flow, and enforcement always
 stays local. If the control plane is unreachable, enrolled endpoints keep enforcing with
-signed cached state.
+signed cached state, and local detection does not depend on the entitlement: an expired or
+invalid entitlement switches off managed features only
+([licensing](../operations/licensing.md)).
 
 ## 6. Plans
 
-Free (local mode), Team, Business and Enterprise. Pricing is by quote through
+Free, Team, Business and Enterprise. Pricing is by quote through
 anil@singularityrd.com; edition contents are listed in the
 [product catalog](../sales/catalog/README.md).
 

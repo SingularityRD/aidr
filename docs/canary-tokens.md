@@ -126,7 +126,7 @@ skipped and logged, and the call is **not** reported as clean: an otherwise clea
 allow carries category `canary_unavailable` with a reason saying the canary check
 did not run, and it is written to the audit log. `aidr canary status` reports an
 unusable registry and exits non-zero. Connector entry points keep failing closed
-exactly as before.
+exactly as before; a hook the host disabled, did not trust, killed or timed out is outside that guarantee; see [host failure behaviour](compatibility-matrix.md#host-failure-behaviour).
 
 ## Browser Guard
 

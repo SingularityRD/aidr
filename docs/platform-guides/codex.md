@@ -121,6 +121,8 @@ change hook behaviour.
 
 ## Real-host acceptance
 
+Tested host versions for every connector, generated from these records: [compatibility matrix](../compatibility-matrix.md). Treat any other host version as unverified.
+
 Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-host-e2e-with-a-scripted-mock-model)): the real host binary on linux/x64, AIDR installed from the development build in a disposable HOME, and a scripted loopback mock model in place of a real one. It proves what the host does with AIDR's answer at each boundary, not how a real model behaves or how broad detection is. Record: [`docs/evidence/real-host/codex.json`](../evidence/real-host/codex.json)
 (`codex-cli 0.141.0`, `codex exec` with a custom `model_providers` entry and
 `--dangerously-bypass-hook-trust` in place of the interactive `/hooks` review).
