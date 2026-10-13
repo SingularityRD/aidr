@@ -6,6 +6,7 @@ import {
 	buildReport,
 	type CaseResult,
 	connectorRepoRoot,
+	DEFAULT_MIN_SCORE,
 	formatHtml,
 	formatReport,
 	formatTable,
@@ -199,6 +200,25 @@ describe("simulate scoring math", () => {
 		};
 		expect(buildReport({ ...base, minScore: 50 }).passed).toBe(true);
 		expect(buildReport({ ...base, minScore: 60 }).passed).toBe(false);
+		// MSC-12: the default threshold fails a half-blind engine.
+		expect(buildReport({ ...base, minScore: DEFAULT_MIN_SCORE }).passed).toBe(false);
+		expect(formatTable(buildReport({ ...base, minScore: DEFAULT_MIN_SCORE }))).toContain(
+			`FAIL — score 50% < minimum ${DEFAULT_MIN_SCORE}%`,
+		);
+	});
+
+	it("never passes a run in which nothing could be scored, whatever the threshold", () => {
+		const report = buildReport({
+			results: [caseResult("a", "deny", abort("reputation leg unavailable"))],
+			suites: ["destructive"],
+			connector: null,
+			minScore: 0,
+			sensitivity: "balanced",
+			mode: "evaluator",
+		});
+		expect(report.totals.counted).toBe(0);
+		expect(report.passed).toBe(false);
+		expect(formatTable(report)).toContain("FAIL — no fixture could be scored");
 	});
 });
 
@@ -274,6 +294,9 @@ describe("simulate evaluator mode isolation", () => {
 			expect(spawnSpy).not.toHaveBeenCalled();
 			expect(fetchSpy).not.toHaveBeenCalled();
 			expect(report.mode).toBe("evaluator");
+			// MSC-12: without --min-score the gate is the default threshold, not 0.
+			expect(report.minScore).toBe(DEFAULT_MIN_SCORE);
+			expect(report.passed).toBe(report.score >= DEFAULT_MIN_SCORE);
 			expect(report.totals.counted).toBeGreaterThan(0);
 		} finally {
 			spawnSpy.mockRestore();

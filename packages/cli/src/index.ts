@@ -185,7 +185,10 @@ program
 	.option("--sensitivity <level>", "Override sensitivity: paranoid, balanced or relaxed")
 	.option("--format <format>", "Output format: table, json or html", "table")
 	.option("--output <file>", "Write the report to a file instead of stdout")
-	.option("--min-score <n>", "Exit non-zero when the overall detection score is below N (0-100)")
+	.option(
+		"--min-score <n>",
+		"Exit non-zero when the overall detection score is below N (0-100; default 90, 0 = report only)",
+	)
 	.option(
 		"--connector <name>",
 		"Drive a built connector entry point instead of the in-process evaluator (claude-code, codex, cursor, vscode)",
