@@ -70,7 +70,7 @@ başka her kod gerçek bir kurulum sorunudur.
 
 ### Windows
 
-1. AIDR panelindeki İndirme sayfasından `singularity-aidr-<sürüm>-windows-x64.msi`
+1. AIDR panelindeki **İndirmeler** sayfasından `singularity-aidr-<sürüm>-windows-x64.msi`
    dosyasını indirin.
 2. Çift tıklayın ve onay penceresini kabul edin. Kurulum sonunda sizin için
    `aidr setup` çalışır.
@@ -132,6 +132,29 @@ bildirir:
 
 Bu komutların hiçbiri ana makinenin hook'u gerçekten çalıştırdığını kanıtlamaz;
 bunun için ana makinenin kendisi gerekir ([ilk müşteri çalışma kitabı](../../deploy/FIRST_CUSTOMER.md)).
+
+`aidr doctor` her denetim için bir satır yazar (yapılandırma, sürüm anahtarı,
+tespit, bağlayıcılar, DLP, profiller, onaylar, son karar) ve biri başarısızsa
+sıfırdan farklı kodla çıkar; `aidr doctor --verbose` her satırın altına nedeni,
+yolu ve çözümü ekler.
+
+## Engellenen bir işlemi onaylama
+
+Bazı işlemler bir kişi onaylayana kadar bekletilir (örneğin `terraform destroy`
+ya da `.env` dosyasını okumak). Codex, OpenCode ve OpenClaw'da (ve
+`operator_approvals.mode: "operator"` olan her ana makinede) engelleme mesajı,
+kendi terminalinizde çalıştıracağınız komutla başlar, örneğin:
+
+```sh
+aidr approve 3f9c2a7b   # kimliğin ilk 8 karakteri yeterlidir; "approve" yazın
+aidr approve            # kimlik yok: bekleyen işlemlerin numaralı listesinden seçin
+aidr pending            # bekleyen her şeyi listeler
+```
+
+AIDR ardından "Onaylandı. Yapay zekâ aracından 15 dakika içinde yeniden
+denemesini isteyin." yazar; onay o tek çağrıya bir kez izin verir. Yapay zekâ
+aracı hiçbir zaman kendisi onaylayamaz. Claude Code varsayılan olarak bunun
+yerine kendi Evet / Hayır penceresini gösterir.
 
 ## Sessiz ve yönetilen dağıtım
 
@@ -337,9 +360,12 @@ tüm kayıtları korur ve kurulumu yapan kullanıcı için kurulumu yeniden çal
 - **`aidr uninstall`, `receipt_connector_missing` ile reddediyor** — paket
   `aidr uninstall` çalışmadan kaldırılmış; aynı sürümü yeniden kurun,
   `aidr uninstall` çalıştırın, sonra paketi kaldırın.
-- **Her araç çağrısı "the release key … is not set up" ile engelleniyor** — o
-  kullanıcı olarak `aidr setup` çalıştırın (yükleyicinin getirdiği anahtarı
-  ayarlar); elle kurulumda `aidr setup --release-key <dosya.pem>`.
+- **Her araç çağrısı "sürüm anahtarı ayarlanmamış" ("the release key … is not set
+  up") ile engelleniyor** — o kullanıcı olarak `aidr setup` çalıştırın
+  (yükleyicinin getirdiği anahtarı ayarlar); elle kurulumda
+  `aidr setup --release-key <dosya.pem>`.
+- **Diğer her şey** — `aidr doctor --verbose` başarısız her denetimin nedenini ve
+  çözümünü gösterir; bunu ya da `aidr support-bundle` arşivini desteğe gönderin.
 - **Yükleyici boyutu** — komut satırı aracını ve her hook'u tek bir bağımsız
   program sunar; kurulu paket yaklaşık 150 MB'tır (her hook ayrı programken
   yaklaşık 900 MB'tı).

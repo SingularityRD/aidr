@@ -181,10 +181,11 @@ are:
 1. **Operator approval of one retry (`aidr approve`).** Every `ask` is recorded in
    the operator approval store (`~/.singularity-aidr/approvals.json`). In their own
    terminal the user runs `aidr pending` to review it and
-   `aidr approve <actionId>` to approve it; the CLI shows the call and requires an
+   `aidr approve <first 8 characters of the id>` (the command the block message shows,
+   or `aidr approve` alone to pick from a numbered list) to approve it; the CLI shows the call and requires an
    interactive confirmation. The approval is HMAC-protected, bound to the exact
    tool and artifact set, expires after 15 minutes by default and is spent by the
-   first identical retry. `aidr approve <actionId> --permit-allowlist` additionally
+   first identical retry. `aidr approve <id> --permit-allowlist` additionally
    lets `aidr_allowlist_add` turn that one artifact into a permanent entry once.
 2. **Permanently allowlist the exact artifact** with `aidr allowlist add
    <url|command|file_path> <value>` (also interactive). Any later tool call with

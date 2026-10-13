@@ -236,7 +236,8 @@ Codex runs each hook in a **fresh process**, so an in-memory approval cannot
 survive from the blocked call to the retry. The connector therefore records every
 `ask` in the file-backed operator approval store
 (`~/.singularity-aidr/approvals.json`). In their own terminal the operator runs
-`aidr pending` and `aidr approve <actionId>` (interactive confirmation); the next
+the command the block message shows, `aidr approve <first 8 characters of the id>`
+(or `aidr approve` alone to pick from a numbered list; interactive confirmation); the next
 identical call — same tool, input and Codex session — is then released once,
 within 15 minutes by default. A permanent exception is `aidr allowlist add`.
 This works on headless Linux, WSL and containers too: with no OS credential vault

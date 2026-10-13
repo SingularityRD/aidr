@@ -9,7 +9,7 @@ check that proves it works.
 > **Availability.** Singularity AIDR is not yet released for customer use (see
 > [Release status](../README.md#release-status)). The steps below apply once a release is
 > approved and your organisation has published its installers and Browser Guard store
-> links; until then the Download page and the store links stay empty.
+> links; until then the Downloads page and the store links stay empty.
 
 Two things are true at the same time, and they do not conflict:
 
@@ -28,7 +28,8 @@ Supported AI tools: Claude Code, OpenCode and OpenClaw are set up by the install
 Codex, Cursor and VS Code (Cursor and VS Code: preview — no real-host acceptance evidence
 yet) need one extra step that `aidr status` prints for you.
 
-1. **Download.** Sign in to your company's AIDR dashboard and open **Download**. The page
+1. **Download.** Sign in to your company's AIDR dashboard and open **Downloads** (under
+   **Devices & downloads**). The page
    picks the installer for your system. It also shows each file's SHA-256 and a command to
    compare it; use it if your company asks you to.
 2. **Install.**
@@ -54,7 +55,10 @@ yet) need one extra step that `aidr status` prints for you.
      sudo ./singularity-aidr-<version>-linux-x64/install.sh
      ```
 
-   The installer sets AIDR up for you (the user who ran it) at the end.
+   The installer sets AIDR up for you (the user who ran it) at the end, including the
+   release key, so there is nothing to configure. If none of your AI tools is installed
+   yet, it says "No AI tool … was found" and finishes anyway (setup exit code `3`, not an
+   error): install your AI tool, then run `aidr setup` once.
 3. **Restart your AI tools.** A tool that was already open picks up AIDR only after a
    restart.
 4. **Check.** Open a new terminal and run:
@@ -70,12 +74,34 @@ yet) need one extra step that `aidr status` prints for you.
    prints **PASS**, **FAIL** or **SKIP** for each one. You are done when your tools show
    PASS. SKIP means the check lives inside the tool (OpenCode, OpenClaw): open the tool
    once and confirm AIDR is listed there.
+5. **Stay up to date.** When an AI tool starts, AIDR checks at most once a day whether
+   your company's portal (or the update source IT set) has a newer version and says so
+   ("… is available … To install it, run: aidr update"). Then run:
+
+   ```sh
+   aidr update --check   # is a newer version available? changes nothing
+   aidr update           # verify, install, run 'aidr verify'; puts the old version back on failure
+   ```
+
+   On Linux run it as yourself, not with `sudo` (it asks for your password when it
+   installs); on Windows a per-machine install needs a terminal opened with **Run as
+   administrator**. `update.auto` (`notify` by default) can also be `install` (install in
+   the background) or `off`. On computers IT marked as device-managed, updates come from
+   IT and `aidr update` only checks.
 
 If something is off:
 
 - **`aidr` not found (Windows):** open a new terminal.
-- **FAIL, or every action is blocked:** run `aidr doctor` and send its output, or the
-  file from `aidr support-bundle`, to your IT team. Do not uninstall AIDR to get unblocked.
+- **FAIL, or every action is blocked:** run `aidr doctor` (one line per check;
+  `aidr doctor --verbose` adds the reason and the fix under each line) and send its
+  output, or the file from `aidr support-bundle`, to your IT team. Do not uninstall AIDR
+  to get unblocked.
+- **Every action is blocked because the release key is missing** ("the release key …
+  is not set up" or "release verification key missing"): run `aidr setup` once; it sets
+  up the key the installer ships. For a manual install without the installer, ask IT for
+  the release key file and run `aidr setup --release-key <file.pem>`.
+- **"No AI tool … was found":** install your AI tool (Claude Code, Cursor, VS Code,
+  Codex, OpenCode or OpenClaw), then run `aidr setup`.
 - **macOS:** desktop installers are not offered yet. Browser Guard (part B) works on
   macOS in Chrome, Edge and Firefox.
 
@@ -90,7 +116,7 @@ and confidential data before it leaves your browser. It works on Windows, Linux 
 1. **Is your computer managed by your company?** Then IT installs it for you; skip to
    step 4.
 2. **Open the install link** from your IT team, your Singularity contact or the
-   dashboard **Download** page. The store listings are unlisted, so searching the store
+   dashboard **Downloads** page. The store listings are unlisted, so searching the store
    does not find them.
    - Chrome 120+: **Add to Chrome**, then **Add extension**.
    - Edge 120+: **Get**, then **Add extension**.
@@ -126,8 +152,15 @@ sudo dnf install -y ./singularity-aidr-<version>-1.x86_64.rpm     # RHEL/Fedora
 sudo -u alice -H aidr setup                                       # once per user, when installed without sudo from that user
 ```
 
-Upgrades: deploy the newer installer the same way; registrations are kept. Details,
-uninstall and package signature checks: [Desktop installers](installation/desktop-installers.md#silent-and-managed-deployment).
+Setup exit codes, for scripts and detection rules: `0` protected, `3` no supported AI
+tool installed for that user yet (not an error; the package and the MSI still install),
+`1` a real setup problem. A manual install without the installer first needs the release
+key: `aidr setup --release-key <file.pem>`.
+
+Upgrades: deploy the newer installer the same way; registrations are kept. Add
+`AIDR_MDM_MANAGED=1` to the install so endpoints leave updates to you; without it,
+endpoints can update themselves from your portal with `aidr update` (`update.auto`).
+Details, uninstall and package signature checks: [Desktop installers](installation/desktop-installers.md#silent-and-managed-deployment).
 
 ### Force-install Browser Guard
 
@@ -141,7 +174,7 @@ ADMX, Google Admin console, or Firefox `policies.json`):
 | Firefox | ID `browser-guard@singularityrd.com`, install URL where you host the signed `.xpi` |
 
 The two store IDs exist only after Singularity publishes the store listings; your
-Singularity contact gives them to you, and the dashboard Download page shows them when
+Singularity contact gives them to you, and the dashboard Downloads page shows them when
 it is configured with them. Start with a pilot group in `"mode": "monitor"`
 (nothing is masked, everything is counted). Step-by-step for Intune, Google Admin,
 GPO and Firefox, settings you can lock, and rollback:
@@ -155,16 +188,17 @@ never approve its own action.
 
 - **Claude Code** shows its own confirmation dialog by default; the user decides there.
 - **Codex, OpenCode, OpenClaw** (and Claude Code, Cursor and VS Code when
-  `operator_approvals.mode` is `"operator"`): the action is blocked. The person at the
-  keyboard runs, in their own terminal:
+  `operator_approvals.mode` is `"operator"`): the action is blocked, and the message
+  shows the exact command. The person at the keyboard runs it in their own terminal:
 
   ```sh
-  aidr pending                 # what is waiting, with its id
-  aidr approve <id>            # type "approve" to confirm
+  aidr approve 3f9c2a7b        # the first 8 characters of the id are enough; type "approve"
+  aidr approve                 # or: pick from a numbered list of what is waiting
+  aidr pending                 # see everything that is waiting
   ```
 
-  Then they ask the AI tool to try again. The approval allows that one action once,
-  for 15 minutes by default.
+  AIDR prints "Approved. Ask the agent to retry within 15 minutes." The approval allows
+  that one action once, for 15 minutes by default.
 - **With the AIDR dashboard** (managed mode), owners and admins can also approve on the
   **Approvals** page, signed in with two-step verification.
 
@@ -178,6 +212,9 @@ in your own environment.
 - Single Linux host with Docker Compose: [AIDR on-prem installation](../deploy/onprem/README.md)
 - Kubernetes with Helm: [Running AIDR on Kubernetes](operations/kubernetes.md)
 - Overview, air-gapped installs and topologies: [On-premises deployment](deployment/onprem.md)
-- Upgrades: [Upgrade runbook](../deploy/UPGRADE.md)
+- Upgrades: one command, `pnpm onprem:upgrade --to <new release directory>` (backup,
+  checks, upgrade, health check; stops and says what to do if a step fails):
+  [Upgrading an on-prem installation](operations/onprem-upgrade.md); contracts in the
+  [Upgrade runbook](../deploy/UPGRADE.md)
 
 All install and deployment guides, by role: [Installation guides](installation/README.md).

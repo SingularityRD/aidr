@@ -2,7 +2,7 @@
 
 English: [download-portal.md](download-portal.md)
 
-Müşteriler AIDR yükleyicisini panelin **İndir** sayfasından (`/downloads`,
+Müşteriler AIDR yükleyicisini panelin **İndirmeler** sayfasından (`/downloads`,
 ayrıca kurulumun 1. adımı) indirir. Sayfa ziyaretçinin işletim sistemini
 algılar, uygun platformu öne çıkarır, diğer platformları boyut, SHA-256 ve
 kopyalanabilir sağlama toplamı komutuyla listeler; Browser Guard mağaza

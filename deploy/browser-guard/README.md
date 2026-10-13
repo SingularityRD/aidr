@@ -174,7 +174,7 @@ into a requirement. While `PERSON`, `ADDRESS` or `LOCATION` is in `enabledEntiti
   noticeably longer than with rules only, and one failed window blocks the whole
   upload. Measure on your target hardware with your largest typical files.
 
-The same requirement can be switched on from the dashboard (Browser Privacy Guard →
+The same requirement can be switched on from the dashboard (Browser Guard →
 **Require native NER**, owners and administrators, multi-factor verification,
 audited). It reaches browsers in the signed dashboard policy, so they also need
 `telemetry` and the managed `dashboardPolicy` trust anchor (see "Allow / block from

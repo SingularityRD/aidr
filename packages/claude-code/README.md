@@ -54,7 +54,7 @@ model are not covered.
   [dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
 - With `operator_approvals.mode: "operator"` an `ask` never opens the native
   dialog: the call is denied with an approval reference, listed in `aidr pending`,
-  and exactly one retry is released after `aidr approve <actionId>` in your own
+  and exactly one retry is released after `aidr approve <first 8 characters of the id>` in your own
   terminal (same store, OS-vault key and single-use ledger as OpenClaw/OpenCode/Codex).
   In the default `host_dialog` mode the dialog decides and the ask is listed in
   `aidr pending` for information only. See

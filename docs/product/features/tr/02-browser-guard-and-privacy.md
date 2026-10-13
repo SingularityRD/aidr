@@ -45,7 +45,7 @@ belirtilmiştir.
     - [13b. Kurum içi özel yapay zekâ siteleri](#13b-kurum-içi-özel-yapay-zekâ-siteleri)
     - [13c. Yapay zekâ kabul edilebilir kullanım bildirimi](#13c-yapay-zekâ-kabul-edilebilir-kullanım-bildirimi)
 14. [Kurumsal yönetilen politika ve dağıtım](#14-kurumsal-yönetilen-politika-ve-dağıtım)
-15. [Yalnızca sayım içeren telemetri ve Browser Privacy paneli](#15-yalnızca-sayım-içeren-telemetri-ve-browser-privacy-paneli)
+15. [Yalnızca sayım içeren telemetri ve Browser Guard panel sayfası](#15-yalnızca-sayım-içeren-telemetri-ve-browser-guard-panel-sayfası)
 16. [NER ve OCR için isteğe bağlı native host](#16-ner-ve-ocr-için-isteğe-bağlı-native-host)
 17. [Cihazdan hangi veriler çıkar](#17-cihazdan-hangi-veriler-çıkar)
 
@@ -63,7 +63,7 @@ belirtilmiştir.
 
 ## Kapsam özeti
 
-Plan kataloğu (`packages/dashboard/src/billing/plans.ts`) **Browser Privacy Guard** özelliğini (`browser_privacy_guard`)
+Plan kataloğu (`packages/dashboard/src/billing/plans.ts`) **Browser Guard** özelliğini (`browser_privacy_guard`)
 **Team, Business ve Enterprise** planlarında listeler; Free planda bu özellik yer almaz.
 Eklentinin kendisi plan ya da hesap denetimi yapmaz. Algılama, maskeleme ve geri yükleme,
 eklenti kontrol düzlemine kayıtlı olsun ya da olmasın tarayıcıda çalışır. Kayıt, kontrol
@@ -266,8 +266,8 @@ misafir modu, diğer profiller ve tarayıcılar, geliştirici araçları, diğer
 kapatır.
 
 **Örnek** — `auto` modunda kullanıcı 300.000 karakterlik bir log yapıştırıp Enter'a basar.
-Siteye hiçbir şey gitmez. **Gönderim engellendi** başlıklı kırmızı balonda "AIDR bu istemi
-kontrol etmeyi tamamlayamadı; gönderilmedi." yazar.
+Siteye hiçbir şey gitmez. **Gönderim engellendi** başlıklı kırmızı balonda "Singularity AIDR bu
+mesajı kontrol etmeyi tamamlayamadı; mesaj gönderilmedi." yazar.
 
 **Kapsam**
 
@@ -430,8 +430,8 @@ değeri hiçbir zaman almaz.
 **Örnek** — Kullanıcı `Please email ayse.yilmaz@example.com about the refund, deploy key sk-proj-…`
 gönderir. Site `Please email [EMAIL_1] about the refund, deploy key [SECRET_1]` alır.
 "I emailed `[EMAIL_1]`; rotate `[SECRET_1]`" yanıtı kullanıcıya "I emailed
-ayse.yilmaz@example.com; rotate `[SECRET_1]`" olarak, "AIDR tarafından yerel olarak geri
-yüklendi" ipucuyla gösterilir.
+ayse.yilmaz@example.com; rotate `[SECRET_1]`" olarak, "Yalnızca bu bilgisayarda gösteriliyor.
+Yapay zekâ hizmetine [EMAIL_1] gitti." ipucuyla gösterilir.
 
 **Kapsam**
 
@@ -543,7 +543,7 @@ eklenir.
 | `auto`, `confirm` | Maskeli metin eklenir | "Yapıştırılan metin maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." |
 | `block` | Hiçbir şey eklenmez | "Yapıştırılan metin hassas veri içerdiği için eklenmedi." ve kurum yönlendirme satırı |
 | `monitor` | Orijinal eklenir, bulgular sayılır | — |
-| Tarama başarısız | Hiçbir şey eklenmez | "AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
+| Tarama başarısız | Hiçbir şey eklenmez | "Singularity AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
 
 Temiz metin değiştirilmeden eklenir. Yapıştırılan dosyaları dosya koruması ele alır
 (özellik 7).
@@ -759,8 +759,8 @@ duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır.
 | Yükleme politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
 | Belgeler politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
 | Hassas veri içeren PDF | `"sozlesme.pdf" kişisel veya gizli bilgi içeriyor (1 e-posta adresi), bu yüzden yüklenmedi. PDF dosyaları maskelenemez: gereken metni kopyalayıp mesaja yapıştırın (yapıştırılan metin maskelenir) ya da BT ekibinize başvurun.` |
-| Dosya denetlenemedi | "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
-| Tarayıcı dosyayı değiştiremiyor | "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
+| Dosya denetlenemedi | "Dosya kontrol edilemedi; yüklenmedi." |
+| Tarayıcı dosyayı değiştiremiyor | "Bu tarayıcı dosyayı maskelenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
 
 Yüklemeyi durdurabilecek her nedenin yukarıdakiler gibi sade bir cümlesi vardır (dosyaya ne
 oldu, ne yapılabilir), Türkçe ve İngilizce. İç neden kodları (`SENSITIVE_DATA_IN_PDF`,
@@ -1007,7 +1007,7 @@ yaygın bir fikrî mülkiyet sızıntısıdır.
 | `EXACT_DATA_MATCH` | tam veri eşleşmesi (özellik 9) |
 
 Tepkiyi `signalAction` belirler:
-- `warn` (varsayılan): **Göndermeden önce isteminizi kontrol edin** balonu. Balonda
+- `warn` (varsayılan): **Göndermeden önce mesajınızı kontrol edin** balonu. Balonda
   yönlendirme metni ile **Düzenle** (varsayılan) ve **Yine de gönder** düğmeleri bulunur.
   Aynı istemde kişisel veri de bulunduysa onay balonu (özellik 5) yönlendirme satırları
   eklenerek gösterilir.
@@ -1112,7 +1112,7 @@ kaldırmasından hem daha dürüst hem de denetlenmesi daha kolaydır.
 
 **Nasıl çalışır** — **Duraklatma**, süre dolana kadar tüm sekmeleri `monitor` davranışına
 geçirir. Hiçbir şey maskelenmez, gönderimler yine sayılır. Açılır pencerede **ss:dd saatine
-kadar duraklatıldı** ve "O saate kadar ChatGPT hizmetine giden mesajlar yalnızca izlenir,
+kadar duraklatıldı** ve "O saate kadar ChatGPT hizmetine giden mesajlar yalnızca sayılır,
 hiçbir veri maskelenmez." yazar. Arka plan 1–60 dakikalık duraklatmaları kabul eder; açılır
 pencere 15 dakika sunar. Duraklatma, süre dolunca ya da **Korumayı sürdür** ile biter.
 **Site bazında kapatma** (Ayarlar → **Siteler**) o siteyi kalıcı olarak aynı izleme
@@ -1229,7 +1229,7 @@ söyler: eksik erişim hiçbir zaman "kullanım yok" olarak gösterilmez.
 **Nasıl kullanılır** — Yönetilen anahtar `shadowAi`:
 `{ "mode": "monitor" | "block-unsanctioned" | "off", "sanctioned": [kimlikler], "blocked": [kimlikler] }`.
 `blocked` içindeki kimlikler her kipte engellenir; iki listede birden bulunan kimlik
-engellenir. Panodaki **Browser Privacy** sayfasında bir **Shadow AI** paneli (en çok
+engellenir. Paneldeki **Browser Guard** sayfasında bir **Gölge yapay zekâ** (Shadow AI) bölümü (en çok
 kullanılan hizmetler, onaylı ve onaysız ziyaretler, engellenen denemeler, günlük eğilim) ve
 bir politika parçacığı oluşturucusu bulunur.
 
@@ -1323,7 +1323,7 @@ yapay zekâ okuryazarlığı çalışmalarını destekler (farkındalık sağlar
 
 **Nasıl çalışır** — Yöneticiler bildirimi yönetilen politikanın `acceptableUse` anahtarında
 yayımlar (kimlik, sürüm, başlık, en fazla 4.000 karakter düz metin, isteğe bağlı `https://`
-bağlantısı); JSON'u **Browser Privacy** sayfası oluşturur. Browser Guard bildirimi
+bağlantısı); JSON'u **Browser Guard** sayfası oluşturur. Browser Guard bildirimi
 **I understand** ve **Remind me later** seçenekleriyle kendi penceresinde gösterir. Metin
 işaretleme olarak değil, her zaman düz metin olarak gösterilir; bildirim bilgilendirir,
 gönderimi asla engellemez. **I understand** her tarayıcı profili için hatırlanır; `version`
@@ -1335,7 +1335,7 @@ bütünüyle yok sayılır.
 **Nasıl kullanılır** — Örnek kayıt:
 `{"acceptableUse": {"id": "acme-ai-use", "version": 2, "title": "Using AI at Acme", "text":
 "Do not paste customer records.", "url": "https://intranet.example.com/ai-policy"}}`.
-Bildirim sürümü başına kapsam, paneldeki **Governance** skor kartında görünür.
+Bildirim sürümü başına kapsam, paneldeki **Yapay zekâ yönetişimi** skor kartında görünür.
 
 **Örnek** — 2. sürüm yayımlandıktan sonra ChatGPT'yi açan kullanıcı "Using AI at Acme"
 bildirimini bir kez görür, **I understand** düğmesine tıklar ve skor kartı 2. sürüm için
@@ -1358,6 +1358,27 @@ onaylayan tarayıcı kurulumu sayısını bir artırır.
 **Ne yapar** — Yöneticilerin eklentiyi zorunlu olarak kurmasına ve yapılandırmasını merkezden
 kilitlemesine olanak tanır. Bunun için Group Policy, Microsoft Intune, Jamf ya da Firefox
 politika dosyası kullanılabilir.
+
+**Kurulum ve güncelleme kanalları** — İki kanal vardır; ikisinde de eklenti kendiliğinden
+güncellenir:
+
+- **Tarayıcı mağazaları**: liste dışı (unlisted) Chrome Web Store ve Microsoft Edge
+  Eklentileri kayıtları (mağaza aramasında çıkmaz; bağlantıdan ya da politikayla kurulur).
+  Mağazadan kurulan eklentiyi tarayıcı kendiliğinden günceller; mağazalar yalnızca en son
+  sürümü sunar. Kurulum yapılandırılmışsa mağaza bağlantıları ve uzantı kimlikleri panelin
+  **İndirmeler** sayfasında görünür.
+- **Kendi sunucunuzdan**: mağazalara erişemeyen ağlar ya da her sürümün ne zaman
+  dağıtılacağına kendisi karar vermek isteyenler için Chrome ve Edge'e, Singularity
+  tarafından imzalanmış bir CRX3 paketi (kendine ait sabit bir uzantı kimliğiyle) kendi
+  HTTPS sunucunuzdan sunulur. `packages/browser-guard/scripts/update-feed.mjs`, `update.xml`
+  beslemesini oluşturur: CRX imzasını ve sabitlenen uzantı kimliğini denetler, barındırılan
+  sürümden yüksek olmayan bir sürümü reddeder; böylece besleme hiçbir zaman geriye gitmez.
+  Firefox, içine gömülü `updates.json` adresinden güncellenen Mozilla imzalı XPI'ı kullanır.
+
+Sürüm paketleri `pnpm package:browser-guard` ile oluşturulur (mağaza ZIP'leri, kaynak
+arşivi, `SHA256SUMS`, mağaza doğrulaması). Adım adım:
+[Browser Guard'ı kurumda dağıtma](../../../installation/browser-guard-enterprise.tr.md),
+kurum içi barındırma için bölüm 10.
 
 **Neden önemli** — Her kullanıcının kendi başına ayarladığı bir gizlilik denetimi, gerçek bir
 denetim sayılmaz. Yönetilen politikayla modu, veri türlerini ve yükleme kurallarını kurum
@@ -1452,11 +1473,11 @@ New-ItemProperty -Path $key -Name neverRestore -PropertyType String -Value '["SE
 - Yönetilen politika kilitlemesi gerçek tarayıcı testlerinde denenemez (yönetilen depolamaya
   testten yazılamaz); birim testleriyle doğrulanır.
 
-### 15. Yalnızca sayım içeren telemetri ve Browser Privacy paneli
+### 15. Yalnızca sayım içeren telemetri ve Browser Guard panel sayfası
 
 **Ne yapar** — Kayıtlı tarayıcılar, her yapay zekâ sitesinde her türden kaç öğenin
 maskelendiğini, uyarıldığını, engellendiğini ya da geçtiğini raporlar. Kontrol düzlemi bu
-sayıları **Browser Privacy** sayfasında (`/privacy-guard`) gösterir.
+sayıları **Browser Guard** sayfasında (`/privacy-guard`) gösterir.
 
 **Neden önemli** — Güvenlik ekiplerinin, kişisel veri maruziyetinin nerede yaşandığını ve
 azalıp azalmadığını göstermesi gerekir. Bunu yaparken kişisel verinin ikinci bir kopyasını
@@ -1478,17 +1499,16 @@ ayrıca kuruluma özgü rastgele bir kimlik (`iid`), `agent_runtime: "browser_gu
 ailesi ve ana sürümü (ör. `chrome-126`) ve eklenti sürümünü ekler. İçerik betikleri API
 anahtarını hiçbir zaman almaz.
 
-Paneldeki **Browser Privacy Guard** sayfası 7 ya da 30 günlük pencere için şunları gösterir:
-**Prompts protected** (korunan istemler), **Items masked** (maskelenen öğeler), **Blocked
-sends** (engellenen gönderimler), **Active browser installs** (etkin tarayıcı kurulumları),
-**By entity type** (türe göre), **By AI site** (siteye göre), **Daily activity** (günlük
-etkinlik) ve **Recent privacy events** (son olaylar). Panel arayüzü şu an İngilizcedir.
-**Enroll browsers** bölümü, seçilen mod için kontrol düzlemi adresi doldurulmuş ve kiracı API
+Paneldeki **Browser Guard** sayfası (`/privacy-guard`, **Koruma** altında) 7 ya da 30
+günlük pencere için şunları gösterir: **Korunan mesajlar**, **Maskelenen öğeler**,
+**Engellenen gönderimler**, **Etkin tarayıcı kurulumları**, **Veri türüne göre**, **Yapay
+zekâ sitesine göre**, **Günlük etkinlik** ve **Son gizlilik olayları**. Panel Türkçe ve
+İngilizce kullanılabilir. **Tarayıcıları kaydedin** bölümü, seçilen mod için kontrol düzlemi adresi doldurulmuş ve kiracı API
 anahtarı için yer tutucu içeren bir yönetilen politika JSON parçası üretir. Olaylar kiracının
 telemetri saklama sınıfında tutulur ve yalnızca kiracı üyelerince okunur.
 
 **Nasıl kullanılır**
-1. Paneldeki **API Keys** sayfasında yazma yetkili bir kiracı API anahtarı oluşturun.
+1. Paneldeki **API anahtarları** sayfasında yazma yetkili bir kiracı API anahtarı oluşturun.
 2. `telemetry: { "controlPlaneUrl": "https://…", "apiKey": "…" }` değerini yönetilen
    politikaya ekleyin ya da kullanıcının Ayarlar → **Kuruluş bağlantısı** bölümünden girmesine
    izin verin (**Bağlantıyı kaydet**, **Bağlantıyı kes**).
@@ -1540,8 +1560,8 @@ süreçle kullanılır. 200.000 karakterden uzun metin gönderilmez. Art arda ü
 Host'un `PERSON`, `ADDRESS` ve `LOCATION` aralıkları (yalnızca `enabledEntities` içinde açık
 olan türler) `source: "native-ner"` ve sabit 0,9 skoruyla işaretlenip maskelemeden önce kural
 bulgularıyla birleştirilir. Host kullanılabilir bir yanıt vermezse istem yalnızca kurallarla
-denetlenir ve sayfa içi bildirim ya da balon "Gelişmiş ad ve adres algılama (yerel yardımcı
-uygulama) kullanılamıyor: yalnızca yerleşik kurallarla kontrol edildi." der (temiz çıkan
+denetlenir ve sayfa içi bildirim ya da balon "Ad ve adresler yalnızca yerleşik
+kurallarla denetlendi: AIDR Privacy yardımcı uygulaması kullanılamadı." der (temiz çıkan
 istemler için sayfa başına bir kez). Hiçbir şey kalıcı olarak saklanmaz. Yalnızca metnin
 kendisi gönderilir; adres, site, sekme ya da kullanıcı bilgisi gönderilmez.
 Yüklenen görseller (ve Office/OpenDocument dosyalarındaki resimler), host OCR bildirdiğinde

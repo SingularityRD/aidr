@@ -10,7 +10,7 @@ use; see [Release status](../../README.md#release-status).
 
 | Guide | Covers |
 |---|---|
-| [Desktop installers](desktop-installers.md) | Windows MSI and Linux .deb / .rpm / tarball from the dashboard Download page, `aidr status`, `aidr verify`, uninstall, troubleshooting. macOS installers are not offered yet. |
+| [Desktop installers](desktop-installers.md) | Windows MSI and Linux .deb / .rpm / tarball from the dashboard Downloads page, `aidr status`, `aidr verify`, uninstall, troubleshooting. macOS installers are not offered yet. |
 | [Getting Started](../getting-started.md) | Per-tool connector packages (Claude Code, Cursor, VS Code, OpenClaw, OpenCode, Codex) for tools and systems the installers do not cover, including macOS |
 | [Package Installation](../package-installation.md) | Private-registry access and version-pinned package installs |
 | [Integrity verification](../integrity.md) | The release key that connector packages need before they start (the desktop installers already contain it) |
@@ -51,7 +51,7 @@ use; see [Release status](../../README.md#release-status).
 
 | Guide | Covers |
 |---|---|
-| [Installer download portal](download-portal.md) | Publishing signed installers to the dashboard Download page, store-link settings |
+| [Installer download portal](download-portal.md) | Publishing signed installers to the dashboard Downloads page, store-link settings |
 | [Desktop installers: building](desktop-installers.md#building-the-installers) | Building and signing the installers |
 | [SaaS deployment](../deployment/saas.md) | The hosted control plane |
 

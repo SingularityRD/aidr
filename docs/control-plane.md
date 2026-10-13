@@ -20,7 +20,7 @@ Tenants can require SAML or OpenID Connect (Entra ID, Okta, generic) sign-in; se
 
 ## Installer downloads
 
-The dashboard **Download** page (`/downloads`, and step 1 of onboarding) offers
+The dashboard **Downloads** page (`/downloads`, and step 1 of onboarding) offers
 the Windows and Linux installers of the current release (no macOS installer is
 offered). The `installer-download` Edge Function lists a signed installer
 catalog only to active members of an active tenant whose admission (licence,
@@ -84,14 +84,14 @@ Failure handling is per layer, not a blanket "fail-open":
 - **Security controls** on the control plane (authentication, tenant isolation, rate limits,
   webhook signatures, approvals) fail closed.
 
-## Browser Privacy Guard (browser installs)
+## Browser Guard (browser installs)
 
 Singularity AIDR Browser Guard (`packages/browser-guard`) masks sensitive data
 in prompts, pastes and files before they reach AI chat products. Detection and
 masking run locally in the browser. Enrollment adds counts-only reporting to the
 control plane; it is not a precondition for protection.
 
-**Enroll browsers** (dashboard: **Browser Privacy**, route `/privacy-guard`):
+**Enroll browsers** (dashboard: **Browser Guard**, route `/privacy-guard`):
 
 1. Deploy the Browser Guard extension package from your AIDR release to Chrome,
    Edge or Firefox, per user or force-installed by browser management policy.

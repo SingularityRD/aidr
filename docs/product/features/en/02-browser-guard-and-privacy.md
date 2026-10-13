@@ -43,7 +43,7 @@ Related documents: [product overview](../../overview.md) ·
     - [13b. Custom internal AI sites](#13b-custom-internal-ai-sites)
     - [13c. AI acceptable-use notice](#13c-ai-acceptable-use-notice)
 14. [Enterprise managed policy and deployment](#14-enterprise-managed-policy-and-deployment)
-15. [Counts-only telemetry and the Browser Privacy dashboard](#15-counts-only-telemetry-and-the-browser-privacy-dashboard)
+15. [Counts-only telemetry and the Browser Guard dashboard page](#15-counts-only-telemetry-and-the-browser-guard-dashboard-page)
 16. [Optional native host for NER and OCR](#16-optional-native-host-for-ner-and-ocr)
 17. [What data leaves the device](#17-what-data-leaves-the-device)
 
@@ -61,7 +61,7 @@ Related documents: [product overview](../../overview.md) ·
 
 ## Availability at a glance
 
-The plan catalog (`packages/dashboard/src/billing/plans.ts`) lists **Browser Privacy Guard** (`browser_privacy_guard`) for **Team,
+The plan catalog (`packages/dashboard/src/billing/plans.ts`) lists **Browser Guard** (`browser_privacy_guard`) for **Team,
 Business and Enterprise**, not for Free. The extension itself does not check a plan or an
 account: detection, masking and restore run in the browser whether or not it is enrolled.
 Enrollment adds reporting to the control plane (feature 15). The dashboard describes each
@@ -250,8 +250,8 @@ policies in `deploy/browser-guard/README.md` (private browsing, guest mode, othe
 and browsers, developer tools, other extensions).
 
 **Example** — A user pastes a 300,000-character log and presses Enter in `auto` mode. The site
-receives nothing. A red bubble titled **Sending blocked** says "AIDR could not finish
-checking this prompt, so it was not sent."
+receives nothing. A red bubble titled **Sending blocked** says "Singularity AIDR could not
+finish checking this message, so it was not sent."
 
 **Availability**
 
@@ -516,7 +516,7 @@ at send time). The result is inserted at the cursor.
 | `auto`, `confirm` | Masked text is inserted | "Pasted text masked: 1 email address, 1 Turkish ID number (TCKN)." / "Yapıştırılan metin maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." |
 | `block` | Nothing is inserted | "The pasted text contains sensitive data and was not inserted." / "Yapıştırılan metin hassas veri içerdiği için eklenmedi." plus the organisation coaching line |
 | `monitor` | Original is inserted; findings counted | — |
-| Scan failed | Nothing is inserted | "AIDR could not check the pasted text, so it was not inserted." / "AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
+| Scan failed | Nothing is inserted | "Singularity AIDR could not check the pasted text, so it was not inserted." / "Singularity AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
 
 Clean text is inserted unchanged. Pasted files are handled by file protection (feature 7).
 
@@ -716,7 +716,7 @@ while paused) files pass unchanged and are only counted. Blocked sites and
 | Documents disabled by policy | "Your organisation does not allow Office or PDF documents to be uploaded to AI services." / "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
 | PDF with sensitive data | `"contract.pdf" contains personal or confidential data (1 email address), so it was not uploaded. PDFs cannot be masked: copy the text you need and paste it into the message instead (pasted text is masked), or ask your IT team.` / `"contract.pdf" kişisel veya gizli bilgi içeriyor (1 e-posta adresi), bu yüzden yüklenmedi. PDF dosyaları maskelenemez: gereken metni kopyalayıp mesaja yapıştırın (yapıştırılan metin maskelenir) ya da BT ekibinize başvurun.` |
 | File could not be checked | "The file could not be checked, so it was not uploaded." / "Dosya kontrol edilemedi; yüklenmedi." |
-| Browser cannot swap the file | "This browser cannot replace the file with a sanitized copy, so it was not uploaded." / "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
+| Browser cannot swap the file | "This browser cannot replace the file with a masked copy, so it was not uploaded." / "Bu tarayıcı dosyayı maskelenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
 
 Every reason that can stop an upload has its own plain sentence like the ones above (what
 happened to the file and what to do), in English and Turkish. The internal reason codes
@@ -958,8 +958,8 @@ into public AI tools is a common IP leak.
 | `EXACT_DATA_MATCH` | an exact-data hit (feature 9) |
 
 `signalAction` decides the response:
-- `warn` (default): bubble **Check your prompt before sending** / **Göndermeden önce
-  isteminizi kontrol edin** with the coaching text and the buttons **Edit** (default) and
+- `warn` (default): bubble **Check your message before sending** / **Göndermeden önce
+  mesajınızı kontrol edin** with the coaching text and the buttons **Edit** (default) and
   **Send anyway** / **Yine de gönder**. If personal data was also found, the confirmation
   bubble (feature 5) is shown with the coaching lines added.
 - `block`: **Sending blocked** with the coaching text. Files with signals are blocked with
@@ -1057,7 +1057,7 @@ honest, and easier to audit, than users uninstalling the extension.
 
 **How it works** — **Pause** switches every tab to `monitor` behaviour until the pause ends.
 Nothing is masked, sends are still counted, and the popup shows **Paused until hh:mm**
-("Messages to ChatGPT are only monitored until then. Nothing is masked."). The background
+("Until then, messages to ChatGPT are only counted. Nothing is masked."). The background
 accepts pauses of 1–60 minutes; the popup offers 15. The pause ends on a timer or with
 **Resume protection**. **Per-site switch** (Options → **Sites**) puts that site in the same
 monitor behaviour permanently: prompts, pastes and files are sent unchanged, but they are
@@ -1167,7 +1167,7 @@ access is never shown as "no usage".
 **How to use** — Managed key `shadowAi`:
 `{ "mode": "monitor" | "block-unsanctioned" | "off", "sanctioned": [ids], "blocked": [ids] }`.
 Ids in `blocked` are blocked in every mode; an id in both lists is blocked. The dashboard's
-**Browser Privacy** page has a **Shadow AI** panel (top services, sanctioned vs
+**Browser Guard** page has a **Shadow AI** panel (top services, sanctioned vs
 unsanctioned visits, blocked attempts, daily trend) and a policy snippet generator.
 
 **Example** — `{"mode": "block-unsanctioned", "sanctioned": ["chatgpt", "copilot"]}`. A user
@@ -1253,7 +1253,7 @@ Article 4 of the EU AI Act (awareness, not training).
 
 **How it works** — Administrators publish the notice in the managed policy key
 `acceptableUse` (id, version, title, plain text up to 4,000 characters, optional `https://`
-link); the **Browser Privacy** page builds the JSON. Browser Guard shows it in its own dialog
+link); the **Browser Guard** page builds the JSON. Browser Guard shows it in its own dialog
 with **I understand** and **Remind me later**. The text is rendered as plain text, never as
 markup, and the notice informs: it never blocks sending. **I understand** is remembered per
 browser profile; raising `version` shows the notice again to everyone. Each acknowledgement
@@ -1264,7 +1264,7 @@ ignored as a whole.
 **How to use** — Example entry:
 `{"acceptableUse": {"id": "acme-ai-use", "version": 2, "title": "Using AI at Acme", "text":
 "Do not paste customer records.", "url": "https://intranet.example.com/ai-policy"}}`.
-Coverage per notice version appears on the dashboard **Governance** scorecard.
+Coverage per notice version appears on the dashboard **AI governance** scorecard.
 
 **Example** — After version 2 is published, a user opening ChatGPT sees "Using AI at Acme"
 once, clicks **I understand**, and the scorecard counts one more acknowledging browser
@@ -1287,6 +1287,26 @@ install for version 2.
 **What it does** — Lets administrators force-install the extension and lock its
 configuration centrally, through Group Policy, Microsoft Intune, Jamf or the Firefox policy
 file.
+
+**Install and update channels** — Two channels, each updating the extension by itself:
+
+- **Browser stores**: unlisted Chrome Web Store and Microsoft Edge Add-ons listings (not
+  found by store search; installed from the link or by policy). The browser updates a
+  store install automatically; the stores serve only the latest version. Store links and
+  extension IDs are on the dashboard **Downloads** page when the deployment is configured
+  with them.
+- **Self-hosted**: for networks without store access, or to decide when each version
+  rolls out, a Singularity-signed CRX3 for Chrome and Edge (its own fixed extension ID)
+  served from your own HTTPS server. `packages/browser-guard/scripts/update-feed.mjs`
+  builds the `update.xml` feed: it checks the CRX signature and the pinned extension ID and
+  refuses a version that is not higher than the hosted one, so a feed never moves
+  backwards. Firefox uses the Mozilla-signed XPI, which updates from the `updates.json`
+  address built into it.
+
+Release packages are built with `pnpm package:browser-guard` (store zips, source archive,
+`SHA256SUMS`, store validation). Step-by-step:
+[Deploying Browser Guard in an organisation](../../../installation/browser-guard-enterprise.md),
+section 10 for internal hosting.
 
 **Why it matters** — A privacy control that each user configures alone is not a control. With
 managed policy the organisation decides the mode, the data types and the upload rules, and
@@ -1377,11 +1397,11 @@ New-ItemProperty -Path $key -Name neverRestore -PropertyType String -Value '["SE
 - Managed-policy locking cannot be exercised in the real-browser suite (managed storage
   cannot be written from a test). It is covered by unit tests.
 
-### 15. Counts-only telemetry and the Browser Privacy dashboard
+### 15. Counts-only telemetry and the Browser Guard dashboard page
 
 **What it does** — Enrolled browsers report how many items of each type were masked, warned,
 blocked or allowed on each AI site. The control plane shows these counts on its **Browser
-Privacy** page (`/privacy-guard`).
+Guard** page (`/privacy-guard`).
 
 **Why it matters** — Security teams need to show where personal data exposure happens and
 whether it is falling, without building a second copy of that personal data in a
@@ -1402,7 +1422,7 @@ Each event contains exactly (per [`privacy-telemetry.md`](../../../contracts/pri
 "browser_guard"`, the browser family and major version (for example `chrome-126`) and the
 extension version. Content scripts never receive the API key.
 
-The dashboard page **Browser Privacy Guard** shows, for a 7- or 30-day window: **Prompts
+The dashboard page **Browser Guard** (`/privacy-guard`, under **Protection**) shows, for a 7- or 30-day window: **Prompts
 protected**, **Items masked**, **Blocked sends**, **Active browser installs**, **By entity
 type**, **By AI site**, **Daily activity** and **Recent privacy events**. An **Enroll browsers**
 panel generates a managed-policy JSON snippet for a chosen mode, with the control-plane URL
@@ -1410,7 +1430,7 @@ filled in and a placeholder for the tenant API key. Events are stored under the 
 telemetry retention class and read only by tenant members.
 
 **How to use**
-1. Create a write-capable tenant API key on the dashboard's **API Keys** page.
+1. Create a write-capable tenant API key on the dashboard's **API keys** page.
 2. Put `telemetry: { "controlPlaneUrl": "https://…", "apiKey": "…" }` into managed policy,
    or let a user enter it under Options → **Organization connection** (**Save connection**,
    **Disconnect**).
@@ -1461,8 +1481,8 @@ characters is not sent. After three consecutive failures the host is considered 
 The host's `PERSON`, `ADDRESS` and `LOCATION` spans (only types enabled in
 `enabledEntities`) are tagged `source: "native-ner"` with a fixed score of 0.9 and merged
 with the rule findings before masking. When the host gives no usable answer the prompt is
-checked with the rules only, and the in-page toast or bubble says "Advanced name and
-address detection (native host) is unavailable: checked with built-in rules only." (once
+checked with the rules only, and the in-page toast or bubble says "Names and addresses
+were checked with built-in rules only: the AIDR Privacy helper app could not be used." (once
 per page for prompts that turn out clean). Nothing is persisted, and only the text itself
 is sent (no URL, site, tab or user data).
 Uploaded images (and pictures inside Office/OpenDocument files) are sent the same way as an

@@ -25,9 +25,13 @@ Two statements elsewhere in these docs can look contradictory; both are true:
   central features off and decides every call locally, exactly as above. A signed
   release build also verifies its own files against the release trust key
   (`integrity.public_keys_pem`, see [Integrity verification](integrity.md)) before it
-  inspects anything. Without that key it blocks every tool call and says so
-  (`Singularity AIDR inspection unavailable`); it does not run unprotected. The desktop
-  installers already contain the key; the per-tool packages need it provisioned first.
+  inspects anything. Without that key it blocks every tool call and says so ("Singularity
+  AIDR blocked this action because it cannot verify its own installation (release
+  verification key missing) … aidr setup --release-key <key.pem>"); it does not run
+  unprotected. The desktop installers already contain the key and `aidr setup` sets it up
+  for each user; for the per-tool packages run `aidr setup --release-key <file.pem>` once
+  (it asks the operator to confirm and prints the key's fingerprint). `aidr doctor` shows
+  whether the key is set up.
 
 ## Current customer-installation status
 
@@ -44,7 +48,13 @@ desktop installer for its OS: download it from the AIDR dashboard's Download
 page, run it, restart your AI tools. It bundles the standalone `aidr` CLI and
 hook binaries, the rules and the release trust key (no Node.js), runs
 `aidr setup` for the logged-in user and ends with `aidr status` /
-`aidr verify` showing what is protected and what still needs a step. Windows
+`aidr verify` showing what is protected and what still needs a step. If no
+supported AI tool is installed for that user yet, setup changes nothing and exits
+with code `3` (not an error; the package still installs): install the AI tool,
+then run `aidr setup`. Installer endpoints update with `aidr update` (`--check`
+only reports), which verifies the signed catalog and the installer's SHA-256,
+runs `aidr verify` and puts the previous version back on failure; `update.auto`
+(`notify` by default, `install`, `off`) controls the automatic check. Windows
 (signed MSI, also for Intune / SCCM / GPO) and Linux (.deb, .rpm, tarball)
 installers are described in [Desktop installers](installation/desktop-installers.md).
 **macOS installers are not offered yet**; on macOS use the connector packages
@@ -64,7 +74,8 @@ features require a separately deployed control plane and an operator-provisioned
 runtime configuration. Check the tested host versions in the
 [compatibility matrix](compatibility-matrix.md).
 
-1. Provision the release trust key in `integrity.public_keys_pem`.
+1. Provision the release trust key: `aidr setup --release-key <file.pem>` writes it to
+   `integrity.public_keys_pem` after operator confirmation.
 2. Install the exact approved connector version using [Package Installation](package-installation.md).
 3. Complete that host's registration and trust steps.
 4. Use managed features only after the operator has deployed the control plane and supplied the signed tenant configuration.
@@ -81,9 +92,10 @@ after the deployed authentication method has passed a live end-to-end check.
 
 Download the Claude plugin archive from a publisher-verified release bundle and
 verify the bundle's signature and artifact hashes before extracting it. Before
-installing, provision the independently distributed Ed25519 public key in
-`integrity.public_keys_pem` in `~/.singularity-aidr/config.json` (Windows:
-`%USERPROFILE%\.singularity-aidr\config.json`):
+installing, provision the independently distributed Ed25519 public key with
+`aidr setup --release-key <file.pem>`, which writes it to `integrity.public_keys_pem` in
+`~/.singularity-aidr/config.json` (Windows:
+`%USERPROFILE%\.singularity-aidr\config.json`). The resulting configuration is:
 
 ```json
 { "integrity": { "enabled": true, "verify_on_start": true, "public_keys_pem": ["-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"] } }
@@ -91,7 +103,7 @@ installing, provision the independently distributed Ed25519 public key in
 
 Release builds are managed-only and verify their signed artifacts before they
 inspect anything; when this trust configuration is missing or invalid they block
-every tool call (`Singularity AIDR inspection unavailable`). See
+every tool call and name the fix (`aidr setup --release-key <key.pem>`). See
 [Integrity verification](integrity.md). The same key is required for every
 connector below. Never put a signing private key on an endpoint. Then, from the Claude Code prompt:
 
@@ -163,11 +175,13 @@ The CLI is a separate setup and diagnostics package. Install it from the private
 registry using [Package Installation](package-installation.md), then run
 `aidr setup --dry-run` to see what it would do and `aidr setup` to configure AIDR
 and install or update the connector of every agent host found in your home
-directory. Local mode (the default) needs no account, credential or OS credential
+directory. Exit code `3` means no supported AI tool was found yet (nothing failed);
+`1` is a real problem. Local mode (the default) needs no account, credential or OS credential
 vault, so this works on headless Linux, WSL and containers too; only a managed
 configuration stores a credential (in the OS vault, or the machine-bound
 encrypted file store `~/.singularity-aidr/sealed` where there is none). Commercial
-builds additionally need the operator-provided release verification key.
+builds additionally need the operator-provided release verification key:
+`aidr setup --release-key <file.pem>`.
 
 ## Verify It Works
 
@@ -176,7 +190,9 @@ because setup registered them while they were open, and hosts that need a
 manual step with the exact command. `aidr verify` then passes a harmless canary
 through each registered connector's real hook entry point as data (nothing is
 executed) and prints PASS / FAIL / SKIP per host; in-process plugins (OpenCode,
-OpenClaw) are SKIP and are confirmed inside the host.
+OpenClaw) are SKIP and are confirmed inside the host. `aidr doctor` prints one line per
+check and exits non-zero on a problem; `aidr doctor --verbose` adds the reason and the
+fix under each line.
 
 Then verify with the safe, non-executing deny canary in the host acceptance
 procedure in the [first-customer runbook](../deploy/FIRST_CUSTOMER.md). Do not
@@ -194,8 +210,11 @@ records it as `reputation_not_checked` (not checked, never "clean"). A rule hit,
 a likely typosquat (`npm install lodahs`) or an install straight from a URL, Git
 or local path still asks or denies. To hold every unchecked URL or package for
 review instead, set `url_check.unchecked_action` / `package_check.unchecked_action`
-to `"ask"` (see [Configuration](configuration.md#url_check)). On Codex, Cursor,
-OpenClaw and OpenCode an `ask` blocks the call until an operator approves it.
+to `"ask"` (see [Configuration](configuration.md#url_check)). On Codex, OpenClaw and
+OpenCode an `ask` blocks the call until a person approves it in their own terminal: the
+message shows the command, for example `aidr approve 3f9c2a7b` (the first 8 characters
+of the id); `aidr approve` alone lists the waiting actions to pick from. Cursor
+`preToolUse` asks are denied.
 
 ## Uninstall
 

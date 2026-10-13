@@ -29,7 +29,8 @@ Desteklenen yapay zekâ araçları: Claude Code, OpenCode ve OpenClaw'u yükleyi
 Codex, Cursor ve VS Code (Cursor ve VS Code: önizleme — henüz gerçek ortam kabul kanıtı
 yok) için `aidr status` komutunun yazdırdığı bir ek adım gerekir.
 
-1. **İndirin.** Şirketinizin AIDR paneline giriş yapın ve **İndirmeler** sayfasını açın.
+1. **İndirin.** Şirketinizin AIDR paneline giriş yapın ve **Cihazlar ve indirmeler**
+   altındaki **İndirmeler** sayfasını açın.
    Sayfa sisteminize uygun yükleyiciyi seçer. Her dosyanın SHA-256 değerini ve bunu
    karşılaştırmak için bir komutu da gösterir; şirketiniz isterse kullanın.
 2. **Kurun.**
@@ -55,7 +56,11 @@ yok) için `aidr status` komutunun yazdırdığı bir ek adım gerekir.
      sudo ./singularity-aidr-<sürüm>-linux-x64/install.sh
      ```
 
-   Yükleyici, sonunda AIDR'yi sizin için (yükleyiciyi çalıştıran kullanıcı) ayarlar.
+   Yükleyici, sonunda AIDR'yi sizin için (yükleyiciyi çalıştıran kullanıcı) ayarlar;
+   sürüm anahtarı da buna dahildir, yapılandırmanız gereken bir şey yoktur. Yapay zekâ
+   araçlarınızdan hiçbiri henüz kurulu değilse "No AI tool … was found" yazar ve kurulum
+   yine tamamlanır (kurulum çıkış kodu `3`; hata değildir): yapay zekâ aracınızı kurun,
+   ardından bir kez `aidr setup` çalıştırın.
 3. **Yapay zekâ araçlarınızı yeniden başlatın.** Zaten açık olan bir araç AIDR'yi ancak
    yeniden başlatıldıktan sonra kullanır.
 4. **Denetleyin.** Yeni bir terminal açıp şunları çalıştırın:
@@ -68,16 +73,41 @@ yok) için `aidr status` komutunun yazdırdığı bir ek adım gerekir.
    `aidr status` tek bir satırla biter: korunan araçlar, yeniden başlatılması gereken
    araçlar ve elle bir adım gerektiren araçlar (komutuyla birlikte). `aidr verify`, her
    korunan aracın AIDR denetiminden zararsız bir deneme komutu geçirir (hiçbir şey
-   çalıştırılmaz) ve her biri için **PASS**, **FAIL** veya **SKIP** yazar. Araçlarınız
-   PASS gösteriyorsa işlem tamamdır. SKIP, denetimin aracın içinde yapıldığı anlamına
-   gelir (OpenCode, OpenClaw): aracı bir kez açın ve AIDR'nin orada listelendiğini görün.
+   çalıştırılmaz) ve her biri için **BAŞARILI**, **BAŞARISIZ** veya **ATLANDI** yazar
+   (İngilizce sistemde PASS, FAIL, SKIP). Araçlarınız BAŞARILI gösteriyorsa işlem
+   tamamdır. ATLANDI, denetimin aracın içinde yapıldığı anlamına gelir (OpenCode,
+   OpenClaw): aracı bir kez açın ve AIDR'nin orada listelendiğini görün.
+5. **Güncel kalın.** Bir yapay zekâ aracı başladığında AIDR, şirketinizin portalında (ya
+   da BT'nin belirlediği güncelleme kaynağında) daha yeni bir sürüm olup olmadığını en
+   fazla günde bir kez denetler ve varsa söyler ("… sürümü yayımlandı … Kurmak için şunu
+   çalıştırın: aidr update"). Ardından:
+
+   ```sh
+   aidr update --check   # daha yeni sürüm var mı? hiçbir şeyi değiştirmez
+   aidr update           # doğrular, kurar, 'aidr verify' çalıştırır; sorun çıkarsa eski sürümü geri koyar
+   ```
+
+   Linux'ta komutu `sudo` ile değil kendi kullanıcınızla çalıştırın (kurarken parolanızı
+   kendisi sorar); Windows'ta makine geneli kurulum, **Yönetici olarak çalıştır** ile
+   açılmış bir terminal ister. `update.auto` (varsayılan `notify`) `install` (arka planda
+   kurar) ya da `off` da olabilir. BT'nin cihaz yönetimiyle işaretlediği bilgisayarlarda
+   güncellemeler BT'den gelir; `aidr update` yalnızca denetler.
 
 Bir sorun varsa:
 
 - **`aidr` bulunamadı (Windows):** yeni bir terminal açın.
-- **FAIL çıkıyor veya her işlem engelleniyor:** `aidr doctor` çıktısını ya da
-  `aidr support-bundle` komutunun ürettiği dosyayı BT ekibinize gönderin. Engeli kaldırmak
-  için AIDR'yi kaldırmayın.
+- **BAŞARISIZ çıkıyor veya her işlem engelleniyor:** `aidr doctor` çalıştırın (her denetim
+  için bir satır; `aidr doctor --verbose` her satırın altına nedenini ve çözümünü ekler)
+  ve çıktısını ya da `aidr support-bundle` komutunun ürettiği dosyayı BT ekibinize
+  gönderin. Engeli kaldırmak için AIDR'yi kaldırmayın.
+- **Sürüm anahtarı eksik olduğu için her işlem engelleniyor** ("sürüm anahtarı
+  ayarlanmamış" ya da "sürüm doğrulama anahtarı eksik"): bir kez `aidr setup` çalıştırın;
+  yükleyicinin getirdiği anahtarı ayarlar. Yükleyici olmadan elle yapılan kurulumda BT
+  ekibinizden sürüm anahtarı dosyasını isteyin ve
+  `aidr setup --release-key <anahtar.pem>` çalıştırın.
+- **"… desteklenen bir yapay zekâ aracı bulunamadı" ya da "No AI tool … was found":**
+  yapay zekâ aracınızı (Claude Code, Cursor, VS Code, Codex, OpenCode ya da OpenClaw)
+  kurun, ardından `aidr setup` çalıştırın.
 - **macOS:** masaüstü yükleyicisi henüz sunulmuyor. Browser Guard (B bölümü) macOS'ta
   Chrome, Edge ve Firefox ile çalışır.
 
@@ -130,8 +160,16 @@ sudo dnf install -y ./singularity-aidr-<sürüm>-1.x86_64.rpm     # RHEL/Fedora
 sudo -u ayse -H aidr setup                                     # kullanıcının kendi sudo'su olmadan kurulduysa, her kullanıcı için bir kez
 ```
 
-Güncelleme: yeni yükleyiciyi aynı yolla dağıtın; kayıtlar korunur. Ayrıntılar, kaldırma ve
-paket imzası denetimi: [Masaüstü yükleyicileri](installation/desktop-installers.tr.md).
+Betikler ve algılama kuralları için kurulum çıkış kodları: `0` korunuyor, `3` o
+kullanıcıda henüz desteklenen bir yapay zekâ aracı kurulu değil (hata değildir; paket ve
+MSI yine kurulur), `1` gerçek bir kurulum sorunu. Yükleyici olmadan elle yapılan kurulum
+önce sürüm anahtarını ister: `aidr setup --release-key <anahtar.pem>`.
+
+Güncelleme: yeni yükleyiciyi aynı yolla dağıtın; kayıtlar korunur. Uç noktaların
+güncellemeyi size bırakması için kuruluma `AIDR_MDM_MANAGED=1` ekleyin; bu olmadan uç
+noktalar portalınızdan `aidr update` ile kendilerini güncelleyebilir (`update.auto`).
+Ayrıntılar, kaldırma ve paket imzası denetimi:
+[Masaüstü yükleyicileri](installation/desktop-installers.tr.md).
 
 ### Browser Guard'ı zorunlu kurun
 
@@ -160,16 +198,17 @@ kendi işlemini hiçbir zaman onaylayamaz.
 - **Claude Code** varsayılan olarak kendi onay penceresini gösterir; kararı kullanıcı
   orada verir.
 - **Codex, OpenCode, OpenClaw** (ve `operator_approvals.mode` değeri `"operator"` olduğunda
-  Claude Code, Cursor ve VS Code): işlem engellenir. Bilgisayarın başındaki kişi kendi
-  terminalinde şunları çalıştırır:
+  Claude Code, Cursor ve VS Code): işlem engellenir ve mesaj tam komutu gösterir.
+  Bilgisayarın başındaki kişi onu kendi terminalinde çalıştırır:
 
   ```sh
-  aidr pending                 # bekleyen işlemler ve kimlikleri
-  aidr approve <kimlik>        # onaylamak için "approve" yazın
+  aidr approve 3f9c2a7b        # kimliğin ilk 8 karakteri yeterlidir; onaylamak için "approve" yazın
+  aidr approve                 # ya da: bekleyenlerin numaralı listesinden seçin
+  aidr pending                 # bekleyen her şeyi görün
   ```
 
-  Ardından yapay zekâ aracından aynı işlemi yeniden denemesini ister. Onay o tek işleme
-  bir kez izin verir; varsayılan süre 15 dakikadır.
+  AIDR "Onaylandı. Yapay zekâ aracından 15 dakika içinde yeniden denemesini isteyin."
+  yazar. Onay o tek işleme bir kez izin verir; varsayılan süre 15 dakikadır.
 - **AIDR paneli kullanılıyorsa** (yönetilen mod), sahipler ve yöneticiler iki adımlı
   doğrulamayla giriş yapıp **Onaylar** sayfasından da onay verebilir.
 
@@ -183,7 +222,10 @@ bağlandıkları panel sizin ortamınızda çalışır. Bu belgeler İngilizcedi
 - Docker Compose ile tek Linux sunucusu: [AIDR on-prem installation](../deploy/onprem/README.md)
 - Helm ile Kubernetes: [Running AIDR on Kubernetes](operations/kubernetes.md)
 - Genel bakış, internetsiz (air-gapped) kurulum ve topolojiler: [On-premises deployment](deployment/onprem.md)
-- Güncellemeler: [Upgrade runbook](../deploy/UPGRADE.md)
+- Güncellemeler: tek komut, `pnpm onprem:upgrade --to <yeni sürüm dizini>` (yedek,
+  denetimler, yükseltme, sağlık denetimi; bir adım başarısız olursa durur ve ne
+  yapılacağını söyler): [On-prem kurulumu yükseltme](operations/onprem-upgrade.tr.md)
+  (Türkçe); sözleşmeler: [Upgrade runbook](../deploy/UPGRADE.md)
 - İlk müşteri kurulum ve kabul kılavuzu (Türkçe): [FIRST_CUSTOMER.md](../deploy/FIRST_CUSTOMER.md)
 
 Role göre tüm kurulum ve dağıtım belgeleri: [Kurulum belgeleri](installation/README.tr.md).

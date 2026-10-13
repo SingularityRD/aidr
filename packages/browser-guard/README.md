@@ -452,7 +452,7 @@ work-account Copilot can be sanctioned while the consumer one is blocked.
 #### Allow / block from the dashboard
 
 Owners and administrators can also allow or block a detected service from the
-dashboard (Browser Privacy Guard → Shadow AI; AAL2, audited). The decision is an AI
+dashboard (Browser Guard → Shadow AI; AAL2, audited). The decision is an AI
 governance register entry (`ai_site`, catalog id; `approved` or `banned`) and reaches
 enrolled browsers as a **signed** document from
 `GET {controlPlaneUrl}/functions/v1/browser-guard-policy`, authenticated with the
@@ -466,7 +466,7 @@ the last verified one stays in force. Refresh: startup, every managed-policy cha
 every 15 minutes (`aidr-dashboard-policy` alarm).
 
 The same signed document carries the tenant's **Require native NER** setting
-(Browser Privacy Guard → Require native NER; owners/admins, AAL2, audited; switching
+(Browser Guard → Require native NER; owners/admins, AAL2, audited; switching
 it off is refused while four-eyes change control is on) as
 `browser_guard.require_native_ner: true`; the key is omitted when the setting is off,
 so documents of tenants that do not use it stay acceptable to extension versions that
