@@ -31,6 +31,10 @@ node packages/mcp-gateway/dist/aidr-mcp-gateway.mjs /secure/path/gateway.json
 Point the MCP client at `http://127.0.0.1:<port>/mcp/<serverId>` and send
 `Authorization: Bearer <token>` on every request. For a client that launches a
 stdio command, use `dist/aidr-mcp-stdio.mjs` instead (see the package README).
+The stdio bridge runs as the agent's own user, so it is a convenience mode and
+not a credential-isolation or approval boundary; it prints a warning saying so
+on every start. Requests must use a loopback `Host` for the bound port (or an
+entry in `allowedHosts`), and uncompressed UTF-8 JSON bodies.
 
 ## Request path
 
@@ -41,7 +45,12 @@ first one that fails.
    client. The tool must be on that client's allowlist for this tenant and
    server.
 2. **Manifest attestation.** The upstream's signed manifest must be approved
-   by an operator, and the live `tools/list` must match it exactly.
+   by an operator, and the live `tools/list` must match it exactly. Every
+   manifest is also verified at startup: an expired, over-long (default
+   maximum lifetime 7 days, `manifestPolicy.maxLifetimeDays`) or otherwise
+   invalid manifest refuses startup with its precise reason, and the HTTP
+   gateway reloads re-signed manifests from its configuration file. See
+   "Signed manifest lifetime and rotation" in the package README.
 3. **Argument schema.** Arguments must validate against the signed input
    schema. Only a bounded, ReDoS-resistant subset of JSON Schema is accepted.
 4. **Threat and DLP evaluation.** The call is normalised to
@@ -50,7 +59,10 @@ first one that fails.
    allowlist, policy, and the server's tenant DLP policy if one is configured.
 5. **Upstream call.** The request goes out over the pinned-DNS transport,
    which rejects redirects and private addresses.
-6. **Result inspection.** Text is scanned. Binary content gets a bounded
+6. **Result inspection.** Text is scanned by pattern-based rules, including
+   consecutive content blocks joined in order and readable base64/hex
+   decodings. Paraphrased instructions are not recognised; add an
+   `outputGuard` for semantic inspection. Binary content gets a bounded
    inspection (see below). Output schemas are enforced.
 
 ### Decisions returned to the client
@@ -186,10 +198,12 @@ AIDR MCP gateway failed: <stage>[:<detail>]
 ```
 
 The stage is one of `integrity_verification_failed`, `config_unreadable`,
-`config_parse_failed`, `config_invalid`, `startup_failed`, `approval_failed`
-or `bridge_stopped`. The detail is a fixed code, for example `enoent`,
-`invalid_json`, `invalid_port`, `unknown_tenant_server`,
-`stdio_client_binding_rejected` or `direct_upstream_bypass_detected`. The
+`config_parse_failed`, `config_invalid`, `startup_failed`, `approval_failed`,
+`stdio_isolation_refused` or `bridge_stopped`. The detail is a fixed code, for
+example `enoent`, `invalid_json`, `invalid_port`, `unknown_tenant_server`,
+`stdio_client_binding_rejected`, `stdio_upstream_credential_refused`,
+`manifest_expired`, `manifest_lifetime_too_long` or
+`direct_upstream_bypass_detected`. The
 gateway never prints error text itself, file contents, tokens or tool data.
 
 ## Limits

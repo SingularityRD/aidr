@@ -39,6 +39,7 @@ const KNOWN_MESSAGES = new Set([
 	"upstream_auth_unavailable",
 	"unknown tenant server",
 	"approval rejected",
+	"stdio upstream credential refused",
 ]);
 
 export class OperatorStageError extends Error {

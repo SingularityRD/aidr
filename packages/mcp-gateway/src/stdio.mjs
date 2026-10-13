@@ -1,6 +1,6 @@
 import { once } from "node:events";
-import { authenticateBearer, MCP_PROTOCOL_VERSIONS } from "./config.mjs";
 import { readMcpSseMessages } from "../../core/dist/mcp-transport.js";
+import { authenticateBearer, MCP_PROTOCOL_VERSIONS } from "./config.mjs";
 
 const ENV_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -75,6 +75,27 @@ export function validateStdioBinding(
 		throw new Error("stdio client binding rejected");
 	}
 	return token;
+}
+
+/**
+ * The stdio bridge runs as the MCP client's (the agent's) own process, so its
+ * configuration, environment and state are within the agent user's reach: it
+ * is not a credential-isolation boundary. Every start says so on stderr. A
+ * server with an upstream credential (`upstreamAuthEnv`) puts that credential
+ * in the agent's environment; `stdioUpstreamCredentials: "refuse"` makes that
+ * a startup refusal instead of a warning. Messages carry no secret values.
+ */
+export function assertStdioIsolationPolicy(config, { tenantId, serverId, stderr }) {
+	stderr.write(
+		"AIDR MCP stdio bridge warning: stdio mode runs as the agent's user; the agent can read this configuration and environment, so it is not a credential-isolation or approval boundary. Use the HTTP gateway as an operator-owned service for that guarantee.\n",
+	);
+	const server = config.servers.find((item) => item.tenantId === tenantId && item.id === serverId);
+	if (!server?.upstreamAuthEnv) return;
+	if (config.stdioUpstreamCredentials === "refuse")
+		throw new Error("stdio upstream credential refused");
+	stderr.write(
+		"AIDR MCP stdio bridge warning: upstreamAuthEnv is set, so the upstream credential is in the agent's environment and the agent can call the upstream directly. Set stdioUpstreamCredentials to refuse to block this.\n",
+	);
 }
 
 function parseFrame(line) {

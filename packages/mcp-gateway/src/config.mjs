@@ -374,6 +374,52 @@ function validateBinaryOutput(input, maxBodyBytes) {
 	return { maxDecodedBytes, allowedMimeTypes: [...allowedMimeTypes] };
 }
 
+/** Signed-manifest lifetime policy (`manifestPolicy`), in whole days. */
+export const MANIFEST_POLICY_DEFAULTS = Object.freeze({
+	maxLifetimeDays: 7,
+	expiryWarningDays: 2,
+	maxLifetimeDaysCeiling: 90,
+});
+
+function validateManifestPolicy(input) {
+	if (input !== undefined)
+		requireKeys(input, ["maxLifetimeDays", "expiryWarningDays"], "manifest policy");
+	const maxLifetimeDays = input?.maxLifetimeDays ?? MANIFEST_POLICY_DEFAULTS.maxLifetimeDays;
+	if (
+		!Number.isSafeInteger(maxLifetimeDays) ||
+		maxLifetimeDays < 1 ||
+		maxLifetimeDays > MANIFEST_POLICY_DEFAULTS.maxLifetimeDaysCeiling
+	)
+		throw new GatewayConfigError("invalid manifest max lifetime");
+	const expiryWarningDays =
+		input?.expiryWarningDays ??
+		Math.min(MANIFEST_POLICY_DEFAULTS.expiryWarningDays, maxLifetimeDays);
+	if (
+		!Number.isSafeInteger(expiryWarningDays) ||
+		expiryWarningDays < 0 ||
+		expiryWarningDays > maxLifetimeDays
+	)
+		throw new GatewayConfigError("invalid manifest expiry warning window");
+	return { maxLifetimeDays, expiryWarningDays };
+}
+
+const HOST = /^(?:[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?|\[[0-9a-f:.]{2,45}\]):[0-9]{1,5}$/;
+
+/**
+ * Extra `Host` header values (`host:port`, for example an operator reverse
+ * proxy). The loopback names for the bound port are always accepted.
+ */
+function validateAllowedHosts(input) {
+	if (input === undefined) return [];
+	if (
+		!Array.isArray(input) ||
+		input.length > 64 ||
+		input.some((host) => typeof host !== "string" || !HOST.test(host.toLowerCase()))
+	)
+		throw new GatewayConfigError("invalid allowedHosts");
+	return [...new Set(input.map((host) => host.toLowerCase()))];
+}
+
 function validateServerInitiated(input) {
 	const policy = Object.fromEntries(SERVER_INITIATED_CATEGORIES.map((key) => [key, "deny"]));
 	if (input === undefined) return policy;
@@ -422,9 +468,17 @@ export function validateGatewayConfig(input) {
 			"serverInitiated",
 			"agentProfiles",
 			"tenantQuotas",
+			"manifestPolicy",
+			"allowedHosts",
+			"stdioUpstreamCredentials",
 		],
 		"gateway config",
 	);
+	if (
+		input.stdioUpstreamCredentials !== undefined &&
+		!["warn", "refuse"].includes(input.stdioUpstreamCredentials)
+	)
+		throw new GatewayConfigError("invalid stdioUpstreamCredentials");
 	if (input.routingRequired !== undefined && typeof input.routingRequired !== "boolean")
 		throw new GatewayConfigError("invalid routing requirement");
 	if (typeof input.stateDir !== "string" || !input.stateDir.trim())
@@ -466,6 +520,9 @@ export function validateGatewayConfig(input) {
 		serverInitiated: validateServerInitiated(input.serverInitiated),
 		agentProfiles: validateAgentProfiles(input.agentProfiles, clients),
 		tenantQuotas: validateTenantQuotas(input.tenantQuotas),
+		manifestPolicy: validateManifestPolicy(input.manifestPolicy),
+		allowedHosts: validateAllowedHosts(input.allowedHosts),
+		stdioUpstreamCredentials: input.stdioUpstreamCredentials ?? "warn",
 	});
 }
 
