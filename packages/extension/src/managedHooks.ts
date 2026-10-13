@@ -27,4 +27,8 @@ export interface ManagedHookHealth {
 	runnerPath: string | undefined;
 	installedEvents: string[];
 	managedCommands: string[];
+	/** Why a managed command would not reach a hook runner (dangling or legacy shim, ...). */
+	problems: string[];
+	/** Managed hooks are installed and every managed command reaches a runner. */
+	healthy: boolean;
 }

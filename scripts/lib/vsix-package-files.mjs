@@ -14,6 +14,9 @@ export const VSIX_PACKAGE_FILES = Object.freeze([
 	"dist/aidr-hook.cjs",
 	// Real hook runner; aidr-hook.cjs is the compile-cache bootstrap that requires it.
 	"dist/aidr-hook.bundle.cjs",
+	// Stable hook launcher (copied to the AIDR home) and the vscode:uninstall cleanup.
+	"dist/aidr-hook-launcher.cjs",
+	"dist/aidr-uninstall.cjs",
 	...VSIX_INTEGRITY_EVIDENCE_FILES,
 	"dist/resources/**",
 	// Native AMSI addon (koffi, MIT) loaded by the hook runner; manifest-covered.

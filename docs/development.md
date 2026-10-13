@@ -446,7 +446,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"t","hook_e
 
 ## Building the Extension
 
-See [Release packaging](../packages/extension/README.md#release-packaging) in the extension README and the [VS Code/Cursor section of the deployment runbook](runbooks/deployment.md#vs-codecursor-extension-publishing) for Cursor/VS Code VSIX packaging.
+`pnpm --filter aidr-cursor build` builds the extension `dist/`. Cursor/VS Code VSIX packaging (signed release candidates only) is described in [Release packaging](../packages/extension/README.md#release-packaging) and the [VS Code/Cursor section of the deployment runbook](runbooks/deployment.md#vs-codecursor-extension-publishing).
 
 ---
 
