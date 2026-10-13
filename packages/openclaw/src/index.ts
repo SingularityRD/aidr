@@ -112,7 +112,7 @@ function integrityGatedTool(
 }
 
 function initFailureBlock(error: unknown): BlockResult {
-	return { block: true, blockReason: formatInitFailureMessage(initFailureCode(error)) };
+	return { block: true, blockReason: formatInitFailureMessage(initFailureCode(error), error) };
 }
 
 const PLUGIN_ID = "aidr-openclaw";
@@ -341,7 +341,7 @@ function registerGuarded(api: PluginApi): void {
 			try {
 				await integrityReady;
 			} catch (error) {
-				return initFailureQuarantine(formatInitFailureMessage(initFailureCode(error)));
+				return initFailureQuarantine(formatInitFailureMessage(initFailureCode(error), error));
 			}
 			try {
 				// Refresh signed output-policy trust; a refresh failure quarantines below.

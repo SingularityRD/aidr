@@ -3,6 +3,7 @@
  * Plain text + Unicode only — no ANSI escape codes.
  */
 
+import { displayReason } from "./i18n/display.js";
 import { severityLabel, t, upperCaseFor } from "./i18n/index.js";
 import type { SessionStartCoverageFinding, SessionStartResult } from "./session-start.js";
 import type { PluginScanResult, PluginScanUnavailableCheck } from "./types.js";
@@ -181,7 +182,7 @@ export function formatThreatBanner(
 
 			const emoji = severityEmoji(f.severity);
 			lines.push(`${emoji} ${t("session.label.plugin").padEnd(PAD)}${result.plugin.key}`);
-			lines.push(kv(t("session.label.threat"), f.title));
+			lines.push(kv(t("session.label.threat"), displayReason(f.title)));
 			lines.push(kv(t("session.label.severity"), upperCaseFor(severityLabel(f.severity))));
 			if (f.artifact) {
 				lines.push(kv(t("session.label.artifact"), f.artifact));

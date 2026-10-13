@@ -540,7 +540,7 @@ describe("package check availability is fail-closed", () => {
 			source: "local_only",
 			artifacts: ["https://unlisted.example/payload.sh"],
 		});
-		expect(verdict.reasons.join(" ")).toContain("url_check is not enabled");
+		expect(verdict.reasons.join(" ")).toContain("URL reputation is not set up");
 		expect(verdict.reasons.join(" ")).toContain("not a clean reputation result");
 	});
 

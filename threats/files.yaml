@@ -12,6 +12,7 @@
   pattern: "(/etc/passwd|/etc/shadow|/etc/sudoers)"
   match_on: file_path
   title: "Access system authentication file"
+  title_tr: "Sistem kimlik doğrulama dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -24,6 +25,7 @@
   pattern: "\\.ssh/authorized_keys"
   match_on: file_path
   title: "Access SSH authorized_keys (unauthorized access persistence)"
+  title_tr: "SSH authorized_keys dosyasına erişim (yetkisiz kalıcı erişim)"
   expires_at: null
   revoked: false
 
@@ -36,6 +38,7 @@
   pattern: "\\.ssh/(id_rsa|id_ed25519|id_ecdsa|id_dsa|config)$"
   match_on: file_path
   title: "Access SSH key or config file"
+  title_tr: "SSH anahtarı ya da yapılandırma dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -48,6 +51,7 @@
   pattern: "\\.(bashrc|zshrc|profile|bash_profile|zprofile|zshenv)$"
   match_on: file_path
   title: "Access shell RC file (persistence mechanism)"
+  title_tr: "Kabuk başlangıç (RC) dosyasına erişim (kalıcılık yöntemi)"
   expires_at: null
   revoked: false
 
@@ -60,6 +64,7 @@
   pattern: "(/etc/cron\\.(d|daily|hourly|weekly|monthly)/|/var/spool/cron/)"
   match_on: file_path
   title: "Access cron directory"
+  title_tr: "cron dizinine erişim"
   expires_at: null
   revoked: false
 
@@ -72,6 +77,7 @@
   pattern: "/etc/systemd/system/"
   match_on: file_path
   title: "Access systemd service unit file"
+  title_tr: "systemd hizmet birim dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -88,6 +94,7 @@
   pattern: "((^|[\\/\\\\])\\.env(\\.local|\\.production|\\.prod|\\.staging|\\.stage|\\.development|\\.dev|\\.test)?|\\.aws/credentials|\\.netrc|\\.pgpass|(^|[\\/\\\\])\\.git-credentials|/etc/shadow|/etc/gshadow)$"
   match_on: file_path
   title: "Access credential or environment file"
+  title_tr: "Kimlik bilgisi ya da ortam (env) dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -100,6 +107,7 @@
   pattern: "\\.git/hooks/"
   match_on: file_path
   title: "Access git hook (potential code execution on git events)"
+  title_tr: "Git kancasına erişim (git işlemlerinde kod çalıştırabilir)"
   expires_at: null
   revoked: false
 
@@ -112,6 +120,7 @@
   pattern: "(key\\.properties|release\\.keystore|\\.jks|\\.keystore)$"
   match_on: file_path
   title: "Access Android signing file"
+  title_tr: "Android imzalama dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -124,6 +133,7 @@
   pattern: "(google-services\\.json|GoogleService-Info\\.plist)$"
   match_on: file_path
   title: "Access Firebase configuration file"
+  title_tr: "Firebase yapılandırma dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -136,6 +146,7 @@
   pattern: "(application_default_credentials\\.json|\\.azure/(accessTokens|msal_token_cache)\\.json|\\.config/doctl/config\\.yaml)$"
   match_on: file_path
   title: "Access cloud provider credential file"
+  title_tr: "Bulut sağlayıcısı kimlik bilgisi dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -148,6 +159,7 @@
   pattern: "(\\.npmrc|\\.pypirc|\\.gem/credentials|\\.cargo/credentials\\.toml|\\.docker/config\\.json)$"
   match_on: file_path
   title: "Access package manager credential file"
+  title_tr: "Paket yöneticisi kimlik bilgisi dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -160,6 +172,7 @@
   pattern: "\\.(tfstate(\\.backup)?|tfvars(\\.json)?)$"
   match_on: file_path
   title: "Access Terraform state or variables file"
+  title_tr: "Terraform durum ya da değişken dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -172,6 +185,7 @@
   pattern: "(master\\.key|credentials\\.yml\\.enc|secrets\\.yml|vault\\.yml|\\.vault-pass|\\.vault-token)$"
   match_on: file_path
   title: "Access secrets or vault file"
+  title_tr: "Gizli bilgi ya da kasa (vault) dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -187,6 +201,7 @@
   pattern: "\\.(pem|p12|pfx|p8)$"
   match_on: file_path
   title: "Access private key or certificate file"
+  title_tr: "Özel anahtar ya da sertifika dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -199,6 +214,7 @@
   pattern: "(\\.kube/config|kubeconfig(\\.yaml|\\.yml)?)$"
   match_on: file_path
   title: "Access Kubernetes configuration file"
+  title_tr: "Kubernetes yapılandırma dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -211,6 +227,7 @@
   pattern: "(\\.m2/settings\\.xml|gradle\\.properties)$"
   match_on: file_path
   title: "Access build system credential file"
+  title_tr: "Derleme sistemi kimlik bilgisi dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -223,6 +240,7 @@
   pattern: "\\.(bash_history|zsh_history|mysql_history|python_history|node_repl_history|psql_history|irb_history)$"
   match_on: file_path
   title: "Access shell or REPL history file"
+  title_tr: "Kabuk ya da REPL geçmiş dosyasına erişim"
   expires_at: null
   revoked: false
 
@@ -235,6 +253,7 @@
   pattern: "\\.idea/dataSources(\\.xml|/)"
   match_on: file_path
   title: "Access JetBrains IDE database credential file"
+  title_tr: "JetBrains IDE veritabanı kimlik bilgisi dosyasına erişim"
   expires_at: null
   revoked: false
 

@@ -98,6 +98,8 @@ const EVASIONS = [
 	"aidr uninstall",
 	"aidr uninstall --json",
 	"aidr setup --force",
+	"aidr setup --release-key /tmp/attacker.pem",
+	"aidr setup --release-key=./k.pem --yes",
 	"aidr setup -f",
 	"aidr setup --secret-store file --force",
 	"aidr-setup setup --force",

@@ -132,7 +132,7 @@ describe.skipIf(releaseBundle)("Codex PostToolUse output inspection (shipped hoo
 		});
 		const hook = next.wire?.hookSpecificOutput as Record<string, unknown> | undefined;
 		expect(hook?.permissionDecision).toBe("deny");
-		expect(String(hook?.permissionDecisionReason)).toContain('Toxic flow "injection_to_action"');
+		expect(String(hook?.permissionDecisionReason)).toContain("Risky combination in this session");
 
 		const fresh = runHook({
 			session_id: "thr_fresh",
@@ -142,7 +142,7 @@ describe.skipIf(releaseBundle)("Codex PostToolUse output inspection (shipped hoo
 			tool_use_id: "call_3",
 			cwd: home,
 		});
-		expect(JSON.stringify(fresh.wire ?? {})).not.toContain("Toxic flow");
+		expect(JSON.stringify(fresh.wire ?? {})).not.toContain("Risky combination");
 	});
 
 	it("inspects object keys, not only values, of a structured result", () => {

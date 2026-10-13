@@ -281,6 +281,14 @@ export {
 	createBehavioralDetectionOrchestrator,
 	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
+// One block/ask message shape for every connector
+export {
+	approveCommand,
+	type BlockApproval,
+	type BlockMessageOptions,
+	formatAgentBlockReason,
+	formatBlockMessage,
+} from "./block-message.js";
 // Build flavor
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
@@ -938,6 +946,13 @@ export {
 	type HostObservationRecord,
 	recordHostObservation,
 } from "./host-observation.js";
+// Plain-language display text for rule titles, categories and sources
+export {
+	categoryLabel,
+	displayReason,
+	registerReasonDisplay,
+	sourceLabel,
+} from "./i18n/display.js";
 // User-facing message catalog (en/tr) and locale resolution
 export {
 	createTranslator,
@@ -1002,7 +1017,12 @@ export {
 	writeSignedIncidentAnchorReceipt,
 } from "./incidents/index.js";
 // Connector initialisation failure (fail-closed load)
-export { formatInitFailureMessage, initFailureCode } from "./init-failure.js";
+export {
+	formatInitFailureMessage,
+	type IntegrityFailureMessage,
+	initFailureCode,
+	integrityFailureMessage,
+} from "./init-failure.js";
 // Installation ID
 export { getInstallationId } from "./installation-id.js";
 // Integrity (signed artifact manifest verification)

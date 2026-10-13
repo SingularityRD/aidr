@@ -94,12 +94,25 @@ describe("Claude Code commercial integrity (unsigned artifact)", () => {
 			}),
 		);
 		const output = JSON.parse(result.stdout) as {
+			systemMessage?: string;
 			hookSpecificOutput?: { permissionDecision?: string };
 		};
 		expect(output.hookSpecificOutput?.permissionDecision).toBe("deny");
+		// The person is told why and what fixes it, not "could not inspect".
+		expect(output.systemMessage).toContain(
+			"cannot verify its own installation (release verification key missing)",
+		);
+		expect(output.systemMessage).toContain("aidr setup --release-key <key.pem>");
 		const incidents = await integrityIncidents();
 		expect(incidents.length).toBeGreaterThan(0);
 		expect(JSON.stringify(incidents)).toContain("no_public_keys");
+	});
+
+	it("says at session start that every tool call is blocked, not that the session is unprotected", async () => {
+		const result = await run("session-start.cjs", "{}");
+		const output = JSON.parse(result.stdout) as { systemMessage?: string };
+		expect(output.systemMessage).toContain("every tool call in this session is blocked");
+		expect(output.systemMessage).not.toContain("not protected");
 	});
 
 	it("blocks a prompt before it reaches the model", async () => {

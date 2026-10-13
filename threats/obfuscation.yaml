@@ -11,6 +11,7 @@
   pattern: "base64\\s+(-d|--decode|-D)\\b[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)\\b"
   match_on: command
   title: "Base64 decode piped to shell execution"
+  title_tr: "Base64 ile çözülen içerik kabukta çalıştırılıyor"
   expires_at: null
   revoked: false
 
@@ -23,6 +24,7 @@
   pattern: "printf\\s+[\"']\\\\x[0-9a-fA-F]{2}(\\\\x[0-9a-fA-F]{2}){3,}"
   match_on: command
   title: "Hex escape sequences in printf (potential obfuscation)"
+  title_tr: "printf içinde onaltılık kaçış dizileri (gizleme olabilir)"
   expires_at: null
   revoked: false
 
@@ -35,6 +37,7 @@
   pattern: "\\|\\s*rev\\s*\\|\\s*(bash|sh|zsh|ksh|dash)"
   match_on: command
   title: "Reversed string piped to shell execution"
+  title_tr: "Ters çevrilmiş metin kabukta çalıştırılıyor"
   expires_at: null
   revoked: false
 
@@ -47,6 +50,7 @@
   pattern: "\\beval\\s+[^\\n]{0,300}\\bbase64\\s+(?:-d|--decode|-D)\\b|\\beval\\s+.{0,300}\\$\\(\\s*base64|python[3]?\\s+-c\\s+[\"'].{0,300}exec\\(.{0,300}decode"
   match_on: [command, content]
   title: "Eval with decode (obfuscated code execution)"
+  title_tr: "Çözülen kodun eval ile çalıştırılması (gizlenmiş kod çalıştırma)"
   expires_at: null
   revoked: false
 
@@ -59,6 +63,7 @@
   pattern: "\\|\\s*[\\\\'\"]+(bash|sh|zsh|ksh|dash)[\\\\'\"]{0,300}(\\s|$)"
   match_on: command
   title: "Shell metacharacter escaping to hide pipe target"
+  title_tr: "Kabuk özel karakterleriyle kanal hedefini gizleme"
   expires_at: null
   revoked: false
 
@@ -71,6 +76,7 @@
   pattern: "\\balias\\s+(bash|sh|zsh|curl|wget|nc|netcat|python|ruby|perl|node)="
   match_on: command
   title: "Alias redefinition of security-relevant command"
+  title_tr: "Güvenlikle ilgili bir komutun alias ile yeniden tanımlanması"
   expires_at: null
   revoked: false
 
@@ -82,6 +88,7 @@
   pattern: "\\b(function\\s+)?(bash|sh|curl|wget|nc|python|ruby|perl|node)\\s*\\(\\s*\\)"
   match_on: command
   title: "Function redefinition of security-relevant command"
+  title_tr: "Güvenlikle ilgili bir komutun fonksiyon olarak yeniden tanımlanması"
   expires_at: null
   revoked: false
 
@@ -94,6 +101,7 @@
   pattern: "python[23]?\\s+-c\\s+[\"'].{0,300}\\b(exec|eval|compile|__import__)\\b.{0,300}\\b(base64|decode|decompress)\\b"
   match_on: command
   title: "Python encoded payload execution via -c"
+  title_tr: "Python -c ile kodlanmış yükün çalıştırılması"
   expires_at: null
   revoked: false
 
@@ -107,6 +115,7 @@
   pattern: "node\\b[^\\n]{0,40}\\s-e\\s[\"'][^\"']{0,300}\\beval\\b[^\"']{0,300}\\b(?:Buffer\\.from|atob|base64)\\b"
   match_on: command
   title: "Node.js eval of a base64-decoded buffer (obfuscated code execution)"
+  title_tr: "Node.js'te base64 ile çözülen içeriğin eval ile çalıştırılması (gizlenmiş kod çalıştırma)"
   expires_at: null
   revoked: false
 
@@ -119,6 +128,7 @@
   pattern: "\\bxxd\\s+-r\\b[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)\\b"
   match_on: command
   title: "Hex-decoded payload piped to shell execution"
+  title_tr: "Onaltılık (hex) olarak çözülen yük kabukta çalıştırılıyor"
   expires_at: null
   revoked: false
 
@@ -136,6 +146,7 @@
   pattern: "\\b(curl|wget|fetch)\\b[^|]{0,300}\\|\\s*(?:(?:sudo|timeout|xargs|env|command|nohup|stdbuf|nice|setsid|doas)\\b[^|]{0,60}\\s+){0,3}(?:/[^\\s|]{1,80}/)?(bash|sh|zsh|ksh|dash)\\b"
   match_on: command_normalized
   title: "Remote code execution via download piped to shell (obfuscated/normalized)"
+  title_tr: "Uzaktan kod çalıştırma: indirilen içerik kabuğa aktarılıyor (gizlenmiş ya da normalleştirilmiş biçim)"
   expires_at: null
   revoked: false
 
@@ -150,6 +161,7 @@
     - command
     - command_normalized
   title: "Encoded payload decoded and executed through command substitution"
+  title_tr: "Kodlanmış yük, komut ikamesi içinde çözülüp çalıştırılıyor"
   expires_at: null
   revoked: false
 

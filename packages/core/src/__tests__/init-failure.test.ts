@@ -24,10 +24,10 @@ describe("connector initialisation failure", () => {
 
 	it("formats the block reason shown for every tool call", () => {
 		expect(formatInitFailureMessage("ENOENT")).toBe(
-			"AIDR failed to initialise: ENOENT; tool calls are blocked until fixed",
+			"Singularity AIDR could not start (ENOENT), so every tool call is blocked until this is fixed. Ask your IT admin to run `aidr doctor`.",
 		);
-		expect(formatInitFailureMessage("")).toBe(
-			"AIDR failed to initialise: init_error; tool calls are blocked until fixed",
-		);
+		expect(formatInitFailureMessage("")).toContain("(init_error)");
+		// A sanitized code only: never raw error text.
+		expect(formatInitFailureMessage("bad code; rm -rf /")).toContain("(bad_code_rm_-rf)");
 	});
 });

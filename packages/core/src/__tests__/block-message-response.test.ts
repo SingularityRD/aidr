@@ -42,12 +42,12 @@ describe("formatDenyMessage", () => {
 	it("is unchanged when no response action ran", () => {
 		const message = formatDenyMessage(verdict);
 		expect(message).toContain("Singularity AIDR blocked this action.");
-		expect(message).not.toContain("Response:");
+		expect(message).not.toContain("What Singularity AIDR did:");
 	});
 
 	it("tells the user what was preserved and where", () => {
 		const message = formatDenyMessage(verdict, [success]);
-		expect(message).toContain("Response:");
+		expect(message).toContain("What Singularity AIDR did:");
 		expect(message).toContain("preserved a copy of");
 		expect(message).toContain("/home/u/.ssh/authorized_keys");
 		expect(message).toContain(success.vaultPath as string);
@@ -76,14 +76,14 @@ describe("formatDenyMessage", () => {
 describe("formatAskMessage", () => {
 	it("keeps the approval contract and adds the response line", () => {
 		const message = formatAskMessage("a".repeat(64), verdict, [], [success]);
-		expect(message).toContain("pending explicit user approval");
-		expect(message).toContain("You cannot approve this action yourself");
-		expect(message).toContain("Response:");
+		expect(message).toContain("stopped this action until you approve it");
+		expect(message).toContain("you cannot approve this action");
+		expect(message).toContain("What Singularity AIDR did:");
 		expect(message).toContain("preserved a copy of");
 	});
 
 	it("omits the response line when nothing ran", () => {
 		const message = formatAskMessage("a".repeat(64), verdict, []);
-		expect(message).not.toContain("Response:");
+		expect(message).not.toContain("What Singularity AIDR did:");
 	});
 });

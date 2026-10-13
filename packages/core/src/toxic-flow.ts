@@ -52,6 +52,7 @@ import { lstat, mkdir, open, readdir, stat, unlink, utimes } from "node:fs/promi
 import { join } from "node:path";
 import { isInvalidConfig, loadConfig, resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent } from "./file-utils.js";
+import { registerReasonDisplay } from "./i18n/display.js";
 import {
 	DEFAULT_FLOW_CAPABILITIES,
 	type FlowCapabilityPatterns,
@@ -66,6 +67,7 @@ import {
 	type FlowObservation,
 	pathWithinDownload,
 } from "./toxic-flow-classify.js";
+import { plainToxicFlowReason } from "./toxic-flow-plain.js";
 import type { Artifact, Config, Logger, Verdict } from "./types.js";
 import { nullLogger } from "./types.js";
 
@@ -264,6 +266,14 @@ export function resolveFlowSessionKey(
 
 // ── Pure evaluation ────────────────────────────────────────────────
 
+/** One matched chain: its steps, for the technical reason and the plain wording. */
+interface ChainMatch {
+	earlier: FlowStep[];
+	current: string[];
+	currentObservations: FlowObservation[];
+	destructive?: string;
+}
+
 interface ToxicFlowFinding {
 	chain: ToxicFlowChain;
 	threatId: string;
@@ -360,7 +370,7 @@ export function evaluateToxicFlow(
 	];
 	const callCaps = new Set(observations.map((observation) => observation.cap));
 	const priorCaps = new Set(prior.map((step) => step.cap));
-	const matched = new Map<ToxicFlowChain, { earlier: FlowStep[]; current: string[] }>();
+	const matched = new Map<ToxicFlowChain, ChainMatch>();
 
 	// exfil_chain: secret-grade material read (earlier or in this call), then an
 	// egress that carries data.
@@ -376,6 +386,7 @@ export function evaluateToxicFlow(
 			matched.set("exfil_chain", {
 				earlier: priorSecrets,
 				current: [...callSecrets, ...dataEgress].map((o) => describeObservation(call.tool, o)),
+				currentObservations: [...callSecrets, ...dataEgress],
 			});
 		}
 	}
@@ -389,6 +400,7 @@ export function evaluateToxicFlow(
 		matched.set("lethal_trifecta", {
 			earlier,
 			current: observations.map((o) => describeObservation(call.tool, o)),
+			currentObservations: observations,
 		});
 	}
 
@@ -403,6 +415,8 @@ export function evaluateToxicFlow(
 					...callUntrusted.map((o) => describeObservation(call.tool, o)),
 					`[destructive] ${call.tool}: ${call.classification.destructive}`,
 				],
+				currentObservations: callUntrusted,
+				destructive: call.classification.destructive,
 			});
 		}
 	}
@@ -420,6 +434,7 @@ export function evaluateToxicFlow(
 			matched.set("bulk_sensitive_access", {
 				earlier: latest(prior, (step) => step.cap === "private_data", MAX_EARLIER_STEPS_IN_REASON),
 				current: callPrivate.map((o) => describeObservation(call.tool, o)),
+				currentObservations: callPrivate,
 			});
 		}
 	}
@@ -428,21 +443,20 @@ export function evaluateToxicFlow(
 
 	const chains = CHAIN_PRECEDENCE.filter((chain) => matched.has(chain));
 	const chain = chains[0] as ToxicFlowChain;
-	const detail = matched.get(chain) as { earlier: FlowStep[]; current: string[] };
+	const detail = matched.get(chain) as ChainMatch;
 	const earlier = uniqueSteps(detail.earlier).slice(0, MAX_EARLIER_STEPS_IN_REASON);
 	const windowMinutes = Math.round(settings.windowMs / 60_000);
+	const bulkCount = new Set([
+		...prior.filter((s) => s.cap === "private_data").map((s) => s.target),
+		...callPrivate.map((o) => targetDigest(o.target)),
+	]).size;
 	const headline: Record<ToxicFlowChain, string> = {
 		exfil_chain:
 			"this call sends data to an external destination after secret material was read in this session",
 		lethal_trifecta:
 			"this call would complete private-data access, untrusted-content exposure and external communication in one session",
 		injection_to_action: "destructive command after untrusted content entered this session",
-		bulk_sensitive_access: `${
-			new Set([
-				...prior.filter((s) => s.cap === "private_data").map((s) => s.target),
-				...callPrivate.map((o) => targetDigest(o.target)),
-			]).size
-		} distinct sensitive files or credential stores accessed within ${windowMinutes} minutes (threshold ${settings.bulkThreshold})`,
+		bulk_sensitive_access: `${bulkCount} distinct sensitive files or credential stores accessed within ${windowMinutes} minutes (threshold ${settings.bulkThreshold})`,
 	};
 	const parts = [
 		`Toxic flow "${chain}": ${headline[chain]}.`,
@@ -457,12 +471,26 @@ export function evaluateToxicFlow(
 			"The session's earlier flow record failed its integrity check and was reset conservatively.",
 		);
 	}
+	const reason = parts.join(" ");
+	// The technical reason stays in the verdict and the audit log; a person
+	// reads the plain wording (see toxic-flow-plain.ts).
+	registerReasonDisplay(
+		reason,
+		plainToxicFlowReason({
+			chain,
+			earlier: earlier.slice(0, 3),
+			current: detail.currentObservations.slice(0, 3),
+			destructive: detail.destructive,
+			bulk: { count: bulkCount, minutes: windowMinutes, threshold: settings.bulkThreshold },
+			integrityLost: state.integrity === "lost",
+		}),
+	);
 	return {
 		finding: {
 			chain,
 			threatId: TOXIC_FLOW_THREAT_IDS[chain],
 			severity: chain === "exfil_chain" || chain === "lethal_trifecta" ? "critical" : "warning",
-			reason: parts.join(" "),
+			reason,
 			chains,
 			earlier,
 		},

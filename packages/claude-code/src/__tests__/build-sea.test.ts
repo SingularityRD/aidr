@@ -121,7 +121,10 @@ function runHook(
 	const parsed = JSON.parse(out);
 	return {
 		decision: parsed.hookSpecificOutput?.permissionDecision,
-		reason: parsed.hookSpecificOutput?.permissionDecisionReason ?? "",
+		// The agent gets a short reason; the full message for the user is systemMessage.
+		reason: [parsed.hookSpecificOutput?.permissionDecisionReason ?? "", parsed.systemMessage ?? ""]
+			.filter(Boolean)
+			.join("\n"),
 		status: result.status,
 	};
 }

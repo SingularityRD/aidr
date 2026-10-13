@@ -35,6 +35,7 @@
     - command
     - modified_path
   title: "Attempt to remove or overwrite the Singularity AIDR installation"
+  title_tr: "Singularity AIDR kurulumunu silme ya da üzerine yazma girişimi"
   expires_at: null
   revoked: false
 
@@ -47,6 +48,7 @@
   pattern: "\\.singularity-aidr[\\\\/]((allowlist|config|approvals|operator-approval-key)\\.json|operator-approval\\.key)"
   match_on: file_path
   title: "Access Singularity AIDR configuration files"
+  title_tr: "Singularity AIDR yapılandırma dosyalarına erişim"
   expires_at: null
   revoked: false
 
@@ -76,6 +78,7 @@
     - command
     - modified_path
   title: "Attempt to remove or rewrite an agent host's hook or plugin configuration"
+  title_tr: "Bir yapay zekâ aracının kanca ya da eklenti yapılandırmasını silme veya değiştirme girişimi"
   expires_at: null
   revoked: false
 
@@ -95,6 +98,7 @@
   pattern: "\"heuristics_enabled\"\\s*:\\s*false|\"url_check\"\\s*:\\s*\\{[^}]{0,300}\"enabled\"\\s*:\\s*false|\"AIDR_(?:THREATS|ALLOWLISTS)_DIR\"\\s{0,10}:|(?:^|\\n|[{,])[ \\t]{0,20}(?:(?:export|set|declare[ \\t]{1,4}-x)[ \\t]{1,10})?AIDR_(?:THREATS|ALLOWLISTS)_DIR[ \\t]{0,10}=|(?:^|\\n)[ \\t]{0,20}setenv[ \\t]{1,10}AIDR_(?:THREATS|ALLOWLISTS)_DIR\\b|\"disableAllHooks\"\\s{0,10}:\\s{0,10}true|\"aidr@[\\w.-]{1,64}\"\\s{0,10}:\\s{0,10}false|\"aidr-openclaw\"\\s{0,10}:\\s{0,10}\\{[^}]{0,300}\"enabled\"\\s{0,10}:\\s{0,10}false|(?:^|\\n)[ \\t]{0,20}codex_hooks[ \\t]{0,10}=[ \\t]{0,10}false"
   match_on: content
   title: "Attempt to disable Singularity AIDR or its hooks via configuration"
+  title_tr: "Singularity AIDR'yi ya da kancalarını yapılandırma yoluyla devre dışı bırakma girişimi"
   expires_at: null
   revoked: false
 
@@ -108,6 +112,7 @@
   case_insensitive: true
   match_on: command
   title: "Attempt to forge a Singularity AIDR approval record"
+  title_tr: "Sahte bir Singularity AIDR onay kaydı oluşturma girişimi"
   expires_at: null
   revoked: false
 
@@ -121,6 +126,7 @@
   case_insensitive: true
   match_on: command
   title: "Attempt to disable the AIDR agent service"
+  title_tr: "AIDR hizmetini devre dışı bırakma girişimi"
   expires_at: null
   revoked: false
 
@@ -132,7 +138,8 @@
 # The protection-weakening CLI commands are operator-only for the same reason:
 # `aidr config -s|--set` (heuristics off, disabled threats, lower sensitivity,
 # checks or policies off), `aidr uninstall` (removes the hooks) and
-# `aidr setup --force|-f` (replaces the configuration). Short-flag clusters
+# `aidr setup --force|-f` (replaces the configuration), `aidr setup --release-key`
+# (replaces the trust anchor the installation verifies itself against). Short-flag clusters
 # containing the flag (`-ls`, `-vf`) and `--set=key` are matched too.
 # It matches the shell-normalized view (`command_normalized`, see
 # packages/core/src/shell-normalize.ts), so quoting (`aidr 'approve'`,
@@ -171,10 +178,11 @@
   severity: critical
   confidence: 0.99
   action: block
-  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|(?:allowlist|exceptions?)[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add|uninstall|config[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--set|-[A-Za-z]{0,6}s[A-Za-z]{0,6})|setup[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--force|-[A-Za-z]{0,6}f[A-Za-z]{0,6})|quarantine[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}(?:release|delete)|restore|audit[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}rotate-key)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b|\\bclaude\\b[^\\n;&|]{0,60}\\bplugins?\\b[^\\n;&|]{0,80}\\b(?:disable|uninstall|remove|rm)\\b[^\\n;&|]{0,200}?(?:\\baidr\\b|--all\\b)|\\b(?:code|code-insiders|code-oss|codium|cursor|windsurf)(?:\\.cmd|\\.exe)?\\b[^\\n;&|]{0,200}?--(?:uninstall|disable)-extension(?:s\\b|[\\s=]{1,10}[^\\s;&|]{0,80}?(?:singularityrd|aidr))|\\bopen(?:claw|code)\\b[^\\n;&|]{0,60}\\bplugins?\\b[^\\n;&|]{0,80}\\b(?:disable|uninstall|remove|rm|delete)\\b[^\\n;&|]{0,200}?\\baidr|\\bopenclaw\\b[^\\n;&|]{0,60}\\bconfig\\b[^\\n;&|]{0,40}\\b(?:set|unset|delete|rm|remove)\\b[^\\n;&|]{0,40}?\\bplugins\\.(?:entries\\.aidr|enabled\\b)|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,200}?(?:\\s(?:-g|--global|--location[= ]global)\\b|\\bglobal\\b)[^\\n;&|]{0,200}?@singularityrd/aidr-|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,200}?@singularityrd/aidr-[^\\n;&|]{0,200}?\\s(?:-g|--global)\\b|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,120}?\\b(?:uninstall|remove|rm|un|r|unlink|erase)\\b[^\\n;&|]{0,200}?@singularityrd/aidr-(?:codex|cli|claude-code|openclaw|opencode|mcp-gateway)\\b|\\bAIDR_(?:THREATS|ALLOWLISTS)_DIR\\s{0,10}\\]?\\s{0,10}(?:=|:\\s)|\\b(?:export|setenv|setx|SetEnvironmentVariable)\\b[\\s(,]{1,10}(?:-\\w{1,10}\\s{1,10})?AIDR_(?:THREATS|ALLOWLISTS)_DIR\\b"
+  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|(?:allowlist|exceptions?)[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add|uninstall|config[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--set|-[A-Za-z]{0,6}s[A-Za-z]{0,6})|setup[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--force|--release-key|-[A-Za-z]{0,6}f[A-Za-z]{0,6})|quarantine[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}(?:release|delete)|restore|audit[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}rotate-key)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b|\\bclaude\\b[^\\n;&|]{0,60}\\bplugins?\\b[^\\n;&|]{0,80}\\b(?:disable|uninstall|remove|rm)\\b[^\\n;&|]{0,200}?(?:\\baidr\\b|--all\\b)|\\b(?:code|code-insiders|code-oss|codium|cursor|windsurf)(?:\\.cmd|\\.exe)?\\b[^\\n;&|]{0,200}?--(?:uninstall|disable)-extension(?:s\\b|[\\s=]{1,10}[^\\s;&|]{0,80}?(?:singularityrd|aidr))|\\bopen(?:claw|code)\\b[^\\n;&|]{0,60}\\bplugins?\\b[^\\n;&|]{0,80}\\b(?:disable|uninstall|remove|rm|delete)\\b[^\\n;&|]{0,200}?\\baidr|\\bopenclaw\\b[^\\n;&|]{0,60}\\bconfig\\b[^\\n;&|]{0,40}\\b(?:set|unset|delete|rm|remove)\\b[^\\n;&|]{0,40}?\\bplugins\\.(?:entries\\.aidr|enabled\\b)|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,200}?(?:\\s(?:-g|--global|--location[= ]global)\\b|\\bglobal\\b)[^\\n;&|]{0,200}?@singularityrd/aidr-|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,200}?@singularityrd/aidr-[^\\n;&|]{0,200}?\\s(?:-g|--global)\\b|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,120}?\\b(?:uninstall|remove|rm|un|r|unlink|erase)\\b[^\\n;&|]{0,200}?@singularityrd/aidr-(?:codex|cli|claude-code|openclaw|opencode|mcp-gateway)\\b|\\bAIDR_(?:THREATS|ALLOWLISTS)_DIR\\s{0,10}\\]?\\s{0,10}(?:=|:\\s)|\\b(?:export|setenv|setx|SetEnvironmentVariable)\\b[\\s(,]{1,10}(?:-\\w{1,10}\\s{1,10})?AIDR_(?:THREATS|ALLOWLISTS)_DIR\\b"
   case_insensitive: true
   match_on: command_normalized
   title: "Attempt to self-approve a Singularity AIDR block, forge an operator approval or weaken its protection"
+  title_tr: "Bir Singularity AIDR engelini kendi kendine onaylama, operatör onayını taklit etme ya da korumayı zayıflatma girişimi"
   expires_at: null
   revoked: false
 
@@ -201,6 +209,7 @@
     - file_path_normalized
     - content_normalized
   title: "Agent access to the Singularity AIDR state directory"
+  title_tr: "Yapay zekâ aracının Singularity AIDR durum dizinine erişimi"
   expires_at: null
   revoked: false
 
@@ -229,5 +238,6 @@
     - file_path_normalized
     - content_normalized
   title: "Agent access to the Singularity AIDR approval key, vault entries or MCP approval API"
+  title_tr: "Yapay zekâ aracının Singularity AIDR onay anahtarına, kasa kayıtlarına ya da MCP onay API'sine erişimi"
   expires_at: null
   revoked: false

@@ -514,7 +514,10 @@ function parseDecision(stdout, stderr) {
 		const raw = specific.permissionDecision ?? parsed?.decision;
 		return {
 			decision: raw === "block" ? "deny" : (raw ?? "unknown"),
-			reason: `${specific.permissionDecisionReason ?? parsed?.reason ?? ""}`,
+			// Claude Code splits the short agent reason from the full message the user sees.
+			reason: [specific.permissionDecisionReason ?? parsed?.reason ?? "", parsed?.systemMessage ?? ""]
+				.filter(Boolean)
+				.join("\n"),
 		};
 	} catch {
 		return { decision: "unparsed", reason: `${output}${stderr ?? ""}`.slice(0, 400) };

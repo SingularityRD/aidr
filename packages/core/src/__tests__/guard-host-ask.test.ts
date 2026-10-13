@@ -180,9 +180,9 @@ describe("resolveHostAsk in operator mode", () => {
 		expect(result.operatorHold?.pendingRecorded).toBe(true);
 		const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
 		expect(result.operatorHold?.actionId).toBe(actionId);
-		expect(result.operatorHold?.message).toContain(`actionId: "${actionId}"`);
-		expect(result.operatorHold?.message).toContain("You cannot approve this action yourself");
-		expect(result.operatorHold?.message).toContain("aidr approve <actionId>");
+		expect(result.operatorHold?.message).toContain(`Approval reference: ${actionId}`);
+		expect(result.operatorHold?.message).toContain("you cannot approve this action");
+		expect(result.operatorHold?.message).toContain(`aidr approve ${actionId.slice(0, 8)}`);
 		const pending = await listPendingAsks(operatorApprovals);
 		expect(pending.map((p) => p.actionId)).toEqual([actionId]);
 		expect(pending[0]?.verified).toBe(true);
@@ -256,7 +256,7 @@ describe("resolveHostAsk in operator mode", () => {
 		});
 		expect(result.verdict.decision).toBe("ask");
 		expect(result.operatorHold?.pendingRecorded).toBe(false);
-		expect(result.operatorHold?.message).toContain("could NOT be recorded");
+		expect(result.operatorHold?.message).toContain("could not be saved for approval");
 	});
 });
 

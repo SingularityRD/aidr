@@ -175,9 +175,9 @@ describe("locale resolution", () => {
 	});
 
 	it("interpolates parameters and never throws on a missing one", () => {
-		expect(t("block.line.rule", { rule: "CLT-1" }, "en")).toBe("Rule: CLT-1");
-		expect(t("block.line.rule", { rule: "CLT-1" }, "tr")).toBe("Kural: CLT-1");
-		expect(t("block.line.rule", {}, "tr")).toBe("Kural: {rule}");
+		expect(t("block.detail.rule", { rule: "CLT-1" }, "en")).toBe("rule CLT-1");
+		expect(t("block.detail.rule", { rule: "CLT-1" }, "tr")).toBe("kural CLT-1");
+		expect(t("block.detail.rule", {}, "tr")).toBe("kural {rule}");
 		expect(severityLabel("high", "tr")).toBe("yüksek");
 		expect(severityLabel("HIGH", "en")).toBe("HIGH");
 		expect(severityLabel("custom", "tr")).toBe("custom");
@@ -185,69 +185,56 @@ describe("locale resolution", () => {
 });
 
 describe("block messages", () => {
-	it("renders the deny message in English by default (unchanged text)", () => {
+	it("renders the deny message in English: what, why, what to do, agent line", () => {
 		vi.stubEnv("AIDR_LOCALE", "en");
 		expect(formatDenyMessage(verdict)).toMatchInlineSnapshot(`
-			"Singularity AIDR blocked this action.
-			Severity: high
-			Rule: CLT-CMD-001
-			Category: dangerous_command
-			Reason: Recursive delete of the filesystem root"
+			"🛡️ Singularity AIDR blocked this action.
+			Why: Recursive delete of the filesystem root (high, rule CLT-CMD-001).
+			What you can do: if you think this is a false positive, report rule CLT-CMD-001 to your IT or security team; they can allow it with a time-limited exception. Details: \`aidr audit tail\`.
+			For the AI agent: do not retry this call or try to work around the block."
 		`);
 	});
 
 	it("renders the deny message in Turkish", () => {
 		vi.stubEnv("AIDR_LOCALE", "tr");
 		expect(formatDenyMessage(verdict)).toMatchInlineSnapshot(`
-			"Singularity AIDR bu eylemi engelledi.
-			Önem: yüksek
-			Kural: CLT-CMD-001
-			Kategori: dangerous_command
-			Neden: Recursive delete of the filesystem root"
+			"🛡️ Singularity AIDR bu işlemi engelledi.
+			Neden: Recursive delete of the filesystem root (yüksek, kural CLT-CMD-001).
+			Ne yapabilirsiniz: Bunun yanlış alarm olduğunu düşünüyorsanız CLT-CMD-001 kuralını BT veya güvenlik ekibinize bildirin; ekip süreli bir istisna tanımlayarak izin verebilir. Ayrıntılar: \`aidr audit tail\`.
+			Yapay zekâ aracı için: Bu çağrıyı yeniden deneme ve engeli aşmaya çalışma."
 		`);
 	});
 
-	it("renders the ask message in English with the actionId token intact", () => {
+	it("renders the ask message in English with the short approve command first", () => {
 		vi.stubEnv("AIDR_LOCALE", "en");
 		const message = formatAskMessage("act_123", { ...verdict, decision: "ask" }, artifacts);
 		expect(message).toMatchInlineSnapshot(`
-			"Singularity AIDR flagged this action and blocked it pending explicit user approval.
-			Severity: high
-			Rule: CLT-CMD-001
-			Category: dangerous_command
-			Reason: Recursive delete of the filesystem root
-			Artifacts: command 'rm -rf /'
-
-			Approval reference: actionId: "act_123"
-			You cannot approve this action yourself and no tool available to you can approve it.
-			Approval is an out-of-band, human-only action. Report the reference above to the user and
-			stop here: do NOT retry this tool call and do NOT try to work around the block. The action
-			stays blocked until the user approves it out of band or permanently allowlists the artifact.
-			(For the user: review it with \`aidr pending\` and approve it with \`aidr approve <actionId>\`
-			in your own terminal; the approval covers one retry of this exact call for 15 minutes.)"
+			"🛡️ Singularity AIDR stopped this action until you approve it.
+			To allow it once, run this in your own terminal (valid for 15 minutes), then ask the agent to try again:
+			  aidr approve act_123
+			Stopped: command 'rm -rf /'
+			Why: Recursive delete of the filesystem root (high, rule CLT-CMD-001).
+			Details: \`aidr pending\`. If you think this is a false positive, report rule CLT-CMD-001 to your IT or security team.
+			Approval reference: act_123
+			For the AI agent: you cannot approve this action and no tool available to you can. Tell the user what was stopped and how they can allow it, then stop: do not retry this call or try to work around the block."
 		`);
 	});
 
-	it("renders the ask message in Turkish with the actionId token intact", () => {
+	it("renders the ask message in Turkish with the short approve command first", () => {
 		vi.stubEnv("AIDR_LOCALE", "tr");
 		const message = formatAskMessage("act_123", { ...verdict, decision: "ask" }, artifacts);
-		expect(message).toContain('actionId: "act_123"');
-		expect(message).toContain("aidr approve <actionId>");
+		expect(message).toContain("aidr approve act_123");
+		expect(message).toContain("Onay referansı: act_123");
+		expect(message).not.toMatch(/actionId|bant dışı/);
 		expect(message).toMatchInlineSnapshot(`
-			"Singularity AIDR bu eylemi şüpheli buldu ve kullanıcı açıkça onaylayana kadar engelledi.
-			Önem: yüksek
-			Kural: CLT-CMD-001
-			Kategori: dangerous_command
-			Neden: Recursive delete of the filesystem root
-			Öğeler: command 'rm -rf /'
-
-			Onay referansı: actionId: "act_123"
-			Bu eylemi kendin onaylayamazsın ve erişebildiğin hiçbir araç da onaylayamaz.
-			Onay, bant dışı ve yalnızca bir insanın verebileceği bir işlemdir. Yukarıdaki referansı kullanıcıya bildir ve
-			burada dur: bu araç çağrısını yeniden DENEME ve engeli aşmaya ÇALIŞMA. Eylem, kullanıcı
-			bant dışında onaylayana ya da öğeyi kalıcı olarak izin listesine ekleyene kadar engelli kalır.
-			(Kullanıcı için: kendi terminalinizde \`aidr pending\` ile inceleyip \`aidr approve <actionId>\` ile
-			onaylayın; onay, bu çağrının birebir aynısının 15 dakika içinde bir kez yeniden denenmesini kapsar.)"
+			"🛡️ Singularity AIDR bu işlemi siz onaylayana kadar durdurdu.
+			Bir kez izin vermek için kendi terminalinizde şunu çalıştırın (15 dakika geçerli), sonra yapay zekâ aracından yeniden denemesini isteyin:
+			  aidr approve act_123
+			Durdurulan: komut 'rm -rf /'
+			Neden: Recursive delete of the filesystem root (yüksek, kural CLT-CMD-001).
+			Ayrıntılar: \`aidr pending\`. Bunun yanlış alarm olduğunu düşünüyorsanız CLT-CMD-001 kuralını BT veya güvenlik ekibinize bildirin.
+			Onay referansı: act_123
+			Yapay zekâ aracı için: Bu işlemi kendin onaylayamazsın ve erişebildiğin hiçbir araç onaylayamaz. Kullanıcıya neyin durdurulduğunu ve nasıl izin verebileceğini söyle, sonra dur: bu çağrıyı yeniden deneme ve engeli aşmaya çalışma."
 		`);
 	});
 

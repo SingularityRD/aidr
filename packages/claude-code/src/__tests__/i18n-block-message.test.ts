@@ -1,6 +1,6 @@
 /**
- * PRD-15: Claude Code block messages in English (default, unchanged) and
- * Turkish, and proof that the locale changes only human-readable text: the
+ * PRD-15: Claude Code block messages in English (default) and Turkish, in
+ * the shared what / why / what-to-do shape, and proof that the locale changes only human-readable text: the
  * hook JSON the host parses keeps the same fields and decision values.
  */
 import { execFile } from "node:child_process";
@@ -30,43 +30,31 @@ afterEach(() => {
 });
 
 describe("formatBlockReason locales", () => {
-	it("keeps the English deny banner unchanged by default", () => {
+	it("renders the English deny banner by default", () => {
 		vi.stubEnv("AIDR_LOCALE", "en");
 		expect(formatBlockReason(verdict)).toMatchInlineSnapshot(`
-			" 
-			🚨 Threat      Recursive delete of the filesystem root
-			   Severity    CRITICAL
-			   Rule        CLT-CMD-001
-			   Artifact    rm -rf /
-			   Source      heuristic
-			   Action      Blocked"
+			"🛡️ Singularity AIDR blocked this action.
+			Why: Recursive delete of the filesystem root (critical, rule CLT-CMD-001).
+			What you can do: if you think this is a false positive, report rule CLT-CMD-001 to your IT or security team; they can allow it with a time-limited exception. Details: \`aidr audit tail\`."
 		`);
 	});
 
 	it("renders the deny banner in Turkish", () => {
 		vi.stubEnv("AIDR_LOCALE", "tr");
 		expect(formatBlockReason(verdict)).toMatchInlineSnapshot(`
-			" 
-			🚨 Tehdit      Recursive delete of the filesystem root
-			   Önem        KRİTİK
-			   Kural       CLT-CMD-001
-			   Öğe         rm -rf /
-			   Kaynak      heuristic
-			   Eylem       Engellendi"
+			"🛡️ Singularity AIDR bu işlemi engelledi.
+			Neden: Recursive delete of the filesystem root (kritik, kural CLT-CMD-001).
+			Ne yapabilirsiniz: Bunun yanlış alarm olduğunu düşünüyorsanız CLT-CMD-001 kuralını BT veya güvenlik ekibinize bildirin; ekip süreli bir istisna tanımlayarak izin verebilir. Ayrıntılar: \`aidr audit tail\`."
 		`);
 	});
 
-	it("renders the ask banner in Turkish with locale-aware upper case", () => {
+	it("renders the ask banner in Turkish with the native dialog as the next step", () => {
 		vi.stubEnv("AIDR_LOCALE", "tr");
 		expect(formatBlockReason({ ...verdict, decision: "ask" })).toMatchInlineSnapshot(`
-			"🛡️ Singularity AIDR: Şüpheli Etkinlik Algılandı
-			━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			🚨 Tehdit      Recursive delete of the filesystem root
-			   Önem        KRİTİK
-			   Kural       CLT-CMD-001
-			   Öğe         rm -rf /
-			   Kaynak      heuristic
-			   Eylem       Onay gerekiyor"
+			"🛡️ Singularity AIDR bu işlemi siz onaylayana kadar durdurdu.
+			Bir kez izin vermek için Evet'i, engelli kalması için Hayır'ı seçin.
+			Neden: Recursive delete of the filesystem root (kritik, kural CLT-CMD-001).
+			Ayrıntılar: \`aidr pending\`. Bunun yanlış alarm olduğunu düşünüyorsanız CLT-CMD-001 kuralını BT veya güvenlik ekibinize bildirin."
 		`);
 	});
 });
@@ -129,8 +117,13 @@ describe("pre-tool-use hook output across locales", () => {
 		expect(["deny", "ask"]).toContain(decision(english));
 
 		expect(JSON.stringify(english)).toContain("Singularity AIDR");
-		expect(JSON.stringify(english)).not.toMatch(/Tehdit|Eylem/);
-		expect(JSON.stringify(turkish)).toMatch(/Tehdit|Eylem/);
+		expect(JSON.stringify(english)).not.toMatch(/Neden|Durdurulan/);
+		expect(JSON.stringify(turkish)).toMatch(/Neden|Durdurulan/);
+		// The rule title is Turkish too (title_tr), not only the frame around it.
+		expect(String(turkish.systemMessage)).toContain(
+			"Kök dizinden (/) başlayarak zorla ve özyinelemeli silme",
+		);
+		expect(JSON.stringify(turkish)).not.toMatch(/\bheuristic\b|Recursive forced deletion/);
 	}, 60_000);
 
 	it("localizes the fixed fail-closed deny for unreadable input", async () => {
@@ -139,10 +132,10 @@ describe("pre-tool-use hook output across locales", () => {
 		expect(shape(turkish)).toEqual(shape(english));
 		expect((turkish.hookSpecificOutput as Record<string, unknown>).permissionDecision).toBe("deny");
 		expect(turkish.systemMessage).toBe(
-			"Singularity AIDR bu araç çağrısını inceleyemedi. Eylem engellendi.",
+			"Singularity AIDR bu araç çağrısını inceleyemediği için çağrı engellendi. Yeniden deneyin; sorun sürerse kendi terminalinizde `aidr doctor` komutunu çalıştırın.",
 		);
 		expect(english.systemMessage).toBe(
-			"Singularity AIDR could not inspect this tool call. The action was blocked.",
+			"Singularity AIDR could not inspect this tool call, so it was blocked. Try again; if this keeps happening, run `aidr doctor` in your own terminal.",
 		);
 	}, 60_000);
 });

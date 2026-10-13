@@ -203,18 +203,18 @@ describe("formatThreatBanner", () => {
 });
 
 describe("formatBlockReason", () => {
-	it("renders deny verdict with structured details", () => {
-		const msg = formatBlockReason(makeVerdict());
-		expect(msg).toContain("🚨");
-		expect(msg).toContain("URL check: malicious");
-		expect(msg).toContain("Blocked");
-		expect(msg).toContain("http://evil.com");
-		// Deny banner is details-only (branding in permissionDecisionReason)
-		expect(msg).not.toContain("Singularity AIDR");
-		expect(msg).not.toContain("━");
+	it("renders a deny as what was stopped, why and what to do, with no internal labels", () => {
+		const msg = formatBlockReason(makeVerdict(), [{ type: "url", value: "http://evil.com" }]);
+		expect(msg).toContain("🛡️ Singularity AIDR blocked this action.");
+		expect(msg).toContain("Stopped: URL 'http://evil.com'");
+		expect(msg).toContain("Why: URL check: malicious (critical, URL reputation check).");
+		expect(msg).toContain("What you can do:");
+		// The systemMessage is the person's; the agent line is not repeated there.
+		expect(msg).not.toContain("For the AI agent");
+		expect(msg).not.toMatch(/\burl_check\b|━/);
 	});
 
-	it("renders ask verdict as Suspicious Activity with artifact", () => {
+	it("renders an ask for Claude Code's own dialog, with Yes/No as the next step", () => {
 		const msg = formatBlockReason(
 			makeVerdict({
 				decision: "ask",
@@ -222,27 +222,32 @@ describe("formatBlockReason", () => {
 				reasons: ["Overly permissive file permissions"],
 				artifacts: ["/etc/shadow"],
 			}),
+			[{ type: "file_path", value: "/etc/shadow" }],
 		);
-		expect(msg).toContain("Suspicious Activity Detected");
-		expect(msg).toContain("⚠️");
-		expect(msg).toContain("Requires confirmation");
-		expect(msg).toContain("/etc/shadow");
-		expect(msg).toContain("━");
+		expect(msg).toContain("🛡️ Singularity AIDR stopped this action until you approve it.");
+		expect(msg).toContain("Choose Yes to allow it once, or No to keep it blocked.");
+		expect(msg).toContain("Stopped: file '/etc/shadow'");
+		expect(msg).not.toContain("aidr approve");
 	});
 
-	it("falls back to category when no reasons", () => {
-		const msg = formatBlockReason(makeVerdict({ reasons: [] }));
-		expect(msg).toContain("malware/bot, malware/backdoor");
+	it("falls back to the category in plain words when no reasons", () => {
+		const msg = formatBlockReason(makeVerdict({ reasons: [], category: "network_egress" }));
+		expect(msg).toContain("Why: sending data over the network");
 	});
 
-	it("renders multiple artifacts", () => {
+	it("counts further artifacts instead of listing duplicates and punctuation", () => {
 		const msg = formatBlockReason(
 			makeVerdict({
-				artifacts: ["http://evil.com", "http://also-evil.com"],
+				artifacts: ["http://evil.com", "http://evil.com", ";", "http://also-evil.com"],
 			}),
+			[
+				{ type: "url", value: "http://evil.com" },
+				{ type: "url", value: "http://evil.com" },
+				{ type: "url", value: "http://also-evil.com" },
+			],
 		);
-		expect(msg).toContain("http://evil.com");
-		expect(msg).toContain("http://also-evil.com");
+		expect(msg).toContain("Stopped: URL 'http://evil.com' (+1 more)");
+		expect(msg).not.toMatch(/^;$/m);
 	});
 });
 

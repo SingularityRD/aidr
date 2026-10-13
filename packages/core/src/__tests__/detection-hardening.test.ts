@@ -615,10 +615,8 @@ describe("decision engine escalation and rule labelling", () => {
 		expect(verdict.severity).toBe("warning");
 
 		const deny = formatDenyMessage(verdict);
-		expect(deny).toContain("Severity: high");
-		expect(deny).toContain("Rule: TST-HIGH");
+		expect(deny).toContain("(high, rule TST-HIGH)");
 		const ask = formatAskMessage("act-1", { ...verdict, decision: "ask" }, []);
-		expect(ask).toContain("Severity: high");
-		expect(ask).toContain("Rule: TST-HIGH");
+		expect(ask).toContain("(high, rule TST-HIGH)");
 	});
 });

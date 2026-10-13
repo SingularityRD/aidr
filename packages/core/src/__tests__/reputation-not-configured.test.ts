@@ -102,7 +102,7 @@ describe("fresh local install without reputation legs", () => {
 			decision: "allow",
 			category: "reputation_not_checked",
 		});
-		expect(verdict.reasons.join(" ")).toContain("url_check is not enabled");
+		expect(verdict.reasons.join(" ")).toContain("URL reputation is not set up");
 	});
 
 	it("writes the not-checked allow to the audit log, so it is never mistaken for a clean check", async () => {

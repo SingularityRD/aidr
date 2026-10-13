@@ -200,13 +200,17 @@ try {
 		env: { ...process.env, HOME: userHome, USERPROFILE: userHome, AIDR_THREATS_DIR: join(target, "resources/threats"), AIDR_ALLOWLISTS_DIR: join(target, "resources/allowlists") },
 	});
 	let verdict; try { verdict = JSON.parse(probe.stdout); } catch { throw new Error("Installed hook returned invalid canary output; registration unchanged"); }
-	const expectedReason = "🛡️ Singularity AIDR: Threat Blocked";
-	const expectedThreat = "Remote code execution via curl pipe to shell";
+	// The block text is localized and reworded across releases: check the
+	// decision, the product prefix and the rule id (or the English rule title an
+	// older hook printed), never the exact wording.
+	const reason = verdict.hookSpecificOutput?.permissionDecisionReason;
+	const message = verdict.systemMessage;
 	if (
 		probe.status !== 0 ||
 		verdict.hookSpecificOutput?.permissionDecision !== "deny" ||
-		verdict.hookSpecificOutput?.permissionDecisionReason !== expectedReason ||
-		!verdict.systemMessage?.includes(expectedThreat)
+		typeof reason !== "string" || !reason.startsWith("🛡️ Singularity AIDR") ||
+		typeof message !== "string" ||
+		!(message.includes("CLT-CMD-001") || message.includes("Remote code execution via curl pipe to shell"))
 	) throw new Error("Installed hook failed malicious-command canary; registration unchanged");
 	mkdirSync(dirname(settingsPath), { recursive: true, mode: 0o700 });
 	if (!unchanged(settingsPath, originalSettings)) throw new Error("Claude settings changed during installation; registration unchanged. Retry after closing other settings editors");

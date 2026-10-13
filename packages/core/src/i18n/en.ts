@@ -17,32 +17,55 @@ export const en = {
 	"common.unknown": "unknown",
 	"common.none": "none",
 
-	// Block / ask messages handed to the host (core guard).
-	"block.deny.headline": "Singularity AIDR blocked this action.",
-	"block.line.severity": "Severity: {severity}",
-	"block.line.rule": "Rule: {rule}",
-	"block.line.category": "Category: {category}",
-	"block.line.reason": "Reason: {reason}",
-	"block.line.artifacts": "Artifacts: {artifacts}",
-	"block.line.response": "Response: {response}",
+	// Block / ask messages: one shape on every connector. What was stopped, why
+	// in plain words, what the user does now, then one line for the agent. The
+	// agent line never offers it a way to approve: approval is the user's own
+	// terminal command or the dashboard.
+	"block.deny.headline": "🛡️ Singularity AIDR blocked this action.",
+	"block.ask.headline": "🛡️ Singularity AIDR stopped this action until you approve it.",
+	"block.line.stopped": "Stopped: {what}",
+	"block.line.why": "Why: {reason} ({details}).",
+	"block.line.also": "Also found: {reasons}.",
+	"block.detail.rule": "rule {rule}",
+	"block.more": "{what} (+{count} more)",
+	"block.artifact.command": "command",
+	"block.artifact.url": "URL",
+	"block.artifact.file_path": "file",
+	"block.artifact.content": "content",
+	"block.line.response": "What Singularity AIDR did: {response}",
 	"block.response.failed": "response action(s) failed: {failures} - nothing was preserved",
 	"block.response.rollback": "rollback: restored {target} from snapshot {snapshot}",
 	"block.response.preserved": "{action}: preserved a copy of {target} at {where}",
 	"block.response.snapshot": "snapshot {snapshot}",
 	"block.response.vault": "(vault)",
 	"block.response.unknownSnapshot": "(unknown)",
+	"block.deny.next":
+		"What you can do: if you think this is a false positive, report rule {rule} to your IT or security team; they can allow it with a time-limited exception. Details: `aidr audit tail`.",
+	"block.deny.nextNoRule":
+		"What you can do: if you think this is a false positive, report it to your IT or security team. Details: `aidr audit tail`.",
+	"block.ask.cli":
+		"To allow it once, run this in your own terminal (valid for 15 minutes), then ask the agent to try again:\n  {command}",
+	"block.ask.notRecorded":
+		"This request could not be saved for approval, so it cannot be allowed from the terminal. Run `aidr doctor` in your own terminal to see why.",
+	"block.ask.dashboardOnly":
+		"Only an administrator can allow it, in the Singularity AIDR dashboard.",
+	"block.ask.hostDialog": "Choose Yes to allow it once, or No to keep it blocked.",
+	"block.ask.next":
+		"Details: `aidr pending`. If you think this is a false positive, report rule {rule} to your IT or security team.",
+	"block.ask.nextNoRule":
+		"Details: `aidr pending`. If you think this is a false positive, report it to your IT or security team.",
+	"block.ask.reference": "Approval reference: {actionId}",
+	"block.agent.deny": "For the AI agent: do not retry this call or try to work around the block.",
+	"block.agent.ask":
+		"For the AI agent: you cannot approve this action and no tool available to you can. Tell the user what was stopped and how they can allow it, then stop: do not retry this call or try to work around the block.",
+	"block.agent.short":
+		"🛡️ Singularity AIDR blocked this action: {reason}. Do not retry it or try to work around the block; the user has been shown the details.",
+	"block.agent.askShort":
+		"🛡️ Singularity AIDR stopped this action until the user approves it: {reason}. You cannot approve it and no tool available to you can; do not retry it or try to work around the block. The user has been shown how to allow it.",
+	"codex.dlpRewrite":
+		"This tool call contains sensitive data that must be masked first, and Codex cannot safely change a tool call's input, so it was blocked. Remove the sensitive values and try again.",
 	"block.configUnreadable":
 		"Singularity AIDR could not read its configuration, so this action was blocked instead of being offered for approval.",
-	"ask.headline":
-		"Singularity AIDR flagged this action and blocked it pending explicit user approval.",
-	"ask.reference": 'Approval reference: actionId: "{actionId}"',
-	"ask.agentInstructions":
-		"You cannot approve this action yourself and no tool available to you can approve it.\nApproval is an out-of-band, human-only action. Report the reference above to the user and\nstop here: do NOT retry this tool call and do NOT try to work around the block. The action\nstays blocked until the user approves it out of band or permanently allowlists the artifact.",
-	"ask.user.dashboardOnly": "(For the user: only an AIDR dashboard approval can release it.)",
-	"ask.user.notRecorded":
-		"(For the user: this ask could NOT be recorded for operator approval — operator approvals\nare disabled or the approval store is unavailable, so `aidr approve` cannot release it.\nRun `aidr doctor` in your own terminal to see why.)",
-	"ask.user.cli":
-		"(For the user: review it with `aidr pending` and approve it with `aidr approve <actionId>`\nin your own terminal; the approval covers one retry of this exact call for 15 minutes.)",
 	"dashboard.requested":
 		"Approval requested in the AIDR dashboard: {requestId}\n(For the user: an AIDR administrator must approve this request in the dashboard; the\napproval then covers one retry of this exact call.)",
 	"dashboard.denied":
@@ -57,28 +80,14 @@ export const en = {
 		"AIDR dashboard approvals are unavailable ({reason}); the action stays blocked.",
 
 	// Claude Code hook banner and decision reasons.
-	"hook.label.threat": "Threat",
-	"hook.label.severity": "Severity",
-	"hook.label.rule": "Rule",
-	"hook.label.artifact": "Artifact",
-	"hook.label.source": "Source",
-	"hook.label.action": "Action",
-	"hook.action.blocked": "Blocked",
-	"hook.action.requiresConfirmation": "Requires confirmation",
-	"hook.ask.header": "🛡️ Singularity AIDR: Suspicious Activity Detected",
-	"hook.reason.threatBlocked": "🛡️ Singularity AIDR: Threat Blocked",
-	"hook.reason.profileBlocked": "🛡️ Singularity AIDR: Blocked by agent permission profile",
-	"hook.reason.operatorHold": "🛡️ Singularity AIDR: blocked pending operator approval",
-	"hook.reason.dashboardRequired": "🛡️ Singularity AIDR: approval required in the AIDR dashboard",
-	"hook.dashboardOnlyNotice": "Only an AIDR dashboard approval can release this action.",
 	"hook.timeout.message":
-		"Singularity AIDR could not finish inspecting this tool call in time. The action was blocked.",
+		"Singularity AIDR could not finish inspecting this tool call in time, so it was blocked. Try again; if this keeps happening, run `aidr doctor` in your own terminal.",
 	"hook.timeout.reason": "Singularity AIDR inspection timed out",
 	"hook.inspectionFailed.message":
-		"Singularity AIDR could not inspect this tool call. The action was blocked.",
+		"Singularity AIDR could not inspect this tool call, so it was blocked. Try again; if this keeps happening, run `aidr doctor` in your own terminal.",
 	"hook.inspectionFailed.reason": "Singularity AIDR inspection unavailable",
 	"hook.tooLarge.message":
-		"Singularity AIDR could not inspect this tool call: its input exceeded the {bytes}-byte inspection limit. The action was blocked.",
+		"Singularity AIDR could not inspect this tool call because its input is larger than the {bytes}-byte inspection limit, so it was blocked. Split the work into smaller steps.",
 	"hook.tooLarge.reason": "Singularity AIDR input too large to inspect",
 	"hook.malformed.message":
 		"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.",
@@ -91,6 +100,26 @@ export const en = {
 		"Singularity AIDR could not finish scanning installed plugins in time; the plugin scan result is unavailable. Tool calls are still inspected.",
 	"hook.sessionStartFailed":
 		"Singularity AIDR protection failed to start; the session is not protected.",
+	"hook.sessionStartIntegrity":
+		"Singularity AIDR cannot verify its own installation ({cause}), so every tool call in this session is blocked until it is fixed. Ask your IT admin to run `aidr doctor`.",
+	"hook.sessionStartNoKey":
+		"Singularity AIDR cannot verify its own installation (release verification key missing), so every tool call in this session is blocked until it is fixed. Ask your IT admin to run: aidr setup --release-key <key.pem> (details: aidr doctor)",
+
+	// Release integrity failures: the connector blocks every call until an
+	// administrator fixes the installation.
+	"integrity.noKey.message":
+		"Singularity AIDR blocked this action because it cannot verify its own installation (release verification key missing). Nothing runs until this is fixed. Ask your IT admin to run: aidr setup --release-key <key.pem> (details: aidr doctor)",
+	"integrity.failed.message":
+		"Singularity AIDR blocked this action because it cannot verify its own installation ({cause}). Nothing runs until this is fixed. Ask your IT admin to reinstall Singularity AIDR from a signed release (details: aidr doctor)",
+	"integrity.reason":
+		"Singularity AIDR cannot verify its own installation; every action is blocked",
+	"integrity.agent": "For the AI agent: do not try to fix this yourself; tell the user.",
+	"integrity.cause.revoked": "this version was withdrawn by your organisation",
+	"integrity.cause.signature": "its release signature is missing or invalid",
+	"integrity.cause.files": "its files were changed or are missing",
+	"integrity.cause.io": "its files could not be read",
+	"init.failed.message":
+		"Singularity AIDR could not start ({code}), so every tool call is blocked until this is fixed. Ask your IT admin to run `aidr doctor`.",
 	"prompt.notSent.uninspected":
 		"🛡️ Singularity AIDR could not inspect this prompt for secrets, so it was not sent. Try again; if this persists, run `aidr status`.",
 	"prompt.sent.uninspected":

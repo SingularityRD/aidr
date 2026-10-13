@@ -92,7 +92,10 @@ describe("OpenClaw integrity failure", () => {
 		const beforeToolCall = handlers.get("before_tool_call");
 		expect(beforeToolCall).toBeTypeOf("function");
 		const first = await beforeToolCall?.({ toolName: "exec", params: { command: "ls" } }, {});
-		expect(first).toEqual({ block: true, blockReason: expect.stringContaining("integrity") });
+		expect(first).toEqual({
+			block: true,
+			blockReason: expect.stringContaining("cannot verify its own installation"),
+		});
 		// It keeps blocking for later calls too.
 		const second = await beforeToolCall?.({ toolName: "read", params: { path: "README.md" } }, {});
 		expect(second).toMatchObject({ block: true });

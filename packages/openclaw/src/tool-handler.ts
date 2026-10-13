@@ -272,7 +272,7 @@ export function createToolCallHandler(
 			// actually did (e.g. that a copy of the file was preserved). Without this
 			// the response happens silently.
 			if (verdict.decision === "deny") {
-				return { block: true, blockReason: formatDenyMessage(verdict, responseActions) };
+				return { block: true, blockReason: formatDenyMessage(verdict, responseActions, artifacts) };
 			}
 
 			// ask — actionId is always set for ask verdicts

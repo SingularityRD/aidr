@@ -150,11 +150,13 @@ describe.each(CASES)("$host in operator mode", (c) => {
 		const held = await runHook(c);
 		expect(c.decision(held)).toBe("deny");
 		const text = c.text(held);
-		const match = /actionId: "([a-f0-9]{64})"/.exec(text);
+		const match = /Approval reference: ([a-f0-9]{64})/.exec(text);
 		expect(match).not.toBeNull();
 		const actionId = match?.[1] as string;
-		expect(text).toContain("You cannot approve this action yourself");
-		expect(text).toContain("aidr approve <actionId>");
+		// The user types the short prefix; the agent is told it cannot approve.
+		expect(text).toContain(`aidr approve ${actionId.slice(0, 8)}`);
+		expect(text).toMatch(/cannot approve (this action|it)/);
+		expect(text).not.toMatch(/\bactionId\b/);
 
 		const pending = await listPendingAsks(store());
 		expect(pending.map((p) => p.actionId)).toEqual([actionId]);
@@ -226,7 +228,7 @@ describe.each(CASES)("$host: the agent cannot approve or create exceptions itsel
 			const response = await runHook(c, shellPayload(c.host, command));
 			expect(c.decision(response), `${c.host}: ${command}`).toBe("deny");
 			// A hard deny, never an approvable hold: no approval reference is handed out.
-			expect(c.text(response)).not.toMatch(/actionId: "/);
+			expect(c.text(response)).not.toMatch(/Approval reference:|aidr approve [a-f0-9]{8}\b/);
 		}
 		expect(await listPendingAsks(store())).toEqual([]);
 	}, 120_000);

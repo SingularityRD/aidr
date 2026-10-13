@@ -88,7 +88,7 @@ describe("SDK reputation availability", () => {
 		expect(result.metadata?.leg).toBe("url_reputation");
 		expect(result.metadata?.indeterminate).toBeUndefined();
 		expect(result.reason).toContain("Not checked by a reputation service");
-		expect(result.reason).toContain("url_check is not enabled");
+		expect(result.reason).toContain("URL reputation is not set up");
 		expect(result.reason).toContain("this is not a clean reputation result");
 		// The secret-bearing URL is not echoed into the human-readable reason.
 		expect(result.reason).not.toContain("token=secret");

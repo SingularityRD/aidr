@@ -188,8 +188,10 @@ describe("Codex hook entry point (built bundle)", () => {
 
 		expectDeny(run);
 		expect(run.status).toBe(2);
-		expect(reason).toContain("Artifact integrity verification failed");
-		expect(reason).toMatch(/(?:missing_manifest|no_public_keys)/);
+		// The cause in plain words and the administrator's fix, not a raw status code.
+		expect(reason).toContain("cannot verify its own installation");
+		expect(reason).toMatch(/release verification key missing|release signature is missing/);
+		expect(reason).toContain("aidr doctor");
 		expect(run.stderr).toContain(reason);
 	});
 

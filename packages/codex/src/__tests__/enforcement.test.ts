@@ -487,9 +487,14 @@ describe("Codex operator approval channel", () => {
 				const blocked = await enforceCodexPreToolUse(call, options());
 				expect(blocked.decision).toBe("ask");
 				const reason = blocked.wire.hookSpecificOutput?.permissionDecisionReason ?? "";
-				expect(reason).not.toContain("could NOT be recorded");
+				expect(reason).not.toContain("could not be saved");
 				const [pending] = await listPendingAsks();
 				expect(reason).toContain(pending?.actionId as string);
+				// The user's step comes first, with the short prefix `aidr approve` accepts.
+				const lines = reason.split("\n");
+				expect(lines[1]).toMatch(/^To allow it once, run this in your own terminal/);
+				expect(lines[2]).toBe(`  aidr approve ${(pending?.actionId as string).slice(0, 8)}`);
+				expect(reason).not.toMatch(/\bactionId\b|out-of-band|out of band/);
 				expect(existsSync(join(home, ".singularity-aidr", "operator-approval.key"))).toBe(false);
 				expect(existsSync(join(home, ".singularity-aidr", "sealed"))).toBe(true);
 
@@ -521,7 +526,7 @@ describe("Codex operator approval channel", () => {
 			expect(blocked.decision).toBe("ask");
 			expect(blocked.wire.hookSpecificOutput?.permissionDecision).toBe("deny");
 			const reason = blocked.wire.hookSpecificOutput?.permissionDecisionReason ?? "";
-			expect(reason).toContain("could NOT be recorded for operator approval");
+			expect(reason).toContain("could not be saved for approval");
 			expect(await listPendingAsks()).toEqual([]);
 			expect(existsSync(join(home, ".singularity-aidr", "operator-approval.key"))).toBe(false);
 		} finally {

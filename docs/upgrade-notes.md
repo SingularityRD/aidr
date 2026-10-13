@@ -33,10 +33,12 @@ real-host acceptance evidence yet**; no host version is tested for them.
    }
    ```
 
-   Without a valid key the connector cannot verify itself and blocks every tool call (Claude
-   Code reports `Singularity AIDR inspection unavailable`; OpenClaw and OpenCode report
-   `AIDR failed to initialise: <code>`). See [Integrity verification](integrity.md). Never
-   put a signing private key on an endpoint.
+   Without a valid key the connector cannot verify itself and blocks every tool call. Every
+   connector then says so: "Singularity AIDR blocked this action because it cannot verify its
+   own installation (release verification key missing). Nothing runs until this is fixed. Ask
+   your IT admin to run: aidr setup --release-key <key.pem> (details: aidr doctor)", and the
+   Claude Code session-start banner says every tool call in the session is blocked. See
+   [Integrity verification](integrity.md). Never put a signing private key on an endpoint.
 3. **Expect managed mode.** Release builds are managed-only: they run with `mode: "managed"`,
    signed entitlements required and integrity verification on, whatever the configuration
    file says. Local detection still runs on every tool call without an account; managed

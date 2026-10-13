@@ -35,14 +35,22 @@ When several chains fire, the strongest is reported and the others are listed un
 
 ### What the agent and the user see
 
-The verdict category is `toxic_flow`. The reason names the chain, the earlier steps and this
-call, for example:
+The verdict category is `toxic_flow`. The reason recorded in the verdict and the audit log
+names the chain, the earlier steps and this call, for example:
 
 ```text
 Toxic flow "exfil_chain": this call sends data to an external destination after secret
 material was read in this session. Earlier steps: [private data] Read: Read
 ~/.aws/credentials (cloud credentials) (4m ago). This call: [external communication]
 Bash: curl → collector.example (carries data).
+```
+
+The block message a person and the agent read says the same thing in plain words, in English
+or Turkish (`AIDR_LOCALE`), without the chain name or capability tags:
+
+```text
+Risky combination in this session: the agent read sensitive data (cloud credentials) and is
+now sending data to collector.example. Together these could leak the secret.
 ```
 
 Step summaries name a tool and a target: a path, a host or a remote name. They never

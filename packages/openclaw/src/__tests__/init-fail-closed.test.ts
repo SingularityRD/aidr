@@ -28,7 +28,7 @@ vi.mock("../bundled-dirs.js", () => ({
 	getAidrVersion: () => "0.0.0",
 }));
 
-import { ArtifactIntegrityError } from "@singularityrd/aidr-core";
+import { ArtifactIntegrityError, formatInitFailureMessage } from "@singularityrd/aidr-core";
 import plugin from "../index.js";
 
 type Handler = (...args: unknown[]) => Promise<unknown>;
@@ -60,6 +60,11 @@ function register() {
 	return { handlers, tools, errors, middlewares };
 }
 
+/** The block reason core gives for this failure (integrity failures get their own wording). */
+function expectedReason(expectedCode: string): string {
+	return formatInitFailureMessage(expectedCode, failures.integrity);
+}
+
 /** OpenClaw applies every middleware in order; the last replacement is what the model gets. */
 async function expectQuarantined(middlewares: Handler[], expectedCode: string) {
 	expect(middlewares.length).toBeGreaterThan(0);
@@ -72,7 +77,9 @@ async function expectQuarantined(middlewares: Handler[], expectedCode: string) {
 		result = replaced?.result ?? result;
 	}
 	expect(JSON.stringify(result)).toContain(
-		`Singularity AIDR quarantined this tool output before it reached the model: AIDR failed to initialise: ${expectedCode}`,
+		JSON.stringify(
+			`Singularity AIDR quarantined this tool output before it reached the model: ${expectedReason(expectedCode)}`,
+		).slice(1, -1),
 	);
 	expect(JSON.stringify(result)).not.toContain("aidr-benign-ok");
 }
@@ -80,7 +87,7 @@ async function expectQuarantined(middlewares: Handler[], expectedCode: string) {
 async function expectBlocked(handlers: Map<string, Handler[]>, expectedCode: string) {
 	const gates = handlers.get("before_tool_call") ?? [];
 	expect(gates.length).toBeGreaterThan(0);
-	const blockReason = `AIDR failed to initialise: ${expectedCode}; tool calls are blocked until fixed`;
+	const blockReason = expectedReason(expectedCode);
 	for (const event of [
 		{ toolName: "exec", params: { command: "ls" } },
 		{ toolName: "read", params: { path: "README.md" } },
