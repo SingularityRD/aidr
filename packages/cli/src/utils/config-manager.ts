@@ -737,7 +737,12 @@ export async function createConfig(
 	const expected = existing?.stats ?? null;
 	const previous = existing ? readPreviousConfig(existing, options) : null;
 
-	const needsCredential = requiresCliCredential(previous?.config);
+	// An explicitly chosen store (`--secret-store`, or an injected one) asks for
+	// a credential too; the AIDR_SECRET_STORE variable only picks where one goes.
+	const needsCredential =
+		requiresCliCredential(previous?.config) ||
+		options.secretStore !== undefined ||
+		options.secretStoreSelection !== undefined;
 	if (previous && !force && (!needsCredential || hasCredential(previous.config))) {
 		if (!IS_POSIX) hardenWindowsAcl(CONFIG_FILE, previous.stats, false);
 		if (isCommercialBuild() && previous.config.auth) {
