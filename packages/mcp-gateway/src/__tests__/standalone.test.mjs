@@ -285,3 +285,42 @@ test("stdio source bridge withholds a loopback reply if profile changes while it
 	}), /standalone_privacy_unavailable/);
 	assert.deepEqual(chunks, []);
 }));
+
+async function runWithConfig(name, config, extraEnv = {}) {
+	const path = join(root, `${name}-variant.json`);
+	await writeFile(path, JSON.stringify(config));
+	const prepared = childOptions(name, extraEnv);
+	prepared.args[prepared.args.indexOf(gatewayConfig)] = path;
+	return spawnSync(process.execPath, prepared.args, { ...prepared.options, input: "" });
+}
+
+test("public gateway CLI refuses an expired signed manifest with a precise reason and never reports listening", async () => {
+	await profile("{}");
+	const config = fixtureConfig();
+	const keys = generateKeyPairSync("ed25519");
+	config.servers[0].signedManifest = runtime.signMcpToolManifest({ keyId: "publisher", privateKey: keys.privateKey, manifest: {
+		...config.servers[0].signedManifest.manifest, issued_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+		expires_at: new Date(Date.now() - 86400000).toISOString() } });
+	config.servers[0].trustedSigners = { publisher: keys.publicKey.export({ type: "spki", format: "pem" }).toString() };
+	const result = await runWithConfig("cli.mjs", config);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /AIDR MCP gateway failed: startup_failed:manifest_expired\n/);
+	assert.doesNotMatch(result.stdout, /listening/);
+});
+
+test("public stdio CLI warns about its isolation limits and can refuse an upstream credential", async () => {
+	await profile("{}");
+	const upstream = "u".repeat(48);
+	const warned = await runWithConfig("stdio-cli.mjs", fixtureConfig({ upstreamAuthEnv: "TEST_STDIO_UPSTREAM" }),
+		{ TEST_STDIO_UPSTREAM: upstream });
+	assert.equal(warned.status, 0, warned.stderr);
+	assert.match(warned.stderr, /not a credential-isolation or approval boundary/);
+	assert.match(warned.stderr, /upstreamAuthEnv is set/);
+	assert.equal(warned.stderr.includes(upstream), false);
+
+	const refused = await runWithConfig("stdio-cli.mjs",
+		{ ...fixtureConfig({ upstreamAuthEnv: "TEST_STDIO_UPSTREAM" }), stdioUpstreamCredentials: "refuse" },
+		{ TEST_STDIO_UPSTREAM: upstream });
+	assert.equal(refused.status, 1, refused.stderr);
+	assert.match(refused.stderr, /AIDR MCP stdio bridge failed: stdio_isolation_refused:stdio_upstream_credential_refused\n/);
+});

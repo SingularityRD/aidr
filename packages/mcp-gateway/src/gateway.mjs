@@ -11,11 +11,17 @@ import {
 	McpTransportError,
 	mcpToolsetHash,
 	scanModelOutput,
+	verifySignedMcpToolManifest,
 } from "@singularityrd/aidr-core";
 // readMcpSseMessages is not part of the core package export; it resolves to the
 // same module instance as the package's own mcp-transport import.
 import { readMcpSseMessages } from "../../core/dist/mcp-transport.js";
-import { authenticateBearer, resourceUriAllowed, validateGatewayConfig } from "./config.mjs";
+import {
+	authenticateBearer,
+	GatewayConfigError,
+	resourceUriAllowed,
+	validateGatewayConfig,
+} from "./config.mjs";
 import {
 	coverageDescriptor,
 	McpGatewayRefusal,
@@ -37,6 +43,11 @@ const MAX_SESSIONS = 10_000;
 const MAX_SESSIONS_PER_TENANT = 256;
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** A manifest inside its expiry warning window is reported at most this often. */
+const EXPIRY_WARNING_INTERVAL_MS = 60 * 60 * 1000;
+/** Fields a manifest reload may change; anything else requires a restart. */
+const RELOADABLE_SERVER_FIELDS = ["signedManifest", "trustedSigners", "revokedKeyIds"];
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const RESOURCE_METHODS = new Set(["resources/list", "resources/templates/list", "resources/read"]);
 const PROMPT_METHODS = new Set(["prompts/list", "prompts/get"]);
@@ -562,6 +573,20 @@ function safeJson(value) {
 	return text;
 }
 
+/**
+ * Request bodies must be uncompressed UTF-8 JSON. A compressed body or another
+ * charset is refused with its own reason instead of a generic failure.
+ */
+function assertRequestEncoding(headers) {
+	if (!/^application\/json(?:\s*;|$)/i.test(headers["content-type"] ?? ""))
+		throw new Error("invalid_content_type");
+	const charset = /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(headers["content-type"])?.[1];
+	if (charset !== undefined && !/^utf-?8$/i.test(charset)) throw new Error("unsupported_charset");
+	const encoding = headers["content-encoding"];
+	if (encoding !== undefined && encoding.trim().toLowerCase() !== "identity")
+		throw new Error("unsupported_content_encoding");
+}
+
 async function readBody(request, maxBytes, signal) {
 	const announced = request.headers["content-length"];
 	if (announced !== undefined && (!/^\d+$/.test(announced) || Number(announced) > maxBytes)) {
@@ -579,14 +604,26 @@ async function readBody(request, maxBytes, signal) {
 			chunks.push(chunk);
 		}
 		signal.throwIfAborted();
-		return textDecoder.decode(Buffer.concat(chunks));
+		const body = Buffer.concat(chunks);
+		// JSON never contains a raw NUL byte, so one means UTF-16/32 text.
+		if (body.includes(0)) throw new Error("invalid_request_encoding");
+		try {
+			return textDecoder.decode(body);
+		} catch {
+			throw new Error("invalid_request_encoding");
+		}
 	} finally {
 		signal.removeEventListener("abort", abort);
 	}
 }
 
 function parseRequest(text) {
-	const rpc = JSON.parse(text);
+	let rpc;
+	try {
+		rpc = JSON.parse(text);
+	} catch {
+		throw new Error("invalid_rpc_request");
+	}
 	if (
 		jsonObject(rpc) &&
 		rpc.jsonrpc === "2.0" &&
@@ -701,17 +738,92 @@ function collectStrings(value, depth = 0, nodes = { count: 0 }, output = []) {
 	return output;
 }
 
+/** The text a model reads from one content block, message or embedded resource. */
+function blockText(item) {
+	if (!jsonObject(item)) return undefined;
+	if (typeof item.text === "string") return item.text;
+	if (jsonObject(item.content) && typeof item.content.text === "string") return item.content.text;
+	if (jsonObject(item.resource) && typeof item.resource.text === "string")
+		return item.resource.text;
+	return undefined;
+}
+
+/**
+ * Every array of content blocks (tool `content`, prompt `messages`, resource
+ * `contents`) joined in order, with and without a separator. The model reads
+ * consecutive blocks as one text, so an injection or secret split across two
+ * blocks must be scanned as one string too.
+ */
+function joinedBlockViews(value, output = []) {
+	if (Array.isArray(value)) {
+		const texts = value.map(blockText).filter((text) => text !== undefined);
+		if (texts.length > 1) output.push(texts.join(""), texts.join("\n"));
+		for (const item of value) joinedBlockViews(item, output);
+	} else if (jsonObject(value)) {
+		for (const item of Object.values(value)) joinedBlockViews(item, output);
+	}
+	return output;
+}
+
+const BASE64_TOKEN = /[A-Za-z0-9+/_-]{24,}={0,2}/g;
+const HEX_TOKEN = /(?:[0-9A-Fa-f]{2}){12,}/g;
+const MIN_DECODED_TEXT = 12;
+const DECODE_ROUNDS = 2;
+
+/** Decoded bytes that read as text: valid UTF-8, almost entirely printable. */
+function decodedText(bytes) {
+	if (bytes.length < MIN_DECODED_TEXT) return null;
+	const text = bytes.toString("utf8");
+	let printable = 0;
+	for (const character of text) {
+		const code = character.codePointAt(0);
+		if (code === 0xfffd) return null;
+		if (code >= 0x20 || code === 0x09 || code === 0x0a || code === 0x0d) printable += 1;
+	}
+	return printable / text.length >= 0.95 ? text : null;
+}
+
+/**
+ * Bounded base64/base64url and hex decoding pass (two nested rounds). Only
+ * runs that decode to readable text are added to the scan input; the decoded
+ * total can never exceed the encoded input it came from.
+ */
+function decodedViews(text) {
+	const views = [];
+	let input = text;
+	for (let round = 0; round < DECODE_ROUNDS && input; round += 1) {
+		const decoded = [];
+		for (const [token] of input.matchAll(BASE64_TOKEN)) {
+			const value = decodedText(Buffer.from(token, "base64"));
+			if (value) decoded.push(value);
+		}
+		for (const [token] of input.matchAll(HEX_TOKEN)) {
+			const value = decodedText(Buffer.from(token, "hex"));
+			if (value) decoded.push(value);
+		}
+		input = decoded.join("\n");
+		if (input) views.push(input);
+	}
+	return views;
+}
+
+/**
+ * Pattern-based output inspection. The scanner reads the serialized JSON, the
+ * string values (NFKC, zero-width characters removed), the content blocks
+ * joined as the model reads them, and readable base64/hex decodings of those.
+ * It does not interpret paraphrased or otherwise obfuscated instructions.
+ */
 function inspect(value, scanner, maxBytes) {
 	const json = safeJson(value);
 	if (Buffer.byteLength(json, "utf8") > maxBytes) throw new Error("output_oversize");
-	const text = collectStrings(value)
-		.join(" ")
-		.normalize("NFKC")
-		.replace(/[\u200B-\u200D\uFEFF]/g, "");
-	if (Buffer.byteLength(text, "utf8") > maxBytes * 2) throw new Error("output_oversize");
+	const clean = (input) => input.normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/g, "");
+	const text = clean(collectStrings(value).join(" "));
+	const joined = joinedBlockViews(value).map(clean);
+	const views = [json, text, ...joined, ...decodedViews([text, ...joined].join("\n"))].join("\n");
+	if (Buffer.byteLength(views, "utf8") > maxBytes * 10) throw new Error("output_oversize");
 	let findings;
 	try {
-		findings = scanner(`${json}\n${text}`);
+		findings = scanner(views);
 	} catch {
 		throw new Error("scanner_unavailable");
 	}
@@ -724,6 +836,9 @@ const BLOCK_REASONS = new Set([
 	"manifest_rejected",
 	"request_too_large",
 	"invalid_content_type",
+	"unsupported_content_encoding",
+	"unsupported_charset",
+	"invalid_request_encoding",
 	"invalid_rpc_request",
 	"invalid_protocol_version",
 	"invalid_session",
@@ -824,6 +939,7 @@ function blockedAuditFields(blocked) {
 function refusalStatus(reason, rpcId) {
 	if (reason === "tenant_busy" || reason === "gateway_busy") return 429;
 	if (reason === "request_too_large") return 413;
+	if (reason === "unsupported_content_encoding" || reason === "unsupported_charset") return 415;
 	return rpcId === null ? 400 : 200;
 }
 
@@ -1084,7 +1200,7 @@ function sendRpcResult(response, result) {
 }
 
 export function createMcpGateway(input, dependencies = {}) {
-	const config = validateGatewayConfig(input);
+	let config = validateGatewayConfig(input);
 	const stores = new Map();
 	const sessions = new Map();
 	const inflight = new Map();
@@ -1104,6 +1220,9 @@ export function createMcpGateway(input, dependencies = {}) {
 	const scanToolMetadata = dependencies.toolMetadataScanner ?? createToolMetadataScanner(config);
 	let startupCheckPromise;
 	let ready = false;
+	let boundPort;
+	let expiryTimer;
+	const expiryWarnedAt = new Map();
 	let activeRequests = 0;
 	// Only standalone hosts install this check; private hosts supply their own full guards.
 	const assertInstalledPrivacySupported = async () =>
@@ -1626,6 +1745,7 @@ export function createMcpGateway(input, dependencies = {}) {
 	}
 
 	async function runStartupSelfCheck(gatewayAddress) {
+		await verifyConfiguredManifests(config.servers);
 		const results = [];
 		for (const server of config.servers) {
 			if (config.routingRequired) {
@@ -1711,6 +1831,68 @@ export function createMcpGateway(input, dependencies = {}) {
 		return results;
 	}
 
+	function manifestVerifier(server) {
+		return {
+			trustedSigners: server.trustedSigners,
+			revokedKeyIds: new Set(server.revokedKeyIds ?? []),
+			expectedServerId: server.id,
+			maxLifetimeMs: config.manifestPolicy.maxLifetimeDays * DAY_MS,
+			now: now(),
+		};
+	}
+
+	/** A redacted manifest lifecycle event (`rejected`, `expiring`, `reloaded`). */
+	function manifestEvent(server, status, reasonCode) {
+		const expiresAt = Date.parse(server.signedManifest?.manifest?.expires_at);
+		return {
+			event: "aidr.mcp_gateway.manifest",
+			type: "mcp_gateway_manifest",
+			tenantId: server.tenantId,
+			serverId: server.id,
+			status,
+			reasonCode,
+			...(Number.isFinite(expiresAt) ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
+			at: now().toISOString(),
+		};
+	}
+
+	/** Report a manifest inside the operator's expiry warning window. */
+	async function warnIfExpiring(server, { force = false } = {}) {
+		const expiresAt = Date.parse(server.signedManifest?.manifest?.expires_at);
+		const current = now().getTime();
+		if (
+			!Number.isFinite(expiresAt) ||
+			expiresAt - current > config.manifestPolicy.expiryWarningDays * DAY_MS
+		)
+			return;
+		const key = `${server.tenantId}\0${server.id}`;
+		const last = expiryWarnedAt.get(key);
+		if (!force && last !== undefined && current - last < EXPIRY_WARNING_INTERVAL_MS) return;
+		expiryWarnedAt.set(key, current);
+		await emitEvent(manifestEvent(server, "expiring", "manifest_expiring_soon"));
+	}
+
+	/**
+	 * Verify every configured signed manifest (schema, signer, revocation,
+	 * lifetime, validity window, signature) before the gateway serves traffic
+	 * or adopts a reloaded configuration. The first invalid manifest refuses
+	 * with its precise reason, for example `manifest_expired`.
+	 */
+	async function verifyConfiguredManifests(servers) {
+		for (const server of servers) {
+			const verified = verifySignedMcpToolManifest(server.signedManifest, manifestVerifier(server));
+			if (verified.valid) continue;
+			const code = `manifest_${verified.reason}`;
+			await emitEvent(manifestEvent(server, "rejected", code));
+			throw new McpGatewayRefusal(
+				code,
+				"A configured signed MCP manifest is invalid; the gateway refused to use it",
+				{ surface: "signed_manifest", coverageStatus: "limited", enforcement: "startup_refusal" },
+			);
+		}
+		for (const server of servers) await warnIfExpiring(server, { force: true });
+	}
+
 	async function attest(server) {
 		const result = await attestMcpToolManifest({
 			candidate: server.signedManifest,
@@ -1724,15 +1906,16 @@ export function createMcpGateway(input, dependencies = {}) {
 				server.upstreamAuthEnv ?? null,
 				resolvedUpstreamAuth(server) ?? null,
 			],
-			verifier: {
-				trustedSigners: server.trustedSigners,
-				revokedKeyIds: new Set(server.revokedKeyIds ?? []),
-				expectedServerId: server.id,
-				now: now(),
-			},
+			verifier: manifestVerifier(server),
 			store: storeFor(server.tenantId),
 		});
+		if (result.status === "rejected") {
+			// The client sees the generic reason; the audit event carries the
+			// precise one (expired, lifetime_too_long, invalid_signature, ...).
+			throw Object.assign(new Error("manifest_rejected"), { manifestReason: result.reason });
+		}
 		if (result.status !== "accepted") throw new Error(`manifest_${result.status}`);
+		await warnIfExpiring(server);
 	}
 
 	async function forward(server, rpc, sessionId, signal) {
@@ -2157,7 +2340,12 @@ export function createMcpGateway(input, dependencies = {}) {
 		const reason = safeReason(cause);
 		const blocked = cause instanceof McpToolCallBlocked ? cause : null;
 		const refusal = cause instanceof McpGatewayRefusal ? cause : null;
-		await audit(client.tenantId, serverId, client.id, "deny", reason, blockedAuditFields(blocked));
+		await audit(client.tenantId, serverId, client.id, "deny", reason, {
+			...blockedAuditFields(blocked),
+			...(typeof cause?.manifestReason === "string" && /^[a-z_]{1,48}$/.test(cause.manifestReason)
+				? { manifestReason: cause.manifestReason }
+				: {}),
+		});
 		if (refusal) {
 			await emitCoverageForRefusal(refusal, {
 				tenantId: client.tenantId,
@@ -2186,9 +2374,7 @@ export function createMcpGateway(input, dependencies = {}) {
 		let counted = false;
 		let requestUpstream;
 		try {
-			if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")) {
-				throw new Error("invalid_content_type");
-			}
+			assertRequestEncoding(request.headers);
 			const rpc = parseRequest(await readBody(request, config.maxBodyBytes, controller.signal));
 			rpcId = rpc.id ?? null;
 			rpcMethod = rpc.method;
@@ -2281,7 +2467,26 @@ export function createMcpGateway(input, dependencies = {}) {
 		return { client, serverId, upstream };
 	}
 
+	/**
+	 * DNS-rebinding defence: only the loopback names for the bound port, plus
+	 * operator-listed `allowedHosts` (a reverse proxy), may address the gateway.
+	 */
+	function hostAllowed(host) {
+		if (typeof host !== "string" || boundPort === undefined) return false;
+		const value = host.toLowerCase();
+		return (
+			value === `127.0.0.1:${boundPort}` ||
+			value === `localhost:${boundPort}` ||
+			value === `[::1]:${boundPort}` ||
+			config.allowedHosts.includes(value)
+		);
+	}
+
 	const server = createServer(async (request, response) => {
+		if (!hostAllowed(request.headers.host)) {
+			send(response, 421, { error: "host_forbidden" });
+			return;
+		}
 		try {
 			await assertInstalledPrivacySupported();
 		} catch {
@@ -2320,10 +2525,43 @@ export function createMcpGateway(input, dependencies = {}) {
 	server.keepAliveTimeout = 5_000;
 
 	return {
-		config,
+		get config() {
+			return config;
+		},
 		storeFor,
+		/**
+		 * Adopt re-signed manifests, signer keys or revocations from a new
+		 * configuration without a restart. Every other field must be unchanged,
+		 * and every manifest must verify; otherwise the current configuration
+		 * stays in force and the reload is refused with a reason code.
+		 */
+		async reloadManifests(input) {
+			const next = validateGatewayConfig(input);
+			const fixed = (value) => ({
+				...value,
+				servers: value.servers.map((item) =>
+					Object.fromEntries(
+						Object.entries(item).filter(([key]) => !RELOADABLE_SERVER_FIELDS.includes(key)),
+					),
+				),
+			});
+			if (!isDeepStrictEqual(fixed(next), fixed(config)))
+				throw new GatewayConfigError("configuration change requires restart");
+			await verifyConfiguredManifests(next.servers);
+			const changed = next.servers.filter(
+				(item, index) =>
+					!RELOADABLE_SERVER_FIELDS.every((key) =>
+						isDeepStrictEqual(item[key], config.servers[index][key]),
+					),
+			);
+			config = next;
+			for (const item of changed)
+				await emitEvent(manifestEvent(item, "reloaded", "manifest_reloaded"));
+			return { reloaded: changed.length };
+		},
 		close() {
 			ready = false;
+			clearInterval(expiryTimer);
 			return new Promise((resolve) => server.close(resolve));
 		},
 		async approve({ tenantId, serverId, toolsetHash, bindingSha256, approvedBy, reason }) {
@@ -2352,11 +2590,17 @@ export function createMcpGateway(input, dependencies = {}) {
 				server.listen(port, "127.0.0.1", async () => {
 					server.off("error", reject);
 					const address = server.address();
+					boundPort = address.port;
 					try {
 						if (!startupCheckPromise) startupCheckPromise = runStartupSelfCheck(address);
 						await startupCheckPromise;
 						await assertInstalledPrivacySupported();
 						ready = true;
+						// Idle gateways still report manifests entering the warning window.
+						expiryTimer = setInterval(() => {
+							for (const item of config.servers) void warnIfExpiring(item);
+						}, EXPIRY_WARNING_INTERVAL_MS);
+						expiryTimer.unref();
 						resolve(address);
 					} catch (cause) {
 						server.close(() => reject(cause));
