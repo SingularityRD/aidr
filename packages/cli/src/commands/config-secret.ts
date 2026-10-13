@@ -20,8 +20,9 @@ interface SecretCommandOptions {
 
 /** Shared `--secret-store` description so the commands and `setup` agree. */
 export const SECRET_STORE_OPTION_DESCRIPTION =
-	`Credential store: ${SECRET_STORE_KINDS.join(", ")} (default: detect the OS vault; ` +
-	`${SECRET_STORE_ENV}=file-acl accepts the reduced-protection file fallback)`;
+	`Credential store: ${SECRET_STORE_KINDS.join(", ")} (default: the OS vault, or the ` +
+	"machine-bound encrypted-file store on a host without one; " +
+	`${SECRET_STORE_ENV}=file-acl accepts the plaintext file fallback)`;
 
 function report(
 	command: string,
