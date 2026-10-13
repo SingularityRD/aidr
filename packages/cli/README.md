@@ -16,6 +16,13 @@ available commands:
 aidr --help
 ```
 
+Help and the output of `aidr status`, `aidr pending` and `aidr approve` are
+available in English and Turkish. Turkish is used when `AIDR_LOCALE=tr`, the
+configuration key `locale` is `"tr"`, or the shell locale is Turkish
+(`LANG=tr_TR.UTF-8`); everything else stays English. Flags, command names,
+`--json` output and the `approve` confirmation word are the same in both
+languages. Other commands still print English.
+
 Run `aidr setup` only after the operator has supplied the approved runtime
 configuration and selected a supported secret store. It may write local
 configuration and record detected runtime state; it does not install hooks or

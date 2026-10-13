@@ -1,0 +1,108 @@
+/**
+ * CLI localization: the `aidr --help` tree and the output of the incident
+ * commands. Locale resolution is the shared one from aidr-core (AIDR_LOCALE,
+ * the config `locale` key, LC_ALL / LC_MESSAGES / LANG, then English).
+ */
+import { readFileSync } from "node:fs";
+import {
+	createTranslator,
+	currentLocale,
+	DEFAULT_LOCALE,
+	type Locale,
+	resolvePath,
+	setConfiguredLocale,
+} from "@singularityrd/aidr-core";
+import { type Command, Help, type Option } from "commander";
+import { HELP_TR } from "./help-tr.js";
+import { CLI_EN, CLI_TR, type CliMessageKey } from "./messages.js";
+
+export { HELP_TR } from "./help-tr.js";
+export { CLI_EN, CLI_TR, type CliMessageKey } from "./messages.js";
+
+/** CLI output message in the current locale. */
+export const ct = createTranslator<CliMessageKey>({ en: CLI_EN, tr: CLI_TR });
+
+/** Commander's own help texts, which are not part of the command tree. */
+export const BUILTIN_HELP_TEXTS = [
+	"output the version number",
+	"display help for command",
+	"Usage:",
+	"Options:",
+	"Commands:",
+	"Arguments:",
+	"Global Options:",
+] as const;
+
+/**
+ * Pick up `locale` from ~/.singularity-aidr/config.json before any output is
+ * written. Commands that run loadConfig set it again; this read only covers
+ * help and the commands that never load the configuration. Never throws.
+ */
+export function initCliLocale(): void {
+	try {
+		const raw = readFileSync(resolvePath("~/.singularity-aidr/config.json"), "utf8");
+		const parsed = JSON.parse(raw) as { locale?: unknown } | null;
+		if (parsed && typeof parsed === "object") setConfiguredLocale(parsed.locale);
+	} catch {
+		// No or unreadable configuration: the environment decides.
+	}
+}
+
+/** Every description in the command tree (commands, options, arguments). */
+export function collectHelpTexts(program: Command): Set<string> {
+	const texts = new Set<string>();
+	const walk = (command: Command): void => {
+		if (command.description()) texts.add(command.description());
+		for (const option of command.options) if (option.description) texts.add(option.description);
+		for (const argument of command.registeredArguments)
+			if (argument.description) texts.add(argument.description);
+		for (const sub of command.commands) walk(sub);
+	};
+	walk(program);
+	return texts;
+}
+
+function translateHelp(text: string, table: Readonly<Record<string, string>>): string {
+	return table[text] ?? text;
+}
+
+/** Commander appends "(default: …)" / "(choices: …)" after the description. */
+function translateSuffixes(text: string): string {
+	return text
+		.replace(/\(default: /g, "(varsayılan: ")
+		.replace(/\(choices: /g, "(seçenekler: ")
+		.replace(/\(preset: /g, "(ön ayar: ");
+}
+
+/**
+ * Show the help of every command in the given locale. English needs nothing:
+ * the definitions are English, so the tree is left untouched and the output
+ * stays byte-for-byte what it was. Translation happens at display time, so
+ * descriptions keep their English source for tests and tooling.
+ */
+export function localizeHelp(program: Command, locale: Locale = currentLocale()): void {
+	if (locale === DEFAULT_LOCALE) return;
+	const table = HELP_TR;
+	const base = Help.prototype;
+	const configuration: Partial<Help> = {
+		styleTitle: (title: string) => translateHelp(title, table),
+		commandDescription: (command: Command) => translateHelp(command.description(), table),
+		subcommandDescription: (command: Command) =>
+			translateHelp(command.summary() || command.description(), table),
+		optionDescription(this: Help, option: Option) {
+			const translated = Object.create(option) as Option;
+			translated.description = translateHelp(option.description ?? "", table);
+			return translateSuffixes(base.optionDescription.call(this, translated));
+		},
+		argumentDescription(this: Help, argument) {
+			const translated = Object.create(argument);
+			translated.description = translateHelp(argument.description ?? "", table);
+			return translateSuffixes(base.argumentDescription.call(this, translated));
+		},
+	};
+	const walk = (command: Command): void => {
+		command.configureHelp(configuration);
+		for (const sub of command.commands) walk(sub);
+	};
+	walk(program);
+}

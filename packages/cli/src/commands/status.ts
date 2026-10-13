@@ -6,6 +6,7 @@ import {
 	readTelemetryLossSummary,
 	resolvePath,
 } from "@singularityrd/aidr-core";
+import { ct } from "../i18n/index.js";
 import { detectConnectorStatuses } from "../utils/connector-status.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 
@@ -79,29 +80,38 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 	};
 	if (options.json) console.log(JSON.stringify(report, null, 2));
 	else {
-		console.log("Singularity AIDR — installation diagnostics");
-		console.log(`Detection self-test: ${detectionOk ? "passed" : "FAILED"}; ${ruleCount} rules. ${detail}`);
-		console.log(`Configuration: ${configState}; mode: ${config.mode}`);
-		for (const connector of connectors) console.log(`  ${connector.label}: ${connector.state === "installed" ? "registration/package detected" : connector.state} — ${connector.detail}`);
+		console.log(ct("status.title"));
+		console.log(ct("status.detection", { result: detectionOk ? ct("status.passed") : ct("status.failed"), rules: ruleCount, detail }));
+		console.log(ct("status.configuration", { state: configState, mode: config.mode }));
+		for (const connector of connectors) console.log(`  ${connector.label}: ${connector.state === "installed" ? ct("status.registrationDetected") : connector.state} — ${connector.detail}`);
 		if (config.mode !== "managed") {
-			console.log(`Managed: inactive (mode: ${config.mode}); enforcement is local and no control plane is used.`);
+			console.log(ct("status.managedInactive", { mode: config.mode }));
 		} else {
-			console.log(`Managed: ${managedActive ? "enabled" : "disabled"}; endpoint ${config.control_plane.endpoint ? "configured" : "missing"}. Connectivity and fleet adoption have not been checked.`);
+			console.log(ct("status.managed", {
+				state: managedActive ? ct("status.managedEnabled") : ct("status.managedDisabled"),
+				endpoint: config.control_plane.endpoint ? ct("status.endpointConfigured") : ct("status.endpointMissing"),
+			}));
 		}
 		const unreadableTelemetryQueue =
 			telemetryLoss.state === "unavailable" ||
 			telemetryLoss.namespaces.some((entry: { state: string }) => entry.state === "unavailable");
 		console.log(
-			`Telemetry queue: ${telemetryLoss.state}; ${telemetryLoss.pendingEvents} event(s) undelivered, ${telemetryLoss.lostTotal} lost` +
-				(telemetryLoss.pendingEvents > 0 ? `, oldest ${telemetryLoss.oldestAgeSeconds}s` : "") +
-				(unreadableTelemetryQueue ? " — at least one queue could not be read." : "."),
+			ct("status.telemetry", {
+				state: telemetryLoss.state,
+				pending: telemetryLoss.pendingEvents,
+				lost: telemetryLoss.lostTotal,
+				oldest: telemetryLoss.pendingEvents > 0 ? ct("status.telemetryOldest", { seconds: telemetryLoss.oldestAgeSeconds }) : "",
+				suffix: unreadableTelemetryQueue ? ct("status.telemetryUnreadable") : ct("status.telemetryEnd"),
+			}),
 		);
 		const auditSummary =
-			`Audit log: ${auditLoss.writeFailures} append(s) could not be written, ${persistedAuditLoss ? auditLoss.rotationDrops : "an unknown number of"} rotation(s) dropped the oldest file.` +
-			(auditLoss.lastError ? ` Last error: ${auditLoss.lastError}.` : "");
+			ct("status.audit", {
+				failures: auditLoss.writeFailures,
+				drops: persistedAuditLoss ? auditLoss.rotationDrops : ct("status.auditUnknownDrops"),
+			}) + (auditLoss.lastError ? ct("status.auditLastError", { error: auditLoss.lastError }) : "");
 		console.log(auditSummary);
-		console.log(configurationReady ? "Local installation checks passed. Run an agent-host canary to confirm actual enforcement." : "Installation requires attention. Check configuration and connector registration above.");
-		console.log("A package or hook registration does not prove that the host executes it.");
+		console.log(configurationReady ? ct("status.ready") : ct("status.attention"));
+		console.log(ct("status.disclaimer"));
 	}
 	if (!configurationReady) process.exitCode = 1;
 }
