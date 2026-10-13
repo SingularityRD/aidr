@@ -162,6 +162,11 @@ flows](privacy.md) before enabling network features.
   "version_check": {
     "enabled": false
   },
+  "update": {
+    "auto": "notify",
+    "check_interval_hours": 24,
+    "catalog_public_keys": []
+  },
   "heuristics_enabled": true,
   "cache": {
     "enabled": true,
@@ -441,6 +446,36 @@ stores no request field and is rate limited (aggregate
 `AIDR_VERSION_CHECK_RATE_LIMIT_PER_MINUTE`, default 6000; per signed client IP
 `AIDR_VERSION_CHECK_CLIENT_RATE_LIMIT_PER_MINUTE`, default 30), failing closed
 when the limiter is unavailable.
+
+### `update`
+
+`aidr update` for endpoints installed with the Windows and Linux desktop
+installers ([Updating](installation/desktop-installers.md#updating)).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `auto` | `"notify"` | `notify`: at AI tool session start, at most once per `check_interval_hours`, check the signed installer catalog and show "To install it, run: aidr update". `install`: also start `aidr update --auto` in the background, which installs only a newer verified version from the configured source and rolls back on a failed `aidr verify`. `off`: no automatic check. Device management turns it off (below). |
+| `source` | unset | A mirror of the download portal tree: a folder or an `https` URL holding `latest.json`. Used when there is no managed control plane (local mode) or the device is not enrolled. |
+| `catalog_public_keys` | `[]` | Installer-catalog public keys (PEM, or base64 SPKI DER / raw Ed25519). Used only when the install folder has no `config/installer-catalog-public.pem`; that file wins. No key: nothing is downloaded or installed. |
+| `check_interval_hours` | `24` | Hours between automatic checks (1–720). |
+
+Source order for `aidr update`: `--from`, then the tenant portal in managed
+mode (`control_plane.endpoint` with the device's API key, Edge Function
+`installer-update`), then `source`. Every source is verified the same way:
+the catalog signature with the pinned key, then the installer's SHA-256 and
+size. An older version needs `--allow-downgrade`.
+
+**Device management.** On a machine marked as device-managed
+(`/etc/singularity-aidr/mdm-managed` on Linux; on Windows the policy value
+`HKLM\SOFTWARE\Policies\Singularity AIDR\MdmManaged = 1`, set by the MSI
+property `AIDR_MDM_MANAGED=1`, or the file
+`%ProgramData%\Singularity AIDR\mdm-managed`) automatic checks are off
+whatever `auto` says and `aidr update` only checks: MDM customers update
+through their MDM.
+
+These checks are separate from `version_check`: on an installer endpoint the
+session-start notice comes from the signed installer catalog, not from the
+`version-check` endpoint.
 
 ### `amsi_check`
 

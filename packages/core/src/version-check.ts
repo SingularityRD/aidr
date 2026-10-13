@@ -23,6 +23,11 @@ export interface VersionCheckResult {
 	currentVersion: string;
 	latestVersion: string;
 	updateAvailable: boolean;
+	/**
+	 * Set for an endpoint installed with the desktop installers (update/check.ts):
+	 * the notice names `aidr update`, or says the update is being installed.
+	 */
+	action?: "aidr_update" | "installing";
 }
 
 /**

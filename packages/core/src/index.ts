@@ -1800,6 +1800,52 @@ export {
 	UrlCheckConfigSchema,
 	VerdictSeveritySchema,
 } from "./types.js";
+// Desktop-installer self-update (`aidr update`, session-start update notice)
+export type {
+	CatalogVerification,
+	InstallerCatalog,
+	InstallerCatalogFile,
+	InstallerPlatform,
+	SignedDocument,
+} from "./update/catalog.js";
+export {
+	INSTALLER_PLATFORMS,
+	parseCatalogPublicKey,
+	verifyCatalogDocument,
+	verifyPublishedCatalog,
+} from "./update/catalog.js";
+export type { UpdateCheck, UpdateCheckState, UpdateNotice, UpdateStatus } from "./update/check.js";
+export {
+	checkInstallerUpdate,
+	compareReleaseVersions,
+	installerUpdateNotice,
+	installerUpdatesApply,
+	readUpdateState,
+	resolveManagedApiKey,
+	resolveUpdateSource,
+	UPDATE_STATE_FILE,
+	writeUpdateState,
+} from "./update/check.js";
+export type {
+	InstallerLayout,
+	MdmStatus,
+	TrustedCatalogKeys,
+	UpdateAutoMode,
+	UpdateEnvironmentDeps,
+} from "./update/environment.js";
+export {
+	CATALOG_KEY_FILE,
+	detectMdmManaged,
+	effectiveAutoMode,
+	installerLayoutFor,
+	installerPlatform,
+	LINUX_MDM_MARKER,
+	trustedCatalogKeys,
+	WINDOWS_MDM_POLICY_KEY,
+	WINDOWS_MDM_POLICY_VALUE,
+} from "./update/environment.js";
+export type { SourceDeps, SourceErrorCode, UpdateSource } from "./update/source.js";
+export { downloadVerified, installerLocation, loadCatalog } from "./update/source.js";
 // URL utilities
 export { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 // Build/runtime version used by health, telemetry and consumer CLIs.

@@ -316,4 +316,19 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 		"Arşiv yolu (.tar.gz); var olan bir dosyanın üzerine asla yazmaz",
 	"Recent audit verdicts to summarise (0-1000)": "Özetlenecek son denetim kararı sayısı (0-1000)",
 	"Print the bundle summary as JSON": "Paket özetini JSON olarak yazdır",
+	"Update an installation from the Windows/Linux installers: verify the signed catalog and the installer's SHA-256, install silently, run 'aidr verify', roll back on failure":
+		"Windows/Linux kurulum dosyalarıyla yapılmış bir kurulumu güncelle: imzalı kataloğu ve kurulum dosyasının SHA-256 değerini doğrula, sessizce kur, 'aidr verify' çalıştır, başarısız olursa geri al",
+	"Only report whether a newer version is available; change nothing":
+		"Yalnızca daha yeni bir sürüm olup olmadığını bildir; hiçbir şeyi değiştirme",
+	"Installer file, portal mirror directory or https URL your administrator provides (instead of the portal)":
+		"Yöneticinizin verdiği kurulum dosyası, portal kopyası dizini ya da https adresi (portal yerine)",
+	"Signed manifest.json for --from (default: next to the installer)":
+		"--from için imzalı manifest.json (varsayılan: kurulum dosyasının yanındaki)",
+	"Allow installing an older version (a rollback your administrator asked for)":
+		"Daha eski bir sürümün kurulmasına izin ver (yöneticinizin istediği bir geri dönüş)",
+	"With AIDR_OPERATOR_NONINTERACTIVE=1, install without a prompt":
+		"AIDR_OPERATOR_NONINTERACTIVE=1 ile sormadan kur",
+	"With --check, emit a machine-readable result": "--check ile makinece okunabilir sonuç üret",
+	"Background install started by update.auto=install":
+		"update.auto=install ile başlatılan arka plan kurulumu",
 };

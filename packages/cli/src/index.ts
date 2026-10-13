@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { VERSION } from "@singularityrd/aidr-core";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import aibomCommand from "./commands/aibom.js";
 import {
 	allowlistAddCommand,
@@ -65,6 +65,7 @@ import simulateCommand from "./commands/simulate.js";
 import statusCommand from "./commands/status.js";
 import supportBundleCommand from "./commands/support-bundle.js";
 import uninstallCommand from "./commands/uninstall.js";
+import updateCommand from "./commands/update.js";
 import verifyCommand from "./commands/verify.js";
 import { groupCommands, initCliLocale, localizeHelp } from "./i18n/index.js";
 
@@ -135,6 +136,29 @@ program
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action((options) => verifyCommand(options));
+
+program
+	.command("update")
+	.description(
+		"Update an installation from the Windows/Linux installers: verify the signed catalog and the installer's SHA-256, install silently, run 'aidr verify', roll back on failure",
+	)
+	.option("--check", "Only report whether a newer version is available; change nothing")
+	.option(
+		"--from <location>",
+		"Installer file, portal mirror directory or https URL your administrator provides (instead of the portal)",
+	)
+	.option(
+		"--catalog <location>",
+		"Signed manifest.json for --from (default: next to the installer)",
+	)
+	.option(
+		"--allow-downgrade",
+		"Allow installing an older version (a rollback your administrator asked for)",
+	)
+	.option("-y, --yes", "With AIDR_OPERATOR_NONINTERACTIVE=1, install without a prompt")
+	.option("--json", "With --check, emit a machine-readable result")
+	.addOption(new Option("--auto", "Background install started by update.auto=install").hideHelp())
+	.action((options) => updateCommand(options));
 
 program
 	.command("scan")

@@ -102,6 +102,10 @@ export const tr: Record<MessageKey, string> = {
 
 	"session.updateAvailable":
 		"⬆️  Güncelleme mevcut: v{current} → v{latest} (https://github.com/singularityrd/aidr)",
+	"session.updateAvailableInstaller":
+		"⬆️  Singularity AIDR v{latest} sürümü yayımlandı (sizdeki sürüm v{current}). Kurmak için şunu çalıştırın: aidr update",
+	"session.updateInstalling":
+		"⬆️  Singularity AIDR v{latest} sürümü yayımlandı (sizdeki sürüm v{current}) ve arka planda kuruluyor. Durumu görmek için: aidr update --check",
 	"session.policy.cached": "{policy} önbellekte, {seconds} sn kaldı",
 	"session.policy.expired": "{policy} önbelleğinin süresi doldu",
 	"session.policy.expiredAge": "{policy} önbelleğinin süresi doldu, {seconds} sn önce alındı",

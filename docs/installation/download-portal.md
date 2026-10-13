@@ -47,6 +47,16 @@ dashboard /downloads ──► installer-download Edge Function ─────�
   flow (approve the code on `/verify`; manual enrollment tokens stay in the
   onboarding page's advanced section). No secret is created in the browser.
 
+- **Endpoint updates.** Enrolled endpoints reach the same catalog through
+  the `installer-update` Edge Function with their tenant API key (no browser
+  session): an active owner/admin/member key of an active tenant with an
+  ACTIVE admission. It returns the exact signed `latest.json` and catalog
+  bytes, which `aidr update` verifies again with its pinned catalog key, and
+  then one signed URL for the current version with the same
+  `installer.download` audit row (actor: the key's owner). Rate limits per key
+  and tenant per minute: catalog 30 / 6000, download links 10 / 3000. See
+  [Updating](desktop-installers.md#updating).
+
 ## Storage contract
 
 Private bucket, default name `aidr-installers` (created by migration
@@ -151,7 +161,7 @@ rotate, publish once with the new key after updating the function's public key
 
 ## Configuration
 
-Edge Function `installer-download`:
+Edge Functions `installer-download` and `installer-update` (same variables):
 
 | Variable | Required | Meaning |
 |---|---|---|

@@ -256,6 +256,11 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
     "trusted_mcp_servers": [],
     "window_minutes": 60,
   },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
+  },
   "url_check": {
     "allow_insecure_loopback": false,
     "enabled": false,
@@ -513,6 +518,11 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
     ],
     "trusted_mcp_servers": [],
     "window_minutes": 60,
+  },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
   },
   "url_check": {
     "allow_insecure_loopback": false,
@@ -778,6 +788,11 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
     "trusted_mcp_servers": [],
     "window_minutes": 60,
   },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
+  },
   "url_check": {
     "allow_insecure_loopback": false,
     "enabled": false,
@@ -1036,6 +1051,11 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
     "trusted_mcp_servers": [],
     "window_minutes": 60,
   },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
+  },
   "url_check": {
     "allow_insecure_loopback": false,
     "enabled": false,
@@ -1293,6 +1313,11 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
     ],
     "trusted_mcp_servers": [],
     "window_minutes": 60,
+  },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
   },
   "url_check": {
     "allow_insecure_loopback": false,

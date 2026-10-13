@@ -48,8 +48,9 @@ import {
 	type SessionStartRulesIncomplete,
 	type SessionStartScanReport,
 } from "./session-start-scan.js";
-import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
+import type { AgentRuntime, Config, Logger, PluginInfo, PluginScanResult } from "./types.js";
 import { nullLogger } from "./types.js";
+import { installerUpdateNotice, installerUpdatesApply } from "./update/check.js";
 import { checkForUpdate, type VersionCheckResult, versionCheckEndpoint } from "./version-check.js";
 
 export interface SessionStartContext {
@@ -196,6 +197,42 @@ function mcpToolManifestCoverageFindings(
 		});
 	}
 	return findings;
+}
+
+/**
+ * The session-start update notice. An endpoint installed with the desktop
+ * installers is updated with `aidr update` from its own portal: its notice
+ * comes from the signed installer catalog (update.auto). Every other install
+ * uses the opt-in generic version check.
+ */
+function startVersionCheck(
+	config: Config,
+	ctx: SessionStartContext,
+	token: string | undefined,
+	iidPromise: Promise<string | undefined>,
+	logger: Logger,
+): Promise<VersionCheckResult | null> {
+	if (installerUpdatesApply(process.execPath)) {
+		return installerUpdateNotice({
+			config,
+			currentVersion: ctx.version,
+			apiKey: token,
+			executable: process.execPath,
+		});
+	}
+	if (!config.version_check.enabled) return Promise.resolve(null);
+	return iidPromise
+		.then((iid) =>
+			checkForUpdate(
+				ctx.version,
+				logger,
+				undefined,
+				{ agentRuntime: ctx.agentRuntime, agentRuntimeVersion: ctx.agentRuntimeVersion, iid },
+				token,
+				versionCheckEndpoint(config),
+			),
+		)
+		.catch(() => null);
 }
 
 export async function runSessionStart(ctx: SessionStartContext): Promise<SessionStartResult> {
@@ -652,24 +689,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 
 	const heartbeatPromise = managedHeartbeat();
 
-	const versionCheckPromise = config.version_check.enabled
-		? iidPromise
-				.then((iid) =>
-					checkForUpdate(
-						ctx.version,
-						logger,
-						undefined,
-						{
-							agentRuntime: ctx.agentRuntime,
-							agentRuntimeVersion: ctx.agentRuntimeVersion,
-							iid,
-						},
-						token,
-						versionCheckEndpoint(config),
-					),
-				)
-				.catch(() => null)
-		: Promise.resolve(null);
+	const versionCheckPromise = startVersionCheck(config, ctx, token, iidPromise, logger);
 
 	const scan = () =>
 		runSessionStartScanWithReport({

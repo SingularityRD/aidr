@@ -103,6 +103,10 @@ export const en = {
 	// Session-start banners (core format).
 	"session.updateAvailable":
 		"⬆️  Update available: v{current} → v{latest} (https://github.com/singularityrd/aidr)",
+	"session.updateAvailableInstaller":
+		"⬆️  Singularity AIDR v{latest} is available (you have v{current}). To install it, run: aidr update",
+	"session.updateInstalling":
+		"⬆️  Singularity AIDR v{latest} is available (you have v{current}) and is being installed in the background. Check with: aidr update --check",
 	"session.policy.cached": "{policy} cached, {seconds}s left",
 	"session.policy.expired": "{policy} cache expired",
 	"session.policy.expiredAge": "{policy} cache expired, {seconds}s old",

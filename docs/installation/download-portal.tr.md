@@ -33,6 +33,16 @@ platform sayfa değiştirilmeden eklenebilir.
   genel adresini içerir; sayfa mevcut cihaz kodu akışını gösterir (kodu
   `/verify` sayfasında onaylayın). Tarayıcıda gizli bilgi üretilmez.
 
+- **Uç nokta güncellemeleri.** Kaydı yapılmış uç noktalar aynı kataloğa,
+  tarayıcı oturumu olmadan, kiracı API anahtarlarıyla `installer-update` Edge
+  Function üzerinden ulaşır: etkin bir kiracının etkin sahip/yönetici/üye
+  anahtarı ve ETKİN bir kabul gerekir. İşlev imzalı `latest.json` ve katalog
+  baytlarını olduğu gibi döndürür; `aidr update` bunları sabitlenmiş katalog
+  anahtarıyla yeniden doğrular, ardından güncel sürüm için tek bir imzalı
+  adres alır ve aynı `installer.download` denetim kaydı yazılır (işlemi yapan:
+  anahtarın sahibi). Anahtar ve kiracı başına dakikada: katalog 30 / 6000,
+  indirme bağlantısı 10 / 3000. Bkz. [Güncelleme](desktop-installers.tr.md#güncelleme).
+
 ## Depolama sözleşmesi
 
 Özel kova, varsayılan adı `aidr-installers` (göç
@@ -70,7 +80,7 @@ Sürüm yükseltme iş akışına eklenecek adım ve yerel deneme (`--dry-run`) 
 
 ## Yapılandırma
 
-Edge Function `installer-download`: `SUPABASE_URL`,
+Edge Function `installer-download` ve `installer-update` (aynı değişkenler): `SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`, `AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_B64` (zorunlu),
 `AIDR_INSTALLERS_BUCKET` (varsayılan `aidr-installers`),
 `AIDR_INSTALLER_URL_TTL_SECONDS` (varsayılan 300, 30..900),
