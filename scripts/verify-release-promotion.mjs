@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseRcTag, RC_TAG_PATTERN } from "./lib/rc-tag.mjs";
 import { systemTar } from "./lib/tar-path.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -16,6 +18,11 @@ export async function verifyReleasePromotion(options) {
 	const receiptPath = path.resolve(options.receipt);
 	const lockfile = path.resolve(options.lockfile);
 	const firstReceipt = options.record ? `${receiptPath}.preflight` : receiptPath;
+	// A recording promotion advances the production rollback floor. A missing
+	// state there means it was lost (expired, deleted, never restored), not that
+	// this is the first release, so it fails closed. Only an explicit genesis
+	// approval may start from nothing, and never over an existing state.
+	const requireState = assertPromotionStatePolicy(options, existsSync(statePath));
 
 	runNode(path.join(scriptDir, "release-verify.mjs"), [
 		"--bundle",
@@ -26,6 +33,7 @@ export async function verifyReleasePromotion(options) {
 		statePath,
 		"--receipt",
 		firstReceipt,
+		...(requireState ? ["--require-state"] : []),
 	]);
 
 	const metadata = await readJson(path.join(bundle, "release-metadata.json"), "release metadata");
@@ -47,9 +55,22 @@ export async function verifyReleasePromotion(options) {
 			"--receipt",
 			receiptPath,
 			"--record",
+			...(requireState ? ["--require-state"] : []),
 		]);
 		await rm(firstReceipt, { force: true });
 	}
+}
+
+/**
+ * @returns {boolean} whether release-verify must refuse a missing state file
+ */
+export function assertPromotionStatePolicy({ record = false, genesis = false }, stateExists) {
+	if (genesis && !record) throw new Error("--genesis only applies to a recording promotion (--record)");
+	if (genesis && stateExists) throw new Error("--genesis refused: an anti-rollback state already exists; a genesis promotion may only start from no state at all");
+	if (record && !genesis && !stateExists) {
+		throw new Error("anti-rollback state is missing; refusing to treat this promotion as a first release. Restore the protected state (or the floor from signed GitHub releases), or pass the explicit genesis approval for the very first promotion only.");
+	}
+	return record && !genesis;
 }
 
 function runNode(script, args) {
@@ -173,7 +194,7 @@ function uriBasename(value) {
 }
 
 function parseArguments(argv) {
-	const flags = new Set(["--record"]);
+	const flags = new Set(["--record", "--genesis"]);
 	const valued = new Set([
 		"--bundle",
 		"--policy",
@@ -189,7 +210,7 @@ function parseArguments(argv) {
 	for (let index = 0; index < argv.length; index += 1) {
 		const flag = argv[index];
 		if (flags.has(flag)) {
-			values.record = true;
+			values[flag.slice(2)] = true;
 			continue;
 		}
 		if (!valued.has(flag) || !argv[index + 1]) throw new Error(`unknown or incomplete option: ${flag}`);
@@ -198,8 +219,9 @@ function parseArguments(argv) {
 	for (const name of ["bundle", "policy", "state", "receipt", "lockfile", "expected_tag", "expected_version", "expected_sha", "run_id"]) {
 		if (!values[name]) throw new Error(`--${name.replaceAll("_", "-")} is required`);
 	}
-	if (!/^v\d+\.\d+\.\d+-rc\.0$/.test(values.expected_tag)) throw new Error("--expected-tag is invalid");
+	if (!RC_TAG_PATTERN.test(values.expected_tag)) throw new Error("--expected-tag is invalid");
 	if (!/^\d+\.\d+\.\d+$/.test(values.expected_version)) throw new Error("--expected-version is invalid");
+	if (parseRcTag(values.expected_tag).version !== values.expected_version) throw new Error("--expected-tag does not belong to --expected-version");
 	if (!/^[0-9a-f]{40,64}$/i.test(values.expected_sha)) throw new Error("--expected-sha is invalid");
 	if (!/^\d+$/.test(values.run_id)) throw new Error("--run-id is invalid");
 	return {
@@ -213,6 +235,7 @@ function parseArguments(argv) {
 		expectedSha: values.expected_sha,
 		runId: values.run_id,
 		record: values.record === true,
+		genesis: values.genesis === true,
 	};
 }
 

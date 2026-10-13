@@ -51,6 +51,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseRcTag, RC_TAG_PATTERN } from "./lib/rc-tag.mjs";
 import { CANDIDATE_DIGEST_SOURCE, gitCommitSha } from "./generate-v8-evidence-index.mjs";
 import { REGISTRY_FILE, validateCommercialGateReceipts } from "./verify-commercial-gate-receipts.mjs";
 
@@ -280,7 +281,7 @@ function entryProblems(entry, index, previous) {
 	}
 	if (entry.candidate_digest_source !== CANDIDATE_DIGEST_SOURCE) problems.push(`${at} has candidate_digest_source ${JSON.stringify(entry.candidate_digest_source)}`);
 	if (typeof entry.release_version !== "string" || !/^\d+\.\d+\.\d+$/u.test(entry.release_version)) problems.push(`${at} has an invalid release_version`);
-	else if (entry.release_tag !== `v${entry.release_version}-rc.0`) problems.push(`${at} release_tag ${JSON.stringify(entry.release_tag)} does not match its version`);
+	else if (!RC_TAG_PATTERN.test(String(entry.release_tag)) || parseRcTag(entry.release_tag).version !== entry.release_version) problems.push(`${at} release_tag ${JSON.stringify(entry.release_tag)} does not match its version`);
 	if (typeof entry.git_sha !== "string" || !GIT_SHA.test(entry.git_sha)) problems.push(`${at} has an invalid git_sha`);
 	if (typeof entry.trusted_verifier_commit !== "string" || !(GIT_SHA.test(entry.trusted_verifier_commit) || entry.trusted_verifier_commit === "unknown")) problems.push(`${at} has an invalid trusted_verifier_commit`);
 	const verifiedAt = typeof entry.verified_at_utc === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(entry.verified_at_utc) ? Date.parse(entry.verified_at_utc) : Number.NaN;

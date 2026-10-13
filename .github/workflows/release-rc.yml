@@ -72,11 +72,13 @@ jobs:
           set -euo pipefail
           tag="${REQUESTED_TAG}"
           # RC artifacts intentionally carry the stable package version so
-          # promotion can retag the exact signed bytes. NPM cannot publish a
-          # second tarball with that same version, therefore this workflow
-          # supports exactly one RC (rc.0) per base version.
-          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$ ]] || {
-            echo "Only vX.Y.Z-rc.0 is supported; repeated RCs would collide with the stable package version." >&2
+          # promotion can retag the exact signed bytes. Building an RC publishes
+          # nothing, so a failed acceptance is fixed with the next rc.N of the
+          # same version. NPM cannot publish a second tarball with that version,
+          # so only one RC per version can ever be promoted; the promotion
+          # workflow refuses a version already promoted from another RC tag.
+          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.(0|[1-9][0-9]{0,3})$ ]] || {
+            echo "Only vX.Y.Z-rc.N tags (N without leading zeros) are supported." >&2
             exit 1
           }
 

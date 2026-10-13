@@ -29,6 +29,10 @@ on:
         description: "Type I_UNDERSTAND for yank"
         required: false
         type: string
+      genesis:
+        description: "Type FIRST_PROMOTION only for the very first promotion (no prior anti-rollback state and no signed GitHub release exist)"
+        required: false
+        type: string
 
 concurrency:
   group: release-promotion-production
@@ -66,6 +70,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           RC_RUN_ID: ${{ inputs.rc_run_id }}
+          GENESIS: ${{ inputs.genesis }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           WORKFLOW_REF: ${{ github.ref }}
         run: |
@@ -74,11 +79,15 @@ jobs:
             echo "Release promotion must run from the protected default branch." >&2
             exit 1
           }
-          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$ ]] || {
-            echo "Only a protected vX.Y.Z-rc.0 tag can be promoted; repeated RCs collide with the stable package version." >&2
+          # Any vX.Y.Z-rc.N may be promoted, but only one RC per version ever:
+          # restore-promotion-state.mjs refuses a version already promoted from
+          # another RC tag, and npm cannot republish the stable version.
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.(0|[1-9][0-9]{0,3})$ ]] || {
+            echo "Only a protected vX.Y.Z-rc.N tag can be promoted." >&2
             exit 1
           }
           [[ "${RC_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "A successful RC workflow run ID is required." >&2; exit 1; }
+          [[ -z "${GENESIS}" || "${GENESIS}" == "FIRST_PROMOTION" ]] || { echo "genesis must be empty or FIRST_PROMOTION." >&2; exit 1; }
 
       # The RC tag checkout is DATA in this job: its commit identity, its
       # pnpm-lock.yaml (provenance digest) and its dashboard sources (read as
@@ -187,12 +196,33 @@ jobs:
           printf '%s\n' "${SIGNER_POLICY_JSON}" > "${policy_path}"
           echo "AIDR_RELEASE_SIGNER_POLICY_PATH=${policy_path}" >> "${GITHUB_ENV}"
 
+      # The Actions artifact above expires and can be deleted. Every promotion
+      # also publishes its signed release manifest as a GitHub release asset, so
+      # the rollback floor is rebuilt from those signatures and merged in; a
+      # promotion then fails closed if neither source exists (no genesis).
+      - name: Rebuild anti-rollback floor from signed GitHub releases
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/aidr-promotion-state"
+          node .trusted-release-verifier/scripts/restore-promotion-state.mjs \
+            --repository "${GITHUB_REPOSITORY}" \
+            --api-url "${GITHUB_API_URL}" \
+            --policy "${AIDR_RELEASE_SIGNER_POLICY_PATH}" \
+            --state "${RUNNER_TEMP}/aidr-promotion-state/anti-rollback-state.json" \
+            --bundle release-output \
+            --expected-tag "${RELEASE_TAG}"
+
       - name: Verify RC identity, manifest, SBOM and signatures
         id: verify
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           RC_RUN_ID: ${{ inputs.rc_run_id }}
+          GENESIS: ${{ inputs.genesis }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -222,7 +252,8 @@ jobs:
             --expected-version "${version}" \
             --expected-sha "${expected_sha}" \
             --run-id "${RC_RUN_ID}" \
-            --record
+            --record \
+            ${GENESIS:+--genesis}
           for file in release-output/singularityrd-aidr-core-"${version}".tgz release-output/singularityrd-aidr-openclaw-"${version}".tgz release-output/singularityrd-aidr-opencode-"${version}".tgz release-output/singularityrd-aidr-sdk-"${version}".tgz release-output/singularityrd-aidr-cli-"${version}".tgz release-output/singularityrd-aidr-codex-"${version}".tgz; do
             [[ -f "${file}" ]] || { echo "Missing stable-version package artifact ${file}." >&2; exit 1; }
             package_version="$(tar -xOzf "${file}" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')"
@@ -435,7 +466,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${WORKFLOW_REF}" == "refs/heads/${DEFAULT_BRANCH}" ]] || { echo "Release rehearsal must run from the protected default branch." >&2; exit 1; }
-          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.0$ ]] || { echo "Only a protected vX.Y.Z-rc.0 tag can be rehearsed." >&2; exit 1; }
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.(0|[1-9][0-9]{0,3})$ ]] || { echo "Only a protected vX.Y.Z-rc.N tag can be rehearsed." >&2; exit 1; }
           [[ "${RC_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "A successful RC workflow run ID is required." >&2; exit 1; }
 
       - name: Checkout the exact RC tag (pinned)
@@ -586,7 +617,7 @@ jobs:
           set -euo pipefail
           [[ "${WORKFLOW_REF}" == "refs/heads/${DEFAULT_BRANCH}" ]] || { echo "Release rollback must run from the protected default branch." >&2; exit 1; }
           [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rollback_version must be x.y.z" >&2; exit 1; }
-          [[ "${RELEASE_TAG}" == "v${VERSION}-rc.0" ]] || { echo "rollback tag must be v${VERSION}-rc.0" >&2; exit 1; }
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.(0|[1-9][0-9]{0,3})$ && "${RELEASE_TAG%-rc.*}" == "v${VERSION}" ]] || { echo "rollback tag must be v${VERSION}-rc.N (the RC that was promoted)" >&2; exit 1; }
           [[ "${RC_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "A successful RC workflow run ID is required for rollback." >&2; exit 1; }
           [[ -n "${DEPLOY_HOOK}" && -n "${VERSION_URL}" && -n "${SMOKE_BASE_URL}" ]] || {
             echo "Rollback dashboard hook, version endpoint and smoke URL are required." >&2
