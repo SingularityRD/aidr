@@ -257,6 +257,29 @@ export const CLI_EN = {
 	"setup.action.failed": "FAILED",
 	"setup.action.notDetected": "not detected",
 	"setup.dryRunDone": "Dry run: no file was written and no host command was run.",
+	"setup.company.confirmTitle": "Singularity AIDR — connect this computer to your company",
+	"setup.company.confirmAddress": "Company address: {endpoint}",
+	"setup.company.withCode": "Enrollment code: entered in the installer",
+	"setup.company.withoutCode":
+		"Enrollment code: none (approve this computer in your company's Singularity AIDR console when an AI tool starts)",
+	"setup.company.confirmEffect":
+		"This computer will send its protection events to that address and follow your company's policy. Protection on this computer stays on either way.",
+	"setup.company.applied":
+		"Connected to your company ({endpoint}). The connection completes the next time an AI tool starts.",
+	"setup.company.appliedApprove":
+		"Company address set ({endpoint}). The next time an AI tool starts, it shows a code and a link: approve this computer there.",
+	"setup.company.alreadyConnected":
+		"This computer is already connected to {endpoint}. The company details from the installer were not used and have been deleted.",
+	"setup.company.notConfirmed":
+		"The company connection from the installer was not applied: {reason} It stays saved; run aidr setup in a terminal to apply it.",
+	"setup.company.invalid":
+		"The company connection saved by the installer could not be used ({reason}) and was deleted. Install again with the details from your IT team.",
+	"setup.company.expired":
+		"The company connection saved by the installer is older than 3 days and was deleted. Ask your IT team for a new enrollment code.",
+	"setup.company.failed":
+		"The company connection could not be saved: {reason}. Protection on this computer is not affected.",
+	"setup.company.notDeleted":
+		"The installer's company connection file could not be deleted ({reason}). Delete installer-enrollment.json in the .singularity-aidr folder of your user folder.",
 	"setup.complete": "✅ Setup complete!",
 	"setup.registeredFor": "Registered for: {hosts} (not yet verified inside the AI tool).",
 	"setup.incomplete": "⚠ Setup finished, but Protection is NOT yet active for every AI tool:",
@@ -575,6 +598,29 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"setup.action.failed": "BAŞARISIZ",
 	"setup.action.notDetected": "bulunamadı",
 	"setup.dryRunDone": "Deneme: hiçbir dosya yazılmadı ve hiçbir komut çalıştırılmadı.",
+	"setup.company.confirmTitle": "Singularity AIDR — bu bilgisayarı şirketinize bağla",
+	"setup.company.confirmAddress": "Şirket adresi: {endpoint}",
+	"setup.company.withCode": "Kayıt kodu: yükleyicide girildi",
+	"setup.company.withoutCode":
+		"Kayıt kodu: yok (bir yapay zekâ aracı açıldığında bu bilgisayarı şirketinizin Singularity AIDR konsolunda onaylayın)",
+	"setup.company.confirmEffect":
+		"Bu bilgisayar koruma olaylarını bu adrese gönderecek ve şirketinizin politikasını uygulayacak. Bu bilgisayardaki koruma her durumda açık kalır.",
+	"setup.company.applied":
+		"Şirketinize bağlandı ({endpoint}). Bağlantı, bir yapay zekâ aracı bir sonraki açılışında tamamlanır.",
+	"setup.company.appliedApprove":
+		"Şirket adresi ayarlandı ({endpoint}). Bir yapay zekâ aracı bir sonraki açılışında bir kod ve bağlantı gösterir: bu bilgisayarı orada onaylayın.",
+	"setup.company.alreadyConnected":
+		"Bu bilgisayar zaten {endpoint} adresine bağlı. Yükleyicideki şirket bilgileri kullanılmadı ve silindi.",
+	"setup.company.notConfirmed":
+		"Yükleyicideki şirket bağlantısı uygulanmadı: {reason} Kayıtlı duruyor; uygulamak için bir terminalde aidr setup komutunu çalıştırın.",
+	"setup.company.invalid":
+		"Yükleyicinin kaydettiği şirket bağlantısı kullanılamadı ({reason}) ve silindi. BT ekibinizden aldığınız bilgilerle yeniden kurun.",
+	"setup.company.expired":
+		"Yükleyicinin kaydettiği şirket bağlantısı 3 günden eski olduğu için silindi. BT ekibinizden yeni bir kayıt kodu isteyin.",
+	"setup.company.failed":
+		"Şirket bağlantısı kaydedilemedi: {reason}. Bu bilgisayardaki koruma etkilenmedi.",
+	"setup.company.notDeleted":
+		"Yükleyicinin şirket bağlantısı dosyası silinemedi ({reason}). Kullanıcı klasörünüzdeki .singularity-aidr klasöründe bulunan installer-enrollment.json dosyasını silin.",
 	"setup.complete": "✅ Kurulum tamamlandı!",
 	"setup.registeredFor": "Kayıtlı: {hosts} (yapay zekâ aracının içinde henüz doğrulanmadı).",
 	"setup.incomplete": "⚠ Kurulum bitti, ancak koruma her yapay zekâ aracı için henüz ETKİN DEĞİL:",

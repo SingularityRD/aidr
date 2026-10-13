@@ -6,6 +6,8 @@ packages/privacy/**/*.md whitespace=-blank-at-eol
 packages/privacy/fixtures/**/*.pdf -text -diff
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+# Installer wizard bitmaps (rendered from their SVG sources by render-bitmaps.mjs).
+deploy/installers/windows/ui/*.bmp binary
 packages/privacy/deployment/*.reg -text -eol whitespace=-blank-at-eol
 # Generated connector bundles can contain intentional whitespace inside
 # embedded third-party documentation strings; source files remain strict.

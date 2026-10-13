@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Managed custom actions of the Singularity AIDR MSI (WiX 5 DTF). build-msi.ps1
+    builds this with `dotnet build -c Release` and embeds AidrInstallerActions.CA.dll
+    (the self-extracting package the DTF build targets produce) as a Binary.
+
+    It does exactly two things, both for the company connection page:
+      * ValidateEnrollmentInput (immediate, wizard): format check of the
+        control-plane address and the enrollment code;
+      * WriteEnrollmentHandoff / RemoveEnrollmentHandoff (deferred, impersonated
+        as the installing user; rollback): write the user-only handoff file that
+        `aidr setup` consumes and deletes, so the enrollment code never appears
+        on a command line or in the msiexec log.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>AidrInstallerActions</AssemblyName>
+    <RootNamespace>SingularityAidr.Installer</RootNamespace>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Dtf.CustomAction" Version="5.0.2" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="CustomAction.config" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -38,7 +38,8 @@ import {
 	packageVersion,
 	rpmSpec,
 } from "./linux/build-linux-packages.mjs";
-import { msiInputs } from "./windows/msi-inputs.mjs";
+import { MSI_CULTURES, msiInputs } from "./windows/msi-inputs.mjs";
+import { bmpInfo, renderSvgToBmp, WIZARD_BITMAPS } from "./windows/ui/render-bitmaps.mjs";
 
 const scratch = [];
 after(() => {
@@ -137,6 +138,45 @@ describe("installer inputs", () => {
 	});
 });
 
+// --- WiX source helpers (structural checks; WiX itself runs on the Windows release job) ---
+const windowsFile = (path) => readFileSync(new URL(`./windows/${path}`, import.meta.url), "utf8");
+const repoFile = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+/** Body of the first <tag>...</tag> element. */
+function sequence(xml, tag) {
+	const match = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(xml);
+	assert.ok(match, `no <${tag}>`);
+	return match[1];
+}
+/** Attributes of a start tag, XML entities decoded. */
+function attrs(tag) {
+	const out = {};
+	for (const m of tag.matchAll(/([A-Za-z][\w:-]*)=(?:"([^"]*)"|'([^']*)')/g)) {
+		out[m[1]] = (m[2] ?? m[3]).replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+	}
+	return out;
+}
+/** Attributes of the element `<name ... Id="id" ...>`. */
+function element(xml, name, id) {
+	const match = new RegExp(`<${name}\\b[^>]*\\bId="${id}"[^>]*>`).exec(xml);
+	assert.ok(match, `no <${name} Id="${id}">`);
+	return attrs(match[0]);
+}
+function wxlStrings(culture) {
+	const xml = windowsFile(`ui/aidr.${culture}.wxl`);
+	const root = attrs(/<WixLocalization\b[^>]*>/.exec(xml)[0]);
+	const strings = new Map();
+	for (const m of xml.matchAll(/<String\b[^>]*>/g)) {
+		const { Id, Value } = attrs(m[0]);
+		assert.ok(!strings.has(Id), `${culture}: duplicate ${Id}`);
+		strings.set(Id, Value);
+	}
+	return { root, strings };
+}
+/** Characters a Windows ANSI code page can encode. */
+function codepageChars(codepage) {
+	return new Set(new TextDecoder(`windows-${codepage}`).decode(Uint8Array.from({ length: 256 }, (_, i) => i)));
+}
+
 describe("Windows MSI inputs", () => {
 	test("derive the MSI variables from a verified win32 bundle and mark unsigned builds", () => {
 		const key = releaseKey;
@@ -147,6 +187,10 @@ describe("Windows MSI inputs", () => {
 		assert.equal(signed.outputName, "singularity-aidr-0.6.0-rc.3-windows-x64.msi");
 		const unsigned = msiInputs({ seaDir: sea, trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0", signing: "unsigned" });
 		assert.match(unsigned.outputName, /-UNSIGNED\.msi$/);
+		// A new ProductCode per build (WiX's default before), shared by every culture of that build.
+		assert.match(signed.productCode, /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/);
+		assert.notEqual(signed.productCode, unsigned.productCode);
+		assert.deepEqual(signed.cultures, MSI_CULTURES);
 		assert.throws(() => msiInputs({ seaDir: sea, trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0", signing: "" }), /--signing/);
 		assert.throws(() => msiInputs({ seaDir: fakeSeaBundle(), trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0", signing: "signed" }), /not win32/);
 		assert.throws(() => msiInputs({ seaDir: sea, trustKey: key.path, trustKeyFingerprint: "1".repeat(64), version: "0.6.0", signing: "signed" }), /fingerprint mismatch/);
@@ -156,8 +200,11 @@ describe("Windows MSI inputs", () => {
 		const wxs = readFileSync(new URL("./windows/aidr.wxs", import.meta.url), "utf8");
 		assert.match(wxs, /Scope="perUserOrMachine"/);
 		assert.match(wxs, /<CustomAction Id="AidrSetupForUser"[\s\S]*?ExeCommand="setup"[\s\S]*?Impersonate="yes"/);
-		// Never as LocalSystem: both per-user actions are guarded on the SYSTEM SID.
-		assert.equal((wxs.match(/UserSID &lt;&gt; &quot;S-1-5-18&quot;/g) ?? []).length, 2);
+		// Never as LocalSystem: every action of the execute sequence (setup,
+		// uninstall and the company-connection handoff) is guarded on the SYSTEM SID.
+		const customs = [...sequence(wxs, "InstallExecuteSequence").matchAll(/<Custom\b[^>]*>/g)].map((m) => m[0]);
+		assert.equal(customs.length, 6);
+		for (const custom of customs) assert.match(custom, /UserSID &lt;&gt; &quot;S-1-5-18&quot;/, custom);
 		assert.match(wxs, /AIDR_OPERATOR_NONINTERACTIVE=1&amp;&amp; &quot;\[#AidrExe\]&quot; uninstall --yes --keep-data/);
 		assert.match(wxs, /Action="AidrUninstallForUser" Before="RemoveFiles"[\s\S]*?NOT UPGRADINGPRODUCTCODE/);
 		assert.match(wxs, /Active Setup\\Installed Components/);
@@ -170,6 +217,223 @@ describe("Windows MSI inputs", () => {
 		assert.match(ps1, /Pass -SignThumbprint for a release build or -Unsigned for a local build/);
 		assert.match(ps1, /--remanifest/);
 		assert.match(ps1, /'verify', '\/pa', \$msi/);
+	});
+});
+
+describe("Windows MSI install wizard", () => {
+	const wxs = windowsFile("aidr.wxs");
+	const ui = windowsFile("ui/AidrUI.wxs");
+	const en = wxlStrings("en-US");
+	const tr = wxlStrings("tr-TR");
+
+	test("every wizard string has an English and a Turkish entry, in the culture's code page", () => {
+		assert.equal(en.root.Culture, "en-US");
+		assert.equal(en.root.Codepage, "1252");
+		assert.equal(tr.root.Culture, "tr-TR");
+		assert.equal(tr.root.Codepage, "1254");
+		assert.deepEqual([...tr.strings.keys()].sort(), [...en.strings.keys()].sort());
+		const used = new Set([...`${wxs}\n${ui}`.matchAll(/!\(loc\.(\w+)\)/g)].map((m) => m[1]));
+		const stock = new Set(["WixUIBack", "WixUINext", "WixUICancel", "WixUIFinish", "WixUIOK"]);
+		for (const id of used) {
+			if (stock.has(id)) continue;
+			assert.ok(en.strings.get(id), `en-US has no ${id}`);
+			assert.ok(tr.strings.get(id), `tr-TR has no ${id}`);
+		}
+		for (const id of en.strings.keys()) assert.ok(used.has(id), `${id} is never used`);
+		const cp1252 = codepageChars(1252);
+		const cp1254 = codepageChars(1254);
+		for (const [id, value] of en.strings) for (const ch of value) assert.ok(cp1252.has(ch), `en-US ${id}: ${ch}`);
+		for (const [id, value] of tr.strings) {
+			for (const ch of value) assert.ok(cp1254.has(ch), `tr-TR ${id}: ${ch}`);
+			// Translated, not copied (the language number aside).
+			if (!/^\d+$/.test(value)) assert.notEqual(value, en.strings.get(id), `tr-TR ${id} is the English text`);
+			// Plain Turkish, and the brand as written (never Turkish upper case).
+			assert.doesNotMatch(value, /\bajan\b|actionId|heuristic|bant dışı|S[Iİ]NGULAR[Iİ]TY|sıngular/u, `tr-TR ${id}`);
+		}
+		assert.equal(en.strings.get("AidrPackageLanguage"), "1033");
+		assert.equal(tr.strings.get("AidrPackageLanguage"), "1055");
+		assert.deepEqual(
+			MSI_CULTURES.map((c) => [c.culture, c.lcid]),
+			[
+				["en-US", 1033],
+				["tr-TR", 1055],
+			],
+		);
+		// No dialog text is hard-coded: a Text attribute is a loc string, a bitmap or an Edit length limit.
+		for (const m of ui.matchAll(/<Control\b[^>]*>/g)) {
+			const { Text, Type } = attrs(m[0]);
+			if (Text === undefined) continue;
+			const allowed =
+				/^!\(loc\.\w+\)$/.test(Text) ||
+				(Type === "Bitmap" && /^WixUI_Bmp_(Banner|Dialog)$/.test(Text)) ||
+				(Type === "Edit" && /^\{\d+\}$/.test(Text));
+			assert.ok(allowed, `hard-coded text: ${m[0]}`);
+		}
+	});
+
+	test("the company connection never logs or passes the enrollment code in clear", () => {
+		assert.deepEqual(element(wxs, "Property", "ENROLLMENT_CODE"), { Id: "ENROLLMENT_CODE", Secure: "yes", Hidden: "yes" });
+		assert.deepEqual(element(wxs, "Property", "ENROLLMENT_URL"), { Id: "ENROLLMENT_URL", Secure: "yes" });
+		// The CustomActionData that carries it is hidden too, and so is the action setting it.
+		assert.equal(element(wxs, "Property", "AidrWriteEnrollmentHandoff").Hidden, "yes");
+		const prepare = element(wxs, "CustomAction", "AidrPrepareEnrollmentHandoff");
+		assert.equal(prepare.Property, "AidrWriteEnrollmentHandoff");
+		assert.equal(prepare.HideTarget, "yes");
+		const write = element(wxs, "CustomAction", "AidrWriteEnrollmentHandoff");
+		assert.deepEqual(
+			[write.Execute, write.Impersonate, write.HideTarget, write.DllEntry],
+			["deferred", "yes", "yes", "WriteEnrollmentHandoff"],
+		);
+		const rollback = element(wxs, "CustomAction", "AidrRollbackEnrollmentHandoff");
+		assert.deepEqual([rollback.Execute, rollback.Impersonate, rollback.DllEntry], ["rollback", "yes", "RemoveEnrollmentHandoff"]);
+		// Never on a command line: no ExeCommand references the company fields.
+		for (const m of `${wxs}${ui}`.matchAll(/ExeCommand="[^"]*"/g)) assert.doesNotMatch(m[0], /ENROLLMENT/);
+		// Masked in the wizard.
+		const code = attrs(/<Control Id="Code"[^>]*>/.exec(ui)[0]);
+		assert.equal(code.Password, "yes");
+		assert.equal(code.Property, "ENROLLMENT_CODE");
+		// Setup applies it only as the confirmed operator; plain setup otherwise.
+		const connect = element(wxs, "CustomAction", "AidrSetupForUserConnect");
+		assert.match(connect.ExeCommand, /set AIDR_OPERATOR_NONINTERACTIVE=1&& "\[#AidrExe\]" setup --yes"$/);
+		assert.equal(connect.Impersonate, "yes");
+		// The C# action and `aidr setup` agree on the format and the file.
+		const cs = windowsFile("ca/EnrollmentActions.cs");
+		const ts = repoFile("packages/cli/src/utils/installer-enrollment.ts");
+		const csConst = (name) => new RegExp(`const string ${name} = @?"([^"]*)"`).exec(cs)[1];
+		const tsRegex = (name) => new RegExp(`${name} =\\s*/(.*)/;`).exec(ts)[1].replaceAll("\\/", "/");
+		assert.equal(csConst("UrlPattern"), tsRegex("INSTALLER_ENROLLMENT_URL_PATTERN"));
+		assert.equal(csConst("CodePattern"), tsRegex("INSTALLER_ENROLLMENT_CODE_PATTERN"));
+		assert.ok(ts.includes(`"${csConst("HandoffDirectory")}", "${csConst("HandoffFile")}"`));
+		assert.ok(ts.includes(`FORMAT = "${csConst("HandoffFormat")}"`));
+		assert.match(cs, /SetAccessRuleProtection\(true, false\)/);
+		for (const m of cs.matchAll(/session\.Log\(([^;]*)\);/g)) assert.doesNotMatch(m[1], /\+ code\b|\+ url\b/, "values are never logged");
+		// The prefilled company address is the product's default control plane.
+		const defaultEndpoint = /DEFAULT_CONTROL_PLANE_ENDPOINT = "([^"]+)"/.exec(repoFile("packages/core/src/clients/control-plane-url.ts"))[1];
+		assert.equal(element(ui, "Property", "AIDR_DEFAULT_CONTROL_PLANE").Value, defaultEndpoint);
+	});
+
+	test("the Finish page opens the Setup Assistant as the interactive user, never elevated or as SYSTEM", () => {
+		assert.deepEqual(element(ui, "CustomAction", "AidrLaunchAssistant"), {
+			Id: "AidrLaunchAssistant",
+			FileRef: "AidrExe",
+			ExeCommand: "assistant",
+			Execute: "immediate",
+			Return: "asyncNoWait",
+		});
+		// Only from the wizard's Finish button (the wizard process, not the installation service).
+		assert.doesNotMatch(wxs, /AidrLaunchAssistant/);
+		assert.equal((ui.match(/Value="AidrLaunchAssistant"/g) ?? []).length, 1);
+		const finish = /<Control Id="Finish"[\s\S]*?<\/Control>/.exec(ui)[0];
+		const doAction = attrs(/<Publish Event="DoAction" Value="AidrLaunchAssistant"[^>]*>/.exec(finish)[0]);
+		assert.match(doAction.Condition, /AIDR_LAUNCH_ASSISTANT = 1/);
+		assert.match(doAction.Condition, /NOT MsiRunningElevated/);
+		assert.match(doAction.Condition, /NOT Installed/);
+		// An elevated wizard hides the checkbox and says how to open it instead.
+		const checkbox = attrs(/<Control Id="LaunchAssistant"[^>]*>/.exec(ui)[0]);
+		assert.equal(checkbox.Property, "AIDR_LAUNCH_ASSISTANT");
+		assert.match(checkbox.HideCondition, /MsiRunningElevated/);
+		assert.equal(element(ui, "Property", "AIDR_LAUNCH_ASSISTANT").Value, "1", "checked by default");
+		assert.match(en.strings.get("AidrExitLaunchAssistant"), /Open the Singularity AIDR Setup Assistant/);
+		assert.match(en.strings.get("AidrExitQuickStart"), /href="\[#AidrQuickStartEn\]">View quick start</);
+		assert.match(tr.strings.get("AidrExitQuickStart"), /href="\[#AidrQuickStartTr\]">/);
+		assert.match(wxs, /File Id="AidrQuickStartEn"[^>]*quick-start\.en-US\.html/);
+		assert.match(wxs, /File Id="AidrQuickStartTr"[^>]*quick-start\.tr-TR\.html/);
+	});
+
+	test("a silent install behaves as before: same setup action, no new required property", () => {
+		const execute = sequence(wxs, "InstallExecuteSequence");
+		const setup = attrs(/<Custom Action="AidrSetupForUser"[^>]*>/.exec(execute)[0]);
+		// The original condition, plus "not when the optional company fields are given".
+		assert.equal(
+			setup.Condition,
+			'NOT REMOVE AND NOT AIDR_SKIP_SETUP AND UserSID <> "S-1-5-18" AND NOT ENROLLMENT_URL AND NOT ENROLLMENT_CODE',
+		);
+		assert.deepEqual(element(wxs, "CustomAction", "AidrSetupForUser"), {
+			Id: "AidrSetupForUser",
+			FileRef: "AidrExe",
+			ExeCommand: "setup",
+			Execute: "deferred",
+			Impersonate: "yes",
+			Return: "ignore",
+		});
+		// Everything new in the execute sequence runs only when a company field is set.
+		for (const action of ["AidrPrepareEnrollmentHandoff", "AidrRollbackEnrollmentHandoff", "AidrWriteEnrollmentHandoff", "AidrSetupForUserConnect"]) {
+			const custom = attrs(new RegExp(`<Custom Action="${action}"[^>]*>`).exec(execute)[0]);
+			assert.match(custom.Condition, /\(ENROLLMENT_URL OR ENROLLMENT_CODE\)/, action);
+			assert.match(custom.Condition, /NOT REMOVE/, action);
+		}
+		// Public properties a command line may set are optional (no Value means unset).
+		for (const id of ["AIDR_SKIP_SETUP", "AIDR_MDM_MANAGED", "ENROLLMENT_URL", "ENROLLMENT_CODE"]) {
+			assert.equal(element(wxs, "Property", id).Value, undefined, id);
+		}
+		// The wizard lives in the UI sequence only and sets the documented command-line properties.
+		assert.doesNotMatch(ui, /<InstallExecuteSequence>/);
+		for (const m of ui.matchAll(/<SetProperty\b[^>]*>/g)) assert.equal(attrs(m[0]).Sequence, "ui", m[0]);
+		const scopeNext = /<Dialog Id="AidrScopeDlg"[\s\S]*?<Control Id="Next"[\s\S]*?<\/Control>/.exec(ui)[0];
+		assert.match(scopeNext, /Property="ALLUSERS" Value="2"[^>]*AIDR_SCOPE = "user"/);
+		assert.match(scopeNext, /Property="MSIINSTALLPERUSER" Value="1"[^>]*AIDR_SCOPE = "user"/);
+		assert.match(scopeNext, /Property="ALLUSERS" Value="1"[^>]*AIDR_SCOPE = "machine"/);
+		assert.match(scopeNext, /Property="MSIINSTALLPERUSER" Value="\{\}"[^>]*AIDR_SCOPE = "machine"/);
+		assert.match(scopeNext, /Event="SetTargetPath" Value="INSTALLFOLDER"/);
+		// Per-machine shows the UAC shield; "local only" clears the company fields at Install.
+		assert.match(ui, /<Control Id="Install"[^>]*ElevationShield="yes"[^>]*\s+ShowCondition='AIDR_SCOPE = "machine"'/);
+		for (const id of ["Install", "InstallNoShield"]) {
+			const button = new RegExp(`<Control Id="${id}"[\\s\\S]*?</Control>`).exec(ui)[0];
+			assert.match(button, /Property="ENROLLMENT_CODE" Value="\{\}"[^>]*AIDR_CONNECTION = "local"/, id);
+			assert.match(button, /Property="ENROLLMENT_URL" Value="\{\}"[^>]*AIDR_CONNECTION = "local"/, id);
+		}
+		// One package per build: the ProductCode is per build and shared by both cultures.
+		assert.match(wxs, /ProductCode="\$\(var\.ProductCode\)"/);
+		assert.match(wxs, /Language="!\(loc\.AidrPackageLanguage\)"/);
+		assert.match(wxs, /<UIRef Id="AidrUI" \/>/);
+		// Without it the Turkish install (ProductLanguage 1055) would not upgrade an English one.
+		assert.match(wxs, /<MajorUpgrade AllowSameVersionUpgrades="yes"\s+IgnoreLanguage="yes"/);
+		const ps1 = windowsFile("build-msi.ps1");
+		assert.match(ps1, /'-ext', \$WixUiExtension/);
+		assert.match(ps1, /\$WixUiExtensionVersion = '5\.0\.2'/);
+		assert.match(ps1, /'-culture', \$culture\.culture, '-loc'/);
+		assert.match(ps1, /Add-LanguageTransform -Base[\s\S]*Set-PackageLanguages -Msi[\s\S]*Test-LanguageTransforms -Msi[\s\S]*'sign', '\/sha1'/);
+		assert.match(ps1, /render-bitmaps\.mjs'\), '--check'/);
+	});
+
+	test("the wizard bitmaps have the exact WiX sizes and are what their SVG sources render to", () => {
+		assert.deepEqual(
+			WIZARD_BITMAPS.map((b) => [b.width, b.height]),
+			[
+				[493, 58],
+				[493, 312],
+			],
+		);
+		for (const bitmap of WIZARD_BITMAPS) {
+			const committed = readFileSync(bitmap.bmp);
+			assert.deepEqual(bmpInfo(committed), { width: bitmap.width, height: bitmap.height, bitsPerPixel: 24 });
+			assert.ok(renderSvgToBmp(readFileSync(bitmap.svg, "utf8")).equals(committed), `${bitmap.bmp} is stale: run render-bitmaps.mjs`);
+		}
+		assert.match(wxs, /Id="WixUIBannerBmp" Value="\$\(sys\.SOURCEFILEDIR\)ui\\banner\.bmp"/);
+		assert.match(wxs, /Id="WixUIDialogBmp" Value="\$\(sys\.SOURCEFILEDIR\)ui\\dialog\.bmp"/);
+		assert.throws(() => renderSvgToBmp('<svg width="2" height="2" viewBox="0 0 2 2"><text>x</text></svg>'), /not supported/);
+	});
+
+	test("the WiX sources are XML that WiX's reader accepts (no double hyphen inside a comment)", () => {
+		for (const path of ["aidr.wxs", "ui/AidrUI.wxs", "ui/aidr.en-US.wxl", "ui/aidr.tr-TR.wxl"]) {
+			const xml = windowsFile(path);
+			assert.match(xml, /^<\?xml version="1\.0" encoding="utf-8"\?>/, path);
+			for (const m of xml.matchAll(/<!--([\s\S]*?)-->/g)) assert.ok(!m[1].includes("--"), `${path}: "--" in a comment`);
+		}
+	});
+
+	test("the licence page is a marked placeholder and points at the shipped third-party notices", () => {
+		const decode = (rtf) => rtf.replace(/\\u(\d+)\?/g, (_, n) => String.fromCharCode(Number(n)));
+		for (const culture of ["en-US", "tr-TR"]) {
+			const rtf = windowsFile(`ui/eula.${culture}.rtf`);
+			assert.match(rtf, /^\{\\rtf1\\ansi/);
+			assert.match(rtf, /^[\t\n\r\x20-\x7e]*$/, `${culture} RTF must be ASCII (\\u escapes)`);
+			const text = decode(rtf);
+			assert.ok(text.includes("<EULA TEXT \u2014 legal review required>"), culture);
+			assert.ok(text.includes("THIRD_PARTY_NOTICES.txt"), culture);
+		}
+		assert.match(ui, /<Text SourceFile="\$\(sys\.SOURCEFILEDIR\)eula\.\$\(var\.AidrCulture\)\.rtf" \/>/);
+		assert.match(wxs, /Source="\$\(sys\.SOURCEFILEDIR\)\.\.\\\.\.\\\.\.\\THIRD_PARTY_NOTICES" Name="THIRD_PARTY_NOTICES\.txt"/);
 	});
 });
 

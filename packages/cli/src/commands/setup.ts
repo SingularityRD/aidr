@@ -1,7 +1,19 @@
 import { resolve } from "node:path";
-import { isCommercialBuild, resolvePath, VERSION } from "@singularityrd/aidr-core";
+import {
+	ConfigSchema,
+	DEFAULT_CONTROL_PLANE_ENDPOINT,
+	isCommercialBuild,
+	resolvePath,
+	VERSION,
+} from "@singularityrd/aidr-core";
 import { type CliMessageKey, ct } from "../i18n/index.js";
-import { type Config, createConfig, getConfig, updateConfig } from "../utils/config-manager.js";
+import {
+	type Config,
+	createConfig,
+	type Environment,
+	getConfig,
+	updateConfig,
+} from "../utils/config-manager.js";
 import {
 	type ConnectorInstallOptions,
 	HOST_IDS,
@@ -12,6 +24,11 @@ import {
 } from "../utils/connector-install.js";
 import { detectEnvironment } from "../utils/detect-env.js";
 import { installHooks, recordHooksInstalled } from "../utils/install-hooks.js";
+import {
+	discardInstallerEnrollment,
+	type InstallerEnrollment,
+	readInstallerEnrollment,
+} from "../utils/installer-enrollment.js";
 import {
 	confirmOperatorAction,
 	type OperatorCommandDeps,
@@ -251,6 +268,130 @@ function applyReleaseKey(
 	return plan.keys;
 }
 
+interface ManagedConfigView {
+	mode?: unknown;
+	control_plane?: Record<string, unknown>;
+	auth?: Record<string, unknown>;
+}
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+function discardHandoff(home: string): void {
+	try {
+		discardInstallerEnrollment(home);
+	} catch (error) {
+		console.error(`! ${ct("setup.company.notDeleted", { reason: errorText(error) })}`);
+	}
+}
+
+/** Write the managed-mode settings for the installer's company connection. */
+function connectToCompany(enrollment: InstallerEnrollment, endpoint: string): void {
+	const current = (getConfig() ?? {}) as Config & ManagedConfigView;
+	const update = {
+		mode: "managed",
+		control_plane: { ...(current.control_plane ?? {}), enabled: true, endpoint },
+		auth: {
+			...(current.auth ?? {}),
+			...(enrollment.enrollmentCode ? { enrollment_token: enrollment.enrollmentCode } : {}),
+		},
+	};
+	if (!ConfigSchema.safeParse({ ...current, ...update }).success) {
+		throw new Error("the resulting configuration is not valid");
+	}
+	updateConfig(update as Partial<Config>);
+}
+
+/** The endpoint this computer is already enrolled with, or null when it is not enrolled. */
+function enrolledEndpoint(): string | null {
+	const current = (getConfig() ?? {}) as Config & ManagedConfigView;
+	const auth = current.auth ?? {};
+	if (current.mode !== "managed" || !(auth.api_key || auth.api_key_ref)) return null;
+	return String(current.control_plane?.endpoint || DEFAULT_CONTROL_PLANE_ENDPOINT);
+}
+
+/** Operator confirmation for the connection; false (reported) when it was not given. */
+async function confirmCompany(
+	enrollment: InstallerEnrollment,
+	endpoint: string,
+	options: SetupOptions,
+	deps: SetupDeps,
+): Promise<boolean> {
+	try {
+		await confirmOperatorAction({
+			prompt: [
+				ct("setup.company.confirmTitle"),
+				`  ${ct("setup.company.confirmAddress", { endpoint })}`,
+				`  ${ct(enrollment.enrollmentCode ? "setup.company.withCode" : "setup.company.withoutCode")}`,
+				ct("setup.company.confirmEffect"),
+			].join("\n"),
+			word: "connect",
+			yes: options.yes,
+			env: deps.env,
+			streams: deps.streams,
+		});
+		return true;
+	} catch (error) {
+		console.error(`! ${ct("setup.company.notConfirmed", { reason: errorText(error) })}`);
+		return false;
+	}
+}
+
+/**
+ * Apply the company connection the Windows installer saved for this user
+ * (utils/installer-enrollment.ts), then delete it. Pointing AIDR at a control
+ * plane is an operator action, confirmed like `aidr config -s`: the installer
+ * runs setup with --yes and AIDR_OPERATOR_NONINTERACTIVE=1 because the person at
+ * the wizard entered it; an unconfirmed run keeps the file for the next
+ * `aidr setup` in a terminal. Local protection never depends on this.
+ */
+async function applyInstallerEnrollment(
+	home: string,
+	env: Environment,
+	options: SetupOptions,
+	deps: SetupDeps,
+): Promise<void> {
+	const handoff = readInstallerEnrollment(home);
+	if (handoff.state === "none") return;
+	if (handoff.state !== "ready") {
+		discardHandoff(home);
+		const message =
+			handoff.state === "expired"
+				? ct("setup.company.expired")
+				: ct("setup.company.invalid", { reason: handoff.reason });
+		console.error(`! ${message}`);
+		return;
+	}
+	const { enrollment } = handoff;
+	const endpoint = enrollment.controlPlaneUrl || DEFAULT_CONTROL_PLANE_ENDPOINT;
+	try {
+		const enrolled = enrolledEndpoint();
+		if (enrolled !== null) {
+			discardHandoff(home);
+			console.error(ct("setup.company.alreadyConnected", { endpoint: enrolled }));
+			return;
+		}
+	} catch (error) {
+		console.error(`! ${ct("setup.company.failed", { reason: errorText(error) })}`);
+		return;
+	}
+	if (!(await confirmCompany(enrollment, endpoint, options, deps))) return;
+	try {
+		connectToCompany(enrollment, endpoint);
+		// Managed mode carries a CLI credential: mint it now, as a fresh managed setup would.
+		await createConfig(env, false, { secretStoreSelection: options.secretStore });
+	} catch (error) {
+		console.error(`! ${ct("setup.company.failed", { reason: errorText(error) })}`);
+		return;
+	} finally {
+		// Used or not, the one-time code does not stay on disk once confirmed.
+		discardHandoff(home);
+	}
+	const applied = enrollment.enrollmentCode
+		? "setup.company.applied"
+		: "setup.company.appliedApprove";
+	console.error(`✓ ${ct(applied, { endpoint })}`);
+}
+
 /**
  * Exit code of a setup that changed nothing because no supported AI tool is
  * installed for this user yet (not a failure). The Linux package hook and the
@@ -314,6 +455,7 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 				console.log(`\n${ct("setup.rerunNoChanges")}`);
 				console.log(`  ${ct("setup.rerunConfig", { path: config.path })}`);
 			}
+			await applyInstallerEnrollment(home, env, options, deps);
 		}
 
 		// A release build's hooks trust nothing until the release key is set up:

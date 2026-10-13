@@ -70,9 +70,83 @@ installing one (`aidr setup`). Any other non-zero code is a real setup problem.
 
 1. Download `singularity-aidr-<version>-windows-x64.msi` from the AIDR
    dashboard's **Downloads** page.
-2. Double-click it and accept the prompt. Setup runs for you at the end.
+2. Double-click it and follow the wizard ([pages below](#the-windows-install-wizard)).
+   Setup runs for you at the end.
 3. Restart your AI tools (Claude Code, Cursor, VS Code, ...). Open a new
    terminal and run `aidr status`, then `aidr verify`.
+
+#### The Windows install wizard
+
+The wizard opens in Turkish when the Windows display language is Turkish and
+in English otherwise; both are in the one MSI. Screenshots are not published
+yet: each placeholder below says what the screenshot will show.
+
+1. **Welcome**: the product name, one line on what it does and the version.
+   *Screenshot placeholder: dark-blue panel with the shield mark on the left;
+   "Welcome to Singularity AIDR", the one-line description and "Version 0.6.0"
+   on the right.*
+2. **License agreement**: read it and tick "I accept" to continue.
+   *Screenshot placeholder: the licence text box with the acceptance box below.*
+3. **Who should be protected?**
+   - *Only for me*: installs in `%LOCALAPPDATA%\Programs\Singularity AIDR\`
+     for your account; no administrator rights.
+   - *For all users of this computer* (default): installs in
+     `C:\Program Files\Singularity AIDR\`; Windows asks for administrator
+     approval (the Install button carries the shield). Other users are set up
+     at their next sign-in.
+   An existing "Only for me" install is preselected, so an upgrade keeps its
+   scope; to change the scope, uninstall first.
+   *Screenshot placeholder: two choices, each with one explanatory line.*
+4. **Company connection (optional)**:
+   - *Local protection only (no account)* (default): protection runs on this
+     computer; nothing else to enter.
+   - *Connect to my company*: the company address from your IT team (`https://`
+     only; prefilled with the Singularity AIDR service, change it for an
+     on-premises console) and, optionally, the enrollment code from the console
+     (`aidr_enroll_…`, 55 characters, masked as you type). The format is checked
+     before you can continue. See
+     [Company connection from the installer](#company-connection-from-the-installer).
+   *Screenshot placeholder: the two choices; the address and code fields are
+   greyed out until "Connect to my company" is chosen.*
+5. **Ready to install**: who is protected, the folder, the company connection
+   and what setup will do. Then the progress page.
+6. **Finish**: "Open the Singularity AIDR Setup Assistant" (ticked) starts
+   `aidr assistant` for you, as your own account without administrator rights,
+   and Setup closes without waiting for it. "View quick start" opens the
+   offline guide installed in `docs\quick-start.<language>.html` of the install
+   folder. If you started the installer from an administrator prompt, the
+   assistant is not started from there; the page says to run `aidr assistant`
+   in a normal terminal.
+   *Screenshot placeholder: "Singularity AIDR is installed", the next step
+   (`aidr status`), the ticked assistant box and the quick start link.*
+
+Repair and removal (Settings > Apps, or running the MSI again) use the
+standard Windows Installer pages and end on the same Finish page.
+
+#### Company connection from the installer
+
+The enrollment code is a one-time secret, so the installer never puts it on a
+command line or in its log: the field is masked, `ENROLLMENT_CODE` is a hidden
+property, and a custom action running as you writes it, with the address, to
+`%USERPROFILE%\.singularity-aidr\installer-enrollment.json`, a file only your
+account can open. The `aidr setup` the installer runs then applies it:
+`mode: "managed"`, `control_plane.endpoint` and `auth.enrollment_token` in
+`~/.singularity-aidr/config.json` (a commercial build keeps the token in the
+Windows credential vault), and deletes the file. Enrollment completes when an AI tool
+next starts; without a code, the AI tool shows a short code and a link to
+approve this computer in your company's console.
+
+- Pointing AIDR at a control plane is an operator action: setup applies the
+  file only when the installer runs it, or when you run `aidr setup` in a
+  terminal and type `connect`. A run without confirmation (for example by an
+  AI tool) changes nothing and leaves the file in place.
+- A file older than 3 days, or one that is not in the expected format, is
+  deleted without being used; install again with fresh details.
+- A computer that is already enrolled keeps its connection; the installer's
+  details are deleted unused.
+- With `AIDR_SKIP_SETUP=1` the file waits for the user's first `aidr setup`.
+- Local protection does not depend on the connection: if it cannot be saved,
+  setup says so and protection stays on.
 
 ### Debian / Ubuntu
 
@@ -163,6 +237,21 @@ msiexec /i singularity-aidr-<version>-windows-x64.msi /qn /l*v aidr-install.log
   `msiexec /i … /qn AIDR_SKIP_SETUP=1`.
 - `AIDR_MDM_MANAGED=1` leaves updates to your MDM: endpoints do not update
   themselves ([Device-managed machines](#device-managed-machines-intune-sccm-gpo-configuration-management)).
+- A silent install needs no new property: it behaves exactly as it did before
+  the wizard existed. The wizard's company page has two optional public
+  properties, for **user-context** installs only:
+  `ENROLLMENT_URL=https://aidr.example.com` and `ENROLLMENT_CODE=aidr_enroll_…`
+  (either one is enough; `ENROLLMENT_CODE` alone uses the Singularity AIDR
+  service). A malformed value fails the install with a line in the log that
+  names the property, never its value. `ENROLLMENT_CODE` is hidden from the
+  msiexec log, but a value on a command line can be seen by other programs
+  while msiexec runs and may be kept by your deployment tool: prefer
+  short-lived codes. A system-context install has no interactive user to
+  connect and ignores both; enroll those users with the managed configuration
+  ([`mode`](../configuration.md#mode), [`auth`](../configuration.md#auth)).
+- **Language:** the MSI shows Turkish when the display language is Turkish.
+  `TRANSFORMS=:1055` forces the Turkish wizard; a silent install is the same
+  in both languages.
 - **Per-user install without admin rights:**
   `msiexec /i … MSIINSTALLPERUSER=1 ALLUSERS=2` installs to
   `%LOCALAPPDATA%\Programs\Singularity AIDR\` and adds `bundle\bin` to the
@@ -372,7 +461,7 @@ node packages/claude-code/scripts/build-sea.mjs --verify /tmp/aidr-sea --public-
 node deploy/installers/linux/build-linux-packages.mjs --sea-dir /tmp/aidr-sea \
   --trust-key release-public.pem --trust-key-fingerprint <sha256> --version 0.6.0 --out out \
   [--catalog-key installer-catalog-public.pem]
-# Windows (WiX 5 + signtool):
+# Windows (WiX 5 + WixToolset.UI.wixext 5.0.2, .NET SDK, signtool):
 pwsh deploy/installers/windows/build-msi.ps1 -SeaDir C:\aidr-sea -TrustKey release-public.pem `
   -TrustKeyFingerprint <sha256> -Version 0.6.0 -OutDir out -SignThumbprint <thumbprint> `
   [-CatalogKey installer-catalog-public.pem]
@@ -386,6 +475,32 @@ and Codex hooks allow `ls -la` and deny a pipe-to-shell canary, and that
 without the key every call is denied with the release-key message. The
 optional catalog key is installed as `config/installer-catalog-public.pem` for
 `aidr update`.
+
+The Windows build compiles the wizard (`windows/ui/AidrUI.wxs`, strings in
+`windows/ui/aidr.en-US.wxl` and `aidr.tr-TR.wxl`) once per language with the
+same ProductCode and payload, then embeds the Turkish build into the English
+MSI as a language transform (storage `1055`, summary languages `1033,1055`)
+and checks that the transform changes only the language. **One MSI is
+published per version and architecture.** The company page's custom actions
+(`windows/ca/`, C#, net472) are built with `dotnet build`; the script adds the
+pinned WiX UI extension itself. The wizard bitmaps (`windows/ui/banner.bmp`
+493×58, `dialog.bmp` 493×312) are rendered from `banner.svg` and `dialog.svg`
+by `node deploy/installers/windows/ui/render-bitmaps.mjs`; the build stops if
+they are stale. The licence page is a placeholder
+(`<EULA TEXT — legal review required>`, `windows/ui/eula.*.rtf`) until the
+reviewed text replaces it.
+
+`pnpm test:installers` checks the wizard sources structurally on any OS. A
+real Windows machine must still confirm, before a release: the wizard renders
+in English and, with a Turkish display language, in Turkish (and with
+`TRANSFORMS=:1055`); "Only for me" installs without a UAC prompt into
+`%LOCALAPPDATA%\Programs` and "For all users" prompts for approval; the
+company page rejects a malformed address or code, the handoff file has a
+user-only ACL, `aidr setup` applies and deletes it, and `msiexec /l*v` shows no
+enrollment code; the Finish page starts the assistant unelevated as the user
+(Task Manager, "Elevated: No") and does not start it from an elevated prompt;
+`msiexec /qn` with and without `AIDR_SKIP_SETUP`/`AIDR_MDM_MANAGED` and in the
+system context behaves as before; repair, removal and a major upgrade.
 
 A local MSI without a certificate needs `-Unsigned` and is named
 `…-UNSIGNED.msi`. The release workflow uses these secrets and fails when one
