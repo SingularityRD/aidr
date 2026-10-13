@@ -2078,14 +2078,14 @@ uygulama ekiplerinin aynı karar sözleşmesini kendi araçlarının önüne koy
 <tr><td><code>ask</code> + çağıranın sağladığı <code>onAsk</code> <code>true</code> döndürür</td><td>Çalıştırır</td></tr>
 <tr><td><code>onAsk</code> olmadan <code>ask</code>, ya da <code>onAsk</code> false döndürür / hata fırlatır</td><td>Engeller</td></tr>
 <tr><td>Belirsiz (kontrol başarısız veya tutarsız)</td><td>Engeller; yalnızca <code>allowApprovalOfIndeterminateResults:<wbr> true</code> ile onaylanabilir</td></tr></tbody></table></div>
-<p>Express/Next.js açık bir gerekçeyle HTTP 403 döndürür. <code>guardToolOutput</code> sonuçları inceler
+<p>Express/Next.js genel bir HTTP 403 döndürür (<code>error</code> + <code>requestId</code>; gerekçe sunucu tarafındaki <code>onBlocked</code> kancasına gider) ve kimlik bilgisi taşımayan istek başlıklarını da inceler. <code>guardToolOutput</code> sonuçları inceler
 (varsayılan 256 KiB) ve bulguları engeller veya maskeler. URL itibarı varsayılan olarak
 kapalıdır (açmak için <code>urlReputationEnabled:<wbr> true</code>). Hiç kural yüklenemezse <code>init()</code> açıkça
 hata verir.</p>
 <p class="label"><strong>Nasıl kullanılır</strong></p>
 <pre data-lang="ts"><code>import { AIDRClient, createMiddleware } from &quot;@singularityrd/aidr-sdk&quot;;
 
-const client = new AIDRClient({ apiKey: process.env.AIDR_API_KEY! });
+const client = new AIDRClient({}); // yerel mod: API anahtarı gerekmez
 const middleware = createMiddleware(client, {
   onAsk: async (result) =&gt; await askOperatorInTerminal(result), // çağıran sağlar, bant dışı
 });

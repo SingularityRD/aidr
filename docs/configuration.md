@@ -1001,6 +1001,7 @@ sent to the AIDR dashboard for an administrator to approve — see
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
 | `aidr audit verify [--json] [--expect-root <fp>] [--response-chain <path>]` | Verify the signed verdict log and, when enabled, the Ed25519-signed response-action chain offline (`--response-chain <path>` checks only that file) and print the first broken link. Both modes share one exit-code contract: `0` verified, `1` broken (edited, reordered, deleted or truncated entry, forged or missing signature, tampered retention manifest), `2` unverifiable (configuration or log unreadable, log or signing key missing, or no signed chain enabled). A broken chain outranks an unverifiable one. Never creates a signing key |
 | `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
+| `aidr support-bundle [--out <path>] [--audit-entries <n>] [--json]` | Write a redacted diagnostic bundle for a support case; see [support-diagnostics.md](support-diagnostics.md) |
 | `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles (see [Agent permission profiles](agent-profiles.md)) |
 
 The protection-weakening commands take the same operator confirmation as

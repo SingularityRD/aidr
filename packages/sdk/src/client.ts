@@ -4,6 +4,7 @@ import {
 	type Config,
 	checkRunaway,
 	DecisionEngine,
+	extractFromBash,
 	extractFromUnknownTool,
 	extractUrls,
 	getEffectiveManagedApiKey,
@@ -40,6 +41,7 @@ import type {
 } from "./config.js";
 import { CheckRequestSchema, CheckResultSchema, SDKConfigSchema } from "./config.js";
 import { INDETERMINATE_METADATA_KEY } from "./enforcement.js";
+import { MAX_INSPECTED_HEADER_CHARS, partitionHeaders } from "./http-headers.js";
 import {
 	AIDRPrivacyTextError,
 	loadPrivacyTextGateway,
@@ -790,6 +792,37 @@ export class AIDRClient {
 
 		if (request.artifacts) artifacts.push(...request.artifacts);
 		artifacts.push(...this._contextBodyArtifacts(request));
+		artifacts.push(...this._contextHeaderArtifacts(request));
+		return artifacts;
+	}
+
+	/**
+	 * Artifacts from `request.context.headers` (HTTP request headers). Every
+	 * non-credential header value is walked by the generic extractor, so a
+	 * command, URL or injection payload smuggled in a header is inspected like
+	 * one in the body. Credential headers (`Authorization`, `Cookie`, any name
+	 * containing token/secret/session/…) are skipped here as well as by the
+	 * middleware: their values are opaque secrets, not content. A header set
+	 * larger than {@link MAX_INSPECTED_HEADER_CHARS} is reported as not fully
+	 * inspected (the check then denies).
+	 */
+	private _contextHeaderArtifacts(request: CheckRequest): Artifact[] {
+		const raw = request.context?.headers;
+		if (raw === undefined || raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+			return [];
+		}
+		const { inspected } = partitionHeaders(raw as Record<string, string>);
+		if (Object.keys(inspected).length === 0) return [];
+		const size = Object.entries(inspected).reduce(
+			(total, [name, value]) => total + name.length + value.length,
+			0,
+		);
+		if (size > MAX_INSPECTED_HEADER_CHARS) return [notFullyInspected()];
+		// Header names say nothing about the value's kind (`x-cmd`, `x-query`), so
+		// besides the generic walk each value is also parsed as a shell command:
+		// a backend that forwards a header to a shell is exactly the case to catch.
+		const artifacts = extractFromUnknownTool("http_headers", inspected);
+		for (const value of Object.values(inspected)) artifacts.push(...extractFromBash(value));
 		return artifacts;
 	}
 
@@ -872,7 +905,7 @@ export class AIDRClient {
 					request.resource,
 					artifacts,
 					this.config.baseUrl ?? "",
-					this.config.apiKey,
+					this.config.apiKey ?? "",
 					this.config.urlReputationEnabled,
 					this.config.includeUrlQueryParameters,
 				]),
