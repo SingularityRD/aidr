@@ -290,6 +290,48 @@ there is no automatic re-encryption).
 **Not included.** `agent.offline` alerts, per-user notification preferences,
 digest/batching, and mTLS to webhook receivers are not implemented.
 
+## Retention maintenance
+
+Time-based deletion and the scheduled governance digest only happen when the
+maintenance worker runs. It calls, in apply mode and in bounded batches, the
+retention routines for temporary audit exports (Storage objects, with the
+exact-deletion protocol), billing webhooks, telemetry (per-tenant retention),
+GA trial subjects, public waitlist sign-ups (365 days), expired team
+invitations, decided approval requests, AI governance records and rate-limit
+counters, then dispatches due governance digests. Every routine honours legal
+holds and the shared tenant lock. Schedule it on every topology:
+
+| Topology | Scheduler | Evidence |
+|---|---|---|
+| Docker Compose on-prem | systemd timer `aidr-export-retention.timer`, hourly (`deploy/maintenance/install-systemd.sh`) | `/srv/aidr/maintenance-evidence.json`, journal |
+| Kubernetes (Helm) | `maintenance` CronJob, hourly, **on by default** (`maintenance.enabled`); runs `deployment-maintenance.mjs --from-env --apply` against the in-cluster API gateway with the service-role key from `secrets.existingSecret` | Pod log (the evidence JSON); exit 2 = incomplete (e.g. a legal hold or missing tenant policy), exit 1 = failed |
+| Supabase Cloud | pg_cron jobs `aidr-retention-*` and `aidr-governance-digest` (migration `20261013000200`), one bounded batch per data class every 10–60 minutes | `public.retention_job_runs`, `public.retention_job_status` (last run / last success per job) |
+
+**Supabase Cloud setup.** Enable the `pg_cron` extension (and `pg_net` for the
+digest). If pg_cron was enabled before the migration ran, the jobs already
+exist; otherwise run once as an operator:
+
+```sql
+select app.schedule_retention_maintenance();   -- idempotent; app.unschedule_retention_maintenance() removes them
+-- Governance digest only: store the project origin and service key in Vault.
+select vault.create_secret('https://<project-ref>.supabase.co', 'aidr_project_url');
+select vault.create_secret('<service-role key>', 'aidr_service_role_key');
+```
+
+Without the two Vault secrets the digest job records `not_configured` (a
+failed run in `retention_job_status`). The pg_cron jobs do **not** delete
+expired temporary audit-export objects: that needs the Storage API protocol.
+Where audit exports are used, also run the HTTP worker hourly from an operator
+host or CI runner: `AIDR_MAINTENANCE_API_URL=https://<project-ref>.supabase.co
+SERVICE_ROLE_KEY=… node scripts/deployment-maintenance.mjs <evidence-dir>
+--from-env --apply`. Running it next to the pg_cron jobs is safe: every
+routine is bounded, idempotent and lock-protected.
+
+**Alerting.** Alert when `retention_job_status.last_success_at` is older than
+two hours for any job, when the Helm CronJob's last successful run is older
+than two hours, or when `maintenance-evidence.json` reports `status:
+incomplete` for more than a day.
+
 ## Operator administration
 
 Platform operators fix the deployment admission mode, record the approved

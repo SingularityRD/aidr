@@ -21,7 +21,7 @@ covers operation.
 
 - One Helm release per installation and namespace. The chart creates no cluster-scoped
   resources.
-- `migrations` is a Helm hook Job; `backup` is an optional CronJob.
+- `migrations` is a Helm hook Job; `maintenance` is an hourly CronJob; `backup` is an optional, encrypted CronJob.
 - `postureScanner.enabled` adds the AI Security Posture scanner (`posture-scanner-server`,
   `posture-scanner-agent` and `posture-scanner-bridge`, the
   `docker-compose.posture-scanner.yml` stack) with the bridge reachable only from
@@ -168,15 +168,28 @@ forward-only, so a rollback across a migration needs a database restore.
 
 ## Backup and restore
 
-`backup.enabled=true` schedules `pg_dump --format=custom` into a PVC with a `.sha256`
-file per dump and `backup.retentionDays` pruning. Copy the volume off-cluster (volume
-snapshots, Velero, or an object-store sync) and rehearse restores regularly:
+Backups are off by default. `backup.enabled=true` (with the required
+`backup.encryption.ageRecipients`) schedules `pg_dump --format=custom` streamed through
+age into a PVC (`aidr-<stamp>.dump.age` plus `.sha256`) with `backup.retentionDays`
+pruning; `backup.offsite.enabled=true` also uploads every encrypted artifact to an
+S3-compatible bucket off the cluster. Keep the age identity, the credential directory and
+the exported pgsodium root key off the cluster (chart README, "Backups" and "Key
+material"), and rehearse restores regularly:
 
 ```bash
 kubectl -n aidr run restore --rm -it --image <registry>/aidr/migrations:<tag> --command -- sh
-sha256sum -c aidr-<stamp>.dump.sha256
-pg_restore --clean --if-exists --no-owner -d "$DATABASE_URL" aidr-<stamp>.dump
+sha256sum -c aidr-<stamp>.dump.age.sha256
+age -d -i backup-identity.txt aidr-<stamp>.dump.age | pg_restore --clean --if-exists --no-owner -d "$DATABASE_URL"
 ```
+
+Copy the identity into the restore pod only for the restore (for example with
+`kubectl cp`) and delete the pod afterwards.
+
+## Retention maintenance
+
+The chart's `maintenance` CronJob (on by default, hourly) runs the same retention,
+erasure and governance-digest worker as the Compose timer; see the chart README,
+"Retention maintenance", and [control-plane.md](../control-plane.md#retention-maintenance).
 
 The Compose tools `scripts/deployment-backup*.mjs` and `deployment-restore-drill.mjs`
 operate on a Compose deployment directory and do not apply to the chart.

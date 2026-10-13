@@ -36,7 +36,8 @@ secrets:
   # functions runtime (AIDR_ENTITLEMENT_SIGNING_*, AIDR_REVOCATION_SIGNING_*,
   # AIDR_DELEGATION_SIGNING_*, AIDR_PACK_MASTER_KEY_B64,
   # AIDR_PACK_DOWNLOAD_GRANT_SECRET, AIDR_DEVICE_START_INGRESS_SECRET,
-  # AIDR_NOTIFICATION_ENCRYPTION_KEYS, AIDR_NOTIFICATION_DISPATCH_TOKEN).
+  # AIDR_NOTIFICATION_ENCRYPTION_KEYS, AIDR_NOTIFICATION_DISPATCH_TOKEN; optional
+  # AIDR_SHARED_PACK_KEYS for shared/vendor premium intel packs).
   functionsExistingSecret: ""
 
 serviceAccount:
@@ -326,10 +327,17 @@ migrations:
 # Optional backups: pg_dump (+ file storage archive) CronJob and pre-upgrade hook
 # ---------------------------------------------------------------------------
 # Backed up: the database (custom-format pg_dump) and, with storage.enabled,
-# the storage.backend=file object volume (tar.gz). NOT backed up: an S3 bucket
-# (use bucket versioning/replication), the Secrets the chart consumes (keep
-# the credential directory from generate-secrets.mjs), and the backup volume
-# itself (replicate it off-cluster). Every artifact has a .sha256 sidecar.
+# the storage.backend=file object volume (tar.gz), each sealed with age to
+# backup.encryption.ageRecipients and optionally copied off-cluster
+# (backup.offsite). NOT backed up: an S3 bucket (use bucket versioning/
+# replication), the Secrets the chart consumes (keep the credential directory
+# from generate-secrets.mjs), the in-cluster Postgres pgsodium root key (export
+# it once, README "Key material") and the age identity (keep it off-cluster).
+# Every artifact has a .sha256 sidecar.
+#
+# Off by default because it needs an operator decision the chart cannot make
+# (where the decryption identity lives, which bucket holds the off-cluster
+# copy). With externalDatabase, the provider's PITR is the primary backup.
 backup:
   enabled: false
   schedule: "17 2 * * *"
@@ -357,6 +365,30 @@ backup:
     # storage.enabled or this acknowledgement is set (dev/evaluation only:
     # a restore then loses every stored object).
     acknowledgeNotBackedUp: false
+  encryption:
+    # REQUIRED with backup.enabled: age X25519 recipients (public keys,
+    # "age1..."; `age-keygen -o backup-identity.txt` prints one). Every dump
+    # and archive is streamed through age, so no plaintext reaches the volume.
+    # Keep the identity (private key) OFF the cluster, e.g. in your password
+    # vault or HSM-backed escrow; list two recipients to split custody.
+    ageRecipients: []
+    # Dev/evaluation only: write plaintext dumps when no recipient is set.
+    allowPlaintext: false
+  offsite:
+    # Copy every finished artifact to an S3-compatible bucket outside the
+    # cluster (HTTPS PUT, SigV4, path-style). Requires encryption. Use a bucket
+    # with object lock/versioning and a lifecycle rule for retention; the
+    # backup.retentionDays pruning applies to the in-cluster volume only.
+    enabled: false
+    endpoint: ""        # https://s3.eu-central-1.amazonaws.com
+    bucket: ""
+    region: ""
+    prefix: "aidr/"
+    # Secret with keys access-key-id and secret-access-key (write-only
+    # credentials: PutObject on the prefix is enough).
+    existingSecret: ""
+    # CIDRs (TCP 443) of the object store, required when networkPolicy.enabled.
+    egressCIDRs: []
   image:
     registry: ""
     repository: aidr/migrations   # ships pg_dump matching the server major version
@@ -369,6 +401,32 @@ backup:
     size: 50Gi
     accessModes: ["ReadWriteOnce"]
     existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Retention maintenance CronJob (docs/control-plane.md, "Retention maintenance")
+# ---------------------------------------------------------------------------
+# Hourly run of scripts/deployment-maintenance.mjs (shipped in a ConfigMap):
+# deletes data past each tenant's retention (telemetry, approval requests,
+# expired invitations, billing webhooks, AI governance records), GA trial
+# subjects, public waitlist sign-ups after 365 days, expired temporary audit
+# exports and rate-limit counters, honouring legal holds, then dispatches due
+# governance digests. It reaches only the in-cluster API gateway, with the
+# service-role key from secrets.existingSecret. Keep it on: without it data is
+# kept indefinitely regardless of the retention owners configure.
+maintenance:
+  enabled: true
+  schedule: "11 * * * *"
+  # false = dry run (counts only, deletes nothing).
+  apply: true
+  activeDeadlineSeconds: 1800
+  image:
+    registry: ""
+    repository: aidr/dashboard   # ships Node.js 24
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  resources: {}
+  runAsUser: 1000
 
 # ---------------------------------------------------------------------------
 # Alert notifications (Settings -> Notifications; docs/control-plane.md)
@@ -445,8 +503,8 @@ postureScanner:
   enabled: false
   sourceVersion: v4.6.1-aidr.1
   timezone: UTC
-  # REQUIRED when enabled. Secret keys: agent-shared-secret, bridge-api-key
-  # (api_key mode) or bridge-jwt-secret (broker mode), task-postgres-dsn.
+  # REQUIRED when enabled. Secret keys: agent-shared-secret, bridge-jwt-secret,
+  # task-postgres-dsn.
   existingSecret: ""
   # REQUIRED when enabled. Secret with key signing-public.pem (Ed25519 SPKI PEM).
   signingPublicKeySecret: ""
@@ -491,6 +549,8 @@ postureScanner:
       digest: ""
       pullPolicy: IfNotPresent
     resources: {}
+    # Only "broker" (tenant-bound, scoped JWTs). The bridge's api_key mode takes
+    # the tenant from a caller header, so the chart refuses it.
     authMode: broker
     jwtIssuer: ""
     jwtAudience: ""

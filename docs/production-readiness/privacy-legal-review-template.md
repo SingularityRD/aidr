@@ -78,8 +78,10 @@ as Legal input; this repository does not execute or modify those forms.
 `retention-holds.md` records current source defaults and bounds. New Supabase
 tenants default to the existing `tenants.retention_days` (30); class-specific
 policies and later owner-approved changes control actual eligibility. Public
-waitlist rows without a tenant and pilot free-text evidence have separate
-unresolved disposition. Commercial settlement/idempotency evidence is retained;
+waitlist rows without a tenant are deleted 365 days after sign-up, and an
+operator DSAR routine exports or erases waitlist rows and pilot free-text notes
+by e-mail (audit-log copies of pilot decision notes are retained;
+`retention-holds.md`, "Public waitlist and pilot free text"). Commercial settlement/idempotency evidence is retained;
 it is not silently erased as an event row.
 
 Source export/offboarding deletion requires exact-path authorization, Storage

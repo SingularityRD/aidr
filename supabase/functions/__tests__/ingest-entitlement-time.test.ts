@@ -58,7 +58,7 @@ function issuer(env: Record<string, string>) {
 			extraAgents: number;
 			allowedAgents: number;
 			premiumModules: string[];
-			tenantPackKey: string | null;
+			packKeys: Array<{ key_id: string; key_b64: string }>;
 			revocationEpoch: number;
 			timing: NonNullable<Timing>;
 			providerValidUntilMs?: number | null;
@@ -77,7 +77,7 @@ describe("ingest signed entitlement timing", () => {
 		expect(timing).toEqual({ ttlHours: 168, graceHours: 72 });
 		const snapshot = functions.buildEntitlementSnapshot({
 			tenantId: "tenant-1", includedAgents: 1, extraAgents: 1, allowedAgents: 2,
-			premiumModules: ["premium_intel"], tenantPackKey: "test-pack-key", revocationEpoch: 1,
+			premiumModules: ["premium_intel"], packKeys: [{ key_id: "aidr-shared-pack-test", key_b64: "test-pack-key" }], revocationEpoch: 1,
 			timing: timing!,
 		});
 		expect(snapshot?.issued_at).toBe("2026-01-01T00:00:00.000Z");
@@ -93,7 +93,7 @@ describe("ingest signed entitlement timing", () => {
 		const term = Date.parse("2026-01-03T00:00:00.000Z");
 		const snapshot = functions.buildEntitlementSnapshot({
 			tenantId: "tenant-1", includedAgents: 1, extraAgents: 2, allowedAgents: 3,
-			premiumModules: ["premium_intel"], tenantPackKey: "test-pack-key", revocationEpoch: 1,
+			premiumModules: ["premium_intel"], packKeys: [{ key_id: "aidr-shared-pack-test", key_b64: "test-pack-key" }], revocationEpoch: 1,
 			timing: functions.entitlementTiming()!, providerValidUntilMs: term,
 		});
 		expect(snapshot?.expires_at).toBe("2026-01-03T00:00:00.000Z");
@@ -102,7 +102,7 @@ describe("ingest signed entitlement timing", () => {
 		vi.setSystemTime(new Date("2026-01-03T00:00:00.000Z"));
 		expect(functions.buildEntitlementSnapshot({
 			tenantId: "tenant-1", includedAgents: 1, extraAgents: 2, allowedAgents: 3,
-			premiumModules: [], tenantPackKey: null, revocationEpoch: 1,
+			premiumModules: [], packKeys: [], revocationEpoch: 1,
 			timing: functions.entitlementTiming()!, providerValidUntilMs: term,
 		})).toBeNull();
 	});

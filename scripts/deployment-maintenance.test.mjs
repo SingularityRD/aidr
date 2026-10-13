@@ -29,6 +29,7 @@ async function fixture(t, failure) {
       { tenant: freeTenant, expired: true, active: true, hasPolicy: false },
     ],
     trialSubjects: [{ expired: true }, { expired: false }],
+    waitlist: [{ expired: true }, { expired: true }, { expired: false }],
     invitations: [
       { tenant: heldTenant, expired: true, retentionElapsed: true, active: true, hasPolicy: true, accepted: false },
       { tenant: freeTenant, expired: true, retentionElapsed: true, active: true, hasPolicy: true, accepted: false },
@@ -122,6 +123,14 @@ async function fixture(t, failure) {
       return reply(200, { eligible: due.length, deleted: body.p_apply ? due.length : 0,
         remaining: state.trialSubjects.filter(row => row.expired).length, applied: body.p_apply });
     }
+    if (req.url === "/rest/v1/rpc/purge_expired_waitlist_signups") {
+      if (failure === "waitlist-prune-invalid") return reply(200, { eligible: 1, deleted: 2, remaining: 0, applied: body.p_apply, retention_days: 365, cutoff: new Date().toISOString() });
+      const due = state.waitlist.filter(row => row.expired).slice(0, body.p_limit);
+      if (body.p_apply) state.waitlist = state.waitlist.filter(row => !due.includes(row));
+      return reply(200, { eligible: due.length, deleted: body.p_apply ? due.length : 0,
+        remaining: state.waitlist.filter(row => row.expired).length, applied: body.p_apply,
+        retention_days: 365, cutoff: new Date(Date.now() - 365 * 86_400_000).toISOString() });
+    }
     if (req.url === "/rest/v1/rpc/prune_expired_team_invitations") {
       if (failure === "invitation-prune-invalid") return reply(200, { eligible: 1, deleted: 2, remaining: 0, applied: body.p_apply });
       const retentionDue = row => row.expired && row.retentionElapsed && !row.accepted;
@@ -198,8 +207,17 @@ async function fixture(t, failure) {
     child.on("error", reject);
     child.on("close", code => done({ code, stdout, stderr }));
   });
+  const runWith = (args, env = {}) => new Promise((done, reject) => {
+    const child = spawn(process.execPath, [resolve(dirname(fileURLToPath(import.meta.url)), "deployment-maintenance.mjs"), ...args],
+      { stdio: ["ignore", "pipe", "pipe"], timeout: 10_000, env: { ...process.env, ...env } });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", code => done({ code, stdout, stderr }));
+  });
   const evidence = () => JSON.parse(readFileSync(join(dir, "maintenance-evidence.json"), "utf8"));
-  return { state, heldPath, freePath, currentPath, heldTenant, run, evidence, dir };
+  return { state, heldPath, freePath, currentPath, heldTenant, run, runWith, evidence, dir, port: server.address().port };
 }
 
 test("held/unheld exports and billing: dry-run, apply, release-then-prune, repeat", async t => {
@@ -290,6 +308,45 @@ test("held/unheld exports and billing: dry-run, apply, release-then-prune, repea
   assert.equal(f.state.invitations.length, 4, "only retained accepted, young, unexpired, and inactive invitations remain");
   assert.equal(f.state.telemetry.length, 2, "retention resumes when the missing policy is configured");
   assert.equal(f.evidence().rate_limit_pruning.deleted, 0, "repeated maintenance is idempotent");
+});
+
+test("public waitlist sign-ups are counted on a dry run and purged on apply", async t => {
+  const f = await fixture(t);
+  let result = await f.run(false);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual([f.evidence().waitlist_retention.eligible, f.evidence().waitlist_retention.deleted], [2, 0]);
+  assert.equal(f.state.waitlist.length, 3, "a dry run never removes waitlist PII");
+  result = await f.run();
+  assert.equal(f.evidence().waitlist_retention.deleted, 2);
+  assert.equal(f.evidence().waitlist_retention.complete, true);
+  assert.deepEqual(f.state.waitlist, [{ expired: false }]);
+  assert.match(f.evidence().action, /waitlist-signups/);
+});
+
+test("invalid waitlist retention receipt cannot complete maintenance", async t => {
+  const f = await fixture(t, "waitlist-prune-invalid");
+  const result = await f.run();
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Invalid waitlist retention response/);
+});
+
+test("--from-env runs against an in-cluster Service URL and refuses public plain HTTP", async t => {
+  const f = await fixture(t);
+  const evidenceDir = join(f.dir, "k8s-evidence");
+  const ok = await f.runWith([evidenceDir, "--from-env", "--apply"],
+    { AIDR_MAINTENANCE_API_URL: `http://localhost:${f.port}`, SERVICE_ROLE_KEY: "private-fixture-key" });
+  assert.notEqual(ok.code, 1, ok.stderr);
+  const evidence = JSON.parse(readFileSync(join(evidenceDir, "maintenance-evidence.json"), "utf8"));
+  assert.equal(evidence.applied, true);
+  assert.equal(evidence.waitlist_retention.deleted, 2);
+  for (const [url, pattern] of [["http://api.example.com", /HTTPS or an in-cluster Service URL/], ["http://aidr-api.aidr.svc.evil.example", /HTTPS or an in-cluster Service URL/], ["", /AIDR_MAINTENANCE_API_URL is required/]]) {
+    const refused = await f.runWith([evidenceDir, "--from-env", "--apply"], { AIDR_MAINTENANCE_API_URL: url, SERVICE_ROLE_KEY: "private-fixture-key" });
+    assert.equal(refused.code, 1);
+    assert.match(refused.stderr, pattern);
+  }
+  const missing = await f.runWith([evidenceDir, "--from-env"], { AIDR_MAINTENANCE_API_URL: "http://aidr-api-gateway.aidr.svc.cluster.local:8000", SERVICE_ROLE_KEY: "" });
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /service credential missing/);
 });
 
 test("invalid AI governance maintenance receipt cannot complete maintenance", async t => {

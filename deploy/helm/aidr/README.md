@@ -82,7 +82,13 @@ Rendering fails, rather than producing a weaker install, when:
 - `helm upgrade` while the pre-upgrade migration would run without a fresh backup
   (`backup.enabled` + `backup.preUpgrade.enabled`) and `migrations.allowWithoutBackup`
   is not `true`.
+- `backup.enabled` without `backup.encryption.ageRecipients` (unless the dev-only
+  `backup.encryption.allowPlaintext`), or `backup.offsite.enabled` without encryption,
+  an `https://` endpoint, bucket, region, credentials Secret or (with NetworkPolicy)
+  `backup.offsite.egressCIDRs`.
 - `postureScanner.enabled` without its Secret, signing key, data ConfigMap, trust anchors or egress proxy.
+- `postureScanner.bridge.authMode` other than `broker`: the bridge's `api_key` mode takes the
+  tenant from a caller-supplied header, so any holder of the shared key could act for every tenant.
 - Any value under the former `aig` key; see [AI Security Posture scanner](#ai-security-posture-scanner).
 - `privacyGateway.enabled` with `privacyGateway.mtls.enabled=false`, without its mTLS
   Secret, gateway Secret, trust ConfigMap, model PVC or egress allow-list, with a default
@@ -101,7 +107,24 @@ with `jwt-secret`), `metrics-token`. Optional: the key named by `auth.smtp.passw
 `AIDR_DELEGATION_SIGNING_KEY_ID`, `AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64`,
 `AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64`, `AIDR_PACK_MASTER_KEY_B64`,
 `AIDR_PACK_DOWNLOAD_GRANT_SECRET`, `AIDR_DEVICE_START_INGRESS_SECRET`,
-`AIDR_NOTIFICATION_ENCRYPTION_KEYS`, `AIDR_NOTIFICATION_DISPATCH_TOKEN`.
+`AIDR_NOTIFICATION_ENCRYPTION_KEYS`, `AIDR_NOTIFICATION_DISPATCH_TOKEN`, and optionally
+`AIDR_SHARED_PACK_KEYS` (keys of shared/vendor premium intel packs; see `supabase/README.md`).
+
+## Retention maintenance
+
+The `maintenance` CronJob (on by default, `maintenance.schedule` hourly) runs
+`scripts/deployment-maintenance.mjs --from-env --apply`, shipped in a ConfigMap from
+`files/deployment-maintenance.mjs` (a byte-identical copy, checked by the chart tests). It
+deletes data past each tenant's retention (telemetry, approval requests, expired
+invitations, billing webhooks, AI governance records), GA trial subjects, public waitlist
+sign-ups after 365 days, expired temporary audit-export objects and rate-limit counters,
+honouring legal holds, then dispatches due governance digests. It reaches only the API
+gateway Service (its own NetworkPolicy) with `service-role-key` from
+`secrets.existingSecret`, read from the environment. The evidence JSON is the pod log;
+exit code 2 means the run was incomplete (for example a legal hold or a tenant without a
+retention policy), 1 means it failed. Alert when no run has succeeded for two hours.
+`maintenance.apply=false` makes it a dry run. Disabling it keeps personal data
+indefinitely, whatever retention the workspace owners configure.
 
 ## Alert notifications
 
@@ -133,7 +156,10 @@ Vault, sealed-secrets) as long as the Secret names match.
 | `storage.backend` | `file` | `file` (PVC, one replica) or `s3` |
 | `migrations.enabled` | `true` | Schema hook Job |
 | `migrations.allowWithoutBackup` | `false` | Let `helm upgrade` migrate without the pre-upgrade backup (only after your own backup) |
-| `backup.enabled` | `false` | Nightly `pg_dump` CronJob to a PVC |
+| `maintenance.enabled` | `true` | Hourly retention/erasure/digest CronJob (see [Retention maintenance](#retention-maintenance)) |
+| `backup.enabled` | `false` | Nightly encrypted `pg_dump` CronJob to a PVC (off by default: needs your age recipients) |
+| `backup.encryption.ageRecipients` | `[]` | Required with backups: age public keys every artifact is sealed to |
+| `backup.offsite.enabled` | `false` | Also upload each encrypted artifact to an S3-compatible bucket off the cluster |
 | `backup.preUpgrade.enabled` | `true` | Backup hook Job that must succeed before the pre-upgrade migration |
 | `backup.storage.enabled` | `false` | Also archive the `storage.backend=file` volume (tar.gz + SHA-256) |
 | `backup.storage.acknowledgeNotBackedUp` | `false` | Dev only: accept database-only backups with `storage.backend=file` |
@@ -243,12 +269,30 @@ pre-create a claim and set `backup.persistence.existingClaim`).
 
 ## Backups
 
+Backups are **off by default** (`backup.enabled=false`): turning them on needs two
+decisions the chart cannot make for you, where the decryption identity is kept and
+(recommended) which bucket holds the off-cluster copy. With `externalDatabase`, prefer
+the provider's PITR and keep the CronJob as a second, logical copy.
+
 `backup.enabled=true` adds a CronJob (and the pre-upgrade hook, see [Upgrade](#upgrade))
-that writes `aidr-<UTC stamp>.dump` (custom format) and a `.sha256` file to a PVC and
-prunes backup files older than `backup.retentionDays`. It is a logical backup on the same
-cluster: replicate the volume off-site and rehearse restores
-(`pg_restore --clean --if-exists`). With `externalDatabase`, prefer the provider's PITR
-and keep the CronJob as a second, logical copy.
+that streams the custom-format `pg_dump` through [age](https://age-encryption.org) to
+every recipient in `backup.encryption.ageRecipients` and writes `aidr-<UTC stamp>.dump.age`,
+its `.sha256` and an `aidr-<stamp>.manifest` to a PVC, pruning files older than
+`backup.retentionDays`. No plaintext dump touches the volume, and the cluster only holds
+public recipients: create the identity off the cluster (`age-keygen -o backup-identity.txt`)
+and keep it in your vault or key escrow (list two recipients to split custody). Rendering
+fails without a recipient; `backup.encryption.allowPlaintext=true` (dev only) restores the
+old plaintext `.dump`. The default `aidr/migrations` image ships `age` and `curl`; a custom
+`backup.image` without them fails the run instead of writing plaintext.
+
+**Off-cluster copy.** A PVC on the same cluster is not a disaster-recovery copy.
+`backup.offsite.enabled=true` uploads every finished artifact (`.age`, `.sha256`,
+`.manifest`) to `backup.offsite.endpoint`/`bucket`/`prefix` over HTTPS with SigV4
+(path-style; AWS S3, MinIO, Ceph RGW and similar), with write-only credentials from
+`backup.offsite.existingSecret` (`access-key-id`, `secret-access-key`) passed to curl on
+stdin. A failed upload fails the run (and, for the pre-upgrade hook, the upgrade). Use a
+bucket with versioning/object lock and a lifecycle rule; `retentionDays` prunes only the
+PVC. With NetworkPolicy, `backup.offsite.egressCIDRs` opens TCP 443 to the store.
 
 What is and is not backed up:
 
@@ -258,7 +302,26 @@ What is and is not backed up:
 | Stored objects, `storage.backend=file` | Only with `backup.storage.enabled=true` |
 | Stored objects, `storage.backend=s3` | **No**: use bucket versioning, replication or provider backups |
 | Secrets (`secrets.existingSecret`, functions Secret, S3 credentials) | **No**: keep the `generate-secrets.mjs` credential directory safe |
-| The backup volume itself | **No**: replicate it off-cluster |
+| pgsodium / Vault root key of the in-cluster Postgres (`pgsodium_root.key` on the `config-<release>-db-0` PVC) | **No**: export it once, see [Key material](#key-material) |
+| The age identity that decrypts the backups | **No**: it must never be on the cluster; escrow it |
+| The backup volume itself | Only with `backup.offsite.enabled=true`; otherwise replicate it off-cluster |
+
+### Key material
+
+A restore needs, besides the dump: the age identity, the platform and functions Secrets
+(the `generate-secrets.mjs` directory, which also holds the pack master key and signing
+keys), and, for the in-cluster Postgres, its pgsodium root key. Any value encrypted with
+pgsodium or Supabase Vault is unreadable after a restore without that key (AIDR's own
+schema does not use them today, but extensions and operators may). Export it once after
+install, sealed to the same recipients, and store it with the identity escrow:
+
+```bash
+kubectl -n aidr exec aidr-db-0 -c postgres -- cat /etc/postgresql-custom/pgsodium_root.key \
+  | age -r age1... -r age1... > pgsodium_root.key.age
+```
+
+The key does not change after the first start; re-export only after you replace it. With
+`externalDatabase`, follow the provider's key backup instead.
 
 With `storage.backend=file` and `backup.enabled=true`, rendering fails until you choose:
 `backup.storage.enabled=true`, `storage.backend=s3`, or (dev only)
@@ -284,8 +347,13 @@ and, after the dump, writes `aidr-<stamp>.storage.tar.gz`, its `.sha256` and an
   default `aidr/migrations` image has busybox tar, and the manifest then records
   `storage_xattrs=not-preserved` (the bytes and the database metadata are intact).
 
-Restore: stop Storage, verify the checksums (`sha256sum -c aidr-<stamp>.dump.sha256`
-and `aidr-<stamp>.storage.tar.gz.sha256`), `pg_restore --clean --if-exists` the dump, then
-extract the archive into an empty storage volume as the storage user
-(`tar -xzf aidr-<stamp>.storage.tar.gz -C <volume>`, adding `--xattrs` with GNU tar)
-and start Storage again.
+Restore (off the cluster or in a restore pod, with the identity): stop Storage, verify
+the checksums (`sha256sum -c aidr-<stamp>.dump.age.sha256` and
+`aidr-<stamp>.storage.tar.gz.age.sha256`), decrypt and restore the dump
+(`age -d -i backup-identity.txt aidr-<stamp>.dump.age | pg_restore --clean --if-exists -d <db>`),
+then decrypt and extract the archive into an empty storage volume as the storage user
+(`age -d -i backup-identity.txt aidr-<stamp>.storage.tar.gz.age | tar -xzf - -C <volume>`,
+adding `--xattrs` with GNU tar) and start Storage again. For the in-cluster Postgres,
+put the exported `pgsodium_root.key` back on the new `config` volume before the first
+start. Rehearse this on a scratch namespace after every chart upgrade; the chart does not
+yet ship a restore-drill Job (the Compose path has `scripts/deployment-restore-drill.mjs`).

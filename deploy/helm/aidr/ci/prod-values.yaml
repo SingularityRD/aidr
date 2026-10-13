@@ -63,6 +63,18 @@ externalDatabase:
 backup:
   enabled: true
   retentionDays: 30
+  encryption:
+    # Synthetic recipients for rendering only (two custodians).
+    ageRecipients:
+      - age10sncrgwzlg4tsr6y7k9tn5qgqc6je72f9u3vdnwfspjtfreueheshljgj2
+      - age15p4g9uzy9q6alveamnsmf7hg3ur4zrh0s3w79a4xlr3v7pf9srts8dfrh0
+  offsite:
+    enabled: true
+    endpoint: https://s3.eu-west-1.amazonaws.com
+    bucket: aidr-backups-offsite
+    region: eu-west-1
+    existingSecret: aidr-backup-offsite
+    egressCIDRs: ["10.60.0.0/16"]
 ingress:
   className: nginx
   tlsSecretName: aidr-tls

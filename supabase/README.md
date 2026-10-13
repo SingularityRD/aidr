@@ -91,7 +91,17 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
     policy public keys reject it. A dedicated key is recommended.
 - `AIDR_POLICY_SIGNATURE_TTL_HOURS` (default `24`; `1..720`)
 - `AIDR_PACK_MASTER_KEY_B64`
-  - Base64 of a 32-byte master key used to derive per-tenant AES-256-GCM pack keys (HKDF-SHA256).
+  - Base64 of a 32-byte master key used to derive per-tenant AES-256-GCM pack keys (HKDF-SHA256,
+    key id `aidr-tenant-pack-v2.<tenant id>.<master fingerprint>`). A tenant key only opens packs
+    registered for that tenant (`import-offline-pack.mjs --tenant-id`). Rotating the master key
+    changes every tenant key id; re-encrypt and re-register tenant packs.
+- `AIDR_SHARED_PACK_KEYS` (optional)
+  - Keys of shared packs (`pack_versions.tenant_id IS NULL`, e.g. vendor packs):
+    `aidr-shared-pack-<label>=<base64 32-byte key>[,...]`. Every premium_intel tenant receives all of
+    them. A malformed value delivers no shared key. Keep the previous key listed while a rotation is
+    in progress.
+  - Encrypt packs with `node scripts/intel-pack-keys.mjs encrypt-pack` (tenant or shared key), then
+    sign the manifest with `scripts/sign-intel-pack-manifest.mjs`.
 - `AIDR_COMPLIANCE_SIGNING_KEY_ID` and `AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64` (optional pair)
   - Ed25519 key that signs compliance evidence reports (`compliance-report`), same format as the
     entitlement key. Use a dedicated key. Unset: reports carry a SHA-256 only. Setting only one of
@@ -130,7 +140,7 @@ SCIM collection pages contain at most 200 resources, and a group request or resp
 Operationally:
 
 - Rotate signing keys by rolling `*_KEY_ID` and updating client `licensing.public_keys_pem` / `intel_packs.trusted_keys_path`.
-- Treat `AIDR_PACK_MASTER_KEY_B64` as a crown-jewel secret; leaking it effectively leaks premium pack encryption for all tenants.
+- Treat `AIDR_PACK_MASTER_KEY_B64` and `AIDR_SHARED_PACK_KEYS` as crown-jewel secrets; leaking the master key exposes every tenant pack, leaking a shared key exposes every shared pack encrypted with it.
 - For an explicitly authorized tenant, set the same server-only
   `AIDR_RUNTIME_CAPABILITIES_BY_TENANT={"TENANT_ID":["runtime_detectors","behavioral_learning_v1"]}`
   on both `enroll` and `ingest`; keep the mapping in the operator change record.

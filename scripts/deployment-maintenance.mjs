@@ -1,16 +1,51 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs";
+// Retention, erasure and digest maintenance for a deployment.
+//
+//   node scripts/deployment-maintenance.mjs <deployment-dir> [--apply]
+//       Compose/systemd installs: reads <dir>/deployment.json and <dir>/.env.
+//   node scripts/deployment-maintenance.mjs <evidence-dir> --from-env [--apply]
+//       Kubernetes CronJob (deploy/helm, maintenance.enabled): reads the API
+//       origin from AIDR_MAINTENANCE_API_URL and the service credential from
+//       SERVICE_ROLE_KEY. Plain HTTP is accepted only for an in-cluster
+//       Service name (no dot, *.svc or *.svc.cluster.local).
+//
+// Every run (re)writes <dir>/maintenance-evidence.json and prints it; an
+// incomplete --apply run exits 2, a failed one exits 1.
+//
+// deploy/helm/aidr/files/deployment-maintenance.mjs must stay a byte-identical
+// copy (the chart ships it in a ConfigMap; deploy/helm/chart.test.mjs checks):
+//   cp scripts/deployment-maintenance.mjs deploy/helm/aidr/files/
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 
 const isCount = n => Number.isInteger(n) && n >= 0;
+const clusterInternalHost = host => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host)
+  && (!host.includes(".") || host.endsWith(".svc") || host.endsWith(".svc.cluster.local"));
 
-async function main() {
-  const args = process.argv.slice(2), dir = resolve(args[0] || ".aidr-deploy");
-  const apply = args.includes("--apply");
+function loadTarget(args) {
+  const dir = resolve(args.find(arg => !arg.startsWith("--")) || ".aidr-deploy");
+  if (args.includes("--from-env")) {
+    const url = (process.env.AIDR_MAINTENANCE_API_URL ?? "").trim();
+    if (!url) throw new Error("AIDR_MAINTENANCE_API_URL is required with --from-env");
+    const base = new URL(url);
+    if (base.protocol !== "https:" && !(base.protocol === "http:" && clusterInternalHost(base.hostname))) {
+      throw new Error("Maintenance requires HTTPS or an in-cluster Service URL");
+    }
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    return { dir, base, serviceRoleKey: (process.env.SERVICE_ROLE_KEY ?? "").trim() };
+  }
   const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
   const env = Object.fromEntries(readFileSync(join(dir, ".env"), "utf8").split(/\r?\n/).filter(s => s.includes("=")).map(s => [s.slice(0, s.indexOf("=")), s.slice(s.indexOf("=")+1)]));
   const base = new URL(manifest.supabase_url);
   if (base.protocol !== "https:" && !(manifest.development && base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname))) throw new Error("Maintenance requires HTTPS or a loopback development deployment");
+  return { dir, base, serviceRoleKey: env.SERVICE_ROLE_KEY };
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const apply = args.includes("--apply");
+  const { dir, base, serviceRoleKey } = loadTarget(args);
+  const env = { SERVICE_ROLE_KEY: serviceRoleKey };
   if (!env.SERVICE_ROLE_KEY) throw new Error("Deployment service credential missing");
   // Replace stale success evidence BEFORE any authorization or external side effect.
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify({
@@ -145,6 +180,26 @@ async function main() {
     trialSubjects.batches += 1;
     if (!apply || result.remaining === 0 || result.deleted === 0) {
       trialSubjects.complete = result.remaining === 0;
+      break;
+    }
+  }
+  // Public waitlist sign-ups (e-mail, name, company, free text) without a
+  // tenant are deleted 365 days after sign-up (migration 20261013000100).
+  const waitlist = { eligible: 0, deleted: 0, remaining: 0, batches: 0, complete: false };
+  for (let batch = 0; batch < 100; batch++) {
+    const result = await request("/rest/v1/rpc/purge_expired_waitlist_signups", "POST", { p_limit: 500, p_apply: apply });
+    if (!result || ![result.eligible, result.deleted, result.remaining].every(isCount)
+      || result.applied !== apply || result.deleted > result.eligible || result.retention_days !== 365
+      || (!apply && result.deleted !== 0)
+      || typeof result.cutoff !== "string" || !Number.isFinite(Date.parse(result.cutoff))) {
+      throw new Error("Invalid waitlist retention response");
+    }
+    waitlist.eligible += result.eligible;
+    waitlist.deleted += result.deleted;
+    waitlist.remaining = result.remaining;
+    waitlist.batches += 1;
+    if (!apply || result.remaining === 0 || result.deleted === 0) {
+      waitlist.complete = result.remaining === 0;
       break;
     }
   }
@@ -320,10 +375,10 @@ async function main() {
       ? "invalid_dispatch_response" : "dispatch_unavailable";
   }
   const retentionComplete = exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete
-    && invitations.complete && approvals.complete && governance.complete && rateLimits.complete;
+    && waitlist.complete && invitations.complete && approvals.complete && governance.complete && rateLimits.complete;
   const evidence = {
     checked_at: new Date().toISOString(),
-    action: "expire-private-audit-exports-billing-webhooks-telemetry-trial-subjects-team-invitations-approval-requests-ai-governance-records-and-rate-limits",
+    action: "expire-private-audit-exports-billing-webhooks-telemetry-trial-subjects-waitlist-signups-team-invitations-approval-requests-ai-governance-records-and-rate-limits",
     applied: apply, selected, removed,
     complete: retentionComplete && governanceDigest.complete, cutoff,
     status: !apply ? "dry_run" : retentionComplete && governanceDigest.complete ? "completed" : "incomplete",
@@ -331,12 +386,13 @@ async function main() {
     billing_retention: billing,
     telemetry_retention: telemetry,
     trial_subject_retention: trialSubjects,
+    waitlist_retention: waitlist,
     team_invitation_retention: invitations,
     approval_request_retention: approvals,
     ai_governance_maintenance: governance,
     rate_limit_pruning: rateLimits,
     governance_digest: governanceDigest,
-    scope: "Deletes authorized expired temporary export objects, completed attributed billing webhooks for active unheld tenants, expired events for active tenants according to each tenant's telemetry retention policy, pseudonymous trial-subject digests at the original 14-day expiry, expired unaccepted team invitations only after each active tenant's existing identity_membership retention window, decided or expired dashboard approval requests only after each active tenant's telemetry retention window, and operational rate-limit counters at least 15 minutes after their last update. Accepted and unexpired invitations are preserved; held and inactive-tenant invitation rows are retained. Active tenants missing identity_membership policy and contention/hold-race cases keep the run incomplete. Tenant rate-limit counters under legal hold or outside active tenancy are retained for the tenant lifecycle; global counters have no tenant association. Settlement request keys remain durable; unfinished, unattributed, held, and inactive-tenant webhooks are retained. Events without a telemetry policy and non-active tenants are not selected; legal-hold tenants are preserved. The append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure. The run also dispatches due governance summaries (counts-only e-mail to workspace owners/admins) and records their delivery outcome; a dry run only counts due schedules.",
+    scope: "Deletes authorized expired temporary export objects, completed attributed billing webhooks for active unheld tenants, expired events for active tenants according to each tenant's telemetry retention policy, pseudonymous trial-subject digests at the original 14-day expiry, public waitlist sign-ups without a tenant 365 days after sign-up, expired unaccepted team invitations only after each active tenant's existing identity_membership retention window, decided or expired dashboard approval requests only after each active tenant's telemetry retention window, and operational rate-limit counters at least 15 minutes after their last update. Accepted and unexpired invitations are preserved; held and inactive-tenant invitation rows are retained. Active tenants missing identity_membership policy and contention/hold-race cases keep the run incomplete. Tenant rate-limit counters under legal hold or outside active tenancy are retained for the tenant lifecycle; global counters have no tenant association. Settlement request keys remain durable; unfinished, unattributed, held, and inactive-tenant webhooks are retained. Events without a telemetry policy and non-active tenants are not selected; legal-hold tenants are preserved. The append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure. The run also dispatches due governance summaries (counts-only e-mail to workspace owners/admins) and records their delivery outcome; a dry run only counts due schedules.",
   };
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));

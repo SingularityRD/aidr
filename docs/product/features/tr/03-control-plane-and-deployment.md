@@ -1599,8 +1599,9 @@ node scripts/deployment-backup-offsite.mjs upload --backup /var/lib/aidr-backup/
   --retention-days 35 --object-lock-mode COMPLIANCE --health-file /srv/aidr/health/backup.json
 systemctl start aidr-restore-drill.service
 ```
-Kubernetes kurulumları chart'ın `backup.enabled` ile açılan `pg_dump` CronJob'unu veya
-veritabanı sağlayıcısının zamanda geri dönüş (PITR) özelliğini kullanır.
+Kubernetes kurulumları chart'ın `backup.enabled` ile açılan `pg_dump` CronJob'unu
+(operatör alıcılarına age ile şifrelenir, isteğe bağlı olarak küme dışındaki S3 uyumlu bir
+kovaya kopyalanır) veya veritabanı sağlayıcısının zamanda geri dönüş (PITR) özelliğini kullanır.
 
 **Örnek.** Tatbikat dün geceki yedeği yeni bir projeye geri yükler ve hedef RPO 24 saat,
 RTO 4 saat ile ölçülen değerleri içeren `restore-drill-evidence.json` dosyasını yazar.

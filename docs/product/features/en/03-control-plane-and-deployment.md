@@ -1549,8 +1549,9 @@ node scripts/deployment-backup-offsite.mjs upload --backup /var/lib/aidr-backup/
   --retention-days 35 --object-lock-mode COMPLIANCE --health-file /srv/aidr/health/backup.json
 systemctl start aidr-restore-drill.service
 ```
-Kubernetes installations use the chart's `backup.enabled` `pg_dump` CronJob, or the
-database provider's point-in-time recovery.
+Kubernetes installations use the chart's `backup.enabled` `pg_dump` CronJob (sealed with
+age to operator recipients, optionally copied to an off-cluster S3-compatible bucket), or
+the database provider's point-in-time recovery.
 
 **Example.** The drill restores last night's backup into a new project and writes
 `restore-drill-evidence.json` with target RPO 24 h and RTO 4 h and the measured values.
