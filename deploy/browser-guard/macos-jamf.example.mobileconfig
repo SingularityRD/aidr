@@ -37,6 +37,20 @@
 			<array>
 				<string>REPLACE_WITH_CHROME_EXTENSION_ID;https://clients2.google.com/service/update2/crx</string>
 			</array>
+			<key>IncognitoModeAvailability</key>
+			<integer>1</integer>
+			<key>BrowserGuestModeEnabled</key>
+			<false/>
+			<key>DeveloperToolsAvailability</key>
+			<integer>2</integer>
+			<key>ExtensionInstallBlocklist</key>
+			<array>
+				<string>*</string>
+			</array>
+			<key>ExtensionInstallAllowlist</key>
+			<array>
+				<string>REPLACE_WITH_CHROME_EXTENSION_ID</string>
+			</array>
 			<key>ExtensionSettings</key>
 			<dict>
 				<key>REPLACE_WITH_CHROME_EXTENSION_ID</key>
@@ -220,6 +234,20 @@
 			<key>ExtensionInstallForcelist</key>
 			<array>
 				<string>REPLACE_WITH_EDGE_EXTENSION_ID;https://edge.microsoft.com/extensionwebstorebase/v1/crx</string>
+			</array>
+			<key>InPrivateModeAvailability</key>
+			<integer>1</integer>
+			<key>BrowserGuestModeEnabled</key>
+			<false/>
+			<key>DeveloperToolsAvailability</key>
+			<integer>2</integer>
+			<key>ExtensionInstallBlocklist</key>
+			<array>
+				<string>*</string>
+			</array>
+			<key>ExtensionInstallAllowlist</key>
+			<array>
+				<string>REPLACE_WITH_EDGE_EXTENSION_ID</string>
 			</array>
 		</dict>
 		<dict>

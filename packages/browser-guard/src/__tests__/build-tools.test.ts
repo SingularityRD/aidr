@@ -548,6 +548,67 @@ describe("deployment examples", () => {
 		}
 	});
 
+	// GA audit BG-5: without these a private window, a Guest profile, the page console or
+	// another extension gives an unprotected path to the same AI sites.
+	const hardening = (privateMode: string, id: string) => ({
+		[privateMode]: 1,
+		BrowserGuestModeEnabled: false,
+		DeveloperToolsAvailability: 2,
+		ExtensionInstallBlocklist: ["*"],
+		ExtensionInstallAllowlist: [id],
+	});
+
+	it("every example carries the browser hardening policies (private mode, Guest, DevTools, extensions)", () => {
+		expect(chrome).toMatchObject(hardening("IncognitoModeAvailability", CHROME_ID));
+
+		const firefox = JSON.parse(readDeploy("firefox-policies.example.json")).policies;
+		expect(firefox.DisablePrivateBrowsing).toBe(true);
+		expect(firefox.DisableDeveloperTools).toBe(true);
+		expect(firefox.ExtensionSettings["*"].installation_mode).toBe("blocked");
+
+		const intune = JSON.parse(readDeploy("edge-intune.example.json"));
+		const catalog = Object.fromEntries(
+			(intune.settingsCatalog as { policy: string; value: Json }[]).map((s) => [s.policy, s.value]),
+		);
+		expect(catalog).toMatchObject(hardening("InPrivateModeAvailability", EDGE_ID));
+
+		const reg = parseReg(readDeploy("windows-registry.example.reg"));
+		for (const [base, privateMode, id] of [
+			[
+				"HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome",
+				"IncognitoModeAvailability",
+				CHROME_ID,
+			],
+			[
+				"HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+				"InPrivateModeAvailability",
+				EDGE_ID,
+			],
+		]) {
+			expect(reg[base]).toEqual({
+				[privateMode]: 1,
+				BrowserGuestModeEnabled: 0,
+				DeveloperToolsAvailability: 2,
+			});
+			expect(reg[`${base}\\ExtensionInstallBlocklist`]).toEqual({ "1": "*" });
+			expect(reg[`${base}\\ExtensionInstallAllowlist`]).toEqual({ "1": id });
+		}
+
+		const profile = parsePlist(readDeploy("macos-jamf.example.mobileconfig")) as Record<
+			string,
+			Json
+		>;
+		const byType = new Map(
+			(profile.PayloadContent as Record<string, Json>[]).map((p) => [p.PayloadType as string, p]),
+		);
+		expect(byType.get("com.google.Chrome")).toMatchObject(
+			hardening("IncognitoModeAvailability", CHROME_ID),
+		);
+		expect(byType.get("com.microsoft.Edge")).toMatchObject(
+			hardening("InPrivateModeAvailability", EDGE_ID),
+		);
+	});
+
 	const schemaFile = join(PACKAGE_ROOT, "static", "managed_schema.json");
 	it("every example key is declared in static/managed_schema.json", () => {
 		const schema = JSON.parse(readFileSync(schemaFile, "utf8"));

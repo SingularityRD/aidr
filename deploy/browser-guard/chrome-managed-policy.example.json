@@ -9,6 +9,15 @@
   "ExtensionInstallForcelist": [
     "REPLACE_WITH_CHROME_EXTENSION_ID;https://clients2.google.com/service/update2/crx"
   ],
+  "IncognitoModeAvailability": 1,
+  "BrowserGuestModeEnabled": false,
+  "DeveloperToolsAvailability": 2,
+  "ExtensionInstallBlocklist": [
+    "*"
+  ],
+  "ExtensionInstallAllowlist": [
+    "REPLACE_WITH_CHROME_EXTENSION_ID"
+  ],
   "3rdparty": {
     "extensions": {
       "REPLACE_WITH_CHROME_EXTENSION_ID": {
