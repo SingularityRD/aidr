@@ -11,7 +11,7 @@ customer installation.
 
 The OpenClaw connector runs in-process using the OpenClaw plugin API:
 
-- **`before_tool_call`** - Intercepts `exec`, `web_fetch`, `write`, `edit`, `read`, and `apply_patch`. Runs the full detection pipeline.
+- **`before_tool_call`** - Intercepts `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` and `ls`, and the command channels `process`, `terminal` and `nodes` (see Intercepted Tools). Runs the full detection pipeline.
 - **Tool-result middleware** (`api.registerAgentToolResultMiddleware`, OpenClaw 2026.9+) - Pre-model tool-output quarantine: the embedded runner awaits it after the tool executed and before the result enters the model context. A risky or incompletely inspected result is replaced by a fresh text-only notice (`Singularity AIDR quarantined this tool output before it reached the model`, rule identifiers only), so the same-turn model never reads the original. Inspection, integrity and initialisation failures also quarantine. Requires `contracts.agentToolResultMiddleware: ["openclaw"]` (shipped in `openclaw.plugin.json`) and explicit enablement (`plugins.entries.aidr-openclaw.enabled: true`); otherwise OpenClaw drops the registration and the connector logs the boundary as `enforced: false`. Only the embedded `openclaw` runtime is claimed: OpenClaw's Codex native-hook relay does not feed a middleware result back to the model.
 - **`after_tool_call`** - Inspects tool output after execution and records risky or incomplete results; carrying that observation forward depends on OpenClaw providing matching tool-call, run, or session identifiers. It is observation-only and cannot undo the action or prove the same-turn model did not see the original result.
 - **`tool_result_persist`** - Synchronously replaces risky or incompletely inspected output before it is written to the transcript. This is still a post-execution boundary.
@@ -36,6 +36,20 @@ accepted on the embedded runner only (see Real-host acceptance below).
 | `edit` | File path + content extraction |
 | `read` | File path extraction |
 | `apply_patch` | File path extraction from diffs |
+| `ls` | Listed path as a file path |
+| `process` (`write`, `paste`, `send-keys`, `submit`) | Text delivered to the running process evaluated as a shell command, joined with that session's unfinished line; also checked in `python3`/`node`/`perl`/`ruby`/`php` inline-code form, since the process may be a REPL |
+| `terminal` (`input`) | Same as `process` input |
+| `nodes` (`run`, `invoke`) | The node command (string or argv from `invokeParamsJson`) evaluated as a shell command |
+
+Input that cannot be reconstructed is blocked, not guessed: cursor keys,
+backspace or tab completion over typed text, an exec-capable `nodes invoke`
+(for example `system.run`, `worker.workspace.exec.v1`) with no inspectable
+command, and any `process`/`terminal`/`nodes` action AIDR does not recognise.
+A plugin tool whose name says it runs commands (`shell_exec`, `run_bash`) is
+evaluated on its `command`/`cmd`/`argv` field and blocked without one. The tool
+list was checked against OpenClaw 2026.9.6; the remaining built-in tools
+(agents, sessions, media, messaging, UI, gateway config) neither run commands
+nor write files by path and are inspected generically.
 
 ## Approving a flagged action
 

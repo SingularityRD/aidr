@@ -27,6 +27,16 @@ import {
 	mcpIdentityFromOpenClawName,
 	recordHostObservation,
 } from "@singularityrd/aidr-core";
+import {
+	type ExecSurfaceResolution,
+	PASSTHROUGH,
+	PendingInputLines,
+	replInputArtifacts,
+	resolveExecNamedTool,
+	resolveNodes,
+	resolveProcess,
+	resolveTerminal,
+} from "./process-input.js";
 
 export interface ToolCallEvent {
 	toolName: string;
@@ -76,9 +86,80 @@ function mapToolToArtifacts(toolName: string, params: Record<string, unknown>): 
 			const patch = (params.patch ?? "") as string;
 			return patch ? extractFilePaths(patch) : null;
 		}
-		default:
-			return extractFromUnknownTool(`openclaw:${toolName || "unknown"}`, params);
+		case "ls": {
+			// Directory listing: the listed path goes through the same file-path
+			// rules as a read.
+			const path = typeof params.path === "string" ? params.path : "";
+			return path ? [{ type: "file_path", value: path, context: "list" }] : null;
+		}
+		default: {
+			const artifacts = extractFromUnknownTool(`openclaw:${toolName || "unknown"}`, params);
+			// The generic extractor types a string `command` as a command but never
+			// joins an argv array; do that here so `command: ["rm", "-rf", "/"]`
+			// is inspected as the command it runs.
+			if (Array.isArray(params.command)) {
+				const argv = commandFromValue(params.command);
+				if (argv.ok && argv.command) artifacts.push(...extractFromBash(argv.command));
+			}
+			return artifacts;
+		}
 	}
+}
+
+/**
+ * Route tools that run commands or write to a running process onto the shell
+ * inspection path (see process-input.ts). `process`, `terminal` and `nodes` are
+ * OpenClaw built-ins; any other tool whose name says it executes commands is
+ * held to the same rule.
+ */
+function resolveExecSurface(
+	toolName: string,
+	params: Record<string, unknown>,
+	pendingLines: PendingInputLines,
+	scope: string,
+): ExecSurfaceResolution {
+	switch (toolName) {
+		case "process":
+			return resolveProcess(params, pendingLines, scope);
+		case "terminal":
+			return resolveTerminal(params, pendingLines, scope);
+		case "nodes":
+			return resolveNodes(params);
+		case "exec":
+		case "web_fetch":
+		case "write":
+		case "edit":
+		case "read":
+		case "apply_patch":
+		case "ls":
+			return PASSTHROUGH;
+		default:
+			return resolveExecNamedTool(toolName, params);
+	}
+}
+
+interface EvaluatedCall {
+	toolName: string;
+	params: Record<string, unknown>;
+	extraArtifacts: Artifact[];
+}
+
+/**
+ * The call core evaluates: shell input becomes an `exec` of that input (plus
+ * its REPL inline-code forms when it was written to a running process); any
+ * other call is evaluated as sent.
+ */
+function evaluatedCall(
+	toolName: string,
+	params: Record<string, unknown>,
+	surface: ExecSurfaceResolution,
+): EvaluatedCall {
+	if (surface.kind !== "shell") return { toolName, params, extraArtifacts: [] };
+	return {
+		toolName: "exec",
+		params: { command: surface.command },
+		extraArtifacts: surface.stdin ? replInputArtifacts(surface.command) : [],
+	};
 }
 
 /**
@@ -101,6 +182,7 @@ export function createToolCallHandler(
 	allowlistsDir: string,
 ): (event: ToolCallEvent, ctx?: ToolCallContext) => Promise<BlockResult | undefined> {
 	const hostObservation = createHostObservation();
+	const pendingLines = new PendingInputLines();
 	async function handleToolCall(
 		event: ToolCallEvent,
 		ctx?: ToolCallContext,
@@ -124,7 +206,20 @@ export function createToolCallHandler(
 				blockReason: "Singularity AIDR could not identify this tool call; execution was denied.",
 			};
 		}
-		if (malformedShellCommandReason(toolName, params)) {
+		// Input written to a running process (or a command sent to a node) is
+		// evaluated as the shell command it becomes; input that cannot be
+		// reconstructed is refused rather than passed through.
+		const surface = resolveExecSurface(toolName, params, pendingLines, ctx?.sessionKey ?? "");
+		if (surface.kind === "deny") {
+			return {
+				block: true,
+				blockReason: `Singularity AIDR blocked this action: ${surface.reason}; it cannot be inspected reliably, so execution was denied.`,
+			};
+		}
+		if (surface.kind === "shell")
+			logger.debug(`evaluating ${surface.via} input as a shell command`);
+		const call = evaluatedCall(toolName, params, surface);
+		if (malformedShellCommandReason(call.toolName, call.params)) {
 			return {
 				block: true,
 				blockReason:
@@ -132,17 +227,21 @@ export function createToolCallHandler(
 			};
 		}
 		// The deadline that blocks a hung evaluation wraps this handler in index.ts.
-		return evaluate(toolName, params, ctx);
+		const result = await evaluate(call.toolName, call.params, ctx, call.extraArtifacts);
+		// Only input the host will actually deliver extends the session's line.
+		if (result === undefined && surface.kind === "shell") surface.commit?.();
+		return result;
 	}
 
 	async function evaluate(
 		toolName: string,
 		params: Record<string, unknown>,
-		ctx?: ToolCallContext,
+		ctx: ToolCallContext | undefined,
+		extraArtifacts: Artifact[],
 	): Promise<BlockResult | undefined> {
 		try {
 			// Core may find artifacts after normalizing connector-specific fields.
-			const artifacts = mapToolToArtifacts(toolName, params) ?? [];
+			const artifacts = [...(mapToolToArtifacts(toolName, params) ?? []), ...extraArtifacts];
 			const sessionId = ctx?.sessionKey ?? "unknown";
 			// OpenClaw bundle MCP tools are `<server>__<tool>`; evaluate them under
 			// the canonical `mcp__<server>__<tool>` name so MCP policy applies.

@@ -53,10 +53,11 @@ approve the action itself**, because approval is an out-of-band, human-only acti
 | `read` | file path |
 | `write` | file path + content |
 | `edit` | file path + edited content |
-| `apply_patch` | `patchText` normalized to every target path + added-content section |
-| `ls` | file path |
-| `glob` | pattern as file_path artifact |
-| `grep` | pattern as content artifact |
+| `apply_patch`, `patch` | `patchText` normalized to every target path + added-content section; a call without a patch body is blocked |
+| `multiedit` | file path + every replacement, normalized to a file edit |
+| `ls`, `list` | listed path as a file path |
+| `glob` | pattern, search root, and the pattern resolved against the root as file paths |
+| `grep` | pattern as content; search root, `include`, and `include` resolved against the root as file paths |
 
 Unmapped tools pass through unchanged.
 

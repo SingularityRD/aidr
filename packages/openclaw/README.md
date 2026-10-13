@@ -18,7 +18,7 @@ Replace `VERSION` with the version in the approved release record.
 
 ## What It Does
 
-- Intercepts `exec`, `web_fetch`, `write`, `edit`, `read`, and `apply_patch` tool calls
+- Intercepts `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` and `ls` tool calls, and evaluates input sent to a running process or node (`process` write/paste/send-keys/submit, `terminal` input, `nodes` run/invoke) as the shell command it becomes; input it cannot reconstruct, and unrecognised actions on those tools, are blocked
 - Optionally checks URLs against a configured first-party reputation endpoint (off by default; an unavailable lookup is never reported as clean)
 - Matches commands and file paths against YAML-based threat definitions
 - Validates npm/PyPI packages against supply-chain risks

@@ -6,11 +6,14 @@ Singularity AIDR evaluates named tool calls forwarded by an enabled OpenCode `to
 
 - `bash` commands
 - `webfetch` URLs
-- File operations (`read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`)
+- File operations (`read`, `write`, `edit`, `apply_patch`, `patch`, `multiedit`, `ls`, `list`, `glob`, `grep`)
 
-OpenCode's `apply_patch` `patchText` is normalized to a file edit. AIDR checks
-every parsed target path and added-text section through the same core policy
-path as `edit`; if AIDR cannot parse the complete patch, it blocks the call.
+OpenCode's `apply_patch` `patchText` (also exposed as `patch` by some builds)
+is normalized to a file edit. AIDR checks every parsed target path and
+added-text section through the same core policy path as `edit`; if AIDR cannot
+parse the complete patch, it blocks the call. `multiedit` is checked as an edit
+of its file with every replacement. `glob` and `grep` search roots and patterns
+are checked as file paths.
 
 Unmapped tools pass through unchanged.
 

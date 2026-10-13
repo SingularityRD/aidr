@@ -143,4 +143,68 @@ describe("connector tool-name contract", () => {
 			expect.objectContaining({ connector: "fixture", kind: "undeclared-pass-through" }),
 		);
 	});
+
+	// CON-2/CON-3: the source-derived vocabulary cannot see a host tool the
+	// connector never names (OpenClaw `process`, OpenCode `patch`). The pinned
+	// host inventory closes that gap.
+	it("classifies every tool in the pinned OpenClaw and OpenCode host inventories", async () => {
+		const derived = await deriveConnectorToolNames();
+		for (const connector of ["openclaw", "opencode"]) {
+			const surface = CONNECTOR_TOOL_SURFACES.find((s) => s.connector === connector);
+			expect(surface?.hostInventory?.tools.length, connector).toBeGreaterThan(0);
+		}
+		// The exec-capable OpenClaw tools are dispatched, not left generic.
+		for (const tool of ["process", "terminal", "nodes"]) {
+			expect(derived.get("openclaw")).toContain(tool);
+		}
+		expect(canonicalToolName("patch")).toBe("Edit");
+		expect(canonicalToolName("multiedit")).toBe("Edit");
+		expect(findConnectorToolSurfaceViolations(derived)).toEqual([]);
+	});
+
+	it("flags a host inventory tool that nothing classifies", async () => {
+		const derived = await deriveConnectorToolNames();
+		const surfaces = CONNECTOR_TOOL_SURFACES.map((surface) =>
+			surface.connector === "openclaw" && surface.hostInventory
+				? {
+						...surface,
+						hostInventory: {
+							...surface.hostInventory,
+							tools: [...surface.hostInventory.tools, "remote_shell"],
+						},
+					}
+				: surface,
+		);
+
+		expect(findConnectorToolSurfaceViolations(derived, surfaces)).toContainEqual(
+			expect.objectContaining({
+				connector: "openclaw",
+				toolName: "remote_shell",
+				kind: "unclassified-host-tool",
+			}),
+		);
+	});
+
+	it("flags a generic-inspection entry the connector now dispatches", async () => {
+		const derived = await deriveConnectorToolNames();
+		const surfaces = CONNECTOR_TOOL_SURFACES.map((surface) =>
+			surface.connector === "openclaw" && surface.hostInventory
+				? {
+						...surface,
+						hostInventory: {
+							...surface.hostInventory,
+							genericInspection: [...surface.hostInventory.genericInspection, "process"],
+						},
+					}
+				: surface,
+		);
+
+		expect(findConnectorToolSurfaceViolations(derived, surfaces)).toContainEqual(
+			expect.objectContaining({
+				connector: "openclaw",
+				toolName: "process",
+				kind: "stale-generic-inspection",
+			}),
+		);
+	});
 });
