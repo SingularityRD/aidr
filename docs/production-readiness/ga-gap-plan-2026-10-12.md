@@ -27,6 +27,26 @@ imzaları, Browser Guard vault ve mesaj güveni, imzalı dashboard politikası, 
 bozuk girdi ve zaman aşımında fail-closed çalışması, kabuk gizleme normalizasyonunun kendisi (yalnız tüm
 kural ailelerine bağlı değil), 507 kural regex'inde ReDoS yok, bağımlılık denetimi temiz (`pnpm audit` 0).
 
+## Durum — 13 Ekim 2026
+
+87 kaydın kod ile kapatılabilen hepsi düzeltildi ve `claude/upbeat-mayer-tefkgn` dalına birleştirildi
+(20 düzeltme dalı ve ardından 5 boşluk düzeltmesi; her biri regresyon testiyle). DET-2/3/4
+CLT-CMD-037/038/039 ve CLT-OBFUS-012 ile kapandı; DET-6 ve MSC-16 teyit kayıtlarıdır; OPS-1 (CI/CD)
+ürün sahibi tarafından çözüldü. Kısmi kalanlar ve dış bağımlılıklar:
+
+- **Kimlik bilgisi sızdırma (tek komutta kaynak + ağ)** hâlâ `ask`; `wget --post-file` ve `tftp put`
+  sinyalsiz. Ayrı görev olarak izleniyor.
+- **PRD-15 (TR yerelleştirme)** kısmi: CLI'nin diğer komutları, dashboard'un iç sayfaları, eklenti
+  kurulum hataları ve kural başlıkları İngilizce; Türkçe metinler anadil incelemesi bekliyor.
+- **BG-10/BG-LIVE**: Office web içindeki Copilot paneli `m365.cloud.microsoft` ve
+  `copilot.cloud.microsoft` alt çerçevelerinde korunuyor; gerçek kiracıdaki host ve seçiciler doğrulanmadı.
+- **BG-11**: kalıcı native host; gerçek Windows/macOS gecikmesi ölçülmedi, Firefox'ta native NER yok.
+- **CP-1**: cihaz onayında coğrafi konum için ingress'in ülke başlığını imzalaması gerekiyor.
+- **Dış bağımlılıklar**: imzalı RC etiketi ve ilk promotion (`genesis=FIRST_PROMOTION`),
+  `release-images` ortamı ve GHCR izinleri, yeni migration'ların gerçek veritabanında uygulanması,
+  AIG fork'unda `v4.6.1-aidr.2` etiketi, Docker/Postgres/Helm/IPv6/Node 24/Chromium 1243 isteyen CI
+  kapıları, katalog ve broşür PDF'lerinin yeniden üretimi.
+
 ## Dalgalar
 
 - **Dalga 1 — hemen:** bütün kod tarafı P0'lar ve hızlı güvenlik P1'leri. Her düzeltme kendi testiyle gelir.
