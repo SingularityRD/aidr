@@ -38,8 +38,8 @@ açılır pencere **Korunmuyor — bu sekmeyi yenileyin** diyorsa sekmeyi yenile
 
 1. Desteklenen yapay zekâ sitelerinden birini açın.
 2. İsteme `jane.doe@example.com` gibi bir deneme adresi yazıp gönderin.
-3. Siteye adres yerine `[EMAIL_1_xxxx]` gider; küçük bir "1 öğe maskelendi: 1 EMAIL" notu
-   görünür ve yanıt özgün adresi yeniden gösterir.
+3. Siteye adres yerine `[EMAIL_1_xxxx]` gider; küçük bir "Gönderilmeden önce maskelendi:
+   1 e-posta adresi." notu görünür ve yanıt özgün adresi yeniden gösterir.
 
 Araç çubuğu penceresi geçerli sekmenin korunup korunmadığını ve bu oturumda kaç öğenin
 maskelendiğini gösterir.

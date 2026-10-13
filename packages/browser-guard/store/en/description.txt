@@ -9,7 +9,7 @@ WHAT IT DOES
 - Replaces each finding with a placeholder such as [EMAIL_1_k3f9]. The AI service receives the placeholder; the original value never leaves your browser.
 - Shows the original values again in the answer, in your browser only. Secrets and private keys stay masked.
 - Word, Excel, PowerPoint and OpenDocument files: the text is masked inside the file before upload. PDFs and older .doc/.xls/.ppt files are checked and blocked when they contain sensitive data.
-- Four modes: mask automatically (default), ask before sending, block, or monitor only.
+- Four modes: Auto-mask (default), Ask me, Block, or Count only (no masking).
 - English and Turkish user interface.
 
 PRIVACY
@@ -30,6 +30,6 @@ WHAT IT DOES NOT COVER
 - Images and screenshots are checked only with that native host and its text recognition. Without it they are reported as not inspected, never as clean.
 - A redesign of a supported site can stop the extension from recognising the Send button until it is updated.
 - Restored values appear only on the page. Text the site exports, copies or shares itself still contains the placeholders.
-- In monitor mode, on sites turned off by the user, while protection is paused, and after "Send original" or "Send anyway" (when allowed), text is sent unmasked. Administrators can turn these off by policy.
+- In "Count only" mode, on sites turned off by the user, while protection is paused, and after "Send original" or "Send anyway" (when allowed), text is sent unmasked. Administrators can turn these off by policy.
 
 Browser Guard reduces the chance that sensitive data reaches AI services. It does not replace your organisation's data-protection policy or training.

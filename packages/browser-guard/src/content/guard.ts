@@ -63,6 +63,7 @@ import {
 } from "./file-guard.js";
 import { RELAY_SCAN } from "./file-relay.js";
 import {
+	exampleLabel,
 	formatCounts,
 	type Lang,
 	resolveLanguage,
@@ -388,6 +389,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const cache = new Map<string, { policy: GuardPolicy; result: GuardScan; at: number }>();
 	/** Set once the user was told that native NER is unavailable; cleared when it works again. */
 	let nativeNoticeShown = false;
+	/** Set once this page explained what highlighted (restored) values in answers are. */
+	let legendShown = false;
 	let lastFocused: Element | null = null;
 	/** Re-entrancy token: set only while our own replayed send is being dispatched. */
 	let replayText: string | null = null;
@@ -553,9 +556,25 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		return nativeNerRequired(policy) && result.native !== "used";
 	}
 
-	/** The "rules only" note for messages about a scan native NER should have been part of. */
-	const nativeLines = (result: GuardScan | null): string[] =>
-		result?.native === "unavailable" ? [strings().nativeUnavailable] : [];
+	/**
+	 * What a scan with findings did not cover: the "rules only" note when native NER should
+	 * have taken part, or that person names were not looked for when it is off.
+	 */
+	const nativeLines = (result: GuardScan | null): string[] => {
+		if (result?.native === "unavailable") return [strings().nativeUnavailable];
+		if (result?.native === "off") return [strings().namesNotChecked];
+		return [];
+	};
+
+	/** Whether answers will show any of these values again (restore on, not all never-restore). */
+	const restoresAny = (policy: GuardPolicy, counts: Readonly<Counts>): boolean =>
+		policy.restoreResponses &&
+		(Object.keys(counts) as EntityType[]).some(
+			(type) => (counts[type] ?? 0) > 0 && !policy.neverRestore.includes(type),
+		);
+
+	/** Counts in plain words in the page's language ("1 email address, 2 IBANs"). */
+	const summarize = (counts: Readonly<Counts>): string => formatCounts(counts, lang());
 
 	/** Tells the user once (until NER works again) that a clean prompt was checked rules-only. */
 	const noticeNativeOnce = (result: GuardScan): void => {
@@ -740,10 +759,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			record("blocked", "prompt", counts);
 			return;
 		}
-		ui.toast(
-			[s.maskedToast(totalCount(counts), formatCounts(counts)), ...nativeLines(scanned)].join(" "),
-			"info",
-		);
+		ui.toast([s.maskedToast(summarize(counts)), ...nativeLines(scanned)].join(" "), "info");
 		record("masked", "prompt", counts, scanned.native);
 		await replay(origin, editor, masked);
 	};
@@ -806,13 +822,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		coaching: readonly string[],
 	): string[] | null => {
 		const s = strings();
-		const total = totalCount(counts);
-		const summary = formatCounts(counts);
+		const summary = summarize(counts);
 		if (hasSignals && policy.signalAction === "block") {
-			return [...(total > 0 ? [s.blockedBody(total, summary)] : []), ...coaching];
+			return [...(totalCount(counts) > 0 ? [s.blockedBody(summary)] : []), ...coaching];
 		}
 		if (hasFindings && policy.mode === "block") {
-			return [s.blockedBody(total, summary), s.blockedCoaching, ...coaching];
+			return [s.blockedBody(summary), s.blockedCoaching, ...coaching];
 		}
 		return null;
 	};
@@ -846,9 +861,16 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		if (policy.allowSendAnyway) actions.push({ id: "send-original", label: s.sendOriginal });
 		return {
 			title: s.confirmTitle,
-			lines: [s.confirmBody(totalCount(counts), formatCounts(counts)), ...coaching],
+			lines: [
+				s.confirmBody(summarize(counts), exampleLabel(counts), restoresAny(policy, counts)),
+				...coaching,
+			],
 			actions,
 			tone: "warn",
+			// The consequence of "Send original", right under the button that has it.
+			...(policy.allowSendAnyway
+				? { footnote: s.sendOriginalNote(adapter.id === "other" ? null : adapter.label) }
+				: {}),
 		};
 	};
 
@@ -1234,10 +1256,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		const masked = vault.mask(text, findings);
 		await insertText(editor, masked.masked);
 		ui.toast(
-			[
-				s.pasteMaskedToast(totalCount(masked.counts), formatCounts(masked.counts)),
-				...nativeLines(result),
-			].join(" "),
+			[s.pasteMaskedToast(summarize(masked.counts)), ...nativeLines(result)].join(" "),
 			"info",
 		);
 		record("masked", "paste", masked.counts, result.native);
@@ -1366,7 +1385,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		adapter,
 		vault,
 		editorElement: () => editorFor(null)?.element ?? null,
-		title: () => strings().restoredTitle,
+		title: (placeholder) => strings().restoredTitle(placeholder),
+		onRestored: (placeholder) => {
+			if (legendShown) return;
+			legendShown = true;
+			ui.toastWhenIdle(strings().restoredLegend(placeholder));
+		},
 		schedule: deps.schedule,
 	});
 

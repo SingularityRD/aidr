@@ -203,8 +203,9 @@ a:hover {
 	color: var(--text-muted);
 	font-size: 11px;
 	font-weight: 600;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	/* Never upper-cased: the brand is "Singularity AIDR" in every language (Turkish casing
+	   would render it as "SİNGULARİTY AIDR"). */
 }
 
 .brand__title {
@@ -464,9 +465,14 @@ a:hover {
 	font-weight: 600;
 	line-height: 1.2;
 	text-align: center;
-	overflow-wrap: anywhere;
-	hyphens: auto;
+	/* Wrap between words; break inside a word only when it cannot fit at all. */
+	overflow-wrap: break-word;
 	cursor: pointer;
+}
+
+/* The popup is narrow: two rows of two keep "Yalnızca say (maskeleme yok)" readable. */
+.page--popup .segmented__options {
+	grid-template-columns: repeat(2, 1fr);
 }
 
 .segmented__input:checked + .segmented__label {

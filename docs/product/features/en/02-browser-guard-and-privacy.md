@@ -195,13 +195,13 @@ original, trusted event untouched.
 Enter / click / submit
    │  (capture phase, before the site)
    ▼
-policy loaded? ──no──► block: "AIDR protection is still loading…"
+policy loaded? ──no──► block: "Protection is still loading…"
    │ yes
 site blocked? ──yes──► block: "Your organisation has blocked this AI service…"
    │
 prompt box found? ──no──► block (monitor mode: pass)
    │
-scan complete? ──no──► block: "AIDR could not finish checking this prompt…"
+scan complete? ──no──► block: "Singularity AIDR could not finish checking this message…"
    │
 findings / signals ──► mode decides (feature 5) ──► replay the send once
 ```
@@ -210,13 +210,13 @@ Fail-closed cases and the exact messages (English / Turkish, from `src/content/s
 
 | Situation | English | Turkish |
 |---|---|---|
-| Policy not received yet | AIDR protection is still loading. Nothing was sent; try again in a moment. | AIDR koruması henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. |
-| Scan failed or incomplete | AIDR could not finish checking this prompt, so it was not sent. | AIDR bu istemi kontrol etmeyi tamamlayamadı; gönderilmedi. |
-| Prompt box not found | AIDR could not find the prompt box on this page, so nothing was sent. | AIDR bu sayfadaki istem alanını bulamadı; hiçbir şey gönderilmedi. |
-| Several text boxes hold text | AIDR could not tell which text box this send belongs to (several hold text), so nothing was sent. | AIDR bu gönderimin hangi metin alanına ait olduğunu belirleyemedi (birden fazla alanda metin var); hiçbir şey gönderilmedi. |
-| Rewrite could not be verified | AIDR could not safely rewrite the prompt. Nothing was sent. | AIDR istemi güvenli biçimde yeniden yazamadı. Hiçbir şey gönderilmedi. |
-| Text changed during the check | The prompt changed while it was being checked. Press send again. | İstem kontrol edilirken değişti. Yeniden gönderin. |
-| Previous check still running | AIDR is still checking the previous action. | AIDR önceki işlemi kontrol etmeye devam ediyor. |
+| Policy not received yet | Protection is still loading. Nothing was sent; try again in a moment. | Koruma henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. |
+| Scan failed or incomplete | Singularity AIDR could not finish checking this message, so it was not sent. | Singularity AIDR bu mesajı kontrol etmeyi tamamlayamadı; mesaj gönderilmedi. |
+| Message box not found | The message box on this page could not be found, so nothing was sent. | Bu sayfadaki mesaj alanı bulunamadı; hiçbir şey gönderilmedi. |
+| Several text boxes hold text | Several text boxes hold text and it is unclear which one is being sent, so nothing was sent. | Birden fazla metin alanında yazı var ve hangisinin gönderildiği anlaşılamadı; hiçbir şey gönderilmedi. |
+| Rewrite could not be verified | The message could not be masked safely. Nothing was sent. | Mesaj güvenli biçimde maskelenemedi. Hiçbir şey gönderilmedi. |
+| Text changed during the check | The message changed while it was being checked. Press send again. | Mesaj kontrol edilirken değişti. Yeniden gönderin. |
+| Previous check still running | Still checking the previous action. | Önceki işlem hâlâ kontrol ediliyor. |
 | Site blocked by policy | Your organisation has blocked this AI service. Nothing was sent. | Kurumunuz bu yapay zekâ hizmetini engelledi. Hiçbir şey gönderilmedi. |
 
 A scan is marked incomplete when the prompt exceeds 200,000 characters, when the internal
@@ -408,7 +408,7 @@ useful answers. Reversible placeholders keep answers usable ("Draft an email to
 **Example** — The user sends `Please email ayse.yilmaz@example.com about the refund, deploy key sk-proj-…`.
 The site receives `Please email [EMAIL_1] about the refund, deploy key [SECRET_1]`. The
 answer "I emailed `[EMAIL_1]`; rotate `[SECRET_1]`" is shown to the user as "I emailed
-ayse.yilmaz@example.com; rotate `[SECRET_1]`", with the tooltip "Restored locally by AIDR".
+ayse.yilmaz@example.com; rotate `[SECRET_1]`", with the tooltip "Shown only on this computer. The AI service received [EMAIL_1]."
 
 **Availability**
 
@@ -443,20 +443,28 @@ to measure exposure, moves to `auto` or `confirm` for everyday use, and uses `bl
 teams where no personal data may reach external AI at all.
 
 **How it works** — What the user sees in each mode (exact texts from `src/content/strings.ts`
-and `_locales/*/messages.json`; counts are shown as "1 EMAIL, 1 TCKN" using the placeholder
-prefixes):
+and `_locales/*/messages.json`; data is named the way the popup names it, e.g. "1 email
+address, 1 Turkish ID number (TCKN)" / "1 e-posta adresi, 1 T.C. kimlik numarası"):
 
 | Mode (popup label EN / TR) | What happens when findings exist | What the user sees |
 |---|---|---|
-| `auto`, **Auto-mask** / **Otomatik maskele** (default) | Values are replaced in the prompt box, then the send is replayed once | Toast: "2 items masked: 1 EMAIL, 1 TCKN" / "2 öğe maskelendi: 1 EMAIL, 1 TCKN". If the site does not accept the replayed send: "The prompt was masked. Press send to continue." / "İstem maskelendi. Devam etmek için gönderin." |
-| `confirm`, **Confirm** / **Onayla** | Nothing is sent until the user decides | Bubble **Sensitive data in your prompt** / **İsteminizde hassas veri var**: "2 sensitive items were found: 1 EMAIL, 1 TCKN. They can be replaced with placeholders and restored locally in the answer." Buttons: **Send masked** / **Maskeli gönder** (default), **Edit** / **Düzenle**, and **Send original** / **Orijinali gönder** only when `allowSendAnyway` is true |
-| `block`, **Block** / **Engelle** | The send is stopped and the prompt stays in the box | Bubble **Sending blocked** / **Gönderim engellendi**: "2 sensitive items were found: 1 EMAIL, 1 TCKN." + "Your organisation does not allow this data to be sent to AI services. Remove it or describe it in general terms, then try again." / "Kurumunuz bu verinin yapay zekâ hizmetlerine gönderilmesine izin vermiyor. Veriyi çıkarın veya genel ifadelerle anlatıp yeniden deneyin." Button **Close** / **Kapat** |
-| `monitor`, **Monitor** / **İzle** | The original text is sent unchanged; findings are counted | Nothing in the page. The popup shows **Monitoring only**: "Sensitive data sent to ChatGPT is counted but not masked or blocked." |
+| `auto`, **Auto-mask** / **Otomatik maskele** (default) | Values are replaced in the prompt box, then the send is replayed once | Toast: "Masked before sending: 1 email address, 1 Turkish ID number (TCKN)." / "Gönderilmeden önce maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." If the site does not accept the replayed send: "The message was masked. Press send to continue." / "Mesaj maskelendi. Devam etmek için gönder düğmesine basın." |
+| `confirm`, **Ask me** / **Bana sor** | Nothing is sent until the user decides | Bubble **Your message contains personal or confidential data** / **Mesajınızda kişisel veya gizli bilgi var**: "Found: 1 email address, 1 Turkish ID number (TCKN). "Send masked" replaces them with labels such as [EMAIL_1] before the message leaves your computer; the answer shows your original values again, only on this computer." Buttons: **Send masked** / **Maskeli gönder** (default), **Edit** / **Düzenle**, and **Send original** / **Orijinali gönder** only when `allowSendAnyway` is true, with the note ""Send original" sends the real values to ChatGPT. This choice is counted; the message itself is never reported." under the buttons |
+| `block`, **Block** / **Engelle** | The send is stopped and the prompt stays in the box | Bubble **Sending blocked** / **Gönderim engellendi**: "Found: 1 email address, 1 Turkish ID number (TCKN)." + "Your organisation does not allow this data to be sent to AI services. Remove it or describe it in general terms, then try again." / "Kurumunuz bu verinin yapay zekâ hizmetlerine gönderilmesine izin vermiyor. Veriyi çıkarın veya genel ifadelerle anlatıp yeniden deneyin." Button **Close** / **Kapat** |
+| `monitor`, **Count only (no masking)** / **Yalnızca say (maskeleme yok)** | The original text is sent unchanged; findings are counted | Nothing in the page. The popup shows **Counting only (no masking)**: "Sensitive data sent to ChatGPT is counted but not masked or blocked." |
 
-The popup help texts are: Auto-mask, "Sensitive data is replaced with placeholders such as
-[EMAIL_1] before sending."; Confirm, "You review what was found and choose to send it masked
-or edit your message."; Block, "Messages that contain sensitive data are not sent.";
-Monitor, "Nothing is changed or blocked; findings are only counted."
+The popup help texts are: Auto-mask, "Sensitive data is replaced with labels such as
+[EMAIL_1] before sending."; Ask me, "You see what was found and choose: send it masked or
+edit your message."; Block, "Messages that contain sensitive data are not sent.";
+Count only, "Nothing is masked or blocked; findings are only counted."
+
+When advanced name detection (the AIDR Privacy helper app) is off, toasts and bubbles about
+findings add "Person names were not checked: advanced name detection is off." and the popup
+shows "Names and addresses are not checked: advanced detection is off. Built-in rules are
+active." Values restored in answers carry the tooltip "Shown only on this computer. The AI
+service received [EMAIL_1].", and the first restore on a page shows a one-time legend toast.
+Toasts stay up 60 ms per character (5 s minimum, 20 s maximum), pause while hovered or
+focused, and have a close button (Escape closes them too).
 
 Bubbles and toasts are rendered in a closed shadow root at the bottom right of the page. The
 host page cannot read or restyle them. Bubbles use `role=alertdialog` with keyboard focus
@@ -505,7 +513,7 @@ at send time). The result is inserted at the cursor.
 
 | Mode | Paste outcome | Message |
 |---|---|---|
-| `auto`, `confirm` | Masked text is inserted | "Pasted text masked (2 items): 1 EMAIL, 1 TCKN" / "Yapıştırılan metin maskelendi (2 öğe): 1 EMAIL, 1 TCKN" |
+| `auto`, `confirm` | Masked text is inserted | "Pasted text masked: 1 email address, 1 Turkish ID number (TCKN)." / "Yapıştırılan metin maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." |
 | `block` | Nothing is inserted | "The pasted text contains sensitive data and was not inserted." / "Yapıştırılan metin hassas veri içerdiği için eklenmedi." plus the organisation coaching line |
 | `monitor` | Original is inserted; findings counted | — |
 | Scan failed | Nothing is inserted | "AIDR could not check the pasted text, so it was not inserted." / "AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
@@ -696,18 +704,18 @@ while paused) files pass unchanged and are only counted. Blocked sites and
 
 | Situation | Message (EN / TR) |
 |---|---|
-| Sanitised | "1 file sanitized before upload: 2 EMAIL" / "1 dosya yüklenmeden önce temizlendi: 2 EMAIL" |
-| Binary, not blocked | `"report.pdf" could not be scanned (binary file). Check it before sending.` / `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
-| Legacy Office not fully read, not blocked | `"old.doc" is a legacy Office file (.doc/.xls/.ppt) that AIDR could not fully check. Save it as .docx/.xlsx/.pptx to have it masked, or check it before sending.` / `"old.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu dosyayı tam olarak denetleyemedi. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
-| Legacy Office with sensitive data | `"contract.doc" was not uploaded (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Legacy Office files (.doc/.xls/.ppt) cannot be masked. Save the file as .docx/.xlsx/.pptx and upload that instead: AIDR masks those.` / `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: AIDR bu biçimleri maskeler.` |
-| Image not inspected | `"screen.png" is an image and its content was not inspected (the local OCR helper is not available or could not read it). Check it before sending.` / `"screen.png" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.` |
-| Pictures in a document not inspected | `Pictures inside "report.docx" were not inspected. Check them before sending.` / `"report.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
-| Image with sensitive data | `"screen.png" was not uploaded (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). The image shows sensitive data and images cannot be masked. Crop or redact it before uploading.` / `"screen.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
+| Sanitised | "1 file masked before upload: 2 email addresses." / "1 dosya yüklenmeden önce maskelendi: 2 e-posta adresi." |
+| Binary, not blocked | `"report.pdf" could not be checked (binary file). Check it before sending.` / `"report.pdf" denetlenemedi (ikili dosya). Göndermeden önce kontrol edin.` |
+| Legacy Office not fully read, not blocked | `"old.doc" (old .doc/.xls/.ppt format) could not be fully checked. Save it as .docx/.xlsx/.pptx, or check it before sending.` / `"old.doc" (eski .doc/.xls/.ppt biçimi) tam olarak denetlenemedi. .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Legacy Office with sensitive data | `"contract.doc" was not uploaded (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 email address). Old Office files (.doc/.xls/.ppt) cannot be masked. Save the file as .docx/.xlsx/.pptx and upload that instead: those are masked.` / `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 e-posta adresi). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: bu biçimler maskelenir.` |
+| Image not inspected | `"screen.png" was not checked: images need the AIDR Privacy helper app. Check it before sending.` / `"screen.png" denetlenmedi: görseller için AIDR Privacy yardımcı uygulaması gerekir. Göndermeden önce kontrol edin.` |
+| Pictures in a document not inspected | `Pictures inside "report.docx" were not checked. Check them before sending.` / `"report.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
+| Image with sensitive data | `"screen.png" was not uploaded (SENSITIVE_DATA_IN_IMAGE, 1 email address). The image shows sensitive data and images cannot be masked. Crop or redact it before uploading.` / `"screen.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 e-posta adresi). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
 | Blocked | **Upload blocked** / **Yükleme engellendi**: `"big.csv" was not uploaded (FILE_TOO_LARGE).` / `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
 | Uploads disabled by policy | "Your organisation does not allow file uploads to AI services." / "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
 | Documents disabled by policy | "Your organisation does not allow Office or PDF documents to be uploaded to AI services." / "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
-| PDF with sensitive data | `"contract.pdf" was not uploaded (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDFs cannot be masked. Copy the text you need and paste it instead: AIDR masks pasted text.` / `"contract.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.` |
-| File could not be checked | "AIDR could not check the file, so it was not uploaded." / "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
+| PDF with sensitive data | `"contract.pdf" was not uploaded (SENSITIVE_DATA_IN_PDF, 1 email address). PDFs cannot be masked. Copy the text you need and paste it instead: pasted text is masked.` / `"contract.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 e-posta adresi). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: yapıştırılan metin maskelenir.` |
+| File could not be checked | "The file could not be checked, so it was not uploaded." / "Dosya kontrol edilemedi; yüklenmedi." |
 | Browser cannot swap the file | "This browser cannot replace the file with a sanitized copy, so it was not uploaded." / "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
 
 **How to use** — Managed keys `fileHandling` (`scan` | `block` | `allow`, default `scan`),
@@ -992,11 +1000,13 @@ need locked settings to be visible as locked, so users do not file tickets about
 **How it works**
 - **Toolbar popup**: current-tab status (**Protected**, **Not a supported AI site**,
   **Paused until hh:mm**, **Disabled by policy**, **Turned off for this site**, **Blocked by
-  your organization**, **Monitoring only**). It also has the mode control, session
+  your organization**, **Counting only (no masking)**). It also has the mode control, session
   statistics (**Protected messages**, **Items masked**, **Sends blocked**, **Most found**),
   the toggle **Show original values in responses**, **Pause for 15 min** / **Resume
-  protection** and **Settings**. When the native host is enabled it shows "Advanced
-  detection is connected" or "Advanced detection is unavailable; built-in rules are active".
+  protection** and **Settings**. It shows "Advanced detection is connected" when the native
+  host is in use, otherwise "Names and addresses are not checked: the AIDR Privacy helper app
+  is not available. Built-in rules are active." (enabled but not responding) or "Names and
+  addresses are not checked: advanced detection is off. Built-in rules are active."
   The toolbar badge shows the number of masked items on the tab.
 - **Options page** sections: **Protection** (mode, what to detect, mask pasted text, restore
   responses, **Advanced name and address detection**: the native-host switch, the
@@ -1469,8 +1479,8 @@ most 65 seconds per image.
 
 **Example** — With the host installed and enabled, the popup and the options page show
 "Advanced detection is connected", and "Write to Ahmet Kaya" is sent as "Write to
-`[PERSON_1]`". Otherwise they show "Advanced detection is unavailable; built-in rules are
-active", protection continues with the built-in rules, and the in-page message says the
+`[PERSON_1]`". Otherwise they say that names and addresses are not checked and the built-in
+rules are active, protection continues with the built-in rules, and the in-page message says the
 check was rules-only.
 
 **Availability**

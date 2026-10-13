@@ -257,7 +257,7 @@ describe("isolated guard without the page-world hook", () => {
 		expect(seen).toEqual([]);
 		expect(input.files?.length).toBe(0);
 		expect(g.sanitizeFile).not.toHaveBeenCalled();
-		expect(g.bubble()?.textContent ?? "").toContain("cannot check files chosen");
+		expect(g.bubble()?.textContent ?? "").toContain("cannot be checked on this page");
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", channel: "file" });
 	});
 });

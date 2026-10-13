@@ -206,13 +206,13 @@ kullanıcının orijinal olayına dokunulmadan gönderilir.
 Enter / tıklama / form gönderimi
    │  (capture aşaması, siteden önce)
    ▼
-politika yüklü mü? ──hayır──► engelle: "AIDR koruması henüz yükleniyor…"
+politika yüklü mü? ──hayır──► engelle: "Koruma henüz yükleniyor…"
    │ evet
 site engelli mi? ──evet──► engelle: "Kurumunuz bu yapay zekâ hizmetini engelledi…"
    │
 istem kutusu bulundu mu? ──hayır──► engelle (monitor modunda geçir)
    │
-tarama tamamlandı mı? ──hayır──► engelle: "AIDR bu istemi kontrol etmeyi tamamlayamadı…"
+tarama tamamlandı mı? ──hayır──► engelle: "Singularity AIDR bu mesajı kontrol etmeyi tamamlayamadı…"
    │
 bulgular / sinyaller ──► kararı mod verir (özellik 5) ──► gönderim bir kez tetiklenir
 ```
@@ -221,13 +221,13 @@ Hata durumunda engelleme halleri ve ekranda görünen metinler (`src/content/str
 
 | Durum | Türkçe | İngilizce |
 |---|---|---|
-| Politika henüz alınmadı | AIDR koruması henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. | AIDR protection is still loading. Nothing was sent; try again in a moment. |
-| Tarama başarısız ya da eksik | AIDR bu istemi kontrol etmeyi tamamlayamadı; gönderilmedi. | AIDR could not finish checking this prompt, so it was not sent. |
-| İstem kutusu bulunamadı | AIDR bu sayfadaki istem alanını bulamadı; hiçbir şey gönderilmedi. | AIDR could not find the prompt box on this page, so nothing was sent. |
-| Birden fazla metin alanında metin var | AIDR bu gönderimin hangi metin alanına ait olduğunu belirleyemedi (birden fazla alanda metin var); hiçbir şey gönderilmedi. | AIDR could not tell which text box this send belongs to (several hold text), so nothing was sent. |
-| Yeniden yazma doğrulanamadı | AIDR istemi güvenli biçimde yeniden yazamadı. Hiçbir şey gönderilmedi. | AIDR could not safely rewrite the prompt. Nothing was sent. |
-| Metin denetim sırasında değişti | İstem kontrol edilirken değişti. Yeniden gönderin. | The prompt changed while it was being checked. Press send again. |
-| Önceki denetim sürüyor | AIDR önceki işlemi kontrol etmeye devam ediyor. | AIDR is still checking the previous action. |
+| Politika henüz alınmadı | Koruma henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. | Protection is still loading. Nothing was sent; try again in a moment. |
+| Tarama başarısız ya da eksik | Singularity AIDR bu mesajı kontrol etmeyi tamamlayamadı; mesaj gönderilmedi. | Singularity AIDR could not finish checking this message, so it was not sent. |
+| Mesaj kutusu bulunamadı | Bu sayfadaki mesaj alanı bulunamadı; hiçbir şey gönderilmedi. | The message box on this page could not be found, so nothing was sent. |
+| Birden fazla metin alanında metin var | Birden fazla metin alanında yazı var ve hangisinin gönderildiği anlaşılamadı; hiçbir şey gönderilmedi. | Several text boxes hold text and it is unclear which one is being sent, so nothing was sent. |
+| Yeniden yazma doğrulanamadı | Mesaj güvenli biçimde maskelenemedi. Hiçbir şey gönderilmedi. | The message could not be masked safely. Nothing was sent. |
+| Metin denetim sırasında değişti | Mesaj kontrol edilirken değişti. Yeniden gönderin. | The message changed while it was being checked. Press send again. |
+| Önceki denetim sürüyor | Önceki işlem hâlâ kontrol ediliyor. | Still checking the previous action. |
 | Site politikayla engelli | Kurumunuz bu yapay zekâ hizmetini engelledi. Hiçbir şey gönderilmedi. | Your organisation has blocked this AI service. Nothing was sent. |
 
 Tarama şu durumlarda eksik (incomplete) sayılır: istem 200.000 karakteri aştığında, iç süre
@@ -467,21 +467,30 @@ göndermek, kullanıcıya sormak, reddetmek ya da yalnızca saymak.
 verinin dış yapay zekâya ulaşmaması gereken ekiplerde `block` kullanılır.
 
 **Nasıl çalışır** — Her modda kullanıcının gördükleri (`src/content/strings.ts` ve
-`_locales/*/messages.json` içindeki metinler; sayılar yer tutucu önekleriyle "1 EMAIL,
-1 TCKN" biçiminde gösterilir):
+`_locales/*/messages.json` içindeki metinler; veriler açılır penceredeki adlarıyla, örneğin
+"1 e-posta adresi, 1 T.C. kimlik numarası" biçiminde gösterilir):
 
 | Mod (açılır penceredeki etiket TR / EN) | Bulgu varsa ne olur | Kullanıcının gördüğü |
 |---|---|---|
-| `auto`, **Otomatik maskele** / **Auto-mask** (varsayılan) | Değerler istem kutusunda değiştirilir, gönderim bir kez yeniden tetiklenir | Bildirim: "2 öğe maskelendi: 1 EMAIL, 1 TCKN" / "2 items masked: 1 EMAIL, 1 TCKN". Site yeniden tetiklenen gönderimi almazsa: "İstem maskelendi. Devam etmek için gönderin." |
-| `confirm`, **Onayla** / **Confirm** | Kullanıcı karar verene kadar hiçbir şey gönderilmez | **İsteminizde hassas veri var** balonu: "2 hassas öğe bulundu: 1 EMAIL, 1 TCKN. Bunlar yer tutucularla değiştirilip yanıtta yerel olarak geri yüklenebilir." Düğmeler: **Maskeli gönder** (varsayılan), **Düzenle** ve yalnızca `allowSendAnyway` açıksa **Orijinali gönder** |
-| `block`, **Engelle** / **Block** | Gönderim durdurulur, istem kutuda kalır | **Gönderim engellendi** balonu: "2 hassas öğe bulundu: 1 EMAIL, 1 TCKN." ve "Kurumunuz bu verinin yapay zekâ hizmetlerine gönderilmesine izin vermiyor. Veriyi çıkarın veya genel ifadelerle anlatıp yeniden deneyin." Düğme: **Kapat** |
-| `monitor`, **İzle** / **Monitor** | Orijinal metin değiştirilmeden gönderilir, bulgular sayılır | Sayfada hiçbir şey görünmez. Açılır pencerede **Yalnızca izleniyor**: "ChatGPT hizmetine gönderilen hassas veriler sayılır ancak maskelenmez veya engellenmez." |
+| `auto`, **Otomatik maskele** / **Auto-mask** (varsayılan) | Değerler mesaj kutusunda değiştirilir, gönderim bir kez yeniden tetiklenir | Bildirim: "Gönderilmeden önce maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." / "Masked before sending: 1 email address, 1 Turkish ID number (TCKN)." Site yeniden tetiklenen gönderimi almazsa: "Mesaj maskelendi. Devam etmek için gönder düğmesine basın." |
+| `confirm`, **Bana sor** / **Ask me** | Kullanıcı karar verene kadar hiçbir şey gönderilmez | **Mesajınızda kişisel veya gizli bilgi var** balonu: "Bulunanlar: 1 e-posta adresi, 1 T.C. kimlik numarası. "Maskeli gönder" bunları, mesaj bilgisayarınızdan çıkmadan önce [EMAIL_1] gibi etiketlerle değiştirir; yanıtta gerçek değerler yalnızca bu bilgisayarda yeniden gösterilir." Düğmeler: **Maskeli gönder** (varsayılan), **Düzenle** ve yalnızca `allowSendAnyway` açıksa **Orijinali gönder**; düğmelerin altında ""Orijinali gönder" gerçek değerleri ChatGPT hizmetine gönderir. Bu seçim sayılır; mesajın kendisi hiçbir zaman raporlanmaz." notu |
+| `block`, **Engelle** / **Block** | Gönderim durdurulur, mesaj kutuda kalır | **Gönderim engellendi** balonu: "Bulunanlar: 1 e-posta adresi, 1 T.C. kimlik numarası." ve "Kurumunuz bu verinin yapay zekâ hizmetlerine gönderilmesine izin vermiyor. Veriyi çıkarın veya genel ifadelerle anlatıp yeniden deneyin." Düğme: **Kapat** |
+| `monitor`, **Yalnızca say (maskeleme yok)** / **Count only (no masking)** | Orijinal metin değiştirilmeden gönderilir, bulgular sayılır | Sayfada hiçbir şey görünmez. Açılır pencerede **Yalnızca sayılıyor (maskeleme yok)**: "ChatGPT hizmetine gönderilen hassas veriler sayılır ancak maskelenmez veya engellenmez." |
 
 Açılır penceredeki açıklamalar şöyledir. Otomatik maskele: "Hassas veriler gönderilmeden
-önce [EMAIL_1] gibi yer tutucularla değiştirilir." Onayla: "Bulunan verileri görür, mesajı
+önce [EMAIL_1] gibi etiketlerle değiştirilir." Bana sor: "Bulunan verileri görür, mesajı
 maskeli göndermeyi ya da düzenlemeyi siz seçersiniz." Engelle: "Hassas veri içeren mesajlar
-gönderilmez." İzle: "Hiçbir şey değiştirilmez veya engellenmez; bulgular yalnızca
+gönderilmez." Yalnızca say: "Hiçbir şey değiştirilmez veya engellenmez; bulgular yalnızca
 sayılır."
+
+Gelişmiş ad algılama (AIDR Privacy yardımcı uygulaması) kapalıyken bulgu bildiren
+bildirimler ve balonlar "Kişi adları denetlenmedi: gelişmiş ad algılama kapalı." satırını
+ekler; açılır pencere "Kişi adları ve adresler denetlenmiyor: gelişmiş algılama kapalı.
+Yerleşik kurallar etkin." der. Yanıtlarda geri getirilen değerlerin ipucu "Yalnızca bu
+bilgisayarda gösteriliyor. Yapay zekâ hizmetine [EMAIL_1] gitti." şeklindedir; bir sayfada
+ilk geri getirmede tek seferlik bir açıklama bildirimi görünür. Bildirimler karakter başına
+60 ms (en az 5 sn, en çok 20 sn) ekranda kalır, fare üzerindeyken veya odaktayken bekler ve
+bir kapatma düğmesi vardır (Escape de kapatır).
 
 Balonlar ve bildirimler sayfanın sağ altında, kapalı bir shadow root içinde çizilir. Sayfa
 bunları okuyamaz ve stillerini değiştiremez. Balonlar `role=alertdialog` kullanır, klavye
@@ -531,7 +540,7 @@ eklenir.
 
 | Mod | Sonuç | Mesaj |
 |---|---|---|
-| `auto`, `confirm` | Maskeli metin eklenir | "Yapıştırılan metin maskelendi (2 öğe): 1 EMAIL, 1 TCKN" |
+| `auto`, `confirm` | Maskeli metin eklenir | "Yapıştırılan metin maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." |
 | `block` | Hiçbir şey eklenmez | "Yapıştırılan metin hassas veri içerdiği için eklenmedi." ve kurum yönlendirme satırı |
 | `monitor` | Orijinal eklenir, bulgular sayılır | — |
 | Tarama başarısız | Hiçbir şey eklenmez | "AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
@@ -739,17 +748,17 @@ duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır.
 
 | Durum | Mesaj (TR / EN) |
 |---|---|
-| Temizlendi | "1 dosya yüklenmeden önce temizlendi: 2 EMAIL" / "1 file sanitized before upload: 2 EMAIL" |
-| İkili, engellenmedi | `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
-| Eski Office tam okunamadı, engellenmedi | `"eski.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu dosyayı tam olarak denetleyemedi. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
-| Hassas veri içeren eski Office dosyası | `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: AIDR bu biçimleri maskeler.` |
-| Görsel incelenmedi | `"ekran.png" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.` |
+| Maskelendi | "1 dosya yüklenmeden önce maskelendi: 2 e-posta adresi." / "1 file masked before upload: 2 email addresses." |
+| İkili, engellenmedi | `"report.pdf" denetlenemedi (ikili dosya). Göndermeden önce kontrol edin.` |
+| Eski Office tam okunamadı, engellenmedi | `"eski.doc" (eski .doc/.xls/.ppt biçimi) tam olarak denetlenemedi. .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Hassas veri içeren eski Office dosyası | `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 e-posta adresi). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: bu biçimler maskelenir.` |
+| Görsel incelenmedi | `"ekran.png" denetlenmedi: görseller için AIDR Privacy yardımcı uygulaması gerekir. Göndermeden önce kontrol edin.` |
 | Belgedeki resimler incelenmedi | `"rapor.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
-| Hassas veri içeren görsel | `"ekran.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
+| Hassas veri içeren görsel | `"ekran.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 e-posta adresi). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
 | Engellendi | **Yükleme engellendi**: `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
 | Yükleme politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
 | Belgeler politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
-| Hassas veri içeren PDF | `"sozlesme.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.` |
+| Hassas veri içeren PDF | `"sozlesme.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 e-posta adresi). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: yapıştırılan metin maskelenir.` |
 | Dosya denetlenemedi | "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
 | Tarayıcı dosyayı değiştiremiyor | "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
 
@@ -1044,11 +1053,13 @@ Yöneticiler ise kilitli ayarların kilitli olarak görünmesini ister; böylece
 - **Araç çubuğu açılır penceresi** geçerli sekmenin durumunu gösterir: **Korunuyor**,
   **Desteklenen bir yapay zekâ sitesi değil**, **ss:dd saatine kadar duraklatıldı**,
   **Politika tarafından devre dışı**, **Bu site için kapalı**, **Kuruluşunuz tarafından
-  engellendi**, **Yalnızca izleniyor**. Ayrıca mod seçicisi, oturum istatistikleri
+  engellendi**, **Yalnızca sayılıyor (maskeleme yok)**. Ayrıca mod seçicisi, oturum istatistikleri
   (**Korunan mesajlar**, **Maskelenen öğeler**, **Engellenen gönderimler**, **En sık
   bulunanlar**), **Yanıtlarda orijinal değerleri göster** anahtarı, **15 dk duraklat** /
-  **Korumayı sürdür** ve **Ayarlar** bulunur. Native host açıkken "Gelişmiş algılama bağlı"
-  ya da "Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin" satırı görünür. Araç
+  **Korumayı sürdür** ve **Ayarlar** bulunur. Native host kullanılıyorsa "Gelişmiş algılama
+  bağlı", değilse "Kişi adları ve adresler denetlenmiyor: AIDR Privacy yardımcı uygulaması
+  kullanılamıyor. Yerleşik kurallar etkin." (açık ama yanıt vermiyor) ya da "Kişi adları ve
+  adresler denetlenmiyor: gelişmiş algılama kapalı. Yerleşik kurallar etkin." satırı görünür. Araç
   çubuğu simgesindeki rozet, sekmede maskelenen öğe sayısını gösterir.
 - **Ayarlar sayfası** bölümleri: **Koruma** (mod, neler algılansın, yapıştırılan metni
   maskele, yanıtlarda geri getir, **Gelişmiş ad ve adres algılama**: native host anahtarı,
@@ -1548,7 +1559,7 @@ başına en fazla 65 saniye bekler.
 
 **Örnek** — Host kurulu ve etkinken açılır pencere ve ayarlar sayfası "Gelişmiş algılama
 bağlı" gösterir ve "Ahmet Kaya'ya yaz" metni "`[PERSON_1]`'ya yaz" olarak gider. Değilse
-"Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin" yazar, koruma yerleşik kurallarla
+kişi adları ve adreslerin denetlenmediğini ve yerleşik kuralların etkin olduğunu yazar, koruma yerleşik kurallarla
 devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını belirtir.
 
 **Kapsam**

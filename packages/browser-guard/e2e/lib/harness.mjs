@@ -618,7 +618,7 @@ class Harness {
 					.send("DOM.getBoxModel", { backendNodeId: node.backendNodeId })
 					.catch(() => null);
 				if (!box || box.model.width <= 0 || box.model.height <= 0) continue;
-				out.push(`${node.localName}:${textOf(node).replace(/\s+/g, " ").trim().slice(0, 160)}`);
+				out.push(`${node.localName}:${textOf(node).replace(/\s+/g, " ").trim().slice(0, 400)}`);
 			}
 			return out;
 		});

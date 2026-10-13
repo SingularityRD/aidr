@@ -59,7 +59,7 @@ describe("content guard: document uploads", () => {
 		expect(xml).toContain("İletişim: [EMAIL_1]");
 		expect(xml).not.toContain(EMAIL);
 		expect(xml).not.toContain("jane.doe@");
-		expect(g.toastText()).toContain("1 file sanitized before upload: 1 EMAIL");
+		expect(g.toastText()).toContain("1 file masked before upload: 1 email address.");
 	});
 
 	it("documentHandling=block rejects Office/PDF uploads in every mode, other files pass", async () => {

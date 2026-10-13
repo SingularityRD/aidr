@@ -30,7 +30,7 @@ describe("content guard: send interception (auto)", () => {
 		await expect.poll(() => g.sent.length).toBe(1);
 		expect(g.sent[0]).toBe("Please email [EMAIL_1] today");
 		expect(g.editor.value).toBe("Please email [EMAIL_1] today");
-		expect(g.toastText()).toContain("1 item masked: 1 EMAIL");
+		expect(g.toastText()).toContain("Masked before sending: 1 email address.");
 		expect(g.records()).toEqual([
 			{
 				type: "RECORD",
@@ -61,7 +61,7 @@ describe("content guard: send interception (auto)", () => {
 		g.enter();
 		g.editor.value = "something else entirely";
 		release();
-		await expect.poll(() => g.toastText()).toContain("prompt changed");
+		await expect.poll(() => g.toastText()).toContain("message changed");
 		expect(g.sent).toEqual([]);
 		expect(g.editor.value).toBe("something else entirely");
 	});
@@ -155,7 +155,7 @@ describe("content guard: confirm mode", () => {
 		g.editor.value = `to ${EMAIL}`;
 		g.enter();
 		await expect.poll(() => g.bubble()).not.toBeNull();
-		expect(g.bubble()?.textContent).toContain("1 sensitive item was found: 1 EMAIL");
+		expect(g.bubble()?.textContent).toContain("Found: 1 email address.");
 		expect(g.bubbleButton("send-masked")).not.toBeNull();
 		expect(g.bubbleButton("edit")).not.toBeNull();
 		expect(g.bubbleButton("send-original")).toBeNull();
@@ -167,11 +167,38 @@ describe("content guard: confirm mode", () => {
 		expect(g.records().at(-1)).toMatchObject({ action: "masked", counts: { EMAIL: 1 } });
 	});
 
+	it("explains Send masked in plain words and says names were not checked", async () => {
+		const g = start({ policy: { mode: "confirm" } });
+		g.editor.value = `to ${EMAIL}`;
+		g.enter();
+		await expect.poll(() => g.bubble()).not.toBeNull();
+		const text = g.bubble()?.textContent ?? "";
+		expect(text).toContain("Your message contains personal or confidential data");
+		expect(text).toContain(
+			'"Send masked" replaces them with labels such as [EMAIL_1] before the message leaves your computer; the answer shows your original values again, only on this computer.',
+		);
+		expect(text).toContain("Person names were not checked: advanced name detection is off.");
+		// No "Send original" button, so no note about it.
+		expect(g.bubble()?.querySelector(".footnote")).toBeNull();
+	});
+
+	it("does not promise restored answers when restoring is off", async () => {
+		const g = start({ policy: { mode: "confirm", restoreResponses: false } });
+		g.editor.value = `to ${EMAIL}`;
+		g.enter();
+		await expect.poll(() => g.bubble()).not.toBeNull();
+		expect(g.bubble()?.textContent).not.toContain("the answer shows your original values");
+	});
+
 	it("Send original sends the unmodified prompt when the policy allows it", async () => {
 		const g = start({ policy: { mode: "confirm", allowSendAnyway: true } });
 		g.editor.value = `to ${EMAIL}`;
 		g.enter();
 		await expect.poll(() => g.bubbleButton("send-original")).not.toBeNull();
+		// The consequence sits right under the buttons, naming the site; counts-only telemetry.
+		expect(g.bubble()?.querySelector(".footnote")?.textContent).toBe(
+			'"Send original" sends the real values to ChatGPT. This choice is counted; the message itself is never reported.',
+		);
 		g.bubbleButton("send-original")?.click();
 		await expect.poll(() => g.sent).toEqual([`to ${EMAIL}`]);
 		expect(g.records().at(-1)).toMatchObject({ action: "allowed", counts: { EMAIL: 1 } });
@@ -353,7 +380,7 @@ describe("content guard: fails closed", () => {
 		const click = new MouseEvent("click", { bubbles: true, cancelable: true });
 		g.button.dispatchEvent(click);
 		expect(click.defaultPrevented).toBe(true);
-		expect(g.bubble()?.textContent).toContain("could not find the prompt box");
+		expect(g.bubble()?.textContent).toContain("message box on this page could not be found");
 	});
 
 	it("monitor mode never blocks, even on engine errors", async () => {
@@ -391,7 +418,10 @@ describe("content guard: language", () => {
 		const g = start({ policy: { language: "tr" } });
 		g.editor.value = `to ${EMAIL}`;
 		g.enter();
-		await expect.poll(() => g.toastText()).toContain("1 öğe maskelendi: 1 EMAIL");
+		await expect
+			.poll(() => g.toastText())
+			.toContain("Gönderilmeden önce maskelendi: 1 e-posta adresi.");
+		expect(g.toastText()).toContain("Kişi adları denetlenmedi");
 	});
 
 	it("falls back to navigator.language for auto", async () => {
