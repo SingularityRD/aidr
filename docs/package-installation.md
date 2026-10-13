@@ -17,8 +17,9 @@ repository merely to make installation work. A customer-facing private
 registry and its invoice-to-access lifecycle must be approved and tested
 before these commands become customer instructions. A source build or locally
 generated tarball is for development/testing, not a supported customer
-release. `aidr setup` only configures local AIDR state; it does not download or
-activate every connector, provision a tenant, or deploy a control plane.
+release. `aidr setup` configures local AIDR state and registers the connector of
+each detected host from packages or verified artifacts you already have; it does
+not download release artifacts, provision a tenant, or deploy a control plane.
 
 ## Registry access
 
@@ -116,10 +117,12 @@ installation and trust/activation checks.
 ## CLI and local setup
 
 After installing the CLI, use `aidr --help` to see commands. `aidr setup` writes
-local configuration and prints connector setup guidance; it does not install or
-activate a connector. Run it only after the customer's approved runtime
-configuration and secret-store choice are ready. It does not create a cloud
-account or deploy the control plane.
+local configuration and installs or updates the connector of every agent host it
+detects in the home directory (Codex hook registration, OpenCode plugin pin, and
+the host's own CLI for OpenClaw, a verified VSIX or a verified Claude Code plugin
+directory); `aidr setup --dry-run` shows the plan first. In the default local
+mode it needs no credential and no OS vault. It does not create a cloud account
+or deploy the control plane. See the [CLI README](../packages/cli/README.md#setup).
 
 For host-specific behavior and limitations, use each connector guide. For
 release signing, customer kits, and deployment acceptance, follow the

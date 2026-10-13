@@ -74,10 +74,25 @@ program
 
 program
 	.command("setup")
-	.description("Configure AIDR and show connector setup guidance")
+	.description(
+		"Configure AIDR and install or update the connector of every detected agent host (idempotent)",
+	)
 	.option("-f, --force", "Replace an existing local configuration")
 	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
-	.action(setupCommand);
+	.option("--dry-run", "Show what would be installed or updated; change nothing")
+	.option(
+		"--host <ids>",
+		"Only these hosts, comma-separated: claude-code, cursor, vscode, openclaw, opencode, codex (default: every detected host)",
+	)
+	.option("--no-install", "Configure only and print the manual connector steps")
+	.option(
+		"--claude-plugin-dir <dir>",
+		"Extracted, verified aidr-claude-plugin directory to install into Claude Code",
+	)
+	.option("--cursor-vsix <file>", "Verified aidr-cursor.vsix to install into Cursor")
+	.option("--vscode-vsix <file>", "Verified aidr-vscode.vsix to install into VS Code")
+	.option("-y, --yes", "With AIDR_OPERATOR_NONINTERACTIVE=1, confirm --force without a prompt")
+	.action((options) => setupCommand(options));
 
 const configProgram = program
 	.command("config")

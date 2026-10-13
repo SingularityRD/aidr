@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolvePath, VERSION } from "@singularityrd/aidr-core";
 
@@ -105,9 +105,26 @@ function detectClaudeCode(home: string): ConnectorStatus {
 
 	const settingsRead = readJson(settings);
 	if (settingsRead.unavailable) return unavailableStatus("claude-code", "Claude Code", evidence);
-	const parsed = settingsRead.value as { disableAllHooks?: boolean; enabledPlugins?: Record<string, unknown>; hooks?: { PreToolUse?: Array<{ hooks?: Array<{ type?: string; command?: string }> }> } } | null;
-	const enabled = Object.entries(parsed?.enabledPlugins ?? {}).some(([name, value]) => /aidr|singularity/i.test(name) && value === true);
-	const hooked = Array.isArray(parsed?.hooks?.PreToolUse) && parsed.hooks.PreToolUse.some((entry) => Array.isArray(entry?.hooks) && entry.hooks.some((hook) => hook?.type === "command" && typeof hook.command === "string" && /aidr|singularity/i.test(hook.command)));
+	const parsed = settingsRead.value as {
+		disableAllHooks?: boolean;
+		enabledPlugins?: Record<string, unknown>;
+		hooks?: { PreToolUse?: Array<{ hooks?: Array<{ type?: string; command?: string }> }> };
+	} | null;
+	const enabled = Object.entries(parsed?.enabledPlugins ?? {}).some(
+		([name, value]) => /aidr|singularity/i.test(name) && value === true,
+	);
+	const hooked =
+		Array.isArray(parsed?.hooks?.PreToolUse) &&
+		parsed.hooks.PreToolUse.some(
+			(entry) =>
+				Array.isArray(entry?.hooks) &&
+				entry.hooks.some(
+					(hook) =>
+						hook?.type === "command" &&
+						typeof hook.command === "string" &&
+						/aidr|singularity/i.test(hook.command),
+				),
+		);
 	if (parsed?.disableAllHooks !== true && (enabled || hooked)) {
 		return {
 			id: "claude-code",
@@ -125,7 +142,8 @@ function detectClaudeCode(home: string): ConnectorStatus {
 			state: "runtime_present_not_installed",
 			detail: "~/.claude/settings.json exists but does not reference AIDR",
 			evidence,
-			remedy: "Verify the publisher-signed release bundle before extracting the Claude plugin, add the extracted directory as a marketplace, then install aidr@aidr",
+			remedy:
+				"Verify the publisher-signed release bundle before extracting the Claude plugin, add the extracted directory as a marketplace, then install aidr@aidr",
 		};
 	}
 
@@ -155,7 +173,8 @@ function detectEditor(
 		if (!/aidr|singularity/i.test(name)) continue;
 		const manifest = readJson(join(extDir, name, "package.json"));
 		if (manifest.unavailable) return unavailableStatus(id, label, evidence);
-		if (!manifest.value || typeof manifest.value !== "object" || Array.isArray(manifest.value)) continue;
+		if (!manifest.value || typeof manifest.value !== "object" || Array.isArray(manifest.value))
+			continue;
 		const value = manifest.value as Record<string, unknown>;
 		if (
 			typeof value.publisher === "string" &&
@@ -182,7 +201,8 @@ function detectEditor(
 			state: "runtime_present_not_installed",
 			detail: `${label} config directory exists but no AIDR extension was found`,
 			evidence,
-			remedy: "Install the VSIX, then run 'Singularity AIDR: Enable protection' from the command palette",
+			remedy:
+				"Install the VSIX, then run 'Singularity AIDR: Enable protection' from the command palette",
 		};
 	}
 	return {
@@ -211,9 +231,12 @@ function detectOpenClaw(home: string): ConnectorStatus {
 	const plugins = config?.plugins;
 	const entry = plugins?.entries?.["aidr-openclaw"];
 	const registered = !!entry && typeof entry === "object" && !Array.isArray(entry);
-	const enabled = registered && plugins?.enabled !== false && entry.enabled !== false
-		&& (!Array.isArray(plugins?.allow) || plugins.allow.includes("aidr-openclaw"))
-		&& (!Array.isArray(plugins?.deny) || !plugins.deny.includes("aidr-openclaw"));
+	const enabled =
+		registered &&
+		plugins?.enabled !== false &&
+		entry.enabled !== false &&
+		(!Array.isArray(plugins?.allow) || plugins.allow.includes("aidr-openclaw")) &&
+		(!Array.isArray(plugins?.deny) || !plugins.deny.includes("aidr-openclaw"));
 	if (registered) {
 		return {
 			id: "openclaw",
@@ -223,7 +246,12 @@ function detectOpenClaw(home: string): ConnectorStatus {
 				? "AIDR plugin enabled in ~/.openclaw/openclaw.json; host execution unverified"
 				: "AIDR plugin is registered but disabled by the OpenClaw plugin policy",
 			evidence,
-			...(!enabled ? { remedy: "Enable aidr-openclaw in plugins.entries and permit it in the OpenClaw allow/deny policy" } : {}),
+			...(!enabled
+				? {
+						remedy:
+							"Enable aidr-openclaw in plugins.entries and permit it in the OpenClaw allow/deny policy",
+					}
+				: {}),
 		};
 	}
 	if (existsSync(cfg)) {
@@ -246,8 +274,8 @@ function detectOpenClaw(home: string): ConnectorStatus {
 }
 
 /** OpenCode discovers plugins from a plugins directory. */
-function detectOpenCode(home: string): ConnectorStatus {
-	const configHome = process.env.XDG_CONFIG_HOME?.trim() || join(home, ".config");
+function detectOpenCode(home: string, env: NodeJS.ProcessEnv): ConnectorStatus {
+	const configHome = env.XDG_CONFIG_HOME?.trim() || join(home, ".config");
 	const configDir = join(configHome, "opencode");
 	const dir = join(configDir, "plugins");
 	const globalConfig = join(configDir, "opencode.json");
@@ -258,16 +286,22 @@ function detectOpenCode(home: string): ConnectorStatus {
 	if (configRead.unavailable || packageRead.unavailable) {
 		return unavailableStatus("opencode", "OpenCode", evidence);
 	}
-	const config = configRead.value && typeof configRead.value === "object" && !Array.isArray(configRead.value)
-		? (configRead.value as Record<string, unknown>)
-		: {};
-	const manifest = packageRead.value && typeof packageRead.value === "object" && !Array.isArray(packageRead.value)
-		? (packageRead.value as Record<string, unknown>)
-		: {};
-	const dependencies = manifest.dependencies && typeof manifest.dependencies === "object" && !Array.isArray(manifest.dependencies)
-		? (manifest.dependencies as Record<string, unknown>)
-		: {};
-	const configuredNpmPackage = Array.isArray(config.plugin) && config.plugin.includes("@singularityrd/aidr-opencode");
+	const config =
+		configRead.value && typeof configRead.value === "object" && !Array.isArray(configRead.value)
+			? (configRead.value as Record<string, unknown>)
+			: {};
+	const manifest =
+		packageRead.value && typeof packageRead.value === "object" && !Array.isArray(packageRead.value)
+			? (packageRead.value as Record<string, unknown>)
+			: {};
+	const dependencies =
+		manifest.dependencies &&
+		typeof manifest.dependencies === "object" &&
+		!Array.isArray(manifest.dependencies)
+			? (manifest.dependencies as Record<string, unknown>)
+			: {};
+	const configuredNpmPackage =
+		Array.isArray(config.plugin) && config.plugin.includes("@singularityrd/aidr-opencode");
 	const installedNpmPackage = typeof dependencies["@singularityrd/aidr-opencode"] === "string";
 	if (configuredNpmPackage && installedNpmPackage) {
 		return {
@@ -312,7 +346,8 @@ function detectOpenCode(home: string): ConnectorStatus {
 			? "OpenCode config contains no registered AIDR plugin"
 			: "no OpenCode config directory found",
 		evidence,
-		remedy: "Add the approved @singularityrd/aidr-opencode version to package.json and register it in opencode.json",
+		remedy:
+			"Add the approved @singularityrd/aidr-opencode version to package.json and register it in opencode.json",
 	};
 }
 
@@ -355,7 +390,8 @@ function detectCodex(home: string): ConnectorStatus {
 				detail:
 					"config.toml uses a lower-case hooks.pre_tool_use table, which Codex parses and then IGNORES - the hook will never run",
 				evidence,
-				remedy: "Rename the table to [[hooks.PreToolUse]] with a nested [[hooks.PreToolUse.hooks]] handler",
+				remedy:
+					"Rename the table to [[hooks.PreToolUse]] with a nested [[hooks.PreToolUse.hooks]] handler",
 			};
 		}
 	}
@@ -409,13 +445,16 @@ function detectCodex(home: string): ConnectorStatus {
  * Inspect every supported runtime. A caller must present the result as measured
  * state, including the evidence paths, rather than as a configuration claim.
  */
-export function detectConnectorStatuses(home: string = resolvePath("~")): ConnectorStatus[] {
+export function detectConnectorStatuses(
+	home: string = resolvePath("~"),
+	env: NodeJS.ProcessEnv = process.env,
+): ConnectorStatus[] {
 	return [
 		detectClaudeCode(home),
 		detectEditor("cursor", "Cursor", join(home, ".cursor", "extensions"), home),
 		detectEditor("vscode", "VS Code", join(home, ".vscode", "extensions"), home),
 		detectOpenClaw(home),
-		detectOpenCode(home),
+		detectOpenCode(home, env),
 		detectCodex(home),
 	];
 }
