@@ -280,6 +280,28 @@ export const CLI_EN = {
 		"The company connection could not be saved: {reason}. Protection on this computer is not affected.",
 	"setup.company.notDeleted":
 		"The installer's company connection file could not be deleted ({reason}). Delete installer-enrollment.json in the .singularity-aidr folder of your user folder.",
+	"setup.company.fromPacket": "Set by the installer for {customer}",
+	"setup.packet.applied": "Customer: {customer} ({id}). License {state}; updates until {date}.",
+	"setup.packet.wouldApply":
+		"Would apply the customer packet for {customer} ({id}); license {state}, updates until {date}.",
+	"setup.packet.refused":
+		"The customer packet {path} was refused ({reason}) and was not used. Local detection is installed anyway. Ask Singularity R&D for a new installer.",
+	"setup.packet.recordFailed":
+		"The customer license could not be saved ({reason}). New update packs cannot be checked against it; local detection is not affected.",
+	"setup.packet.expired":
+		"The license has ended: new updates stopped on {date}. Local detection keeps working with the rules already installed.",
+	"setup.packet.notYetValid":
+		"The license starts on {date}; updates are accepted from then on. Local detection works now.",
+	"setup.packet.sensitivity": "Sensitivity set to {level} by the customer packet.",
+	"customer.state.active": "active",
+	"customer.state.grace": "in its grace period",
+	"customer.state.expired": "ended",
+	"customer.state.not_yet_valid": "not started yet",
+	"customer.status": "Customer: {customer} ({id}); license {state}. Updates until {date}.",
+	"customer.statusExpired":
+		"Customer: {customer} ({id}); license ended. Updates stopped on {date}; detection continues with the rules already installed.",
+	"customer.statusRefused":
+		"Customer packet: refused ({reason}); not used. Local detection is not affected. Ask Singularity R&D for a new installer.",
 	"setup.complete": "✅ Setup complete!",
 	"setup.registeredFor": "Registered for: {hosts} (not yet verified inside the AI tool).",
 	"setup.incomplete": "⚠ Setup finished, but Protection is NOT yet active for every AI tool:",
@@ -621,6 +643,30 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 		"Şirket bağlantısı kaydedilemedi: {reason}. Bu bilgisayardaki koruma etkilenmedi.",
 	"setup.company.notDeleted":
 		"Yükleyicinin şirket bağlantısı dosyası silinemedi ({reason}). Kullanıcı klasörünüzdeki .singularity-aidr klasöründe bulunan installer-enrollment.json dosyasını silin.",
+	"setup.company.fromPacket": "{customer} için kurulum programı tarafından ayarlandı",
+	"setup.packet.applied":
+		"Müşteri: {customer} ({id}). Lisans {state}; güncellemeler şu tarihe kadar: {date}.",
+	"setup.packet.wouldApply":
+		"{customer} ({id}) müşteri paketi uygulanacak; lisans {state}, güncellemeler şu tarihe kadar: {date}.",
+	"setup.packet.refused":
+		"{path} müşteri paketi reddedildi ({reason}) ve kullanılmadı. Yerel tespit yine de kuruldu. Singularity R&D'den yeni bir kurulum programı isteyin.",
+	"setup.packet.recordFailed":
+		"Müşteri lisansı kaydedilemedi ({reason}). Yeni güncelleme paketleri bu lisansa göre denetlenemez; yerel tespit etkilenmedi.",
+	"setup.packet.expired":
+		"Lisans sona erdi: yeni güncellemeler {date} tarihinde durdu. Yerel tespit, kurulu kurallarla çalışmaya devam ediyor.",
+	"setup.packet.notYetValid":
+		"Lisans {date} tarihinde başlıyor; güncellemeler o tarihten itibaren kabul edilir. Yerel tespit şimdiden çalışıyor.",
+	"setup.packet.sensitivity": "Hassasiyet, müşteri paketi tarafından {level} olarak ayarlandı.",
+	"customer.state.active": "etkin",
+	"customer.state.grace": "ek süresinde",
+	"customer.state.expired": "sona erdi",
+	"customer.state.not_yet_valid": "henüz başlamadı",
+	"customer.status":
+		"Müşteri: {customer} ({id}); lisans {state}. Güncellemeler şu tarihe kadar: {date}.",
+	"customer.statusExpired":
+		"Müşteri: {customer} ({id}); lisans sona erdi. Güncellemeler {date} tarihinde durdu; tespit, kurulu kurallarla devam ediyor.",
+	"customer.statusRefused":
+		"Müşteri paketi: reddedildi ({reason}); kullanılmadı. Yerel tespit etkilenmedi. Singularity R&D'den yeni bir kurulum programı isteyin.",
 	"setup.complete": "✅ Kurulum tamamlandı!",
 	"setup.registeredFor": "Kayıtlı: {hosts} (yapay zekâ aracının içinde henüz doğrulanmadı).",
 	"setup.incomplete": "⚠ Kurulum bitti, ancak koruma her yapay zekâ aracı için henüz ETKİN DEĞİL:",

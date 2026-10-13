@@ -622,3 +622,47 @@ describe("browser launcher", () => {
 		);
 	});
 });
+
+describe("the customer packet's company address", () => {
+	const packet = {
+		customerId: "bilgem",
+		packetId: "PKT-BILGEM-1",
+		controlPlaneUrl: "https://aidr.bilgem.example.tr",
+		license: {} as never,
+	};
+
+	it("pre-fills the address (no code) when the installer left no file", async () => {
+		const ops = createLocalOps({ home, env: env(), enrollment: { customerPacket: () => packet } });
+		const state = await ops.state();
+		expect(state.pending).toEqual({ endpoint: "https://aidr.bilgem.example.tr", hasToken: false });
+		expect(
+			await ops.enrollStart({
+				endpoint: "https://aidr.bilgem.example.tr",
+				useInstallerToken: true,
+			}),
+		).toMatchObject({ phase: "error", code: "no_installer_token" });
+	});
+
+	it("loses to the installer's own file", async () => {
+		mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
+		const path = join(home, ".singularity-aidr", "installer-enrollment.json");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				format: "aidr-installer-enrollment/1",
+				control_plane_url: "https://aidr.corp.example",
+				enrollment_code: "",
+				created_at: new Date().toISOString(),
+			}),
+			{ mode: 0o600 },
+		);
+		chmodSync(path, 0o600);
+		const ops = createLocalOps({ home, env: env(), enrollment: { customerPacket: () => packet } });
+		expect((await ops.state()).pending?.endpoint).toBe("https://aidr.corp.example");
+	});
+
+	it("shows nothing for a refused or absent packet", async () => {
+		const ops = createLocalOps({ home, env: env(), enrollment: { customerPacket: () => null } });
+		expect((await ops.state()).pending).toBeNull();
+	});
+});

@@ -135,7 +135,7 @@ program
 	.command("status")
 	.description("Show the local AIDR configuration and hook status")
 	.option("--json", "Emit measured installation state without credentials")
-	.action(statusCommand);
+	.action((options) => statusCommand(options));
 
 program
 	.command("verify")

@@ -16,6 +16,7 @@ import {
 	installConnectors,
 } from "../utils/connector-install.js";
 import { detectConnectorStatuses } from "../utils/connector-status.js";
+import { verifiedCustomerPacket } from "../utils/customer-packet.js";
 import { detectEnvironment } from "../utils/detect-env.js";
 import { recordHooksInstalled } from "../utils/install-hooks.js";
 import { installerReleaseKey } from "../utils/release-key.js";
@@ -142,6 +143,10 @@ export function createLocalOps(deps: LocalOpsDeps = {}): AssistantOps {
 	const enrollment = createEnrollment({
 		home,
 		persist: persistCompany,
+		customerPacket: () =>
+			verifiedCustomerPacket(
+				deps.standaloneRoot === undefined ? standaloneBundleRoot() : deps.standaloneRoot,
+			),
 		...deps.enrollment,
 	});
 

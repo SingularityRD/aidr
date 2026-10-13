@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, unlinkSync } from "node:fs";
+import { lstatSync, unlinkSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import {
@@ -14,6 +14,7 @@ import {
 	loadManagedState,
 	nullLogger,
 } from "@singularityrd/aidr-core";
+import type { VerifiedCustomerPacket } from "../utils/customer-packet.js";
 import { installerEnrollmentPath, readInstallerEnrollment } from "../utils/installer-enrollment.js";
 import type { EnrollStartInput, EnrollView, PendingEnrollmentView } from "./types.js";
 
@@ -39,12 +40,17 @@ import type { EnrollStartInput, EnrollView, PendingEnrollmentView } from "./type
  * the assistant pre-fills the company address from it and, with a code, exchanges
  * the code directly (no device code). The file is deleted once it has been used,
  * whatever the outcome (a code is single-use).
+ *
+ * Without that file, the company address of the verified customer packet
+ * (utils/customer-packet.ts) pre-fills the field instead. It carries no code,
+ * so the device-code approval runs as usual, and the packet is never deleted.
  */
 const MAX_PENDING_BYTES = 16 * 1024;
 
 interface PendingEnrollment extends PendingEnrollmentView {
 	token?: string;
-	path: string;
+	/** The installer's handoff file; absent for an address from the customer packet. */
+	path?: string;
 }
 
 /** Trim trailing slashes; refuse credentials, query and fragment in the address. */
@@ -112,6 +118,8 @@ export interface EnrollmentDeps {
 	persist: (endpoint: string) => Promise<void>;
 	installationId?: () => Promise<string | undefined>;
 	platform?: NodeJS.Platform;
+	/** The verified customer packet, whose company address pre-fills the field. */
+	customerPacket?: () => VerifiedCustomerPacket | null;
 }
 
 interface DeviceSession {
@@ -182,14 +190,25 @@ export function createEnrollment(deps: EnrollmentDeps) {
 			: new ControlPlaneClient(config.control_plane, "");
 	}
 
-	/** The installer's file, read with the configured loopback allowance. */
-	async function pending() {
+	/** The installer's file, else the customer packet's address. */
+	async function pending(): Promise<{ pending: PendingEnrollment | null; ignored: boolean }> {
 		const config = await settings();
-		return readPendingEnrollment(
+		const read = readPendingEnrollment(
 			deps.home,
 			deps.platform,
 			config.control_plane.allow_insecure_loopback,
 		);
+		if (read.pending) return read;
+		let packetUrl: string | undefined;
+		try {
+			packetUrl = deps.customerPacket?.()?.controlPlaneUrl;
+		} catch {
+			packetUrl = undefined;
+		}
+		const endpoint = packetUrl
+			? normalizeEndpoint(packetUrl, config.control_plane.allow_insecure_loopback)
+			: null;
+		return endpoint ? { pending: { endpoint, hasToken: false }, ignored: read.ignored } : read;
 	}
 
 	function consumePending(path: string | undefined): void {

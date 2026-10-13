@@ -10,6 +10,13 @@ import {
 } from "@singularityrd/aidr-core";
 import { ct } from "../i18n/index.js";
 import { type ConnectorStatus, detectConnectorStatuses } from "../utils/connector-status.js";
+import {
+	type CustomerPacketDiscovery,
+	type CustomerPacketOptions,
+	customerReport,
+	describeCustomer,
+	discoverCustomerPacket,
+} from "../utils/customer-packet.js";
 import { describeReleaseKey, releaseKeySeverity, releaseKeyState } from "../utils/release-key.js";
 import { readSetupLedger } from "../utils/setup-ledger.js";
 import { standaloneBundleRoot } from "../utils/standalone.js";
@@ -59,7 +66,22 @@ export function statusVerdictFor(
 	});
 }
 
-export default async function statusCommand(options: { json?: boolean } = {}): Promise<void> {
+/** The customer line, when the installer placed a customer packet. */
+function printCustomer(discovery: CustomerPacketDiscovery): void {
+	const described = describeCustomer(discovery);
+	if (described) console.log(`${described.severity === "warn" ? "! " : ""}${described.line}`);
+}
+
+/** Test seams; production callers pass nothing. */
+export interface StatusDeps {
+	/** Customer packet discovery: candidate files, key registry, clock. */
+	customerPacket?: CustomerPacketOptions;
+}
+
+export default async function statusCommand(
+	options: { json?: boolean } = {},
+	deps: StatusDeps = {},
+): Promise<void> {
 	let ruleCount = 0;
 	let detectionOk = false;
 	let detail = "";
@@ -72,6 +94,9 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 		detail = error instanceof Error ? error.message : String(error);
 	}
 	const connectors = detectConnectorStatuses();
+	// Informational only: a refused packet or an ended license never makes the
+	// installation "not ready", because local detection does not depend on it.
+	const customer = discoverCustomerPacket(standaloneBundleRoot(), deps.customerPacket);
 	const path = resolvePath("~/.singularity-aidr/config.json");
 	// The same loader the hooks use: a release build is always managed, and
 	// `aidr doctor` reads it the same way, so the two never disagree on mode.
@@ -130,6 +155,7 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 			release_build: isCommercialBuild(),
 		},
 		integrity: releaseKey,
+		customer: customerReport(customer),
 		managed: {
 			active: managedActive,
 			enabled: managedActive,
@@ -168,6 +194,7 @@ export default async function statusCommand(options: { json?: boolean } = {}): P
 			}),
 		);
 		console.log(`${releaseKeyFailed ? "✗ " : ""}${describeReleaseKey(releaseKey)}`);
+		printCustomer(customer);
 		for (const connector of connectors)
 			console.log(
 				`  ${connector.label}: ${connector.state === "installed" ? ct("status.registrationDetected") : connector.state} — ${connector.detail}`,

@@ -22,6 +22,16 @@ import {
 	type HostInstallResult,
 	installConnectors,
 } from "../utils/connector-install.js";
+import {
+	type CustomerPacketDiscovery,
+	type CustomerPacketOptions,
+	customerLabel,
+	dateOnly,
+	discoverCustomerPacket,
+	licenseStateLabel,
+	recordCustomerPacket,
+	type VerifiedCustomerPacket,
+} from "../utils/customer-packet.js";
 import { detectEnvironment } from "../utils/detect-env.js";
 import { installHooks, recordHooksInstalled } from "../utils/install-hooks.js";
 import {
@@ -73,6 +83,8 @@ interface SetupDeps extends OperatorCommandDeps {
 	run?: HostCommandRunner;
 	/** Standalone bundle root (tests); defaults to the SEA this process runs from. */
 	standaloneRoot?: string | null;
+	/** Customer packet discovery (tests): candidate files, key registry, clock. */
+	customerPacket?: CustomerPacketOptions;
 }
 
 const ACTION_TEXT: Record<HostInstallResult["action"], CliMessageKey> = {
@@ -315,12 +327,16 @@ async function confirmCompany(
 	endpoint: string,
 	options: SetupOptions,
 	deps: SetupDeps,
+	packet: VerifiedCustomerPacket | null,
 ): Promise<boolean> {
 	try {
 		await confirmOperatorAction({
 			prompt: [
 				ct("setup.company.confirmTitle"),
 				`  ${ct("setup.company.confirmAddress", { endpoint })}`,
+				...(packet && endpoint === packet.controlPlaneUrl
+					? [`  ${ct("setup.company.fromPacket", { customer: customerLabel(packet) })}`]
+					: []),
 				`  ${ct(enrollment.enrollmentCode ? "setup.company.withCode" : "setup.company.withoutCode")}`,
 				ct("setup.company.confirmEffect"),
 			].join("\n"),
@@ -336,45 +352,83 @@ async function confirmCompany(
 	}
 }
 
+/** The control-plane address config.json already names, whether or not it is enrolled yet. */
+function configuredManagedEndpoint(): string | null {
+	const current = (getConfig() ?? {}) as Config & ManagedConfigView;
+	const endpoint = current.control_plane?.endpoint;
+	return current.mode === "managed" && typeof endpoint === "string" && endpoint ? endpoint : null;
+}
+
 /**
- * Apply the company connection the Windows installer saved for this user
- * (utils/installer-enrollment.ts), then delete it. Pointing AIDR at a control
- * plane is an operator action, confirmed like `aidr config -s`: the installer
- * runs setup with --yes and AIDR_OPERATOR_NONINTERACTIVE=1 because the person at
- * the wizard entered it; an unconfirmed run keeps the file for the next
- * `aidr setup` in a terminal. Local protection never depends on this.
+ * The connection to apply: the installer's handoff when it is usable (a bad
+ * one is reported and deleted), else the packet's company address, else none.
  */
-async function applyInstallerEnrollment(
+function companyConnection(
 	home: string,
-	env: Environment,
-	options: SetupOptions,
-	deps: SetupDeps,
-): Promise<void> {
+	packet: VerifiedCustomerPacket | null,
+): { enrollment: InstallerEnrollment; fromHandoff: boolean } | null {
 	const handoff = readInstallerEnrollment(home);
-	if (handoff.state === "none") return;
-	if (handoff.state !== "ready") {
+	if (handoff.state === "ready") return { enrollment: handoff.enrollment, fromHandoff: true };
+	if (handoff.state !== "none") {
 		discardHandoff(home);
 		const message =
 			handoff.state === "expired"
 				? ct("setup.company.expired")
 				: ct("setup.company.invalid", { reason: handoff.reason });
 		console.error(`! ${message}`);
-		return;
 	}
-	const { enrollment } = handoff;
-	const endpoint = enrollment.controlPlaneUrl || DEFAULT_CONTROL_PLANE_ENDPOINT;
+	if (!packet?.controlPlaneUrl) return null;
+	return {
+		enrollment: { controlPlaneUrl: packet.controlPlaneUrl, enrollmentCode: "" },
+		fromHandoff: false,
+	};
+}
+
+/** True (reported where useful) when there is nothing to connect: already enrolled or applied. */
+function alreadyConnected(home: string, endpoint: string, fromHandoff: boolean): boolean {
 	try {
 		const enrolled = enrolledEndpoint();
 		if (enrolled !== null) {
-			discardHandoff(home);
-			console.error(ct("setup.company.alreadyConnected", { endpoint: enrolled }));
-			return;
+			// The packet stays on the machine: say nothing on every rerun.
+			if (fromHandoff) {
+				discardHandoff(home);
+				console.error(ct("setup.company.alreadyConnected", { endpoint: enrolled }));
+			}
+			return true;
 		}
+		// Applied by an earlier run and waiting for approval in the console.
+		return !fromHandoff && configuredManagedEndpoint() === endpoint;
 	} catch (error) {
 		console.error(`! ${ct("setup.company.failed", { reason: errorText(error) })}`);
-		return;
+		return true;
 	}
-	if (!(await confirmCompany(enrollment, endpoint, options, deps))) return;
+}
+
+/**
+ * Apply the company connection: the one the Windows installer saved for this
+ * user (utils/installer-enrollment.ts, deleted once confirmed), else the
+ * company address of the verified customer packet. The installer's handoff
+ * wins (it carries the one-time code and the address the person entered); the
+ * packet's address only fills an empty one. Pointing AIDR at a control plane is
+ * an operator action, confirmed like `aidr config -s`: the installers run setup
+ * with --yes and AIDR_OPERATOR_NONINTERACTIVE=1; an unconfirmed run keeps the
+ * handoff for the next `aidr setup` in a terminal. Local protection never
+ * depends on this.
+ */
+async function applyInstallerEnrollment(
+	home: string,
+	env: Environment,
+	options: SetupOptions,
+	deps: SetupDeps,
+	packet: VerifiedCustomerPacket | null,
+): Promise<void> {
+	const source = companyConnection(home, packet);
+	if (!source) return;
+	const { enrollment, fromHandoff } = source;
+	const endpoint =
+		enrollment.controlPlaneUrl || packet?.controlPlaneUrl || DEFAULT_CONTROL_PLANE_ENDPOINT;
+	if (alreadyConnected(home, endpoint, fromHandoff)) return;
+	if (!(await confirmCompany(enrollment, endpoint, options, deps, packet))) return;
 	try {
 		connectToCompany(enrollment, endpoint);
 		// Managed mode carries a CLI credential: mint it now, as a fresh managed setup would.
@@ -384,12 +438,70 @@ async function applyInstallerEnrollment(
 		return;
 	} finally {
 		// Used or not, the one-time code does not stay on disk once confirmed.
-		discardHandoff(home);
+		if (fromHandoff) discardHandoff(home);
 	}
 	const applied = enrollment.enrollmentCode
 		? "setup.company.applied"
 		: "setup.company.appliedApprove";
 	console.error(`✓ ${ct(applied, { endpoint })}`);
+}
+
+/** Set the packet's sensitivity preset unless the configuration already chose one. */
+function applyPacketSensitivity(packet: VerifiedCustomerPacket): void {
+	if (!packet.sensitivity) return;
+	const current = (getConfig() ?? {}) as Config & { sensitivity?: unknown };
+	if (current.sensitivity !== undefined) return;
+	const update = { sensitivity: packet.sensitivity };
+	if (!ConfigSchema.safeParse({ ...current, ...update }).success) {
+		throw new Error("the resulting configuration is not valid");
+	}
+	updateConfig(update as Partial<Config>);
+	console.error(`✓ ${ct("setup.packet.sensitivity", { level: packet.sensitivity })}`);
+}
+
+/**
+ * Report the customer packet and, outside a dry run, record its license for
+ * this user and apply its preset. Returns the verified packet, or null. A
+ * refused packet is reported and ignored: local detection installs regardless,
+ * and so it does when the license has ended.
+ */
+function applyCustomerPacket(
+	home: string,
+	discovery: CustomerPacketDiscovery,
+	dryRun: boolean,
+): VerifiedCustomerPacket | null {
+	if (discovery.state === "none") return null;
+	if (discovery.state === "refused") {
+		console.error(
+			`! ${ct("setup.packet.refused", { path: discovery.path, reason: discovery.reason })}`,
+		);
+		return null;
+	}
+	const { packet, license } = discovery;
+	const params = {
+		customer: customerLabel(packet),
+		id: packet.customerId,
+		state: licenseStateLabel(license.state),
+		date: dateOnly(license.updatesUntil),
+	};
+	if (dryRun) {
+		console.error(ct("setup.packet.wouldApply", params));
+		return packet;
+	}
+	try {
+		recordCustomerPacket(home, packet);
+		applyPacketSensitivity(packet);
+	} catch (error) {
+		console.error(`! ${ct("setup.packet.recordFailed", { reason: errorText(error) })}`);
+	}
+	console.error(`${license.state === "active" ? "✓" : "!"} ${ct("setup.packet.applied", params)}`);
+	if (license.state === "expired") console.error(`! ${ct("setup.packet.expired", params)}`);
+	if (license.state === "not_yet_valid") {
+		console.error(
+			`! ${ct("setup.packet.notYetValid", { date: packet.license.payload.not_before.slice(0, 10) })}`,
+		);
+	}
+	return packet;
 }
 
 /**
@@ -434,8 +546,10 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 				: `! ${ct("setup.noHosts")}`,
 		);
 
+		const discovery = discoverCustomerPacket(standaloneRoot, deps.customerPacket);
 		if (options.dryRun) {
 			console.error(ct("setup.skipConfig"));
+			applyCustomerPacket(home, discovery, true);
 		} else {
 			console.error(ct("setup.creatingConfig"));
 			// Local mode needs no credential, so no vault either; a managed config's
@@ -455,7 +569,8 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 				console.log(`\n${ct("setup.rerunNoChanges")}`);
 				console.log(`  ${ct("setup.rerunConfig", { path: config.path })}`);
 			}
-			await applyInstallerEnrollment(home, env, options, deps);
+			const packet = applyCustomerPacket(home, discovery, false);
+			await applyInstallerEnrollment(home, env, options, deps, packet);
 		}
 
 		// A release build's hooks trust nothing until the release key is set up:
