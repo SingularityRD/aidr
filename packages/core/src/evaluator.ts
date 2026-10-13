@@ -2615,7 +2615,7 @@ async function runEvaluationPipeline(
 }
 
 /** Category of an allow decided by local detection while a reputation leg is not enabled. */
-const REPUTATION_NOT_CHECKED_CATEGORY = "reputation_not_checked";
+export const REPUTATION_NOT_CHECKED_CATEGORY = "reputation_not_checked";
 
 /**
  * Annotate a clean local allow with the URLs and packages no reputation
@@ -2623,9 +2623,10 @@ const REPUTATION_NOT_CHECKED_CATEGORY = "reputation_not_checked";
  * log record the call (an unannotated allow is not logged by default) and keeps
  * it distinguishable from a reputation-checked allow. Any other verdict, and
  * an allow another layer already labelled, keeps its own category and only
- * gains the note.
+ * gains the note. Exported so the SDK labels its own not-checked URLs the
+ * same way.
  */
-function reputationNotCheckedVerdict(
+export function reputationNotCheckedVerdict(
 	verdict: Verdict,
 	urls: readonly string[],
 	packages: readonly string[],
