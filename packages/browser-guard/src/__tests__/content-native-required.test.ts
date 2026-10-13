@@ -288,7 +288,9 @@ describe("content guard: requireNativeNer, uploads", () => {
 				g,
 				new File([`Customer ${NAME}`], "notes.txt", { type: "text/plain" }),
 			);
-			await expect.poll(() => g.bubble()?.textContent ?? "").toContain("NATIVE_NER_UNAVAILABLE");
+			await expect
+				.poll(() => g.bubble()?.textContent ?? "")
+				.toContain("requires the AIDR Privacy helper app to check uploads");
 			expect(g.bubble()?.textContent).toContain(BLOCK_REASON);
 			expect(g.records().at(-1)).toMatchObject({
 				action: "blocked",
@@ -337,7 +339,9 @@ describe("content guard: requireNativeNer, uploads", () => {
 		);
 		const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
 		upload(g, new File([png], "shot.png", { type: "image/png" }));
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("NATIVE_NER_UNAVAILABLE");
+		await expect
+			.poll(() => g.bubble()?.textContent ?? "")
+			.toContain("requires the AIDR Privacy helper app to check uploads");
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", native: "unavailable" });
 	});
 
@@ -351,7 +355,9 @@ describe("content guard: requireNativeNer, uploads", () => {
 			value: { getData: () => `Customer ${NAME}`, files: [file], items: [] },
 		});
 		g.editor.dispatchEvent(event);
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("NATIVE_NER_UNAVAILABLE");
+		await expect
+			.poll(() => g.bubble()?.textContent ?? "")
+			.toContain("requires the AIDR Privacy helper app to check uploads");
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", native: "unavailable" });
 	});
 
