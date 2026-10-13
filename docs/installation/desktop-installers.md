@@ -3,9 +3,10 @@
 [Türkçe](desktop-installers.tr.md)
 
 The desktop installers put a self-contained AIDR on a workstation: no Node.js,
-no package registry. Each one carries the standalone bundle built by
-`pnpm build:sea` (the `aidr` CLI and the Claude Code hook binaries, with the
-threat rules next to them) and the release trust public key, then runs
+no package registry. Each one carries the release build of the standalone
+bundle (one `aidr` program that is both the CLI and every hook, the threat
+rules next to it, the Cursor and VS Code extensions, all listed in manifests
+signed with the release key) and the release public key, then runs
 `aidr setup` for the logged-in user.
 
 | OS | File | Install location |
@@ -30,17 +31,38 @@ packages described in [Getting Started](../getting-started.md).
 `aidr setup` runs for the user who installed (never for `root` or
 `LocalSystem`) and:
 
-- **Claude Code** — registers the bundle's hook binaries in
-  `~/.claude/settings.json` (only AIDR-marked entries change; your own hooks
-  stay). Before that it checks every bundle file against its manifest and
-  sends a harmless deny canary through the PreToolUse binary; it registers
-  nothing if either fails. An enabled AIDR Claude Code plugin is left alone.
+- **Release key** — copies the release public key the installer placed in
+  `config/release-public.pem` into `integrity.public_keys_pem` of
+  `~/.singularity-aidr/config.json` and prints its fingerprint. The release
+  build trusts its own rules only once this key is set up: until then every
+  tool call is blocked with a message that says so and names the fix. A
+  different key an administrator already configured is kept (setup says so);
+  `aidr setup --force` replaces it after operator confirmation. For a manual
+  install, `aidr setup --release-key <file.pem>` sets up an Ed25519 public key
+  (PEM) after operator confirmation and prints its fingerprint.
+- **Claude Code** — registers `"<bundle>/bin/aidr" hook pre-tool-use` (and
+  `post-tool-use`, `session-start`) in `~/.claude/settings.json` (only
+  AIDR-marked entries change; your own hooks stay). Before that it checks every
+  bundle file and both manifest signatures against the release key and sends a
+  harmless deny canary and a harmless `ls` through the hook; it registers
+  nothing unless the canary is denied and `ls` is allowed. An enabled AIDR
+  Claude Code plugin is left alone.
+- **Codex** — registers `"<bundle>/bin/aidr" hook aidr-codex-hook` for
+  PreToolUse, UserPromptSubmit and PostToolUse in `~/.codex/hooks.json` after
+  the same canary check. Then trust the hooks once with `/hooks` in Codex.
+- **Cursor, VS Code** — installs the extension the installer carries
+  (`bundle/extensions/aidr-cursor.vsix`, `aidr-vscode.vsix`) with the editor's
+  own command line when the editor is installed. Then run
+  "Singularity AIDR: Enable protection" from the command palette.
 - **OpenCode** — registers the `@singularityrd/aidr-opencode` package
   (OpenCode installs it from the private registry at its next start).
 - **OpenClaw** — runs `openclaw plugins install` when the `openclaw` CLI is on
   `PATH`.
-- **Codex, Cursor, VS Code** — not bundled. `aidr status` prints the exact
-  step (Codex: the `aidr-codex-hook` package; Cursor/VS Code: the signed VSIX).
+
+If no supported AI tool is installed for that user yet, setup changes no host,
+exits with code 3 and the package still installs; the Linux package prints
+"No AI tool … was found for <user> yet" and the command to run after
+installing one (`aidr setup`). Any other non-zero code is a real setup problem.
 
 ## Quickstart
 
@@ -297,28 +319,50 @@ every registration and rerun setup for the installing user.
 - **`aidr uninstall` refuses with `receipt_connector_missing`** — the package
   was removed before `aidr uninstall` ran; reinstall the same version, run
   `aidr uninstall`, then remove the package.
-- **Installer size** — each installer is about 200–300 MB: every hook is a
-  separate self-contained executable.
+- **Every tool call is blocked with "the release key … is not set up"** — run
+  `aidr setup` as that user (it sets up the key the installer ships), or
+  `aidr setup --release-key <file.pem>` for a manual install.
+- **Installer size** — one self-contained program serves the CLI and every
+  hook, so the installed bundle is about 150 MB (it was about 900 MB with one
+  program per hook).
 - Logs: Windows `msiexec /l*v`; Linux the package manager output.
 
 ## Building the installers
 
 ```sh
-pnpm --filter @singularityrd/aidr-core build && pnpm --filter @singularityrd/aidr-cli build \
-  && pnpm --filter @singularityrd/aidr-claude-code build
-node packages/claude-code/scripts/build-sea.mjs --out /tmp/aidr-sea
+for p in core cli claude-code codex; do pnpm --filter @singularityrd/aidr-$p build:release; done
+node packages/claude-code/scripts/build-sea.mjs --prebuilt --flavor release --out /tmp/aidr-sea
+node packages/claude-code/scripts/build-sea.mjs --add-extensions /tmp/aidr-sea \
+  --vsix aidr-cursor.vsix --vsix aidr-vscode.vsix            # optional
+node packages/claude-code/scripts/build-sea.mjs --sign /tmp/aidr-sea --key release-private.pem \
+  --public-key release-public.pem
+node packages/claude-code/scripts/build-sea.mjs --verify /tmp/aidr-sea --public-key release-public.pem
 node deploy/installers/linux/build-linux-packages.mjs --sea-dir /tmp/aidr-sea \
-  --trust-key release-public.pem --trust-key-fingerprint <sha256> --version 0.6.0 --out out
+  --trust-key release-public.pem --trust-key-fingerprint <sha256> --version 0.6.0 --out out \
+  [--catalog-key installer-catalog-public.pem]
 # Windows (WiX 5 + signtool):
 pwsh deploy/installers/windows/build-msi.ps1 -SeaDir C:\aidr-sea -TrustKey release-public.pem `
-  -TrustKeyFingerprint <sha256> -Version 0.6.0 -OutDir out -SignThumbprint <thumbprint>
+  -TrustKeyFingerprint <sha256> -Version 0.6.0 -OutDir out -SignThumbprint <thumbprint> `
+  [-CatalogKey installer-catalog-public.pem]
 pnpm test:installers
 ```
+
+The builders refuse a development-flavour bundle and a bundle whose manifests
+are not signed by the given release key. `--verify` copies the bundle to a
+temporary folder and proves that, with the release key set up, the Claude Code
+and Codex hooks allow `ls -la` and deny a pipe-to-shell canary, and that
+without the key every call is denied with the release-key message. The
+optional catalog key is installed as `config/installer-catalog-public.pem` for
+`aidr update`.
 
 A local MSI without a certificate needs `-Unsigned` and is named
 `…-UNSIGNED.msi`. The release workflow uses these secrets and fails when one
 is missing: `AIDR_SIGNING_PUBLIC_KEY_PEM` / `AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT`
-(embedded trust key), `AIDR_WINDOWS_CODE_SIGNING_PFX_B64` /
+(embedded trust key), `AIDR_SIGNING_PRIVATE_KEY_PEM` (only in the
+`installers-sea-sign` job, which adds the candidate VSIXs and signs both bundle
+manifests between the bundle builds and packaging), `AIDR_WINDOWS_CODE_SIGNING_PFX_B64` /
 `_PFX_PASSWORD` / `_THUMBPRINT` and `vars.AIDR_WINDOWS_TIMESTAMP_SERVER`
 (Authenticode), `AIDR_LINUX_PACKAGE_GPG_PRIVATE_KEY` / `_PASSPHRASE` /
-`_FINGERPRINT` (rpm and detached `.asc` signatures).
+`_FINGERPRINT` (rpm and detached `.asc` signatures). The optional
+`AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM` (variable or secret) adds the
+`aidr update` catalog key.

@@ -17,7 +17,12 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ruleDirOverride, ruleDirOverrideNotice, ruleDirOverrides } from "@singularityrd/aidr-core";
+import {
+	ruleDirOverride,
+	ruleDirOverrideNotice,
+	ruleDirOverrides,
+	runningAsSea,
+} from "@singularityrd/aidr-core";
 
 type AssetKind = "threats" | "allowlists";
 
@@ -44,6 +49,14 @@ function isDirectory(candidate: string): boolean {
  */
 export function resolveAssetDir(kind: AssetKind): string {
 	const override = ruleDirOverride(kind);
+	if (runningAsSea()) {
+		// Standalone bundle (desktop installers): the hook runs as `<bundle>/bin/aidr
+		// hook aidr-codex-hook` and its rules ship in `<bundle>/dist/resources`,
+		// covered by the bundle's runtime manifest. Nothing outside the bundle
+		// (cwd, home, a parent directory) may stand in for them.
+		const bundled = join(packageRoot, "dist", "resources", kind);
+		return resolve(override?.accepted ? override.path : bundled);
+	}
 	const packaged = join(moduleDir, "resources", kind);
 	const candidates = [
 		override?.accepted ? override.path : undefined,

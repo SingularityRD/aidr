@@ -14,7 +14,12 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { ruleDirOverride, ruleDirOverrideNotice, ruleDirOverrides } from "@singularityrd/aidr-core";
+import {
+	ruleDirOverride,
+	ruleDirOverrideNotice,
+	ruleDirOverrides,
+	runningAsSea,
+} from "@singularityrd/aidr-core";
 
 type AssetKind = "threats" | "allowlists";
 
@@ -30,6 +35,9 @@ const repositoryRoot = resolve(packageRoot, "..", "..");
 export function resolveAssetDir(kind: AssetKind): string {
 	const override = ruleDirOverride(kind);
 	const packaged = join(packageRoot, "dist", "resources", kind);
+	// Standalone bundle (desktop installers): the rules ship in
+	// <bundle>/dist/resources only; never fall back to cwd or home rules.
+	if (runningAsSea()) return resolve(override?.accepted ? override.path : packaged);
 	const candidates = [
 		override?.accepted ? override.path : undefined,
 		packaged,

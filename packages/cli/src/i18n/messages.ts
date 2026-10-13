@@ -64,6 +64,17 @@ export const CLI_EN = {
 	"verify.pluginOnly":
 		"registered as a Claude Code plugin; its hooks run only inside Claude Code (check /plugin).",
 	"verify.noEntry": "registered, but no AIDR hook command was found to exercise in {file}.",
+	"releaseKey.added": "✓ Release key {fingerprint} set up (from {source}).",
+	"releaseKey.present": "✓ Release key {fingerprint} already set up.",
+	"releaseKey.replaced":
+		"✓ Release key {fingerprint} set up (from {source}); it replaced {previous}.",
+	"releaseKey.wouldAdd": "Would set up the release key {fingerprint} (from {source}).",
+	"releaseKey.kept":
+		"⚠ A different release key is already set up ({previous}); it was kept. The key from {source} ({fingerprint}) was NOT added. If the operator trusts it, rerun: aidr setup --force",
+	"releaseKey.missing":
+		"⚠ No release key is set up. This release build blocks every tool call until one is. Run: aidr setup --release-key <file.pem> (the release public key from your Singularity AIDR administrator).",
+	"releaseKey.invalid": "The release key was refused: {reason}",
+	"releaseKey.confirm": "  Release key: {file} ({fingerprint})",
 
 	"approvals.artifactsTruncated":
 		"artifacts:  showing {shown} of {total} (truncated); the approval covers all {total}",
@@ -367,6 +378,17 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"verify.pluginOnly":
 		"Claude Code eklentisi olarak kayıtlı; hook'ları yalnızca Claude Code içinde çalışır (/plugin ile kontrol edin).",
 	"verify.noEntry": "kayıtlı, ancak {file} içinde sınanacak bir AIDR hook komutu bulunamadı.",
+	"releaseKey.added": "✓ Sürüm anahtarı {fingerprint} ayarlandı (kaynak: {source}).",
+	"releaseKey.present": "✓ Sürüm anahtarı {fingerprint} zaten ayarlı.",
+	"releaseKey.replaced":
+		"✓ Sürüm anahtarı {fingerprint} ayarlandı (kaynak: {source}); {previous} anahtarının yerini aldı.",
+	"releaseKey.wouldAdd": "Sürüm anahtarı {fingerprint} ayarlanacaktı (kaynak: {source}).",
+	"releaseKey.kept":
+		"⚠ Zaten farklı bir sürüm anahtarı ayarlı ({previous}); o korundu. {source} kaynağındaki anahtar ({fingerprint}) EKLENMEDİ. Yönetici bu anahtara güveniyorsa şunu yeniden çalıştırın: aidr setup --force",
+	"releaseKey.missing":
+		"⚠ Ayarlı bir sürüm anahtarı yok. Bu sürüm, anahtar ayarlanana kadar her araç çağrısını engeller. Şunu çalıştırın: aidr setup --release-key <dosya.pem> (Singularity AIDR yöneticinizden aldığınız sürüm ortak anahtarı).",
+	"releaseKey.invalid": "Sürüm anahtarı reddedildi: {reason}",
+	"releaseKey.confirm": "  Sürüm anahtarı: {file} ({fingerprint})",
 
 	"approvals.artifactsTruncated":
 		"artifacts:  {total} öğeden {shown} tanesi gösteriliyor (kısaltıldı); onay {total} öğenin tümünü kapsar",

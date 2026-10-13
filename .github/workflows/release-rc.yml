@@ -1465,12 +1465,246 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Desktop installers (deploy/installers) ────────────────────────────────
-  # Build jobs run the RC code and hold no signing key; signing jobs hold one
-  # key, run no dependency install and consume only the hash-bound build output.
+  # The installers ship the RELEASE-flavour multi-call SEA bundle. Build jobs
+  # run the RC code and hold no signing key; installers-sea-sign holds only the
+  # release Ed25519 key (no dependency install) and signs both bundle manifests
+  # between the bundle build and packaging; packaging and the GPG/Authenticode
+  # jobs consume only hash-bound, signed bundles.
+
+  installers-linux-sea:
+    name: Build the unsigned release-flavour Linux SEA bundle
+    needs: build-rc
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    environment: release-candidate
+    permissions:
+      contents: read
+    outputs:
+      archive_sha256: ${{ steps.linux_sea.outputs.archive_sha256 }}
+    env:
+      SOURCE_DATE_EPOCH: ${{ needs.build-rc.outputs.source_date_epoch }}
+    steps:
+      - name: Checkout immutable RC commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-rc.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen dependency install (no lifecycle mutation)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build the release-flavour SEA bundle from the verified commit
+        id: linux_sea
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in @singularityrd/aidr-core @singularityrd/aidr-cli @singularityrd/aidr-claude-code @singularityrd/aidr-codex; do
+            pnpm --filter "${package}" build:release
+          done
+          node packages/claude-code/scripts/build-sea.mjs --prebuilt --flavor release --out "${RUNNER_TEMP}/aidr-sea"
+          archive="${RUNNER_TEMP}/aidr-sea-linux-unsigned.tgz"
+          tar -C "${RUNNER_TEMP}/aidr-sea" -czf "${archive}" .
+          echo "archive_sha256=$(sha256sum "${archive}" | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload unsigned Linux SEA bundle (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidr-sea-linux-unsigned-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/aidr-sea-linux-unsigned.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  installers-windows-build:
+    name: Build the unsigned release-flavour Windows SEA bundle
+    needs: build-rc
+    runs-on: windows-2022
+    timeout-minutes: 45
+    environment: release-candidate
+    permissions:
+      contents: read
+    outputs:
+      archive_sha256: ${{ steps.windows_sea.outputs.archive_sha256 }}
+    steps:
+      - name: Checkout immutable RC commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-rc.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Frozen dependency install (no lifecycle mutation)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build the release-flavour SEA bundle from the verified commit
+        id: windows_sea
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($package in @("@singularityrd/aidr-core", "@singularityrd/aidr-cli", "@singularityrd/aidr-claude-code", "@singularityrd/aidr-codex")) {
+            pnpm --filter $package build:release
+            if ($LASTEXITCODE -ne 0) { throw "$package release build failed" }
+          }
+          $sea = Join-Path $env:RUNNER_TEMP "aidr-sea"
+          node packages/claude-code/scripts/build-sea.mjs --prebuilt --flavor release --out $sea
+          if ($LASTEXITCODE -ne 0) { throw "SEA build failed" }
+          $archive = Join-Path $env:RUNNER_TEMP "aidr-sea-windows-unsigned.tgz"
+          & tar -czf $archive -C $sea .
+          if ($LASTEXITCODE -ne 0) { throw "SEA archiving failed" }
+          "archive_sha256=$((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Upload unsigned Windows SEA bundle (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidr-sea-windows-unsigned-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/aidr-sea-windows-unsigned.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  installers-sea-sign:
+    name: Add the editor VSIXs and sign the SEA bundles with the release key
+    needs: [build-rc, assemble-e2e, installers-linux-sea, installers-windows-build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    environment: release-candidate
+    permissions:
+      contents: read
+    outputs:
+      linux_sha256: ${{ steps.sea_sign.outputs.linux_sha256 }}
+      windows_sha256: ${{ steps.sea_sign.outputs.windows_sha256 }}
+    steps:
+      - name: Checkout immutable RC commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-rc.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download unsigned Linux SEA bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-sea-linux-unsigned-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/sea-unsigned
+
+      - name: Download unsigned Windows SEA bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-sea-windows-unsigned-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/sea-unsigned
+
+      - name: Download exact unsigned outer bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-exact-candidate-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/exact-candidate
+
+      - name: Add the candidate VSIXs and sign both bundles fail-closed
+        id: sea_sign
+        shell: bash
+        env:
+          EXPECTED_LINUX_SHA256: ${{ needs.installers-linux-sea.outputs.archive_sha256 }}
+          EXPECTED_WINDOWS_SHA256: ${{ needs.installers-windows-build.outputs.archive_sha256 }}
+          EXPECTED_CANDIDATE_DIGEST: ${{ needs.assemble-e2e.outputs.candidate_digest }}
+          SIGNING_PRIVATE_KEY: ${{ secrets.AIDR_SIGNING_PRIVATE_KEY_PEM }}
+          SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
+          SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SIGNING_PRIVATE_KEY}" && -n "${SIGNING_PUBLIC_KEY}" && -n "${SIGNING_PUBLIC_KEY_FINGERPRINT}" ]] || {
+            echo "The release signing key, its public key and fingerprint are required; no unsigned SEA bundle is packaged." >&2
+            exit 1
+          }
+          echo "${EXPECTED_LINUX_SHA256}  ${RUNNER_TEMP}/sea-unsigned/aidr-sea-linux-unsigned.tgz" | sha256sum --check --strict
+          echo "${EXPECTED_WINDOWS_SHA256}  ${RUNNER_TEMP}/sea-unsigned/aidr-sea-windows-unsigned.tgz" | sha256sum --check --strict
+          candidate="${RUNNER_TEMP}/candidate"
+          mkdir -p "${candidate}"
+          tar -xzf "${RUNNER_TEMP}/exact-candidate/exact-release-candidate.tgz" -C "${candidate}"
+          actual="$(cd "${candidate}" && sha256sum release-output/release-metadata.json release-output/release-inventory.json | sha256sum | awk '{print $1}')"
+          [[ "${actual}" == "${EXPECTED_CANDIDATE_DIGEST}" ]] || { echo "Candidate identity changed across runner boundary." >&2; exit 1; }
+          # Each VSIX must be the exact candidate artifact the inventory records.
+          node --input-type=module - "${candidate}/release-output" <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync } from "node:fs";
+          import { join } from "node:path";
+          const dir = process.argv[2];
+          const recorded = new Map(JSON.parse(readFileSync(join(dir, "release-metadata.json"), "utf8")).artifacts.map((entry) => [entry.path, entry.sha256]));
+          for (const name of ["aidr-cursor.vsix", "aidr-vscode.vsix"]) {
+            const actual = createHash("sha256").update(readFileSync(join(dir, name))).digest("hex");
+            if (recorded.get(name) !== actual) throw new Error(`${name} is not the recorded candidate artifact`);
+          }
+          NODE
+          private_path="${RUNNER_TEMP}/aidr-sea-private.pem"
+          public_path="${RUNNER_TEMP}/aidr-sea-public.pem"
+          cleanup() { rm -f "${private_path}" "${public_path}"; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "${SIGNING_PRIVATE_KEY}" > "${private_path}"
+          printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${public_path}"
+          unset SIGNING_PRIVATE_KEY SIGNING_PUBLIC_KEY
+          umask 022
+          for platform in linux windows; do
+            sea="${RUNNER_TEMP}/aidr-sea-${platform}"
+            mkdir -p "${sea}"
+            tar -xzf "${RUNNER_TEMP}/sea-unsigned/aidr-sea-${platform}-unsigned.tgz" -C "${sea}"
+            node packages/claude-code/scripts/build-sea.mjs --add-extensions "${sea}" \
+              --vsix "${candidate}/release-output/aidr-cursor.vsix" --vsix "${candidate}/release-output/aidr-vscode.vsix"
+            node packages/claude-code/scripts/build-sea.mjs --sign "${sea}" --key "${private_path}" --public-key "${public_path}" \
+              | tee "${RUNNER_TEMP}/sign-${platform}.log"
+            fingerprint="${SIGNING_PUBLIC_KEY_FINGERPRINT,,}"
+            grep -q "sha256:${fingerprint#sha256:}" "${RUNNER_TEMP}/sign-${platform}.log" || {
+              echo "The release key does not match its pinned fingerprint." >&2
+              exit 1
+            }
+            archive="${RUNNER_TEMP}/aidr-sea-${platform}-signed.tgz"
+            tar -C "${sea}" -czf "${archive}" .
+            echo "${platform}_sha256=$(sha256sum "${archive}" | awk '{print $1}')" >> "${GITHUB_OUTPUT}"
+          done
+          rm -f "${private_path}"
+          # The Linux bundle runs here: verify it end to end with the public key only.
+          node packages/claude-code/scripts/build-sea.mjs --verify "${RUNNER_TEMP}/aidr-sea-linux" --public-key "${public_path}"
+          cleanup
+          trap - EXIT
+
+      - name: Upload signed SEA bundles (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidr-sea-signed-${{ needs.build-rc.outputs.tag }}
+          path: |
+            ${{ runner.temp }}/aidr-sea-linux-signed.tgz
+            ${{ runner.temp }}/aidr-sea-windows-signed.tgz
+          if-no-files-found: error
+          retention-days: 7
 
   installers-linux-build:
     name: Build unsigned Linux desktop installers
-    needs: build-rc
+    needs: [build-rc, installers-sea-sign]
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     environment: release-candidate
@@ -1502,14 +1736,11 @@ jobs:
       - name: Frozen dependency install (no lifecycle mutation)
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build the standalone SEA bundle from the verified commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm --filter @singularityrd/aidr-core build
-          pnpm --filter @singularityrd/aidr-cli build
-          pnpm --filter @singularityrd/aidr-claude-code build
-          node packages/claude-code/scripts/build-sea.mjs --out "${RUNNER_TEMP}/aidr-sea"
+      - name: Download signed SEA bundles (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-sea-signed-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/sea-signed
 
       - name: Installer builder contract tests
         shell: bash
@@ -1523,6 +1754,9 @@ jobs:
         id: linux_unsigned
         shell: bash
         env:
+          EXPECTED_SEA_SHA256: ${{ needs.installers-sea-sign.outputs.linux_sha256 }}
+          # Optional: the public key `aidr update` verifies the installer catalog with.
+          CATALOG_PUBLIC_KEY: ${{ vars.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM || secrets.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM }}
           SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
           SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
           RC_VERSION: ${{ needs.build-rc.outputs.version }}
@@ -1532,15 +1766,26 @@ jobs:
             echo "The release trust public key and its fingerprint are required to build installers." >&2
             exit 1
           }
+          echo "${EXPECTED_SEA_SHA256}  ${RUNNER_TEMP}/sea-signed/aidr-sea-linux-signed.tgz" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/aidr-sea"
+          tar -xzf "${RUNNER_TEMP}/sea-signed/aidr-sea-linux-signed.tgz" -C "${RUNNER_TEMP}/aidr-sea"
           printf '%s\n' "${SIGNING_PUBLIC_KEY}" > "${RUNNER_TEMP}/release-public.pem"
+          # Relocated canary with the release key: allows ls, denies the canary, blocks everything without the key.
+          node packages/claude-code/scripts/build-sea.mjs --verify "${RUNNER_TEMP}/aidr-sea" --public-key "${RUNNER_TEMP}/release-public.pem"
           out="${RUNNER_TEMP}/installers-linux"
+          catalog_args=()
+          if [[ -n "${CATALOG_PUBLIC_KEY}" ]]; then
+            printf '%s\n' "${CATALOG_PUBLIC_KEY}" > "${RUNNER_TEMP}/installer-catalog-public.pem"
+            catalog_args=(--catalog-key "${RUNNER_TEMP}/installer-catalog-public.pem")
+          fi
           node deploy/installers/linux/build-linux-packages.mjs \
             --sea-dir "${RUNNER_TEMP}/aidr-sea" \
             --trust-key "${RUNNER_TEMP}/release-public.pem" \
             --trust-key-fingerprint "${SIGNING_PUBLIC_KEY_FINGERPRINT}" \
             --version "${RC_VERSION}" \
             --out "${out}" \
-            --formats deb,rpm,tar
+            --formats deb,rpm,tar \
+            "${catalog_args[@]}"
           cp "${RUNNER_TEMP}/aidr-sea/aidr-artifact.manifest.json" "${out}/sea-manifest-linux-x64.json"
           archive="${RUNNER_TEMP}/installers-linux-unsigned.tgz"
           tar -C "${out}" -czf "${archive}" .
@@ -1627,66 +1872,9 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  installers-windows-build:
-    name: Build the unsigned Windows SEA bundle
-    needs: build-rc
-    runs-on: windows-2022
-    timeout-minutes: 45
-    environment: release-candidate
-    permissions:
-      contents: read
-    outputs:
-      archive_sha256: ${{ steps.windows_sea.outputs.archive_sha256 }}
-    steps:
-      - name: Checkout immutable RC commit (pinned)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.build-rc.outputs.sha }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Setup pnpm (pinned)
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js (pinned)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Frozen dependency install (no lifecycle mutation)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Build the standalone SEA bundle from the verified commit
-        id: windows_sea
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          foreach ($package in @("@singularityrd/aidr-core", "@singularityrd/aidr-cli", "@singularityrd/aidr-claude-code")) {
-            pnpm --filter $package build
-            if ($LASTEXITCODE -ne 0) { throw "$package build failed" }
-          }
-          $sea = Join-Path $env:RUNNER_TEMP "aidr-sea"
-          node packages/claude-code/scripts/build-sea.mjs --out $sea
-          if ($LASTEXITCODE -ne 0) { throw "SEA build failed" }
-          $archive = Join-Path $env:RUNNER_TEMP "aidr-sea-windows-unsigned.tgz"
-          & tar -czf $archive -C $sea .
-          if ($LASTEXITCODE -ne 0) { throw "SEA archiving failed" }
-          "archive_sha256=$((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-
-      - name: Upload unsigned Windows SEA bundle (pinned)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: aidr-sea-windows-unsigned-${{ needs.build-rc.outputs.tag }}
-          path: ${{ runner.temp }}/aidr-sea-windows-unsigned.tgz
-          if-no-files-found: error
-          retention-days: 7
-
   installers-windows:
     name: Build and Authenticode-sign the Windows MSI
-    needs: [build-rc, installers-windows-build]
+    needs: [build-rc, installers-sea-sign]
     runs-on: windows-2022
     timeout-minutes: 45
     environment: release-candidate
@@ -1712,22 +1900,23 @@ jobs:
           dotnet tool install --global wix --version 5.0.2
           if ($LASTEXITCODE -ne 0) { throw "WiX install failed" }
 
-      - name: Download unsigned Windows SEA bundle (pinned)
+      - name: Download signed SEA bundles (pinned)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: aidr-sea-windows-unsigned-${{ needs.build-rc.outputs.tag }}
-          path: ${{ runner.temp }}/sea-unsigned
+          name: aidr-sea-signed-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/sea-signed
 
       - name: Build and Authenticode-sign the MSI with ephemeral runner certificate custody
         shell: pwsh
         env:
-          EXPECTED_ARCHIVE_SHA256: ${{ needs.installers-windows-build.outputs.archive_sha256 }}
+          EXPECTED_ARCHIVE_SHA256: ${{ needs.installers-sea-sign.outputs.windows_sha256 }}
           WINDOWS_CODE_SIGNING_PFX_B64: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 }}
           WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD }}
           WINDOWS_CODE_SIGNING_THUMBPRINT: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_THUMBPRINT }}
           WINDOWS_TIMESTAMP_SERVER: ${{ vars.AIDR_WINDOWS_TIMESTAMP_SERVER }}
           SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
           SIGNING_PUBLIC_KEY_FINGERPRINT: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT }}
+          CATALOG_PUBLIC_KEY: ${{ vars.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM || secrets.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM }}
           RC_VERSION: ${{ needs.build-rc.outputs.version }}
         run: |
           $ErrorActionPreference = "Stop"
@@ -1738,14 +1927,19 @@ jobs:
           if ($thumbprint -cnotmatch '^[0-9A-F]{40}$' -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_B64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD)) { throw "Protected Windows signing certificate, password and thumbprint are required; no unsigned MSI is published" }
           $timestampUri = $null
           if (-not [Uri]::TryCreate($timestamp, [UriKind]::Absolute, [ref]$timestampUri) -or $timestampUri.Scheme -cne 'https' -or $timestampUri.UserInfo -or $timestampUri.Query -or $timestampUri.Fragment) { throw "An approved protected HTTPS timestamp server is required" }
-          $archive = Join-Path $env:RUNNER_TEMP "sea-unsigned/aidr-sea-windows-unsigned.tgz"
-          if ($env:EXPECTED_ARCHIVE_SHA256 -notmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:EXPECTED_ARCHIVE_SHA256) { throw "Unsigned SEA archive hash mismatch" }
+          $archive = Join-Path $env:RUNNER_TEMP "sea-signed/aidr-sea-windows-signed.tgz"
+          if ($env:EXPECTED_ARCHIVE_SHA256 -notmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:EXPECTED_ARCHIVE_SHA256) { throw "Signed SEA archive hash mismatch" }
           $sea = Join-Path $env:RUNNER_TEMP "aidr-sea"
           New-Item -ItemType Directory -Path $sea | Out-Null
           & tar -xzf $archive -C $sea
           if ($LASTEXITCODE -ne 0) { throw "SEA extraction failed" }
           $trustKey = Join-Path $env:RUNNER_TEMP "release-public.pem"
           Set-Content -LiteralPath $trustKey -Value $env:SIGNING_PUBLIC_KEY -NoNewline
+          $catalogKey = ''
+          if (-not [string]::IsNullOrWhiteSpace($env:CATALOG_PUBLIC_KEY)) {
+            $catalogKey = Join-Path $env:RUNNER_TEMP "installer-catalog-public.pem"
+            Set-Content -LiteralPath $catalogKey -Value $env:CATALOG_PUBLIC_KEY -NoNewline
+          }
           $out = Join-Path $env:RUNNER_TEMP "installers-windows"
           $certificatePath = "Cert:\CurrentUser\My\$thumbprint"
           if (Test-Path -LiteralPath $certificatePath) { throw "Signing certificate already exists; refusing to replace runner custody" }
@@ -1779,7 +1973,7 @@ jobs:
             $imported = Test-Path -LiteralPath $certificatePath
             if ($importedCertificates.Count -ne 1 -or $importedCertificates[0].Thumbprint -cne $thumbprint -or -not $imported) { throw "Runner certificate import did not preserve the approved identity" }
             Remove-Item -LiteralPath $pfxPath -Force
-            & ./deploy/installers/windows/build-msi.ps1 -SeaDir $sea -TrustKey $trustKey -TrustKeyFingerprint $env:SIGNING_PUBLIC_KEY_FINGERPRINT -Version $env:RC_VERSION -OutDir $out -SignThumbprint $thumbprint -TimestampServer $timestamp
+            & ./deploy/installers/windows/build-msi.ps1 -SeaDir $sea -TrustKey $trustKey -TrustKeyFingerprint $env:SIGNING_PUBLIC_KEY_FINGERPRINT -Version $env:RC_VERSION -OutDir $out -SignThumbprint $thumbprint -TimestampServer $timestamp -CatalogKey $catalogKey
           } finally {
             $passwordText = $null
             Remove-Item Env:WINDOWS_CODE_SIGNING_PFX_B64, Env:WINDOWS_CODE_SIGNING_PFX_PASSWORD -ErrorAction SilentlyContinue
@@ -1791,7 +1985,7 @@ jobs:
           }
           $msis = @(Get-ChildItem -LiteralPath $out -Filter *.msi)
           if ($msis.Count -ne 1 -or $msis[0].Name -match 'UNSIGNED') { throw "Exactly one signed MSI is expected" }
-          Copy-Item (Join-Path $sea "aidr-artifact.manifest.json") (Join-Path $out "sea-manifest-windows-x64.unsigned-binaries.json")
+          Copy-Item (Join-Path $sea "aidr-artifact.manifest.json") (Join-Path $out "sea-manifest-windows-x64.before-authenticode.json")
           $lines = foreach ($msi in $msis) { "$((Get-FileHash -Algorithm SHA256 -LiteralPath $msi.FullName).Hash.ToLowerInvariant())  $($msi.Name)" }
           [System.IO.File]::WriteAllText((Join-Path $out "SHA256SUMS"), (($lines -join "`n") + "`n"))
 

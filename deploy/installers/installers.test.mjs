@@ -1,8 +1,10 @@
 // Desktop installer builders: input contracts, the Linux package layout and
 // the maintainer-hook behaviour, run against temporary roots and fake homes.
-// The bundle here is a small stand-in SEA directory (the real one is ~900 MB);
-// its `aidr` is a shell script that records how it was called, so the tests
-// prove WHO the hook runs setup/uninstall for, never touching a real HOME.
+// The bundle here is a small stand-in for the release-flavour SEA directory
+// (the real one is one ~120 MB multi-call binary plus rules), signed with a
+// test release key; its `aidr` is a shell script that records how it was
+// called, so the tests prove WHO the hook runs setup/uninstall for, never
+// touching a real HOME.
 //
 //   node --test deploy/installers/installers.test.mjs
 
@@ -23,7 +25,11 @@ import {
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { writeDistributionManifest } from "../../packages/claude-code/scripts/build-sea.mjs";
+import {
+	signDistribution,
+	writeDistributionManifest,
+	writeRuntimeManifest,
+} from "../../packages/claude-code/scripts/build-sea.mjs";
 import { checkSeaBundle, checkTrustKey, checkVersion, InstallerInputError } from "./lib/common.mjs";
 import {
 	buildLinuxPackages,
@@ -61,22 +67,28 @@ function trustKey() {
 const FAKE_AIDR = `#!/bin/sh
 printf '%s HOME=%s OP=%s %s\\n' "$(id -u)" "$HOME" "\${AIDR_OPERATOR_NONINTERACTIVE:-}" "$*" >> "$HOME/aidr-calls.log"
 [ "$1" != "--version" ] || echo 0.0.0-test
+[ "$1" != "setup" ] || exit "\${FAKE_AIDR_SETUP_EXIT:-0}"
 exit 0
 `;
 
-function fakeSeaBundle({ platform = "linux", arch = "x64" } = {}) {
+/** The release key every fake bundle is signed with (tests pass its public half as the trust key). */
+const releaseKey = trustKey();
+
+function fakeSeaBundle({ platform = "linux", arch = "x64", flavor = "release", key = releaseKey } = {}) {
 	const dir = tempDir(`sea-${platform}`);
 	const exe = platform === "win32" ? ".exe" : "";
 	for (const sub of ["bin", "dist/resources/threats", "dist/resources/allowlists"]) mkdirSync(join(dir, sub), { recursive: true });
 	writeFileSync(join(dir, "dist/resources/threats/rules.yaml"), "- id: TEST-1\n");
 	writeFileSync(join(dir, "dist/resources/allowlists/domains.yaml"), "domains: []\n");
 	writeFileSync(join(dir, "dist/response-worker.cjs"), "");
-	for (const name of ["aidr", "aidr-pre-tool-use", "aidr-post-tool-use", "aidr-session-start", "aidr-user-prompt-submit", "aidr-health", "aidr-mcp-server"]) {
-		writeFileSync(join(dir, "bin", `${name}${exe}`), name === "aidr" ? FAKE_AIDR : "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-	}
-	writeDistributionManifest(dir, { version: "0.6.0", platform, arch, nodeVersion: "v22.0.0", createdAt: "2026-01-01T00:00:00.000Z" });
+	writeFileSync(join(dir, "bin", `aidr${exe}`), FAKE_AIDR, { mode: 0o755 });
+	const createdAt = "2026-01-01T00:00:00.000Z";
+	writeRuntimeManifest(dir, { version: "0.6.0", createdAt });
+	writeDistributionManifest(dir, { version: "0.6.0", platform, arch, nodeVersion: "v22.0.0", flavor, createdAt });
+	if (key) signDistribution(dir, { privateKeyPem: readFileSync(key.privatePath, "utf8") });
 	return dir;
 }
+const releasePem = () => readFileSync(releaseKey.path, "utf8");
 
 describe("installer inputs", () => {
 	test("the trust key must be the Ed25519 public key with the expected fingerprint", () => {
@@ -99,21 +111,35 @@ describe("installer inputs", () => {
 	});
 
 	test("a tampered, foreign-platform or incomplete SEA bundle is refused", () => {
+		const trustKeyPem = releasePem();
 		const linux = fakeSeaBundle();
-		assert.equal(checkSeaBundle(linux, { platform: "linux" }).artifact_id, "claude-code/sea");
-		assert.throws(() => checkSeaBundle(linux, { platform: "win32" }), /built for linux, not win32/);
-		writeFileSync(join(linux, "bin", "aidr-pre-tool-use"), "tampered");
-		assert.throws(() => checkSeaBundle(linux, { platform: "linux" }), /does not match its manifest digest/);
+		assert.equal(checkSeaBundle(linux, { platform: "linux", trustKeyPem }).artifact_id, "claude-code/sea");
+		assert.throws(() => checkSeaBundle(linux, { platform: "win32", trustKeyPem }), /built for linux, not win32/);
+		writeFileSync(join(linux, "bin", "aidr"), "tampered");
+		assert.throws(() => checkSeaBundle(linux, { platform: "linux", trustKeyPem }), /does not match its manifest digest/);
 		const incomplete = fakeSeaBundle();
 		rmSync(join(incomplete, "bin", "aidr"));
-		writeDistributionManifest(incomplete, { version: "0.6.0", platform: "linux", arch: "x64" });
-		assert.throws(() => checkSeaBundle(incomplete, { platform: "linux" }), /lacks bin\/aidr/);
+		writeDistributionManifest(incomplete, { version: "0.6.0", platform: "linux", arch: "x64", flavor: "release" });
+		assert.throws(() => checkSeaBundle(incomplete, { platform: "linux", trustKeyPem }), /bin\/aidr/);
+	});
+
+	test("only a release-flavour bundle signed by the embedded release key is packaged", () => {
+		const trustKeyPem = releasePem();
+		assert.throws(() => checkSeaBundle(fakeSeaBundle({ flavor: "development" }), { platform: "linux", trustKeyPem }), /development-flavour build; installers ship the release flavour/);
+		assert.throws(() => checkSeaBundle(fakeSeaBundle({ key: null }), { platform: "linux", trustKeyPem }), /not signed by the release key[\s\S]*is not signed/);
+		assert.throws(() => checkSeaBundle(fakeSeaBundle({ key: trustKey() }), { platform: "linux", trustKeyPem }), /signature does not verify against the release key/);
+		const key = trustKey();
+		const out = tempDir("out-unsigned");
+		assert.throws(
+			() => buildLinuxPackages({ seaDir: fakeSeaBundle(), trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0", out, formats: "tar" }),
+			/not signed by the release key/,
+		);
 	});
 });
 
 describe("Windows MSI inputs", () => {
 	test("derive the MSI variables from a verified win32 bundle and mark unsigned builds", () => {
-		const key = trustKey();
+		const key = releaseKey;
 		const sea = fakeSeaBundle({ platform: "win32" });
 		const signed = msiInputs({ seaDir: sea, trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0-rc.3", signing: "signed" });
 		assert.equal(signed.productVersion, "0.6.0");
@@ -161,7 +187,7 @@ describe("Linux packages", () => {
 	});
 
 	test("the .deb carries the bundle, the trust key and the aidr link", { skip: !have("dpkg-deb") && "dpkg-deb not installed" }, () => {
-		const key = trustKey();
+		const key = releaseKey;
 		const sea = fakeSeaBundle();
 		const out = tempDir("out");
 		const { files, sums } = buildLinuxPackages({ seaDir: sea, trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0-rc.1", out, formats: "deb,tar" });
@@ -173,7 +199,7 @@ describe("Linux packages", () => {
 		assert.equal(spawnSync("dpkg-deb", ["-x", deb, root]).status, 0);
 		const prefix = join(root, "opt/singularity-aidr");
 		assert.deepEqual(readFileSync(join(prefix, "bundle/aidr-artifact.manifest.json")), readFileSync(join(sea, "aidr-artifact.manifest.json")));
-		assert.deepEqual(checkSeaBundle(join(prefix, "bundle"), { platform: "linux" }).files.length > 0, true);
+		assert.deepEqual(checkSeaBundle(join(prefix, "bundle"), { platform: "linux", trustKeyPem: releasePem() }).files.length > 0, true);
 		assert.equal(readFileSync(join(prefix, "config/release-public.pem"), "utf8"), readFileSync(key.path, "utf8"));
 		assert.equal(statSync(join(prefix, "bundle/bin/aidr")).mode & 0o777, 0o755);
 		assert.equal(statSync(join(prefix, "config/release-public.pem")).mode & 0o777, 0o644);
@@ -215,6 +241,19 @@ describe("Linux packages", () => {
 			assert.notEqual(uid, "0");
 		});
 
+		test("postinstall tells 'no AI tool yet' apart from a failed setup, and the install succeeds either way", { skip: !canSwitch && "runuser not available" }, () => {
+			const none = hook(["postinstall"], { SUDO_USER: invoker, FAKE_AIDR_SETUP_EXIT: "3" });
+			assert.equal(none.status, 0);
+			assert.match(none.stdout, /No AI tool .* was found for .* yet/);
+			assert.match(none.stdout, /runs once: aidr setup/);
+			assert.doesNotMatch(`${none.stdout}${none.stderr}`, /did not finish/);
+			const failed = hook(["postinstall"], { SUDO_USER: invoker, FAKE_AIDR_SETUP_EXIT: "1" });
+			assert.equal(failed.status, 0);
+			assert.match(failed.stderr, /setup did not finish for/);
+			const ok = hook(["postinstall"], { SUDO_USER: invoker });
+			assert.match(ok.stdout, /done\. Restart your AI tools/);
+		});
+
 		test("postinstall never runs setup as root or without an invoking user; it prints the command", () => {
 			for (const env of [{}, { SUDO_USER: "root" }, { SUDO_USER: "no-such-user-aidr" }, { SUDO_USER: "a;b" }]) {
 				const run = hook(["postinstall"], env);
@@ -251,8 +290,29 @@ describe("Linux packages", () => {
 		});
 	});
 
+	test("an optional `aidr update` catalog key is validated and placed next to the release key", () => {
+		const catalog = trustKey();
+		const out = tempDir("catalog-out");
+		const base = { seaDir: fakeSeaBundle(), trustKey: releaseKey.path, trustKeyFingerprint: releaseKey.fingerprint, version: "0.6.0", formats: "tar" };
+		assert.throws(() => buildLinuxPackages({ ...base, out, catalogKey: catalog.privatePath }), /catalog key file contains a private key/);
+		const { files } = buildLinuxPackages({ ...base, out, catalogKey: catalog.path });
+		const unpack = tempDir("catalog-x");
+		assert.equal(spawnSync("tar", ["-xzf", files[0], "-C", unpack]).status, 0);
+		const placed = join(unpack, "singularity-aidr-0.6.0-linux-x64", "config", "installer-catalog-public.pem");
+		assert.equal(readFileSync(placed, "utf8"), readFileSync(catalog.path, "utf8"));
+		const without = buildLinuxPackages({ ...base, out: tempDir("catalog-none") });
+		const bare = tempDir("catalog-none-x");
+		assert.equal(spawnSync("tar", ["-xzf", without.files[0], "-C", bare]).status, 0);
+		assert.ok(!existsSync(join(bare, "singularity-aidr-0.6.0-linux-x64", "config", "installer-catalog-public.pem")));
+		const msi = msiInputs({ seaDir: fakeSeaBundle({ platform: "win32" }), trustKey: releaseKey.path, trustKeyFingerprint: releaseKey.fingerprint, version: "0.6.0", signing: "signed", catalogKey: catalog.path });
+		assert.equal(msi.hasCatalogKey, "1");
+		assert.equal(msi.catalogKeyFingerprint, catalog.fingerprint);
+		const wxs = readFileSync(new URL("./windows/aidr.wxs", import.meta.url), "utf8");
+		assert.match(wxs, /<\?if \$\(var\.HasCatalogKey\) = 1 \?>[\s\S]*Name="installer-catalog-public\.pem"/);
+	});
+
 	test("the tarball installs into a prefix, links aidr and uninstalls cleanly", () => {
-		const key = trustKey();
+		const key = releaseKey;
 		const out = tempDir("tar-out");
 		const { files } = buildLinuxPackages({ seaDir: fakeSeaBundle(), trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0", out, formats: "tar" });
 		const tarball = files[0];

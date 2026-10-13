@@ -159,7 +159,7 @@ describe("aidr setup connector install", () => {
 		expect(progress).toContain("! No supported AI tool found in this home directory");
 		expect(progress).not.toMatch(/✓ No supported/);
 		expect(stdout.join("\n")).not.toContain("✅");
-		expect(process.exitCode).toBe(1);
+		expect(process.exitCode).toBe(3); // distinct from a failure: no AI tool to protect yet (installers read it)
 	});
 
 	it("reports a partly protected machine as not complete", async () => {

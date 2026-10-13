@@ -95,6 +95,10 @@ program
 	)
 	.option("--cursor-vsix <file>", "Verified aidr-cursor.vsix to install into Cursor")
 	.option("--vscode-vsix <file>", "Verified aidr-vscode.vsix to install into VS Code")
+	.option(
+		"--release-key <file>",
+		"Release public key (Ed25519 PEM) for a manual install; the desktop installers set it up themselves",
+	)
 	.option("-y, --yes", "With AIDR_OPERATOR_NONINTERACTIVE=1, confirm --force without a prompt")
 	.action((options) => setupCommand(options));
 

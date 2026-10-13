@@ -21,11 +21,14 @@ import {
 } from "./connector-status.js";
 import { MANAGED_HOOK_MARKER } from "./install-hooks.js";
 import {
-	canaryCommand,
-	runHookCommand,
+	type HookProbe,
+	probeHookCommand,
 	STANDALONE_CLAUDE_HOOKS,
+	STANDALONE_CODEX_HOOK,
 	STANDALONE_INSTALL_KIND,
-	standaloneBinary,
+	type StandaloneBundleCheck,
+	standaloneExtension,
+	standaloneHookCommand,
 	verifyStandaloneBundle,
 } from "./standalone.js";
 
@@ -85,9 +88,17 @@ export interface ConnectorDeps {
 	/**
 	 * Root of the standalone (SEA) bundle `aidr` runs from (desktop installers).
 	 * With it, Claude Code gets the bundle's hook binaries registered directly;
-	 * without it Claude Code needs a verified plugin directory.
+	 * without it Claude Code needs a verified plugin directory. Codex gets the
+	 * bundle's Codex hook, and Cursor / VS Code the VSIXs the bundle ships.
 	 */
 	standaloneRoot?: string;
+	/**
+	 * Release public keys (PEM) the bundle's signatures must verify against:
+	 * the `integrity.public_keys_pem` the hooks will trust once registered.
+	 */
+	releaseKeys?: readonly string[];
+	/** A release (commercial) bundle: its runtime manifest must be signed by a trusted key. */
+	requireSignedBundle?: boolean;
 }
 
 type HostInstallAction =
@@ -300,6 +311,30 @@ function result(
 	return { host, label, action, detail, changes, followUp, state };
 }
 
+/** One verification of the standalone bundle per install run, shared by every host. */
+const bundleChecks = new WeakMap<ConnectorDeps, StandaloneBundleCheck>();
+function standaloneBundle(deps: ConnectorDeps): StandaloneBundleCheck {
+	const cached = bundleChecks.get(deps);
+	if (cached) return cached;
+	const check = verifyStandaloneBundle(deps.standaloneRoot as string, {
+		trustKeys: deps.releaseKeys ?? [],
+		requireSignature: deps.requireSignedBundle === true,
+	});
+	bundleChecks.set(deps, check);
+	return check;
+}
+
+function bundleFailure(deps: ConnectorDeps, check: StandaloneBundleCheck): string {
+	return `the installed AIDR bundle at ${deps.standaloneRoot} failed verification: ${check.problems.slice(0, 3).join("; ")}. Reinstall it.`;
+}
+
+/** Why a canary probe failed, in one sentence. */
+function probeFailure(probe: { canary: HookProbe; benign: HookProbe | null }): string {
+	return probe.benign === null
+		? `returned ${probe.canary.decision} for the deny canary (${probe.canary.detail})`
+		: `denied the harmless 'ls' as well (${probe.benign.detail})`;
+}
+
 function summarizeFailure(outcome: ReturnType<HostCommandRunner>): string {
 	if (outcome.error) return outcome.error.message;
 	const text = `${outcome.stderr ?? ""}\n${outcome.stdout ?? ""}`
@@ -346,17 +381,47 @@ function stripCodexHooks(hooks: Record<string, unknown>): {
 	return { hooks: next, removed };
 }
 
-function codexDesiredHooks(existing: Record<string, unknown>): Record<string, unknown> {
+function codexDesiredHooks(
+	existing: Record<string, unknown>,
+	command: string,
+): Record<string, unknown> {
 	const { hooks } = stripCodexHooks(existing);
 	for (const { event, matcher } of CODEX_HOOK_EVENTS) {
 		const entries = Array.isArray(hooks[event]) ? [...(hooks[event] as unknown[])] : [];
 		entries.push({
 			...(matcher ? { matcher } : {}),
-			hooks: [{ type: "command", command: AIDR_CODEX_HOOK, timeout: 10 }],
+			hooks: [{ type: "command", command, timeout: 10 }],
 		});
 		hooks[event] = entries;
 	}
 	return hooks;
+}
+
+/** A Codex PreToolUse payload for a shell command (the fields Codex always sends). */
+function codexPayload(cwd: string): (shellCommand: string) => Record<string, unknown> {
+	return (shellCommand) => ({
+		session_id: "aidr-setup-canary",
+		turn_id: "aidr-setup-canary",
+		hook_event_name: "PreToolUse",
+		cwd,
+		model: "aidr-setup",
+		permission_mode: "default",
+		transcript_path: null,
+		tool_name: "Bash",
+		tool_use_id: "aidr-setup-canary-call",
+		tool_input: { command: shellCommand },
+	});
+}
+
+/** A Claude Code PreToolUse payload for a shell command. */
+function claudePayload(cwd: string): (shellCommand: string) => Record<string, unknown> {
+	return (shellCommand) => ({
+		hook_event_name: "PreToolUse",
+		session_id: "aidr-setup-canary",
+		cwd,
+		tool_name: "Bash",
+		tool_input: { command: shellCommand },
+	});
 }
 
 function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
@@ -396,7 +461,16 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			before.state,
 		);
 	}
-	const desired = { ...document.value, hooks: codexDesiredHooks(existingHooks ?? {}) };
+	// From the standalone bundle the hook is the bundle's binary
+	// (`"<bundle>/bin/aidr" hook aidr-codex-hook`); otherwise the npm bin on PATH.
+	const root = deps.standaloneRoot;
+	const command = root ? standaloneHookCommand(root, STANDALONE_CODEX_HOOK) : AIDR_CODEX_HOOK;
+	if (root) {
+		const bundle = standaloneBundle(deps);
+		if (!bundle.ok)
+			return result("codex", label, "failed", bundleFailure(deps, bundle), before.state);
+	}
+	const desired = { ...document.value, hooks: codexDesiredHooks(existingHooks ?? {}, command) };
 	const trust = [
 		"  Codex: review and trust the three AIDR hooks with /hooks. Codex drops an untrusted",
 		"         hook silently (fails open), so protection starts only after trust.",
@@ -412,7 +486,7 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			trust,
 		);
 	}
-	const binary = findExecutable(AIDR_CODEX_HOOK, hostEnv(deps));
+	const binary = root ? command : findExecutable(AIDR_CODEX_HOOK, hostEnv(deps));
 	if (!binary) {
 		return result(
 			"codex",
@@ -437,6 +511,23 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			[],
 			trust,
 		);
+	}
+	if (root) {
+		// The canary is data on the hook's stdin; nothing is executed.
+		const probe = probeHookCommand(command, codexPayload(deps.home), {
+			home: deps.home,
+			cwd: deps.home,
+			env: deps.env,
+		});
+		if (!probe.ok) {
+			return result(
+				"codex",
+				label,
+				"failed",
+				`the bundle's Codex hook ${probeFailure(probe)}; registration unchanged.`,
+				before.state,
+			);
+		}
 	}
 	try {
 		const changes = writeJsonWithBackup(path, desired, document.raw, deps, "setup");
@@ -654,13 +745,24 @@ function installEditor(
 	host: "cursor" | "vscode",
 	deps: ConnectorDeps,
 	dryRun: boolean,
-	vsix: string | undefined,
+	operatorVsix: string | undefined,
 ): HostInstallResult {
 	const label = host === "cursor" ? "Cursor" : "VS Code";
 	const before = measure(deps, host);
 	const artifact = host === "cursor" ? "aidr-cursor.vsix" : "aidr-vscode.vsix";
 	const cliName = EDITOR_CLIS[host];
 	const enable = `  ${label}: run 'Singularity AIDR: Enable protection' from the command palette.`;
+	// The installer's own VSIX, used only once the signed bundle that lists it
+	// verified; an operator-supplied --<host>-vsix always wins (and was confirmed).
+	const bundled =
+		!operatorVsix && deps.standaloneRoot
+			? standaloneExtension(deps.standaloneRoot, artifact)
+			: null;
+	if (bundled) {
+		const bundle = standaloneBundle(deps);
+		if (!bundle.ok) return result(host, label, "failed", bundleFailure(deps, bundle), before.state);
+	}
+	const vsix = operatorVsix ?? bundled ?? undefined;
 	if (!vsix) {
 		return before.state === "installed"
 			? result(
@@ -837,14 +939,6 @@ function installClaude(
 
 // ── Claude Code from the standalone (SEA) bundle ─────────────────────
 
-/** Quote a hook binary path the way `scripts/endpoint-install.mjs` does. */
-function quoteHookPath(path: string): string {
-	if (/["`$%\r\n]/u.test(path)) {
-		throw new Error(`the bundle path ${path} contains characters a hook command cannot carry`);
-	}
-	return `"${path.replaceAll("\\", "/")}"`;
-}
-
 /** Settings with every AIDR-marked hook replaced by the standalone bundle's hooks. */
 function standaloneClaudeSettings(
 	settings: Record<string, unknown>,
@@ -854,7 +948,7 @@ function standaloneClaudeSettings(
 		throw new Error("~/.claude/settings.json has a 'hooks' value that is not an object");
 	}
 	const hooks: Record<string, unknown> = { ...((settings.hooks as Record<string, unknown>) ?? {}) };
-	for (const { event, binary, timeout } of STANDALONE_CLAUDE_HOOKS) {
+	for (const { event, hook: name, timeout } of STANDALONE_CLAUDE_HOOKS) {
 		const current = hooks[event] ?? [];
 		if (!Array.isArray(current)) {
 			throw new Error(`~/.claude/settings.json: ${event} is not an array`);
@@ -872,7 +966,7 @@ function standaloneClaudeSettings(
 			hooks: [
 				{
 					type: "command",
-					command: quoteHookPath(standaloneBinary(root, binary)),
+					command: standaloneHookCommand(root, name),
 					timeout,
 					statusMessage: MANAGED_HOOK_MARKER,
 				},
@@ -930,15 +1024,9 @@ function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInst
 			before.state,
 		);
 	}
-	const bundle = verifyStandaloneBundle(root);
+	const bundle = standaloneBundle(deps);
 	if (!bundle.ok || !bundle.manifestSha256) {
-		return result(
-			"claude-code",
-			label,
-			"failed",
-			`the installed AIDR bundle at ${root} failed verification: ${bundle.problems.slice(0, 3).join("; ")}. Reinstall it.`,
-			before.state,
-		);
+		return result("claude-code", label, "failed", bundleFailure(deps, bundle), before.state);
 	}
 	let desired: Record<string, unknown>;
 	try {
@@ -973,28 +1061,24 @@ function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInst
 			"claude-code",
 			label,
 			update ? "would_update" : "would_install",
-			`would register the hook binaries of ${root} in ${settingsPath}.`,
+			`would register the hooks of ${root} in ${settingsPath}.`,
 			before.state,
 		);
 	}
-	// The canary is data on the hook's stdin; nothing is executed.
-	const canary = runHookCommand(
-		quoteHookPath(standaloneBinary(root, "aidr-pre-tool-use")),
-		{
-			hook_event_name: "PreToolUse",
-			session_id: "aidr-setup-canary",
-			cwd: deps.home,
-			tool_name: "Bash",
-			tool_input: { command: canaryCommand() },
-		},
+	// The canary is data on the hook's stdin; nothing is executed. Its benign
+	// twin must pass too: a hook that blocks everything (e.g. a release hook
+	// that cannot verify its files) is not a working installation.
+	const probe = probeHookCommand(
+		standaloneHookCommand(root, "pre-tool-use"),
+		claudePayload(deps.home),
 		{ home: deps.home, cwd: deps.home, env: deps.env },
 	);
-	if (canary.decision !== "deny") {
+	if (!probe.ok) {
 		return result(
 			"claude-code",
 			label,
 			"failed",
-			`the bundle's PreToolUse hook returned ${canary.decision} for the deny canary (${canary.detail}); registration unchanged.`,
+			`the bundle's PreToolUse hook ${probeFailure(probe)}; registration unchanged.`,
 			before.state,
 		);
 	}

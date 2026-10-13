@@ -84,6 +84,8 @@ export const tr: Record<MessageKey, string> = {
 	"hook.malformed.message":
 		"Singularity AIDR bu komutu engelledi: komut bozuk (metin ya da argv değil veya NUL ya da geçersiz UTF-8 metin içeriyor) ve güvenilir biçimde incelenemez.",
 	"hook.malformed.reason": "Singularity AIDR: bozuk komut",
+	"hook.releaseKeyMissing.message":
+		"Singularity AIDR bu araç çağrısını engelledi: kurulu dosyalarının orijinal olduğunu kanıtlayan sürüm anahtarı ayarlanmamış, bu yüzden kendi kurallarına güvenemiyor. Anahtar ayarlanana kadar her araç çağrısı engellenir. Bir kez 'aidr setup' çalıştırın (elle kurulumda 'aidr setup --release-key <dosya.pem>').",
 	"hook.redacted":
 		"🛡️ Singularity AIDR bu araç çağrısı çalışmadan önce içindeki hassas verileri maskeledi. {reason}",
 	"hook.sessionScanTimeout":

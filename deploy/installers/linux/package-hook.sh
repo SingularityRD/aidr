@@ -87,12 +87,23 @@ postinstall)
 		exit 0
 	fi
 	say "running 'aidr setup' for $user ($home)"
-	if run_as "$user" "$home" "$AIDR" setup; then
+	# aidr setup exits 3 when it found no supported AI tool to protect yet:
+	# that is not a failure, and the package install still succeeds.
+	run_as "$user" "$home" "$AIDR" setup
+	rc=$?
+	case "$rc" in
+	0)
 		run_as "$user" "$home" "$AIDR" status >/dev/null 2>&1 || true
 		say "done. Restart your AI tools, then run: aidr status && aidr verify"
-	else
-		say "setup did not finish for $user. Run as $user: aidr setup" >&2
-	fi
+		;;
+	3)
+		say "installed. No AI tool (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw) was found for $user yet."
+		say "after installing one, $user runs once: aidr setup"
+		;;
+	*)
+		say "setup did not finish for $user (see the lines above). Run as $user: aidr setup" >&2
+		;;
+	esac
 	exit 0
 	;;
 preremove)

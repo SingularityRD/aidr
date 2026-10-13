@@ -31,6 +31,7 @@ import {
 	createLogger,
 	exitAfterStdoutFlush,
 	HOOK_HOST_TIMEOUT_MS,
+	isReleaseKeyMissing,
 	isValidUtf8,
 	isWellFormedToolCall,
 	type Logger,
@@ -38,6 +39,7 @@ import {
 	readBoundedStdinAsync,
 	recordHostObservation,
 	resolveHookDeadlineMs,
+	t,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { assetOverrideNotice, resolveAssetDir } from "./assets.js";
@@ -340,9 +342,11 @@ main()
 		const integrityFailure =
 			error instanceof Error &&
 			(error instanceof ArtifactIntegrityError || error.name === "ArtifactIntegrityError");
-		const reason = integrityFailure
-			? `${DENY_HEADLINE}\n${(error as Error).message}; this tool call was blocked.`
-			: `${DENY_HEADLINE}\nSingularity AIDR failed to start, so the tool call was blocked.`;
+		const reason = isReleaseKeyMissing(error)
+			? `${DENY_HEADLINE}\n${t("hook.releaseKeyMissing.message")}`
+			: integrityFailure
+				? `${DENY_HEADLINE}\n${(error as Error).message}; this tool call was blocked.`
+				: `${DENY_HEADLINE}\nSingularity AIDR failed to start, so the tool call was blocked.`;
 		blockUnconditionally(reason);
 	})
 	.finally(() => {

@@ -83,6 +83,8 @@ export const en = {
 	"hook.malformed.message":
 		"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.",
 	"hook.malformed.reason": "Singularity AIDR malformed command",
+	"hook.releaseKeyMissing.message":
+		"Singularity AIDR blocked this tool call: the release key that proves its installed files are genuine is not set up, so it cannot trust its own rules. Every tool call is blocked until it is. Run 'aidr setup' once (or 'aidr setup --release-key <file.pem>' for a manual install).",
 	"hook.redacted":
 		"🛡️ Singularity AIDR redacted sensitive data from this tool call before it ran. {reason}",
 	"hook.sessionScanTimeout":

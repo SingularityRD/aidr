@@ -3,10 +3,11 @@
 [English](desktop-installers.md)
 
 Masaüstü yükleyicileri AIDR'yi bir iş istasyonuna kendi kendine yeterli olarak
-kurar: Node.js ya da paket deposu gerekmez. Her yükleyici `pnpm build:sea` ile
-üretilen bağımsız paketi (`aidr` komut satırı aracı ve Claude Code hook
-çalıştırılabilirleri, yanlarında tehdit kurallarıyla) ve sürüm güven açık
-anahtarını içerir; ardından oturum açmış kullanıcı için `aidr setup` çalıştırır.
+kurar: Node.js ya da paket deposu gerekmez. Her yükleyici bağımsız paketin
+sürüm derlemesini (hem komut satırı aracı hem her hook olan tek bir `aidr`
+programı, yanında tehdit kuralları, Cursor ve VS Code eklentileri; hepsi sürüm
+anahtarıyla imzalı bildirim dosyalarında listelenir) ve sürüm ortak anahtarını
+içerir; ardından oturum açmış kullanıcı için `aidr setup` çalıştırır.
 
 | İşletim sistemi | Dosya | Kurulum konumu |
 |---|---|---|
@@ -30,18 +31,40 @@ belgesindeki bağlayıcı paketlerini kullanın.
 `aidr setup`, kurulumu yapan kullanıcı için çalışır (`root` ya da
 `LocalSystem` için asla) ve:
 
-- **Claude Code** — paketin hook çalıştırılabilirlerini `~/.claude/settings.json`
-  dosyasına kaydeder (yalnızca AIDR işaretli girdiler değişir; sizin hook'larınız
-  kalır). Öncesinde paketteki her dosyayı bildirim dosyasıyla karşılaştırır ve
-  PreToolUse çalıştırılabilirinden zararsız bir engelleme canary'si geçirir;
-  biri başarısız olursa hiçbir şey kaydetmez. Etkin bir AIDR Claude Code
-  eklentisine dokunulmaz.
+- **Sürüm anahtarı** — yükleyicinin `config/release-public.pem` dosyasına
+  koyduğu sürüm ortak anahtarını `~/.singularity-aidr/config.json` içindeki
+  `integrity.public_keys_pem` alanına kopyalar ve parmak izini yazdırır. Sürüm
+  derlemesi kendi kurallarına ancak bu anahtar ayarlandıktan sonra güvenir; o
+  zamana kadar her araç çağrısı, bunu ve çözümünü söyleyen bir mesajla
+  engellenir. Yöneticinin daha önce ayarladığı farklı bir anahtar korunur
+  (kurulum bunu söyler); `aidr setup --force` operatör onayından sonra onu
+  değiştirir. Elle kurulumda `aidr setup --release-key <dosya.pem>` bir Ed25519
+  ortak anahtarını (PEM) operatör onayından sonra ayarlar ve parmak izini yazdırır.
+- **Claude Code** — `"<paket>/bin/aidr" hook pre-tool-use` (ve `post-tool-use`,
+  `session-start`) komutlarını `~/.claude/settings.json` dosyasına kaydeder
+  (yalnızca AIDR işaretli girdiler değişir; sizin hook'larınız kalır). Öncesinde
+  paketteki her dosyayı ve iki bildirim imzasını sürüm anahtarıyla denetler,
+  hook'tan zararsız bir engelleme canary'si ve zararsız bir `ls` geçirir;
+  canary engellenmez ya da `ls` engellenirse hiçbir şey kaydetmez. Etkin bir
+  AIDR Claude Code eklentisine dokunulmaz.
+- **Codex** — aynı canary denetiminden sonra `"<paket>/bin/aidr" hook
+  aidr-codex-hook` komutunu PreToolUse, UserPromptSubmit ve PostToolUse için
+  `~/.codex/hooks.json` dosyasına kaydeder. Ardından Codex'te `/hooks` ile
+  hook'lara bir kez güvenin.
+- **Cursor, VS Code** — editör kuruluysa yükleyicinin taşıdığı eklentiyi
+  (`bundle/extensions/aidr-cursor.vsix`, `aidr-vscode.vsix`) editörün kendi
+  komut satırıyla kurar. Ardından komut paletinden "Singularity AIDR: Enable
+  protection" komutunu çalıştırın.
 - **OpenCode** — `@singularityrd/aidr-opencode` paketini kaydeder (OpenCode bir
   sonraki açılışta özel depodan kurar).
 - **OpenClaw** — `openclaw` komutu `PATH` üzerindeyse `openclaw plugins install`
   çalıştırır.
-- **Codex, Cursor, VS Code** — pakette yok. `aidr status` gereken adımı tam
-  komutuyla yazdırır (Codex: `aidr-codex-hook` paketi; Cursor/VS Code: imzalı VSIX).
+
+O kullanıcı için henüz desteklenen bir yapay zekâ aracı kurulu değilse kurulum
+hiçbir aracı değiştirmez, 3 koduyla çıkar ve paket yine de kurulur; Linux
+paketi "No AI tool … was found for <kullanıcı> yet" iletisini ve bir araç
+kurduktan sonra çalıştırılacak komutu (`aidr setup`) yazdırır. Sıfırdan farklı
+başka her kod gerçek bir kurulum sorunudur.
 
 ## Hızlı başlangıç
 
@@ -308,13 +331,20 @@ tüm kayıtları korur ve kurulumu yapan kullanıcı için kurulumu yeniden çal
 - **`aidr uninstall`, `receipt_connector_missing` ile reddediyor** — paket
   `aidr uninstall` çalışmadan kaldırılmış; aynı sürümü yeniden kurun,
   `aidr uninstall` çalıştırın, sonra paketi kaldırın.
-- **Yükleyici boyutu** — her yükleyici yaklaşık 200–300 MB'tır: her hook ayrı,
-  kendi kendine yeterli bir çalıştırılabilirdir.
+- **Her araç çağrısı "the release key … is not set up" ile engelleniyor** — o
+  kullanıcı olarak `aidr setup` çalıştırın (yükleyicinin getirdiği anahtarı
+  ayarlar); elle kurulumda `aidr setup --release-key <dosya.pem>`.
+- **Yükleyici boyutu** — komut satırı aracını ve her hook'u tek bir bağımsız
+  program sunar; kurulu paket yaklaşık 150 MB'tır (her hook ayrı programken
+  yaklaşık 900 MB'tı).
 - Kayıtlar: Windows `msiexec /l*v`; Linux paket yöneticisi çıktısı.
 
 ## Yükleyicileri derleme
 
 Komutlar ve gerekli imzalama sırları için İngilizce belgenin
 [Building the installers](desktop-installers.md#building-the-installers)
-bölümüne bakın. Sertifikasız yerel bir MSI `-Unsigned` gerektirir ve adı
+bölümüne bakın. Yükleyiciler yalnızca sürüm anahtarıyla imzalanmış sürüm
+derlemesini paketler; isteğe bağlı katalog anahtarı (`--catalog-key`,
+`-CatalogKey`) `aidr update` için `config/installer-catalog-public.pem` olarak
+kurulur. Sertifikasız yerel bir MSI `-Unsigned` gerektirir ve adı
 `…-UNSIGNED.msi` ile biter; sürüm iş akışı eksik bir sırda başarısız olur.

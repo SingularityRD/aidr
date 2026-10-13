@@ -1013,6 +1013,10 @@ export {
 	type IntegrityCheckResult,
 	type IntegrityMismatch,
 	type IntegrityStatus,
+	isReleaseKeyMissing,
+	runningAsSea,
+	STANDALONE_RUNTIME_ARTIFACT_ID,
+	standaloneRuntimeArtifact,
 	verifyArtifactIntegrity,
 	verifyArtifactIntegrityAndLog,
 } from "./integrity/index.js";

@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// Build the Linux desktop installers (.deb, .rpm and a tarball) from a SEA
-// bundle built on Linux (`pnpm build:sea`). All three carry the same layout:
+// Build the Linux desktop installers (.deb, .rpm and a tarball) from a
+// release-flavour SEA bundle built on Linux and signed with the release key
+// (`build-sea.mjs --flavor release`, then `--sign`). All three carry the same layout:
 //
 //   /opt/singularity-aidr/bundle/...                  the SEA directory, unchanged
+//                                                     (one multi-call bin/aidr)
 //   /opt/singularity-aidr/config/release-public.pem   release trust key
+//   /opt/singularity-aidr/config/installer-catalog-public.pem  `aidr update` catalog key (optional, --catalog-key)
 //   /opt/singularity-aidr/libexec/package-hook.sh     postinstall / preremove
 //   /usr/bin/aidr -> /opt/singularity-aidr/bundle/bin/aidr   (.deb / .rpm)
 //
@@ -11,7 +14,7 @@
 //   node deploy/installers/linux/build-linux-packages.mjs \
 //     --sea-dir bin/aidr-sea --trust-key release-public.pem \
 //     --trust-key-fingerprint <sha256> --version 0.6.0 --out dist-installers \
-//     [--formats deb,rpm,tar] [--maintainer "Name <address>"]
+//     [--formats deb,rpm,tar] [--maintainer "Name <address>"] [--catalog-key catalog-public.pem]
 //
 // .deb needs dpkg-deb and .rpm needs rpmbuild on PATH; a requested format whose
 // tool is missing fails the build. Signing is a separate step (CI signs the
@@ -34,6 +37,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+	CATALOG_KEY_FILE,
+	checkCatalogKey,
 	checkSeaBundle,
 	checkTrustKey,
 	checkVersion,
@@ -81,12 +86,13 @@ function setModes(root) {
  * Stage the file tree every format shares under `<root>`.
  * @returns {{ prefix: string }} the staged prefix directory
  */
-export function stageLinuxRoot({ root, seaDir, trustKeyPem, withUsrBin = true }) {
+export function stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, withUsrBin = true }) {
 	const prefix = join(root, LINUX_PREFIX.slice(1));
 	mkdirSync(join(prefix, "config"), { recursive: true });
 	mkdirSync(join(prefix, "libexec"), { recursive: true });
 	cpSync(seaDir, join(prefix, "bundle"), { recursive: true });
 	writeFileSync(join(prefix, "config", "release-public.pem"), trustKeyPem);
+	if (catalogKeyPem) writeFileSync(join(prefix, "config", CATALOG_KEY_FILE), catalogKeyPem);
 	copyFileSync(PACKAGE_HOOK, join(prefix, "libexec", "package-hook.sh"));
 	setModes(root);
 	if (withUsrBin) {
@@ -147,10 +153,10 @@ function run(command, args, options = {}) {
 	if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited with ${result.status}`);
 }
 
-export function buildDeb({ seaDir, trustKeyPem, version, arch, out, work, maintainer }) {
+export function buildDeb({ seaDir, trustKeyPem, catalogKeyPem, version, arch, out, work, maintainer }) {
 	if (!tool("dpkg-deb")) throw new InstallerInputError("dpkg-deb is required to build the .deb");
 	const root = join(work, "deb-root");
-	stageLinuxRoot({ root, seaDir, trustKeyPem });
+	stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem });
 	mkdirSync(join(root, "DEBIAN"), { mode: 0o755 });
 	writeFileSync(join(root, "DEBIAN", "control"), debControl({ version, arch, maintainer, installedSizeKb: duKb(root) }));
 	writeFileSync(join(root, "DEBIAN", "postinst"), DEB_POSTINST, { mode: 0o755 });
@@ -202,10 +208,10 @@ ${LINUX_PREFIX}
 `;
 }
 
-export function buildRpm({ seaDir, trustKeyPem, version, arch, out, work, maintainer }) {
+export function buildRpm({ seaDir, trustKeyPem, catalogKeyPem, version, arch, out, work, maintainer }) {
 	if (!tool("rpmbuild")) throw new InstallerInputError("rpmbuild is required to build the .rpm");
 	const root = join(work, "rpm-root");
-	stageLinuxRoot({ root, seaDir, trustKeyPem });
+	stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem });
 	const top = join(work, "rpmbuild");
 	for (const dir of ["BUILD", "RPMS", "SOURCES", "SPECS", "SRPMS", "BUILDROOT"]) mkdirSync(join(top, dir), { recursive: true });
 	const spec = join(top, "SPECS", `${PACKAGE_NAME}.spec`);
@@ -244,11 +250,11 @@ rm -rf "$PREFIX/bundle" "$PREFIX/config" "$PREFIX/libexec"
 rmdir "$PREFIX" 2>/dev/null || true
 `;
 
-export function buildTarball({ seaDir, trustKeyPem, version, arch, out, work }) {
+export function buildTarball({ seaDir, trustKeyPem, catalogKeyPem, version, arch, out, work }) {
 	const name = `${PACKAGE_NAME}-${version}-linux-${arch}`;
 	const stage = join(work, "tar-root");
 	const root = join(stage, "staged");
-	const { prefix } = stageLinuxRoot({ root, seaDir, trustKeyPem, withUsrBin: false });
+	const { prefix } = stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, withUsrBin: false });
 	const top = join(stage, name);
 	cpSync(prefix, top, { recursive: true });
 	writeFileSync(join(top, "install.sh"), TAR_INSTALL, { mode: 0o755 });
@@ -280,18 +286,19 @@ export function writeSha256Sums(out, files) {
 export function buildLinuxPackages(options) {
 	const version = checkVersion(options.version);
 	const seaDir = resolve(options.seaDir);
-	const manifest = checkSeaBundle(seaDir, { platform: "linux" });
+	const { pem } = checkTrustKey(options.trustKey, options.trustKeyFingerprint);
+	const manifest = checkSeaBundle(seaDir, { platform: "linux", trustKeyPem: pem });
 	if (manifest.artifact_version !== version.replace(/-.*$/u, "") && manifest.artifact_version !== version) {
 		throw new InstallerInputError(`SEA bundle version ${manifest.artifact_version} does not match ${version}`);
 	}
-	const { pem } = checkTrustKey(options.trustKey, options.trustKeyFingerprint);
 	const formats = (options.formats ?? FORMATS.join(",")).split(",").map((entry) => entry.trim());
 	for (const format of formats) if (!FORMATS.includes(format)) throw new InstallerInputError(`unknown format ${format}`);
 	const names = archNames(manifest.sea.arch);
 	const out = resolve(options.out);
 	mkdirSync(out, { recursive: true });
 	const work = mkdtempSync(join(options.workRoot ?? tmpdir(), "aidr-linux-installers-"));
-	const common = { seaDir, trustKeyPem: pem, version, out, work, maintainer: options.maintainer };
+	const catalogKeyPem = options.catalogKey ? checkCatalogKey(options.catalogKey).pem : undefined;
+	const common = { seaDir, trustKeyPem: pem, catalogKeyPem, version, out, work, maintainer: options.maintainer };
 	try {
 		const files = [];
 		if (formats.includes("deb")) files.push(buildDeb({ ...common, arch: names.deb }));
@@ -306,7 +313,7 @@ export function buildLinuxPackages(options) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
 	try {
-		const flags = parseFlags(process.argv.slice(2), ["sea-dir", "trust-key", "trust-key-fingerprint", "version", "out", "formats", "maintainer"]);
+		const flags = parseFlags(process.argv.slice(2), ["sea-dir", "trust-key", "trust-key-fingerprint", "version", "out", "formats", "maintainer", "catalog-key"]);
 		for (const required of ["sea-dir", "trust-key", "trust-key-fingerprint", "version", "out"]) {
 			if (!flags[required]) throw new InstallerInputError(`--${required} is required`);
 		}
@@ -318,6 +325,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
 			out: flags.out,
 			formats: flags.formats,
 			maintainer: flags.maintainer,
+			catalogKey: flags["catalog-key"],
 		});
 		for (const file of [...files, sums]) console.log(`built ${file}`);
 		console.log("UNSIGNED: sign the packages (rpm --addsign, detached .asc for .deb/.tar.gz) before distribution.");

@@ -204,7 +204,12 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 		["release-rc.yml::Upload immutable RC evidence (pinned)", ["release-output/"]],
 		// Signed desktop installers, their SHA256SUMS (+ .asc) and the SEA manifest they wrap.
 		["release-rc.yml::Upload unsigned Linux installers (pinned)", ["${{ runner.temp }}/installers-linux-unsigned.tgz"]],
+		["release-rc.yml::Upload unsigned Linux SEA bundle (pinned)", ["${{ runner.temp }}/aidr-sea-linux-unsigned.tgz"]],
 		["release-rc.yml::Upload unsigned Windows SEA bundle (pinned)", ["${{ runner.temp }}/aidr-sea-windows-unsigned.tgz"]],
+		["release-rc.yml::Upload signed SEA bundles (pinned)", [
+			"${{ runner.temp }}/aidr-sea-linux-signed.tgz",
+			"${{ runner.temp }}/aidr-sea-windows-signed.tgz",
+		]],
 		["release-rc.yml::Upload Linux installers (pinned)", ["${{ runner.temp }}/installers-linux/"]],
 		["release-rc.yml::Upload Windows installer (pinned)", ["${{ runner.temp }}/installers-windows/"]],
 	]);
@@ -256,43 +261,65 @@ test("broad release-output uploads follow exact signed-bundle verification", () 
 	assert.match(signingTests, /keeps private keys and trust policy outside the signed bundle/);
 });
 
-test("desktop installer jobs build from the verified commit, sign fail-closed in key-only jobs and reach the draft RC only checked", () => {
+test("desktop installer jobs build the release-flavour bundle from the verified commit, sign it in a key-only job and reach the draft RC only checked", () => {
 	const rc = readWorkflow("release-rc.yml");
-	const builds = [job(rc, "installers-linux-build"), job(rc, "installers-windows-build")];
-	const signers = [job(rc, "installers-linux"), job(rc, "installers-windows")];
-	for (const build of builds) {
+	// SEA bundle builds: RC code, no secret of any kind beyond the public key.
+	const seaBuilds = [job(rc, "installers-linux-sea"), job(rc, "installers-windows-build")];
+	for (const build of seaBuilds) {
 		assert.match(build, /needs: build-rc\n/u);
 		assert.match(build, /ref: \$\{\{ needs\.build-rc\.outputs\.sha \}\}/u);
 		assert.match(build, /pnpm install --frozen-lockfile --ignore-scripts/u);
-		assert.match(build, /node packages\/claude-code\/scripts\/build-sea\.mjs --out/u);
+		assert.match(build, /build:release/u);
+		assert.match(build, /node packages\/claude-code\/scripts\/build-sea\.mjs --prebuilt --flavor release --out/u);
 		assert.match(build, /archive_sha256=/u);
-		assert.doesNotMatch(build, /PRIVATE_KEY|PFX|PASSPHRASE/u, "build jobs hold no signing secret");
+		assert.doesNotMatch(build, /PRIVATE_KEY|PFX|PASSPHRASE|secrets\./u, "SEA build jobs hold no secret");
+	}
+	// The release-key signing step sits between the bundle builds and packaging.
+	const sign = job(rc, "installers-sea-sign");
+	assert.match(sign, /needs: \[build-rc, assemble-e2e, installers-linux-sea, installers-windows-build\]/u);
+	assert.doesNotMatch(sign, /pnpm|npm install|npx /u, "the signing job installs no dependencies");
+	assert.match(sign, /secrets\.AIDR_SIGNING_PRIVATE_KEY_PEM/u);
+	assert.match(sign, /no unsigned SEA bundle is packaged/u);
+	assert.ok(sign.indexOf("sha256sum --check --strict") < sign.indexOf('printf \'%s\\n\' "${SIGNING_PRIVATE_KEY}"'), "archive hashes are checked before the key is written");
+	assert.match(sign, /Candidate identity changed across runner boundary/u);
+	assert.match(sign, /is not the recorded candidate artifact/u);
+	assert.match(sign, /build-sea\.mjs --add-extensions[\s\S]*build-sea\.mjs --sign "\$\{sea\}" --key/u);
+	assert.match(sign, /The release key does not match its pinned fingerprint/u);
+	assert.match(sign, /rm -f "\$\{private_path\}"\n\s+# The Linux bundle runs here[\s\S]*--verify "\$\{RUNNER_TEMP\}\/aidr-sea-linux" --public-key/u);
+	// Packaging and the GPG / Authenticode jobs never hold the release private key.
+	const builds = [job(rc, "installers-linux-build")];
+	const signers = [job(rc, "installers-linux"), job(rc, "installers-windows")];
+	for (const installer of [...builds, ...signers]) {
+		assert.doesNotMatch(installer, /secrets\.AIDR_SIGNING_PRIVATE_KEY_PEM/u, "installer jobs never hold the release private key");
 	}
 	for (const signer of signers) {
 		assert.doesNotMatch(signer, /pnpm|npm install|npx /u, "signing jobs install no dependencies");
-		assert.match(signer, /EXPECTED_ARCHIVE_SHA256: \$\{\{ needs\.installers-(?:linux|windows)-build\.outputs\.archive_sha256 \}\}/u);
-		assert.doesNotMatch(signer, /secrets\.AIDR_SIGNING_PRIVATE_KEY_PEM/u, "installer jobs never hold the release private key");
 	}
-	for (const installer of [...builds, ...signers]) {
+	for (const installer of [...seaBuilds, sign, ...builds, ...signers]) {
 		assert.doesNotMatch(installer, /continue-on-error:|-Unsigned\b|--signing unsigned/u);
 	}
-	const [linuxBuild, windowsBuild] = builds;
+	const [linuxBuild] = builds;
 	const [linux, windows] = signers;
+	assert.match(linuxBuild, /needs: \[build-rc, installers-sea-sign\]/u);
+	assert.match(linuxBuild, /EXPECTED_SEA_SHA256: \$\{\{ needs\.installers-sea-sign\.outputs\.linux_sha256 \}\}/u);
+	assert.match(linuxBuild, /build-sea\.mjs --verify "\$\{RUNNER_TEMP\}\/aidr-sea" --public-key/u);
 	assert.match(linuxBuild, /node --test deploy\/installers\/installers\.test\.mjs/u);
 	assert.match(linuxBuild, /--formats deb,rpm,tar/u);
 	assert.match(linuxBuild, /The release trust public key and its fingerprint are required to build installers/u);
-	assert.match(windowsBuild, /runs-on: windows-2022/u);
+	assert.match(seaBuilds[1], /runs-on: windows-2022/u);
 	assert.match(linux, /needs: \[build-rc, installers-linux-build\]/u);
+	assert.match(linux, /EXPECTED_ARCHIVE_SHA256: \$\{\{ needs\.installers-linux-build\.outputs\.archive_sha256 \}\}/u);
 	assert.match(linux, /no unsigned package is published/u);
 	assert.ok(linux.indexOf("sha256sum --check --strict") < linux.indexOf("gpg --batch --import"), "archive hash is checked before the key is imported");
 	assert.ok(linux.indexOf("--addsign") < linux.indexOf("> SHA256SUMS"), "checksums follow rpm signing");
 	assert.match(linux, /rpmkeys --dbpath "\$\{rpmdb\}" --checksig/u);
 	assert.match(linux, /gpg --batch --verify/u);
-	assert.match(windows, /needs: \[build-rc, installers-windows-build\]/u);
+	assert.match(windows, /needs: \[build-rc, installers-sea-sign\]/u);
+	assert.match(windows, /EXPECTED_ARCHIVE_SHA256: \$\{\{ needs\.installers-sea-sign\.outputs\.windows_sha256 \}\}/u);
 	assert.match(windows, /runs-on: windows-2022/u);
 	assert.match(windows, /The release trust public key and its fingerprint are required to build installers/u);
 	assert.match(windows, /no unsigned MSI is published/u);
-	assert.ok(windows.indexOf("Unsigned SEA archive hash mismatch") < windows.indexOf("Import-PfxCertificate"));
+	assert.ok(windows.indexOf("Signed SEA archive hash mismatch") < windows.indexOf("Import-PfxCertificate"));
 	assert.match(windows, /build-msi\.ps1 [^\n]*-SignThumbprint \$thumbprint/u);
 	assert.match(windows, /finally \{[\s\S]*Remove-Item -LiteralPath \$certificatePath -DeleteKey -Force/u);
 	assert.match(windows, /Exactly one signed MSI is expected/u);

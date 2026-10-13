@@ -104,6 +104,8 @@ async function runHook(
 		// The real message catalog (the suite pins AIDR_LOCALE=en).
 		t,
 		initSentry: vi.fn(),
+		// Only a standalone release bundle without its release key answers this true.
+		isReleaseKeyMissing: () => false,
 		verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),
 	};
 	const pino = Object.assign(() => ({}), { destination: () => ({}) });

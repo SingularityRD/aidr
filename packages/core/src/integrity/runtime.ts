@@ -5,6 +5,7 @@ import { loadRevocationBinding, loadRevocationsCache } from "../managed.js";
 import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { enterDegradedSafeMode } from "./degraded-safe-mode.js";
+import { RELEASE_KEY_MISSING_REASON, standaloneRuntimeArtifact } from "./standalone.js";
 import {
 	hasWellFormedSignature,
 	type IntegrityCheckResult,
@@ -21,6 +22,19 @@ export class ArtifactIntegrityError extends Error {
 	}
 }
 
+/**
+ * Whether a connector start failed only because a standalone release bundle
+ * has no release key provisioned. Hooks show `hook.releaseKeyMissing.*` for
+ * it: the fix is one command, so the blocked call says which.
+ */
+export function isReleaseKeyMissing(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		error.name === "ArtifactIntegrityError" &&
+		(error as ArtifactIntegrityError).result?.reason === RELEASE_KEY_MISSING_REASON
+	);
+}
+
 export async function verifyArtifactIntegrityAndLog(params: {
 	artifactDir: string;
 	artifactId: string;
@@ -30,6 +44,10 @@ export async function verifyArtifactIntegrityAndLog(params: {
 	const logger = params.logger ?? nullLogger;
 	const config = await loadConfig(params.configPath, logger);
 	const commercial = isCommercialBuild();
+	// A hook running from the standalone bundle verifies the bundle's runtime
+	// manifest, not its own directory (see ./standalone.ts).
+	const standalone = standaloneRuntimeArtifact();
+	if (standalone) params = { ...params, ...standalone };
 
 	if (!commercial && !config.integrity.enabled) return { status: "skipped" };
 	if (!commercial && !config.integrity.verify_on_start) return { status: "skipped" };
@@ -78,12 +96,19 @@ export async function verifyArtifactIntegrityAndLog(params: {
 	}
 
 	const publicKeysPem = config.integrity.public_keys_pem ?? [];
-	let result = await verifyArtifactIntegrity({
-		artifactDir: params.artifactDir,
-		publicKeysPem,
-		verifySignatures: commercial || publicKeysPem.length > 0,
-		expectedArtifactId: params.artifactId,
-	});
+	// The desktop installers always ship the release key and `aidr setup`
+	// provisions it, so a standalone release bundle without one was never set
+	// up (or its key was removed): nothing can prove the shipped rules are
+	// genuine, and the digest-only allowance below does not apply.
+	const keyRequired = commercial && standalone !== null && publicKeysPem.length === 0;
+	let result: IntegrityCheckResult = keyRequired
+		? { status: "no_public_keys", reason: RELEASE_KEY_MISSING_REASON }
+		: await verifyArtifactIntegrity({
+				artifactDir: params.artifactDir,
+				publicKeysPem,
+				verifySignatures: commercial || publicKeysPem.length > 0,
+				expectedArtifactId: params.artifactId,
+			});
 
 	if (result.status === "ok") return result;
 
@@ -101,7 +126,9 @@ export async function verifyArtifactIntegrityAndLog(params: {
 	// no release provenance to fall back on, so it fails closed exactly as a
 	// missing manifest does: digests computed by whoever built the bytes prove
 	// nothing about where they came from.
-	if (
+	if (keyRequired) {
+		// Fails closed below; the hooks turn the reason into a clear message.
+	} else if (
 		commercial &&
 		result.status === "no_public_keys" &&
 		!(await hasWellFormedSignature(params.artifactDir))

@@ -32,7 +32,8 @@ import {
 	UpdateApplyError,
 } from "../utils/update-installer.js";
 
-const BINARIES = ["aidr", "aidr-pre-tool-use", "aidr-post-tool-use", "aidr-session-start"];
+/** The multi-call binary (`aidr hook <name>` serves every hook). */
+const BINARIES = ["aidr"];
 const sha = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const catalogKey = generateKeyPairSync("ed25519");
 const otherKey = generateKeyPairSync("ed25519");
@@ -50,6 +51,20 @@ function writeBundle(dir: string, version: string, exe = ""): void {
 		writeFileSync(join(dir, "bin", `${name}${exe}`), content, { mode: 0o755 });
 		return { path: `bin/${name}${exe}`, sha256: sha(content) };
 	});
+	// The runtime manifest the hooks verify (sea/dist), listed in the bundle manifest.
+	const rules = `- id: T-${version}\n`;
+	mkdirSync(join(dir, "dist", "resources", "threats"), { recursive: true });
+	writeFileSync(join(dir, "dist", "resources", "threats", "rules.yaml"), rules);
+	const runtime = JSON.stringify({
+		artifact_id: "sea/dist",
+		artifact_version: version,
+		files: [{ path: "resources/threats/rules.yaml", sha256: sha(rules) }],
+	});
+	writeFileSync(join(dir, "dist", "aidr-artifact.manifest.json"), runtime);
+	files.push(
+		{ path: "dist/aidr-artifact.manifest.json", sha256: sha(runtime) },
+		{ path: "dist/resources/threats/rules.yaml", sha256: sha(rules) },
+	);
 	writeFileSync(
 		join(dir, "aidr-artifact.manifest.json"),
 		JSON.stringify({ artifact_id: "claude-code/sea", artifact_version: version, files }, null, 2),
@@ -680,7 +695,7 @@ describe("aidr update outside an installer layout", () => {
 	});
 
 	it("does not replace an installation that cannot be kept as the fallback copy", async () => {
-		writeFileSync(join(prefix, "bundle", "bin", "aidr-pre-tool-use"), "tampered");
+		writeFileSync(join(prefix, "bundle", "dist", "resources", "threats", "rules.yaml"), "tampered");
 		const mirror = writeMirror(join(root, "mirror"), { installer: buildTarball("1.5.0") });
 		const result = await update({ from: mirror, yes: true });
 		expect(result.output).toContain("failed its own integrity check");

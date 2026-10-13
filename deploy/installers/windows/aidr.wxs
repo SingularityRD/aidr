@@ -63,6 +63,13 @@
       <File Id="ReleasePublicKey" Source="$(var.TrustKey)" Name="release-public.pem" KeyPath="yes" />
     </Component>
 
+    <?if $(var.HasCatalogKey) = 1 ?>
+    <!-- `aidr update` verifies the signed installer catalog with this key (packages/core/src/update/environment.ts). -->
+    <Component Id="CatalogKey" Directory="CONFIGDIR" Guid="9F2C6A1E-4B7D-4E35-8C90-1A5E3D7B2F48">
+      <File Id="InstallerCatalogPublicKey" Source="$(var.CatalogKey)" Name="installer-catalog-public.pem" KeyPath="yes" />
+    </Component>
+    <?endif?>
+
     <Component Id="PathMachine" Directory="INSTALLFOLDER" Condition="ALLUSERS=1"
                Guid="5E2A9C41-0B7D-4F6A-8C13-9D4E2B7A1F05">
       <Environment Id="AidrPathMachine" Name="PATH" Value="[BINDIR]" Part="last" Action="set" System="yes" Permanent="no" />
@@ -95,6 +102,9 @@
       <ComponentGroupRef Id="SeaBundle" />
       <ComponentRef Id="AidrCli" />
       <ComponentRef Id="TrustKey" />
+      <?if $(var.HasCatalogKey) = 1 ?>
+      <ComponentRef Id="CatalogKey" />
+      <?endif?>
       <ComponentRef Id="PathMachine" />
       <ComponentRef Id="PathUser" />
       <ComponentRef Id="ActiveSetup" />

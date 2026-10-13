@@ -300,6 +300,8 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 		"Cursor'a kurulacak doğrulanmış aidr-cursor.vsix",
 	"Verified aidr-vscode.vsix to install into VS Code":
 		"VS Code'a kurulacak doğrulanmış aidr-vscode.vsix",
+	"Release public key (Ed25519 PEM) for a manual install; the desktop installers set it up themselves":
+		"Elle kurulum için sürüm ortak anahtarı (Ed25519 PEM); masaüstü yükleyicileri bunu kendisi ayarlar",
 	"With AIDR_OPERATOR_NONINTERACTIVE=1, confirm --force without a prompt":
 		"AIDR_OPERATOR_NONINTERACTIVE=1 ile --force seçeneğini sormadan onayla",
 	"Remove AIDR: the connector of every agent host, the AIDR-managed hooks, ~/.singularity-aidr and the AIDR vault items (confirmation required)":

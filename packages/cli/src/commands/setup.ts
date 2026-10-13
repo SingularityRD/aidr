@@ -1,6 +1,7 @@
-import { resolvePath, VERSION } from "@singularityrd/aidr-core";
+import { resolve } from "node:path";
+import { isCommercialBuild, resolvePath, VERSION } from "@singularityrd/aidr-core";
 import { type CliMessageKey, ct } from "../i18n/index.js";
-import { createConfig } from "../utils/config-manager.js";
+import { type Config, createConfig, getConfig, updateConfig } from "../utils/config-manager.js";
 import {
 	type ConnectorInstallOptions,
 	HOST_IDS,
@@ -16,6 +17,13 @@ import {
 	type OperatorCommandDeps,
 	OperatorConfirmationError,
 } from "../utils/operator-confirm.js";
+import {
+	installerReleaseKey,
+	provisionReleaseKey,
+	type ReleaseKey,
+	type ReleaseKeyStore,
+	readReleaseKeyFile,
+} from "../utils/release-key.js";
 import { writeSetupLedger } from "../utils/setup-ledger.js";
 import { standaloneBundleRoot } from "../utils/standalone.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
@@ -33,9 +41,15 @@ interface SetupOptions {
 	claudePluginDir?: string;
 	cursorVsix?: string;
 	vscodeVsix?: string;
+	/** `--release-key <file.pem>`: the release public key for a manual install. */
+	releaseKey?: string;
 }
 
 interface SetupDeps extends OperatorCommandDeps {
+	/** Where the release key list lives (tests); defaults to ~/.singularity-aidr/config.json. */
+	releaseKeyStore?: ReleaseKeyStore;
+	/** Whether this is a release (commercial) build (tests); defaults to the embedded flavour. */
+	commercial?: boolean;
 	/** Home whose hosts are detected and configured (tests). */
 	home?: string;
 	/** Host CLI runner (tests). */
@@ -130,11 +144,20 @@ function confirmForce(options: SetupOptions, deps: OperatorCommandDeps): Promise
 async function confirmArtifacts(
 	options: SetupOptions,
 	deps: OperatorCommandDeps,
+	releaseKey: SetupReleaseKey | null,
 ): Promise<boolean> {
 	const artifacts = [
 		options.claudePluginDir && `  Claude Code plugin directory: ${options.claudePluginDir}`,
 		options.cursorVsix && `  Cursor extension: ${options.cursorVsix}`,
 		options.vscodeVsix && `  VS Code extension: ${options.vscodeVsix}`,
+		// A release key decides which signer the hooks trust: an explicit one is
+		// an operator action. The installer's own key needs no confirmation.
+		options.releaseKey &&
+			releaseKey &&
+			ct("releaseKey.confirm", {
+				file: releaseKey.source,
+				fingerprint: `sha256:${releaseKey.key.fingerprint}`,
+			}),
 	].filter((line): line is string => typeof line === "string");
 	if (artifacts.length === 0) return true;
 	return confirmed(
@@ -149,11 +172,110 @@ async function confirmArtifacts(
 	);
 }
 
+interface SetupReleaseKey {
+	key: ReleaseKey;
+	/** The file it was read from. */
+	source: string;
+}
+
+/**
+ * The release key this setup provisions: `--release-key`, else the key the
+ * signed installer placed next to the bundle this CLI runs from. A file that
+ * is not an Ed25519 public key throws {@link ReleaseKeyError}.
+ */
+function setupReleaseKey(
+	options: SetupOptions,
+	standaloneRoot: string | null,
+): SetupReleaseKey | null {
+	if (options.releaseKey) {
+		const source = resolve(options.releaseKey);
+		return { key: readReleaseKeyFile(source), source };
+	}
+	const installed = standaloneRoot ? installerReleaseKey(standaloneRoot) : null;
+	return installed ? { key: installed.key, source: installed.path } : null;
+}
+
+/** `integrity.public_keys_pem` of ~/.singularity-aidr/config.json, merged into the existing config. */
+const configReleaseKeys: ReleaseKeyStore = {
+	read: () => {
+		const integrity = (getConfig() as { integrity?: { public_keys_pem?: unknown } } | null)
+			?.integrity;
+		const keys = integrity?.public_keys_pem;
+		return Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : [];
+	},
+	write: (keys) => {
+		const current = (getConfig() as { integrity?: Record<string, unknown> } | null)?.integrity;
+		updateConfig({ integrity: { ...(current ?? {}), public_keys_pem: keys } } as Partial<Config>);
+	},
+};
+
+const short = (fingerprint: string) => `sha256:${fingerprint}`;
+
+/**
+ * Provision the release key and report it. Returns the release keys the hooks
+ * will trust after this run (what the bundle signatures are checked against).
+ */
+function applyReleaseKey(
+	releaseKey: SetupReleaseKey | null,
+	store: ReleaseKeyStore,
+	options: SetupOptions,
+	required: boolean,
+): string[] {
+	if (!releaseKey) {
+		// Only a release build running from a bundle needs the configured keys.
+		if (!required) return [];
+		const keys = store.read();
+		if (keys.length === 0) console.error(ct("releaseKey.missing"));
+		return keys;
+	}
+	const plan = provisionReleaseKey(releaseKey.key, store, {
+		force: options.force === true,
+		dryRun: options.dryRun === true,
+	});
+	const params = {
+		fingerprint: short(releaseKey.key.fingerprint),
+		source: releaseKey.source,
+		previous: plan.existing.map(short).join(", "),
+	};
+	if (options.dryRun && (plan.outcome === "added" || plan.outcome === "replaced")) {
+		console.error(ct("releaseKey.wouldAdd", params));
+	} else {
+		const key = {
+			added: "releaseKey.added",
+			present: "releaseKey.present",
+			replaced: "releaseKey.replaced",
+			kept_existing: "releaseKey.kept",
+		} as const;
+		console.error(ct(key[plan.outcome], params));
+	}
+	return plan.keys;
+}
+
+/**
+ * Exit code of a setup that changed nothing because no supported AI tool is
+ * installed for this user yet (not a failure). The Linux package hook and the
+ * Windows installer read it (deploy/installers/linux/package-hook.sh).
+ */
+const SETUP_EXIT_NO_AI_TOOL = 3;
+
 async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): Promise<void> {
 	console.log(`\n🛡️  ${ct("setup.title")}${options.dryRun ? ct("setup.titleDryRun") : ""}\n`);
 
+	const standaloneRoot =
+		deps.standaloneRoot === undefined ? standaloneBundleRoot() : deps.standaloneRoot;
+	let releaseKey: SetupReleaseKey | null;
+	try {
+		releaseKey = setupReleaseKey(options, standaloneRoot);
+	} catch (error) {
+		console.error(
+			`Setup failed: ${ct("releaseKey.invalid", { reason: error instanceof Error ? error.message : String(error) })}`,
+		);
+		process.exitCode = 1;
+		return;
+	}
+
 	if (options.force && !options.dryRun && !(await confirmForce(options, deps))) return;
-	if (!options.dryRun && !(await confirmArtifacts(options, deps))) return;
+	if (!options.dryRun && !(await confirmArtifacts(options, deps, releaseKey))) return;
 
 	try {
 		const hosts = parseHosts(options.host);
@@ -194,6 +316,16 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 			}
 		}
 
+		// A release build's hooks trust nothing until the release key is set up:
+		// provision it before any hook runs (the connector canaries below).
+		const requireSignedBundle = deps.commercial ?? isCommercialBuild();
+		const releaseKeys = applyReleaseKey(
+			releaseKey,
+			deps.releaseKeyStore ?? configReleaseKeys,
+			options,
+			requireSignedBundle && standaloneRoot !== null,
+		);
+
 		console.error(ct("setup.loadingRules"));
 		const ruleCount = await loadBundledThreatCount();
 		if (ruleCount <= 0) {
@@ -228,15 +360,13 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 			cursorVsix: options.cursorVsix,
 			vscodeVsix: options.vscodeVsix,
 		};
-		const standaloneRoot =
-			deps.standaloneRoot === undefined ? standaloneBundleRoot() : deps.standaloneRoot;
 		const results = installConnectors(
 			{
 				home,
 				env: hostEnv,
 				run: deps.run,
 				version: VERSION,
-				...(standaloneRoot ? { standaloneRoot } : {}),
+				...(standaloneRoot ? { standaloneRoot, releaseKeys, requireSignedBundle } : {}),
 			},
 			installOptions,
 		);
@@ -294,7 +424,14 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 		console.log(options.dryRun ? ct("setup.dryRunNext") : ct("setup.verifyNext"));
 		console.log("");
 		if (!options.dryRun && (failed.length > 0 || unprotected.length > 0 || active.length === 0)) {
-			process.exitCode = 1;
+			// Nothing failed and no AI tool is there yet: a distinct code, so the
+			// installers can say "install an AI tool, then run aidr setup" instead
+			// of reporting a setup failure.
+			const nothingFound =
+				failed.length === 0 &&
+				unprotected.length === 0 &&
+				results.every((entry) => entry.action === "skipped_not_detected");
+			process.exitCode = nothingFound ? SETUP_EXIT_NO_AI_TOOL : 1;
 		}
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);

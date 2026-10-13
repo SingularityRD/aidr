@@ -16,6 +16,7 @@ import {
 	extractFromToolCall,
 	formatDashboardApprovalNotice,
 	initSentry,
+	isReleaseKeyMissing,
 	isWellFormedToolCall,
 	type Logger,
 	malformedShellCommandReason,
@@ -398,6 +399,13 @@ async function main(): Promise<void> {
 	});
 }
 
-main().catch(() => {
+main().catch((error: unknown) => {
+	// A standalone bundle without its release key blocks every call; say why
+	// and how to fix it instead of the generic inspection failure.
+	if (isReleaseKeyMissing(error)) {
+		const message = t("hook.releaseKeyMissing.message");
+		respond(denyResponse(message, message));
+		return;
+	}
 	writeInspectionFailure();
 });

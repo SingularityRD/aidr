@@ -3,39 +3,48 @@ import { createHash, createPublicKey, verify as verifySignature } from "node:cry
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { isSea } from "node:sea";
+import { STANDALONE_RUNTIME_ARTIFACT_ID } from "@singularityrd/aidr-core";
 
 /**
  * The standalone installation: the relocatable SEA directory built by
  * `packages/claude-code/scripts/build-sea.mjs` and shipped by the desktop
- * installers (`deploy/installers/`). It holds the `aidr` CLI and the Claude
- * Code hook binaries side by side:
+ * installers (`deploy/installers/`). One multi-call binary serves the `aidr`
+ * CLI and every hook (`aidr hook <name>`):
  *
- *   <prefix>/bundle/bin/aidr[.exe], bin/aidr-pre-tool-use[.exe], ...
- *   <prefix>/bundle/dist/resources/{threats,allowlists}
- *   <prefix>/bundle/aidr-artifact.manifest.json   sha256 of every file
- *   <prefix>/config/release-public.pem            release trust key (installer)
+ *   <prefix>/bundle/bin/aidr[.exe]
+ *   <prefix>/bundle/dist/resources/{threats,allowlists}, response worker, native adapter
+ *   <prefix>/bundle/dist/aidr-artifact.manifest.json (+ .sig)   runtime manifest the hooks verify
+ *   <prefix>/bundle/extensions/aidr-{cursor,vscode}.vsix           editor extensions (optional)
+ *   <prefix>/bundle/aidr-artifact.manifest.json (+ .sig)        sha256 of every file above
+ *   <prefix>/config/release-public.pem                            release key (installer)
  *
  * Nothing here trusts the bundle because of where it is: every file is checked
- * against the manifest before a hook is registered, and a manifest signature,
- * when present, must verify against the release key the installer embedded.
+ * against the bundle manifest before a hook is registered, and the manifest
+ * signatures must verify against the release key(s) the hooks will trust.
  */
 
 export const STANDALONE_MANIFEST = "aidr-artifact.manifest.json";
 const STANDALONE_SIGNATURE = "aidr-artifact.manifest.sig";
+const RUNTIME_MANIFEST = `dist/${STANDALONE_MANIFEST}`;
+const RUNTIME_SIGNATURE = `dist/${STANDALONE_SIGNATURE}`;
 export const STANDALONE_ARTIFACT_ID = "claude-code/sea";
 /** `install_kind` of an installation receipt that points at a standalone bundle. */
 export const STANDALONE_INSTALL_KIND = "sea_bundle";
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
+/** The multi-call binary. */
+const STANDALONE_BINARY = "aidr";
+/** The Codex hook as the multi-call binary names it (the npm bin's name). */
+export const STANDALONE_CODEX_HOOK = "aidr-codex-hook";
 
 /** The Claude Code hooks a standalone install registers, with their host timeouts (seconds). */
 export const STANDALONE_CLAUDE_HOOKS: ReadonlyArray<{
 	event: "PreToolUse" | "PostToolUse" | "SessionStart";
-	binary: string;
+	hook: string;
 	timeout: number;
 }> = [
-	{ event: "PreToolUse", binary: "aidr-pre-tool-use", timeout: 15 },
-	{ event: "PostToolUse", binary: "aidr-post-tool-use", timeout: 5 },
-	{ event: "SessionStart", binary: "aidr-session-start", timeout: 30 },
+	{ event: "PreToolUse", hook: "pre-tool-use", timeout: 15 },
+	{ event: "PostToolUse", hook: "post-tool-use", timeout: 5 },
+	{ event: "SessionStart", hook: "session-start", timeout: 30 },
 ];
 
 /** Root of the standalone bundle this process runs from, or null outside a SEA. */
@@ -47,23 +56,61 @@ export function standaloneBundleRoot(): string | null {
 	}
 }
 
-/** The release public key the installer places next to the bundle. */
-function standaloneTrustKeyPath(root: string): string {
-	return join(dirname(root), "config", "release-public.pem");
+/** The multi-call binary of a bundle. */
+function standaloneBinary(root: string, platform = process.platform): string {
+	return join(root, "bin", platform === "win32" ? `${STANDALONE_BINARY}.exe` : STANDALONE_BINARY);
 }
 
-export function standaloneBinary(root: string, name: string, platform = process.platform): string {
-	return join(root, "bin", platform === "win32" ? `${name}.exe` : name);
+/** Quote a hook binary path the way `scripts/endpoint-install.mjs` does. */
+function quoteHookPath(path: string): string {
+	if (/["`$%\r\n]/u.test(path)) {
+		throw new Error(`the bundle path ${path} contains characters a hook command cannot carry`);
+	}
+	return `"${path.replaceAll("\\", "/")}"`;
+}
+
+/** The host hook command for one hook of the bundle: `"<bundle>/bin/aidr" hook <name>`. */
+export function standaloneHookCommand(
+	root: string,
+	hook: string,
+	platform = process.platform,
+): string {
+	return `${quoteHookPath(standaloneBinary(root, platform))} hook ${hook}`;
+}
+
+/** An editor extension the bundle ships, or null when it carries none. */
+export function standaloneExtension(root: string, file: string): string | null {
+	const path = join(root, "extensions", file);
+	return existsSync(path) ? path : null;
 }
 
 export interface StandaloneBundleCheck {
 	ok: boolean;
 	problems: string[];
-	/** sha256 of the manifest bytes: the identity an installation receipt records. */
+	/** sha256 of the bundle manifest bytes: the identity an installation receipt records. */
 	manifestSha256: string | null;
 	version: string | null;
-	/** "verified" against the embedded release key, or "absent" (unsigned build). */
+	/**
+	 * "verified": the runtime manifest (and the bundle manifest when signed)
+	 * verify against a trusted release key; "absent": an unsigned (development)
+	 * bundle; "invalid": a signature is missing where required or does not verify.
+	 */
 	signature: "verified" | "absent" | "invalid";
+	/** Files listed in the bundle manifest (POSIX paths). */
+	files: string[];
+}
+
+export interface StandaloneVerifyOptions {
+	/** Release public keys (PEM) the signatures must verify against: the keys the hooks will trust. */
+	trustKeys?: readonly string[];
+	/**
+	 * A release key file (e.g. the installer's `<prefix>/config/release-public.pem`)
+	 * trusted in addition to `trustKeys`. A missing or unreadable file adds no key.
+	 */
+	trustKeyPath?: string;
+	/** A release (commercial) bundle: the runtime manifest must be signed by a trusted key. */
+	requireSignature?: boolean;
+	platform?: NodeJS.Platform;
 }
 
 function listFiles(root: string, current = root, out: string[] = []): string[] {
@@ -87,14 +134,68 @@ const safeEntry = (path: unknown): path is string =>
 	!isAbsolute(path) &&
 	path.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 
+function readSmallFile(path: string): Buffer {
+	const info = lstatSync(path);
+	if (!info.isFile() || info.size > MAX_MANIFEST_BYTES) throw new Error("not a regular file");
+	return readFileSync(path);
+}
+
+/** Parse a manifest's file list; null when an entry is unsafe or duplicated. */
+function manifestEntries(manifest: { files?: unknown }): Map<string, string> | null {
+	if (!Array.isArray(manifest.files)) return null;
+	const listed = new Map<string, string>();
+	for (const entry of manifest.files as Array<{ path?: unknown; sha256?: unknown }>) {
+		if (!safeEntry(entry?.path) || typeof entry.sha256 !== "string" || listed.has(entry.path)) {
+			return null;
+		}
+		listed.set(entry.path, entry.sha256.toLowerCase());
+	}
+	return listed;
+}
+
+/** The PEM text of a release key file, as a one-entry list; empty when absent or unreadable. */
+function keyFileContents(path: string | undefined): string[] {
+	if (!path) return [];
+	try {
+		const text = readSmallFile(path).toString("utf8");
+		// Never trust a file that holds private key material.
+		return /BEGIN [A-Z ]*PRIVATE KEY/u.test(text) ? [] : [text];
+	} catch {
+		return [];
+	}
+}
+
+/** Whether `signaturePath` holds a valid Ed25519 signature of `bytes` by one of `keys`. */
+function signedBy(bytes: Buffer, signaturePath: string, keys: readonly string[]): boolean {
+	let signature: Buffer;
+	try {
+		signature = Buffer.from(readFileSync(signaturePath, "utf8").trim(), "base64");
+	} catch {
+		return false;
+	}
+	if (signature.length !== 64) return false;
+	for (const pem of keys) {
+		try {
+			const key = createPublicKey(pem);
+			if (key.asymmetricKeyType === "ed25519" && verifySignature(null, bytes, key, signature)) {
+				return true;
+			}
+		} catch {
+			// An unreadable configured entry trusts nothing.
+		}
+	}
+	return false;
+}
+
 /**
- * Check a standalone bundle against its manifest: every listed file present
- * with its digest, nothing unlisted, no links, the hook binaries present, and
- * the signature (when shipped) valid for the embedded release key.
+ * Check a standalone bundle: every file listed in the bundle manifest with its
+ * digest, nothing unlisted, no links, the multi-call binary present, the
+ * runtime manifest consistent with it, and the signatures valid for the
+ * trusted release keys (required for a release bundle).
  */
 export function verifyStandaloneBundle(
 	root: string,
-	options: { trustKeyPath?: string; platform?: NodeJS.Platform } = {},
+	options: StandaloneVerifyOptions = {},
 ): StandaloneBundleCheck {
 	const check: StandaloneBundleCheck = {
 		ok: false,
@@ -102,13 +203,12 @@ export function verifyStandaloneBundle(
 		manifestSha256: null,
 		version: null,
 		signature: "absent",
+		files: [],
 	};
 	const manifestPath = join(root, STANDALONE_MANIFEST);
 	let bytes: Buffer;
 	try {
-		const info = lstatSync(manifestPath);
-		if (!info.isFile() || info.size > MAX_MANIFEST_BYTES) throw new Error("not a regular file");
-		bytes = readFileSync(manifestPath);
+		bytes = readSmallFile(manifestPath);
 	} catch {
 		check.problems.push(`${manifestPath} is missing or unreadable`);
 		return check;
@@ -120,21 +220,19 @@ export function verifyStandaloneBundle(
 		check.problems.push(`${STANDALONE_MANIFEST} is not valid JSON`);
 		return check;
 	}
-	if (manifest?.artifact_id !== STANDALONE_ARTIFACT_ID || !Array.isArray(manifest.files)) {
+	if (manifest?.artifact_id !== STANDALONE_ARTIFACT_ID) {
 		check.problems.push(`${STANDALONE_MANIFEST} is not a ${STANDALONE_ARTIFACT_ID} manifest`);
+		return check;
+	}
+	const listed = manifestEntries(manifest);
+	if (!listed) {
+		check.problems.push(`${STANDALONE_MANIFEST} has an unsafe or duplicate entry`);
 		return check;
 	}
 	check.manifestSha256 = createHash("sha256").update(bytes).digest("hex");
 	check.version = typeof manifest.artifact_version === "string" ? manifest.artifact_version : null;
+	check.files = [...listed.keys()];
 
-	const listed = new Map<string, string>();
-	for (const entry of manifest.files as Array<{ path?: unknown; sha256?: unknown }>) {
-		if (!safeEntry(entry?.path) || typeof entry.sha256 !== "string" || listed.has(entry.path)) {
-			check.problems.push(`${STANDALONE_MANIFEST} has an unsafe or duplicate entry`);
-			return check;
-		}
-		listed.set(entry.path, entry.sha256.toLowerCase());
-	}
 	const onDisk = listFiles(root).filter(
 		(path) => path !== STANDALONE_MANIFEST && path !== STANDALONE_SIGNATURE,
 	);
@@ -152,30 +250,57 @@ export function verifyStandaloneBundle(
 	for (const path of listed.keys())
 		if (!onDisk.includes(path)) check.problems.push(`${path} is missing`);
 	const platform = options.platform ?? process.platform;
-	for (const { binary } of STANDALONE_CLAUDE_HOOKS) {
-		const file = `bin/${platform === "win32" ? `${binary}.exe` : binary}`;
-		if (!listed.has(file)) check.problems.push(`hook binary ${file} is not in the bundle`);
+	const binary = `bin/${platform === "win32" ? `${STANDALONE_BINARY}.exe` : STANDALONE_BINARY}`;
+	if (!listed.has(binary)) check.problems.push(`the AIDR binary ${binary} is not in the bundle`);
+
+	// The runtime manifest is what the hooks verify on every call: it must
+	// describe exactly the dist/ files the bundle manifest lists.
+	let runtimeBytes: Buffer | null = null;
+	try {
+		runtimeBytes = readSmallFile(join(root, ...RUNTIME_MANIFEST.split("/")));
+		const runtime = JSON.parse(runtimeBytes.toString("utf8"));
+		const entries =
+			runtime?.artifact_id === STANDALONE_RUNTIME_ARTIFACT_ID && manifestEntries(runtime);
+		if (!entries) throw new Error(`not a ${STANDALONE_RUNTIME_ARTIFACT_ID} manifest`);
+		const distListed = [...listed.keys()].filter(
+			(path) => path.startsWith("dist/") && path !== RUNTIME_MANIFEST && path !== RUNTIME_SIGNATURE,
+		);
+		const consistent =
+			entries.size === distListed.length &&
+			distListed.every((path) => entries.get(path.slice("dist/".length)) === listed.get(path));
+		if (!consistent) check.problems.push(`${RUNTIME_MANIFEST} does not match the bundle manifest`);
+	} catch (error) {
+		runtimeBytes = null;
+		check.problems.push(
+			`${RUNTIME_MANIFEST} is missing or invalid (${error instanceof Error ? error.message : String(error)})`,
+		);
 	}
 
-	const signaturePath = join(root, STANDALONE_SIGNATURE);
-	if (existsSync(signaturePath)) {
+	const keys = [...(options.trustKeys ?? []), ...keyFileContents(options.trustKeyPath)];
+	const runtimeSigned = existsSync(join(root, ...RUNTIME_SIGNATURE.split("/")));
+	const bundleSigned = existsSync(join(root, STANDALONE_SIGNATURE));
+	if (runtimeSigned || bundleSigned || options.requireSignature) {
 		check.signature = "invalid";
-		const keyPath = options.trustKeyPath ?? standaloneTrustKeyPath(root);
-		try {
-			const pem = readFileSync(keyPath, "utf8");
-			if (/BEGIN [A-Z ]*PRIVATE KEY/u.test(pem))
-				throw new Error("the trust key file holds a private key");
-			const key = createPublicKey(pem);
-			if (key.asymmetricKeyType !== "ed25519") throw new Error("the trust key is not Ed25519");
-			const signature = Buffer.from(readFileSync(signaturePath, "utf8").trim(), "base64");
-			if (signature.length !== 64 || !verifySignature(null, bytes, key, signature)) {
-				throw new Error("the manifest signature does not verify against the release key");
-			}
-			check.signature = "verified";
-		} catch (error) {
+		if (keys.length === 0) {
 			check.problems.push(
-				`bundle signature rejected (${keyPath}): ${error instanceof Error ? error.message : String(error)}`,
+				"no release key is set up to verify the bundle signature (run 'aidr setup --release-key <file.pem>')",
 			);
+		} else {
+			const runtimeOk =
+				runtimeBytes !== null &&
+				runtimeSigned &&
+				signedBy(runtimeBytes, join(root, ...RUNTIME_SIGNATURE.split("/")), keys);
+			const bundleOk = !bundleSigned || signedBy(bytes, join(root, STANDALONE_SIGNATURE), keys);
+			if (!runtimeSigned) check.problems.push(`${RUNTIME_MANIFEST} is not signed (release bundle)`);
+			else if (!runtimeOk)
+				check.problems.push(
+					`${RUNTIME_MANIFEST} signature does not verify against the release key`,
+				);
+			if (!bundleOk)
+				check.problems.push(
+					`${STANDALONE_MANIFEST} signature does not verify against the release key`,
+				);
+			if (runtimeOk && bundleOk) check.signature = "verified";
 		}
 	}
 	check.ok = check.problems.length === 0;
@@ -245,4 +370,20 @@ export function runHookCommand(
 		};
 	}
 	return probe;
+}
+
+/**
+ * The deny canary and its benign twin through one registered hook command. A
+ * hook that denies everything (for example a release hook that cannot verify
+ * its files) fails this as surely as one that allows the canary.
+ */
+export function probeHookCommand(
+	command: string,
+	payload: (shellCommand: string) => Record<string, unknown>,
+	options: { home: string; cwd: string; env?: NodeJS.ProcessEnv },
+): { ok: boolean; canary: HookProbe; benign: HookProbe | null } {
+	const canary = runHookCommand(command, payload(canaryCommand()), options);
+	if (canary.decision !== "deny") return { ok: false, canary, benign: null };
+	const benign = runHookCommand(command, payload("ls"), options);
+	return { ok: benign.decision === "allow", canary, benign };
 }
