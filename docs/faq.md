@@ -53,7 +53,8 @@ coverage in a pilot.
 
 ## How do I disable Singularity AIDR temporarily?
 
-- **Claude Code:** Uninstall the plugin or run Claude without `--plugin-dir`
+- **Any connector:** `aidr uninstall --host <id> --keep-data` removes it and keeps your configuration (see [Uninstall](getting-started.md#uninstall))
+- **Claude Code:** `/plugin uninstall aidr@aidr` (a development `--plugin-dir` install: run Claude without `--plugin-dir`)
 - **Cursor/VS Code:** Run `Singularity AIDR: Disable Protection` from the command palette
 - **OpenClaw:** Uninstall the plugin via `openclaw plugins uninstall aidr-openclaw`
 

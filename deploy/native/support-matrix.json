@@ -64,7 +64,7 @@
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
       "installPath": [".vsix install via MDM or the extension gallery"],
-      "uninstallPath": ["extension uninstall"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host cursor", "extension uninstall"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Extension disabled by the operator",
@@ -88,7 +88,7 @@
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
       "installPath": [".vsix install via MDM or the extension gallery"],
-      "uninstallPath": ["extension uninstall"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host vscode", "extension uninstall"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Extension disabled by the operator",
@@ -112,7 +112,7 @@
       "supportedArchitectures": ["x64"],
       "supportedContexts": ["user", "service"],
       "installPath": ["openclaw plugin install"],
-      "uninstallPath": ["openclaw plugin uninstall"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host openclaw", "openclaw plugins uninstall aidr-openclaw"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Plugin removed or the gateway started without it",
@@ -142,7 +142,7 @@
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user", "service"],
       "installPath": ["opencode plugin add"],
-      "uninstallPath": ["opencode plugin remove"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host opencode", "opencode plugin remove"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Plugin removed or the CLI invoked with the plugin path overridden",
@@ -172,7 +172,7 @@
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
       "installPath": ["install the approved @singularityrd/aidr-codex package", "register its PreToolUse and UserPromptSubmit command handlers in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks"],
-      "uninstallPath": ["remove only the AIDR PreToolUse and UserPromptSubmit handlers from ~/.codex/config.toml or ~/.codex/hooks.json", "uninstall the @singularityrd/aidr-codex package"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host codex", "remove only the AIDR PreToolUse and UserPromptSubmit handlers from ~/.codex/config.toml or ~/.codex/hooks.json", "uninstall the @singularityrd/aidr-codex package"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Host fails open when hook execution is unavailable",

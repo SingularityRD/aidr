@@ -41,7 +41,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import uninstallCommand, { uninstallAidr } from "../commands/uninstall.js";
+import uninstallCommand, { uninstallAidr, uninstallEverything } from "../commands/uninstall.js";
 import { MANAGED_HOOK_MARKER } from "../utils/install-hooks.js";
 import { OPERATOR_NONINTERACTIVE_ENV } from "../utils/operator-confirm.js";
 
@@ -165,7 +165,7 @@ async function runCommand(options: { home: string; json?: boolean }): Promise<st
 	try {
 		// Operator automation: uninstall is confirmed like `aidr allowlist add`.
 		await uninstallCommand(
-			{ ...options, yes: true },
+			{ ...options, yes: true, hooksOnly: true },
 			{ env: { [OPERATOR_NONINTERACTIVE_ENV]: "1" } },
 		);
 	} finally {
@@ -443,6 +443,30 @@ describe("aidr uninstall", () => {
 		expect(errors.join("\n")).toContain("Nothing was removed");
 		expect(readFileSync(fixture.settingsPath, "utf8")).toBe(before);
 		expect(backupNames(fixture.home)).toHaveLength(0);
+	});
+
+	it("full uninstall removes the receipt-managed hooks before deleting the data they run from", async () => {
+		const fixture = createFixture();
+		const report = await uninstallEverything({ home: fixture.home, env: { PATH: "" } });
+		expect(report.claude_hooks.outcome).toBe("removed");
+		expect(report.claude_hooks.removed).toHaveLength(3);
+		expect(report.data.action).toBe("deleted");
+		expect(existsSync(join(fixture.home, ".singularity-aidr"))).toBe(false);
+		// Customer hooks survive; vault items of another account are not touched.
+		expect(readFileSync(fixture.settingsPath, "utf8")).toContain("customer-command-a");
+		expect(report.vault.note).toContain("run the uninstall as that user");
+		expect(report.outcome).toBe("removed");
+	});
+
+	it("full uninstall keeps the data when managed hooks cannot be removed (no receipt)", async () => {
+		const fixture = createFixture();
+		unlinkSync(fixture.receiptPath);
+		const report = await uninstallEverything({ home: fixture.home, env: { PATH: "" } });
+		expect(report.claude_hooks.outcome).toBe("refused");
+		expect(report.outcome).toBe("partial");
+		expect(report.data.action).toBe("kept");
+		expect(readFileSync(fixture.settingsPath, "utf8")).toBe(fixture.settingsRaw);
+		expect(existsSync(fixture.configPath)).toBe(true);
 	});
 
 	it("never prints a removal line when nothing was removed", async () => {

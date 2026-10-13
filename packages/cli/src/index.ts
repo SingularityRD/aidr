@@ -253,14 +253,28 @@ program
 program
 	.command("uninstall")
 	.description(
-		"Remove only the AIDR-managed agent hooks, preserving your own hooks and configuration",
+		"Remove AIDR: the connector of every agent host, the AIDR-managed hooks, ~/.singularity-aidr and the AIDR vault items (confirmation required)",
 	)
 	.option(
 		"--home <path>",
 		"Target an explicit home directory (managed fleets and verification); defaults to the current user",
 	)
 	.option("--json", "Emit a machine-readable report")
-	.action(uninstallCommand);
+	.option(
+		"--keep-data",
+		"Keep ~/.singularity-aidr (config, audit log, approvals) and the vault items",
+	)
+	.option("--dry-run", "Show what would be removed; change nothing")
+	.option(
+		"--host <ids>",
+		"Only these hosts, comma-separated: claude-code, cursor, vscode, openclaw, opencode, codex (default: all)",
+	)
+	.option(
+		"--hooks-only",
+		"Remove only the receipt-managed Claude Code hooks, preserving everything else",
+	)
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((options) => uninstallCommand(options));
 
 const learningProgram = program
 	.command("learning")
