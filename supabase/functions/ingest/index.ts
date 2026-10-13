@@ -35,6 +35,7 @@ import {
 	BROWSER_GUARD_INGEST_SCOPE,
 } from "../_shared/api-key-auth.ts";
 import { canonicalJson } from "../_shared/canonical-json.ts";
+import { entitledPackKeys } from "../_shared/pack-keys.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import {
 	consumeTenantRateLimit,
@@ -78,9 +79,12 @@ const ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64 = (
 	Deno.env.get("AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64") ?? ""
 ).trim();
 
-// Premium pack encryption: master key used to derive per-tenant pack keys (HKDF-SHA256).
-// This secret MUST be kept server-side; clients only receive derived, time-bound keys via entitlements.
+// Premium pack keys (see _shared/pack-keys.ts): the master key derives each
+// tenant's pack key (HKDF-SHA256) and AIDR_SHARED_PACK_KEYS holds the keys of
+// shared/vendor packs. Both stay server-side; clients only receive the keys
+// they are entitled to, time-bound, inside the signed entitlement.
 const PACK_MASTER_KEY_B64 = (Deno.env.get("AIDR_PACK_MASTER_KEY_B64") ?? "").trim();
+const SHARED_PACK_KEYS = Deno.env.get("AIDR_SHARED_PACK_KEYS") ?? "";
 
 // Default: 7d online entitlement TTL, followed by 72h offline grace.
 // Keep these limits aligned with /v1/enroll: malformed settings must not mint
@@ -136,27 +140,6 @@ function bytesToBase64(bytes: Uint8Array): string {
 	return btoa(bin);
 }
 
-async function deriveTenantPackKeyB64(userId: string): Promise<string | null> {
-	if (!PACK_MASTER_KEY_B64) return null;
-	try {
-		const master = Uint8Array.from(atob(PACK_MASTER_KEY_B64), (c) => c.charCodeAt(0));
-		const key = await crypto.subtle.importKey("raw", master, "HKDF", false, ["deriveBits"]);
-		const bits = await crypto.subtle.deriveBits(
-			{
-				name: "HKDF",
-				hash: "SHA-256",
-				salt: new Uint8Array(),
-				info: new TextEncoder().encode(`aidr:packkey:${userId}`),
-			},
-			key,
-			256,
-		);
-		return bytesToBase64(new Uint8Array(bits));
-	} catch {
-		return null;
-	}
-}
-
 async function signEd25519Detached(payloadJson: string): Promise<string | null> {
 	if (!ENTITLEMENT_SIGNING_KEY_ID || !ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64) return null;
 	try {
@@ -180,7 +163,7 @@ function buildEntitlementSnapshot(params: {
 	extraAgents: number;
 	allowedAgents: number;
 	premiumModules: string[];
-	tenantPackKey: string | null;
+	packKeys: Array<{ key_id: string; key_b64: string }>;
 	revocationEpoch: number;
 	timing: { ttlHours: number; graceHours: number };
 	providerValidUntilMs?: number | null;
@@ -202,19 +185,16 @@ function buildEntitlementSnapshot(params: {
 		extra_agents: params.extraAgents,
 		allowed_agents: params.allowedAgents,
 		premium_modules: params.premiumModules,
-		pack_keys:
-			params.tenantPackKey && params.premiumModules.includes("premium_intel")
-				? [
-						{
-							alg: "aes-256-gcm",
-							key_id: "aidr-pack-v1",
-							key_b64: params.tenantPackKey,
-							// A pack key never outlives its signed entitlement. It remains
-							// usable during the explicitly configured offline grace window.
-							expires_at: capped.graceUntil,
-						},
-					]
-				: [],
+		// A pack key never outlives its signed entitlement. It remains usable
+		// during the explicitly configured offline grace window.
+		pack_keys: params.premiumModules.includes("premium_intel")
+			? params.packKeys.map((key) => ({
+					alg: "aes-256-gcm",
+					key_id: key.key_id,
+					key_b64: key.key_b64,
+					expires_at: capped.graceUntil,
+				}))
+			: [],
 		issued_at: issuedAt.toISOString(),
 		expires_at: capped.expiresAt,
 		grace_until: capped.graceUntil,
@@ -513,13 +493,13 @@ Deno.serve(async (req) => {
 		}, rateLimitHeaders(rate));
 	}
 
-	const tenantPackKey = premiumModules.includes("premium_intel")
-		? await deriveTenantPackKeyB64(tenantId)
-		: null;
+	const packKeys = premiumModules.includes("premium_intel")
+		? await entitledPackKeys({ masterB64: PACK_MASTER_KEY_B64, sharedKeys: SHARED_PACK_KEYS, tenantId })
+		: [];
 
 	const entitlement = buildEntitlementSnapshot({
 		tenantId, includedAgents, extraAgents, allowedAgents, premiumModules,
-		tenantPackKey, revocationEpoch, timing, providerValidUntilMs,
+		packKeys, revocationEpoch, timing, providerValidUntilMs,
 		approvalPublicKeys: await loadApprovalPublicKeys(supabase, tenantId, Date.now()),
 	});
 	if (!entitlement) return json(503, { error: "entitlements_unavailable", retryable: true });

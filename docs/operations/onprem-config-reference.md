@@ -120,7 +120,8 @@ Edge Functions runtime (`functions` service `env_file`). Holds the control-plane
 | `AIDR_DELEGATION_SIGNING_KEY_ID` | always | generated | `aidr-delegation-<random>` | Delegated credential signing key id. |
 | `AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64` | always | generated secret | *(secret)* | Ed25519 delegated credential signing key. |
 | `AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64` | always | generated | *(blank)* | Matching delegated credential verification key (public). |
-| `AIDR_PACK_MASTER_KEY_B64` | always | generated secret | *(secret)* | Master key that encrypts policy/intel packs at rest. |
+| `AIDR_PACK_MASTER_KEY_B64` | always | generated secret | *(secret)* | Master key from which each tenant's premium intel pack key is derived (HKDF-SHA256, key id `aidr-tenant-pack-v2.<tenant>.<fingerprint>`) and delivered in the signed entitlement; it encrypts nothing at rest itself. Encrypt tenant packs with `scripts/intel-pack-keys.mjs encrypt-pack --tenant-id`. Rotating it changes every tenant key id: re-encrypt tenant packs. |
+| `AIDR_SHARED_PACK_KEYS` | not written; optional override | operator | *(blank)* | Keys of shared/vendor premium intel packs, `aidr-shared-pack-<label>=<base64 32-byte key>[,…]`, delivered to every premium_intel tenant (secret). The vendor supplies the key of a vendor-encrypted pack with the premium licence; `scripts/intel-pack-keys.mjs new-shared-key` creates one for operator-published packs. A malformed value delivers no shared key. |
 | `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING` | always | fixed by preparation | `false` | Legacy self-service billing stays disabled. |
 | `AIDR_PACK_DOWNLOAD_GRANT_SECRET` | always | generated secret | *(secret)* | HMAC secret for short-lived pack download grants. |
 | `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` | always | generated secret | *(secret)* | Wraps the per-tenant dashboard approval signing keys (32 bytes, base64); without it dashboard approvals fail closed. |

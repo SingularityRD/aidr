@@ -24,7 +24,11 @@
  *                     bucket of a self-hosted deployment (migration
  *                     20260924000013) and register it in `pack_versions`, so the
  *                     authenticated `packs-manifest` / `packs-download` functions
- *                     serve it to entitled tenants.
+ *                     serve it to entitled tenants. Encrypted files must use
+ *                     a key every tenant served the row holds: a shared pack
+ *                     key ("aidr-shared-pack-*") for a shared row, or that
+ *                     tenant's derived key for a --tenant-id row
+ *                     (scripts/intel-pack-keys.mjs).
  *
  * Nothing here contacts the vendor or the internet.
  */
@@ -34,6 +38,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { packKeyScope } from "./intel-pack-keys.mjs";
 
 export const BUNDLE_FORMAT = "aidr-intel-pack-bundle-v1";
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -310,6 +315,24 @@ function readDeployment(deploymentDir) {
 }
 
 /**
+ * Refuse a registration whose encrypted files no tenant it is served to could
+ * decrypt: a shared row (tenant_id IS NULL) reaches every premium tenant, so it
+ * needs a shared pack key; a tenant row may use a shared key or that tenant's
+ * own derived key. Unknown key ids (e.g. the retired per-tenant "aidr-pack-v1",
+ * which named a different key on every tenant) are not deliverable.
+ */
+export function assertDeliverablePackKeys(manifest, tenantId = null) {
+	for (const file of manifest.files) {
+		if (!file.encrypted) continue;
+		const scope = packKeyScope(file.key_id);
+		const ok = scope && (scope.kind === "shared" || (tenantId !== null && scope.tenantId.toLowerCase() === tenantId.toLowerCase()));
+		if (!ok) {
+			throw new PackImportError(`${file.path} is encrypted with key ${JSON.stringify(file.key_id)}, which ${tenantId ? `tenant ${tenantId}` : "the tenants a shared pack is served to"} cannot hold; use a shared pack key${tenantId ? " or this tenant's pack key" : ""} (scripts/intel-pack-keys.mjs)`);
+		}
+	}
+}
+
+/**
  * Upload the verified bundle to the private `aidr-packs` bucket and register it
  * in `pack_versions`. Re-running after an interruption is safe: an identical
  * object or row is accepted, a different one is refused.
@@ -317,6 +340,7 @@ function readDeployment(deploymentDir) {
 export async function installStorage(pack, verified, { deploymentDir, tenantId = null, bucket = "aidr-packs", core } = {}) {
 	const lib = core ?? (await loadCore());
 	if (tenantId !== null && !UUID.test(tenantId)) throw new PackImportError("--tenant-id must be a UUID");
+	assertDeliverablePackKeys(verified.manifest, tenantId);
 	const { base, env } = readDeployment(deploymentDir);
 	const { manifest } = verified;
 	const headers = { apikey: env.ANON_KEY ?? "", Authorization: `Bearer ${env.SERVICE_ROLE_KEY}` };

@@ -154,6 +154,8 @@ const DOCUMENTED_EMPTY_FALLBACKS: Record<string, string> = {
 	AIDR_REVOCATION_SIGNING_KEY_ID: "optional provisioning",
 	AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64: "optional provisioning",
 	AIDR_PACK_MASTER_KEY_B64: "optional provisioning",
+	// Shared (vendor) intel pack keys; unset means no shared encrypted packs.
+	AIDR_SHARED_PACK_KEYS: "optional provisioning",
 	// Unprovisioned endpoint secret with its own documented fail-closed path:
 	// 400 `invalid_signature`, no writes, variable named in the log.
 	STRIPE_WEBHOOK_SECRET: "self-gated fail-closed path",

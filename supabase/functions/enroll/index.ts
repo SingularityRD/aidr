@@ -8,6 +8,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { canonicalJson } from "../_shared/canonical-json.ts";
+import { entitledPackKeys } from "../_shared/pack-keys.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
@@ -24,7 +25,9 @@ const ENTITLEMENT_SIGNING_KEY_ID = (Deno.env.get("AIDR_ENTITLEMENT_SIGNING_KEY_I
 const ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64 = (
 	Deno.env.get("AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64") ?? ""
 ).trim();
+// Premium pack keys: same derivation and shared-key set as /v1/ingest (_shared/pack-keys.ts).
 const PACK_MASTER_KEY_B64 = (Deno.env.get("AIDR_PACK_MASTER_KEY_B64") ?? "").trim();
+const SHARED_PACK_KEYS = Deno.env.get("AIDR_SHARED_PACK_KEYS") ?? "";
 
 const ENTITLEMENT_TTL_HOURS = Deno.env.get("AIDR_ENTITLEMENT_TTL_HOURS") ?? "168";
 const ENTITLEMENT_GRACE_HOURS = Deno.env.get("AIDR_ENTITLEMENT_GRACE_HOURS") ?? "72";
@@ -93,27 +96,6 @@ async function signEd25519Detached(payloadJson: string): Promise<string | null> 
 		]);
 		const sig = await crypto.subtle.sign("Ed25519", key, new TextEncoder().encode(payloadJson));
 		return bytesToBase64(new Uint8Array(sig));
-	} catch {
-		return null;
-	}
-}
-
-async function deriveTenantPackKeyB64(userId: string): Promise<string | null> {
-	if (!PACK_MASTER_KEY_B64) return null;
-	try {
-		const master = Uint8Array.from(atob(PACK_MASTER_KEY_B64), (c) => c.charCodeAt(0));
-		const key = await crypto.subtle.importKey("raw", master, "HKDF", false, ["deriveBits"]);
-		const bits = await crypto.subtle.deriveBits(
-			{
-				name: "HKDF",
-				hash: "SHA-256",
-				salt: new Uint8Array(),
-				info: new TextEncoder().encode(`aidr:packkey:${userId}`),
-			},
-			key,
-			256,
-		);
-		return bytesToBase64(new Uint8Array(bits));
 	} catch {
 		return null;
 	}
@@ -288,7 +270,9 @@ Deno.serve(async (req) => {
 		tenantId, Deno.env.get("AIDR_RUNTIME_CAPABILITIES_BY_TENANT"), admissionData,
 	) : [];
 	const premiumModules = buildPremiumModules(exchange, capabilities);
-	const tenantPackKey = premiumModules.includes("premium_intel") ? await deriveTenantPackKeyB64(tenantId) : null;
+	const packKeys = premiumModules.includes("premium_intel")
+		? await entitledPackKeys({ masterB64: PACK_MASTER_KEY_B64, sharedKeys: SHARED_PACK_KEYS, tenantId })
+		: [];
 	const entitlement = {
 		schema_version: 2,
 		tenant_id: tenantId,
@@ -297,17 +281,14 @@ Deno.serve(async (req) => {
 		extra_agents: extraAgents,
 		allowed_agents: allowedAgents,
 		premium_modules: premiumModules,
-		pack_keys:
-			tenantPackKey && premiumModules.includes("premium_intel")
-				? [
-						{
-							alg: "aes-256-gcm",
-							key_id: "aidr-pack-v1",
-							key_b64: tenantPackKey,
-							expires_at: cappedWindow.graceUntil,
-						},
-					]
-				: [],
+		pack_keys: premiumModules.includes("premium_intel")
+			? packKeys.map((key) => ({
+					alg: "aes-256-gcm",
+					key_id: key.key_id,
+					key_b64: key.key_b64,
+					expires_at: cappedWindow.graceUntil,
+				}))
+			: [],
 		issued_at: window.issuedAt,
 		expires_at: cappedWindow.expiresAt,
 		grace_until: cappedWindow.graceUntil,

@@ -12,6 +12,11 @@
  *
  * Prints a small JSON summary to stdout:
  *   { sha256_plain, sha256_cipher, bytes_plain, bytes_cipher }
+ *
+ * Low-level helper for a raw key. To publish a pack that entitled endpoints can
+ * open, use `scripts/intel-pack-keys.mjs encrypt-pack`, which derives the
+ * tenant key or takes a shared pack key and records the matching key_id in the
+ * manifest (see that file for the key model).
  */
 
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
