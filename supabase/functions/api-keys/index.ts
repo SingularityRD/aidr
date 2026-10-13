@@ -90,7 +90,7 @@ function randomApiKey(scope: CreateRequest["scope"] = "tenant"): string {
 }
 
 async function resolveTenant(
-	supabase: ReturnType<typeof createClient>,
+	supabase: ReturnType<typeof createClient<any, "public">>,
 	userId: string,
 	req: Request,
 ): Promise<{ id: string; role: string } | null> {
@@ -109,7 +109,7 @@ async function resolveTenant(
 }
 
 async function rateLimitCreate(
-	supabase: ReturnType<typeof createClient>,
+	supabase: ReturnType<typeof createClient<any, "public">>,
 	userId: string,
 ): Promise<boolean> {
 	const nowMin = Math.floor(Date.now() / 60000);

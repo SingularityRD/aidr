@@ -352,7 +352,7 @@ export interface NotificationKeyring {
 
 const KEY_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
-function base64ToBytes(value: string): Uint8Array | null {
+function base64ToBytes(value: string): Uint8Array<ArrayBuffer> | null {
 	try {
 		const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
 		const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
@@ -400,7 +400,7 @@ export interface TargetBinding {
 	type: ChannelType;
 }
 
-function associatedData(binding: TargetBinding): Uint8Array {
+function associatedData(binding: TargetBinding): Uint8Array<ArrayBuffer> {
 	return new TextEncoder().encode(
 		`aidr-notification-target:v1:${binding.tenantId.toLowerCase()}:${binding.channelId.toLowerCase()}:${binding.type}`,
 	);

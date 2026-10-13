@@ -57,10 +57,10 @@ const readRuntimeEnv: EnvReader = (name) => {
 	} catch {
 		// Node contract tests use process.env when Deno is unavailable.
 	}
-	return globalThis.process?.env?.[name];
+	return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
 };
 
-type DatabaseClient = ReturnType<typeof createClient>;
+type DatabaseClient = ReturnType<typeof createClient<any, "public">>;
 
 export interface ComplianceReportDeps {
 	env?: EnvReader;

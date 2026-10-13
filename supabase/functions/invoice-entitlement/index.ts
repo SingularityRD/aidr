@@ -34,11 +34,11 @@ async function boundedJson(req: Request): Promise<unknown> {
 
 export interface InvoiceEntitlementDeps {
 	/** Overrides the service-role client; used by the contract suite. */
-	db?: ReturnType<typeof createClient>;
+	db?: ReturnType<typeof createClient<any, "public">>;
 }
 
 interface ApprovalContext {
-	db: ReturnType<typeof createClient>;
+	db: ReturnType<typeof createClient<any, "public">>;
 	tenantId: string;
 	userId: string;
 }

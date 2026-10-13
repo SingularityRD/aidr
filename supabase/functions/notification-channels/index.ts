@@ -78,10 +78,10 @@ const readRuntimeEnv: EnvReader = (name) => {
 	} catch {
 		// Node contract tests use process.env when Deno is unavailable.
 	}
-	return globalThis.process?.env?.[name];
+	return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
 };
 
-type DatabaseClient = ReturnType<typeof createClient>;
+type DatabaseClient = ReturnType<typeof createClient<any, "public">>;
 
 export interface NotificationChannelsDeps {
 	env?: EnvReader;
@@ -131,7 +131,8 @@ export type ChannelCommand =
 			filters?: ChannelFilters;
 			target?: unknown;
 	  }
-	| { action: "delete" | "test"; tenantId: string; channelId: string };
+	| { action: "delete"; tenantId: string; channelId: string }
+	| { action: "test"; tenantId: string; channelId: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
