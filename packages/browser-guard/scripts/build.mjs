@@ -47,6 +47,16 @@ export const SITE_HOSTS = Object.freeze([
 ]);
 export const SITE_MATCHES = Object.freeze(SITE_HOSTS.map((host) => `https://${host}/*`));
 
+/**
+ * Site hosts whose content scripts also run in subframes (`all_frames: true`): the
+ * Microsoft 365 Copilot hosts, whose Copilot pane the Office web apps embed as a
+ * cross-origin iframe. The authoritative list is `FRAME_MATCH_PATTERNS` in
+ * src/sites/index.ts (from src/sites/frames.ts); this copy is the fallback for stub entry
+ * roots and is kept in sync by src/__tests__/build.test.ts. Every other site is top-frame only.
+ */
+export const SITE_FRAME_HOSTS = Object.freeze(["m365.cloud.microsoft", "copilot.cloud.microsoft"]);
+export const SITE_FRAME_MATCHES = Object.freeze(SITE_FRAME_HOSTS.map((host) => `https://${host}/*`));
+
 /** Entry points (see src/types.ts) and the classic scripts they become. */
 export const ENTRIES = Object.freeze([
 	{ source: "src/background/index.ts", output: "background.js" },
@@ -138,30 +148,54 @@ export function manifestVersion(packageVersion) {
 }
 
 /**
+ * The content_scripts entries: content.js and the page-world hook content-main.js for the
+ * top frame of every site, and the same two scripts with `all_frames: true` for the
+ * frame-guarded hosts. The two groups have disjoint `matches`, so no frame ever gets a
+ * script twice. Frame-guarded hosts are covered in their top frame by the second group.
+ * @param {readonly string[]} matches
+ * @param {readonly string[]} frameMatches subset of `matches`
+ * @param {boolean} contentCss
+ */
+export function contentScripts(matches, frameMatches, contentCss = false) {
+	const framed = new Set(frameMatches);
+	const topOnly = matches.filter((pattern) => !framed.has(pattern));
+	const allFrames = matches.filter((pattern) => framed.has(pattern));
+	const group = (patterns, all) =>
+		patterns.length === 0
+			? []
+			: [
+					{
+						matches: [...patterns],
+						js: ["content.js"],
+						...(contentCss ? { css: ["content.css"] } : {}),
+						run_at: "document_start",
+						all_frames: all,
+					},
+					// Page-world file-input hook (src/content/file-input-hook.ts): routes detached and
+					// shadow-DOM <input type=file> selections to content.js. No extension APIs, no data.
+					{
+						matches: [...patterns],
+						js: ["content-main.js"],
+						run_at: "document_start",
+						all_frames: all,
+						world: "MAIN",
+					},
+				];
+	return [...group(topOnly, false), ...group(allFrames, true)];
+}
+
+/**
  * Generates manifest.json for one target.
  * @param {"chrome" | "firefox"} target
- * @param {{ version: string; contentCss?: boolean; matches?: readonly string[] }} options
+ * @param {{ version: string; contentCss?: boolean; matches?: readonly string[]; frameMatches?: readonly string[] }} options
  */
-export function createManifest(target, { version, contentCss = false, matches = SITE_MATCHES }) {
+export function createManifest(
+	target,
+	{ version, contentCss = false, matches = SITE_MATCHES, frameMatches = SITE_FRAME_MATCHES },
+) {
 	if (!TARGETS[target]) throw new Error(`BUILD_UNKNOWN_TARGET: ${target}`);
 	const { version: numeric, versionName } = manifestVersion(version);
 	const icons = Object.fromEntries(ICON_SIZES.map((size) => [String(size), `icons/icon-${size}.png`]));
-	const contentScript = {
-		matches: [...matches],
-		js: ["content.js"],
-		...(contentCss ? { css: ["content.css"] } : {}),
-		run_at: "document_start",
-		all_frames: false,
-	};
-	// Page-world file-input hook (src/content/file-input-hook.ts): routes detached and
-	// shadow-DOM <input type=file> selections to content.js. No extension APIs, no data.
-	const mainWorldScript = {
-		matches: [...matches],
-		js: ["content-main.js"],
-		run_at: "document_start",
-		all_frames: false,
-		world: "MAIN",
-	};
 	const manifest = {
 		manifest_version: 3,
 		name: "__MSG_extName__",
@@ -173,7 +207,7 @@ export function createManifest(target, { version, contentCss = false, matches = 
 		optional_permissions: [...OPTIONAL_PERMISSIONS],
 		host_permissions: [...matches],
 		optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
-		content_scripts: [contentScript, mainWorldScript],
+		content_scripts: contentScripts(matches, frameMatches, contentCss),
 		action: {
 			default_title: "__MSG_extName__",
 			default_popup: "popup.html",
@@ -446,16 +480,24 @@ function collectInputs(root, entriesRoot) {
 const MATCH_PATTERN_SHAPE = /^https:\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)+)\/\*$/;
 
 /**
- * Loads `MATCH_PATTERNS` from src/sites/index.ts (bundled in memory and imported
- * as a data: URL module) so the manifest can never drift from the adapters.
- * Falls back to {@link SITE_MATCHES} only when the module does not exist.
- * @returns {Promise<{ matches: string[]; source: string }>}
+ * Loads `MATCH_PATTERNS` and `FRAME_MATCH_PATTERNS` from src/sites/index.ts (bundled in
+ * memory and imported as a data: URL module) so the manifest can never drift from the
+ * adapters. Falls back to {@link SITE_MATCHES} / {@link SITE_FRAME_MATCHES} only when the
+ * module does not exist. A module without `FRAME_MATCH_PATTERNS` has no frame-guarded host.
+ * @returns {Promise<{ matches: string[]; frameMatches: string[]; source: string }>}
  */
 export async function loadSiteMatches(entriesRoot) {
 	const sitesModule = join(entriesRoot, "src", "sites", "index.ts");
-	if (!existsSync(sitesModule)) return { matches: [...SITE_MATCHES], source: "scripts/build.mjs SITE_HOSTS" };
+	if (!existsSync(sitesModule)) {
+		return {
+			matches: [...SITE_MATCHES],
+			frameMatches: [...SITE_FRAME_MATCHES],
+			source: "scripts/build.mjs SITE_HOSTS",
+		};
+	}
 	const esbuild = await import("esbuild");
 	let patterns;
+	let framePatterns;
 	try {
 		const result = await esbuild.build({
 			entryPoints: [sitesModule],
@@ -466,7 +508,9 @@ export async function loadSiteMatches(entriesRoot) {
 			logLevel: "silent",
 		});
 		const url = `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`;
-		patterns = (await import(url)).MATCH_PATTERNS;
+		const sites = await import(url);
+		patterns = sites.MATCH_PATTERNS;
+		framePatterns = sites.FRAME_MATCH_PATTERNS ?? [];
 	} catch (error) {
 		fail(`could not load MATCH_PATTERNS from src/sites/index.ts: ${error.message}`);
 	}
@@ -476,7 +520,19 @@ export async function loadSiteMatches(entriesRoot) {
 			fail(`src/sites/index.ts MATCH_PATTERNS entry ${JSON.stringify(pattern)} is not an exact https://<host>/* pattern`);
 		}
 	}
-	return { matches: [...new Set(patterns)], source: "src/sites/index.ts MATCH_PATTERNS" };
+	if (!Array.isArray(framePatterns)) fail("src/sites/index.ts FRAME_MATCH_PATTERNS is not an array");
+	for (const pattern of framePatterns) {
+		// Only exact hosts that are also protected sites may run in subframes: never a
+		// wildcard, never a host the extension has no business in.
+		if (typeof pattern !== "string" || !patterns.includes(pattern)) {
+			fail(`src/sites/index.ts FRAME_MATCH_PATTERNS entry ${JSON.stringify(pattern)} is not one of MATCH_PATTERNS`);
+		}
+	}
+	return {
+		matches: [...new Set(patterns)],
+		frameMatches: [...new Set(framePatterns)],
+		source: "src/sites/index.ts MATCH_PATTERNS",
+	};
 }
 
 async function bundleEntries({ entriesRoot, outDir, target, release, version }) {
@@ -541,7 +597,7 @@ export async function buildExtension(options = {}) {
 	const inputs = collectInputs(root, entriesRoot);
 	const { version } = manifestVersion(inputs.version);
 	const contentCss = existsSync(join(root, "static", "content.css"));
-	const { matches } = await loadSiteMatches(entriesRoot);
+	const { matches, frameMatches } = await loadSiteMatches(entriesRoot);
 	const siteHosts = matches.map((pattern) => MATCH_PATTERN_SHAPE.exec(pattern)[1]);
 
 	rmSync(outDir, { recursive: true, force: true });
@@ -571,6 +627,7 @@ export async function buildExtension(options = {}) {
 			version: inputs.version,
 			contentCss,
 			matches,
+			frameMatches,
 		});
 		writeFile(join(targetDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 

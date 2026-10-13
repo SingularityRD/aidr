@@ -14,12 +14,23 @@
  * sees tab URLs only on origins the user granted and keeps catalog ids and counts only.
  * The per-tab placeholder vault (VAULT_SAVE / VAULT_LOAD, ./vault-store.ts) is keyed by
  * the sender's tab id and page origin, so one tab or site can never read another's.
+ *
+ * Content scripts run in the top frame, except on the Microsoft 365 Copilot hosts
+ * (../sites/frames.ts), where they also run in subframes so the Copilot pane the Office web
+ * apps embed as a cross-origin iframe is guarded. A message from a subframe is accepted only
+ * from those hosts; the site comes from the frame's own URL (`sender.url`), never from the
+ * top-level page, so telemetry and stats are tagged `copilot`. A subframe guard keeps its own
+ * vault record (`frame:` scope, so it never overwrites the top frame's) and is registered in
+ * ./content-frames.ts so policy changes reach it although its tab's page is not a protected
+ * site.
+ *
  * Acceptable-use acknowledgements (AUP_STATUS / AUP_ACKNOWLEDGE) are kept per browser
  * profile in storage.local and reported once per notice version, counts only.
  */
 
 import { fromBase64 } from "../../../privacy/src/browser/transport.js";
 import { serviceForUrl } from "../sites/catalog.js";
+import { isFrameGuardUrl } from "../sites/frames.js";
 import type {
 	GuardError,
 	GuardPolicy,
@@ -34,6 +45,7 @@ import type {
 	SiteId,
 	UserSettings,
 } from "../types.js";
+import { ContentFrames } from "./content-frames.js";
 import { CustomSiteScripts, customSiteForUrl, originGranted } from "./custom-sites.js";
 import {
 	DASHBOARD_POLICY_ALARM,
@@ -123,6 +135,8 @@ type Sender =
 			/** Page origin from the sender URL (vault persistence is keyed by tab + origin). */
 			readonly origin: string;
 			readonly topFrame: boolean;
+			/** Sender frame id (0 = top frame). */
+			readonly frameId: number;
 	  };
 
 const fail = (error: string, keys?: readonly string[]): GuardError =>
@@ -134,7 +148,7 @@ function isRecord(raw: unknown): raw is Record<string, unknown> {
 
 const isTabId = (raw: unknown): raw is number => Number.isSafeInteger(raw) && (raw as number) >= 0;
 
-/** Content scripts run in the top frame only (`all_frames: false`). */
+/** Content scripts run in the top frame, plus subframes of the frame-guarded hosts. */
 const isTopFrame = (sender: MessageSender): boolean => (sender.frameId ?? 0) === 0;
 
 export function startBackground(options: BackgroundOptions): BackgroundController {
@@ -149,6 +163,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	const shadowMonitor = new ShadowAiMonitor({ chrome, usage: shadowUsage, now });
 	const customScripts = new CustomSiteScripts(chrome, log);
 	const contentTabs = new ContentTabs(storage);
+	const contentFrames = new ContentFrames(storage);
 	const fetchImpl: typeof fetch = options.fetch ?? ((...args) => globalThis.fetch(...args));
 	const dashboard = new DashboardPolicyClient({ storage, fetch: fetchImpl, now, log });
 	const telemetry = new TelemetryClient({
@@ -198,9 +213,13 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		const tabId = sender.tab?.id;
 		const site = contentSiteForUrl(sender.url);
 		if (!isTabId(tabId) || !site) return null;
+		const topFrame = isTopFrame(sender);
+		// Subframe content scripts exist only on the frame-guarded hosts (the manifest's
+		// all_frames entry); anything else claiming to be one is refused.
+		if (!topFrame && !isFrameGuardUrl(sender.url)) return null;
 		// siteForUrl accepted the URL, so it parses.
 		const origin = new URL(sender.url as string).origin;
-		return { kind: "content", tabId, site, origin, topFrame: isTopFrame(sender) };
+		return { kind: "content", tabId, site, origin, topFrame, frameId: sender.frameId ?? 0 };
 	}
 
 	async function pausedUntil(): Promise<number | null> {
@@ -275,14 +294,25 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			log("tabs: query failed; policy change not broadcast");
 			return;
 		}
-		await Promise.all(
-			tabs.map(async (tab) => {
+		const frames = await contentFrames.list().catch(() => []);
+		const send = (tabId: number, frameId: number, site: SiteId) =>
+			chrome.tabs
+				.sendMessage(
+					tabId,
+					{ type: "POLICY_CHANGED", policy: effectivePolicy(site, true, paused) },
+					{ frameId },
+				)
+				.catch(() => {});
+		await Promise.all([
+			// Top frames, each with the policy of its own site; a subframe guard (which may be
+			// another site than its tab's page) gets the policy of its own site below.
+			...tabs.map(async (tab) => {
 				const site = contentSiteForUrl(tab.url);
 				if (!isTabId(tab.id) || !site) return;
-				const policy = effectivePolicy(site, true, paused);
-				await chrome.tabs.sendMessage(tab.id, { type: "POLICY_CHANGED", policy }).catch(() => {});
+				await send(tab.id, 0, site);
 			}),
-		);
+			...frames.map((frame) => send(frame.tabId, frame.frameId, frame.site)),
+		]);
 	}
 
 	/** (Re)creates the native bridge: on a policy change, or after the permission changed. */
@@ -585,17 +615,25 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		}
 	}
 
+	/**
+	 * Vault record scope: the page origin for the top frame, `frame:<origin>` for a subframe
+	 * guard, so a Copilot frame never overwrites (or reads) the top frame's record, even on
+	 * the same origin.
+	 */
+	const vaultScope = (who: Extract<Sender, { kind: "content" }>): string =>
+		who.topFrame ? who.origin : `frame:${who.origin}`;
+
 	async function vaultSave(message: Record<string, unknown>, who: Sender): Promise<GuardResponse> {
-		if (who.kind !== "content" || !who.topFrame) return fail("NOT_ALLOWED");
-		const result = await vaults.save(who.tabId, who.origin, message.snapshot, message.sent);
+		if (who.kind !== "content") return fail("NOT_ALLOWED");
+		const result = await vaults.save(who.tabId, vaultScope(who), message.snapshot, message.sent);
 		if (result === "invalid") return fail("BAD_MESSAGE");
 		if (result === "too-large") return fail("TOO_LARGE");
 		return { ok: true };
 	}
 
 	async function vaultLoad(who: Sender): Promise<GuardResponse> {
-		if (who.kind !== "content" || !who.topFrame) return fail("NOT_ALLOWED");
-		const stored = await vaults.load(who.tabId, who.origin);
+		if (who.kind !== "content") return fail("NOT_ALLOWED");
+		const stored = await vaults.load(who.tabId, vaultScope(who));
 		return { ok: true, snapshot: stored?.snapshot ?? null, sent: stored?.sent ?? [] };
 	}
 
@@ -606,7 +644,11 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			const [active] = await chrome.tabs
 				.query({ active: true, lastFocusedWindow: true })
 				.catch(() => []);
-			if (!active || !isTabId(active.id) || !contentSiteForUrl(active.url))
+			if (
+				!active ||
+				!isTabId(active.id) ||
+				!(contentSiteForUrl(active.url) || (await contentFrames.has(active.id)))
+			)
 				return fail("NOT_ALLOWED");
 			tabId = active.id;
 		}
@@ -677,7 +719,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	/** Records "I understand" for the notice in force; one telemetry event per new version. */
 	function aupAcknowledge(message: Record<string, unknown>, who: Sender): Promise<GuardResponse> {
-		if (who.kind !== "content" || !who.topFrame) return Promise.resolve(fail("NOT_ALLOWED"));
+		// Subframe senders are already limited to the frame-guarded hosts (classifySender).
+		if (who.kind !== "content") return Promise.resolve(fail("NOT_ALLOWED"));
 		const notice = current.acceptableUse ?? null;
 		if (!notice || message.noticeId !== notice.id || message.version !== notice.version)
 			return Promise.resolve(fail("BAD_MESSAGE"));
@@ -706,6 +749,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		const content = who.kind === "content";
 		// A content script fetches its policy when it boots: the tab is protected from now on.
 		if (content && who.topFrame) await contentTabs.mark(who.tabId, who.origin);
+		// A subframe guard (the Copilot pane of an Office web app) is registered for policy pushes.
+		if (content && !who.topFrame) await contentFrames.mark(who.tabId, who.frameId, who.site);
 		if (content) refreshExactDataKeys();
 		return {
 			ok: true,
@@ -800,6 +845,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		void stats.removeTab(tabId);
 		void contentTabs.remove(tabId);
+		void contentFrames.remove(tabId);
 		void vaults.removeTab(tabId);
 		shadowMonitor.removeTab(tabId);
 	});

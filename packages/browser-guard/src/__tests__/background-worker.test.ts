@@ -772,9 +772,12 @@ describe("background: per-tab vault persistence (VAULT_SAVE / VAULT_LOAD)", () =
 		const save = { type: "VAULT_SAVE", snapshot: snapshot(t.now()), sent: [] };
 		expect(await t.send(save)).toEqual({ ok: false, error: "NOT_ALLOWED" });
 		expect(await t.send({ type: "VAULT_LOAD" })).toEqual({ ok: false, error: "NOT_ALLOWED" });
+		// A ChatGPT sub-frame never runs a content script (top frame only there): refused
+		// outright. Sub-frames are accepted only on the Microsoft 365 Copilot hosts
+		// (background-frames.test.ts).
 		expect(await t.send(save, { ...t.content(), frameId: 3 })).toEqual({
 			ok: false,
-			error: "NOT_ALLOWED",
+			error: "SENDER_DENIED",
 		});
 		const bad = (s: unknown, sent: unknown = []) =>
 			t.send({ type: "VAULT_SAVE", snapshot: s, sent }, t.content());

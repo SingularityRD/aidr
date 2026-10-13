@@ -762,9 +762,13 @@ export async function lastResponseText(page, siteKey) {
 	});
 }
 
-/** Runs `fn` with a short-lived CDP session attached to `page`. */
-async function withCdp(page, fn) {
-	const cdp = await page.context().newCDPSession(page);
+/**
+ * Runs `fn` with a short-lived CDP session attached to `target`: a page, or a frame that
+ * runs out of process (a cross-site iframe under site isolation, e.g. the Copilot pane).
+ */
+export async function withCdp(target, fn) {
+	const page = typeof target.page === "function" ? target.page() : target;
+	const cdp = await page.context().newCDPSession(target);
 	try {
 		return await fn(cdp);
 	} finally {

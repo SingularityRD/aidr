@@ -213,14 +213,14 @@ export default [
 					rules.some(
 						(r) =>
 							r.action.type === "block" &&
-							r.condition.requestDomains.includes("poe.com") &&
+							r.condition.requestDomains?.includes("poe.com") &&
 							r.condition.resourceTypes.includes("main_frame"),
 					),
 					rules.map((r) => r.condition.requestDomains),
 				);
 				checks.check(
 					"sanctioned services have no block rule",
-					!rules.some((r) => r.condition.requestDomains.includes("chatgpt.com")),
+					!rules.some((r) => r.condition.requestDomains?.includes("chatgpt.com")),
 					rules.map((r) => r.condition.requestDomains),
 				);
 

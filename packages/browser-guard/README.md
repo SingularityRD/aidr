@@ -13,7 +13,7 @@ network access.
 | | |
 |---|---|
 | Browsers | Chrome 120+, Edge 120+ (Chromium), Firefox 140+ (ESR) |
-| Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`) and Microsoft 365 Copilot Chat (`m365.cloud.microsoft`, `copilot.cloud.microsoft`; same site id `copilot`), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
+| Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`) and Microsoft 365 Copilot Chat (`m365.cloud.microsoft`, `copilot.cloud.microsoft`; same site id `copilot`; also as a subframe, the Copilot pane of the Office web apps, see [Limitations](#limitations)), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
 | Languages | English, Turkish |
 | Data sent anywhere | Nothing by default. When an administrator connects a control plane, only counts per entity type are sent (see [Privacy](#privacy)). |
 
@@ -301,7 +301,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 | `host_permissions` | the ten HTTPS hosts above | content script injection on supported sites only |
 | `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install. The options page requests exact `https://<host>/*` origins, from a click, only for what the managed policy configures: the hosts of `customSites`, and the Shadow AI catalog origins when `shadowAi` is on (or the origins of explicitly blocked services). No `tabs`, `webNavigation`, `history` or `<all_urls>` permission is requested: the extension sees a tab's URL only on origins it was granted |
-| `content_scripts` | `content.js` and `content-main.js` (`world: "MAIN"`), both `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only. `content-main.js` runs in the page's JavaScript world with no extension APIs and no data: it only hooks `<input type=file>` (`click`, `showPicker`, the `files` getter) so detached and shadow-DOM file inputs are handed to `content.js` for checking (see [Limitations](#limitations)). Custom sites get both scripts |
+| `content_scripts` | `content.js` and `content-main.js` (`world: "MAIN"`), both `run_at: document_start`: `all_frames: false` for every site host except the two Microsoft 365 Copilot hosts (`m365.cloud.microsoft`, `copilot.cloud.microsoft`), which get the same two scripts with `all_frames: true` (disjoint `matches`, so no frame gets a script twice) | intercept before the page's own handlers; top frame only, except that on the Microsoft 365 Copilot hosts the scripts also run when that host is loaded as a subframe, which is how the Office web apps embed the Copilot pane (see [Limitations](#limitations)). No host permission is added for this: the frame hosts are already site hosts, and the Office pages that embed them get no script. `content-main.js` runs in the page's JavaScript world with no extension APIs and no data: it only hooks `<input type=file>` (`click`, `showPicker`, the `files` getter) so detached and shadow-DOM file inputs are handed to `content.js` for checking (see [Limitations](#limitations)). Custom sites get both scripts |
 | `web_accessible_resources` | none | no extension resource is exposed to web pages, so a page cannot detect the extension by probing its resources. That does not make the extension invisible: the page-world hook in `content-main.js` is observable to a page that looks for it (the patched `HTMLInputElement` `files` getter, `click` and `showPicker`, and the `aidr-file-*` relay events). It sets no global name or flag on `window`; see [Limitations](#limitations). A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
 | `incognito` | `not_allowed` | the extension does not run in private windows |
 | CSP (`extension_pages`) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` | no remote code; `connect-src 'self'` so the options page can load the packaged `_locales` for the language override; `https:` because the control-plane URL is configurable per tenant; loopback HTTP for local development |
@@ -560,9 +560,30 @@ secret: the same secret and dataset id reproduce the same fingerprints.
   differently. The guard runs on the whole `m365.cloud.microsoft` host, because the
   Microsoft 365 home enters `/chat` without a page load. Its selectors are covered by
   unit tests against representative markup, not by the real-browser suite or a live
-  tenant. The Copilot pane inside the Office web apps (Word, Excel, PowerPoint, Outlook
-  on the web) runs in a cross-origin iframe and is not covered: Browser Guard runs in
-  the top frame only.
+  tenant.
+- The Copilot pane inside the Office web apps (Word, Excel, PowerPoint, Outlook on the
+  web) is a cross-origin iframe. On the Microsoft 365 Copilot hosts (`m365.cloud.microsoft`,
+  `copilot.cloud.microsoft`; list in [`src/sites/frames.ts`](src/sites/frames.ts)) the
+  content scripts also run in subframes, so a pane served from one of those hosts is
+  guarded like the top-level page: masking on send and paste, file checks, local restore,
+  fail-closed until a policy arrives, counts reported as site `copilot` (the worker takes
+  the site from the frame's own URL, not from the Office page). The pane keeps its own
+  vault record (`vault:<tab>:frame:<origin>`), so it never overwrites a top-frame guard's
+  in the same tab, and each send is counted once by the frame that sent it. Policy changes
+  reach the pane although its tab's page is not a protected site (the worker registers
+  the frame when it boots). The Office pages themselves (`*.officeapps.live.com`,
+  `*.office.com`, Outlook) get no script, no host permission and no block: a
+  `blockedSites: ["copilot"]` or Shadow AI `m365-copilot` block stops the pane's own frame
+  request (the frame rule covers the Copilot hosts, and on `m365.cloud.microsoft` only
+  `/chat`), never the Office app, and the Office tab is never redirected to
+  `blocked.html`. **Unverified against a live tenant (BG-LIVE):** which origin serves the
+  in-app pane, and its markup, could not be checked; a pane served from another host is
+  not covered (add the host to `src/sites/frames.ts` and the adapter), and the selectors
+  are those of Microsoft 365 Copilot Chat. The pane in a tab that was already open when
+  the extension started is guarded after a reload (open-tab injection is top-frame only),
+  and Shadow AI visit counts see top-level tab URLs only, so the pane is not counted as a
+  visit. The real-browser `frame-copilot-office` scenario covers the frame against a
+  fixture, not against Microsoft 365.
 - Free-form names and addresses without a label ("Name:", "Adres:") need the
   optional native host (NER), which ships without model weights or accuracy
   evidence. Without it, rule detection covers structured identifiers, labelled

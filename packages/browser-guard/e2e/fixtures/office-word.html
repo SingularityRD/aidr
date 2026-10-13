@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Word for the web (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; display: flex; min-height: 100vh; }
+	main { flex: 1; padding: 16px; }
+	#comments { min-height: 80px; }
+	.comment-box { display: flex; gap: 8px; }
+	#doc-comment { flex: 1; min-height: 40px; }
+	#copilot-pane { width: 420px; height: 640px; border: 0; border-left: 1px solid #ccc; }
+</style>
+</head>
+<body>
+<!--
+	An Office web app page (served at https://word-edit.officeapps.live.com) that embeds the
+	Microsoft 365 Copilot pane as a cross-origin iframe on a Microsoft 365 Copilot host. The
+	document's own comment box is an ordinary Office field: Browser Guard does not run on the
+	Office page, so what is typed there is sent as typed (the scenario's control).
+-->
+<main>
+	<h1>Quarterly report.docx</h1>
+	<div id="comments"></div>
+	<div class="comment-box">
+		<textarea id="doc-comment" placeholder="Add a comment"></textarea>
+		<button type="button" id="doc-comment-post">Post</button>
+	</div>
+</main>
+<iframe id="copilot-pane" title="Copilot" src="https://copilot.cloud.microsoft/pane?hostApp=Word"></iframe>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	FixtureChat.init({
+		site: "office",
+		kind: "textarea",
+		editor: "#doc-comment",
+		send: "#doc-comment-post",
+		thread: "#comments",
+		endpoint: "/we/api/comment",
+		renderUser(text) {
+			const msg = document.createElement("div");
+			msg.className = "comment";
+			msg.textContent = text;
+			return msg;
+		},
+		renderAssistant() {
+			const root = document.createElement("article");
+			const body = document.createElement("div");
+			root.appendChild(body);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>

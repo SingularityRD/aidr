@@ -115,7 +115,11 @@ eşleştirmesi, açık port ya da adrese gömülü kimlik bilgisi kabul edilmez.
 geçen düğme). Böylece küçük tasarım değişikliklerinde denetim çalışmaya devam eder.
 Desteklenen düzenleyiciler: düz `textarea`, ProseMirror, Quill ve genel `contenteditable`.
 İçerik betiği `document_start` aşamasında ve yalnızca üst çerçevede (`all_frames: false`)
-çalışır. Gizli pencerelerde çalışmaz (`incognito: not_allowed`).
+çalışır; tek istisna iki Microsoft 365 Copilot alan adıdır (`m365.cloud.microsoft`,
+`copilot.cloud.microsoft`): Office web uygulamaları (web için Word, Excel, PowerPoint,
+Outlook) Copilot bölmesini farklı kökenli bir iframe olarak gömdüğü için betik bu alan
+adlarında alt çerçevelerde de çalışır (`all_frames: true`). Office sayfalarının kendisine
+betik eklenmez ve ek izin istenmez. Gizli pencerelerde çalışmaz (`incognito: not_allowed`).
 
 **Nasıl kullanılır** — Eklentiyi kurun (özellik 14); site bazında ayar gerekmez. Kendiniz
 derlemek için: `pnpm build:browser-guard` (geliştirme) veya `pnpm package:browser-guard`
@@ -150,6 +154,15 @@ Firefox'ta `about:debugging#/runtime/this-firefox` → *Geçici Eklenti Yükle* 
   Claude, Copilot ve Perplexity için canlı sitelere değil, kaydedilmiş sayfa yapılarına
   (fixture) karşı çalışır. DeepSeek, Mistral ve Grok bağdaştırıcıları yalnızca birim
   testleriyle doğrulanır.
+- Office web uygulamalarının içindeki Copilot bölmesi, bir Microsoft 365 Copilot alan
+  adından sunulduğunda korunur: maskeleme, yapıştırma ve dosya denetimi, yerel geri yükleme
+  ve politika gelene kadar gönderimi engelleme üst düzey sayfadaki gibi çalışır; sayımlar
+  `copilot` sitesi olarak raporlanır (site, çerçevenin kendi adresinden alınır). Bölmenin
+  kasası ayrı tutulur ve her gönderim bir kez sayılır. Canlı bir kiracıda bölmenin hangi
+  kökenden sunulduğu ve sayfa yapısı **doğrulanmamıştır** (BG-LIVE): başka bir alan
+  adından sunulan bölme kapsam dışıdır. Gerçek tarayıcı senaryosu `frame-copilot-office`
+  çerçeve kapsamını Microsoft 365'e değil, bir fixture'a karşı doğrular. Eklenti
+  başlamadan önce açık olan bir sekmedeki bölme, sekme yenilendikten sonra korunur.
 - Gizli (incognito) pencereler korunmaz. Gerekiyorsa tarayıcı yönetimiyle kısıtlayın.
 - Otomatik gerçek tarayıcı testleri Chromium'da çalışır. Firefox paketleri `addons-linter`
   ile denetlenir, ancak uçtan uca test edilmez.
@@ -1227,7 +1240,11 @@ ziyaret olarak sayılır. Gerçek tarayıcı senaryosu `shadow-ai` bu davranış
   Copilot Chat yol kapsamlı tek kayıttır (`m365-copilot`): kendi alan adı
   `copilot.cloud.microsoft` ve `m365.cloud.microsoft` üzerinde yalnızca `/chat` yolu sayılır ve
   engellenir; Microsoft 365 giriş sayfasının geri kalanı çalışmaya devam eder. Office web
-  uygulamalarının içindeki Copilot bölmesi ayrı bir katalog kaydı değildir.
+  uygulamalarının içindeki Copilot bölmesi ayrı bir katalog kaydı değildir ve ziyaretleri
+  sayılmaz (yalnızca üst düzey sekme adresleri sayılır). `m365-copilot` engeli (veya
+  `blockedSites: ["copilot"]`) bölme bir Copilot alan adından yüklendiğinde yalnızca
+  bölmenin kendi çerçevesini durdurur (`m365.cloud.microsoft` üzerinde yalnızca `/chat`);
+  Office uygulamasının kendisi hiçbir zaman engellenmez veya yönlendirilmez.
 - Hugging Face, DeepL ve Grammarly alan adıyla kataloglanmıştır; engellendiklerinde sitenin
   tamamı (model merkezi, çevirmen, tanıtım sayfaları) engellenir.
 

@@ -4,6 +4,7 @@ import { claude } from "./claude";
 import { copilot } from "./copilot";
 import { customAdapter, customSiteForHost } from "./custom";
 import { deepseek } from "./deepseek";
+import { FRAME_GUARD_HOSTS } from "./frames";
 import { gemini } from "./gemini";
 import { GENERIC_ADAPTER } from "./generic";
 import { grok } from "./grok";
@@ -37,6 +38,16 @@ export const SITE_IDS: readonly SiteId[] = Object.freeze([
 /** Content-script / host-permission match patterns: exact HTTPS hosts only. */
 export const MATCH_PATTERNS: readonly string[] = Object.freeze(
 	ADAPTERS.flatMap((a) => a.hosts.map((h) => `https://${h}/*`)),
+);
+
+/**
+ * The subset of {@link MATCH_PATTERNS} whose content scripts run in every frame
+ * (`all_frames: true`): the Microsoft 365 Copilot hosts, whose Copilot pane is embedded in
+ * the Office web apps as a cross-origin iframe (./frames.ts). Every other site is top-frame
+ * only.
+ */
+export const FRAME_MATCH_PATTERNS: readonly string[] = Object.freeze(
+	FRAME_GUARD_HOSTS.map((h) => `https://${h}/*`),
 );
 
 const BY_HOST: ReadonlyMap<string, SiteAdapter> = new Map(
