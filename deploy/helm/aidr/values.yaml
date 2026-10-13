@@ -501,7 +501,7 @@ networkPolicy:
 # ---------------------------------------------------------------------------
 postureScanner:
   enabled: false
-  sourceVersion: v4.6.1-aidr.1
+  sourceVersion: v4.6.1-aidr.2
   timezone: UTC
   # REQUIRED when enabled. Secret keys: agent-shared-secret, bridge-jwt-secret,
   # task-postgres-dsn.

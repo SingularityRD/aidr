@@ -61,7 +61,7 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `AIDR_AUTH_METHODS` | not written; optional override | operator | `password` | Dashboard sign-in methods offered to users. |
 | `AIDR_POSTGREST_DB_URI_PARAMS` | not written; optional override | operator | `keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000` | Self-hosted only: libpq parameters appended to PostgREST's database URI. The default detects pooled connections on a dead network path (TCP keepalives for idle connections; `tcp_user_timeout` in ms for unacknowledged sends) without limiting query or request duration; see the 2026-10-11 load-soak drill addendum. |
 | `COMPOSE_PROFILES` | `--with-posture-scanner` only | fixed by preparation | `posture-scanner` | Starts the posture scanner services with the stack; remove `posture-scanner` to keep them stopped. |
-| `POSTURE_SCANNER_SOURCE_VERSION` | `--with-posture-scanner` only | derived from options | `v4.6.1-aidr.1` | Pinned scanner source tag; also the scanner server and worker image tag. |
+| `POSTURE_SCANNER_SOURCE_VERSION` | `--with-posture-scanner` only | derived from options | `v4.6.1-aidr.2` | Pinned scanner source tag; also the scanner server and worker image tag. |
 | `POSTURE_SCANNER_TZ` | `--with-posture-scanner` only | fixed by preparation | `UTC` | Time zone inside the posture scanner containers. |
 | `POSTURE_SCANNER_AGENT_SHARED_SECRET` | `--with-posture-scanner` only | generated secret | *(secret)* | Authenticates worker registration and the internal scanner readiness route. |
 | `POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID` | `--with-posture-scanner` only | operator | `--posture-scanner-signing-key-id` | Key id of the posture scanner release data-signing key. |
@@ -70,6 +70,7 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT` | `--with-posture-scanner` only | derived from options | `aig-data-manifest.json source.commit` | Scanner source commit the runtime must attest. |
 | `BRIDGE_AUTH_MODE` | `--with-posture-scanner` only | fixed by preparation | `api_key` | Bridge authentication: `api_key` (isolated local sidecar) or `broker` (JWT). |
 | `BRIDGE_API_KEY` | `--with-posture-scanner` only | generated secret | *(secret)* | Bearer key for bridge callers in `api_key` mode. |
+| `BRIDGE_METRICS_TOKEN` | not written; optional override | operator | *(blank)* | Optional bearer token for the bridge `GET /metrics` Prometheus scrape (secret); empty keeps it disabled, and a value equal to `BRIDGE_API_KEY` is refused. |
 | `BRIDGE_TASK_BACKEND` | `--with-posture-scanner` only | fixed by preparation | `sqlite` | Task registry: `sqlite` (single host) or `postgres` (HA). |
 | `BRIDGE_HA_REQUIRED` | `--with-posture-scanner` only | fixed by preparation | `false` | `true` makes readiness refuse SQLite; set with the PostgreSQL backend. |
 | `BRIDGE_EGRESS_PROXY_URL` | `--with-posture-scanner` only | fixed by preparation | `http://aig-egress:3128` | Deny-by-default egress gateway for remote scan traffic. |

@@ -628,8 +628,8 @@ test("--with-posture-scanner merges the single-host posture scanner stack with a
 		}
 		assert.equal(compose.services["aig-agent"].deploy.replicas, "${POSTURE_SCANNER_AGENT_COUNT:-${AIG_AGENT_COUNT:-1}}", "the single-worker replica pin must survive the resource merge");
 		const aigManifest = JSON.parse(readFileSync(join(root, "packages/core/src/generated/aig-data-manifest.json"), "utf8"));
-		assert.equal(compose.services["aig-server"].image, "aidr-aig-server:v4.6.1-aidr.1");
-		assert.equal(compose.services["aig-agent"].image, "aidr-aig-agent:v4.6.1-aidr.1");
+		assert.equal(compose.services["aig-server"].image, "aidr-aig-server:v4.6.1-aidr.2");
+		assert.equal(compose.services["aig-agent"].image, "aidr-aig-agent:v4.6.1-aidr.2");
 		assert.equal(compose.services["aig-bridge"].image, `aidr-aig-bridge:${dashboardVersion}`);
 		assert.match(compose.services["aig-egress"].image, /^ubuntu\/squid:[^@]+@sha256:[a-f0-9]{64}$/);
 		assert.equal(compose.services["aig-server"].build.context, "./posture-scanner/vendor/ai-infra-guard");
