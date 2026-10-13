@@ -74,6 +74,22 @@ export async function loadTrustedDomains(
 				continue;
 			}
 
+			const paths = record.paths;
+			if (paths !== undefined) {
+				if (
+					!Array.isArray(paths) ||
+					paths.length === 0 ||
+					!paths.every((p) => typeof p === "string" && p.startsWith("/"))
+				) {
+					// A malformed path scope must not widen into a whole-domain trust.
+					logger.warn(
+						`Skipping '${domain}' in ${filename}: 'paths' must be a non-empty list of absolute paths`,
+					);
+					continue;
+				}
+				domains.push({ domain: domain.toLowerCase(), reason, paths: [...paths] });
+				continue;
+			}
 			domains.push({ domain: domain.toLowerCase(), reason });
 		}
 	}
@@ -91,11 +107,42 @@ export function extractDomain(url: string): string | null {
 	}
 }
 
+/** Whole-domain trust only: path-scoped entries never trust a bare domain. */
 export function isTrustedDomain(domain: string, trusted: TrustedDomain[]): boolean {
 	const domainLower = domain.toLowerCase();
 	for (const td of trusted) {
+		if (td.paths) continue;
 		if (domainLower === td.domain) return true;
 		if (domainLower.endsWith(`.${td.domain}`)) return true;
+	}
+	return false;
+}
+
+/**
+ * Trust for a full URL: whole-domain entries match the host by dot-bounded suffix; path-scoped
+ * entries need the exact host and one of the listed paths (no query or fragment).
+ */
+export function isTrustedUrl(url: string, trusted: TrustedDomain[]): boolean {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		return false;
+	}
+	const host = parsed.hostname.toLowerCase();
+	if (!host || parsed.username || parsed.password) return false;
+	for (const td of trusted) {
+		if (td.paths) {
+			if (
+				host === td.domain &&
+				!parsed.search &&
+				!parsed.hash &&
+				td.paths.includes(parsed.pathname)
+			)
+				return true;
+			continue;
+		}
+		if (host === td.domain || host.endsWith(`.${td.domain}`)) return true;
 	}
 	return false;
 }

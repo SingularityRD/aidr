@@ -8,6 +8,7 @@
 #
 # Format: list of {domain, reason} entries. Domains are matched by suffix
 # with dot boundary (e.g. "bun.sh" matches "cdn.bun.sh" but not "notbun.sh").
+# An entry with `paths` trusts only those exact URL paths on exactly that host.
 
 - domain: bun.sh
   reason: Bun JavaScript runtime installer
@@ -42,8 +43,14 @@
 - domain: pyenv.run
   reason: pyenv Python version manager installer
 
+# deno.land also serves anyone's modules (deno.land/x/...): trust the installer scripts only.
 - domain: deno.land
   reason: Deno runtime installer
+  paths:
+    - /install.sh
+    - /install.ps1
+    - /x/install/install.sh
+    - /x/install/install.ps1
 
 - domain: get.pnpm.io
   reason: pnpm package manager installer
