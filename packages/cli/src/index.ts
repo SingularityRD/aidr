@@ -99,7 +99,10 @@ program
 		"--release-key <file>",
 		"Release public key (Ed25519 PEM) for a manual install; the desktop installers set it up themselves",
 	)
-	.option("-y, --yes", "With AIDR_OPERATOR_NONINTERACTIVE=1, confirm --force without a prompt")
+	.option(
+		"-y, --yes",
+		"With AIDR_OPERATOR_NONINTERACTIVE=1, confirm --force or the installer's company connection without a prompt",
+	)
 	.action((options) => setupCommand(options));
 
 const configProgram = program

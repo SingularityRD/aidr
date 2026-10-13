@@ -330,6 +330,7 @@ export {
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 // Control plane client (optional telemetry/licensing)
 export { ControlPlaneClient, type ControlPlaneClientOptions } from "./clients/control-plane.js";
+export { DEFAULT_CONTROL_PLANE_ENDPOINT } from "./clients/control-plane-url.js";
 export type { FileCheckBatchResult, FileCheckResult } from "./clients/file-check.js";
 export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
