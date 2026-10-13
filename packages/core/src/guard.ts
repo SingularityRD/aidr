@@ -48,6 +48,7 @@ import {
 } from "./dashboard-approvals.js";
 import type { ToolEvaluationContext, ToolEvaluationRequest } from "./evaluator.js";
 import { allowVerdict, evaluateToolCall } from "./evaluator.js";
+import { severityLabel, t } from "./i18n/index.js";
 import {
 	consumeOperatorApproval,
 	findOperatorAllowlistGrant,
@@ -486,10 +487,7 @@ export async function resolveHostAsk(
 			verdict: {
 				...verdict,
 				decision: "deny",
-				reasons: [
-					...verdict.reasons,
-					"Singularity AIDR could not read its configuration, so this action was blocked instead of being offered for approval.",
-				],
+				reasons: [...verdict.reasons, t("block.configUnreadable")],
 			},
 			dashboardOnly: false,
 			mode: "host_dialog",
@@ -1155,7 +1153,7 @@ function truncateValue(value: string): string {
 }
 
 export function summarizeArtifacts(artifacts: Artifact[]): string {
-	if (artifacts.length === 0) return "none";
+	if (artifacts.length === 0) return t("common.none");
 	return artifacts
 		.slice(0, 3)
 		.map((artifact) => `${artifact.type} '${truncateValue(artifact.value)}'`)
@@ -1180,9 +1178,11 @@ function responseLine(actions?: ResponseActionRecord[]): string | null {
 	const failures = actions.filter((a) => a.outcome === "failure");
 	if (failures.length > 0) {
 		parts.push(
-			`response action(s) failed: ${failures
-				.map((f) => `${f.action} (${f.reason ?? "unknown"})`)
-				.join(", ")} - nothing was preserved`,
+			t("block.response.failed", {
+				failures: failures
+					.map((f) => `${f.action} (${f.reason ?? t("common.unknown")})`)
+					.join(", "),
+			}),
 		);
 	}
 
@@ -1195,8 +1195,10 @@ function responseLine(actions?: ResponseActionRecord[]): string | null {
  * `high` rule is never shown as `warning` next to its id.
  */
 function verdictRuleLines(verdict: Verdict): string[] {
-	const lines = [`Severity: ${verdict.ruleSeverity ?? verdict.severity}`];
-	if (verdict.matchedThreatId) lines.push(`Rule: ${verdict.matchedThreatId}`);
+	const lines = [
+		t("block.line.severity", { severity: severityLabel(verdict.ruleSeverity ?? verdict.severity) }),
+	];
+	if (verdict.matchedThreatId) lines.push(t("block.line.rule", { rule: verdict.matchedThreatId }));
 	return lines;
 }
 
@@ -1205,14 +1207,14 @@ export function formatDenyMessage(verdict: Verdict, actions?: ResponseActionReco
 		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 5).join("; ") : verdict.category;
 
 	const lines = [
-		"Singularity AIDR blocked this action.",
+		t("block.deny.headline"),
 		...verdictRuleLines(verdict),
-		`Category: ${verdict.category}`,
-		`Reason: ${reasons}`,
+		t("block.line.category", { category: verdict.category }),
+		t("block.line.reason", { reason: reasons }),
 	];
 
 	const responded = responseLine(actions);
-	if (responded) lines.push(`Response: ${responded}`);
+	if (responded) lines.push(t("block.line.response", { response: responded }));
 
 	return lines.join("\n");
 }
@@ -1228,30 +1230,25 @@ export function formatDashboardApprovalNotice(
 ): string | null {
 	if (!outcome) return null;
 	const id = outcome.requestId;
+	const reason = () => outcome.reason ?? t("common.unknown");
 	switch (outcome.status) {
 		case "released":
 			return null;
 		case "requested":
 		case "pending":
-			return [
-				`Approval requested in the AIDR dashboard: ${id}`,
-				"(For the user: an AIDR administrator must approve this request in the dashboard; the",
-				"approval then covers one retry of this exact call.)",
-			].join("\n");
+			return t("dashboard.requested", { requestId: id });
 		case "denied":
-			return `The AIDR dashboard approval request ${id} was denied; the action stays blocked.`;
+			return t("dashboard.denied", { requestId: id });
 		case "expired":
-			return `The AIDR dashboard approval request ${id} expired; the action stays blocked.`;
+			return t("dashboard.expired", { requestId: id });
 		case "rejected":
-			return `The AIDR dashboard approval for request ${id} could not be verified (${outcome.reason ?? "unknown"}); the action stays blocked.`;
+			return t("dashboard.rejected", { requestId: id, reason: reason() });
 		case "request_failed":
-			return `The approval request could not be sent to the AIDR dashboard (${outcome.reason ?? "unknown"}); the action stays blocked.`;
+			return t("dashboard.requestFailed", { reason: reason() });
 		case "unavailable":
 			// Only worth saying when the dashboard is the sole channel; otherwise the
 			// local operator channel below still applies.
-			return outcome.dashboardOnly
-				? `AIDR dashboard approvals are unavailable (${outcome.reason ?? "unknown"}); the action stays blocked.`
-				: null;
+			return outcome.dashboardOnly ? t("dashboard.unavailable", { reason: reason() }) : null;
 	}
 }
 
@@ -1274,41 +1271,28 @@ export function formatAskMessage(
 		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 3).join("; ") : verdict.category;
 
 	const lines = [
-		"Singularity AIDR flagged this action and blocked it pending explicit user approval.",
+		t("ask.headline"),
 		...verdictRuleLines(verdict),
-		`Category: ${verdict.category}`,
-		`Reason: ${reasons}`,
-		`Artifacts: ${summarizeArtifacts(artifacts)}`,
+		t("block.line.category", { category: verdict.category }),
+		t("block.line.reason", { reason: reasons }),
+		t("block.line.artifacts", { artifacts: summarizeArtifacts(artifacts) }),
 	];
 
 	const responded = responseLine(actions);
-	if (responded) lines.push(`Response: ${responded}`);
+	if (responded) lines.push(t("block.line.response", { response: responded }));
 
-	lines.push(
-		"",
-		`Approval reference: actionId: "${actionId}"`,
-		"You cannot approve this action yourself and no tool available to you can approve it.",
-		"Approval is an out-of-band, human-only action. Report the reference above to the user and",
-		"stop here: do NOT retry this tool call and do NOT try to work around the block. The action",
-		"stays blocked until the user approves it out of band or permanently allowlists the artifact.",
-	);
+	// The actionId token is kept verbatim in every locale: users and scripts
+	// copy it into `aidr approve`.
+	lines.push("", t("ask.reference", { actionId }), t("ask.agentInstructions"));
 	const dashboardNotice = formatDashboardApprovalNotice(dashboardApproval);
 	if (dashboardNotice) lines.push(dashboardNotice);
 	if (dashboardApproval?.dashboardOnly) {
 		// The local CLI is not an approval channel under dashboard_only.
-		if (!dashboardNotice)
-			lines.push("(For the user: only an AIDR dashboard approval can release it.)");
+		if (!dashboardNotice) lines.push(t("ask.user.dashboardOnly"));
 	} else if (pendingRecorded === false) {
-		lines.push(
-			"(For the user: this ask could NOT be recorded for operator approval — operator approvals",
-			"are disabled or the approval store is unavailable, so `aidr approve` cannot release it.",
-			"Run `aidr doctor` in your own terminal to see why.)",
-		);
+		lines.push(t("ask.user.notRecorded"));
 	} else {
-		lines.push(
-			"(For the user: review it with `aidr pending` and approve it with `aidr approve <actionId>`",
-			"in your own terminal; the approval covers one retry of this exact call for 15 minutes.)",
-		);
+		lines.push(t("ask.user.cli"));
 	}
 
 	return lines.join("\n");

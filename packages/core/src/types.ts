@@ -1058,6 +1058,13 @@ export const ConfigSchema = z.object({
 	logging: LoggingConfigSchema.default({}),
 	audit: AuditConfigSchema.default({}),
 	sensitivity: SensitivitySchema.default("balanced"),
+	/**
+	 * Display language of user-facing messages ("en" or "tr"). Unset follows
+	 * AIDR_LOCALE / LC_ALL / LANG. An unsupported value is ignored rather than
+	 * invalidating the configuration: a display setting must never change
+	 * enforcement.
+	 */
+	locale: z.enum(["en", "tr"]).optional().catch(undefined),
 	disabled_threats: z.array(z.string()).default([]),
 	operator_approvals: OperatorApprovalsConfigSchema.default({}),
 	agent_safety: AgentSafetyConfigSchema.default({}),

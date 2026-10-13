@@ -11,6 +11,7 @@ import {
 	DEFAULT_CONTROL_PLANE_ENDPOINT,
 } from "./clients/control-plane-url.js";
 import { getFileContent } from "./file-utils.js";
+import { setConfiguredLocale } from "./i18n/index.js";
 import { resolveSecretStore, type SecretStore } from "./secret-store.js";
 import type { Config, Logger } from "./types.js";
 import { ConfigSchema, nullLogger } from "./types.js";
@@ -215,6 +216,7 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 
 function parseRuntimeConfig(data: unknown): Config {
 	const config = ConfigSchema.parse(data);
+	setConfiguredLocale(config.locale);
 	assertSecureControlPlaneEndpoint(
 		config.control_plane.endpoint,
 		config.control_plane.allow_insecure_loopback,

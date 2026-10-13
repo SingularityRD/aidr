@@ -734,6 +734,24 @@ One of `"paranoid"`, `"balanced"`, or `"relaxed"`. Default: `"balanced"`. See [H
 
 In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw, OpenCode and Codex, and a deny can never be released by an operator approval. Those connectors cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a human approves it out of band with `aidr approve` (see [Operator approvals](#operator-approvals)); the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
 
+### `locale`
+
+Display language of user-facing messages: `"en"` or `"tr"`. Unset by default.
+It changes only text a person reads (hook block and approval messages, the
+session-start banner, `aidr --help`, `aidr status`, `aidr pending` and
+`aidr approve`); hook JSON fields, decision values, rule ids, the `actionId`
+token and every machine-readable (`--json`) output are identical in both
+languages. Rule titles and reasons come from the English threat rules and stay
+English.
+
+Resolution order, first match wins: the `AIDR_LOCALE` environment variable,
+this key, then the POSIX locale (`LC_ALL`, `LC_MESSAGES`, `LANG`, so
+`LANG=tr_TR.UTF-8` selects Turkish), then English. An unsupported value is
+ignored; it never makes the configuration invalid.
+
+The Cursor / VS Code extension follows the editor's display language, and the
+dashboard has its own language switcher.
+
 ### `operator_approvals`
 
 `key_storage`: `"os-vault"` (default) or `"file"`. Where the operator approval

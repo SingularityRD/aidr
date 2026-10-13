@@ -18,6 +18,7 @@ import {
 	type Logger,
 	resolveHookDeadlineMs,
 	runPluginScan,
+	t,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { pruneStaleSessionFiles } from "./approval-tracker.js";
@@ -35,8 +36,7 @@ const responder = createHookResponder({
 	),
 	onDeadline: () => ({
 		stdout: `${JSON.stringify({
-			systemMessage:
-				"Singularity AIDR could not finish scanning installed plugins in time; the plugin scan result is unavailable. Tool calls are still inspected.",
+			systemMessage: t("hook.sessionScanTimeout"),
 		})}\n`,
 	}),
 });
@@ -75,7 +75,7 @@ async function main(): Promise<void> {
 
 main().catch(() => {
 	responder.answer({
-		stdout: `${JSON.stringify({ systemMessage: "Singularity AIDR protection failed to start; the session is not protected." })}\n`,
+		stdout: `${JSON.stringify({ systemMessage: t("hook.sessionStartFailed") })}\n`,
 		exitCode: 1,
 	});
 });

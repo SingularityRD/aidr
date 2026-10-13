@@ -936,6 +936,24 @@ export {
 	type HostObservationRecord,
 	recordHostObservation,
 } from "./host-observation.js";
+// User-facing message catalog (en/tr) and locale resolution
+export {
+	createTranslator,
+	currentLocale,
+	DEFAULT_LOCALE,
+	formatMessage,
+	type Locale,
+	MESSAGE_CATALOGS,
+	type MessageKey,
+	type MessageParams,
+	normalizeLocale,
+	resolveLocale,
+	SUPPORTED_LOCALES,
+	setConfiguredLocale,
+	severityLabel,
+	t,
+	upperCaseFor,
+} from "./i18n/index.js";
 // Incidents (normalized signals + correlation engine)
 export {
 	anchorEvidenceHead,
