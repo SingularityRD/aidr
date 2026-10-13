@@ -3,7 +3,6 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
-	approveQuarantinedMcpToolset,
 	assertPrivateMcpStateDirectory,
 	attestMcpToolManifest,
 	FileMcpAttestationStore,
@@ -2582,52 +2581,39 @@ export function createMcpGateway(input, dependencies = {}) {
 			return new Promise((resolve) => server.close(resolve));
 		},
 		/**
-		 * Operator approval. `approvalKey` ({ keyId, privateKey }) is the operator
-		 * approval private key; the gateway itself never holds it. The expected
-		 * toolset, signer and connection binding are derived from this
-		 * configuration, never from the (writable) state file.
+		 * Read-only description of what an operator approval of one quarantined
+		 * toolset must be bound to. The expected toolset, signer and connection
+		 * binding are derived from this configuration, never from the (writable)
+		 * state file. Signing and recording an approval is deliberately not part
+		 * of the gateway or its importable library (MSC-2): it lives only in the
+		 * aidr-mcp-approve operator command (operator-approval.mjs), and the
+		 * gateway honours only approvals signed by a key in `approvalKeys`.
 		 */
-		async approve({
-			tenantId,
-			serverId,
-			toolsetHash,
-			bindingSha256,
-			approvedBy,
-			reason,
-			approvalKey,
-			lifetimeMs,
-		}) {
+		async approvalTarget({ tenantId, serverId }) {
 			const target = config.servers.find(
 				(item) => item.tenantId === tenantId && item.id === serverId,
 			);
 			if (!target) throw new Error("unknown tenant server");
-			if (!approvalKey) throw new Error("approval key required");
 			await assertPrivateMcpStateDirectory(config.stateDir, { create: true });
 			const verified = verifySignedMcpToolManifest(target.signedManifest, manifestVerifier(target));
 			if (!verified.valid) throw new Error("approval manifest invalid");
-			if (verified.toolsetHash !== toolsetHash)
-				return { approved: false, reason: "toolset_mismatch" };
-			const expectedBinding = mcpApprovalBindingHash({
-				serverId: target.id,
+			const expected = {
 				keyId: verified.signed.key_id,
 				signerKeySha256: verified.signerKeySha256,
-				connection: approvalConnection(target),
-			});
-			if (expectedBinding !== bindingSha256) return { approved: false, reason: "binding_mismatch" };
-			const approvedAt = now();
-			return approveQuarantinedMcpToolset({
-				serverId,
-				toolsetHash,
-				bindingSha256,
-				approvedBy,
-				reason,
-				store: storeFor(tenantId),
-				approvalKey,
+			};
+			return {
+				serverId: target.id,
+				toolsetHash: verified.toolsetHash,
+				bindingSha256: mcpApprovalBindingHash({
+					serverId: target.id,
+					...expected,
+					connection: approvalConnection(target),
+				}),
+				expected,
 				approvalKeys: config.approvalKeys,
-				expected: { keyId: verified.signed.key_id, signerKeySha256: verified.signerKeySha256 },
-				now: approvedAt,
-				...(lifetimeMs ? { expiresAt: new Date(approvedAt.getTime() + lifetimeMs) } : {}),
-			});
+				store: storeFor(tenantId),
+				now: now(),
+			};
 		},
 		startupSelfCheck(gatewayAddress = null) {
 			if (!startupCheckPromise) startupCheckPromise = runStartupSelfCheck(gatewayAddress);

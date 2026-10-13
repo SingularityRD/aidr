@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { FileMcpAttestationStore } from "@singularityrd/aidr-core";
 import { validateGatewayConfig } from "../config.mjs";
+import { approveQuarantinedToolset } from "../operator-approval.mjs";
 import { testStateDir } from "./helpers/approval-key.mjs";
 import { fixture, rpc } from "./helpers/gateway-fixture.mjs";
 
@@ -160,7 +161,7 @@ describe("MSC-1: a same-user process cannot approve a quarantined toolset", () =
 			reason: "test",
 		};
 		await assert.rejects(
-			f.gateway.approve({
+			approveQuarantinedToolset(f.gateway, {
 				...common,
 				toolsetHash: state.quarantine.toolsetHash,
 				bindingSha256: state.quarantine.bindingSha256,
@@ -168,7 +169,7 @@ describe("MSC-1: a same-user process cannot approve a quarantined toolset", () =
 			/approval key required/,
 		);
 		assert.deepEqual(
-			await f.gateway.approve({
+			await approveQuarantinedToolset(f.gateway, {
 				...common,
 				toolsetHash: "0".repeat(64),
 				bindingSha256: state.quarantine.bindingSha256,

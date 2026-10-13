@@ -1174,9 +1174,13 @@ hand the agent an actionId to have approved):
 - `CLT-SELF-009` — the vault entries and key/ledger file names
   (`singularity-aidr-cli`, `aidr-operator-approval-*`, `aidr-audit-chain-*`,
   `operator-approval*.key|json`), agent code that imports the MCP gateway's
-  library (`@singularityrd/aidr-mcp-gateway`, `aidr-mcp-library.mjs`) and so
-  could call its `approve()`, and the documented gateway attestation directory
-  (`/var/lib/aidr/mcp-attestation`).
+  library (`@singularityrd/aidr-mcp-gateway`, `aidr-mcp-library.mjs`), and the
+  documented gateway attestation directory (`/var/lib/aidr/mcp-attestation`).
+  The library import rule is defence in depth. A rule cannot see an import
+  path computed at run time, so the gateway side closes that case: the
+  library and serving bundles contain no approval writer (approvals are signed
+  only by `aidr-mcp-approve` with the operator's passphrase-protected key), and
+  the gateway honours only entries signed by a key in its `approvalKeys`.
 
 Removing or switching off AIDR's hooks is covered by three more rules that look
 at what a call **changes** (the `modified_path` view in

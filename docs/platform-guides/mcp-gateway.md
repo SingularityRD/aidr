@@ -56,7 +56,12 @@ first one that fails.
    not expired, so a process that can write the state directory cannot create
    one. Unsigned, altered or expired entries are ignored and reported as
    `approval_entry_ignored` audit events, and a state file whose integrity
-   seal does not verify is refused (`manifest_rejected`). Every manifest is
+   seal does not verify is refused (`manifest_rejected`). Only the
+   `aidr-mcp-approve` operator command signs and records approvals. The
+   importable library (`@singularityrd/aidr-mcp-gateway`,
+   `aidr-mcp-library.mjs`) and the serving binaries contain no approval
+   writer, so code that loads the library, even through an import path
+   computed at run time, cannot approve a toolset. Every manifest is
    also verified at startup: an expired, over-long (default maximum lifetime
    7 days, `manifestPolicy.maxLifetimeDays`) or otherwise invalid manifest
    refuses startup with its precise reason, and the HTTP gateway reloads

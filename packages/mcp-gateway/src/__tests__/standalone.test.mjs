@@ -31,6 +31,7 @@ before(async () => {
 		`export * from ${JSON.stringify(join(packageRoot, "src", "standalone.mjs"))};`,
 		`export * from ${JSON.stringify(join(packageRoot, "src", "gateway.mjs"))};`,
 		`export * from ${JSON.stringify(join(packageRoot, "src", "stdio.mjs"))};`,
+		`export * from ${JSON.stringify(join(packageRoot, "src", "operator-approval.mjs"))};`,
 		`export * from ${JSON.stringify(resolve(packageRoot, "../core/src/mcp-attestation.ts"))};`,
 	].join("\n"));
 	const bundleOptions = gatewayBundleOptions({ ruleSets: await readRuleSets() });
@@ -217,7 +218,7 @@ async function ready(gateway) {
 	gateway.address = await gateway.listen();
 	await request(gateway, { jsonrpc: "2.0", id: 0, method: "ping" });
 	const state = await gateway.storeFor("tenant").read("server");
-	await gateway.approve({ tenantId: "tenant", serverId: "server", toolsetHash: runtime.mcpToolsetHash(gateway.config.servers[0].signedManifest.manifest.tools),
+	await runtime.approveQuarantinedToolset(gateway, { tenantId: "tenant", serverId: "server", toolsetHash: runtime.mcpToolsetHash(gateway.config.servers[0].signedManifest.manifest.tools),
 		bindingSha256: state.quarantine.bindingSha256, approvedBy: "test operator", reason: "synthetic controlled test", approvalKey: TEST_APPROVAL_KEY });
 }
 test("source-alias standalone guards preserve a complete normal local tool request and result", async () => withRuntime(async (f) => {
