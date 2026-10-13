@@ -26,7 +26,7 @@ import { siteLabel } from "../privacy-guard";
 
 type Load =
 	| { kind: "loading" }
-	| { kind: "error"; message: string }
+	| { kind: "error"; code: string }
 	| { kind: "ready"; card: GovernanceScorecard };
 
 const SEVERITY_LABEL: Readonly<Record<RiskSeverity, DashboardMessageKey>> = {
@@ -115,9 +115,7 @@ function TenantGovernancePage({
 		void readGovernanceScorecard(tenantId, windowDays).then((result) => {
 			if (cancelled) return;
 			setLoad(
-				result.ok
-					? { kind: "ready", card: result.value }
-					: { kind: "error", message: governanceErrorText(result.error) },
+				result.ok ? { kind: "ready", card: result.value } : { kind: "error", code: result.error },
 			);
 		});
 		return () => {
@@ -206,7 +204,7 @@ function TenantGovernancePage({
 				) : null}
 				{load.kind === "error" ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
-						{load.message}
+						{governanceErrorText(load.code, t)}
 					</div>
 				) : null}
 				{load.kind === "loading" ? <p role="status">{t("gsc.loading")}</p> : null}
@@ -246,7 +244,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 
 function RisksCard({ card }: { card: GovernanceScorecard }) {
 	const t = useT();
-	const risks = topRisks(card);
+	const risks = topRisks(card, 6, t);
 	return (
 		<section className="card" aria-labelledby="governance-risks">
 			<h2 id="governance-risks">{t("gsc.risks")}</h2>
@@ -686,7 +684,7 @@ function DigestCard({
 		oversightMinDecisions: form.oversightMinDecisions,
 		oversightFastShare: form.oversightFastShare,
 	};
-	const problem = settingsProblem(input);
+	const problem = settingsProblem(input, t);
 
 	async function save() {
 		if (problem) {
@@ -697,7 +695,7 @@ function DigestCard({
 		const result = await saveGovernanceSettings(tenantId, input);
 		setBusy(false);
 		if (!result.ok) {
-			setStatus({ tone: "error", text: governanceErrorText(result.error) });
+			setStatus({ tone: "error", text: governanceErrorText(result.error, t) });
 			return;
 		}
 		setForm(result.value);
@@ -719,7 +717,7 @@ function DigestCard({
 		const result = await sendTestSummary(tenantId);
 		setBusy(false);
 		if (!result.ok) {
-			setStatus({ tone: "error", text: governanceErrorText(result.error) });
+			setStatus({ tone: "error", text: governanceErrorText(result.error, t) });
 			return;
 		}
 		setStatus({

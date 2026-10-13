@@ -26,7 +26,7 @@ const PRESETS = [
 type Status =
 	| { kind: "idle" }
 	| { kind: "loading" }
-	| { kind: "error"; message: string }
+	| { kind: "error"; code: string }
 	| { kind: "ready"; report: ComplianceReport };
 
 function saveFile(name: string, content: BlobPart, type: string) {
@@ -81,7 +81,7 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 		if (preset === "custom") {
 			const custom = customPeriod(fromDay, toDay);
 			if (!custom.ok) {
-				setStatus({ kind: "error", message: complianceErrorText(custom.error) });
+				setStatus({ kind: "error", code: custom.error });
 				return;
 			}
 			period = custom.value;
@@ -91,9 +91,7 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 		setStatus({ kind: "loading" });
 		const result = await generateComplianceReport(tenantId, period);
 		setStatus(
-			result.ok
-				? { kind: "ready", report: result.value }
-				: { kind: "error", message: complianceErrorText(result.error) },
+			result.ok ? { kind: "ready", report: result.value } : { kind: "error", code: result.error },
 		);
 	}
 
@@ -162,7 +160,7 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 				{status.kind === "loading" ? <div role="status">{t("cmp.collecting")}</div> : null}
 				{status.kind === "error" ? (
 					<div className="notice notice-danger" role="alert">
-						{status.message}
+						{complianceErrorText(status.code, t)}
 					</div>
 				) : null}
 			</section>

@@ -10,6 +10,8 @@
  * a field of the RPC answer.
  */
 
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import {
 	GOVERNANCE_MAPPING,
 	type GovernanceControl,
@@ -569,11 +571,25 @@ const SEVERITY_ORDER: Readonly<Record<RiskSeverity, number>> = {
 const SIX_MONTHS_DAYS = 183;
 const STALE_POLICY_DAYS = 180;
 
-const plural = (n: number, one: string, many = `${one}s`) =>
-	`${n.toLocaleString()} ${n === 1 ? one : many}`;
+/** A count message with a singular and a plural catalog form. */
+function counted(
+	t: Translate,
+	count: number,
+	one: DashboardMessageKey,
+	many: DashboardMessageKey,
+): string {
+	return count === 1 ? t(one) : t(many, { count: count.toLocaleString() });
+}
 
-/** Risks derived from the scorecard's own numbers; nothing is listed without data behind it. */
-export function topRisks(card: GovernanceScorecard, limit = 6): GovernanceRisk[] {
+/**
+ * Risks derived from the scorecard's own numbers; nothing is listed without
+ * data behind it. `t` defaults to English, which the printed report uses.
+ */
+export function topRisks(
+	card: GovernanceScorecard,
+	limit = 6,
+	t: Translate = englishT,
+): GovernanceRisk[] {
 	const risks: GovernanceRisk[] = [];
 	const add = (risk: GovernanceRisk) => risks.push(risk);
 	const open = card.incidents.openBySeverity;
@@ -581,74 +597,75 @@ export function topRisks(card: GovernanceScorecard, limit = 6): GovernanceRisk[]
 		add({
 			id: "incidents-critical",
 			severity: "critical",
-			title: `${plural(open.critical, "critical incident")} still open`,
-			detail: `Reported in the last ${card.windowDays} days and not resolved.`,
+			title: counted(t, open.critical, "gr.critical.one", "gr.critical.many"),
+			detail: t("gr.unresolved", { days: card.windowDays }),
 			href: "/incidents",
 		});
 	if (open.high > 0)
 		add({
 			id: "incidents-high",
 			severity: "high",
-			title: `${plural(open.high, "high-severity incident")} still open`,
-			detail: `Reported in the last ${card.windowDays} days and not resolved.`,
+			title: counted(t, open.high, "gr.high.one", "gr.high.many"),
+			detail: t("gr.unresolved", { days: card.windowDays }),
 			href: "/incidents",
 		});
 	if (card.posture.critical > 0)
 		add({
 			id: "posture-critical",
 			severity: "high",
-			title: `${plural(card.posture.critical, "critical AI tool-chain finding")}`,
-			detail: "Critical CVE, MCP server or skill findings uploaded in this window.",
+			title: counted(t, card.posture.critical, "gr.posture.one", "gr.posture.many"),
+			detail: t("gr.postureDetail"),
 			href: "/posture",
 		});
 	if (!card.identity.requireMfa && card.identity.ownersAdminsWithoutMfa > 0)
 		add({
 			id: "admins-without-mfa",
 			severity: "high",
-			title: `${plural(card.identity.ownersAdminsWithoutMfa, "owner or admin", "owners or admins")} without MFA`,
-			detail:
-				"The workspace does not require MFA, and these accounts can approve held agent actions.",
+			title: counted(t, card.identity.ownersAdminsWithoutMfa, "gr.noMfa.one", "gr.noMfa.many"),
+			detail: t("gr.noMfaDetail"),
 			href: "/settings",
 		});
 	if (card.oversight.reviewPrompts > 0)
 		add({
 			id: "oversight-review",
 			severity: "medium",
-			title: `${plural(card.oversight.reviewPrompts, "approver")} to review`,
-			detail: `Approved at least ${Math.round(card.oversight.thresholds.fastShare * 100)}% of their decisions within ${card.oversight.thresholds.fastSeconds} s. A prompt to check for automatic approval, not a finding.`,
+			title: counted(t, card.oversight.reviewPrompts, "gr.review.one", "gr.review.many"),
+			detail: t("gr.reviewDetail", {
+				share: Math.round(card.oversight.thresholds.fastShare * 100),
+				seconds: card.oversight.thresholds.fastSeconds,
+			}),
 			href: "/approvals",
 		});
 	if (card.approvals.expiredWithoutDecision > 0)
 		add({
 			id: "approvals-expired",
 			severity: "medium",
-			title: `${plural(card.approvals.expiredWithoutDecision, "held action")} expired without a decision`,
-			detail: "Nobody approved or denied these requests in time; the agent action stayed blocked.",
+			title: counted(t, card.approvals.expiredWithoutDecision, "gr.expired.one", "gr.expired.many"),
+			detail: t("gr.expiredDetail"),
 			href: "/approvals",
 		});
 	if (card.usage.mcpServers.notApproved > 0)
 		add({
 			id: "mcp-unapproved",
 			severity: "medium",
-			title: `${plural(card.usage.mcpServers.notApproved, "MCP server")} not approved`,
-			detail: "Reported by inventory scans without an approved attestation.",
+			title: counted(t, card.usage.mcpServers.notApproved, "gr.mcp.one", "gr.mcp.many"),
+			detail: t("gr.mcpDetail"),
 			href: "/posture",
 		});
 	if (card.policies.runtime === null)
 		add({
 			id: "runtime-policy-missing",
 			severity: "medium",
-			title: "No workspace runtime policy",
-			detail:
-				"Managed agents use their local defaults; there is no versioned workspace policy to review.",
+			title: t("gr.noPolicy"),
+			detail: t("gr.noPolicyDetail"),
 			href: "/policies",
 		});
 	else if (card.policies.runtime.ageDays > STALE_POLICY_DAYS)
 		add({
 			id: "runtime-policy-stale",
 			severity: "low",
-			title: `Runtime policy unchanged for ${plural(card.policies.runtime.ageDays, "day")}`,
-			detail: "Periodic review is expected by most AI governance frameworks.",
+			title: counted(t, card.policies.runtime.ageDays, "gr.stale.one", "gr.stale.many"),
+			detail: t("gr.staleDetail"),
 			href: "/policies",
 		});
 	const retention = card.identity.telemetryRetentionDays;
@@ -656,17 +673,16 @@ export function topRisks(card: GovernanceScorecard, limit = 6): GovernanceRisk[]
 		add({
 			id: "retention-missing",
 			severity: "low",
-			title: "No telemetry retention policy",
-			detail: "Decision logs have no configured retention period.",
+			title: t("gr.noRetention"),
+			detail: t("gr.noRetentionDetail"),
 			href: "/settings",
 		});
 	else if (retention < SIX_MONTHS_DAYS)
 		add({
 			id: "retention-short",
 			severity: "low",
-			title: `Decision logs kept ${plural(retention, "day")}`,
-			detail:
-				"Shorter than six months. Deployers of high-risk AI systems keep logs for at least six months (EU AI Act Art. 26(6)).",
+			title: counted(t, retention, "gr.short.one", "gr.short.many"),
+			detail: t("gr.shortDetail"),
 			href: "/settings",
 		});
 	const latest = card.acceptableUse[0];
@@ -674,17 +690,20 @@ export function topRisks(card: GovernanceScorecard, limit = 6): GovernanceRisk[]
 		add({
 			id: "aup-coverage",
 			severity: "low",
-			title: `Acceptable-use notice v${latest.noticeVersion} acknowledged on ${latest.installs.toLocaleString()} of ${card.usage.browserInstalls.active.toLocaleString()} active browsers`,
-			detail:
-				"Browsers that have not visited a protected AI site since the notice was published have not seen it yet.",
+			title: t("gr.aup", {
+				version: latest.noticeVersion,
+				installs: latest.installs.toLocaleString(),
+				active: card.usage.browserInstalls.active.toLocaleString(),
+			}),
+			detail: t("gr.aupDetail"),
 			href: "/privacy-guard",
 		});
 	if (!card.signals.agents_reporting && !card.signals.browser_guard_reporting)
 		add({
 			id: "nothing-reporting",
 			severity: "info",
-			title: "No agents or browsers reported in this window",
-			detail: "Enroll coding agents or Browser Guard installs to populate the scorecard.",
+			title: t("gr.nothing"),
+			detail: t("gr.nothingDetail"),
 			href: "/onboarding",
 		});
 	return risks
@@ -723,25 +742,25 @@ export interface SettingsInput {
 }
 
 /** Client-side bounds mirror set_governance_settings; the SQL re-validates. */
-export function settingsProblem(input: SettingsInput): string | null {
+export function settingsProblem(input: SettingsInput, t: Translate = englishT): string | null {
 	if (
 		!Number.isSafeInteger(input.oversightFastSeconds) ||
 		input.oversightFastSeconds < 1 ||
 		input.oversightFastSeconds > 3600
 	)
-		return "Fast-approval time must be a whole number of seconds from 1 to 3600.";
+		return t("gs.fastSeconds");
 	if (
 		!Number.isSafeInteger(input.oversightMinDecisions) ||
 		input.oversightMinDecisions < 1 ||
 		input.oversightMinDecisions > 10000
 	)
-		return "Minimum decisions must be a whole number from 1 to 10000.";
+		return t("gs.minDecisions");
 	if (
 		!Number.isFinite(input.oversightFastShare) ||
 		input.oversightFastShare < 0.5 ||
 		input.oversightFastShare > 1
 	)
-		return "Fast-approval share must be between 50% and 100%.";
+		return t("gs.fastShare");
 	return null;
 }
 
@@ -812,25 +831,20 @@ function rpcError(error: { code?: string; message?: string }): string {
 	return "governance_unavailable";
 }
 
-const ERROR_TEXT: Readonly<Record<string, string>> = {
-	governance_forbidden:
-		"Only active owners and admins of this workspace can open the governance scorecard.",
-	governance_identity_barrier:
-		"Your session does not meet this workspace's sign-in policy (MFA or single sign-on). Sign in again.",
-	governance_malformed:
-		"The scorecard received was incomplete, so it is not shown. Refresh to try again.",
-	invalid_governance_window: "Choose a 7, 30 or 90 day window.",
-	invalid_governance_settings: "The settings are out of range. Check the values and try again.",
-	mail_not_configured:
-		"This deployment has no e-mail transport configured, so the summary was not sent. Ask your operator to configure mail delivery.",
-	rate_limited: "Too many test summaries were requested. Wait a minute and try again.",
-	governance_role_insufficient: "Only workspace owners and admins can send a test summary.",
-	mfa_required:
-		"This workspace requires a multi-factor session. Sign in again with your second factor.",
-	sso_required:
-		"This workspace requires single sign-on. Sign in with your organization's identity provider.",
+const ERROR_TEXT: Readonly<Record<string, DashboardMessageKey>> = {
+	governance_forbidden: "ge.forbidden",
+	governance_identity_barrier: "ge.barrier",
+	governance_malformed: "ge.malformed",
+	invalid_governance_window: "ge.window",
+	invalid_governance_settings: "ge.settings",
+	mail_not_configured: "ge.mail",
+	rate_limited: "ge.rateLimited",
+	governance_role_insufficient: "ge.role",
+	mfa_required: "ge.mfa",
+	sso_required: "ge.sso",
 };
 
-export function governanceErrorText(code: string): string {
-	return ERROR_TEXT[code] ?? "The governance data is unavailable right now. Try again later.";
+export function governanceErrorText(code: string, t: Translate = englishT): string {
+	const key = Object.hasOwn(ERROR_TEXT, code) ? ERROR_TEXT[code] : undefined;
+	return t(key ?? "ge.unavailable");
 }

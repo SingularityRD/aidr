@@ -4,6 +4,8 @@
 // host re-validates on every start and every send, so this is guidance, not a
 // control. Nothing here is transmitted anywhere.
 
+import { englishT, type Translate } from "../i18n/I18nProvider";
+
 export type SyslogTransportChoice = "tls" | "tcp" | "udp";
 
 export type SyslogFormValues = {
@@ -90,77 +92,68 @@ function parsePins(raw: string): string[] {
 		.filter(Boolean);
 }
 
-function checkTls(values: SyslogFormValues, errors: string[]): void {
+function checkTls(values: SyslogFormValues, errors: string[], t: Translate): void {
 	if (values.transport === "tls") {
 		const pem = values.caCertificatePem.trim();
 		if (pem && !/^-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----$/.test(pem))
-			errors.push("The CA certificate must be PEM text (BEGIN CERTIFICATE ... END CERTIFICATE).");
-		if (pem.length > 65_536) errors.push("The CA certificate bundle is too large.");
+			errors.push(t("siem.err.pem"));
+		if (pem.length > 65_536) errors.push(t("siem.err.pemSize"));
 		const pins = parsePins(values.pinnedSha256);
-		if (pins.length > 8) errors.push("Provide at most 8 public-key pins.");
-		if (pins.some((pin) => !PIN.test(pin)))
-			errors.push("Each pin must be a SHA-256 value in hex (64 characters) or base64.");
+		if (pins.length > 8) errors.push(t("siem.err.pinCount"));
+		if (pins.some((pin) => !PIN.test(pin))) errors.push(t("siem.err.pinFormat"));
 	} else if (values.caCertificatePem.trim() || values.pinnedSha256.trim()) {
-		errors.push("CA and pin settings apply only to TLS destinations.");
+		errors.push(t("siem.err.tlsOnly"));
 	}
 }
 
-function checkHost(values: SyslogFormValues, errors: string[], warnings: string[]): void {
+function checkHost(
+	values: SyslogFormValues,
+	errors: string[],
+	warnings: string[],
+	t: Translate,
+): void {
 	const host = values.host
 		.trim()
 		.toLowerCase()
 		.replace(/^\[|\]$/g, "");
 	const literalClass = classifyHostLiteral(host);
-	if (!host) errors.push("Enter the collector host name or address.");
+	if (!host) errors.push(t("siem.err.host"));
 	else if (BLOCKED_HOSTS.has(host) || literalClass === "blocked")
-		errors.push(
-			"Loopback, link-local, metadata and other non-routable addresses are not accepted for SIEM delivery.",
-		);
-	else if (literalClass === null && !DNS_NAME.test(host))
-		errors.push("The host is not a valid DNS name or IP address.");
+		errors.push(t("siem.err.blocked"));
+	else if (literalClass === null && !DNS_NAME.test(host)) errors.push(t("siem.err.hostInvalid"));
 	else if (literalClass === "private" && !values.allowPrivateNetwork)
-		errors.push(
-			"This address is in a private range. Tick the private-network option to confirm an on-premises collector.",
-		);
-	if (literalClass === null && values.allowPrivateNetwork)
-		warnings.push(
-			"The host name is resolved on the host at every send; every address it returns must satisfy the same policy.",
-		);
+		errors.push(t("siem.err.private"));
+	if (literalClass === null && values.allowPrivateNetwork) warnings.push(t("siem.warn.resolve"));
 }
 
-export function buildSyslogAdapter(values: SyslogFormValues): SyslogFormResult {
+export function buildSyslogAdapter(
+	values: SyslogFormValues,
+	t: Translate = englishT,
+): SyslogFormResult {
 	const errors: string[] = [];
 	const warnings: string[] = [];
 	const host = values.host
 		.trim()
 		.toLowerCase()
 		.replace(/^\[|\]$/g, "");
-	checkHost(values, errors, warnings);
+	checkHost(values, errors, warnings, t);
 	const port = Number(values.port);
 	if (!/^\d{1,5}$/.test(values.port.trim()) || port < 1 || port > 65_535)
-		errors.push("The port must be a number from 1 to 65535.");
+		errors.push(t("siem.err.port"));
 	const facility = values.facility.trim() === "" ? undefined : Number(values.facility);
 	if (facility !== undefined && (!Number.isInteger(facility) || facility < 0 || facility > 23))
-		errors.push("The facility must be a whole number from 0 to 23.");
+		errors.push(t("siem.err.facility"));
 	if (/[^\x21-\x7e]/.test(values.hostname) || values.hostname.length > 255)
-		errors.push("The reporting hostname must be printable ASCII without spaces.");
+		errors.push(t("siem.err.hostname"));
 	if (/[^\x21-\x7e]/.test(values.appName) || values.appName.length > 48)
-		errors.push(
-			"The application name must be printable ASCII without spaces (48 characters maximum).",
-		);
-	checkTls(values, errors);
+		errors.push(t("siem.err.appName"));
+	checkTls(values, errors, t);
 	if (values.transport !== "tls" && !values.allowPlaintextTransport)
-		errors.push(
-			"Plain TCP and UDP send incident data unencrypted. Choose TLS, or tick the plaintext option to accept that risk.",
-		);
+		errors.push(t("siem.err.plaintext"));
 	if (errors.length > 0) return { ok: false, errors };
 
-	if (values.transport === "udp")
-		warnings.push(
-			"UDP has no acknowledgement. The delivery receipt records the datagram as sent, not received.",
-		);
-	if (values.transport === "tcp")
-		warnings.push("Plain TCP offers neither encryption nor server authentication.");
+	if (values.transport === "udp") warnings.push(t("siem.warn.udp"));
+	if (values.transport === "tcp") warnings.push(t("siem.warn.tcp"));
 
 	const displayHost = host.includes(":") ? `[${host}]` : host;
 	const pins = parsePins(values.pinnedSha256);

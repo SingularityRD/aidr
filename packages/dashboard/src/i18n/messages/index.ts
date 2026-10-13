@@ -24,9 +24,12 @@ import { governanceMessages } from "./governance";
 import { governanceChangeMessages } from "./governance-change";
 import { governanceErrorsMessages } from "./governance-errors";
 import { governanceRequestsMessages } from "./governance-requests";
+import { governanceRisksMessages } from "./governance-risks";
 import { governanceScorecardMessages } from "./governance-scorecard";
+import { helperErrorsMessages } from "./helper-errors";
 import { landingMessages } from "./landing";
 import { notificationsMessages } from "./notifications";
+import { oidcFlowMessages } from "./oidc-flow";
 import { oidcSsoMessages } from "./oidc-sso";
 import { onboardingMessages } from "./onboarding";
 import { operatorMessages } from "./operator";
@@ -75,9 +78,12 @@ export const pageMessages = {
 	...governanceChangeMessages,
 	...governanceErrorsMessages,
 	...governanceRequestsMessages,
+	...governanceRisksMessages,
 	...governanceScorecardMessages,
+	...helperErrorsMessages,
 	...landingMessages,
 	...notificationsMessages,
+	...oidcFlowMessages,
 	...oidcSsoMessages,
 	...onboardingMessages,
 	...operatorMessages,
@@ -127,9 +133,12 @@ export const messageModules = [
 	governanceChangeMessages,
 	governanceErrorsMessages,
 	governanceRequestsMessages,
+	governanceRisksMessages,
 	governanceScorecardMessages,
+	helperErrorsMessages,
 	landingMessages,
 	notificationsMessages,
+	oidcFlowMessages,
 	oidcSsoMessages,
 	onboardingMessages,
 	operatorMessages,

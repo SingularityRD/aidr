@@ -15,6 +15,9 @@ function scrubCallbackUrl() {
 /** IdP redirect target. The authorization code is consumed exactly once and removed from the URL first. */
 export function OidcCallbackPage() {
 	const t = useT();
+	// The one-time code exchange reads the translator through a ref; it never re-runs.
+	const translator = useRef(t);
+	translator.current = t;
 	const navigate = useNavigate();
 	const { search } = useLocation();
 	const [error, setError] = useState<string | null>(null);
@@ -32,7 +35,7 @@ export function OidcCallbackPage() {
 			};
 		started.current = true;
 		scrubCallbackUrl();
-		completeOidcFlow(search)
+		completeOidcFlow(search, translator.current)
 			.then((result) => {
 				if (!active.current) return;
 				if (!result.ok) {

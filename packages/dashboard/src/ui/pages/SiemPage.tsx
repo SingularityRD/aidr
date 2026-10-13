@@ -18,7 +18,7 @@ export function SiemPage() {
 	const richT = useRichT();
 	const [values, setValues] = useState<SyslogFormValues>(DEFAULT_SYSLOG_FORM);
 	const [touched, setTouched] = useState(false);
-	const result = useMemo(() => buildSyslogAdapter(values), [values]);
+	const result = useMemo(() => buildSyslogAdapter(values, t), [values, t]);
 	const update = <K extends keyof SyslogFormValues>(key: K, value: SyslogFormValues[K]) => {
 		setTouched(true);
 		setValues((current) => ({ ...current, [key]: value }));

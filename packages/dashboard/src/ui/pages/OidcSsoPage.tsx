@@ -410,6 +410,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 								providerId: provider?.id,
 								mode: "link",
 								returnTo: "/sso",
+								t,
 							});
 							if (!started.ok) throw new Error(started.message);
 							redirectToIdp(started.url);
