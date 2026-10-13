@@ -288,6 +288,7 @@ pnpm ci:local:quick                # fast subset: lint, tsc, static/contract/rea
 pnpm ci:local --list               # groups, steps, commands, timeouts, prerequisites
 pnpm ci:local --only helm,privacy  # groups or step ids (repeatable); --skip works the same way
 pnpm ci:local --fetch-tools        # provision missing pinned tools into .ci-local/tools first
+pnpm ci:local:release --keep-going # release sign-off: every step must PASS (= --release)
 ```
 
 | Option | Effect |
@@ -299,6 +300,7 @@ pnpm ci:local --fetch-tools        # provision missing pinned tools into .ci-loc
 | `--fetch-tools` | Download or build missing pinned tools into `.ci-local/tools`, verified exactly as `ci.yml` verifies them: gitleaks, promtool and actionlint from the URL and sha256 pinned in `ci.yml`; Helm through the `ci.yml` install step (GPG signature + checksum), falling back to `go install helm.sh/helm/v3/cmd/helm@<pinned>` (module checksum database) when get.helm.sh is unreachable; Node 24 from nodejs.org checked against `SHASUMS256.txt`. Nothing is committed. |
 | `--allow-dirty` | Report the clean-checkout step as SKIPPED instead of failing it when the tree has uncommitted changes. |
 | `--strict` | Exit non-zero when any selected step is SKIPPED (full-parity machines). |
+| `--release` | Release sign-off profile. Selects every non-opt-in step plus the release-only full-history secret scan (`pnpm verify:secrets`), implies `--strict`, refuses `--only`, `--skip`, `--quick` and `--allow-dirty`, and exits non-zero unless every selected step PASSED (a SKIPPED, NOT RUN or advisory failure fails it). Only `claim-evidence-refresh`, which needs a candidate assembled after this gate, is left out, with that reason in the summary. |
 | `--json [file]` | Also write the machine-readable report to `file`; it is always written to `.ci-local/report.json`. |
 
 **Groups**, in execution order: `guards` (real-HOME record/verify and a working-tree
@@ -315,8 +317,9 @@ container suites), `audit`, `build`, `test` (`pnpm test`), `coverage`, `core-mat
 (pin check, build, unit, real-browser E2E, release zips), `onprem` (deployment/air-gap/
 customer-kit/license/offline-pack/onprem-* suites, bootstrap/upgrade/backup/config
 reference, promtool, compose models, image builds), `helm`, `aig-bridge` (pip-audit +
-pytest in `.ci-local/venv/aig-bridge`), `release` (release build, fleet lifecycles,
-packed-artifact install, dashboard route smoke, evidence boundary) and the opt-in
+pytest in `.ci-local/venv/aig-bridge`), `release` (release build, built-artifact
+enforcement `verify:enforcement` + `verify:codex`, release signing/provenance contracts,
+fleet lifecycles, packed-artifact install, dashboard route smoke, evidence boundary) and the opt-in
 `real-host-e2e`.
 
 **How it stays equal to `ci.yml`.** The plan (`scripts/lib/ci-local-plan.mjs`) is an
@@ -332,13 +335,17 @@ individual components so a failure names the gate. `scripts/ci-local.test.mjs` (
 `ci:local` itself, step `ci-local-drift`) fails when `ci.yml` gains a job or `run:`
 step with no local step, when a reference goes stale, when an explicitly covered CI
 step starts calling a root script or repo file the local command does not, or when
-`quality:gate`/`quality:static` gain a component. When you add a CI step, add or
-extend a step in the catalog (or list it in `CI_ONLY_STEPS` with a reason).
+`quality:gate`/`quality:static` gain a component. It also fails when
+`.github/workflows/release-rc.yml` runs a root script (`pnpm <script>`, with
+`quality:*` chains expanded) that no local step runs, so a release-only contract cannot
+rot between releases. When you add a CI step, add or extend a step in the catalog (or
+list it in `CI_ONLY_STEPS` with a reason; release-only scripts go in
+`RELEASE_ONLY_SCRIPTS` with a reason).
 
 **Prerequisites and SKIPPED.** A step whose prerequisite is missing is reported as
 `SKIPPED` with the exact prerequisite and the fix, in the table and in a separate
 SKIPPED section - never as PASS and never silently. Only required failures make the
-exit code non-zero (`--strict` also fails on skips).
+exit code non-zero (`--strict` also fails on skips; `--release` fails on anything but PASS).
 
 **Step dependencies (NOT RUN).** `package-install` and `route-smoke` consume what
 `build-release` writes (the release `dist/` trees and the dashboard build). In `ci.yml`

@@ -309,10 +309,19 @@ jobs:
           pnpm --filter @singularityrd/aidr-privacy build:release
           node --test packages/sdk/src/__tests__/privacy-send-mtls.test.mjs
 
+      # verify:enforcement rebuilds the development flavour in place before it
+      # restores a release build, so it runs before the deterministic build
+      # whose dist/ trees become the candidate inputs.
+      - name: Built-artifact enforcement in both build flavours
+        run: pnpm build:release && pnpm verify:enforcement
+
       - name: Deterministic commercial release build
         env:
           AIDR_BUILD_FLAVOR: commercial
         run: pnpm build:release
+
+      - name: Codex hook verification against the candidate bundle
+        run: pnpm verify:codex
 
       - name: Verify Unix fleet lifecycle
         run: pnpm verify:fleet:unix

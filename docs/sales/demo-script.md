@@ -25,11 +25,15 @@ session that uses a connected control plane. The 13 September 2026 script is kep
 ## 0. Pre-flight (30 minutes before, every time)
 
 ```bash
-pnpm build                                   # do not demo a stale bundle
-node scripts/verify-enforcement.mjs          # must end with ALL PASS
+pnpm build:release                           # the checks below need the release artifact manifest
+node scripts/verify-enforcement.mjs          # must end with ALL PASS (checks both build flavours)
 node scripts/verify-codex-hook.mjs           # if you will mention Codex
+pnpm build                                   # the development bundle the steps below pipe into
 pnpm test:e2e:browser-guard                  # builds the extension, runs the hermetic browser suite
 ```
+
+A plain `pnpm build` writes no artifact manifest, so both verifiers refuse to run after
+it; build the release flavour first and return to the development build afterwards.
 
 If any of these fails, **do not run that part of the demo.**
 
