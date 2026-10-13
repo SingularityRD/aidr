@@ -100,6 +100,7 @@ export function buildPayload(options, now = Date.now()) {
 	const payload = {
 		license_id: options.licenseId,
 		customer: options.customer?.trim(),
+		...(options.customerId === undefined ? {} : { customer_id: options.customerId }),
 		plan_id: options.planId,
 		seats: Number(options.seats),
 		features,
@@ -117,6 +118,7 @@ const USAGE = `Usage:
   node scripts/license-issue.mjs --key-id <id> --license-id <id> --customer <name> --plan-id <plan>
     --seats <n> --deployment ${DEPLOYMENTS.join("|")} --expires-at <ISO> [--features a,b] [--not-before <ISO>]
     (--plan-id is one of ${PLAN_IDS.join("|")}; --deployment airgap requires --plan-id ${AIRGAP_PLAN_IDS.join("|")})
+    [--customer-id <id: 2..32 of a-z0-9-, binds the license to a customer packet>]
     [--issued-at <ISO>] [--grace-days <0..90, default 14>] [--public-keys <registry.json>] --out <license.json>
     (signing key: --private-key-file <0600 pem> | AIDR_LICENSE_SIGNING_KEY_FILE | AIDR_LICENSE_SIGNING_KEY)
   node scripts/license-issue.mjs --print-public-key-entry --key-id <id> [--not-before <ISO>]
@@ -134,6 +136,7 @@ if (invoked) {
 				"key-id": { type: "string" },
 				"license-id": { type: "string" },
 				customer: { type: "string" },
+				"customer-id": { type: "string" },
 				"plan-id": { type: "string" },
 				seats: { type: "string" },
 				features: { type: "string" },
@@ -163,6 +166,7 @@ if (invoked) {
 		const payload = buildPayload({
 			licenseId: values["license-id"],
 			customer: values.customer,
+			customerId: values["customer-id"],
 			planId: values["plan-id"],
 			seats: values.seats,
 			features: values.features,
@@ -193,7 +197,8 @@ if (invoked) {
 		// wx: never overwrite a previously delivered license file.
 		writeFileSync(resolve(values.out), `${JSON.stringify(license, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o644 });
 		const graceEnds = new Date(Date.parse(payload.expires_at) + payload.grace_days * DAY_MS).toISOString();
-		console.log(`Issued license ${payload.license_id} for ${payload.customer}: ${payload.seats} seats, ${payload.deployment}, valid ${payload.not_before} .. ${payload.expires_at} (managed features until ${graceEnds}), key ${values["key-id"]}.`);
+		const customerId = payload.customer_id === undefined ? "" : ` (customer id ${payload.customer_id})`;
+		console.log(`Issued license ${payload.license_id} for ${payload.customer}${customerId}: ${payload.seats} seats, ${payload.deployment}, valid ${payload.not_before} .. ${payload.expires_at} (managed features until ${graceEnds}), key ${values["key-id"]}.`);
 	} catch (error) {
 		console.error(`ERROR: ${error instanceof Error ? error.message : "license issuance failed"}`);
 		process.exitCode = 1;
