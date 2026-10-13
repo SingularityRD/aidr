@@ -1613,6 +1613,17 @@ function inputNotFullyInspectedVerdict(limits: InspectionLimit[]): Verdict {
 	};
 }
 
+/** A managed entitlement refresh that cannot be attempted; managed features stay off. */
+class ManagedRefreshSkipped extends Error {}
+
+/**
+ * The status line a verdict carries while managed features are off. It names
+ * the managed state only; the decision itself came from local detection.
+ */
+function managedDisabledNotice(reason: string): string {
+	return `Singularity AIDR managed features are off (${reason}). Local detection is still enforcing on this device.`;
+}
+
 async function runEvaluationPipeline(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
@@ -1716,26 +1727,28 @@ async function runEvaluationPipeline(
 	// session (toxic) flow, then the profile restriction, then host promotion.
 	// Only called after `preflight` is computed below.
 	const finalize = async (verdict: Verdict, allowlisted = false): Promise<Verdict> =>
-		hostEffectiveVerdict(
-			mergeAgentProfileVerdict(
-				await applySessionFlow(
-					request,
-					context,
-					config,
-					await applyRuntimeDetectors(
+		withManagedStatus(
+			hostEffectiveVerdict(
+				mergeAgentProfileVerdict(
+					await applySessionFlow(
 						request,
 						context,
 						config,
-						mergeDetectorVerdict(preflight, verdict, preflight),
-						managedState,
-						rewriteSource,
+						await applyRuntimeDetectors(
+							request,
+							context,
+							config,
+							mergeDetectorVerdict(preflight, verdict, preflight),
+							managedState,
+							rewriteSource,
+						),
+						allowlisted,
 					),
-					allowlisted,
+					profileVerdict,
 				),
-				profileVerdict,
+				config,
+				context,
 			),
-			config,
-			context,
 		);
 	const commercial = isCommercialBuild();
 	// Computed once: the same manifest edits decide whether this request has
@@ -1743,31 +1756,30 @@ async function runEvaluationPipeline(
 	// fast path below) and what that leg then checks.
 	const manifestEdits = manifestEditInputs(request);
 
-	// Managed-only commercial behavior: without a valid auth token + signed entitlement (or offline grace),
-	// the runtime does not enforce and becomes inert (allow-only).
-	const disabled = (reason: string): Verdict =>
-		mergeAgentProfileVerdict(disabledVerdict(reason), profileVerdict);
-	const disabledVerdict = (reason: string): Verdict => {
-		if (commercial) {
-			return {
-				decision: "ask",
-				category: "managed_disabled",
-				confidence: 1.0,
-				severity: "warning",
-				source: "managed_disabled",
-				artifacts: [],
-				matchedThreatId: null,
-				reasons: [reason],
-			};
+	// Licensing, revocation and integrity state switch MANAGED features off; they
+	// never switch local detection off (docs/operations/licensing.md). Every
+	// verdict below carries the reasons as a notice, while heuristics, policy and
+	// allowlists decide the call exactly as in local mode.
+	// The only state that adds a hold on top of the local verdict is a commercial
+	// build whose own integrity check failed (degraded safe mode): that is a
+	// fail-closed security control, so it is merged as an `ask`, and a local
+	// `deny` stays a `deny` with its detection reason first.
+	const managedDisabledReasons: string[] = [];
+	const disableManaged = (reason: string): void => {
+		if (managedDisabledReasons.includes(reason)) return;
+		managedDisabledReasons.push(reason);
+		logger.warn(`Managed features disabled; local detection still enforcing: ${reason}`);
+	};
+	let integrityHold: Verdict | null = null;
+	const withManagedStatus = (verdict: Verdict): Verdict => {
+		let result = integrityHold ? mergeVerdictsByPriority(verdict, integrityHold) : verdict;
+		if (managedDisabledReasons.length > 0) {
+			const notice = managedDisabledNotice(managedDisabledReasons.join("; "));
+			if (!result.notices?.includes(notice)) {
+				result = { ...result, notices: [...(result.notices ?? []), notice] };
+			}
 		}
-		return {
-			...allowVerdict("managed_disabled"),
-			// Keep the category consistent with the source. A licensing disable is not a
-			// clean inspection, and a caller that logs only `category` must be able to
-			// tell the two apart.
-			category: "managed_disabled",
-			reasons: [reason],
-		};
+		return result;
 	};
 
 	const managedOnly = commercial || config.mode === "managed";
@@ -1829,9 +1841,20 @@ async function runEvaluationPipeline(
 	}
 	// Required response control precedes licensing, policy, cache and empty-input returns.
 	if (commercial && isDegradedSafeMode()) {
-		return disabled(
-			`AIDR disabled: degraded safe mode (${getDegradedSafeModeReason() ?? "integrity"}).`,
-		);
+		const reason = `degraded safe mode (${getDegradedSafeModeReason() ?? "integrity"})`;
+		disableManaged(reason);
+		integrityHold = {
+			decision: "ask",
+			category: "managed_disabled",
+			confidence: 1.0,
+			severity: "warning",
+			source: "managed_disabled",
+			artifacts: [],
+			matchedThreatId: null,
+			reasons: [
+				`Singularity AIDR integrity check failed: ${reason}. Every call needs review until the connector is reinstalled from a signed release.`,
+			],
+		};
 	}
 	if (managedLoadFailure) throw managedLoadFailure.error;
 	if (managedOnly) {
@@ -1913,10 +1936,10 @@ async function runEvaluationPipeline(
 		) {
 			try {
 				const iid = await getInstallationId(aidrDir).catch(() => undefined);
-				if (!iid) return disabled("AIDR disabled: missing installation id (iid).");
+				if (!iid) throw new ManagedRefreshSkipped("missing installation id (iid)");
 
 				if (!config.control_plane.enabled) {
-					return disabled("AIDR disabled: control_plane.enabled=false (managed-only build).");
+					throw new ManagedRefreshSkipped("control_plane.enabled=false (managed-only build)");
 				}
 				managedState = { ...managedState, last_sync_attempt_at: new Date().toISOString() };
 				await saveManagedState(managedPath, managedState);
@@ -1946,20 +1969,24 @@ async function runEvaluationPipeline(
 					await saveEntitlementKeyringFromState(managedState);
 					token = getEffectiveManagedApiKey(config.auth.api_key, managedState);
 				}
-			} catch {
-				// Ignore.
+			} catch (error) {
+				// A failed refresh leaves the entitlement as it was; the gates below
+				// decide what that means for managed features.
+				if (error instanceof ManagedRefreshSkipped) disableManaged(error.message);
 			}
 		}
 
-		// Require server-signed entitlements when configured and keys are present; otherwise remain inert.
-		// This is a licensing control and applies to any installation holding credentials.
+		// Require server-signed entitlements when configured and keys are present.
+		// This is a licensing control and applies to any installation holding
+		// credentials: without a valid entitlement, managed features are off. Local
+		// detection is not a licensed feature and keeps deciding the call.
 		if (
 			hasCredentials &&
 			config.licensing.require_signed_entitlements &&
 			config.licensing.public_keys_pem.length > 0
 		) {
 			if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
-				return disabled("AIDR disabled: missing or invalid server-signed entitlement (ed25519).");
+				disableManaged("missing or invalid server-signed entitlement (ed25519)");
 			}
 		}
 
@@ -2032,18 +2059,12 @@ async function runEvaluationPipeline(
 			// Fail open.
 		}
 
-		// If revocations disabled sync or invalidated the entitlement, stay inert.
-		//
-		// This is safe for an installation that never enrolled: `loadManagedState`
-		// only returns state whose signature verified against the configured public
-		// keys, and such an installation has no keys and no token to sync with, so it
-		// cannot be handed a forged revocation locally. Do NOT widen this to cover
-		// "credentials present but unverified" - a routine seat-limit backoff sets the
-		// same field, and that 24h backoff is explicitly documented as leaving local
-		// protection running.
+		// If revocations disabled sync or invalidated the entitlement, managed
+		// features are off. A revoked device, a rejected key and a seat-limit backoff
+		// all leave local protection running.
 		if (isSyncDisabled(managedState)) {
-			return disabled(
-				`AIDR disabled: managed sync is disabled (${managedState.sync_disabled_reason ?? "unknown"}).`,
+			disableManaged(
+				`managed sync is disabled (${managedState.sync_disabled_reason ?? "unknown"})`,
 			);
 		}
 		// Both signed-entitlement gates require configured keys. Without a key there is
@@ -2059,9 +2080,16 @@ async function runEvaluationPipeline(
 			config.licensing.public_keys_pem.length > 0
 		) {
 			if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
-				return disabled("AIDR disabled: entitlement revoked or no longer valid (ed25519).");
+				disableManaged("entitlement revoked or no longer valid (ed25519)");
 			}
 		}
+	}
+	if (managedDisabledReasons.length > 0) {
+		// Managed features are off for the rest of this call: no remote policy
+		// fetch (and so no tenant detection exceptions that could relax a local
+		// finding), no telemetry upload, no dashboard approval. An operator who set
+		// `remote_policy_required` still gets the documented fail-closed deny.
+		config = { ...config, control_plane: { ...config.control_plane, enabled: false } };
 	}
 
 	// Exceptions delivered inside the signed runtime policy (empty unless it verified).

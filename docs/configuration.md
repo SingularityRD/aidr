@@ -192,11 +192,20 @@ One of `"local"` or `"managed"`. Default: `"local"`.
   `enrollment_token`, **and a deployed control plane**.
 
 Commercial builds force `managed`; setting `local` does not bypass their
-artifact trust or entitlement requirements. If a managed installation has no
-valid enrollment credentials, managed-only features stay disabled and local
-detection continues. An enrolled commercial installation with invalid signed
-entitlement can instead return a blocking review verdict. The runtime reports
-these states rather than presenting an unverified check as clean.
+artifact trust or entitlement requirements. Licensing and enrollment state
+switch **managed** features off; they never switch local detection off. With
+no enrollment credentials, a missing, invalid, expired (past `grace_until`) or
+revoked signed entitlement, or managed sync disabled by the control plane, the
+remote policy fetch, telemetry upload, dashboard approvals and paid intel stay
+off, and heuristics, policy and allowlists decide every call exactly as in
+`local` mode, in every build. Each verdict then carries a notice ("managed
+features are off (...). Local detection is still enforcing"), and the session
+banner reports "Local protection ACTIVE (managed features unavailable: ...)".
+The one exception is a commercial build whose own artifact integrity check
+failed (degraded safe mode): every call is additionally held for review, and a
+local `deny` stays a `deny` with its detection reason first.
+`control_plane.remote_policy_required: true` keeps its fail-closed deny when
+the central policy cannot be loaded, including while managed features are off.
 
 > **Deployment requirement:** no control plane is currently deployed, so `managed`
 > cannot complete enrollment. Leave `mode` at its `local` default unless your

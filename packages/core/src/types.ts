@@ -211,6 +211,13 @@ export interface Verdict {
 	 * Titles and locations only — never the matched source text.
 	 */
 	warnings?: VerdictWarning[];
+	/**
+	 * Status lines about the installation, not about this call (for example
+	 * "managed features are off: the entitlement expired"). They never change
+	 * the decision, which local detection made; a connector may show them in
+	 * its notice channel.
+	 */
+	notices?: string[];
 }
 
 /** Which profile rule restricted a call (names only, never tool input). */

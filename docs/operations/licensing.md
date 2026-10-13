@@ -16,6 +16,21 @@ What the license controls, and what it never controls:
 This follows the product's enforcement default: a connector evaluates every tool
 call locally, and managed features are an opt-in layer on top.
 
+On the endpoint this holds in every build, source and commercial. When the
+server-signed entitlement an endpoint holds is missing, invalid, expired past its
+grace period or revoked, or the control plane disabled its sync (revoked device,
+rejected key, seat limit), the endpoint switches managed features off (remote
+policy, telemetry upload, dashboard approvals, paid intel) and keeps deciding
+every tool call with its local rules, policy and allowlists: `curl … | bash` and
+`rm -rf /` are still denied, and a benign command is still allowed. Each verdict
+carries a notice ("Singularity AIDR managed features are off (…). Local
+detection is still enforcing on this device.") and the session banner reads
+"Local protection ACTIVE (managed features unavailable: …)". There is no
+licensing hard stop on endpoints. The only state that holds every call is a
+failed artifact integrity check in a commercial build (degraded safe mode),
+which is a tamper control, not a license control; a local `deny` stays a `deny`
+there too. See [configuration: `mode`](../configuration.md#mode).
+
 ## What the license can and cannot enforce
 
 License enforcement on a self-hosted or air-gapped installation is

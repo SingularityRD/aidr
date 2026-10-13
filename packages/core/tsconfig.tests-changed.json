@@ -32,6 +32,7 @@
     "src/__tests__/guard-dashboard-approval.test.ts",
     "src/__tests__/host-observation.test.ts",
     "src/__tests__/logger.test.ts",
+    "src/__tests__/managed-mode-disarm.test.ts",
     "src/__tests__/mcp-attestation.test.ts",
     "src/__tests__/mcp-transport.test.ts",
     "src/__tests__/package-check-failclosed.test.ts",
