@@ -45,21 +45,20 @@ async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes("--apply");
   const { dir, base, serviceRoleKey } = loadTarget(args);
-  const env = { SERVICE_ROLE_KEY: serviceRoleKey };
-  if (!env.SERVICE_ROLE_KEY) throw new Error("Deployment service credential missing");
+  if (!serviceRoleKey) throw new Error("Deployment service credential missing");
   // Replace stale success evidence BEFORE any authorization or external side effect.
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify({
     checked_at: new Date().toISOString(), applied: apply, status: "incomplete", complete: false,
     scope: "Run has not completed. Pending export authorizations require fenced-worker reconciliation, not blind Storage retries.",
   }, null, 2));
   async function request(path, method = "GET", body) {
-    const response = await fetch(new URL(path, base), { method, headers: { apikey: env.SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SERVICE_ROLE_KEY}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
+    const response = await fetch(new URL(path, base), { method, headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
     if (!response.ok) throw new Error(`Maintenance request failed (${response.status}); reconcile outstanding authorizations before any Storage retry`);
     const text = await response.text(); return text ? JSON.parse(text) : null;
   }
   async function verifyExportAbsent(path) {
     const response = await fetch(new URL(`/storage/v1/object/info/aidr-audit-exports/${path}`, base), {
-      headers: { apikey: env.SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SERVICE_ROLE_KEY}` },
+      headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
       signal: AbortSignal.timeout(30000),
     });
     if (response.status !== 404) throw new Error(`Storage did not confirm exact export absence (${response.status}); authorization retained`);

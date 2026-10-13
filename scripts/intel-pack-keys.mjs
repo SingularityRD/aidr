@@ -128,10 +128,11 @@ export function encryptPackDirectory(packDir, key, onlyPaths = []) {
 		}
 		const target = join(dir, ...file.path.split("/"));
 		const plain = regularFile(target, file.path);
-		if (file.sha256 && sha256(plain) !== String(file.sha256).toLowerCase()) throw new PackKeyError(`plaintext SHA-256 mismatch for ${file.path}`);
+		const plainSha256 = sha256(plain);
+		if (file.sha256 && plainSha256 !== String(file.sha256).toLowerCase()) throw new PackKeyError(`plaintext SHA-256 mismatch for ${file.path}`);
 		const envelope = encryptEnvelope(plain, key.key_b64);
 		writeFileSync(target, envelope);
-		Object.assign(file, { sha256: sha256(plain), encrypted: true, cipher: "aes-256-gcm", key_id: key.key_id, ciphertext_sha256: sha256(envelope) });
+		Object.assign(file, { sha256: plainSha256, encrypted: true, cipher: "aes-256-gcm", key_id: key.key_id, ciphertext_sha256: sha256(envelope) });
 	}
 	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 	return manifest;

@@ -784,7 +784,7 @@ Runs every gate .github/workflows/ci.yml runs, locally, and prints a summary.
 
 /**
  * @param {string[]} argv
- * @returns {{help: boolean, list: boolean, only: string[], skip: string[], quick: boolean, keepGoing: boolean, fetchTools: boolean, allowDirty: boolean, strict: boolean, json: string | null}}
+ * @returns {{help: boolean, list: boolean, only: string[], skip: string[], quick: boolean, keepGoing: boolean, fetchTools: boolean, allowDirty: boolean, strict: boolean, release: boolean, json: string | null}}
  */
 export function parseArgs(argv) {
 	const options = { help: false, list: false, only: [], skip: [], quick: false, keepGoing: false, fetchTools: false, allowDirty: false, strict: false, release: false, json: null };
@@ -1211,7 +1211,7 @@ export function blockingDependency(entry, results) {
 
 /**
  * @param {Array<{status: string, required: boolean}>} results
- * @param {{strict?: boolean, interrupted?: boolean}} options
+ * @param {{strict?: boolean, release?: boolean, interrupted?: boolean}} options
  */
 export function summarize(results, { strict = false, release = false, interrupted = false } = {}) {
 	const counts = { PASS: 0, FAIL: 0, SKIPPED: 0, "NOT RUN": 0 };

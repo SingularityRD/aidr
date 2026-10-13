@@ -99,8 +99,9 @@ export async function restorePromotionState(options, releases, { now = new Date(
 			const signatureEnvelope = JSON.parse(Buffer.from(release.signatureRaw).toString("utf8"));
 			item = verifySignedRollbackEvidence(release.manifestRaw, signatureEnvelope, policy);
 		} catch (error) {
-			rejected.push({ tag: release.tag, reason: error instanceof Error ? error.message : String(error) });
-			warn(`WARN: ignoring release ${release.tag}: ${error instanceof Error ? error.message : String(error)}`);
+			const reason = error instanceof Error ? error.message : String(error);
+			rejected.push({ tag: release.tag, reason });
+			warn(`WARN: ignoring release ${release.tag}: ${reason}`);
 			continue;
 		}
 		if (item.release_version === expectedVersion && item.release_tag !== options.expectedTag) {
@@ -110,8 +111,9 @@ export async function restorePromotionState(options, releases, { now = new Date(
 	}
 	raiseRollbackFloor(state, evidence, now);
 	const records = Object.keys(state.value.records).length;
-	if (hadState || records > 0) await atomicJsonWrite(state.path, state.value, 0o600);
-	return { had_state: hadState, verified_releases: evidence.length, rejected, records, written: hadState || records > 0 };
+	const written = hadState || records > 0;
+	if (written) await atomicJsonWrite(state.path, state.value, 0o600);
+	return { had_state: hadState, verified_releases: evidence.length, rejected, records, written };
 }
 
 async function githubFetch(fetchImpl, url, token, accept) {

@@ -67,7 +67,8 @@ export function distProvenanceProblems({ distDir, label, commitSha, sourceDigest
 		if (!expected) changed.push(`${file} (not in the manifest)`);
 		else if (createHash("sha256").update(readFileSync(path.join(distDir, file))).digest("hex") !== expected) changed.push(`${file} (content changed)`);
 	}
-	for (const file of listed.keys()) if (!onDisk.includes(file)) changed.push(`${file} (missing)`);
+	const present = new Set(onDisk);
+	for (const file of listed.keys()) if (!present.has(file)) changed.push(`${file} (missing)`);
 	if (changed.length > 0) {
 		problems.push(`${label} no longer matches its build manifest: ${changed.slice(0, 5).join(", ")}${changed.length > 5 ? `, and ${changed.length - 5} more` : ""}; rerun \`pnpm build:release\``);
 	}

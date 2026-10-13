@@ -183,6 +183,7 @@ export function renderCompatibilityMatrix({ support, interception, evidence, pac
 	}
 
 	const conditions = interception.conditionVocabulary;
+	const failureEntry = (connector, condition) => interception.failureConditions.find((r) => r.connector === connector && r.condition === condition);
 	push(
 		"",
 		"## Host failure behaviour",
@@ -197,7 +198,7 @@ export function renderCompatibilityMatrix({ support, interception, evidence, pac
 	);
 	for (const row of rows) {
 		const outcomes = conditions.map((condition) => {
-			const entry = interception.failureConditions.find((r) => r.connector === row.connector && r.condition === condition);
+			const entry = failureEntry(row.connector, condition);
 			return entry ? (OUTCOME_LABEL[entry.outcome] ?? entry.outcome) : "not recorded";
 		});
 		const observed = records[row.connector].some((record) => record.proves?.failurePolicy?.["internal-error"] === "fail-closed");
@@ -208,7 +209,7 @@ export function renderCompatibilityMatrix({ support, interception, evidence, pac
 	for (const row of rows) {
 		push(`- **${name(row.connector)}**: ${cell(row.tamperResistance)}.`);
 		for (const condition of conditions) {
-			const entry = interception.failureConditions.find((r) => r.connector === row.connector && r.condition === condition);
+			const entry = failureEntry(row.connector, condition);
 			if (entry) push(`  - ${CONDITION_LABEL[condition] ?? condition}: ${cell(entry.reason)}`);
 		}
 	}

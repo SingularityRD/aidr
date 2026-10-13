@@ -164,14 +164,14 @@ export function checkLinks(files, root = repositoryRoot) {
 	for (const file of files) {
 		const markdown = readFileSync(path.join(root, file), "utf8");
 		for (const { line, target } of extractLinks(markdown)) {
+			const resolved = resolveTarget(file, target, root);
 			const anchor = anchorOf(target);
 			if (anchor !== null) {
-				const page = target.startsWith("#") ? path.join(root, file) : resolveTarget(file, target, root);
+				const page = target.startsWith("#") ? path.join(root, file) : resolved;
 				if (page?.endsWith(".md") && existsSync(page) && !anchorsOf(page).has(anchor)) {
 					brokenAnchors.push({ file, line, target });
 				}
 			}
-			const resolved = resolveTarget(file, target, root);
 			if (!resolved || existsSync(resolved)) continue;
 			const relative = path.relative(root, resolved);
 			if (relative.startsWith("..") || path.isAbsolute(relative)) {
