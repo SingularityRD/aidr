@@ -122,14 +122,24 @@ export function createZip(entries) {
 	return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
+/** Offset of the end-of-central-directory record (it may be followed by an archive comment). */
+function findEocd(buffer) {
+	for (let offset = buffer.length - 22; offset >= 0 && offset >= buffer.length - 22 - 0xffff; offset--) {
+		if (buffer.readUInt32LE(offset) === 0x06054b50 && offset + 22 + buffer.readUInt16LE(offset + 20) === buffer.length) {
+			return offset;
+		}
+	}
+	throw new Error("ZIP_NO_EOCD");
+}
+
 /**
  * Reads the central directory of an archive written by {@link createZip} (or any
- * non-ZIP64 archive without a comment). Used by the build self-check and tests.
+ * non-ZIP64 archive, such as a Mozilla-signed XPI). Used by the build self-check, the
+ * store validator, the update feed builder and tests.
  * @returns {Map<string, Buffer>} entry name -> uncompressed bytes
  */
 export function readZip(buffer) {
-	const endOffset = buffer.length - 22;
-	if (endOffset < 0 || buffer.readUInt32LE(endOffset) !== 0x06054b50) throw new Error("ZIP_NO_EOCD");
+	const endOffset = findEocd(buffer);
 	const count = buffer.readUInt16LE(endOffset + 10);
 	let cursor = buffer.readUInt32LE(endOffset + 16);
 	const files = new Map();

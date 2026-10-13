@@ -15,7 +15,12 @@ tablosundadır. Tek bir kullanıcının kendi kurulumu için [browser-guard.tr.m
 |---|---|---|---|
 | Google Chrome | Chrome Web Store (liste dışı / unlisted kayıt) | `<CHROME_WEB_STORE_ID>` | `https://clients2.google.com/service/update2/crx` |
 | Microsoft Edge | Microsoft Edge Add-ons (liste dışı kayıt) | `<EDGE_ADDONS_ID>` | `https://edge.microsoft.com/extensionwebstorebase/v1/crx` |
-| Mozilla Firefox 140+ | Mozilla imzalı XPI (addons.mozilla.org, liste dışı, kendi sunucunuzda) | `browser-guard@singularityrd.com` | XPI'yi barındırdığınız HTTPS adresi |
+| Mozilla Firefox 140+ | Mozilla imzalı XPI (addons.mozilla.org, liste dışı, kendi sunucunuzda) | `browser-guard@singularityrd.com` | XPI'nin içine yazılmış, yayıncıya ait `updates.json` adresi (bkz. bölüm 10) |
+| Chrome ve Edge, kurum içi barındırma | Singularity imzalı CRX, kendi HTTPS sunucunuzdan | `<SELF_HOSTED_EXTENSION_ID>` (mağaza kimliklerinden farklıdır) | `https://<INTERNAL_HOST>/browser-guard/update.xml` |
+
+Son satır, mağazalara erişemeyen veya her güncellemenin kendi sunucusundan gelmesini
+isteyen ağlar içindir: bkz.
+[bölüm 10, "Browser Guard güncellemelerini kurum içinde barındırma"](#10-browser-guard-güncellemelerini-kurum-içinde-barındırma).
 
 `<CHROME_WEB_STORE_ID>` ve `<EDGE_ADDONS_ID>`, yayımlanmış mağaza kayıtlarının
 kimlikleridir (`a`-`p` arası 32 harf; kayıt adresinin son bölümü). Singularity
@@ -164,13 +169,15 @@ ve `policies.json` ile aynı içeriği (bölüm 7) kullanın ya da `policies.jso
    `Firefox.app/Contents/Resources/distribution/`; Linux `/etc/firefox/policies/`) ya da
    Firefox ADMX şablonlarını (Windows) veya `org.mozilla.firefox` alanını (macOS) kullanın.
 
-**Güncellemeler.** Bu derleme `update_url` bildirmez; Firefox kendi sunucunuzdaki
-kopyayı kendiliğinden güncellemez. Yeni sürümü, imzalı yeni XPI'yi yeni bir dosya
-adıyla yayımlayıp `install_url` değerini değiştirerek dağıtın; Firefox politikayı bir
-sonraki okuyuşunda yeni adresten kurar. Genişletmeden önce pilot makinede doğrulayın
-(`about:addons` sürümü gösterir). Eklenti addons.mozilla.org'da herkese açık
-listelenirse `https://addons.mozilla.org/firefox/downloads/latest/<AMO_SLUG>/latest.xpi`
-kullanın; Firefox oradan günceller.
+**Güncellemeler.** Kendi sunucunuzda dağıtılan XPI, yayıncının güncelleme
+dosyasının (`updates.json`) adresini taşır ve Mozilla imzası bu adresi de kapsar.
+Firefox bu adresi olağan eklenti güncelleme denetiminde sorar ve daha yeni imzalı
+sürümü kendiliğinden kurar; bilgisayarlarınızın yalnızca o sunucuya HTTPS ile
+erişebilmesi gerekir. Erişemiyorlarsa (yalıtılmış ağ) Firefox eklentiyi kendiliğinden
+güncellemez: yeni sürümü, imzalı yeni XPI'yi yeni bir dosya adıyla yayımlayıp
+`install_url` değerini değiştirerek dağıtın; Firefox politikayı bir sonraki okuyuşunda
+yeni adresten kurar. Genişletmeden önce pilot makinede doğrulayın (`about:addons`
+sürümü gösterir). Bkz. [bölüm 10](#10-browser-guard-güncellemelerini-kurum-içinde-barındırma).
 
 ## 8. Dağıtımı doğrulama
 
@@ -210,6 +217,102 @@ macOS `sudo profiles show -type configuration | grep -i browser-guard`; Linux
   kaldırır) veya `ExtensionInstallBlocklist` listesine ekleyin. Bunun korumayı da
   kaldırdığını unutmayın.
 - **Belirli bir sürüme sabitleme** yalnızca kendi barındırmanızla mümkündür: kendi
-  anahtarınızla paketlenip kendi `update.xml` dosyanızdan sunulan bir Chromium derlemesi
-  (farklı uzantı kimliği; yönetilen yapılandırma o kimliğe taşınır) veya sabit bir
-  `install_url` adresindeki belirli bir imzalı Firefox XPI.
+  `update.xml` dosyanızdan sunulan ve yalnızca siz istediğinizde ilerletilen kurum içi
+  Chrome/Edge paketi (bölüm 10; farklı uzantı kimliği, yönetilen yapılandırma o
+  kimliğe taşınır) veya sabit bir `install_url` adresindeki belirli bir imzalı Firefox
+  XPI.
+
+## 10. Browser Guard güncellemelerini kurum içinde barındırma
+
+Mağazadan kurulan kopyalar Chrome Web Store ve Edge Add-ons üzerinden kendiliğinden
+güncellenir. Bilgisayarlarınız mağazalara erişemiyorsa (yalıtılmış ağ, mağazaları
+engelleyen bir vekil sunucu) veya her güncellemenin kendi sunucunuzdan gelmesini
+istiyorsanız kurum içi paketi kullanın. Tarayıcı bu durumda olağan uzantı güncelleme
+denetiminde sizin sunucunuzu sorar ve daha yeni sürümü kullanıcıdan hiçbir işlem
+beklemeden kendiliğinden kurar.
+
+**Her sürümde aldıklarınız** (Singularity irtibat kişinizden veya GitHub sürümünden,
+`SHA256SUMS` ve derleme kaynağı tasdiki ile):
+
+| Dosya | Nedir |
+|---|---|
+| `aidr-browser-guard-<version>.crx` | Chrome ve Edge paketi, Singularity imzalı (CRX3) |
+| `aidr-browser-guard-firefox-selfhosted-<version>.zip` | Mozilla'nın imzaladığı Firefox derlemesi; imzalı XPI'yi irtibat kişiniz verir |
+
+**Kurum içi uzantı kimliği.** Kurum içi paketin kendi uzantı kimliği vardır:
+`<SELF_HOSTED_EXTENSION_ID>`; mağaza kimliklerinden farklıdır. Bu kimlik Singularity'nin
+imza anahtarından gelir; Chrome ve Edge için aynıdır ve her sürümde değişmeden kalır.
+İrtibat kişiniz size verir. Bu kimliği sabitleyin: aşağıdaki tüm politikalar onu
+kullanır ve besleme aracı başka bir kimlik için imzalanmış paketi reddeder. Mağaza
+kurulumundan kurum içi pakete geçiş, tarayıcı için yeni bir uzantıdır: yönetilen
+yapılandırmayı yeni kimliğe taşıyın ve mağaza kimliğini zorunlu kurulum listesinden
+çıkarın.
+
+### Chrome ve Edge
+
+1. **İndirmeyi doğrulayın.** `sha256sum --check --ignore-missing SHA256SUMS`; GitHub CLI
+   ile `gh attestation verify aidr-browser-guard-<version>.crx --repo SingularityRD/aidr`.
+2. **Sunucunuz için güncelleme beslemesini oluşturun.** Browser Guard kaynaklarıyla
+   (veya `packages/browser-guard/scripts` klasörüyle):
+
+   ```bash
+   node packages/browser-guard/scripts/update-feed.mjs \
+     --base-url https://<INTERNAL_HOST>/browser-guard \
+     --out browser-guard-feed \
+     --chrome-crx aidr-browser-guard-<version>.crx \
+     --extension-id <SELF_HOSTED_EXTENSION_ID> \
+     --previous <şu an barındırdığınız besleme>   # ilk seferde yazmayın
+   ```
+
+   Anahtar gerekmez. Araç CRX imzasını ve paketin sabitlediğiniz kimlik için olduğunu
+   denetler, barındırdığınızdan daha yüksek olmayan bir sürümü reddeder (besleme asla
+   geri gitmez), eski paketleri korur ve `update.xml`, `packages/` ve `SHA256SUMS`
+   dosyalarını yazar. Denetimlerden biri bile geçmezse hiçbir şey yazmaz.
+
+   Araç olmadan `update.xml` dört değerden oluşur (CRX'in SHA-256 değeri `sha256sum`
+   ile):
+
+   ```xml
+   <?xml version='1.0' encoding='UTF-8'?>
+   <gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+     <app appid='<SELF_HOSTED_EXTENSION_ID>'>
+       <updatecheck codebase='https://<INTERNAL_HOST>/browser-guard/packages/aidr-browser-guard-<version>.crx' version='<version>' hash_sha256='<crx dosyasının sha256 değeri>' />
+     </app>
+   </gupdate>
+   ```
+
+3. **Klasörü yükleyin:** sertifikasına bilgisayarlarınızın güvendiği herhangi bir statik
+   HTTPS sunucusunda `https://<INTERNAL_HOST>/browser-guard/` altına. `.crx` dosyalarını
+   `application/x-chrome-extension`, `update.xml` dosyasını `text/xml` türüyle sunun.
+   Önce paketleri, en son `update.xml` dosyasını yükleyin; böylece tarayıcı henüz
+   yüklenmemiş bir paketi gösteren bir dosya görmez.
+4. **Politikayı ayarlayın.**
+   [`chrome-self-hosted-policy.example.json`](../../deploy/browser-guard/chrome-self-hosted-policy.example.json)
+   (Linux'ta Chrome; Linux'ta Edge aynı dosyayı `/etc/opt/edge/policies/managed/` altından okur)
+   veya [`windows-self-hosted-registry.example.reg`](../../deploy/browser-guard/windows-self-hosted-registry.example.reg)
+   (Windows'ta Chrome ve Edge; Intune veya Grup İlkesi ile aynı
+   `ExtensionInstallForcelist` ve `ExtensionSettings` değerlerini ayarlayın) dosyasını
+   kullanın. `<SELF_HOSTED_EXTENSION_ID>`, `<INTERNAL_HOST>` ve örnek değerleri
+   değiştirin. `"override_update_url": true` ayarını koruyun: paket yayıncının güncelleme
+   adresini taşır; bu ayar tarayıcının bunun yerine sizin sunucunuzu sormasını sağlar.
+   Chrome ve Edge mağaza dışı bir paketi yalnızca böyle politikayla zorunlu kurulduğunda
+   kurar.
+5. **Doğrulayın:** bölüm 8'deki gibi; `chrome://policy` sayfası `ExtensionSettings`
+   değerini sizin `update_url` adresinizle gösterir.
+
+**Her sürümde:** 2. adımı, barındırdığınız beslemeyi gösteren `--previous` ile çalıştırın
+ve yükleyin. Tarayıcılar yeni sürümü bir sonraki güncelleme denetiminde alır.
+**Sabitleme ve geri alma:** tarayıcılar `update.xml` dosyasının gösterdiği sürümü kurar;
+bir sürümde kalmak için daha yenisini yayımlamayın. Tarayıcı yüksek bir sürümün üzerine
+asla daha düşüğünü kurmaz: geri almak için Singularity önceki kodu daha yüksek bir sürüm
+numarasıyla yayımlar, siz de onu her sürüm gibi eklersiniz.
+
+### Firefox
+
+Firefox'ta bir eklentinin güncelleme adresini değiştiren bir politika yoktur ve Mozilla
+imzası XPI'nin içindeki adresi de kapsar. Bu yüzden kendi sunucunuzda dağıtılan XPI,
+yayıncının `updates.json` dosyasından güncellenir (adres `manifest.json` içinde,
+`browser_specific_settings.gecko.update_url` alanındadır): o sunucuya HTTPS erişimine
+izin verin; Firefox eklentiyi kendiliğinden günceller ve her paketi `updates.json`
+içindeki `update_hash` değerine ve Mozilla imzasına karşı denetler. Bu erişimin olmadığı
+bir ağda, bölüm 7'de anlatıldığı gibi `install_url` değerini değiştirerek güncelleyin.

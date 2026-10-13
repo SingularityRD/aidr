@@ -5,6 +5,9 @@
  *   node scripts/build.mjs                    # development build -> dist/chrome, dist/firefox
  *   node scripts/build.mjs --release          # minified, no source maps
  *   node scripts/build.mjs --release --zip    # + dist/aidr-browser-guard-<target>-<version>.zip, dist/SHA256SUMS
+ *   node scripts/build.mjs --release --zip --update-base-url https://<host>/browser-guard
+ *                                             # + dist/aidr-browser-guard-<target>-selfhosted-<version>.zip
+ *                                             #   (also taken from BROWSER_GUARD_UPDATE_BASE_URL)
  *   node scripts/build.mjs --root <dir> --out <dir>   # alternate package root / output (tests)
  *   node scripts/build.mjs --entries-root <dir>        # resolve src/ entry points under <dir> (tests)
  *
@@ -242,6 +245,52 @@ export function createManifest(
 		};
 	}
 	return manifest;
+}
+
+/**
+ * Self-hosted channel (outside the stores). The store packages never carry an update URL
+ * (the store updates them); the self-hosted packages are the same files with exactly one
+ * manifest difference each, so the browser updates them from the organisation's or the
+ * publisher's own HTTPS feed (scripts/update-feed.mjs):
+ *   Chrome/Edge: `update_url` -> <base>/update.xml (gupdate XML, CRX3 signed with the owner key)
+ *   Firefox:     `browser_specific_settings.gecko.update_url` -> <base>/updates.json
+ *                (the XPI itself is signed by Mozilla through the AMO unlisted channel)
+ */
+export const UPDATE_BASE_URL_ENV = "BROWSER_GUARD_UPDATE_BASE_URL";
+export const SELF_HOSTED_FEED_FILES = Object.freeze({ chrome: "update.xml", firefox: "updates.json" });
+
+/** Validates an update base URL: https only, no credentials, query or fragment. Trailing slashes are dropped. */
+export function normalizeUpdateBaseUrl(value) {
+	let url;
+	try {
+		url = new URL(String(value ?? "").trim());
+	} catch {
+		throw new Error(`BUILD_BAD_UPDATE_URL: ${JSON.stringify(value)} is not a URL`);
+	}
+	if (url.protocol !== "https:") throw new Error(`BUILD_BAD_UPDATE_URL: ${url.href} must use https://`);
+	if (url.username || url.password || url.search || url.hash) {
+		throw new Error(`BUILD_BAD_UPDATE_URL: ${url.href} must not carry credentials, a query or a fragment`);
+	}
+	return url.href.replace(/\/+$/, "");
+}
+
+/** The update manifest URL each browser reads for a feed at `baseUrl`. */
+export function selfHostedUpdateUrl(target, baseUrl) {
+	if (!SELF_HOSTED_FEED_FILES[target]) throw new Error(`BUILD_UNKNOWN_TARGET: ${target}`);
+	return `${normalizeUpdateBaseUrl(baseUrl)}/${SELF_HOSTED_FEED_FILES[target]}`;
+}
+
+/** The self-hosted manifest: the store manifest plus the channel's update URL, nothing else. */
+export function selfHostedManifest(target, manifest, baseUrl) {
+	const copy = structuredClone(manifest);
+	const updateUrl = selfHostedUpdateUrl(target, baseUrl);
+	if (target === "chrome") copy.update_url = updateUrl;
+	else copy.browser_specific_settings.gecko.update_url = updateUrl;
+	return copy;
+}
+
+export function selfHostedArchiveName(target, version) {
+	return `aidr-browser-guard-${target}-selfhosted-${version}.zip`;
 }
 
 /** Patterns that must never appear in shipped JavaScript. */
@@ -586,7 +635,8 @@ function sha256(data) {
  * Builds both targets.
  * `root` holds package.json, static/ and _locales/; `entriesRoot` (default: `root`)
  * holds the src/ entry points.
- * @param {{ root?: string; entriesRoot?: string; outDir?: string; release?: boolean; zip?: boolean; log?: (line: string) => void }} options
+ * With `zip` and `updateBaseUrl`, the self-hosted packages are written next to the store ones.
+ * @param {{ root?: string; entriesRoot?: string; outDir?: string; release?: boolean; zip?: boolean; updateBaseUrl?: string; log?: (line: string) => void }} options
  */
 export async function buildExtension(options = {}) {
 	const root = resolve(options.root ?? PACKAGE_ROOT);
@@ -594,6 +644,8 @@ export async function buildExtension(options = {}) {
 	const outDir = resolve(options.outDir ?? join(root, "dist"));
 	const release = options.release === true;
 	const log = options.log ?? ((line) => console.log(line));
+	const updateBaseUrl = options.updateBaseUrl ? normalizeUpdateBaseUrl(options.updateBaseUrl) : null;
+	if (updateBaseUrl && !options.zip) fail("--update-base-url needs --zip (it only changes the self-hosted packages)");
 	const inputs = collectInputs(root, entriesRoot);
 	const { version } = manifestVersion(inputs.version);
 	const contentCss = existsSync(join(root, "static", "content.css"));
@@ -601,7 +653,7 @@ export async function buildExtension(options = {}) {
 	const siteHosts = matches.map((pattern) => MATCH_PATTERN_SHAPE.exec(pattern)[1]);
 
 	rmSync(outDir, { recursive: true, force: true });
-	const result = { version, outDir, targets: {}, archives: [] };
+	const result = { version, outDir, targets: {}, archives: [], selfHostedArchives: [] };
 
 	for (const target of Object.keys(TARGETS)) {
 		const targetDir = join(outDir, target);
@@ -640,7 +692,7 @@ export async function buildExtension(options = {}) {
 		if (problems.length > 0) {
 			fail(`output rejected by the security scan:\n  - ${problems.join("\n  - ")}`);
 		}
-		result.targets[target] = { dir: targetDir, files: [...files].sort() };
+		result.targets[target] = { dir: targetDir, files: [...files].sort(), manifest };
 		log(`[browser-guard] built ${target} ${version}${release ? " (release)" : ""} -> ${displayPath(targetDir)}`);
 	}
 
@@ -654,6 +706,21 @@ export async function buildExtension(options = {}) {
 			sums.push(`${sha256(archive)}  ${name}`);
 			result.archives.push(join(outDir, name));
 			log(`[browser-guard] packaged ${name} (${statSync(join(outDir, name)).size} bytes)`);
+			if (updateBaseUrl) {
+				// Same files, only manifest.json differs (validate-store.mjs checks exactly that).
+				const manifest = `${JSON.stringify(selfHostedManifest(target, result.targets[target].manifest, updateBaseUrl), null, 2)}\n`;
+				const selfHosted = createZip(
+					files.map((file) => ({
+						name: file,
+						data: file === "manifest.json" ? Buffer.from(manifest) : readFileSync(join(dir, file)),
+					})),
+				);
+				const selfHostedName = selfHostedArchiveName(target, version);
+				writeFileSync(join(outDir, selfHostedName), selfHosted);
+				sums.push(`${sha256(selfHosted)}  ${selfHostedName}`);
+				result.selfHostedArchives.push(join(outDir, selfHostedName));
+				log(`[browser-guard] packaged ${selfHostedName} (updates from ${selfHostedUpdateUrl(target, updateBaseUrl)})`);
+			}
 		}
 		writeFileSync(join(outDir, "SHA256SUMS"), `${sums.sort().join("\n")}\n`);
 	}
@@ -666,12 +733,20 @@ function parseArgs(argv) {
 		const arg = argv[i];
 		if (arg === "--release") options.release = true;
 		else if (arg === "--zip") options.zip = true;
+		else if (arg === "--update-base-url") {
+			const value = argv[++i];
+			if (!value) fail("--update-base-url needs an https:// URL");
+			options.updateBaseUrl = value;
+		}
 		else if (arg === "--root" || arg === "--out" || arg === "--entries-root") {
 			const value = argv[++i];
 			if (!value) fail(`${arg} needs a directory`);
 			options[{ "--root": "root", "--out": "outDir", "--entries-root": "entriesRoot" }[arg]] = value;
 		} else fail(`unknown argument ${arg}`);
 	}
+	// The environment variable applies to packaging only, so a development build ignores it.
+	const fromEnv = process.env[UPDATE_BASE_URL_ENV]?.trim();
+	if (options.zip && !options.updateBaseUrl && fromEnv) options.updateBaseUrl = fromEnv;
 	return options;
 }
 

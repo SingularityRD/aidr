@@ -13,12 +13,15 @@ extension's UI.
 | [`edge-intune.example.json`](edge-intune.example.json) | Edge on Windows through Microsoft Intune |
 | [`firefox-policies.example.json`](firefox-policies.example.json) | Firefox `policies.json` (Windows, macOS, Linux) |
 | [`macos-jamf.example.mobileconfig`](macos-jamf.example.mobileconfig) | Chrome and Edge on macOS through Jamf Pro (or any MDM) |
+| [`chrome-self-hosted-policy.example.json`](chrome-self-hosted-policy.example.json) | Self-hosted package, Chrome (and Edge) on Linux: installs and updates from your own `update.xml` |
+| [`windows-self-hosted-registry.example.reg`](windows-self-hosted-registry.example.reg) | Self-hosted package, Chrome and Edge on Windows |
 
-All five files carry the **same** managed values and the same browser
+All seven files carry the **same** managed values and the same browser
 hardening policies (see [Hardening the browser](#hardening-the-browser)); the
 automated test `packages/browser-guard/src/__tests__/build-tools.test.ts` fails
 if they drift apart, drop a hardening policy, or use a key the extension does not
-accept.
+accept. The store files use only the store IDs and update URLs, the self-hosted
+files only `<SELF_HOSTED_EXTENSION_ID>` and your internal update URL.
 
 ## Before you start
 
@@ -39,11 +42,14 @@ accept.
      the HTTPS location of the Mozilla-signed XPI (unlisted, self-distributed), or
      use `https://addons.mozilla.org/firefox/downloads/latest/<AMO_SLUG>/latest.xpi`
      if the add-on is listed on addons.mozilla.org.
-   - Self-hosted Chromium build instead of the stores: pack `dist/chrome` with your
-     own key (`chrome --pack-extension=dist/chrome --pack-extension-key=browser-guard.pem`),
-     host the `.crx` with an `update.xml`, and use that ID and URL. Chrome and Edge
-     only install off-store extensions when they are force-installed by policy on
-     managed machines.
+   - Self-hosted package instead of the stores (isolated networks, updates from your
+     own server): use the `*-self-hosted-*` files. `<SELF_HOSTED_EXTENSION_ID>` is the
+     ID of the Singularity-signed CRX (it differs from the store IDs; your contact
+     gives it), and `<INTERNAL_HOST>` the HTTPS server that hosts the feed built by
+     `packages/browser-guard/scripts/update-feed.mjs`. `"override_update_url": true`
+     makes the browser take updates from that server. Chrome and Edge only install
+     off-store extensions when they are force-installed by policy on managed
+     machines. See ["Hosting Browser Guard updates internally"](../../docs/installation/browser-guard-enterprise.md#10-hosting-browser-guard-updates-internally).
 
    Step-by-step guides for Intune, the Google Admin console, Jamf, Group Policy and
    Firefox, with verification and rollback, are in

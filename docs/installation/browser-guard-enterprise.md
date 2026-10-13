@@ -15,7 +15,12 @@ For a single user's own install see [browser-guard.md](browser-guard.md).
 |---|---|---|---|
 | Google Chrome | Chrome Web Store (unlisted listing) | `<CHROME_WEB_STORE_ID>` | `https://clients2.google.com/service/update2/crx` |
 | Microsoft Edge | Microsoft Edge Add-ons (unlisted listing) | `<EDGE_ADDONS_ID>` | `https://edge.microsoft.com/extensionwebstorebase/v1/crx` |
-| Mozilla Firefox 140+ | Mozilla-signed XPI (addons.mozilla.org, unlisted, self-hosted) | `browser-guard@singularityrd.com` | the HTTPS URL where you host the XPI |
+| Mozilla Firefox 140+ | Mozilla-signed XPI (addons.mozilla.org, unlisted, self-hosted) | `browser-guard@singularityrd.com` | the publisher's `updates.json` built into the XPI (see section 10) |
+| Chrome and Edge, internal hosting | CRX signed by Singularity, served from your own HTTPS server | `<SELF_HOSTED_EXTENSION_ID>` (differs from the store IDs) | `https://<INTERNAL_HOST>/browser-guard/update.xml` |
+
+The last row is for networks that cannot reach the stores, or that want every update to
+come from their own server: see
+[section 10, "Hosting Browser Guard updates internally"](#10-hosting-browser-guard-updates-internally).
 
 `<CHROME_WEB_STORE_ID>` and `<EDGE_ADDONS_ID>` are the IDs of the published store
 listings (32 letters `a`-`p`; the last part of the listing URL). Your Singularity
@@ -159,14 +164,15 @@ place `policies.json` in `Firefox.app/Contents/Resources/distribution/`.
    `Firefox.app/Contents/Resources/distribution/`; Linux `/etc/firefox/policies/`), or
    use the Firefox ADMX templates (Windows) or the `org.mozilla.firefox` domain (macOS).
 
-**Updates.** This build declares no `update_url`, so Firefox does not update a
-self-hosted copy by itself. Roll out a new version by publishing the new signed XPI
-under a new file name and changing `install_url`; Firefox installs from the new URL
-when it next reads the policy. Check this on a pilot machine (`about:addons` shows the
-version) before widening. If the add-on is listed on
-addons.mozilla.org instead, use
-`https://addons.mozilla.org/firefox/downloads/latest/<AMO_SLUG>/latest.xpi` and
-Firefox updates it from there.
+**Updates.** The self-distributed XPI carries the address of the publisher's update
+manifest (`updates.json`), and Mozilla's signature covers it. Firefox checks that
+address on its regular add-on update check and installs a newer signed version by
+itself; your computers only need HTTPS access to that host. If they cannot reach it
+(an isolated network), Firefox does not update the add-on by itself: roll out a new
+version by publishing the new signed XPI under a new file name and changing
+`install_url`; Firefox installs from the new URL when it next reads the policy. Check
+this on a pilot machine (`about:addons` shows the version) before widening. See
+[section 10](#10-hosting-browser-guard-updates-internally).
 
 ## 8. Verifying the deployment
 
@@ -206,7 +212,99 @@ macOS `sudo profiles show -type configuration | grep -i browser-guard`; Linux
 - **Emergency stop:** remove the ID from the force-install policy (the browser
   uninstalls it) or add it to `ExtensionInstallBlocklist`. Note that this removes the
   protection too.
-- **Pinning an exact version** is possible only with self-hosting: a Chromium build
-  packed with your own key and served from your own `update.xml` (different extension
-  ID, so the managed configuration moves to that ID), or a specific signed Firefox
-  XPI at a fixed `install_url`.
+- **Pinning an exact version** is possible only with self-hosting: the self-hosted
+  Chrome/Edge package served from your own `update.xml`, which you advance only when
+  you choose (section 10; a different extension ID, so the managed configuration moves
+  to that ID), or a specific signed Firefox XPI at a fixed `install_url`.
+
+## 10. Hosting Browser Guard updates internally
+
+Store installs update themselves from the Chrome Web Store and Edge Add-ons. When your
+computers cannot reach the stores (an isolated network, a proxy that blocks them), or
+you want every update to come from your own server, use the self-hosted package
+instead. The browser then checks your server on its regular extension update check and
+installs a newer version by itself, with no action from the user.
+
+**What you receive for each release** (from your Singularity contact or the GitHub
+release, with `SHA256SUMS` and a build-provenance attestation):
+
+| File | What it is |
+|---|---|
+| `aidr-browser-guard-<version>.crx` | Chrome and Edge package, signed by Singularity (CRX3) |
+| `aidr-browser-guard-firefox-selfhosted-<version>.zip` | the Firefox build Mozilla signs; the signed XPI comes from your contact |
+
+**The self-hosted extension ID.** The self-hosted package has its own extension ID,
+`<SELF_HOSTED_EXTENSION_ID>`, which differs from the store IDs. It is fixed by
+Singularity's signing key, so it is the same for Chrome and Edge and stays the same for
+every release; your contact gives it to you. Pin it: every policy below uses it, and
+the feed tool refuses a package signed for any other ID. Moving from a store install
+to the self-hosted package is a new extension for the browser: move the managed
+configuration to the new ID and remove the store ID from the force-install list.
+
+### Chrome and Edge
+
+1. **Check the download.** `sha256sum --check --ignore-missing SHA256SUMS`, and with
+   the GitHub CLI `gh attestation verify aidr-browser-guard-<version>.crx --repo SingularityRD/aidr`.
+2. **Build the update feed for your server.** With the Browser Guard sources (or the
+   `packages/browser-guard/scripts` folder):
+
+   ```bash
+   node packages/browser-guard/scripts/update-feed.mjs \
+     --base-url https://<INTERNAL_HOST>/browser-guard \
+     --out browser-guard-feed \
+     --chrome-crx aidr-browser-guard-<version>.crx \
+     --extension-id <SELF_HOSTED_EXTENSION_ID> \
+     --previous <the feed you host now>   # leave out the first time
+   ```
+
+   It needs no key. It checks the CRX signature and that the package is for the pinned
+   ID, refuses a version that is not higher than the one you host (a feed never goes
+   backwards), keeps the older packages, and writes `update.xml`, `packages/` and
+   `SHA256SUMS`. It writes nothing unless every check passes.
+
+   Without the tool, `update.xml` is four values (the CRX's SHA-256 from
+   `sha256sum`):
+
+   ```xml
+   <?xml version='1.0' encoding='UTF-8'?>
+   <gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+     <app appid='<SELF_HOSTED_EXTENSION_ID>'>
+       <updatecheck codebase='https://<INTERNAL_HOST>/browser-guard/packages/aidr-browser-guard-<version>.crx' version='<version>' hash_sha256='<sha256 of the crx>' />
+     </app>
+   </gupdate>
+   ```
+
+3. **Upload the folder** to `https://<INTERNAL_HOST>/browser-guard/` on any static
+   HTTPS server whose certificate your computers trust. Serve `.crx` as
+   `application/x-chrome-extension` and `update.xml` as `text/xml`. Upload the
+   packages first and `update.xml` last, so a browser never sees a manifest for a
+   package that is not there yet.
+4. **Set the policy.** Use
+   [`chrome-self-hosted-policy.example.json`](../../deploy/browser-guard/chrome-self-hosted-policy.example.json)
+   (Chrome on Linux; Edge on Linux reads the same file from `/etc/opt/edge/policies/managed/`)
+   or [`windows-self-hosted-registry.example.reg`](../../deploy/browser-guard/windows-self-hosted-registry.example.reg)
+   (Chrome and Edge on Windows; with Intune or Group Policy set the same
+   `ExtensionInstallForcelist` and `ExtensionSettings` values). Replace
+   `<SELF_HOSTED_EXTENSION_ID>`, `<INTERNAL_HOST>` and the example values. Keep
+   `"override_update_url": true`: the package names the publisher's update address, and
+   this setting makes the browser ask your server instead. Chrome and Edge install a
+   package from outside the stores only when it is force-installed by policy like this.
+5. **Verify** as in section 8; `chrome://policy` shows `ExtensionSettings` with your
+   `update_url`.
+
+**Each release:** run step 2 with `--previous` pointing at the feed you host, then
+upload. Browsers pick the new version up on their next update check.
+**Pinning and rollback:** browsers install what `update.xml` names, so to hold a
+version, do not publish the newer one. A browser never installs a lower version over a
+higher one: to roll back, Singularity publishes the previous code under a higher
+version number, which you add like any release.
+
+### Firefox
+
+Firefox has no policy that changes an add-on's update address, and Mozilla's signature
+covers the address built into the XPI. The self-distributed XPI therefore updates from
+the publisher's `updates.json` (the address is in its `manifest.json`,
+`browser_specific_settings.gecko.update_url`): allow HTTPS access to that host and
+Firefox updates the add-on by itself, each package checked against the `update_hash`
+in `updates.json` and against Mozilla's signature. On a network without that access,
+update by changing `install_url` as described in section 7.

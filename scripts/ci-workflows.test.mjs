@@ -289,7 +289,12 @@ test("Browser Guard release: protected signed tag, least privilege, attested and
 	assert.deepEqual(release.permissions, { contents: "read" });
 	assert.equal(release.jobs.build.permissions, undefined, "the build job inherits read-only permissions");
 	assert.deepEqual(release.jobs["attest-publish"].permissions, { contents: "write", attestations: "write", "id-token": "write" });
-	assert.deepEqual(release.jobs["attest-publish"].needs, "build");
+	assert.deepEqual(release.jobs["attest-publish"].needs, ["build", "self-hosted-feed"]);
+	assert.match(
+		release.jobs["attest-publish"].if,
+		/needs\.build\.result == 'success' && \(needs\.self-hosted-feed\.result == 'success' \|\| needs\.self-hosted-feed\.result == 'skipped'\)/u,
+		"attest-publish runs after a successful or skipped (unconfigured) feed job, never after a failed one",
+	);
 
 	const identity = stepNamed(release.jobs.build, "Resolve and verify immutable release identity").run;
 	for (const guard of ["GITHUB_REF_PROTECTED", "git verify-tag --raw", "git cat-file -t", "packages/browser-guard/package.json"]) {
@@ -320,6 +325,64 @@ test("Browser Guard release: protected signed tag, least privilege, attested and
 	assert.ok(names.indexOf("Attest the Browser Guard zips (pinned)") < names.indexOf("Publish draft release (pinned)"));
 	assert.equal(stepNamed(release.jobs["attest-publish"], "Publish draft release (pinned)").with.draft, true);
 	assert.match(stepNamed(release.jobs["attest-publish"], "Recheck bundle across the runner boundary").run, /aidr-browser-guard-source-\$\{VERSION\}\.zip/u);
+});
+
+test("Browser Guard self-hosted channel: selfhosted zips validated, CRX signed only with the pinned owner key, fail closed", () => {
+	const release = workflow("release-browser-guard.yml");
+	const build = release.jobs.build;
+	const channel = stepNamed(build, "Resolve the self-hosted update channel");
+	assert.equal(channel.id, "channel");
+	assert.equal(channel.env.UPDATE_BASE_URL, "${{ vars.BROWSER_GUARD_UPDATE_BASE_URL }}");
+	assert.match(channel.run, /\^https:\/\//u, "the update base URL must be https");
+	assert.equal(build.outputs.self_hosted, "${{ steps.channel.outputs.self_hosted }}");
+	const names = build.steps.map((step) => step.name);
+	assert.ok(names.indexOf(channel.name) < names.indexOf("Release build, zips and reproducibility check"));
+	const pack = stepNamed(build, "Release build, zips and reproducibility check");
+	assert.equal(pack.env.BROWSER_GUARD_UPDATE_BASE_URL, "${{ steps.channel.outputs.update_base_url }}");
+	assert.match(pack.run, /for target in chrome-selfhosted firefox-selfhosted; do/u);
+	const validate = stepNamed(build, "Offline store validation of the staged packages");
+	assert.equal(validate.env.BROWSER_GUARD_UPDATE_BASE_URL, "${{ steps.channel.outputs.update_base_url }}", "the validator requires the selfhosted zips when the channel is on");
+
+	const feed = release.jobs["self-hosted-feed"];
+	assert.ok(feed, "the self-hosted-feed job is missing");
+	assert.equal(feed.needs, "build");
+	assert.equal(feed.if, "needs.build.outputs.self_hosted == 'true'");
+	assert.equal(feed.environment, "browser-guard-self-hosted");
+	assert.deepEqual(feed.permissions, { contents: "read" }, "the signing job cannot write releases or mint tokens");
+	const checkout = feed.steps.find((step) => /actions\/checkout@/u.test(step.uses ?? ""));
+	assert.equal(checkout.with.ref, "${{ needs.build.outputs.sha }}", "the signer runs the verified tag commit");
+	assert.equal(checkout.with["persist-credentials"], false);
+	for (const step of feed.steps) {
+		assert.doesNotMatch(String(step.uses ?? ""), /pnpm\/action-setup@/u, "no package manager next to the key");
+		assert.doesNotMatch(step.run ?? "", /(?:^|[\s;&|(`])(?:pnpm|npm|npx|yarn)\s/mu, `${step.name} runs a package manager`);
+		if (/actions\/setup-node@/u.test(step.uses ?? "")) assert.equal(step.with?.cache, undefined, "no dependency cache next to the key");
+		assert.equal(step["continue-on-error"], undefined, `${step.name} must not hide a failure`);
+	}
+	const sign = stepNamed(feed, "Sign the CRX3 and build the update feed (fails closed without the key)");
+	assert.equal(sign.env.BROWSER_GUARD_CRX_KEY_PEM, "${{ secrets.BROWSER_GUARD_CRX_KEY_PEM }}");
+	assert.equal(sign.env.EXTENSION_ID, "${{ vars.BROWSER_GUARD_CRX_EXTENSION_ID }}");
+	assert.equal(sign.if, undefined);
+	assert.match(sign.run, /\[\[ -n "\$\{BROWSER_GUARD_CRX_KEY_PEM\}" \]\] \|\| \{[\s\S]*?exit 1/u, "a missing key fails the release");
+	assert.match(sign.run, /\[\[ "\$\{EXTENSION_ID\}" =~ \^\[a-p\]\{32\}\$ \]\] \|\| \{[\s\S]*?exit 1/u, "an unpinned ID fails the release");
+	assert.deepEqual([...new Set(nodeScriptTargets(sign.run))], ["packages/browser-guard/scripts/update-feed.mjs"], "the signer runs only the feed builder");
+	assert.match(sign.run, /--extension-id "\$\{EXTENSION_ID\}"/u);
+	assert.doesNotMatch(sign.run, /--crx-key-file|BROWSER_GUARD_CRX_KEY_PEM\}"? *>/u, "the key never reaches argv or disk");
+	const feedNames = feed.steps.map((step) => step.name);
+	assert.ok(feedNames.indexOf("Recheck the bundle before signing") < feedNames.indexOf(sign.name));
+	// The CRX key is visible to the signing step only.
+	for (const [jobId, job] of Object.entries(release.jobs)) {
+		for (const step of job.steps ?? []) {
+			if (jobId === "self-hosted-feed" && step.name === sign.name) continue;
+			assert.ok(!secretsIn(step).has("BROWSER_GUARD_CRX_KEY_PEM"), `${jobId}:${step.name} must not see the CRX key`);
+		}
+		if (jobId !== "self-hosted-feed") assert.ok(!secretsIn(job.env).has("BROWSER_GUARD_CRX_KEY_PEM"));
+	}
+
+	const recheck = stepNamed(release.jobs["attest-publish"], "Recheck bundle across the runner boundary").run;
+	assert.match(recheck, /aidr-browser-guard-chrome-selfhosted-\$\{VERSION\}\.zip/u);
+	assert.match(recheck, /\(cd \.\.\/update-feed && sha256sum --check --strict SHA256SUMS\)/u);
+	const amo = stepNamed(release.jobs["store-drafts"], "addons.mozilla.org - submit unlisted version for signing (never listed)").run;
+	assert.match(amo, /aidr-browser-guard-firefox-selfhosted-\$\{VERSION\}\.zip/u, "AMO signs the package that carries the feed URL");
 });
 
 const STORE_SECRETS = {
@@ -353,7 +416,7 @@ test("Browser Guard store drafts: secrets only in the store job, attested bytes 
 		assert.deepEqual([...secretsIn(stepNamed(job, step))].sort(), [...STORE_SECRETS[store]].sort(), `${step} sees exactly its own secrets`);
 	}
 	const workflowSecrets = new Set([...raw("release-browser-guard.yml").matchAll(/secrets\.([A-Z0-9_]+)/gu)].map((match) => match[1]));
-	assert.deepEqual([...workflowSecrets].sort(), ["GITHUB_TOKEN", "RELEASE_TAG_PGP_FINGERPRINT", "RELEASE_TAG_PGP_PUBLIC_KEY", ...all].sort());
+	assert.deepEqual([...workflowSecrets].sort(), ["BROWSER_GUARD_CRX_KEY_PEM", "GITHUB_TOKEN", "RELEASE_TAG_PGP_FINGERPRINT", "RELEASE_TAG_PGP_PUBLIC_KEY", ...all].sort());
 
 	// No repository code next to the credentials: no checkout, no package manager, no script files.
 	for (const step of job.steps) {
