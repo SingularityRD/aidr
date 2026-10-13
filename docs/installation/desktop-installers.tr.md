@@ -105,6 +105,54 @@ imaj derlemesi ya da yapılandırma yönetimi aracısı) paket yalnızca
 `aidr setup` komutunu yazdırır; her kullanıcı bunu kendi hesabıyla bir kez
 çalıştırır.
 
+## Kurulum Yardımcısı (`aidr assistant`)
+
+Kurulum Yardımcısı, aynı kurulumu tarayıcınızda Türkçe ya da İngilizce adım
+adım yapan bir sayfadır. Uygulamalar menüsünden (**Singularity AIDR Kurulum
+Yardımcısı**, .deb ve .rpm), Windows yükleyicisinin son sayfasından ya da bir
+terminalden açın:
+
+```sh
+aidr assistant            # varsayılan tarayıcınızı açar
+aidr assistant --no-open  # bunun yerine adresi yazdırır (ekransız, SSH)
+```
+
+Yedi adımı vardır: AIDR'nin ne yaptığı; bu bilgisayarda bulunan yapay zekâ
+araçları (kurulu olmayanlar soluk gösterilir); şirket bağlantısı; **Koru**
+(seçtiğiniz araçlar için `aidr setup` ile aynı iş; her araç için sonuç: korunuyor,
+yeniden başlatma gerekli ya da elle çalıştırılacak tam komut); her araç için
+`aidr verify` denetimi; Browser Guard; ve bir özet. İstediğiniz zaman yeniden
+çalıştırabilirsiniz; zaten kurulu olanı değiştirmez.
+
+**Şirket bağlantısı.** Varsayılan "Yalnızca yerel koruma"dır ve hesap gerektirmez.
+"Şirketime bağla", şirketinizin AIDR panelinin adresini sorar; kısa bir bağlantı
+kodu ve onay sayfasını açan bir düğme gösterir. Biri bilgisayarı onayladığında
+sayfa kendiliğinden güncellenir. `mode: "managed"` ve adres ancak o zaman
+`~/.singularity-aidr/config.json` dosyasına yazılır. Windows yükleyicisi bir şirket
+adresini (ve isteğe bağlı tek kullanımlık bir bağlantı anahtarını)
+`%USERPROFILE%\.singularity-aidr\pending-enrollment.json` dosyasına kaydettiyse,
+yardımcı bunu doldurur ve kullandıktan sonra dosyayı siler. Dosyayı yalnızca o
+kullanıcı okuyabiliyorsa kullanılır; aksi halde yok sayılır.
+
+**Browser Guard bağlantıları**, panelin İndirme sayfasının kullandığı ayarlardan
+gelir (`VITE_BROWSER_GUARD_CHROME_URL`, `VITE_BROWSER_GUARD_EDGE_URL`,
+`VITE_BROWSER_GUARD_FIREFOX_URL`; yalnızca https, ortam değişkenlerinden okunur).
+Bilgisayarda tanımlı değilse yardımcı panelin İndirme sayfasına bağlantı verir.
+
+**Nasıl gizli kalır.** Sayfayı `aidr` kendisi `127.0.0.1` üzerinde rastgele bir
+porttan sunar; ağdan erişilemez. Adres, `#` işaretinden sonra tek kullanımlık
+256 bitlik bir anahtar taşır; sayfa bunu bir kez yalnızca tarayıcının gördüğü bir
+oturum çerezine (HttpOnly, SameSite=Strict) çevirir; kopyalanan ya da yeniden
+kullanılan adres reddedilir. Başka bir ana bilgisayar adıyla ya da başka bir web
+sayfasından gelen istekler reddedilir, sayfa ikili dosyanın dışından hiçbir şey
+yüklemez (`Content-Security-Policy: default-src 'self'`) ve yardımcı son sayfada
+kapattığınızda ya da 30 dakika işlem yapılmadığında durur. Yalnızca algılama,
+kurulum (asla `--force` ya da `--release-key` ile değil), denetim, durum gösterme
+ve şirkete bağlanma yapabilir; kaldıramaz, hiçbir şeyi onaylayamaz ve başka
+ayarları değiştiremez. Bir yapay zekâ aracı onu başlatamaz: bir aracın çalıştırdığı
+`aidr assistant`, `aidr setup --force` gibi engellenir (`CLT-SELF-007` kuralı).
+Sayfa imzalı `aidr` ikili dosyasının parçasıdır.
+
 ## Korumayı denetleme
 
 `aidr status` tek satırlık bir sonuçla biter, örneğin:

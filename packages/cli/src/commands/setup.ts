@@ -172,7 +172,7 @@ async function confirmArtifacts(
 	);
 }
 
-interface SetupReleaseKey {
+export interface SetupReleaseKey {
 	key: ReleaseKey;
 	/** The file it was read from. */
 	source: string;
@@ -196,7 +196,7 @@ function setupReleaseKey(
 }
 
 /** `integrity.public_keys_pem` of ~/.singularity-aidr/config.json, merged into the existing config. */
-const configReleaseKeys: ReleaseKeyStore = {
+export const configReleaseKeys: ReleaseKeyStore = {
 	read: () => {
 		const integrity = (getConfig() as { integrity?: { public_keys_pem?: unknown } } | null)
 			?.integrity;
@@ -215,10 +215,10 @@ const short = (fingerprint: string) => `sha256:${fingerprint}`;
  * Provision the release key and report it. Returns the release keys the hooks
  * will trust after this run (what the bundle signatures are checked against).
  */
-function applyReleaseKey(
+export function applyReleaseKey(
 	releaseKey: SetupReleaseKey | null,
 	store: ReleaseKeyStore,
-	options: SetupOptions,
+	options: Pick<SetupOptions, "force" | "dryRun">,
 	required: boolean,
 ): string[] {
 	if (!releaseKey) {

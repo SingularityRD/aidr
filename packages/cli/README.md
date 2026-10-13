@@ -137,6 +137,7 @@ signed approval for ingestion on the execution host.
 
 | Command | What it does |
 |---------|--------------|
+| `aidr assistant [--no-open]` | Singularity AIDR Setup Assistant: the same setup, verify and company connection as a step-by-step page in the browser, served from 127.0.0.1 with a one-time address (Windows, Linux; see [Setup Assistant](../../docs/installation/desktop-installers.md#setup-assistant-aidr-assistant)) |
 | `aidr setup [--dry-run] [--host <ids>] [--no-install]` | Write local configuration and install or update the connector of every detected host (see [Setup](#setup)) |
 | `aidr status [--json]` | Measured installation state (detection self-test, connectors, data loss), ending with a one-line verdict: protected hosts, hosts to restart, hosts needing a manual step (exact command) |
 | `aidr verify [--json]` | Pass a harmless canary (data only, never executed) and its benign twin through each registered connector's real hook entry point; PASS / FAIL / SKIP per host |

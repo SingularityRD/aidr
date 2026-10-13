@@ -98,6 +98,54 @@ When the package manager runs without `sudo` from a user (for example from
 an image build or a configuration-management agent), the package prints
 `aidr setup`; each user runs it once as themselves.
 
+## Setup Assistant (`aidr assistant`)
+
+The Setup Assistant is the same setup as a step-by-step page in your browser,
+in English or Turkish. Open it from the applications menu (**Singularity AIDR
+Setup Assistant**, .deb and .rpm), from the last page of the Windows installer,
+or from a terminal:
+
+```sh
+aidr assistant            # opens your default browser
+aidr assistant --no-open  # prints the address instead (headless, SSH)
+```
+
+It walks through seven steps: what AIDR does; the AI tools found on this
+computer (tools that are not installed are shown greyed out); the company
+connection; **Protect** (the same work as `aidr setup` for the tools you
+chose, with a result per tool: protected, restart needed, or the exact manual
+command); the `aidr verify` check per tool; Browser Guard; and a summary. Run it
+again at any time; a rerun changes nothing that is already set up.
+
+**Company connection.** "Local protection only" is the default and needs no
+account. "Connect to my company" asks for the address of your company's AIDR
+dashboard, shows a short connection code and a button that opens the approval
+page; the page updates by itself once someone approves the computer. Only then
+are `mode: "managed"` and the address written to `~/.singularity-aidr/config.json`.
+If the Windows installer saved a company address (and optionally a one-time
+connection key) in `%USERPROFILE%\.singularity-aidr\pending-enrollment.json`,
+the assistant fills it in and deletes the file once it has been used. The file
+is ignored unless only that user can read it.
+
+**Browser Guard links** come from the same settings the dashboard's Download
+page uses (`VITE_BROWSER_GUARD_CHROME_URL`, `VITE_BROWSER_GUARD_EDGE_URL`,
+`VITE_BROWSER_GUARD_FIREFOX_URL`, https only, read from the environment). When
+they are not set on the computer, the assistant links to the dashboard's
+Download page instead.
+
+**How it stays private.** The page is served by `aidr` itself from `127.0.0.1`
+on a random port, never from the network. The address carries a one-time
+256-bit key after `#`, which the page exchanges once for a browser-only session
+cookie (HttpOnly, SameSite=Strict); a copied or reused address is refused.
+Requests with another host name or from another web page are refused, the page
+loads nothing from outside the binary (`Content-Security-Policy: default-src
+'self'`), and the assistant stops when you close it on the last page or after
+30 minutes without activity. It can only detect, set up (never with `--force`
+or `--release-key`), verify, show status and connect to a company; it cannot
+uninstall, approve anything or change other settings. An AI agent cannot start
+it: `aidr assistant` run by an agent is blocked like `aidr setup --force`
+(rule `CLT-SELF-007`). The page is part of the signed `aidr` binary.
+
 ## Checking protection
 
 `aidr status` ends with one line, for example:

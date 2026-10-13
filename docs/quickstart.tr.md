@@ -83,6 +83,14 @@ Bir sorun varsa:
 
 Ayrıntılar: [Masaüstü yükleyicileri](installation/desktop-installers.tr.md).
 
+**Adım adım kurulum mu istersiniz?** Uygulamalar menüsünden (Linux) ya da Windows
+yükleyicisinin son sayfasından **Singularity AIDR Kurulum Yardımcısı**'nı açın veya
+bir terminalde `aidr assistant` çalıştırın. Bulduğu yapay zekâ araçlarını gösterir,
+isterseniz şirketinize bağlar, seçtiğiniz araçları korur, `aidr verify` ile aynı
+denetimi yapar ve Browser Guard bağlantılarını verir; Türkçe ya da İngilizce.
+İstediğiniz zaman yeniden çalıştırabilirsiniz. Ayrıntılar:
+[Kurulum Yardımcısı](installation/desktop-installers.tr.md#kurulum-yardımcısı-aidr-assistant).
+
 ## B. Ofis çalışanı (Browser Guard)
 
 Browser Guard; ChatGPT, Gemini, Claude, Microsoft Copilot, Perplexity, DeepSeek, Mistral

@@ -45,6 +45,10 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 	"Emit a machine-readable revocation receipt": "Makinece okunabilir bir iptal makbuzu üret",
 	"Pass a harmless canary (data only, never executed) through each registered connector's hook and report PASS/FAIL per host":
 		"Zararsız bir canary'yi (yalnızca veri, asla çalıştırılmaz) kayıtlı her bağlayıcının hook'undan geçir ve yapay zekâ aracı başına BAŞARILI/BAŞARISIZ bildir",
+	"Open the Singularity AIDR Setup Assistant in your browser: a step-by-step setup on this computer (Windows, Linux)":
+		"Singularity AIDR Kurulum Yardımcısını tarayıcınızda aç: bu bilgisayarda adım adım kurulum (Windows, Linux)",
+	"Do not open a browser; print the one-time address instead":
+		"Tarayıcı açma; bunun yerine tek kullanımlık adresi yazdır",
 	"Show the local AIDR configuration and hook status":
 		"Yerel AIDR yapılandırmasını ve hook durumunu göster",
 	"Emit measured installation state without credentials":

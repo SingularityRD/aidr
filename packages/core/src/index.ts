@@ -330,6 +330,10 @@ export {
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
 // Control plane client (optional telemetry/licensing)
 export { ControlPlaneClient, type ControlPlaneClientOptions } from "./clients/control-plane.js";
+export {
+	assertSecureControlPlaneEndpoint,
+	DEFAULT_CONTROL_PLANE_ENDPOINT,
+} from "./clients/control-plane-url.js";
 export type { FileCheckBatchResult, FileCheckResult } from "./clients/file-check.js";
 export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
@@ -1071,6 +1075,8 @@ export {
 	managedStatePath,
 	parseApprovalPublicKeys,
 } from "./managed.js";
+// Device-code enrollment (`aidr assistant`): the same one-time issuance journal startup uses.
+export { enrollManagedInstallation, enrollmentPending } from "./managed-enrollment.js";
 export type {
 	AigMcpCategory,
 	AigMcpDataStatus,

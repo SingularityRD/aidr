@@ -9,6 +9,7 @@ import {
 	allowlistRemoveCommand,
 } from "./commands/allowlist.js";
 import { approveCommand, pendingCommand } from "./commands/approvals.js";
+import assistantCommand from "./commands/assistant.js";
 import {
 	auditExportCommand,
 	auditRotateKeyCommand,
@@ -140,6 +141,14 @@ program
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action((options) => verifyCommand(options));
+
+program
+	.command("assistant")
+	.description(
+		"Open the Singularity AIDR Setup Assistant in your browser: a step-by-step setup on this computer (Windows, Linux)",
+	)
+	.option("--no-open", "Do not open a browser; print the one-time address instead")
+	.action((options) => assistantCommand(options));
 
 program
 	.command("update")
