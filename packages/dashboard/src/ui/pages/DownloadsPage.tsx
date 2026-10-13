@@ -1,35 +1,69 @@
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import { useT } from "../../i18n/I18nProvider";
+import type { VisitorOs } from "../../lib/installers";
+import {
+	BrowserGuardCard,
+	type BrowserGuardLinks,
+	browserGuardLinks,
+	ItDeploymentCard,
+} from "../../onboarding/BrowserGuardDownloads";
 import { DownloadCenter } from "../../onboarding/DownloadCenter";
+import { InstallerDownloads } from "../../onboarding/InstallerDownloads";
 
-export function DownloadsPage() {
+export function DownloadsPage({
+	links,
+	visitorOs,
+}: {
+	/** Test seams; build configuration and the browser are used when absent. */
+	links?: BrowserGuardLinks;
+	visitorOs?: { os: VisitorOs; arch: "x64" | "arm64" };
+} = {}) {
+	const t = useT();
 	const { currentTeam, isLoading } = useTeam();
+	const config = links ?? browserGuardLinks();
 	if (isLoading) {
 		return (
 			<div className="card" role="status">
-				Checking team access…
+				{t("downloads.checkingTeam")}
 			</div>
 		);
 	}
 	return (
 		<div className="stack">
 			<div className="card">
-				<h1>Downloads</h1>
+				<h1>{t("downloads.title")}</h1>
 				<p className="muted">
-					Download a connector from the published release, verify its SHA-256 digest, install it,
-					and connect it to {currentTeam ? <b>{currentTeam.name}</b> : "your team"}. A runtime shows
-					as detected once one of its agents has checked in.
+					{t("downloads.intro", { team: currentTeam?.name ?? t("downloads.yourTeam") })}
 				</p>
 				<div className="row" style={{ flexWrap: "wrap" }}>
 					<Link className="button button-secondary button-sm" to="/onboarding">
-						Back to onboarding
+						{t("downloads.backToOnboarding")}
 					</Link>
 					<Link className="button button-secondary button-sm" to="/agents">
-						View agents
+						{t("downloads.viewAgents")}
 					</Link>
 				</div>
 			</div>
-			<DownloadCenter teamId={currentTeam?.id ?? null} />
+			<section className="card" aria-labelledby="installer-title">
+				<h2 id="installer-title">{t("downloads.installer.title")}</h2>
+				<p className="muted">{t("downloads.installer.intro")}</p>
+				{currentTeam ? (
+					<InstallerDownloads teamId={currentTeam.id} visitorOs={visitorOs} />
+				) : (
+					<p className="notice notice-warning">{t("downloads.noTeam")}</p>
+				)}
+			</section>
+			<BrowserGuardCard links={config} />
+			<ItDeploymentCard adminGuideUrl={config.adminGuideUrl} />
+			<details className="card">
+				<summary>
+					<b>{t("downloads.advanced.title")}</b>
+				</summary>
+				<div style={{ marginTop: 12 }}>
+					<DownloadCenter teamId={currentTeam?.id ?? null} />
+				</div>
+			</details>
 		</div>
 	);
 }

@@ -18,6 +18,20 @@ unreachable managed install disables only the managed features and keeps enforci
 
 Tenants can require SAML or OpenID Connect (Entra ID, Okta, generic) sign-in; see [OIDC SSO](production-readiness/oidc-sso-admin.md) and [SCIM directory setup](production-readiness/scim-directory-admin.md). Both are optional and off by default.
 
+## Installer downloads
+
+The dashboard **Download** page (`/downloads`, and step 1 of onboarding) offers
+the Windows and Linux installers of the current release (no macOS installer is
+offered). The `installer-download` Edge Function lists a signed installer
+catalog only to active members of an active tenant whose admission (licence,
+trial or pilot) is active, and returns a 30–900 second signed Storage URL per
+file after writing an `installer.download` audit row (tenant, user, version,
+platform, file, SHA-256; no IP address). Unauthenticated, removed, revoked or
+unentitled callers get 401/403, and a catalog that fails its signature check is
+not served. For roles that can enroll, the page also shows the control plane's
+URL and the device-code flow below. Publishing and configuration:
+[Installer download portal](installation/download-portal.md).
+
 ## Enrollment (managed mode)
 
 To join an installation to the control plane, the primary flow is **device authorization**.

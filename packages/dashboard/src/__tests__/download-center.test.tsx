@@ -91,7 +91,7 @@ describe("download center", () => {
 
 	it("shows a not-configured state with install guidance and no download links", async () => {
 		renderAt(<DownloadsPage />);
-		expect(screen.getByRole("heading", { level: 1, name: "Downloads" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { level: 1, name: "Download" })).toBeInTheDocument();
 		expect(
 			screen.getByText(/No release manifest is published for this deployment/),
 		).toBeInTheDocument();

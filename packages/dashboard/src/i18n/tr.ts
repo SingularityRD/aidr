@@ -125,4 +125,89 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"login.companyUnavailable": "Şirket oturum açma kullanılamıyor. Yöneticinizle iletişime geçin.",
 	"login.providerUnavailable":
 		"Bu oturum açma sağlayıcısı kullanılamıyor. Yöneticinizle iletişime geçin.",
+
+	"downloads.title": "İndir",
+	"downloads.intro":
+		"AIDR'yi {team} için üç adımda kurun: yükleyiciyi indirin, çalıştırın ve yapay zekâ araçlarınızı yeniden başlatın.",
+	"downloads.yourTeam": "ekibiniz",
+	"downloads.checkingTeam": "Ekip erişimi denetleniyor…",
+	"downloads.noTeam": "Yükleyicileri indirmek için bir çalışma alanı seçin veya oluşturun.",
+	"downloads.backToOnboarding": "Kuruluma dön",
+	"downloads.viewAgents": "Ajanları görüntüle",
+	"downloads.retry": "Yeniden dene",
+	"downloads.os.windows": "Windows",
+	"downloads.os.linux": "Linux",
+	"downloads.installer.title": "AIDR yükleyicisini indirin",
+	"downloads.installer.intro":
+		"Tek bir yükleyici bu bilgisayardaki desteklenen tüm yapay zekâ araçlarını korur: Claude Code, Cursor, VS Code, Codex, OpenCode ve OpenClaw.",
+	"downloads.installer.loading": "Yükleyici kataloğu yükleniyor…",
+	"downloads.installer.version": "Sürüm {version} · yayın tarihi {date}",
+	"downloads.installer.releaseNotes": "Sürüm notları",
+	"downloads.installer.recommended": "Bu bilgisayar için önerilen",
+	"downloads.installer.other": "Diğer platformlar",
+	"downloads.installer.download": "{file} dosyasını indir",
+	"downloads.installer.preparing": "İndirme hazırlanıyor…",
+	"downloads.installer.started":
+		"İndirme başladı. Başlamadıysa {link} ({time} saatine kadar geçerli).",
+	"downloads.installer.directLink": "bu doğrudan bağlantıyı kullanın",
+	"downloads.installer.meta": "{size} · gereksinim: {minOs}",
+	"downloads.installer.sha256": "SHA-256",
+	"downloads.installer.verify": "İndirilen dosyayı çalıştırmadan önce denetleyin:",
+	"downloads.installer.copy": "Kopyala",
+	"downloads.installer.copied": "Kopyalandı",
+	"downloads.installer.copyChecksum": "{file} için sağlama toplamı komutunu kopyala",
+	"downloads.installer.copyBlocked": "Panoya erişim engellendi. Komutu seçip elle kopyalayın.",
+	"downloads.installer.verifyNote":
+		"Komut Windows'ta True, Linux'ta OK yazar. Yazmazsa yükleyiciyi çalıştırmayın.",
+	"downloads.installer.macos":
+		"macOS yükleyicisi henüz sunulmuyor. Aşağıdaki Browser Guard, macOS üzerinde Chrome, Edge ve Firefox'ta çalışır.",
+	"downloads.installer.noMatch":
+		"Bu tarayıcının işletim sistemi için yayımlanmış bir yükleyici yok. Uygunsa aşağıdaki platformlardan birini seçin.",
+	"downloads.installer.step1":
+		"İşletim sisteminize uygun yükleyiciyi indirin ve SHA-256 değerini denetleyin.",
+	"downloads.installer.step2":
+		"Çalıştırın: Windows'ta çift tıklayın, Linux'ta betiği sh ile çalıştırın.",
+	"downloads.installer.step3":
+		"Yapay zekâ araçlarınızı yeniden başlatın. aidr status komutu korumanın açık olduğunu gösterir.",
+	"downloads.error.entitlement":
+		"İndirmek için bu çalışma alanının etkin bir lisansı veya denemesi olmalıdır. Yöneticinize danışın ya da kurulum sayfasından deneme başlatın.",
+	"downloads.error.unpublished":
+		"Bu kurulum için henüz bir yükleyici yayımlanmadı. Sürüm sorumlunuza danışın.",
+	"downloads.error.integrity":
+		"Yükleyici kataloğu imza denetiminden geçemedi; bu nedenle indirme sunulmuyor. Destek ekibiyle iletişime geçin.",
+	"downloads.error.forbidden": "Hesabınız bu çalışma alanı için yükleyici indiremez.",
+	"downloads.error.rateLimited": "Çok fazla istek gönderildi. Bir dakika bekleyip yeniden deneyin.",
+	"downloads.error.generic": "Yükleyiciler şu anda kullanılamıyor. Biraz sonra yeniden deneyin.",
+	"downloads.error.download": "İndirme bağlantısı oluşturulamadı. Yeniden deneyin.",
+	"downloads.managed.title": "Bu bilgisayarı çalışma alanınıza bağlayın (yönetilen mod)",
+	"downloads.managed.body":
+		"Kurulumdan sonra korunan bir yapay zekâ aracı ilk açılışta kısa bir kod gösterir. Bu kodu doğrulama sayfasında bu çalışma alanı için onaylayın. Bu çalışma alanının kontrol düzlemi adresi:",
+	"downloads.managed.verify": "Cihaz kodunu doğrula",
+	"downloads.managed.advanced": "Elle kayıt (gelişmiş)",
+	"downloads.bg.title": "Browser Guard uzantısı",
+	"downloads.bg.body":
+		"Windows, macOS ve Linux üzerinde Chrome, Edge ve Firefox'ta istemler yapay zekâ sohbet sitelerine ulaşmadan önce kişisel verileri ve gizli bilgileri maskeler.",
+	"downloads.bg.chrome": "Chrome'a ekle",
+	"downloads.bg.edge": "Edge'e ekle",
+	"downloads.bg.firefox": "Firefox'a ekle",
+	"downloads.bg.none":
+		"Bu kurulum için mağaza bağlantıları yapılandırılmamış. Yöneticinize danışın.",
+	"downloads.bg.ids": "BT ilkesi için uzantı kimlikleri",
+	"downloads.bg.chromeId": "Chrome",
+	"downloads.bg.edgeId": "Edge",
+	"downloads.bg.firefoxId": "Firefox",
+	"downloads.it.title": "BT / MDM dağıtımı",
+	"downloads.it.body":
+		"Aynı yükleyicileri Intune veya Grup İlkesi ile sessizce dağıtın; Browser Guard'ı tarayıcı ilkesiyle uzantı kimliği üzerinden zorunlu kurun.",
+	"downloads.it.guide": "Yönetici kılavuzunu aç",
+	"downloads.it.guideMissing":
+		"Yönetici kılavuzu sürüm paketinizle birlikte gelir (docs/installation/download-portal.md).",
+	"downloads.advanced.title": "Tek tek bağlayıcı paketleri (gelişmiş)",
+	"onboarding.install.title": "1) Yükleyiciyi indirip çalıştırın",
+	"onboarding.install.body":
+		"Yükleyici bu bilgisayardaki desteklenen tüm yapay zekâ araçlarını korur. Önerilen kurulum budur.",
+	"onboarding.install.allDownloads": "İndirme sayfasını aç",
+	"onboarding.advanced.summary": "Gelişmiş: elle kurulum ve cihaz yetkilendirme",
+	"onboarding.advanced.body":
+		"Bu adımları yalnızca yükleyiciyi çalıştıramıyorsanız ya da tek bir bağlayıcıyı elle kaydetmek için kullanın.",
 };

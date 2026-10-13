@@ -105,6 +105,11 @@ verify_jwt = true
 verify_jwt = false
 [functions.ingest]
 verify_jwt = false
+[functions.installer-download]
+# Dashboard Download page: installer catalog and short-lived signed URLs. The
+# handler repeats session, identity barrier, membership and admission checks,
+# verifies the signed catalog and audits every URL it mints.
+verify_jwt = true
 [functions.packs-download]
 verify_jwt = false
 [functions.packs-manifest]
