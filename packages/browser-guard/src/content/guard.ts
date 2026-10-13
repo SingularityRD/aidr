@@ -41,6 +41,7 @@ import { MAX_OCR_IMAGE_BYTES } from "../engine/office/images.js";
 import {
 	type DetectionEngine,
 	type EditorAccess,
+	type EditorMatch,
 	ENTITY_TYPES,
 	type EntityType,
 	type Finding,
@@ -90,6 +91,13 @@ export interface ContentGuardDeps {
 		root: Document,
 		editor: EditorAccess | null,
 	): HTMLElement | null;
+	/**
+	 * The editor a send gesture belongs to, resolved from the gesture's element (clicked
+	 * button, submitted form, key target) rather than from focus (dom/editor.ts
+	 * `findEditorNear`). Without it the guard falls back to `findEditor` with that element
+	 * as the focus hint, and only buttons the adapter names are treated as send buttons.
+	 */
+	findEditorNear?(adapter: SiteAdapter, anchor: Element): EditorMatch | null;
 	/** Inserts text at the caret; defaults to execCommand/setRangeText with an editor.write fallback. */
 	insertAtSelection?(editor: EditorAccess, text: string): Promise<void> | void;
 	/**
@@ -312,6 +320,56 @@ const contains = (outer: Element, inner: Element): boolean =>
 
 const isDisabled = (el: HTMLElement): boolean =>
 	el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true";
+
+const isSingleLineInput = (el: Element): boolean => el.tagName === "INPUT";
+
+/** Clickable controls a send can start from. */
+const BUTTON_SELECTOR = 'button, [role="button"], input[type="submit"], input[type="button"]';
+
+/**
+ * Labels of the actions that send a prompt: the composer's send button and the
+ * "Send"/"Save"/"Update" buttons of a sent message's edit form (ChatGPT, Claude,
+ * Gemini, Copilot), in English and Turkish.
+ */
+const SEND_LABEL =
+	/^(?:send|submit|save|update|resend|regenerate|gönder|yeniden gönder|kaydet|güncelle)(?![\p{L}\p{N}])/iu;
+
+/** The closest ancestor-or-self of `el` matching `selector` (null for an unusable selector). */
+function closestMatch(el: Element, selector: string): HTMLElement | null {
+	if (!selector) return null;
+	try {
+		return el.closest<HTMLElement>(selector);
+	} catch {
+		return null;
+	}
+}
+
+/** A control that submits its form, or whose accessible label names a send action. */
+function looksLikeSend(control: HTMLElement): boolean {
+	const submit = control as HTMLButtonElement;
+	if (submit.type === "submit" && submit.form) return true;
+	const label =
+		control.getAttribute("aria-label") ||
+		control.textContent ||
+		control.getAttribute("title") ||
+		(control as HTMLInputElement).value ||
+		"";
+	return SEND_LABEL.test(label.replace(/\s+/g, " ").trim());
+}
+
+/**
+ * True when an editor was found in a container below the page body: the control sits
+ * in a form, message turn or panel together with that editor. A send-labelled button
+ * elsewhere (a settings dialog's "Save") is not a prompt send.
+ */
+function sharesContainer(match: EditorMatch | null): boolean {
+	const container = match?.container;
+	if (!container) return false;
+	if (container.nodeType === 11) return true; // a shadow root (web component)
+	if (container.nodeType !== 1) return false;
+	const tag = (container as Element).tagName;
+	return tag !== "BODY" && tag !== "HTML";
+}
 
 export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const { document: doc, adapter, engine, vault } = deps;
@@ -569,6 +627,65 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		return false;
 	};
 
+	/**
+	 * The browser's implicit submission for an Enter in a single-line input: its form's
+	 * default button is clicked (nothing when that button is disabled), or the form is
+	 * submitted when it has none. An input outside a form submits nothing.
+	 */
+	const submitImplicitly = (input: HTMLInputElement, text: string): void => {
+		const form = input.form;
+		if (!form) return;
+		const submitter = form.querySelector<HTMLElement>(
+			'button:not([type]), button[type="submit"], input[type="submit"], input[type="image"]',
+		);
+		perform(text, () => {
+			if (submitter) {
+				if (!isDisabled(submitter)) submitter.click();
+			} else if (typeof form.requestSubmit === "function") form.requestSubmit();
+			else form.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+		});
+	};
+
+	/**
+	 * Replays an Enter as an Enter. Sites that send on Enter handle it (preventDefault).
+	 * When nobody does, the original Enter would not have been a send either, so its
+	 * default action is reproduced instead of clicking a send button: implicit form
+	 * submission in a single-line input, a new line in a multi-line editor (mobile
+	 * layouts, Enter-as-newline sites). Ctrl/Cmd+Enter has no default action.
+	 */
+	const replayEnter = async (
+		origin: Extract<SendOrigin, { kind: "key" }>,
+		editor: EditorAccess,
+		text: string,
+	): Promise<void> => {
+		const target = origin.target.isConnected ? origin.target : editor.element;
+		let handled = false;
+		perform(text, () => {
+			const event = new win.KeyboardEvent("keydown", {
+				key: "Enter",
+				code: "Enter",
+				keyCode: 13,
+				which: 13,
+				bubbles: true,
+				cancelable: true,
+				composed: true,
+				ctrlKey: origin.ctrlKey,
+				metaKey: origin.metaKey,
+			});
+			handled = !target.dispatchEvent(event);
+		});
+		if (handled || origin.ctrlKey || origin.metaKey) return;
+		if (isSingleLineInput(editor.element)) {
+			submitImplicitly(editor.element as HTMLInputElement, text);
+			return;
+		}
+		try {
+			await insertText(editor, "\n");
+		} catch {
+			// Best effort: nothing was sent, the user can press Enter again.
+		}
+	};
+
 	/** Re-sends exactly once; the capture listeners let it through only while `text` is in the editor. */
 	const replay = async (origin: SendOrigin, editor: EditorAccess, text: string): Promise<void> => {
 		if (!stillHolds(editor, text)) {
@@ -585,24 +702,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			return;
 		}
 		if (origin.kind === "key") {
-			const target = origin.target.isConnected ? origin.target : editor.element;
-			let handled = false;
-			perform(text, () => {
-				const event = new win.KeyboardEvent("keydown", {
-					key: "Enter",
-					code: "Enter",
-					keyCode: 13,
-					which: 13,
-					bubbles: true,
-					cancelable: true,
-					composed: true,
-					ctrlKey: origin.ctrlKey,
-					metaKey: origin.metaKey,
-				});
-				handled = !target.dispatchEvent(event);
-			});
-			// Sites that handle Enter call preventDefault; otherwise fall back to the button.
-			if (handled) return;
+			await replayEnter(origin, editor, text);
+			return;
 		}
 		if (!(await clickSend(origin, editor, text)) && stillHolds(editor, text)) {
 			ui.toast(strings().pressSendAgain, "info");
@@ -865,13 +966,23 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		return policy;
 	};
 
-	const onSendAttempt = (event: Event, origin: SendOrigin, editor: EditorAccess | null): void => {
+	/**
+	 * A recognised send gesture. `editor` is the editor the gesture belongs to; null means
+	 * none could be resolved (or several candidates held text), and in enforcing modes the
+	 * send is refused with `missing` (fail closed).
+	 */
+	const onSendAttempt = (
+		event: Event,
+		origin: SendOrigin,
+		editor: EditorAccess | null,
+		missing: string = strings().editorMissing,
+	): void => {
 		const text = readEditor(editor);
 		if (isReplay(text)) return; // our own replay of an already-checked prompt
 		const policy = sendPolicy(event);
 		if (!policy) return;
 		if (!editor || text === null) {
-			if (!monitoring(policy)) refuseSend(event, strings().editorMissing);
+			if (!monitoring(policy)) refuseSend(event, missing);
 			return;
 		}
 		if (normalizeText(text) === "") return;
@@ -918,11 +1029,28 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 	};
 
-	/** The event's innermost target and the editor containing it; null outside the editor. */
+	/**
+	 * The editor a send gesture at `anchor` belongs to (see ContentGuardDeps.findEditorNear);
+	 * null when there is none or the lookup failed.
+	 */
+	const editorNear = (anchor: Element): EditorMatch | null => {
+		try {
+			if (deps.findEditorNear) return deps.findEditorNear(adapter, anchor);
+			const editor = deps.findEditor(adapter, doc, anchor);
+			return editor ? { editor, container: doc } : null;
+		} catch {
+			return null;
+		}
+	};
+
+	/**
+	 * The event's innermost target (inside open shadow roots too) and the editor containing
+	 * it; null outside an editor.
+	 */
 	const editorTargetOf = (event: Event): { target: Element; editor: EditorAccess } | null => {
 		const target = asElement(event.composedPath()[0] ?? event.target);
 		if (!target) return null;
-		const editor = editorFor(target);
+		const editor = deps.findEditorNear ? editorNear(target)?.editor : editorFor(target);
 		return editor && contains(editor.element, target) ? { target, editor } : null;
 	};
 
@@ -945,20 +1073,33 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		);
 	};
 
+	/**
+	 * The send control a click landed on and the editor it sends, or null when the click is
+	 * not a send. A control is a send when the adapter names it, when it is the composer's
+	 * send button, or when it submits its form / carries a send label ("Send", "Save",
+	 * "Update", ...) and shares a container with an editor (edit-and-resend forms on sent
+	 * messages). The editor is resolved from the control's position, never from focus.
+	 */
 	const resolveSendButton = (
 		target: Element,
-	): { button: HTMLElement; editor: EditorAccess | null } | null => {
-		const selector = sendSelector();
-		let bySelector: HTMLElement | null = null;
-		try {
-			bySelector = selector ? target.closest<HTMLElement>(selector) : null;
-		} catch {
-			bySelector = null;
+	): { button: HTMLElement; match: EditorMatch | null } | null => {
+		let button = closestMatch(target, sendSelector());
+		let known = button !== null;
+		if (!button) {
+			const found = deps.findSendButton(adapter, doc, editorFor(null));
+			if (found && contains(found, target)) {
+				button = found;
+				known = true;
+			}
 		}
-		if (bySelector) return { button: bySelector, editor: editorFor(null) };
-		const editor = editorFor(null);
-		const found = deps.findSendButton(adapter, doc, editor);
-		return found && contains(found, target) ? { button: found, editor } : null;
+		if (!button) {
+			const control = closestMatch(target, BUTTON_SELECTOR);
+			if (!control || isDisabled(control) || !looksLikeSend(control)) return null;
+			button = control;
+		}
+		const match = editorNear(button);
+		if (!known && !sharesContainer(match)) return null;
+		return { button, match };
 	};
 
 	const onClick = (event: MouseEvent): void => {
@@ -967,16 +1108,26 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		if (!target) return;
 		const hit = resolveSendButton(target);
 		if (!hit) return;
-		onSendAttempt(event, { kind: "click", button: hit.button }, hit.editor);
+		const editor = hit.match?.editor ?? null;
+		const missing = hit.match && !editor ? strings().editorAmbiguous : strings().editorMissing;
+		onSendAttempt(event, { kind: "click", button: hit.button }, editor, missing);
 	};
 
 	const onSubmit = (event: Event): void => {
 		if (ignored(event)) return;
 		const form = asElement(event.target);
 		if (!form || form.tagName !== "FORM") return;
-		const editor = editorFor(null);
-		if (!editor || !form.contains(editor.element)) return;
-		onSendAttempt(event, { kind: "submit", form: form as HTMLFormElement }, editor);
+		const match = editorNear(form);
+		if (!match) return;
+		const origin: SendOrigin = { kind: "submit", form: form as HTMLFormElement };
+		if (match.editor) {
+			if (form.contains(match.editor.element)) onSendAttempt(event, origin, match.editor);
+			return;
+		}
+		// Several editors in the form hold text: which one is sent is unknown.
+		if (match.container === form || form.contains(match.container)) {
+			onSendAttempt(event, origin, null, strings().editorAmbiguous);
+		}
 	};
 
 	// ---- pre-scan while typing --------------------------------------------------------
@@ -1008,7 +1159,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			fileGuard.onInputEvent(event);
 			return;
 		}
-		const target = asElement(event.target);
+		const target = inner ?? asElement(event.target);
 		if (event.type !== "input" || !target || ignored(event)) return;
 		const editor = editorFor(target);
 		if (editor && contains(editor.element, target)) schedulePrescan();

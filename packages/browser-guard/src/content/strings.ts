@@ -40,6 +40,7 @@ export interface Strings {
 	readonly policyMissing: string;
 	readonly siteBlocked: string;
 	readonly editorMissing: string;
+	readonly editorAmbiguous: string;
 	readonly rewriteFailed: string;
 	readonly textChanged: string;
 	readonly pressSendAgain: string;
@@ -115,6 +116,8 @@ const EN: Strings = {
 	policyMissing: "AIDR protection is still loading. Nothing was sent; try again in a moment.",
 	siteBlocked: "Your organisation has blocked this AI service. Nothing was sent.",
 	editorMissing: "AIDR could not find the prompt box on this page, so nothing was sent.",
+	editorAmbiguous:
+		"AIDR could not tell which text box this send belongs to (several hold text), so nothing was sent.",
 	rewriteFailed: "AIDR could not safely rewrite the prompt. Nothing was sent.",
 	textChanged: "The prompt changed while it was being checked. Press send again.",
 	pressSendAgain: "The prompt was masked. Press send to continue.",
@@ -189,6 +192,8 @@ const TR: Strings = {
 		"AIDR koruması henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin.",
 	siteBlocked: "Kurumunuz bu yapay zekâ hizmetini engelledi. Hiçbir şey gönderilmedi.",
 	editorMissing: "AIDR bu sayfadaki istem alanını bulamadı; hiçbir şey gönderilmedi.",
+	editorAmbiguous:
+		"AIDR bu gönderimin hangi metin alanına ait olduğunu belirleyemedi (birden fazla alanda metin var); hiçbir şey gönderilmedi.",
 	rewriteFailed: "AIDR istemi güvenli biçimde yeniden yazamadı. Hiçbir şey gönderilmedi.",
 	textChanged: "İstem kontrol edilirken değişti. Yeniden gönderin.",
 	pressSendAgain: "İstem maskelendi. Devam etmek için gönderin.",

@@ -19,6 +19,8 @@ export const chatgpt = defineAdapter({
 		"#composer-submit-button",
 		'form[data-type="unified-composer"] button[type="submit"]',
 		'button[aria-label="Send prompt" i]',
+		// Edit-and-resend: the primary ("Send") button of the edit form on a sent message.
+		'[data-message-author-role="user"] button.btn-primary',
 	],
 	response: [
 		'[data-message-author-role="assistant"]',

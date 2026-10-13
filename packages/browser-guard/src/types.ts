@@ -243,6 +243,23 @@ export interface EditorAccess {
 	write(text: string): Promise<void>;
 }
 
+/**
+ * The editor a send gesture belongs to, resolved from where the gesture happened (the
+ * clicked button, the submitted form, the key target), never from focus.
+ */
+export interface EditorMatch {
+	/**
+	 * The editor; null when several editors in the same container hold text, so which one
+	 * the site sends is ambiguous (the guard then refuses the send).
+	 */
+	readonly editor: EditorAccess | null;
+	/**
+	 * The smallest container (element, shadow root or document) above the anchor in which
+	 * an editor was found; the editor itself when the anchor is inside an editor.
+	 */
+	readonly container: Node;
+}
+
 /** Effective policy after merging managed (admin) over user settings. */
 export interface GuardPolicy {
 	readonly version: 1;
@@ -617,6 +634,7 @@ export interface NativeBridge {
  *   dom/editor.ts      export function findEditor(adapter: SiteAdapter, root: Document, lastFocused?: Element | null): EditorAccess | null
  *                      export function editorAccess(element: HTMLElement): EditorAccess
  *                      export function findSendButton(adapter: SiteAdapter, root: Document, editor: EditorAccess | null): HTMLElement | null
+ *                      export function findEditorNear(adapter: SiteAdapter, anchor: Element): EditorMatch | null
  *   background/policy.ts export const DEFAULT_POLICY: GuardPolicy; export function mergePolicy(managed: unknown, user: Partial<UserSettings> | undefined): GuardPolicy
  *   background/native.ts export function createNativeBridge(enabled: boolean): NativeBridge
  *   content/acceptable-use.ts export function createAcceptableUseNotice(deps): AcceptableUseController
