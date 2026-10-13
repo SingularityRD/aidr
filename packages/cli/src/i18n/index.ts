@@ -13,10 +13,12 @@ import {
 	setConfiguredLocale,
 } from "@singularityrd/aidr-core";
 import { type Command, Help, type Option } from "commander";
+import { ASSISTANT_EN, ASSISTANT_TR, type AssistantMessageKey } from "./assistant-messages.js";
 import { HELP_TR } from "./help-tr.js";
 import { CLI_EN, CLI_TR, type CliMessageKey } from "./messages.js";
 import { UPDATE_EN, UPDATE_TR, type UpdateMessageKey } from "./update-messages.js";
 
+export { ASSISTANT_EN, ASSISTANT_TR, type AssistantMessageKey } from "./assistant-messages.js";
 export { HELP_TR } from "./help-tr.js";
 export { CLI_EN, CLI_TR, type CliMessageKey } from "./messages.js";
 export { UPDATE_EN, UPDATE_TR, type UpdateMessageKey } from "./update-messages.js";
@@ -26,6 +28,9 @@ export const ct = createTranslator<CliMessageKey>({ en: CLI_EN, tr: CLI_TR });
 
 /** `aidr update` output in the current locale. */
 export const ut = createTranslator<UpdateMessageKey>({ en: UPDATE_EN, tr: UPDATE_TR });
+
+/** `aidr assistant` terminal lines in the current locale (the wizard gets both catalogs). */
+export const at = createTranslator<AssistantMessageKey>({ en: ASSISTANT_EN, tr: ASSISTANT_TR });
 
 /** Commander's own help texts, which are not part of the command tree. */
 export const BUILTIN_HELP_TEXTS = [
@@ -59,7 +64,7 @@ export function initCliLocale(): void {
  * localizer translates them like every other title.
  */
 export const HELP_GROUPS = [
-	{ heading: "Setup:", commands: ["setup", "update", "config", "uninstall"] },
+	{ heading: "Setup:", commands: ["assistant", "setup", "update", "config", "uninstall"] },
 	{ heading: "Daily use:", commands: ["status", "verify", "audit", "privacy", "scan"] },
 	{ heading: "Approvals:", commands: ["pending", "approve", "allowlist", "exception"] },
 	{ heading: "Diagnostics:", commands: ["doctor", "support-bundle", "simulate", "coverage"] },

@@ -14,9 +14,10 @@
   },
 	"files": ["dist", "resources", "LICENSE", "NOTICE"],
 	"scripts": {
-		"build": "node ../../scripts/ensure-core-build.mjs && npm run sync:assets && tsc",
-		"build:release": "node ../../scripts/rmrf.mjs dist && node ../../scripts/rmrf.mjs tsconfig.tsbuildinfo && npm run sync:assets && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id cli/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
+		"build": "node ../../scripts/ensure-core-build.mjs && npm run sync:assets && npm run build:assistant-ui && tsc",
+		"build:release": "node ../../scripts/rmrf.mjs dist && node ../../scripts/rmrf.mjs tsconfig.tsbuildinfo && npm run sync:assets && npm run build:assistant-ui && tsc -p tsconfig.release.json && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id cli/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
 		"sync:assets": "node scripts/sync-assets.mjs",
+		"build:assistant-ui": "tsc -p src/assistant/ui/tsconfig.json && node scripts/build-assistant-ui.mjs",
 		"test": "vitest run",
 		"dev": "tsc --watch",
 		"prepack": "node ../../scripts/check-workspace-refs.mjs",
@@ -28,6 +29,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.1.2",
     "typescript": "^5.3.0",
     "vitest": "^4.1.11"
   },

@@ -32,6 +32,7 @@ import {
 } from "../../packages/claude-code/scripts/build-sea.mjs";
 import { checkSeaBundle, checkTrustKey, checkVersion, InstallerInputError } from "./lib/common.mjs";
 import {
+	ASSISTANT_DESKTOP,
 	buildLinuxPackages,
 	DEB_POSTINST,
 	DEB_PRERM,
@@ -444,6 +445,10 @@ describe("Linux packages", () => {
 		assert.match(spec, /%global __os_install_post %\{nil\}/);
 		assert.match(spec, /%global debug_package %\{nil\}/);
 		assert.match(spec, /AutoReqProv: no/);
+		assert.match(spec, /^\/usr\/share\/applications\/singularity-aidr-assistant\.desktop$/m);
+		assert.match(ASSISTANT_DESKTOP, /^Exec=\/usr\/bin\/aidr assistant$/m);
+		assert.match(ASSISTANT_DESKTOP, /^Name=Singularity AIDR Setup Assistant$/m);
+		assert.match(ASSISTANT_DESKTOP, /^Name\[tr\]=Singularity AIDR Kurulum Yardımcısı$/m);
 		assert.match(spec, /%preun\nif \[ "\$1" = "0" \]; then "\/opt\/singularity-aidr\/libexec\/package-hook.sh" preremove 1; fi/);
 		assert.match(DEB_POSTINST, /configure\) "\/opt\/singularity-aidr\/libexec\/package-hook.sh" postinstall/);
 		assert.match(DEB_PRERM, /remove\|deconfigure\) "\/opt\/singularity-aidr\/libexec\/package-hook.sh" preremove 1/);
@@ -468,6 +473,9 @@ describe("Linux packages", () => {
 		assert.equal(statSync(join(prefix, "bundle/bin/aidr")).mode & 0o777, 0o755);
 		assert.equal(statSync(join(prefix, "config/release-public.pem")).mode & 0o777, 0o644);
 		assert.equal(readlinkSync(join(root, "usr/bin/aidr")), "/opt/singularity-aidr/bundle/bin/aidr");
+		const desktop = join(root, "usr/share/applications/singularity-aidr-assistant.desktop");
+		assert.equal(readFileSync(desktop, "utf8"), ASSISTANT_DESKTOP);
+		assert.equal(statSync(desktop).mode & 0o777, 0o644);
 		const sumsText = readFileSync(sums, "utf8");
 		for (const file of files) assert.match(sumsText, new RegExp(`${createHash("sha256").update(readFileSync(file)).digest("hex")}  ${file.split("/").pop().replace(/[.~]/g, "\\$&")}`));
 	});
@@ -516,6 +524,7 @@ describe("Linux packages", () => {
 			assert.match(failed.stderr, /setup did not finish for/);
 			const ok = hook(["postinstall"], { SUDO_USER: invoker });
 			assert.match(ok.stdout, /done\. Restart your AI tools/);
+			assert.match(ok.stdout, /Singularity AIDR Setup Assistant.*aidr assistant/);
 		});
 
 		test("postinstall never runs setup as root or without an invoking user; it prints the command", () => {

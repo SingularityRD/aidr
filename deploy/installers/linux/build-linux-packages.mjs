@@ -9,6 +9,8 @@
 //   /opt/singularity-aidr/config/installer-catalog-public.pem  `aidr update` catalog key (optional, --catalog-key)
 //   /opt/singularity-aidr/libexec/package-hook.sh     postinstall / preremove
 //   /usr/bin/aidr -> /opt/singularity-aidr/bundle/bin/aidr   (.deb / .rpm)
+//   /usr/share/applications/singularity-aidr-assistant.desktop  menu entry for
+//                                                     `aidr assistant` (.deb / .rpm)
 //
 // Usage:
 //   node deploy/installers/linux/build-linux-packages.mjs \
@@ -53,6 +55,23 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_HOOK = join(here, "package-hook.sh");
 export const FORMATS = Object.freeze(["deb", "rpm", "tar"]);
+
+/** Application-menu entry that opens the Setup Assistant (`aidr assistant`) in the browser. */
+export const ASSISTANT_DESKTOP_FILE = "/usr/share/applications/singularity-aidr-assistant.desktop";
+export const ASSISTANT_DESKTOP = `[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Singularity AIDR Setup Assistant
+Name[tr]=Singularity AIDR Kurulum Yardımcısı
+Comment=Protect the AI tools on this computer
+Comment[tr]=Bu bilgisayardaki yapay zekâ araçlarını koruyun
+Exec=/usr/bin/aidr assistant
+Icon=security-high
+Terminal=false
+Categories=Utility;Security;
+Keywords=AIDR;AI;security;setup;
+StartupNotify=false
+`;
 
 const ARCH = {
 	x64: { deb: "amd64", rpm: "x86_64", tar: "x64" },
@@ -100,6 +119,10 @@ export function stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, withU
 		chmodSync(join(root, "usr"), 0o755);
 		chmodSync(join(root, "usr", "bin"), 0o755);
 		symlinkSync(`${LINUX_PREFIX}/bundle/bin/aidr`, join(root, "usr", "bin", "aidr"));
+		const applications = join(root, ASSISTANT_DESKTOP_FILE.slice(1, ASSISTANT_DESKTOP_FILE.lastIndexOf("/")));
+		mkdirSync(applications, { recursive: true });
+		for (const dir of [join(root, "usr", "share"), applications]) chmodSync(dir, 0o755);
+		writeFileSync(join(root, ASSISTANT_DESKTOP_FILE.slice(1)), ASSISTANT_DESKTOP, { mode: 0o644 });
 	}
 	return { prefix };
 }
@@ -205,6 +228,7 @@ if [ "$1" = "0" ]; then "${LINUX_PREFIX}/libexec/package-hook.sh" preremove 1; f
 %defattr(-,root,root,-)
 ${LINUX_PREFIX}
 /usr/bin/aidr
+${ASSISTANT_DESKTOP_FILE}
 `;
 }
 

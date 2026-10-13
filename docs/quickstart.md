@@ -107,6 +107,13 @@ If something is off:
 
 More detail: [Desktop installers](installation/desktop-installers.md).
 
+**Prefer a guided setup?** Open **Singularity AIDR Setup Assistant** from the
+applications menu (Linux) or the last page of the Windows installer, or run
+`aidr assistant` in a terminal. It shows the AI tools it found, connects to your
+company if you want, protects the tools you choose, runs the same check as
+`aidr verify` and links Browser Guard, in English or Turkish. Run it again
+anytime. Details: [Setup Assistant](installation/desktop-installers.md#setup-assistant-aidr-assistant).
+
 ## B. Office user (Browser Guard)
 
 Browser Guard checks what you type, paste or upload into ChatGPT, Gemini, Claude,

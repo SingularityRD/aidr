@@ -78,7 +78,7 @@ postinstall)
 		exit 0
 	fi
 	if ! user=$(target_user); then
-		say "installed. Each user runs once (as themselves, not root): aidr setup"
+		say "installed. Each user runs once (as themselves, not root): aidr setup, or opens 'Singularity AIDR Setup Assistant' from the applications menu"
 		exit 0
 	fi
 	home=$(user_home "$user")
@@ -95,13 +95,14 @@ postinstall)
 	0)
 		run_as "$user" "$home" "$AIDR" status >/dev/null 2>&1 || true
 		say "done. Restart your AI tools, then run: aidr status && aidr verify"
+		say "to check or change it step by step, open 'Singularity AIDR Setup Assistant' from the applications menu, or run: aidr assistant"
 		;;
 	3)
 		say "installed. No AI tool (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw) was found for $user yet."
-		say "after installing one, $user runs once: aidr setup"
+		say "after installing one, $user runs once: aidr setup (or opens 'Singularity AIDR Setup Assistant' from the applications menu)"
 		;;
 	*)
-		say "setup did not finish for $user (see the lines above). Run as $user: aidr setup" >&2
+		say "setup did not finish for $user (see the lines above). Run as $user: aidr setup, or open 'Singularity AIDR Setup Assistant' from the applications menu" >&2
 		;;
 	esac
 	exit 0
