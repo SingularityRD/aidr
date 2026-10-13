@@ -8,10 +8,15 @@ import type { Logger } from "../types.js";
 import { nullLogger } from "../types.js";
 import { domainFromUrlOrHost } from "./api.js";
 import { decryptAes256GcmEnvelope } from "./crypto.js";
-import { loadIntelKeyring } from "./keyring.js";
+import {
+	loadIntelKeyring,
+	loadRetainedPackKeys,
+	retainedPackKeyId,
+	retainPackKeys,
+} from "./keyring.js";
 import { IntelPackManifestSchema, PackActivePointerSchema } from "./schema.js";
 import { compareSemver } from "./semver.js";
-import type { DomainRiskEntry, IntelFileKind, IntelMerged } from "./types.js";
+import type { DomainRiskEntry, IntelFileKind, IntelMerged, StaleIntelPack } from "./types.js";
 import { emptyIntelMerged } from "./types.js";
 import { verifyEd25519Signature } from "./verify.js";
 
@@ -30,6 +35,13 @@ export interface LoadIntelOptions {
 	intelDir?: string;
 	packsDir?: string;
 	trustedKeysPath?: string;
+	/** Where activated pack versions' decryption keys are retained (owner-only). */
+	retainedKeysPath?: string;
+	/**
+	 * When an installed pack past its `expires_at` is reported stale: `strict`
+	 * right away, `grace` after `graceHours`. A stale pack is never dropped; it
+	 * keeps enforcing its last verified content until it is updated or revoked.
+	 */
 	verificationMode?: IntelVerificationMode;
 	/** Only used in grace mode. Default: 72h. */
 	graceHours?: number;
@@ -307,6 +319,8 @@ async function loadPackFile(
 		ciphertext_sha256?: string;
 	},
 	keyring: Map<string, Uint8Array>,
+	retainedKeys: Map<string, Uint8Array> | undefined,
+	usedKeys: Map<string, Uint8Array>,
 	revokedKeyIds: Set<string>,
 	logger: Logger,
 ): Promise<{ kind: IntelFileKind; raw: string } | null> {
@@ -342,8 +356,13 @@ async function loadPackFile(
 			return null;
 		}
 
-		const key = keyring.get(file.key_id);
-		if (!key) {
+		// The current entitlement keyring first; then the key this exact, already
+		// activated pack version decrypted with before (see retainPackKeys), so an
+		// ended entitlement does not stop an installed pack from enforcing.
+		const candidates = [keyring.get(file.key_id), retainedKeys?.get(file.key_id)].filter(
+			(candidate): candidate is Uint8Array => candidate !== undefined,
+		);
+		if (candidates.length === 0) {
 			logger.warn("Intel pack encrypted file key_id not found in keyring", {
 				path: fullPath,
 				keyId: file.key_id,
@@ -351,7 +370,14 @@ async function loadPackFile(
 			return null;
 		}
 
-		const decrypted = decryptAes256GcmEnvelope({ key, blob: bytes });
+		let decrypted: Uint8Array | null = null;
+		for (const key of candidates) {
+			decrypted = decryptAes256GcmEnvelope({ key, blob: bytes });
+			if (decrypted) {
+				usedKeys.set(file.key_id, key);
+				break;
+			}
+		}
 		if (!decrypted) {
 			logger.warn("Intel pack encrypted file decrypt failed", { path: fullPath });
 			return null;
@@ -390,10 +416,16 @@ async function loadSinglePack(
 	packVersionDir: string,
 	trustedKeys: Map<string, string>,
 	keyring: Map<string, Uint8Array>,
+	retainedKeys: Map<string, Uint8Array> | undefined,
 	revokedKeyIds: Set<string>,
 	options: { verificationMode: IntelVerificationMode; graceHours: number },
 	logger: Logger,
-): Promise<{ merged: IntelMerged; manifestSha256: string } | null> {
+): Promise<{
+	merged: IntelMerged;
+	manifestSha256: string;
+	usedKeys: Map<string, Uint8Array>;
+	stale: StaleIntelPack | null;
+} | null> {
 	const manifestPath = join(packVersionDir, "manifest.json");
 	const sigPath = join(packVersionDir, "manifest.sig");
 
@@ -425,7 +457,11 @@ async function loadSinglePack(
 		return null;
 	}
 	if (manifest.data.version !== selectedVersion) {
-		logger.warn("Intel pack version mismatch", { packId, selectedVersion, manifestVersion: manifest.data.version });
+		logger.warn("Intel pack version mismatch", {
+			packId,
+			selectedVersion,
+			manifestVersion: manifest.data.version,
+		});
 		return null;
 	}
 
@@ -450,24 +486,36 @@ async function loadSinglePack(
 		return null;
 	}
 
+	// An installed pack past its expiry is stale, not dropped: local detection
+	// never degrades because of a clock or license state. Revocation (above, and
+	// per-file key revocation below) is what removes a pack.
+	let stale: StaleIntelPack | null = null;
 	if (manifest.data.expires_at) {
 		const exp = Date.parse(manifest.data.expires_at);
-		if (Number.isFinite(exp) && Date.now() > exp) {
-			if (options.verificationMode === "strict") {
-				logger.warn("Intel pack expired (strict)", { packId });
-				return null;
-			}
-			const graceMs = Math.max(0, options.graceHours) * 60 * 60 * 1000;
-			if (Date.now() > exp + graceMs) {
-				logger.warn("Intel pack expired beyond grace window", { packId });
-				return null;
-			}
+		const graceMs =
+			options.verificationMode === "strict" ? 0 : Math.max(0, options.graceHours) * 60 * 60 * 1000;
+		if (Number.isFinite(exp) && Date.now() > exp + graceMs) {
+			stale = { packId, version: selectedVersion, expiresAt: manifest.data.expires_at };
+			logger.warn("Intel pack is past its expiry; still enforcing its last verified content", {
+				packId,
+				version: selectedVersion,
+				expiresAt: manifest.data.expires_at,
+			});
 		}
 	}
 
 	const merged = emptyIntelMerged();
+	const usedKeys = new Map<string, Uint8Array>();
 	for (const f of manifest.data.files) {
-		const loaded = await loadPackFile(packVersionDir, f, keyring, revokedKeyIds, logger);
+		const loaded = await loadPackFile(
+			packVersionDir,
+			f,
+			keyring,
+			retainedKeys,
+			usedKeys,
+			revokedKeyIds,
+			logger,
+		);
 		if (!loaded) return null;
 
 		if (loaded.kind === "url_denylist") {
@@ -493,7 +541,15 @@ async function loadSinglePack(
 		}
 	}
 
-	return { merged, manifestSha256: sha256Hex(manifestBytes) };
+	return { merged, manifestSha256: sha256Hex(manifestBytes), usedKeys, stale };
+}
+
+function setStalePacks(merged: IntelMerged, stalePacks: StaleIntelPack[]): void {
+	Object.defineProperty(merged, "stalePacks", {
+		value: stalePacks,
+		enumerable: false,
+		configurable: true,
+	});
 }
 
 function mergeInto(into: IntelMerged, from: IntelMerged): void {
@@ -517,6 +573,9 @@ export async function loadMergedIntelFromDisk(
 
 	const trustedKeys = await loadTrustedKeys(keysPath);
 	const keyring = await loadIntelKeyring().catch(() => new Map<string, Uint8Array>());
+	const retainedKeys = await loadRetainedPackKeys(params.retainedKeysPath).catch(
+		() => new Map<string, Map<string, Uint8Array>>(),
+	);
 	const merged = emptyIntelMerged();
 	if (params.requireRevocations && !params.revocations) {
 		return setAvailability(merged, "unavailable", "signed intel-pack revocations are unavailable");
@@ -534,6 +593,7 @@ export async function loadMergedIntelFromDisk(
 	);
 
 	const packIds = await listDirs(packsDir);
+	const stalePacks: StaleIntelPack[] = [];
 	let loadedPackCount = 0;
 	let failedPackCount = 0;
 	for (const packId of packIds) {
@@ -552,6 +612,7 @@ export async function loadMergedIntelFromDisk(
 			packVersionDir,
 			trustedKeys,
 			keyring,
+			retainedKeys.get(retainedPackKeyId(packId, version)),
 			revokedKeyIds,
 			{ verificationMode, graceHours },
 			logger,
@@ -573,16 +634,33 @@ export async function loadMergedIntelFromDisk(
 		}
 		loadedPackCount += 1;
 		mergeInto(merged, single.merged);
+		if (single.stale) stalePacks.push(single.stale);
+		try {
+			await retainPackKeys({
+				packId,
+				version,
+				keys: single.usedKeys,
+				path: params.retainedKeysPath,
+			});
+		} catch (error) {
+			// Detection internals: the pack is loaded now; only a later load after the
+			// entitlement ends would lack the key. Logged, never reported as clean.
+			logger.warn("Intel pack key retention failed", { packId, version, error: String(error) });
+		}
 	}
+	setStalePacks(merged, stalePacks);
 
 	// Keep the existing merged shape for consumers, while carrying measured
 	// coverage state out-of-band. An empty or rejected corpus is not clean intel.
 	setAvailability(
 		merged,
 		loadedPackCount > 0 && failedPackCount === 0 ? "available" : "unavailable",
-		loadedPackCount > 0 && failedPackCount === 0
+		(loadedPackCount > 0 && failedPackCount === 0
 			? `loaded ${loadedPackCount} signed intel pack(s)`
-			: `no complete signed intel pack was available (${loadedPackCount} loaded, ${failedPackCount} rejected)`,
+			: `no complete signed intel pack was available (${loadedPackCount} loaded, ${failedPackCount} rejected)`) +
+			(stalePacks.length > 0
+				? `; ${stalePacks.length} pack(s) past expiry still enforcing their last verified content: ${stalePacks.map((stale) => `${stale.packId}@${stale.version}`).join(", ")}`
+				: ""),
 	);
 
 	// Ensure the on-disk intel dir exists path-wise (not created here; read-only).

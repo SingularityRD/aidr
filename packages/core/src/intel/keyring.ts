@@ -1,10 +1,16 @@
+import { lstat } from "node:fs/promises";
+import { dirname } from "node:path";
+
 import { loadConfig, resolvePath } from "../config.js";
-import { getFileContent } from "../file-utils.js";
+import { atomicWriteJson, getFileContent } from "../file-utils.js";
 import { type EntitlementSnapshotV2, verifyEd25519SignedEntitlementSnapshot } from "../managed.js";
+import { preparePrivateLocalDirectory, preparePrivateLocalFile } from "../private-local-file.js";
 
 const DEFAULT_KEYRING_PATH = "~/.singularity-aidr/intel/keys.json";
 const DEFAULT_ENTITLEMENT_PATH = "~/.singularity-aidr/entitlement.json";
 const DEFAULT_MANAGED_STATE_PATH = "~/.singularity-aidr/managed.json";
+const DEFAULT_RETAINED_KEYS_PATH = "~/.singularity-aidr/intel/retained/pack-keys.json";
+const RETAINED_KEYS_SCHEMA_VERSION = 1;
 
 function normalizeKeyMap(obj: unknown): Map<string, Uint8Array> {
 	const map = new Map<string, Uint8Array>();
@@ -200,4 +206,87 @@ export async function loadIntelKeyring(
 
 	const keyring = await readJsonFile(keyringPath);
 	return normalizeKeyMap(keyring);
+}
+
+/**
+ * Decryption keys of pack versions that were already activated, by `pack@version`.
+ *
+ * The entitlement keyring above deliberately empties when the entitlement ends.
+ * Without this store an encrypted pack that was installed and enforcing would
+ * stop decrypting at that moment, i.e. detection would degrade because of
+ * license state. The loader therefore records the keys an active pack version
+ * decrypted with, owner-only, and falls back to them for that exact version
+ * only. A NEW version never inherits a retained key, and a revoked key id is
+ * still refused by the loader before any key is looked up.
+ */
+export type RetainedPackKeys = Map<string, Map<string, Uint8Array>>;
+
+export function retainedPackKeyId(packId: string, version: string): string {
+	return `${packId}@${version}`;
+}
+
+function retainedPackKeysPath(path?: string): string {
+	return resolvePath(path ?? DEFAULT_RETAINED_KEYS_PATH);
+}
+
+export async function loadRetainedPackKeys(path?: string): Promise<RetainedPackKeys> {
+	const resolved = retainedPackKeysPath(path);
+	const out: RetainedPackKeys = new Map();
+	try {
+		const stats = await lstat(resolved);
+		if (stats.isSymbolicLink() || !stats.isFile()) return out;
+	} catch {
+		return out;
+	}
+	const parsed = await readJsonFile(resolved);
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return out;
+	const root = parsed as Record<string, unknown>;
+	if (root.schema_version !== RETAINED_KEYS_SCHEMA_VERSION) return out;
+	const versions = root.versions;
+	if (!versions || typeof versions !== "object" || Array.isArray(versions)) return out;
+	for (const [versionId, keys] of Object.entries(versions as Record<string, unknown>)) {
+		const map = normalizeKeyMap({ keys });
+		if (map.size > 0) out.set(versionId, map);
+	}
+	return out;
+}
+
+/**
+ * Record the keys an activated pack version decrypted with. Owner-only file in a
+ * private directory; returns false (no write) when nothing new would be stored.
+ */
+export async function retainPackKeys(params: {
+	packId: string;
+	version: string;
+	keys: Map<string, Uint8Array>;
+	path?: string;
+}): Promise<boolean> {
+	if (params.keys.size === 0) return false;
+	const path = retainedPackKeysPath(params.path);
+	const current = await loadRetainedPackKeys(path);
+	const versionId = retainedPackKeyId(params.packId, params.version);
+	const existing = current.get(versionId) ?? new Map<string, Uint8Array>();
+	let changed = false;
+	for (const [keyId, key] of params.keys) {
+		const known = existing.get(keyId);
+		if (known && Buffer.from(known).equals(Buffer.from(key))) continue;
+		existing.set(keyId, key);
+		changed = true;
+	}
+	if (!changed) return false;
+	current.set(versionId, existing);
+	const versions: Record<string, Record<string, string>> = {};
+	for (const [id, keys] of current) {
+		versions[id] = Object.fromEntries(
+			[...keys].map(([keyId, key]) => [keyId, Buffer.from(key).toString("base64")]),
+		);
+	}
+	preparePrivateLocalDirectory(dirname(path));
+	await atomicWriteJson(
+		path,
+		{ schema_version: RETAINED_KEYS_SCHEMA_VERSION, versions },
+		{ mode: 0o600 },
+	);
+	if (process.platform === "win32") preparePrivateLocalFile(path);
+	return true;
 }

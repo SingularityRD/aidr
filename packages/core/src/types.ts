@@ -489,8 +489,10 @@ export const IntelPacksConfigSchema = z.object({
 	/** Cache TTL for reloading packs from disk. */
 	cache_ttl_seconds: z.number().default(60),
 	/**
-	 * Allow using an expired but correctly signed pack within this grace window.
-	 * Set to 0 for strict expiry.
+	 * How long after its expires_at an installed, correctly signed pack is still
+	 * reported current. After this window it is reported stale; it is never
+	 * dropped (local detection does not degrade with a clock) - only revocation
+	 * removes an installed pack.
 	 */
 	expired_grace_hours: z.number().default(72),
 });

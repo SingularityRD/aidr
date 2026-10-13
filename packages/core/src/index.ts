@@ -1045,6 +1045,7 @@ export {
 	verifyArtifactIntegrityAndLog,
 } from "./integrity/index.js";
 // Intel packs (signed offline intelligence)
+export { acceptPack, type PackAcceptance, type PackRefusalCode } from "./intel/acceptance.js";
 export { loadMergedIntelFromDisk } from "./intel/loader.js";
 export type {
 	IntelReputationProvider,
@@ -1052,10 +1053,45 @@ export type {
 	ReputationVerdict,
 } from "./intel/provider.js";
 export { createIntelReputationProvider } from "./intel/provider.js";
-export type { DomainRiskEntry, IntelMerged } from "./intel/types.js";
+export type { DomainRiskEntry, IntelMerged, StaleIntelPack } from "./intel/types.js";
 // JSONC-tolerant config reader shared by the inventory and policy call sites
 export type { JsoncParseResult, JsoncParseStatus } from "./jsonc.js";
 export { parseJsonc, stripJsonComments } from "./jsonc.js";
+// Vendor-signed licenses and customer packets (on-prem customer builds)
+export {
+	CUSTOMER_ID_PATTERN,
+	CUSTOMER_PACKET_FILE_NAME,
+	CUSTOMER_PACKET_FORMAT,
+	type CustomerPacketPayload,
+	type CustomerPacketSearchOptions,
+	type CustomerPacketSensitivity,
+	type CustomerRecord,
+	customerPacketSearchPaths,
+	customerRecordPath,
+	defaultLicenseKeyRegistry,
+	discoverCustomerPacket,
+	installedLicensePath,
+	LICENSE_FORMAT,
+	LICENSE_PUBLIC_KEYS_FORMAT,
+	type LicenseDocument,
+	type LicenseErrorCode,
+	type LicenseKeyRegistry,
+	type LicensePayload,
+	type LicenseState,
+	LicenseVerificationError,
+	type LicenseVerifyOptions,
+	licenseState,
+	licenseTermEndMs,
+	parseLicensePublicKeyRegistry,
+	readCustomerRecord,
+	readInstalledLicense,
+	readSignedDocumentFile,
+	saveCustomerPacket,
+	type VerifiedCustomerPacket,
+	type VerifiedLicense,
+	verifyCustomerPacket,
+	verifyLicense,
+} from "./license/index.js";
 // Local-mode (unsigned, operator-written) DLP policy file.
 export {
 	DEFAULT_LOCAL_DLP_POLICY_PATH,
