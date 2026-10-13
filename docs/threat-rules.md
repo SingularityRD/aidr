@@ -19,6 +19,7 @@ Rules ship in the `threats/` directory at the repository root:
 | `self-defense.yaml` | Attempts to disable or bypass Singularity AIDR |
 | `context-poisoning.yaml` | Data and context poisoning: writes to agent instruction/memory/config files, hidden or injected instructions in what is written, MCP tool poisoning, memory-store writes. Uses dedicated `match_on` values evaluated with operation context; see [poisoning-protection.md](poisoning-protection.md) |
 | `mitre.yaml` | MITRE ATT&CK technique mappings |
+| `script-content.yaml` | Pipe-to-shell, reverse shells and encoded execution written into scripts (see [Commands written into scripts](#commands-written-into-scripts)) |
 | `win-*.yaml` | Windows-specific variants of the above |
 | `mac-*.yaml` | macOS-specific variants (osascript, Keychain, LOLBins, defense evasion) |
 
@@ -95,6 +96,46 @@ Rules ship in the `threats/` directory at the repository root:
 - Cron directories, systemd unit files
 - Credential files (`.env`, `.aws/credentials`, `.netrc`)
 - Git hooks, URLs and credentials embedded in content
+
+### Commands written into scripts
+
+A `curl … | bash` that the agent *runs* is denied by `commands.yaml`. Written into a
+file, the same line used to reach the engine only as a URL, so with the reputation leg
+off (the default) the write was allowed. `script-content.yaml` closes that gap. Its
+rules use `match_on: code:<language>` and run in the code-guard leg
+(`packages/core/src/code-guard.ts`) on the text a call adds: a Write's content, the new
+lines of an Edit/MultiEdit, the `+` lines of an `apply_patch`, an MCP `write_file` /
+`edit_file`, or a heredoc redirected into a file. The payload is found anywhere in the
+text, including after more than 64 KB of other lines.
+
+| `match_on` | Files |
+|---|---|
+| `code:shell` | `.sh .bash .zsh .ksh .command`, shell rc files, `.git/hooks/*`, and any file whose `#!` line names a POSIX shell |
+| `code:powershell` | `.ps1 .psm1`, or a `pwsh` / `powershell` shebang |
+| `code:batch` | `.bat .cmd` |
+| `code:dockerfile`, `code:makefile` | `Dockerfile`/`Containerfile`, `Makefile`/`*.mk` |
+| `code:ci_config` | CI pipelines and git-hook managers: `.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile`, `.husky/`, … (the paths of the `ci_config` edit view) |
+| `code:npm_script` | the `scripts` values of a `package.json` (for an edited fragment, every `"key": "value"` string) |
+
+| Rule | Detects | Action |
+|---|---|---|
+| `CLT-SCRIPT-001` | download piped into a shell (`curl`/`wget`/`fetch` `\| sh`, also through `sudo`/`env`, across a `\` line continuation), `bash <(curl …)`, `source <(curl …)`, `sh -c "$(curl …)"` | ask |
+| `CLT-SCRIPT-002` | PowerShell download run with `Invoke-Expression` (`iwr \| iex`, `iex (New-Object Net.WebClient).DownloadString(…)`) | ask |
+| `CLT-SCRIPT-003` | reverse shell (`sh -i` with `/dev/tcp`, `nc -e /bin/sh`, `mkfifo` back-pipe, `socat … EXEC:sh`) | deny |
+| `CLT-SCRIPT-004` | encoded payload decoded into a shell (`base64 -d \| sh`, `xxd -r \| sh`, `eval` of decoded text) | ask |
+| `CLT-SCRIPT-005` | PowerShell `-EncodedCommand`, or `FromBase64String` run with `iex` | ask |
+
+Why `ask` and not `deny`: writing a script is not running it, and CI files, Dockerfiles
+and installers legitimately fetch toolchains this way, so a human decides. Reverse shells
+are the exception: they have no ordinary development use, and a script in a git hook, CI
+job or npm lifecycle script later runs without any further tool call AIDR could inspect.
+
+Not matched: documentation (`README.md`, `docs/*.md` and every other file without a
+script language), comment lines (`#`, `//`, `::`, `REM`), and downloads that are saved and
+verified rather than piped (`curl -o tool.tgz …; sha256sum -c …`). The rules are not run
+by `aidr scan --code`, which reports on a project's existing code rather than on what an
+agent writes. Known limits: a pipe inside a quoted `echo` string still matches, and the
+edited fragment of a `package.json` cannot be tied to its `scripts` object.
 
 **URLs:**
 - Known malware/phishing/scam patterns

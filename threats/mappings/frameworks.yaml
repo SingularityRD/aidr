@@ -78,6 +78,9 @@ assessments:
         commands built from input, SQL built by string formatting, TLS verification off,
         permissive CORS, exposed debuggers, CSRF off, weak crypto); those are
         language-gated patterns over added lines and warn by default rather than block.
+        Pipe-to-shell, reverse shells and encoded execution written into scripts (shell,
+        PowerShell, batch, Dockerfile, Makefile, CI and git-hook files, package.json
+        scripts) are held for approval, reverse shells denied.
         Output rendered in a UI (XSS, markdown links) is not covered by these rules.
     LLM06:
       status: covered
@@ -145,7 +148,8 @@ assessments:
       rationale: >-
         Download-and-execute chains, pipe-to-shell, reverse shells, encoded or obfuscated
         execution, script hosts and LOLBins on Linux, macOS and Windows are denied before
-        the command runs. Loading model files through code-executing deserializers and
+        the command runs; written into a script, the same patterns are held for approval
+        (reverse shells denied). Loading model files through code-executing deserializers and
         trust_remote_code are held or denied, and eval, shell commands built from input and
         network-exposed debuggers in code the agent writes are flagged by the (advisory)
         secure-code guardrails.
@@ -355,6 +359,7 @@ defaults:
     mitre.yaml: [LLM06, ASI02, AML.T0053]
     obfuscation.yaml: [LLM06, ASI02, AML.T0053, AML.T0123]
     persistence.yaml: [LLM06, ASI02, AML.T0053]
+    script-content.yaml: [LLM05, ASI05, AML.T0050]
     secure-code.yaml: [LLM05]
     self-defense.yaml: [LLM06, ASI10, AML.T0053]
     skill-scan.yaml: [LLM03, ASI04, AML.T0010.005]
@@ -732,6 +737,15 @@ rules:
   SCG-CRYPTO-002: []
   SCG-CRYPTO-003: []
   SCG-CRYPTO-004: []
+
+  # script-content.yaml (command execution written into scripts; the file
+  # default carries LLM05/ASI05/AML.T0050).
+  CLT-SCRIPT-001: []
+  CLT-SCRIPT-002: []
+  # Reverse shell, as CLT-CMD-003..005.
+  CLT-SCRIPT-003: [AML.T0072]
+  CLT-SCRIPT-004: []
+  CLT-SCRIPT-005: []
 
   # self-defense.yaml
   CLT-SELF-001: []

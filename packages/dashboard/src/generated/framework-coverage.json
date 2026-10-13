@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "matrix": {
-    "rule_count": 514,
-    "rule_files": 30,
+    "rule_count": 519,
+    "rule_files": 31,
     "frameworks": [
       {
         "id": "owasp_llm",
@@ -74,8 +74,8 @@
             "label": "LLM05:2025",
             "title": "Improper Output Handling",
             "status": "covered",
-            "rationale": "Model-generated commands and code are validated before they execute: pipe-to-shell, reverse shells, eval of decoded payloads, LOLBin and script-host execution and obfuscated command lines are denied or held for approval at the tool boundary. Code the agent writes is also checked by the secure-code guardrails (eval or shell commands built from input, SQL built by string formatting, TLS verification off, permissive CORS, exposed debuggers, CSRF off, weak crypto); those are language-gated patterns over added lines and warn by default rather than block. Output rendered in a UI (XSS, markdown links) is not covered by these rules.",
-            "rule_count": 107,
+            "rationale": "Model-generated commands and code are validated before they execute: pipe-to-shell, reverse shells, eval of decoded payloads, LOLBin and script-host execution and obfuscated command lines are denied or held for approval at the tool boundary. Code the agent writes is also checked by the secure-code guardrails (eval or shell commands built from input, SQL built by string formatting, TLS verification off, permissive CORS, exposed debuggers, CSRF off, weak crypto); those are language-gated patterns over added lines and warn by default rather than block. Pipe-to-shell, reverse shells and encoded execution written into scripts (shell, PowerShell, batch, Dockerfile, Makefile, CI and git-hook files, package.json scripts) are held for approval, reverse shells denied. Output rendered in a UI (XSS, markdown links) is not covered by these rules.",
+            "rule_count": 112,
             "example_rules": [
               "CLT-CMD-001",
               "CLT-CMD-002",
@@ -211,8 +211,8 @@
             "label": "ASI05:2026",
             "title": "Unexpected Code Execution (RCE)",
             "status": "covered",
-            "rationale": "Download-and-execute chains, pipe-to-shell, reverse shells, encoded or obfuscated execution, script hosts and LOLBins on Linux, macOS and Windows are denied before the command runs. Loading model files through code-executing deserializers and trust_remote_code are held or denied, and eval, shell commands built from input and network-exposed debuggers in code the agent writes are flagged by the (advisory) secure-code guardrails.",
-            "rule_count": 135,
+            "rationale": "Download-and-execute chains, pipe-to-shell, reverse shells, encoded or obfuscated execution, script hosts and LOLBins on Linux, macOS and Windows are denied before the command runs; written into a script, the same patterns are held for approval (reverse shells denied). Loading model files through code-executing deserializers and trust_remote_code are held or denied, and eval, shell commands built from input and network-exposed debuggers in code the agent writes are flagged by the (advisory) secure-code guardrails.",
+            "rule_count": 140,
             "example_rules": [
               "AISC-001",
               "AISC-002",
@@ -425,7 +425,7 @@
             "title": "Command and Scripting Interpreter",
             "status": "covered",
             "rationale": "Shell, PowerShell, AppleScript/JXA, Python and script-host execution patterns used for remote payloads, obfuscation and proxy execution are detected across all three OSes.",
-            "rule_count": 98,
+            "rule_count": 103,
             "example_rules": [
               "CLT-CMD-001",
               "CLT-CMD-002",
@@ -570,7 +570,7 @@
             "title": "Cyber Communication Channel",
             "status": "covered",
             "rationale": "Reverse shells over /dev/tcp, netcat, Python, Ruby, zsh and .NET sockets and C2-style paste-site or raw-IP URLs are detected.",
-            "rule_count": 18,
+            "rule_count": 19,
             "example_rules": [
               "CLT-CMD-003",
               "CLT-CMD-004",
@@ -4624,6 +4624,62 @@
       ],
       "mitre_atlas": [
         "AML.T0053"
+      ]
+    },
+    "CLT-SCRIPT-001": {
+      "owasp_llm": [
+        "LLM05"
+      ],
+      "owasp_agentic": [
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050"
+      ]
+    },
+    "CLT-SCRIPT-002": {
+      "owasp_llm": [
+        "LLM05"
+      ],
+      "owasp_agentic": [
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050"
+      ]
+    },
+    "CLT-SCRIPT-003": {
+      "owasp_llm": [
+        "LLM05"
+      ],
+      "owasp_agentic": [
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0072"
+      ]
+    },
+    "CLT-SCRIPT-004": {
+      "owasp_llm": [
+        "LLM05"
+      ],
+      "owasp_agentic": [
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050"
+      ]
+    },
+    "CLT-SCRIPT-005": {
+      "owasp_llm": [
+        "LLM05"
+      ],
+      "owasp_agentic": [
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050"
       ]
     },
     "CLT-SELF-001": {

@@ -48,7 +48,7 @@ builds itself.
   fingerprints of sensitive records; the plaintext dataset is never shipped to browsers.
 - **Deployment choice.** Free local mode, cloud, on-prem Docker Compose or Helm, and
   air-gapped with a signed offline license.
-- **Rules as data.** 514 YAML threat rules the customer can read and extend, each mapped to
+- **Rules as data.** 519 YAML threat rules the customer can read and extend, each mapped to
   OWASP LLM, OWASP Agentic and MITRE ATLAS with per-item coverage (including what is not
   covered).
 - **Agent behaviour, not only malware.** Session toxic-flow chains, runaway and sabotage

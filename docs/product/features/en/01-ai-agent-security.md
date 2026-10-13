@@ -497,7 +497,7 @@ session is released once.
 **What it does**
 The engine extracts artifacts (commands, URLs, file paths, content, packages) from each
 tool call and matches them against YAML threat rules. The rules are data, not code:
-**514 rules in 30 files** under [`threats/`](../../../../threats/), covering Linux,
+**519 rules in 31 files** under [`threats/`](../../../../threats/), covering Linux,
 macOS and Windows.
 
 **Why it matters**
@@ -514,10 +514,15 @@ reputation legs → decision engine (deny > ask > allow) → cache → audit log
 
 Each rule has `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` →
 `deny`, `require_approval` → `ask`, `log` → `allow`), a regex `pattern`, `match_on`,
-`title`, `expires_at` and `revoked`. Of the 514 rules, 224 block, 262 require approval
-and 28 log; 179 are critical, 308 high and 27 medium. The 27 `secure-code.yaml` rules are
+`title`, `expires_at` and `revoked`. Of the 519 rules, 225 block, 266 require approval
+and 28 log; 180 are critical, 312 high and 27 medium. The 27 `secure-code.yaml` rules are
 advisory: they only inspect code the agent writes, and `secure_code.action` (`warn` by
-default, or `ask`) decides what a match does.
+default, or `ask`) decides what a match does. The 5 `script-content.yaml` rules carry the
+command-execution patterns over to the scripts an agent writes: a `curl … | bash` written
+into a shell script, Dockerfile, Makefile, CI workflow, git hook or `package.json` script
+is held for approval (a reverse shell is denied), while the same line in a README stays
+allowed. Details:
+[threat-rules.md](../../../threat-rules.md#commands-written-into-scripts).
 
 Rule files:
 
@@ -539,11 +544,12 @@ Rule files:
 | `skill-scan.yaml` | Skill/plugin package rules T01–T09 | 26 |
 | `ai-supply-chain.yaml` | Unsafe model loading and unvetted model sources | 14 |
 | `secure-code.yaml` | Insecure code the agent writes (secure-code guardrails) | 27 |
+| `script-content.yaml` | Pipe-to-shell, reverse shells and encoded execution written into scripts (shell, PowerShell, batch, Dockerfile, Makefile, CI/git-hook files, package.json scripts) | 5 |
 | `context-poisoning.yaml` | Data and context poisoning: agent instruction, memory, config and MCP file writes, hidden or injected instructions, MCP tool poisoning, memory-store writes | 23 |
 | `agent-safety.yaml` | AI safety guardrails: reward hacking and sabotage, autonomy escalation, irreversible actions | 43 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS variants | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows variants | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Total** | 30 files | **514** |
+| **Total** | 31 files | **519** |
 
 Rules by category:
 
@@ -559,10 +565,11 @@ Rules by category:
 | Self-defence | `self_defense` | 10 |
 | Supply chain | `supply_chain` | 6 |
 | AI model supply chain | `ai_supply_chain` | 14 |
+| Script content | `script_content` | 5 |
 | Secure code | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
 | Context poisoning | `context_poisoning` (14), `context_poisoning_hidden_unicode` (3), `mcp_tool_poisoning` (3), `memory_poisoning` (2), `context_poisoning_permission_widening` (1) | 23 |
 | AI safety | `reward_hacking` (17), `irreversible_action` (14), `autonomy_escalation` (7), `agent_sabotage` (5) | 43 |
-| **Total** | | **514** |
+| **Total** | | **519** |
 
 Customers can add their own rules under `~/.singularity-aidr/threats/*.yaml`; a custom
 rule with the same `id` overrides the built-in one.
@@ -2064,7 +2071,7 @@ The mapping is data (`threats/mappings/frameworks.yaml`), keyed by rule id; a te
 when a rule has no mapping or uses an identifier outside the official lists. Matched
 framework ids travel with each verdict into the local audit log, SIEM exports and
 `aidr audit export`; the dashboard shows them on events and incidents and the matrix on the
-Posture page. Current summary for the 514 rules: OWASP LLM 3 covered, 5 partial, 2 not
+Posture page. Current summary for the 519 rules: OWASP LLM 3 covered, 5 partial, 2 not
 applicable; OWASP Agentic 3 covered, 5 partial, **2 not covered** (ASI07 inter-agent
 communication, ASI08 cascading failures); MITRE ATLAS 35 techniques mapped (9 covered,
 26 partial).

@@ -25,7 +25,7 @@ beforeEach(async () => {
 			control_plane: { enabled: false },
 			licensing: { require_signed_entitlements: false },
 			heuristics_enabled: true,
-			url_check: { enabled: false, unchecked_action: "ask" },
+			url_check: { enabled: false },
 			package_check: { enabled: false },
 			cache: { enabled: false },
 			logging: { enabled: false },

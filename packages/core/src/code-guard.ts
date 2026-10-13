@@ -12,12 +12,23 @@
  *    themselves; `secure_code.action` turns them into a warning (default) or a
  *    review. Hard-coded credentials (`SCG-SECRET-001`) reuse the shared secret
  *    detectors in `prompt-protection.ts` instead of a pattern of their own.
+ *  - Script content (`threats/script-content.yaml`, category `script_content`):
+ *    command-execution patterns (download piped to a shell, reverse shells,
+ *    encoded payloads executed) in the scripts an agent writes. Like the
+ *    supply-chain rules they decide through their own action.
+ *
+ * Besides its language, a file can belong to two script views that exist only
+ * for rules: `ci_config` (CI pipelines and git-hook managers, the same paths as
+ * the `ci_config` edit view) and `npm_script` (the `scripts` values of a
+ * `package.json`). A file with no language by its name gets one from a shell
+ * or PowerShell shebang, and `.git/hooks/<name>` is shell.
  *
  * Only text the call ADDS is inspected: a Write's content, the lines of an
  * Edit/MultiEdit `new_string` that are not in its `old_string`, the `+` lines
- * of a patch, a NotebookEdit cell, and code a Bash command runs or writes
- * (`python -c`, Python heredocs, `cat > file <<EOF`). Every rule is gated by
- * the file's language, so documentation that *mentions* `verify=False` is not
+ * of a patch, a NotebookEdit cell, the content of an MCP `write_file` /
+ * `edit_file`, and code a Bash command runs or writes (`python -c`, Python
+ * heredocs, `cat > file <<EOF`). Every rule is gated by the file's language,
+ * so documentation that *mentions* `verify=False` (or `curl … | bash`) is not
  * treated as code.
  *
  * Cost: every pattern is bounded (see the rule files); the text inspected is
@@ -26,6 +37,7 @@
  */
 
 import { basename, extname } from "node:path";
+import { isCiConfigPath } from "./agent-safety/edit-views.js";
 import { isTrustedModelSourceMatch, type TrustedModelSources } from "./ai-supply-chain.js";
 import { locateSecrets } from "./prompt-protection.js";
 import type { HeuristicMatch, SecureCodeConfig, Threat, Verdict, VerdictWarning } from "./types.js";
@@ -60,8 +72,11 @@ const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
 	".bash": "shell",
 	".zsh": "shell",
 	".ksh": "shell",
+	".command": "shell",
 	".ps1": "powershell",
 	".psm1": "powershell",
+	".bat": "batch",
+	".cmd": "batch",
 	".yml": "yaml",
 	".yaml": "yaml",
 	".json": "json",
@@ -88,7 +103,49 @@ export function codeLanguageForPath(filePath: string): string | null {
 	if (lower === "makefile" || lower === "gnumakefile") return "makefile";
 	if (lower === ".env" || lower.startsWith(".env.")) return "dotenv";
 	if (SHELL_DOTFILES.has(lower)) return "shell";
+	if (GIT_HOOK_PATH.test(filePath.replace(/\\/g, "/")) && !lower.endsWith(".sample")) {
+		return "shell";
+	}
 	return LANGUAGE_BY_EXTENSION[extname(lower)] ?? null;
+}
+
+/** A hook script git runs itself: `.git/hooks/<name>`. */
+const GIT_HOOK_PATH = /(?:^|\/)\.git\/hooks\/[^/]{1,100}$/;
+
+const BYTE_ORDER_MARK = 0xfeff;
+/** `#!/bin/sh`, `#!/usr/bin/env bash`, `#!/usr/bin/env -S pwsh -NoProfile`, … */
+const SHEBANG =
+	/^#![ \t]{0,8}(?:\/[^\s/]{1,64}){0,8}\/(?:env[ \t]{1,8}(?:-[A-Za-z]{1,8}[ \t]{1,8}){0,4})?([A-Za-z][\w.-]{0,32})/;
+const SHEBANG_LANGUAGES: Readonly<Record<string, string>> = {
+	sh: "shell",
+	bash: "shell",
+	zsh: "shell",
+	ksh: "shell",
+	dash: "shell",
+	ash: "shell",
+	mksh: "shell",
+	busybox: "shell",
+	pwsh: "powershell",
+	powershell: "powershell",
+};
+
+/** The script language a shebang at the very start of `text` names, or null. */
+export function shebangLanguage(text: string): string | null {
+	const start = text.charCodeAt(0) === BYTE_ORDER_MARK ? text.slice(1, 300) : text.slice(0, 300);
+	const interpreter = SHEBANG.exec(start)?.[1]?.toLowerCase();
+	return interpreter ? (SHEBANG_LANGUAGES[interpreter] ?? null) : null;
+}
+
+/** `match_on` view of the CI pipelines and git-hook managers (see edit-views.ts). */
+export const CI_CONFIG_VIEW = "ci_config";
+/** `match_on` view of the `scripts` values of a package.json. */
+export const NPM_SCRIPT_VIEW = "npm_script";
+/** Category of the script-content rules (threats/script-content.yaml). */
+export const SCRIPT_CONTENT_CATEGORY = "script_content";
+
+/** True for the command-execution rules over written scripts. */
+export function isScriptContentRule(threat: Pick<Threat, "category">): boolean {
+	return threat.category === SCRIPT_CONTENT_CATEGORY;
 }
 
 // ── Rule set ──────────────────────────────────────────────────────────
@@ -186,6 +243,68 @@ function block(
 	return language && text.trim() !== "" ? [{ filePath, language, text, firstLine }] : [];
 }
 
+/** `"key": "value"` pairs of a JSON fragment (an edit to part of a package.json). */
+const JSON_STRING_PAIR =
+	/"(?:[^"\\\n]|\\.){1,200}"[ \t]{0,8}:[ \t]{0,8}("(?:[^"\\\n]|\\.){0,8192}")/g;
+
+function decodeJsonString(literal: string): string {
+	try {
+		const value: unknown = JSON.parse(literal);
+		return typeof value === "string" ? value : "";
+	} catch {
+		return "";
+	}
+}
+
+function parsedManifest(text: string): Record<string, unknown> | null {
+	try {
+		const value: unknown = JSON.parse(text);
+		if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+		const record = value as Record<string, unknown>;
+		return "scripts" in record || "name" in record || "version" in record ? record : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The commands a package.json text defines: its `scripts` values when the text
+ * is the whole manifest, else (an edited fragment, where the enclosing object
+ * is unknown) every string value of a `"key": "value"` pair. One per line.
+ */
+function npmScriptText(text: string): string {
+	const manifest = parsedManifest(text);
+	if (manifest) {
+		const scripts = manifest.scripts;
+		if (!scripts || typeof scripts !== "object") return "";
+		return Object.values(scripts as Record<string, unknown>)
+			.filter((value): value is string => typeof value === "string")
+			.join("\n");
+	}
+	return [...text.matchAll(JSON_STRING_PAIR)]
+		.map((match) => decodeJsonString(match[1] ?? ""))
+		.filter((value) => value !== "")
+		.join("\n");
+}
+
+/**
+ * Every block one piece of text written to `filePath` belongs to: its language
+ * (from the name, else from a shebang) and the script views of its path.
+ */
+function textBlocks(filePath: string, text: string, firstLine?: number): CodeBlock[] {
+	const blocks = block(
+		filePath,
+		codeLanguageForPath(filePath) ?? shebangLanguage(text),
+		text,
+		firstLine,
+	);
+	if (isCiConfigPath(filePath)) blocks.push(...block(filePath, CI_CONFIG_VIEW, text, firstLine));
+	if (basename(filePath.replace(/\\/g, "/")).toLowerCase() === "package.json") {
+		blocks.push(...block(filePath, NPM_SCRIPT_VIEW, npmScriptText(text)));
+	}
+	return blocks;
+}
+
 /**
  * Code cells of a notebook, or null when the text is not notebook JSON. The
  * raw JSON would hide call syntax behind string escaping (`\"`), so rules run
@@ -221,7 +340,7 @@ function writeBlocks(filePath: string, content: string): CodeBlock[] {
 			);
 		}
 	}
-	return block(filePath, language, content, 1);
+	return textBlocks(filePath, content, 1);
 }
 
 /**
@@ -230,8 +349,7 @@ function writeBlocks(filePath: string, content: string): CodeBlock[] {
  * say where the edited region sits in the file, so no file line is attached.
  */
 function addedRunsBlocks(filePath: string, oldText: string, newText: string): CodeBlock[] {
-	const language = codeLanguageForPath(filePath);
-	if (!language || newText.trim() === "") return [];
+	if (newText.trim() === "") return [];
 	const remaining = new Map<string, number>();
 	for (const line of oldText.split(/\r?\n/)) {
 		const key = line.trimEnd();
@@ -240,7 +358,7 @@ function addedRunsBlocks(filePath: string, oldText: string, newText: string): Co
 	const blocks: CodeBlock[] = [];
 	let run: string[] = [];
 	const flush = (): void => {
-		blocks.push(...block(filePath, language, run.join("\n")));
+		blocks.push(...textBlocks(filePath, run.join("\n")));
 		run = [];
 	};
 	for (const line of newText.split(/\r?\n/)) {
@@ -282,7 +400,6 @@ function rawPatchBody(toolInput: Record<string, unknown>): string | null {
 
 interface PatchCursor {
 	filePath: string;
-	language: string | null;
 	/** Next new-file line number, when the patch format carries one. */
 	nextLine?: number;
 	/** Remaining new-side lines of the current unified-diff hunk. */
@@ -373,8 +490,7 @@ class PatchReader {
 
 	private flush(): void {
 		if (this.cursor && this.run.length > 0) {
-			const { filePath, language } = this.cursor;
-			this.blocks.push(...block(filePath, language, this.run.join("\n"), this.runStart));
+			this.blocks.push(...textBlocks(this.cursor.filePath, this.run.join("\n"), this.runStart));
 		}
 		this.run = [];
 		this.runStart = undefined;
@@ -385,7 +501,6 @@ class PatchReader {
 		this.cursor = filePath
 			? {
 					filePath,
-					language: codeLanguageForPath(filePath),
 					nextLine: codexAdd ? 1 : undefined,
 					hunkNewRemaining: 0,
 					codexAdd,
@@ -471,25 +586,44 @@ function heredocBlocks(command: string): CodeBlock[] {
 		const lineStart = command.lastIndexOf("\n", opener.index - 1) + 1;
 		const consumer = `${command.slice(lineStart, opener.index)} ${opener[3] ?? ""}`;
 		const target = heredocTarget(consumer);
-		if (target) blocks.push(...block(target, codeLanguageForPath(target), body, 1));
+		if (target) blocks.push(...textBlocks(target, body, 1));
 		else if (PYTHON_CONSUMER.test(consumer))
 			blocks.push(...block("(python heredoc)", "python", body));
 	}
 	return blocks;
 }
 
+function filePathOf(toolInput: Record<string, unknown>): string {
+	return str(toolInput.file_path) || str(toolInput.filePath) || str(toolInput.path);
+}
+
 function multiEditBlocks(toolInput: Record<string, unknown>): CodeBlock[] {
-	const filePath = str(toolInput.file_path) || str(toolInput.filePath) || str(toolInput.path);
+	const filePath = filePathOf(toolInput);
 	const edits = Array.isArray(toolInput.edits) ? toolInput.edits : [];
 	return edits.flatMap((edit) => {
 		if (!edit || typeof edit !== "object") return [];
 		const fields = edit as Record<string, unknown>;
 		return addedRunsBlocks(
 			filePath,
-			str(fields.old_string) || str(fields.oldString),
-			str(fields.new_string) || str(fields.newString),
+			str(fields.old_string) || str(fields.oldString) || str(fields.oldText),
+			str(fields.new_string) || str(fields.newString) || str(fields.newText),
 		);
 	});
+}
+
+/**
+ * File-writing MCP tools (the reference filesystem server's `write_file` /
+ * `edit_file`, and look-alikes), named `mcp__<server>__<tool>` (Claude Code,
+ * Codex) or `mcp_<server>_<tool>` (VS Code). Tool names stay intact through
+ * normalization, so the operation is recognised here by the tool suffix.
+ */
+const MCP_FILE_TOOL = /^mcp_[\w.-]{0,200}?_(write_file|create_file|edit_file)$/;
+
+function mcpFileBlocks(toolName: string, toolInput: Record<string, unknown>): CodeBlock[] {
+	const operation = MCP_FILE_TOOL.exec(toolName)?.[1];
+	if (!operation) return [];
+	if (operation === "edit_file") return multiEditBlocks(toolInput);
+	return writeBlocks(filePathOf(toolInput), str(toolInput.content) || str(toolInput.text));
 }
 
 /**
@@ -500,7 +634,8 @@ export function codeBlocksForToolCall(
 	toolName: string,
 	toolInput: Record<string, unknown>,
 ): CodeBlock[] {
-	switch (toolName.trim().toLowerCase()) {
+	const name = toolName.trim().toLowerCase();
+	switch (name) {
 		case "write":
 			return writeBlocks(str(toolInput.file_path), str(toolInput.content));
 		case "edit": {
@@ -524,7 +659,7 @@ export function codeBlocksForToolCall(
 		case "bash":
 			return bashBlocks(str(toolInput.command));
 		default:
-			return [];
+			return mcpFileBlocks(name, toolInput);
 	}
 }
 
