@@ -59,7 +59,7 @@ export function initCliLocale(): void {
  * localizer translates them like every other title.
  */
 export const HELP_GROUPS = [
-	{ heading: "Setup:", commands: ["setup", "config", "uninstall"] },
+	{ heading: "Setup:", commands: ["setup", "update", "config", "uninstall"] },
 	{ heading: "Daily use:", commands: ["status", "verify", "audit", "privacy", "scan"] },
 	{ heading: "Approvals:", commands: ["pending", "approve", "allowlist", "exception"] },
 	{ heading: "Diagnostics:", commands: ["doctor", "support-bundle", "simulate", "coverage"] },
