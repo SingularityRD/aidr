@@ -32,7 +32,12 @@ import {
 	recordOperatorApproval,
 	recordPendingAsk,
 } from "../operator-approvals.js";
-import { createEncryptedFileStore, type SecretStore } from "../secret-store.js";
+import {
+	createEncryptedFileStore,
+	resolveCredentialStore,
+	resolveSecretStore,
+	type SecretStore,
+} from "../secret-store.js";
 import type { Artifact } from "../types.js";
 import { isSymlinkPermissionError } from "./test-utils.js";
 
@@ -585,6 +590,28 @@ describe("default key provider (key custody, H1b)", () => {
 		store.put("aidr-operator-approval-ledger", "ledger");
 		copyFileSync(join(dir, "sealed", "aidr-operator-approval-ledger.sealed.json"), file);
 		expect(() => store.get("aidr-operator-approval-key")).toThrow(/authenticate/);
+	});
+
+	it("falls back to the encrypted store for a needed credential only when nothing was selected", () => {
+		const missing = () => ({ status: null, error: new Error("spawn ENOENT") });
+		const options = {
+			runner: missing,
+			encryptedFileDirectory: join(dir, "sealed"),
+			machineId: MACHINE,
+		};
+		expect(resolveCredentialStore({ ...options, env: {} }).kind).toBe("encrypted-file");
+		expect(resolveCredentialStore({ ...options, env: { AIDR_SECRET_STORE: "auto" } }).kind).toBe(
+			"encrypted-file",
+		);
+		// An explicitly named vault that is missing is never silently replaced.
+		expect(() =>
+			resolveCredentialStore({ ...options, env: {}, selection: "linux-secret-service" }),
+		).toThrow(/not available/);
+		expect(
+			resolveCredentialStore({ ...options, env: { AIDR_SECRET_STORE: "file-acl" } }).kind,
+		).toBe("file-acl");
+		// resolveSecretStore itself keeps failing closed for callers that need a vault.
+		expect(() => resolveSecretStore({ ...options, env: {} })).toThrow(/No OS credential vault/);
 	});
 
 	it("reports when the host has no machine id to bind to", () => {
