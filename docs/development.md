@@ -35,7 +35,7 @@ Requires Node.js >= 22.12.0 and pnpm >= 9.
 | `pnpm test:e2e:cursor` | Cursor extension E2E tests only |
 | `pnpm test:e2e:vscode` | VS Code extension E2E tests only |
 | `pnpm test:e2e:real-host` | Real Claude Code / Codex / OpenCode / OpenClaw binaries against a scripted mock model (no API keys) |
-| `pnpm build:sea` | Build standalone SEA binaries |
+| `pnpm build:sea` | Build the relocatable, unsigned SEA hook directory (`bin/aidr-sea/`) |
 | `pnpm lint` | Lint with Biome |
 | `pnpm lint:fix` | Lint + auto-fix |
 | `pnpm check` | Type check all packages |
@@ -420,36 +420,52 @@ The workflow reads only the tag-signing secrets (`RELEASE_TAG_PGP_PUBLIC_KEY`,
 submission (Chrome Web Store, Edge Add-ons, AMO) stays a manual step with no store
 credentials in CI.
 
-## Standalone Binaries (SEA)
+## SEA Binaries (relocatable directory)
 
 `pnpm build:sea` runs `packages/claude-code/scripts/build-sea.mjs`, which builds
 Node.js [single executable applications](https://nodejs.org/api/single-executable-applications.html)
-for the Claude Code hooks on Linux, macOS and Windows:
+for every Claude Code hook and bin entry point on Linux, macOS and Windows. A SEA
+blob holds one script, but the hooks read their threat rules, allowlists, the
+response worker and the native koffi addon from disk, relative to the binary. The
+output is therefore a directory that must be shipped and installed as a whole; a
+single binary copied on its own loads no rules and asks on every call:
 
-| Output (`bin/`, gitignored) | Entry bundle |
+| Path under `bin/aidr-sea/` (gitignored) | Content |
 |---|---|
-| `aidr-pre-tool-use` (`.exe` on Windows) | `packages/claude-code/dist/pre-tool-use.cjs` |
-| `aidr-session-start` (`.exe` on Windows) | `packages/claude-code/dist/session-start.cjs` |
+| `bin/aidr-pre-tool-use`, `aidr-post-tool-use`, `aidr-session-start`, `aidr-user-prompt-submit` (`.exe` on Windows) | `packages/claude-code/dist/<entry>.bundle.cjs` |
+| `bin/aidr-health`, `bin/aidr-mcp-server` | `packages/claude-code/dist/health.cjs`, `mcp-server.cjs` |
+| `dist/resources/threats`, `dist/resources/allowlists` | the shipped rules and allowlists |
+| `dist/response-worker.cjs`, `dist/vendor/`, `dist/native/` | runtime files the bundles load |
+| `aidr-artifact.manifest.json` | sha256 of every file above (connector manifest schema) |
 
 The script uses the documented flow, which works on every supported Node
 (>= 22.12; it does not depend on `node --build-sea`):
 
-1. bundle the entry points with `esbuild.config.js`;
+1. bundle the entry points with `esbuild.config.js --release` (no source maps);
 2. write `dist/sea-config-<entry>.json` and run `node --experimental-sea-config` to produce the blob (code cache disabled);
 3. copy `process.execPath` to the output binary;
 4. inject the blob with the locally pinned `postject` devDependency (no `npx`/network), using the
    `NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2` sentinel. On macOS the signature is removed
    first, the blob goes into the `NODE_SEA` Mach-O segment, and the binary is re-signed ad hoc.
 
-It fails fast when the running Node is older than 20, is a shared-libnode build, or lacks the
-SEA sentinel fuse (Homebrew builds) — use the official binary from nodejs.org, nvm/fnm/volta,
-or `actions/setup-node` in CI. Windows binaries are unsigned (postject prints
-`warning: The signature seems corrupted!`, which is expected); sign them with `signtool`
-before distribution. Smoke test:
+It then writes the manifest, copies the directory to a temporary location and runs the relocated
+`aidr-pre-tool-use` with an isolated HOME: a pipe-to-shell command must be denied from the
+shipped rules and `ls -la` allowed, or the build fails. Because the manifest uses the connector
+schema, the relocated hooks also check every rule and allowlist file they read against it. To
+re-check a copied distribution:
 
 ```bash
-echo '{"tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"t","hook_event_name":"PreToolUse","cwd":"."}' | ./bin/aidr-pre-tool-use
+node packages/claude-code/scripts/build-sea.mjs --verify /opt/aidr-sea
 ```
+
+It fails fast when the running Node is older than 20, is a shared-libnode build, or lacks the
+SEA sentinel fuse (Homebrew builds) — use the official binary from nodejs.org, nvm/fnm/volta,
+or `actions/setup-node` in CI. The output is **unsigned**: sign `aidr-artifact.manifest.json`
+with `scripts/sign-artifact-manifest.mjs` (and configure the public key in
+`integrity.public_keys_pem` so the rule check is signature-verified) and the binaries with
+`codesign`/`signtool` before distribution (postject prints
+`warning: The signature seems corrupted!` on Windows, which is expected). No release workflow
+builds or ships the SEA directory; the supported distribution is the signed npm/plugin package.
 
 ## Building the Extension
 
