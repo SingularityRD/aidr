@@ -126,6 +126,8 @@ msiexec /i singularity-aidr-<sürüm>-windows-x64.msi /qn /l*v aidr-install.log
 - Kullanıcı bağlamındaki kurulum sonunda o kullanıcı için kurulumu çalıştırır.
 - `AIDR_SKIP_SETUP=1` yalnızca dosyaları kurar (ana imajlar, aşamalı dağıtım):
   `msiexec /i … /qn AIDR_SKIP_SETUP=1`.
+- `AIDR_MDM_MANAGED=1` güncellemeyi MDM'nize bırakır: uç noktalar kendini
+  güncellemez ([Cihaz yönetimiyle yönetilen makineler](#cihaz-yönetimiyle-yönetilen-makineler-intune-sccm-gpo-yapılandırma-yönetimi)).
 - **Yönetici hakkı olmadan kullanıcı başına kurulum:**
   `msiexec /i … MSIINSTALLPERUSER=1 ALLUSERS=2`
   `%LOCALAPPDATA%\Programs\Singularity AIDR\` konumuna kurar ve `bundle\bin`
@@ -154,6 +156,118 @@ gpg --import linux-package-signing-key.asc
 gpg --verify SHA256SUMS.asc SHA256SUMS && sha256sum --check --ignore-missing SHA256SUMS
 rpm -K singularity-aidr-<sürüm>-1.x86_64.rpm
 ```
+
+## Güncelleme
+
+`aidr update`, bir iş istasyonunu kurumunuzun indirme portalında yayımladığı
+sürüme getirir:
+
+```sh
+aidr update --check     # daha yeni bir sürüm var mı? hiçbir şeyi değiştirmez
+aidr update             # indirir, doğrular, kurar, 'aidr verify' çalıştırır; başarısız olursa eski sürümü geri koyar
+```
+
+Komutu kendi kullanıcınızla çalıştırın. Linux'ta `sudo` **kullanmayın**:
+kurulum sırasında sudo parolanızı kendisi sorar. Windows'ta makine geneli bir
+kurulum, **Yönetici olarak çalıştır** ile açılmış bir terminal ister; kullanıcıya
+özel kurulum istemez. Kurulum korumayı değiştirdiği için `aidr update` sizden
+`update` yazmanızı ister; otomasyon için `--yes` ile birlikte
+`AIDR_OPERATOR_NONINTERACTIVE=1` verin.
+
+### Güncelleme nereden gelir
+
+| Durum | Kaynak |
+|---|---|
+| Yönetilen (kaydı yapılmış) cihaz | kurumunuzun portalı: `control_plane.endpoint` içindeki SaaS ya da kurum içi kontrol düzlemi; cihazın kendi API anahtarıyla (Edge Function `installer-update`) |
+| Yöneticinizin verdiği kurulum dosyası | `aidr update --from <kurulum dosyası ya da https adresi>`; imzalı `manifest.json` ve `manifest.json.sig` dosyası yanında (ya da portal düzenindeki gibi üst klasörde, `<sürüm>/manifest.json`) olmalı ya da `--catalog <dosya ya da adres>` ile verilmeli |
+| Kurum içi kopya | `aidr update --from <latest.json içeren klasör ya da https adresi>` ya da `update.source` ayarı |
+
+Kopya, portal deposundaki dosya ağacının aynısıdır;
+`scripts/publish-installers.mjs --dry-run --out <dizin>` tam olarak bu ağacı
+hazırlar. Yalnızca `https` üzerinden indirilir.
+
+### Kurulumdan önce ne denetlenir
+
+1. **İmzalı katalog.** `latest.json` ve kataloğun Ed25519 imzaları ile
+   `latest.json` içindeki katalog SHA-256 değeri, sabitlenmiş kurulum kataloğu
+   anahtarıyla denetlenir. Anahtar yoksa hiçbir şey indirilmez.
+2. **Kurulum dosyası.** İndirilen dosyanın boyutu ve SHA-256 değeri imzalı
+   katalogdakiyle birebir aynı olmalıdır; değilse dosya silinir.
+3. **Sürüm.** Daha eski bir sürüm, `--allow-downgrade` verilmedikçe (yöneticinizin
+   istediği bir geri dönüş) reddedilir.
+4. **Biçim.** Kurulum dosyası, AIDR'nin kurulduğu biçimle (MSI, `.deb`, `.rpm`
+   ya da tar arşivi) aynı olmalıdır; `aidr update` biçim değiştirmez.
+
+**Kurulum kataloğu anahtarı**, portal kataloğunu imzalayan anahtarın açık
+kısmıdır (base64 biçimi portaldaki `AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_B64`
+değeridir). Bunu her uç noktada, kurulum klasöründe `release-public.pem`
+dosyasının yanına `config/installer-catalog-public.pem` olarak koyun
+(`/opt/singularity-aidr/config/`, `C:\Program Files\Singularity AIDR\config\`;
+sahibi root/Administrators olsun) ya da `update.catalog_public_keys` içinde
+listeleyin. İkisi birden varsa dosya geçerlidir:
+
+```sh
+openssl pkey -in installer-catalog-key.pem -pubout -out installer-catalog-public.pem
+```
+
+### Nasıl kurar ve nasıl geri alır
+
+| Kurulum | Komut |
+|---|---|
+| Windows | `msiexec /i <msi> /qn /norestart /l*v <kayıt>` (kullanıcıya özel kurulumda ayrıca `MSIINSTALLPERUSER=1 ALLUSERS=2`) |
+| Debian / Ubuntu | `sudo dpkg -i <deb>` |
+| RHEL / Fedora / SUSE | `sudo rpm -U <rpm>` (`--allow-downgrade` ile `--oldpackage`) |
+| Tar arşivi | yeni `bundle`, zaten kurulu olan sürüm anahtarına göre denetlenir, sonra `sudo` ile yerine konur (`install.sh` kullanılmaz) |
+
+`aidr update` kurmadan önce kurulum dosyasını ve kurulu paketi yalnızca root
+ya da yöneticilerin değiştirebildiği bir klasöre kopyalar (sudo ile
+`/var/cache/singularity-aidr/`; makine geneli Windows kurulumunda kurulum
+klasöründeki `update-staging`), kurulum dosyasının SHA-256 değerini orada
+yeniden denetler ve paket kopyasını denetler: bu kopya yedektir. Böylece aynı
+kullanıcının başka bir programı, denetim ile kurulum arasında dosyayı
+değiştiremez. Bozuk bir kurulumun üzerine yazılmaz (onu kurulum dosyasından
+yeniden kurun). Kurulumdan sonra yeni paket, kurulu
+sürüm anahtarına göre bütünlük denetiminden geçmeli, beklenen sürümü taşımalı
+ve `aidr verify`, güncellemeden önce geçen bir ana makine için FAIL
+bildirmemelidir. Aksi hâlde önceki paket geri konur, `aidr setup` ile yeniden
+kaydedilir ve denetlenir. MSI, `.deb` ve `.rpm` kurulumlarında paket yöneticisi
+bundan sonra hâlâ yeni sürümü gösterir: önceki kurulum dosyasını yeniden kurun
+ya da sorun giderildikten sonra `aidr update` komutunu yeniden çalıştırın.
+Başarısız bir Windows kurulumu `msiexec.log` dosyasını
+`~/.singularity-aidr/updates/` altında bırakır.
+
+### Otomatik denetim: `update.auto`
+
+| Değer | Davranış |
+|---|---|
+| `notify` (varsayılan) | Bir yapay zekâ aracı oturum başlattığında, en fazla `update.check_interval_hours` (24) saatte bir, AIDR aynı imzalı kataloğu denetler ve "Singularity AIDR v… sürümü yayımlandı … Kurmak için şunu çalıştırın: aidr update" mesajını gösterir. |
+| `install` | Ayrıca arka planda `aidr update --auto` başlatır. Yalnızca yapılandırılmış kaynaktan gelen, doğrulanmış daha yeni bir sürümü kurar (asla eski sürüme dönmez, asla `--from` kullanmaz) ve aynı şekilde geri alır. Linux'ta parolasız sudo, Windows'ta kullanıcıya özel kurulum gerekir (makine geneli MSI yönetici ister); yoksa yalnızca bildirmeye devam eder. |
+| `off` | Otomatik denetim yok. |
+
+Otomatik denetim yalnızca bu kurulum dosyalarıyla kurulmuş uç noktalarda
+çalışır ve yalnızca kiracının kontrol düzlemine (yönetilen mod) ya da
+`update.source` adresine bağlanır. Ayarlar:
+[configuration.md](../configuration.md#update).
+
+### Cihaz yönetimiyle yönetilen makineler (Intune, SCCM, GPO, yapılandırma yönetimi)
+
+**Dağıtımı cihaz yönetimiyle (MDM) yapan müşteriler güncellemeyi de MDM
+üzerinden yapar**: yeni MSI'yı ya da paketi ilk kurulumdaki gibi orada
+yayımlayın. Uç noktaların kendini güncellememesi için bu kurulumları işaretleyin:
+
+- **Windows:** makine geneli kuruluma `AIDR_MDM_MANAGED=1` ekleyin
+  (`msiexec /i … /qn AIDR_MDM_MANAGED=1`). Bu,
+  `HKLM\SOFTWARE\Policies\Singularity AIDR` altına `MdmManaged = 1` (DWORD)
+  yazar; aynı değeri bir GPO ya da Intune yapılandırma profiliyle de
+  ayarlayabilir ya da `%ProgramData%\Singularity AIDR\mdm-managed` dosyasını
+  oluşturabilirsiniz.
+- **Linux:** paket kurulumunda `AIDR_MDM_MANAGED=1` verin (bu,
+  `/etc/singularity-aidr/mdm-managed` dosyasını yazar; paket tamamen
+  kaldırılınca silinir) ya da bu dosyayı yapılandırma yönetiminizle oluşturun.
+
+İşaretli bir makinede `update.auto` ne olursa olsun otomatik denetim kapalıdır,
+`aidr update` işareti göstererek kurmayı reddeder ve `aidr update --check`
+yine de yayımlanan sürümü bildirir.
 
 ## Kaldırma
 

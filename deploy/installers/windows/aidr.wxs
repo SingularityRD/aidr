@@ -16,7 +16,10 @@
     * for every other user of a per-machine install, through Active Setup at that
       user's next logon (this is also how an Intune/SCCM/GPO install in the
       system context reaches the users).
-  AIDR_SKIP_SETUP=1 installs files only. On removal the installing user's
+  AIDR_SKIP_SETUP=1 installs files only. AIDR_MDM_MANAGED=1 (per-machine) marks the
+  install as owned by device management (HKLM\SOFTWARE\Policies\Singularity AIDR,
+  MdmManaged=1): `aidr update` and automatic updates then leave updates to the
+  MDM. On removal the installing user's
   connectors are removed with `aidr uninstall --yes --keep-data`
   (AIDR_OPERATOR_NONINTERACTIVE=1) before the bundle is deleted.
 -->
@@ -35,6 +38,7 @@
 
     <Property Id="ARPURLINFOABOUT" Value="https://singularityrd.com" />
     <Property Id="AIDR_SKIP_SETUP" Secure="yes" />
+    <Property Id="AIDR_MDM_MANAGED" Secure="yes" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="Singularity AIDR">
@@ -81,6 +85,12 @@
       </RegistryKey>
     </Component>
 
+    <!-- Device-managed install: `aidr update` defers to the MDM (packages/core/src/update/environment.ts). -->
+    <Component Id="MdmManagedMarker" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_MDM_MANAGED=1"
+               Guid="E1B7C2A4-3D58-4F96-8A0E-6C2D9B4F7A13">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="MdmManaged" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
     <Feature Id="Main" Title="Singularity AIDR" Level="1">
       <ComponentGroupRef Id="SeaBundle" />
       <ComponentRef Id="AidrCli" />
@@ -88,6 +98,7 @@
       <ComponentRef Id="PathMachine" />
       <ComponentRef Id="PathUser" />
       <ComponentRef Id="ActiveSetup" />
+      <ComponentRef Id="MdmManagedMarker" />
     </Feature>
 
     <!-- Interactive install: configure the installing user (not elevated, not SYSTEM). -->

@@ -15,12 +15,17 @@ import {
 import { type Command, Help, type Option } from "commander";
 import { HELP_TR } from "./help-tr.js";
 import { CLI_EN, CLI_TR, type CliMessageKey } from "./messages.js";
+import { UPDATE_EN, UPDATE_TR, type UpdateMessageKey } from "./update-messages.js";
 
 export { HELP_TR } from "./help-tr.js";
 export { CLI_EN, CLI_TR, type CliMessageKey } from "./messages.js";
+export { UPDATE_EN, UPDATE_TR, type UpdateMessageKey } from "./update-messages.js";
 
 /** CLI output message in the current locale. */
 export const ct = createTranslator<CliMessageKey>({ en: CLI_EN, tr: CLI_TR });
+
+/** `aidr update` output in the current locale. */
+export const ut = createTranslator<UpdateMessageKey>({ en: UPDATE_EN, tr: UPDATE_TR });
 
 /** Commander's own help texts, which are not part of the command tree. */
 export const BUILTIN_HELP_TEXTS = [

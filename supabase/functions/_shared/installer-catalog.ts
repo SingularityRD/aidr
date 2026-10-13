@@ -42,8 +42,21 @@ export type InstallerCatalog = {
 	files: InstallerFile[];
 };
 
+/**
+ * The exact signed bytes a verified catalog came from. The device update path
+ * (installer-update) hands them to the endpoint, which verifies the same
+ * signatures again with the key the installer pinned; it never trusts this
+ * function's parse.
+ */
+type SignedCatalogDocuments = {
+	pointer: Uint8Array<ArrayBuffer>;
+	pointerSignature: Uint8Array;
+	catalog: Uint8Array<ArrayBuffer>;
+	catalogSignature: Uint8Array;
+};
+
 export type CatalogResult =
-	| { ok: true; catalog: InstallerCatalog }
+	| { ok: true; catalog: InstallerCatalog; documents: SignedCatalogDocuments }
 	| { ok: false; status: 404 | 503; error: "installers_unpublished" | "catalog_unavailable" | "catalog_integrity_failed" };
 
 /** `null` = the object does not exist; a throw or `"error"` = storage is unavailable. */
@@ -217,7 +230,12 @@ export async function loadVerifiedCatalog(read: ObjectReader, spki: Uint8Array<A
 		if ((await sha256Hex(catalogBytes)) !== pointer.manifestSha256) return integrity;
 		if (!(await verifySignedObject(catalogBytes, catalogSig, spki))) return integrity;
 		const catalog = parseInstallerCatalog(parseJson(catalogBytes), pointer.version);
-		return catalog ? { ok: true, catalog } : integrity;
+		if (!catalog) return integrity;
+		return {
+			ok: true,
+			catalog,
+			documents: { pointer: pointerBytes, pointerSignature: pointerSig, catalog: catalogBytes, catalogSignature: catalogSig },
+		};
 	} catch {
 		return unavailable;
 	}

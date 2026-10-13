@@ -117,6 +117,8 @@ msiexec /i singularity-aidr-<version>-windows-x64.msi /qn /l*v aidr-install.log
 - An install in a user's context runs setup for that user at the end.
 - `AIDR_SKIP_SETUP=1` installs files only (golden images, staged rollouts):
   `msiexec /i … /qn AIDR_SKIP_SETUP=1`.
+- `AIDR_MDM_MANAGED=1` leaves updates to your MDM: endpoints do not update
+  themselves ([Device-managed machines](#device-managed-machines-intune-sccm-gpo-configuration-management)).
 - **Per-user install without admin rights:**
   `msiexec /i … MSIINSTALLPERUSER=1 ALLUSERS=2` installs to
   `%LOCALAPPDATA%\Programs\Singularity AIDR\` and adds `bundle\bin` to the
@@ -145,6 +147,116 @@ gpg --import linux-package-signing-key.asc
 gpg --verify SHA256SUMS.asc SHA256SUMS && sha256sum --check --ignore-missing SHA256SUMS
 rpm -K singularity-aidr-<version>-1.x86_64.rpm
 ```
+
+## Updating
+
+`aidr update` brings a workstation to the version your organisation published
+on the download portal:
+
+```sh
+aidr update --check     # is a newer version available? changes nothing
+aidr update             # download, verify, install, run 'aidr verify'; puts the old version back on failure
+```
+
+Run it as yourself. On Linux do **not** use `sudo`: it asks for your sudo
+password when it installs. On Windows a per-machine install needs a terminal
+opened with **Run as administrator**; a per-user install does not. Installing
+replaces the protection, so `aidr update` asks you to type `update`; for
+automation pass `--yes` with `AIDR_OPERATOR_NONINTERACTIVE=1`.
+
+### Where the update comes from
+
+| Situation | Source |
+|---|---|
+| Managed (enrolled) device | your organisation's portal: the SaaS or on-prem control plane in `control_plane.endpoint`, authenticated with the device's own API key (Edge Function `installer-update`) |
+| Installer from your administrator | `aidr update --from <installer file or https URL>`; the signed `manifest.json` and `manifest.json.sig` must be next to it (or in the parent folder, as in the portal layout `<version>/manifest.json`), or pass `--catalog <file or URL>` |
+| Internal mirror | `aidr update --from <folder or https URL holding latest.json>`, or set `update.source` |
+
+A mirror is a copy of the portal bucket tree; `scripts/publish-installers.mjs
+--dry-run --out <dir>` stages exactly that tree (see
+[download-portal.md](download-portal.md#local-dry-run)). Only `https` is
+downloaded.
+
+### What is checked before anything runs
+
+1. **Signed catalog.** The Ed25519 signatures of `latest.json` and the
+   catalog, and the catalog's SHA-256 recorded in `latest.json`, are checked
+   with the pinned installer-catalog key. Without a key nothing is downloaded.
+2. **Installer bytes.** The download must have exactly the size and SHA-256
+   of the signed catalog; otherwise it is deleted.
+3. **Version.** An older version is refused unless you pass
+   `--allow-downgrade` (a rollback your administrator asked for).
+4. **Format.** The installer must match how AIDR was installed (MSI, `.deb`,
+   `.rpm` or tarball); `aidr update` does not switch between them.
+
+The **installer-catalog key** is the public half of the key that signs the
+portal catalog (its base64 form is the portal's
+`AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_B64`, see
+[download-portal.md](download-portal.md#catalog-signing-key)). Put it on each
+endpoint as `config/installer-catalog-public.pem` next to
+`release-public.pem` in the install folder (`/opt/singularity-aidr/config/`,
+`C:\Program Files\Singularity AIDR\config\`), owned by root/Administrators, or
+list it in `update.catalog_public_keys`. The file wins when both exist:
+
+```sh
+openssl pkey -in installer-catalog-key.pem -pubout -out installer-catalog-public.pem
+```
+
+### How it installs, and rollback
+
+| Installation | Command |
+|---|---|
+| Windows | `msiexec /i <msi> /qn /norestart /l*v <log>` (plus `MSIINSTALLPERUSER=1 ALLUSERS=2` for a per-user install) |
+| Debian / Ubuntu | `sudo dpkg -i <deb>` |
+| RHEL / Fedora / SUSE | `sudo rpm -U <rpm>` (`--oldpackage` with `--allow-downgrade`) |
+| Tarball | the new `bundle` is checked against the release key that is already installed, then swapped in with `sudo` (`install.sh` is not used) |
+
+Before installing, `aidr update` copies the installer and the installed
+bundle into a folder only root or administrators can change
+(`/var/cache/singularity-aidr/` through sudo; `update-staging` inside the
+install folder on a per-machine Windows install), checks the installer's
+SHA-256 again there, and checks the bundle copy: it is the fallback. Another
+program of the same user therefore cannot swap the file between the check and
+the install. A damaged installation is not replaced in place (reinstall it
+from the installer). Afterwards the new
+bundle must pass its manifest check against the installed release key, carry
+the expected version, and `aidr verify` must not report FAIL for a host that
+passed before the update. Otherwise the previous bundle is put back,
+registered again with `aidr setup` and checked. For MSI, `.deb` and `.rpm` the
+package manager then still lists the new version: reinstall the previous
+installer, or run `aidr update` again once the problem is fixed. A failed
+Windows install keeps its `msiexec.log` under `~/.singularity-aidr/updates/`.
+
+### Automatic checks: `update.auto`
+
+| Value | Behaviour |
+|---|---|
+| `notify` (default) | When an AI tool starts a session, at most once per `update.check_interval_hours` (24), AIDR checks the same signed catalog and shows "Singularity AIDR v… is available … To install it, run: aidr update". |
+| `install` | Also starts `aidr update --auto` in the background. It installs only a newer, verified version from the configured source (never a downgrade, never `--from`) and rolls back the same way. On Linux it needs sudo without a password, and on Windows a per-user install (a per-machine MSI needs an administrator); otherwise it keeps notifying. |
+| `off` | No automatic check. |
+
+Automatic checks run only on endpoints installed with these installers and
+contact only the tenant's control plane (managed mode) or `update.source`.
+Settings: [configuration.md](../configuration.md#update).
+
+### Device-managed machines (Intune, SCCM, GPO, configuration management)
+
+**Customers who deploy with an MDM update through the MDM**: publish the new
+MSI or package there exactly like the first install. Mark those installs so
+endpoints do not update themselves:
+
+- **Windows:** add `AIDR_MDM_MANAGED=1` to the per-machine install
+  (`msiexec /i … /qn AIDR_MDM_MANAGED=1`). It writes
+  `HKLM\SOFTWARE\Policies\Singularity AIDR`, `MdmManaged = 1` (DWORD); you can
+  also set that value with a GPO or an Intune configuration profile, or create
+  the file `%ProgramData%\Singularity AIDR\mdm-managed`.
+- **Linux:** set `AIDR_MDM_MANAGED=1` for the package install (it writes
+  `/etc/singularity-aidr/mdm-managed`; final removal deletes it), or create
+  that file from your configuration management.
+
+On a marked machine automatic checks are off whatever `update.auto` says,
+`aidr update` refuses to install and names the marker, and
+`aidr update --check` still reports what is available.
 
 ## Uninstall
 

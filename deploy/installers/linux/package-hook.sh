@@ -15,6 +15,10 @@
 #
 # Environment:
 #   AIDR_INSTALL_SKIP_SETUP=1            install files only (images, MDM pre-staging)
+#   AIDR_MDM_MANAGED=1                   device-managed install: writes the marker
+#                                        `aidr update` reads, so updates are left to
+#                                        the MDM / configuration-management tool
+#   AIDR_MDM_MARKER                      marker path (default /etc/singularity-aidr/mdm-managed)
 #   AIDR_PREFIX                          install prefix (default /opt/singularity-aidr)
 #   AIDR_PACKAGE_HOOK_TARGET_HOME        home to configure instead of the user's
 #                                        passwd entry (fleet tooling and tests)
@@ -22,6 +26,7 @@ set -u
 
 PREFIX=${AIDR_PREFIX:-/opt/singularity-aidr}
 AIDR="$PREFIX/bundle/bin/aidr"
+MDM_MARKER=${AIDR_MDM_MARKER:-/etc/singularity-aidr/mdm-managed}
 action=${1:-}
 
 say() { printf '%s\n' "Singularity AIDR: $*"; }
@@ -61,6 +66,13 @@ postinstall)
 		say "$AIDR is missing; the package is incomplete. Reinstall it." >&2
 		exit 1
 	fi
+	if [ "${AIDR_MDM_MANAGED:-}" = "1" ]; then
+		if mkdir -p "$(dirname "$MDM_MARKER")" && : > "$MDM_MARKER"; then
+			say "device-managed install: update it with your device management tool ('aidr update' only checks)"
+		else
+			say "could not write $MDM_MARKER; automatic updates stay on" >&2
+		fi
+	fi
 	if [ "${AIDR_INSTALL_SKIP_SETUP:-}" = "1" ]; then
 		say "installed (setup skipped: AIDR_INSTALL_SKIP_SETUP=1). Each user runs once: aidr setup"
 		exit 0
@@ -86,6 +98,7 @@ postinstall)
 preremove)
 	final=${2:-1}
 	[ "$final" = "1" ] || exit 0
+	rm -f "$MDM_MARKER"
 	[ -x "$AIDR" ] || exit 0
 	if user=$(target_user); then
 		home=$(user_home "$user")

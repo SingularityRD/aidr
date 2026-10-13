@@ -110,6 +110,11 @@ verify_jwt = false
 # handler repeats session, identity barrier, membership and admission checks,
 # verifies the signed catalog and audits every URL it mints.
 verify_jwt = true
+[functions.installer-update]
+# `aidr update` on an enrolled endpoint: the same signed installer catalog and
+# signed URLs, authenticated with the device's tenant API key (not a JWT). The
+# handler authenticates the key, membership, tenant and admission itself.
+verify_jwt = false
 [functions.packs-download]
 verify_jwt = false
 [functions.packs-manifest]

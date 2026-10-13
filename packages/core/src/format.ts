@@ -38,7 +38,13 @@ export function separatorLine(headerLength: number): string {
 }
 
 export function formatUpdateNotice(result: VersionCheckResult): string {
-	return t("session.updateAvailable", {
+	const key =
+		result.action === "installing"
+			? "session.updateInstalling"
+			: result.action === "aidr_update"
+				? "session.updateAvailableInstaller"
+				: "session.updateAvailable";
+	return t(key, {
 		current: result.currentVersion,
 		latest: result.latestVersion,
 	});

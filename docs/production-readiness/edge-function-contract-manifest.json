@@ -80,6 +80,10 @@
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/installer-download-contract.test.ts"]
     },
+    "installer-update": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/installer-update-contract.test.ts"]
+    },
     "invoice-entitlement": {
       "owner": "Billing Engineering",
       "tests": ["supabase/functions/__tests__/billing-invoice-entitlement.test.ts"]

@@ -799,6 +799,29 @@ const VersionCheckConfigSchema = z.object({
 	enabled: z.boolean().default(false),
 });
 
+/**
+ * `aidr update` for desktop-installer endpoints (docs/configuration.md,
+ * "update"). Automatic checks contact only the tenant's own control plane (in
+ * managed mode) or the configured `source`; device management (MDM marker)
+ * turns them off regardless of `auto`.
+ */
+const UpdateConfigSchema = z.object({
+	/** off: never check on its own; notify: check daily and show a notice; install: also install it. */
+	auto: z.enum(["off", "notify", "install"]).default("notify"),
+	/**
+	 * A mirror of the download portal tree (directory or https URL holding
+	 * latest.json) for endpoints without a control plane.
+	 */
+	source: z.string().min(1).max(2048).optional(),
+	/**
+	 * Installer-catalog public keys (PEM, or base64 SPKI / raw Ed25519). Used only
+	 * when the installer did not place config/installer-catalog-public.pem.
+	 */
+	catalog_public_keys: z.array(z.string().min(1).max(4096)).max(8).default([]),
+	/** Hours between automatic checks. */
+	check_interval_hours: z.number().int().min(1).max(720).default(24),
+});
+
 export const PackageCheckConfigSchema = z.object({
 	/** Explicit opt-in to sending package names to public registries. */
 	enabled: z.boolean().default(false),
@@ -1068,6 +1091,7 @@ export const ConfigSchema = z.object({
 	url_check: UrlCheckConfigSchema.default({}),
 	file_check: FileCheckConfigSchema.default({}),
 	version_check: VersionCheckConfigSchema.default({}),
+	update: UpdateConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
 	poisoning_protection: PoisoningProtectionConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),

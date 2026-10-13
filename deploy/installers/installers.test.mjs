@@ -136,6 +136,10 @@ describe("Windows MSI inputs", () => {
 		assert.match(wxs, /Action="AidrUninstallForUser" Before="RemoveFiles"[\s\S]*?NOT UPGRADINGPRODUCTCODE/);
 		assert.match(wxs, /Active Setup\\Installed Components/);
 		assert.match(wxs, /Name="release-public.pem"/);
+		// A device-managed install marks itself for `aidr update` (HKLM policy value).
+		assert.match(wxs, /<Property Id="AIDR_MDM_MANAGED" Secure="yes" \/>/);
+		assert.match(wxs, /Condition="ALLUSERS=1 AND AIDR_MDM_MANAGED=1"[\s\S]*?Key="Software\\Policies\\Singularity AIDR" Name="MdmManaged" Type="integer" Value="1"/);
+		assert.match(wxs, /<ComponentRef Id="MdmManagedMarker" \/>/);
 		const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8");
 		assert.match(ps1, /Pass -SignThumbprint for a release build or -Unsigned for a local build/);
 		assert.match(ps1, /--remanifest/);
@@ -188,14 +192,16 @@ describe("Linux packages", () => {
 		const asRoot = process.getuid?.() === 0;
 		const invoker = asRoot ? "nobody" : userInfo().username;
 		const canSwitch = !asRoot || have("runuser");
+		// Never touch the real /etc marker from a test.
+		const mdmMarker = join(root, "etc/singularity-aidr/mdm-managed");
 
 		function hook(args, env) {
 			const home = tempDir("home");
 			chmodSync(home, 0o777);
-			const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !["SUDO_USER", "AIDR_INSTALL_SKIP_SETUP"].includes(name)));
+			const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !["SUDO_USER", "AIDR_INSTALL_SKIP_SETUP", "AIDR_MDM_MANAGED"].includes(name)));
 			const result = spawnSync("sh", [join(prefix, "libexec/package-hook.sh"), ...args], {
 				encoding: "utf8",
-				env: { ...clean, AIDR_PREFIX: prefix, AIDR_PACKAGE_HOOK_TARGET_HOME: home, ...env },
+				env: { ...clean, AIDR_PREFIX: prefix, AIDR_PACKAGE_HOOK_TARGET_HOME: home, AIDR_MDM_MARKER: mdmMarker, ...env },
 			});
 			const log = existsSync(join(home, "aidr-calls.log")) ? readFileSync(join(home, "aidr-calls.log"), "utf8") : "";
 			return { ...result, log, home };
@@ -219,6 +225,20 @@ describe("Linux packages", () => {
 			const skipped = hook(["postinstall"], { SUDO_USER: invoker, AIDR_INSTALL_SKIP_SETUP: "1" });
 			assert.equal(skipped.log, "");
 			assert.match(skipped.stdout, /setup skipped/);
+		});
+
+		test("AIDR_MDM_MANAGED=1 writes the device-management marker; final removal deletes it", () => {
+			const plain = hook(["postinstall"], { AIDR_INSTALL_SKIP_SETUP: "1" });
+			assert.equal(plain.status, 0);
+			assert.equal(existsSync(mdmMarker), false);
+			const managed = hook(["postinstall"], { AIDR_INSTALL_SKIP_SETUP: "1", AIDR_MDM_MANAGED: "1" });
+			assert.equal(managed.status, 0, managed.stderr);
+			assert.equal(existsSync(mdmMarker), true);
+			assert.match(managed.stdout, /device-managed install/);
+			hook(["preremove", "0"], {});
+			assert.equal(existsSync(mdmMarker), true, "an upgrade keeps the marker");
+			hook(["preremove", "1"], {});
+			assert.equal(existsSync(mdmMarker), false);
 		});
 
 		test("preremove uninstalls with operator confirmation on final removal only", { skip: !canSwitch && "runuser not available" }, () => {
