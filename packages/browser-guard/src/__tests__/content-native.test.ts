@@ -49,8 +49,10 @@ describe("content guard: native NER", () => {
 		g.enter();
 		await expect.poll(() => g.sent).toEqual(["Write to [PERSON_1] at [EMAIL_1]"]);
 		expect(nativeScans(g)).toEqual([{ type: "NATIVE_SCAN", text: `Write to ${NAME} at ${EMAIL}` }]);
-		expect(g.toastText()).toContain("2 items masked");
+		expect(g.toastText()).toContain("Masked before sending: 1 person name, 1 email address.");
 		expect(g.toastText()).not.toContain("built-in rules only");
+		// Names were checked: no "not checked" note.
+		expect(g.toastText()).not.toContain("names were not checked");
 		expect(g.records().at(-1)).toMatchObject({ action: "masked", counts: { PERSON: 1, EMAIL: 1 } });
 	});
 
@@ -105,7 +107,7 @@ describe("content guard: native NER", () => {
 		g.editor.value = `Write to ${NAME} at ${EMAIL}`;
 		g.enter();
 		await expect.poll(() => g.sent).toEqual([`Write to ${NAME} at [EMAIL_1]`]);
-		expect(g.toastText()).toContain("1 item masked");
+		expect(g.toastText()).toContain("Masked before sending: 1 email address.");
 		expect(g.toastText()).toContain("checked with built-in rules only");
 	});
 

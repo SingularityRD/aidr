@@ -96,7 +96,11 @@ describe("content guard: local unmasking", () => {
 
 		const span = answer.querySelector<HTMLElement>("span.aidr-restored");
 		expect(span).not.toBeNull();
-		expect(span?.title).toBe("Restored locally by AIDR");
+		expect(span?.title).toBe("Shown only on this computer. The AI service received [EMAIL_1].");
+		// A one-time legend explains the highlighted values.
+		expect(g.toastText()).toContain(
+			"Highlighted values in answers are your original data, shown only on this computer. The AI service received labels such as [EMAIL_1].",
+		);
 		expect(readRestored(span as HTMLElement)).toBe(EMAIL);
 		expect(visibleText(answer)).toBe(`Reply to ${EMAIL} soon.`);
 		// The page's own scripts still read the placeholder (original only in the closed shadow root).

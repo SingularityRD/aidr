@@ -46,17 +46,17 @@ const sensitive: ImageInspection = {
 
 describe("content guard: uploads that are not fully checked", () => {
 	it.each([
-		["eski.doc", ["BINARY_FILE_UNSCANNED", "LEGACY_OFFICE_FORMAT"], "legacy Office file"],
+		["eski.doc", ["BINARY_FILE_UNSCANNED", "LEGACY_OFFICE_FORMAT"], "old .doc/.xls/.ppt format"],
 		[
 			"ekran.png",
 			["BINARY_FILE_UNSCANNED", "IMAGE_NOT_INSPECTED"],
-			"its content was not inspected",
+			"images need the AIDR Privacy helper app",
 		],
 		["rapor.docx", ["DOCUMENT_IMAGES_NOT_INSPECTED"], 'Pictures inside "rapor.docx"'],
 		[
 			"tarama.pdf",
 			["BINARY_FILE_UNSCANNED", "PDF_IMAGES_NOT_INSPECTED", "PDF_IMAGE_OCR_UNAVAILABLE"],
-			'"tarama.pdf" contains images whose content was not inspected',
+			'Images in "tarama.pdf" were not checked',
 		],
 	])("warns for %s", async (name, reasons, text) => {
 		const g = start({ sanitizeFile: async () => allow(...reasons) });
@@ -75,8 +75,10 @@ describe("content guard: uploads that are not fully checked", () => {
 			}),
 		});
 		upload("rapor.docx");
-		await expect.poll(() => g.toastText()).toContain("sanitized before upload");
-		expect(g.toastText()).toContain('Pictures inside "rapor.docx" were not inspected');
+		await expect
+			.poll(() => g.toastText())
+			.toContain("1 file masked before upload: 1 email address.");
+		expect(g.toastText()).toContain('Pictures inside "rapor.docx" were not checked');
 	});
 
 	it("explains a blocked image and a blocked legacy file", async () => {

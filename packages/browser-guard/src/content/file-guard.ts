@@ -147,7 +147,7 @@ function blockedMessage(
 	s: Strings,
 	outcome: { readonly name: string; readonly reasons: readonly string[]; readonly counts: Counts },
 ): string {
-	const summary = formatCounts(outcome.counts);
+	const summary = formatCounts(outcome.counts, s.lang);
 	const reasons = [...outcome.reasons, ...(summary ? [summary] : [])].join(", ");
 	const has = (code: string) => outcome.reasons.includes(code);
 	const hints = [
@@ -356,7 +356,9 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 		}
 		if (outcome.monitored) return outcome.files;
 		const masked =
-			outcome.masked > 0 ? [s.fileMaskedToast(outcome.masked, formatCounts(outcome.counts))] : [];
+			outcome.masked > 0
+				? [s.fileMaskedToast(outcome.masked, formatCounts(outcome.counts, s.lang))]
+				: [];
 		// Anything that passed without a complete check is a warning, never a silent pass.
 		if (outcome.warnings.length > 0)
 			deps.ui.toast([...masked, ...outcome.warnings].join(" "), "warn");

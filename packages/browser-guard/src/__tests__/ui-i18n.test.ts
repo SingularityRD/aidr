@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { ENTITY_NAMES } from "../content/strings";
 import { ENTITY_TYPES } from "../types";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -116,6 +117,50 @@ describe("locale files", () => {
 			].sort(),
 		);
 		expect(tr.status_protected.message).toBe("Korunuyor");
+	});
+});
+
+describe("plain wording (usability audit)", () => {
+	it("the in-page data names are the popup's entity names", () => {
+		for (const [lang, messages, locale] of [
+			["en", en, "en"],
+			["tr", tr, "tr"],
+		] as const) {
+			for (const type of ENTITY_TYPES) {
+				const popup = messages[`entity_${type}`].message;
+				const inPage = ENTITY_NAMES[lang][type].one;
+				// Sentence case: the first letter is lower-cased unless it starts an acronym.
+				const lowered = popup.charAt(0).toLocaleLowerCase(locale) + popup.slice(1);
+				expect([popup, lowered], `${lang} ${type}`).toContain(inPage);
+			}
+		}
+	});
+
+	it("names the modes plainly in both languages", () => {
+		expect(tr.mode_confirm.message).toBe("Bana sor");
+		expect(tr.mode_monitor.message).toBe("Yalnızca say (maskeleme yok)");
+		expect(en.mode_confirm.message).toBe("Ask me");
+		expect(en.mode_monitor.message).toBe("Count only (no masking)");
+	});
+
+	it("uses no jargon in user-facing Turkish or English", () => {
+		const bad = (messages: Messages, pattern: RegExp) =>
+			Object.entries(messages)
+				.filter(([key]) => !MANIFEST_KEYS.includes(key))
+				.filter(([, entry]) => pattern.test(entry.message))
+				.map(([key]) => key);
+		expect(bad(tr, /yer tutucu|\bistem|izleniyor|\bİzle\b/i)).toEqual([]);
+		expect(bad(en, /placeholder|\bprompt\b|monitor/i)).toEqual([]);
+	});
+
+	it("the brand is never upper-cased by CSS and is marked as English", () => {
+		const css = readFileSync(join(STATIC_DIR, "ui.css"), "utf8");
+		const eyebrow = /\.brand__eyebrow\s*\{[^}]*\}/.exec(css)?.[0] ?? "";
+		expect(eyebrow).not.toContain("text-transform");
+		for (const page of UI_PAGES) {
+			const html = readFileSync(join(STATIC_DIR, page), "utf8");
+			expect(html, page).toMatch(/class="brand__eyebrow" lang="en"[^>]*>Singularity AIDR/);
+		}
 	});
 });
 

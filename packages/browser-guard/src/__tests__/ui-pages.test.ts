@@ -254,6 +254,19 @@ describe("popup", () => {
 		expect(input("#popup-mode-auto").checked).toBe(true);
 		expect(input("#restore-visible").checked).toBe(true);
 		expect(input("#restore-visible").disabled).toBe(false);
+		// Without the helper app, the popup says plainly that names are not checked.
+		expect(text(".native")).toBe(
+			"Names and addresses are not checked: advanced detection is off. Built-in rules are active.",
+		);
+	});
+
+	it("names the modes plainly: Ask me, Count only (no masking)", async () => {
+		const env = fakeEnv();
+		await openPopup(env);
+		const labels = [...document.querySelectorAll('label[for^="popup-mode-"]')].map((node) =>
+			node.textContent?.trim(),
+		);
+		expect(labels).toEqual(["Auto-mask", "Ask me", "Block", "Count only (no masking)"]);
 	});
 
 	it("says when the tab is not a supported AI site", async () => {
@@ -360,7 +373,7 @@ describe("popup", () => {
 		expect(mutations(env)).toEqual([{ type: "SET_RESTORE_VISIBLE", visible: false }]);
 		expect(env.session.get(RESTORE_VISIBLE_KEY)).toBe(false);
 		expect(input("#restore-visible").checked).toBe(false);
-		expect(text("#live")).toBe("Responses show placeholders");
+		expect(text("#live")).toBe("Answers show labels such as [EMAIL_1]");
 
 		await openPopup(env);
 		expect(input("#restore-visible").checked).toBe(false);
@@ -593,7 +606,7 @@ describe("options page", () => {
 		await openOptions(env);
 		expect(input("#native-host-toggle").disabled).toBe(true);
 		expect(text("#native-status")).toBe(
-			"Advanced detection is unavailable; built-in rules are active",
+			"Names and addresses are not checked: the AIDR Privacy helper app is not available. Built-in rules are active.",
 		);
 		click("#native-grant");
 		expect(env.permissionRequests).toBe(1);

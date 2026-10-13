@@ -10,9 +10,9 @@ import { typePrompt, waitForPrompt } from "../lib/harness.mjs";
 
 const MODE_LABELS = {
 	auto: /auto|otomatik/i,
-	confirm: /confirm|onay/i,
+	confirm: /ask me|bana sor/i,
 	block: /block|engel/i,
-	monitor: /monitor|izle/i,
+	monitor: /count only|yalnızca say/i,
 };
 
 export default [

@@ -307,12 +307,18 @@ export function policyErrorNotice(
 	]);
 }
 
-function nativeHostLine(doc: Document, stats: GuardStats, t: Translate): HTMLElement | null {
-	if (stats.nativeHost === "disabled") return null;
+/** Advanced (NER) detection state; says plainly when names and addresses are not checked. */
+function nativeHostLine(doc: Document, stats: GuardStats, t: Translate): HTMLElement {
 	const connected = stats.nativeHost === "connected";
+	const text =
+		stats.nativeHost === "disabled"
+			? t("native_off")
+			: connected
+				? t("native_connected")
+				: t("native_unavailable");
 	return h(doc, "p", { className: `native native--${connected ? "on" : "off"}` }, [
 		h(doc, "span", { className: "native__dot", "aria-hidden": "true" }),
-		connected ? t("native_connected") : t("native_unavailable"),
+		text,
 	]);
 }
 

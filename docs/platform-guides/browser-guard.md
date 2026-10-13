@@ -101,7 +101,8 @@ optional `nativeMessaging` permission, so each user accepts it once on the optio
 page (**Protection** → **Advanced name and address detection** → **Grant
 permission**). Prompts and pastes are then scanned by the host and the rules in
 parallel; when the host is not reachable the check is rules-only and the user sees
-"Advanced detection is unavailable; built-in rules are active" in the popup and a
+"Names and addresses are not checked: the AIDR Privacy helper app is not available.
+Built-in rules are active." in the popup and a
 "checked with built-in rules only" note in the page. See
 [`packages/browser-guard/docs/native-host.md`](../../packages/browser-guard/docs/native-host.md).
 

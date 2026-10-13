@@ -44,16 +44,16 @@ const COPY = {
 	en: {
 		mask: {
 			title: "Sensitive data is masked before it is sent",
-			body: "E-mail addresses, Turkish ID numbers, IBANs, card numbers, secrets and your organisation's own terms are replaced with placeholders in the browser.",
+			body: "E-mail addresses, Turkish ID numbers, IBANs, card numbers, secrets and your organisation's own terms are replaced with labels such as [EMAIL_1] in the browser.",
 			sentLabel: "What the AI service received",
 		},
 		restore: {
 			title: "Answers show your original values, locally",
-			body: "Placeholders in the reply are restored in your browser only. The AI service never sees the originals.",
+			body: "Labels in the reply are shown as your original values in your browser only. The AI service never sees the originals.",
 		},
 		confirm: {
 			title: "Review before sending",
-			body: "In confirm mode you see what was found and choose: send masked or edit. Administrators choose the mode.",
+			body: "In \"Ask me\" mode you see what was found and choose: send masked or edit. Administrators choose the mode.",
 		},
 		manage: {
 			title: "Clear status, central policy",
@@ -64,16 +64,16 @@ const COPY = {
 	tr: {
 		mask: {
 			title: "Hassas veriler gönderilmeden önce maskelenir",
-			body: "E-posta adresleri, T.C. Kimlik Numaraları, IBAN'lar, kart numaraları, gizli anahtarlar ve kurumunuzun terimleri tarayıcıda yer tutucularla değiştirilir.",
+			body: "E-posta adresleri, T.C. Kimlik Numaraları, IBAN'lar, kart numaraları, gizli anahtarlar ve kurumunuzun terimleri tarayıcıda [EMAIL_1] gibi etiketlerle değiştirilir.",
 			sentLabel: "Yapay zekâ hizmetine giden",
 		},
 		restore: {
 			title: "Yanıtlarda özgün değerler yerel olarak görünür",
-			body: "Yanıttaki yer tutucular yalnızca tarayıcınızda geri getirilir. Yapay zekâ hizmeti özgün değerleri görmez.",
+			body: "Yanıttaki etiketler yalnızca tarayıcınızda özgün değerlerle gösterilir. Yapay zekâ hizmeti özgün değerleri görmez.",
 		},
 		confirm: {
 			title: "Göndermeden önce gözden geçirin",
-			body: "Onay modunda bulunanları görür ve seçersiniz: maskeli gönder veya düzenle. Modu yöneticiler belirler.",
+			body: "\"Bana sor\" modunda bulunanları görür ve seçersiniz: maskeli gönder veya düzenle. Modu yöneticiler belirler.",
 		},
 		manage: {
 			title: "Net durum, merkezi politika",

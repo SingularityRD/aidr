@@ -240,7 +240,7 @@ export default [
 			const warning = await waitFor(
 				async () =>
 					(await h.overlays(page, SITE)).find(
-						(o) => !baseline.includes(o) && o.includes("legacy Office"),
+						(o) => !baseline.includes(o) && o.includes("old .doc/.xls/.ppt format"),
 					),
 				{ timeout: 10000, message: "a legacy-format warning" },
 			).catch(() => null);

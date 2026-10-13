@@ -42,7 +42,7 @@ const REQUIRED = {
 	enabledEntities: ["EMAIL", "PERSON"],
 } as const;
 const OPTIONAL = { useNativeHost: true, enabledEntities: ["EMAIL", "PERSON"] } as const;
-const BLOCK_REASON = "requires advanced name and address detection";
+const BLOCK_REASON = "requires the AIDR Privacy helper app";
 
 /** A working NER host: a PERSON span for every occurrence of NAME. */
 function personBridge(message: GuardMessage): unknown {
@@ -289,7 +289,7 @@ describe("content guard: requireNativeNer, uploads", () => {
 				new File([`Customer ${NAME}`], "notes.txt", { type: "text/plain" }),
 			);
 			await expect.poll(() => g.bubble()?.textContent ?? "").toContain("NATIVE_NER_UNAVAILABLE");
-			expect(g.bubble()?.textContent).toContain("requires advanced name and address detection");
+			expect(g.bubble()?.textContent).toContain(BLOCK_REASON);
 			expect(g.records().at(-1)).toMatchObject({
 				action: "blocked",
 				channel: "file",

@@ -36,8 +36,8 @@ if the popup says **Not protected — reload this tab**, reload it.
 
 1. Open one of the supported AI sites.
 2. Type a test address such as `jane.doe@example.com` in the prompt and send it.
-3. The site receives `[EMAIL_1_xxxx]` instead of the address; a small "1 item masked: 1 EMAIL"
-   note appears, and the answer shows the original address again.
+3. The site receives `[EMAIL_1_xxxx]` instead of the address; a small "Masked before sending:
+   1 email address." note appears, and the answer shows the original address again.
 
 The toolbar popup shows whether the current tab is protected and how many items were
 masked in this session.
