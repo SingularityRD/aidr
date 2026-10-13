@@ -10,6 +10,7 @@ import { after, before, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { coreSourcePlugin, gatewayBundleOptions, readRuleSets } from "../../scripts/bundle-options.mjs";
+import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS } from "./helpers/approval-key.mjs";
 
 const packageRoot = resolve(import.meta.dirname, "../..");
 let root;
@@ -74,7 +75,7 @@ after(async () => { await rm(root, { recursive: true, force: true }); });
 function fixtureConfig(overrides = {}) {
 	const keys = generateKeyPairSync("ed25519");
 	const tools = [{ name: "search", description: "Search", input_schema: { type: "object" } }];
-	return { stateDir: join(root, "state"), port: 0,
+	return { stateDir: join(root, "state"), approvalKeys: TEST_APPROVAL_KEYS, port: 0,
 		clients: [{ id: "client", tenantId: "tenant", tokenSha256: createHash("sha256").update(token).digest("hex"), allowedTools: { server: ["search"] } }],
 		servers: [{ id: "server", tenantId: "tenant", url: "https://mcp.example.test/mcp", transport: "json", sessionMode: "stateless",
 			signedManifest: runtime.signMcpToolManifest({ keyId: "publisher", privateKey: keys.privateKey, manifest: {
@@ -217,7 +218,7 @@ async function ready(gateway) {
 	await request(gateway, { jsonrpc: "2.0", id: 0, method: "ping" });
 	const state = await gateway.storeFor("tenant").read("server");
 	await gateway.approve({ tenantId: "tenant", serverId: "server", toolsetHash: runtime.mcpToolsetHash(gateway.config.servers[0].signedManifest.manifest.tools),
-		bindingSha256: state.quarantine.bindingSha256, approvedBy: "test operator", reason: "synthetic controlled test" });
+		bindingSha256: state.quarantine.bindingSha256, approvedBy: "test operator", reason: "synthetic controlled test", approvalKey: TEST_APPROVAL_KEY });
 }
 test("source-alias standalone guards preserve a complete normal local tool request and result", async () => withRuntime(async (f) => {
 	const gateway = f.create(); await ready(gateway);

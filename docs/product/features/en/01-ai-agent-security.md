@@ -2100,7 +2100,10 @@ Server-initiated `sampling`, `elicitation`, `roots` and `notifications` follow t
 `serverInitiated` policy (`deny` by default, or `ignore`); the gateway strips those
 capabilities from the forwarded `initialize`. A new or changed toolset is quarantined until
 an operator approves it with `aidr-mcp-approve`, which is never an MCP tool or HTTP
-endpoint.
+endpoint. Each approval is signed with the operator's passphrase-protected approval key
+(created with `aidr-mcp-approve --generate-key`; the gateway holds only its public key in
+`approvalKeys`), so a process that can only write the gateway state directory cannot approve
+a toolset.
 
 **How to use**
 
@@ -2108,7 +2111,7 @@ endpoint.
 node packages/mcp-gateway/dist/aidr-mcp-gateway.mjs /secure/path/gateway.json
 # point the client at http://127.0.0.1:7789/mcp/<serverId> with Authorization: Bearer <token>
 
-node packages/mcp-gateway/dist/aidr-mcp-approve.mjs /secure/path/gateway.json \
+node packages/mcp-gateway/dist/aidr-mcp-approve.mjs --key /operator/aidr-approval-key.pem /secure/path/gateway.json \
   tenant-a server-a <toolsetHash> <bindingSha256> <operatorId> "approved ticket and reason"
 ```
 

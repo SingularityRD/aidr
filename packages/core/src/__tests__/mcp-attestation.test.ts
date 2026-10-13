@@ -1,21 +1,47 @@
-import { createHash, sign as cryptoSign, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, stat, utimes, writeFile } from "node:fs/promises";
+import { createHash, createHmac, sign as cryptoSign, generateKeyPairSync } from "node:crypto";
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	stat,
+	utimes,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	approveQuarantinedMcpToolset,
+	assertPrivateMcpStateDirectory,
 	attestMcpToolManifest,
 	canonicalMcpToolManifest,
 	FileMcpAttestationStore,
+	type McpApprovalEntryRejection,
+	McpStateDirectoryError,
 	type McpToolDefinition,
 	type McpToolManifestV1,
 	MemoryMcpAttestationStore,
 	mcpToolsetHash,
 	signMcpToolManifest,
+	signMcpToolsetApproval,
+	verifyMcpToolsetApproval,
 	verifySignedMcpToolManifest,
 	writeMcpSignerHealthEvidence,
 } from "../mcp-attestation.js";
+
+// Operator approval key: approvals are honoured only when signed by a configured key.
+const operatorApproval = generateKeyPairSync("ed25519");
+const OPERATOR_APPROVAL_KEY = {
+	keyId: "operator-approval-1",
+	privateKey: operatorApproval.privateKey,
+};
+const OPERATOR_APPROVAL_KEYS = {
+	"operator-approval-1": operatorApproval.publicKey
+		.export({ type: "spki", format: "pem" })
+		.toString(),
+};
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
 const tempDirs: string[] = [];
@@ -306,6 +332,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		});
 
 		const first = await attestMcpToolManifest({
+			approvalKeys: OPERATOR_APPROVAL_KEYS,
 			candidate: signed,
 			verifier: verifier(keys.publicKeyPem),
 			store,
@@ -318,6 +345,7 @@ describe("MCP tool drift approval and replay protection", () => {
 
 		expect(
 			await approveQuarantinedMcpToolset({
+				approvalKey: OPERATOR_APPROVAL_KEY,
 				serverId: signed.manifest.server_id,
 				toolsetHash: first.toolsetHash,
 				bindingSha256: await reviewedBindingHash(store, signed.manifest.server_id),
@@ -330,6 +358,7 @@ describe("MCP tool drift approval and replay protection", () => {
 
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed,
 				verifier: verifier(keys.publicKeyPem),
 				store,
@@ -350,6 +379,7 @@ describe("MCP tool drift approval and replay protection", () => {
 			now: NOW,
 		};
 		const first = await attestMcpToolManifest({
+			approvalKeys: OPERATOR_APPROVAL_KEYS,
 			candidate: signMcpToolManifest({
 				manifest: manifest(1),
 				keyId: "customer-key-1",
@@ -360,11 +390,13 @@ describe("MCP tool drift approval and replay protection", () => {
 		});
 		if (first.status !== "quarantined") throw new Error("expected quarantine");
 		await approveQuarantinedMcpToolset({
+			approvalKey: OPERATOR_APPROVAL_KEY,
 			serverId: "mcp://customer/filesystem",
 			toolsetHash: first.toolsetHash,
 			bindingSha256: await reviewedBindingHash(store, "mcp://customer/filesystem"),
 			approvedBy: "operator",
 			reason: "initial signer",
+			now: NOW,
 			store,
 		});
 		const replacement = signMcpToolManifest({
@@ -373,7 +405,12 @@ describe("MCP tool drift approval and replay protection", () => {
 			privateKey: secondKeys.privateKey,
 		});
 		await expect(
-			attestMcpToolManifest({ candidate: replacement, verifier: trust, store }),
+			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
+				candidate: replacement,
+				verifier: trust,
+				store,
+			}),
 		).resolves.toMatchObject({ status: "quarantined" });
 	});
 
@@ -386,6 +423,7 @@ describe("MCP tool drift approval and replay protection", () => {
 			privateKey: keys.privateKey,
 		});
 		const first = await attestMcpToolManifest({
+			approvalKeys: OPERATOR_APPROVAL_KEYS,
 			candidate: signed,
 			verifier: verifier(keys.publicKeyPem),
 			store,
@@ -394,15 +432,18 @@ describe("MCP tool drift approval and replay protection", () => {
 		if (first.status !== "quarantined") throw new Error("expected quarantine");
 		const reviewedA = await reviewedBindingHash(store, signed.manifest.server_id);
 		await approveQuarantinedMcpToolset({
+			approvalKey: OPERATOR_APPROVAL_KEY,
 			serverId: signed.manifest.server_id,
 			toolsetHash: first.toolsetHash,
 			bindingSha256: reviewedA,
 			approvedBy: "operator",
 			reason: "first endpoint",
+			now: NOW,
 			store,
 		});
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed,
 				verifier: verifier(keys.publicKeyPem),
 				store,
@@ -411,6 +452,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		).resolves.toMatchObject({ status: "accepted" });
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed,
 				verifier: verifier(keys.publicKeyPem),
 				store,
@@ -419,6 +461,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		).resolves.toMatchObject({ status: "quarantined" });
 		await expect(
 			approveQuarantinedMcpToolset({
+				approvalKey: OPERATOR_APPROVAL_KEY,
 				serverId: signed.manifest.server_id,
 				toolsetHash: first.toolsetHash,
 				bindingSha256: reviewedA,
@@ -436,6 +479,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		});
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed,
 				verifier: verifier(keys.publicKeyPem),
 				store,
@@ -453,12 +497,14 @@ describe("MCP tool drift approval and replay protection", () => {
 			privateKey: keys.privateKey,
 		});
 		const first = await attestMcpToolManifest({
+			approvalKeys: OPERATOR_APPROVAL_KEYS,
 			candidate: firstSigned,
 			verifier: verifier(keys.publicKeyPem),
 			store,
 		});
 		if (first.status !== "quarantined") throw new Error("expected quarantine");
 		await approveQuarantinedMcpToolset({
+			approvalKey: OPERATOR_APPROVAL_KEY,
 			serverId: firstSigned.manifest.server_id,
 			toolsetHash: first.toolsetHash,
 			bindingSha256: await reviewedBindingHash(store, firstSigned.manifest.server_id),
@@ -475,6 +521,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		});
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: unchanged,
 				verifier: verifier(keys.publicKeyPem),
 				store,
@@ -491,6 +538,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		});
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: changed,
 				verifier: verifier(keys.publicKeyPem),
 				store,
@@ -511,12 +559,14 @@ describe("MCP tool drift approval and replay protection", () => {
 				privateKey: keys.privateKey,
 			});
 		await attestMcpToolManifest({
+			approvalKeys: OPERATOR_APPROVAL_KEYS,
 			candidate: signed(manifest(8)),
 			verifier: verifier(keys.publicKeyPem),
 			store,
 		});
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed(manifest(7)),
 				verifier: verifier(keys.publicKeyPem),
 				store,
@@ -524,6 +574,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		).resolves.toEqual({ status: "rejected", reason: "sequence_replay" });
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed(manifest(8, [tool("files.write")])),
 				verifier: verifier(keys.publicKeyPem),
 				store,
@@ -542,12 +593,14 @@ describe("MCP tool drift approval and replay protection", () => {
 		});
 		const firstStore = new FileMcpAttestationStore(directory);
 		const first = await attestMcpToolManifest({
+			approvalKeys: OPERATOR_APPROVAL_KEYS,
 			candidate: signed,
 			verifier: verifier(keys.publicKeyPem),
 			store: firstStore,
 		});
 		if (first.status !== "quarantined") throw new Error("expected quarantine");
 		await approveQuarantinedMcpToolset({
+			approvalKey: OPERATOR_APPROVAL_KEY,
 			serverId: signed.manifest.server_id,
 			toolsetHash: first.toolsetHash,
 			bindingSha256: await reviewedBindingHash(firstStore, signed.manifest.server_id),
@@ -560,6 +613,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		const restartedStore = new FileMcpAttestationStore(directory);
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed,
 				verifier: verifier(keys.publicKeyPem),
 				store: restartedStore,
@@ -573,6 +627,7 @@ describe("MCP tool drift approval and replay protection", () => {
 		});
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: replay,
 				verifier: verifier(keys.publicKeyPem),
 				store: restartedStore,
@@ -596,10 +651,254 @@ describe("MCP tool drift approval and replay protection", () => {
 		await writeFile(join(directory, stateName), "{not-json", "utf8");
 		await expect(
 			attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed,
 				verifier: verifier(keys.publicKeyPem),
 				store: new FileMcpAttestationStore(directory),
 			}),
 		).resolves.toEqual({ status: "rejected", reason: "state_unavailable" });
+	});
+});
+
+describe("operator-signed approvals and sealed attestation state (MSC-1, MSC-14)", () => {
+	const SERVER = "mcp://customer/filesystem";
+
+	async function quarantinedFixture(store: MemoryMcpAttestationStore | FileMcpAttestationStore) {
+		const keys = keyPair();
+		const signed = signMcpToolManifest({
+			manifest: manifest(1),
+			keyId: "customer-key-1",
+			privateKey: keys.privateKey,
+		});
+		const attest = (
+			ignored: McpApprovalEntryRejection[] = [],
+			approvalKeys: Record<string, string> = OPERATOR_APPROVAL_KEYS,
+		) =>
+			attestMcpToolManifest({
+				candidate: signed,
+				verifier: verifier(keys.publicKeyPem),
+				store,
+				approvalKeys,
+				onApprovalIgnored: (reason) => ignored.push(reason),
+			});
+		const first = await attest();
+		if (first.status !== "quarantined") throw new Error("expected quarantine");
+		const quarantine = (await store.read(SERVER))?.quarantine;
+		if (!quarantine?.signerKeySha256 || !quarantine.bindingSha256) {
+			throw new Error("missing quarantine");
+		}
+		return {
+			attest,
+			first,
+			quarantine: {
+				...quarantine,
+				signerKeySha256: quarantine.signerKeySha256,
+				bindingSha256: quarantine.bindingSha256,
+			},
+		};
+	}
+
+	/** What a same-user process can do with plain writes: add an approval entry. */
+	async function injectApproval(store: MemoryMcpAttestationStore, entry: object): Promise<void> {
+		await store.transact(SERVER, (state) => {
+			if (!state) throw new Error("missing state");
+			state.approvedToolsets.push(entry as (typeof state.approvedToolsets)[number]);
+			return { state, result: undefined };
+		});
+	}
+
+	it("never honours an unsigned approval entry copied from the quarantine record", async () => {
+		const store = new MemoryMcpAttestationStore();
+		const { attest, quarantine } = await quarantinedFixture(store);
+		await injectApproval(store, {
+			toolsetHash: quarantine.toolsetHash,
+			keyId: quarantine.keyId,
+			signerKeySha256: quarantine.signerKeySha256,
+			bindingSha256: quarantine.bindingSha256,
+			approvedAt: NOW.toISOString(),
+			approvedBy: "agent",
+			reason: "self",
+		});
+		const ignored: McpApprovalEntryRejection[] = [];
+		await expect(attest(ignored)).resolves.toMatchObject({ status: "quarantined" });
+		expect(ignored).toEqual(["unsigned_approval"]);
+	});
+
+	it("ignores approvals signed by an unconfigured key, altered after signing, or expired", async () => {
+		const store = new MemoryMcpAttestationStore();
+		const { attest, quarantine } = await quarantinedFixture(store);
+		const base = {
+			serverId: SERVER,
+			toolsetHash: quarantine.toolsetHash,
+			keyId: quarantine.keyId,
+			signerKeySha256: quarantine.signerKeySha256,
+			bindingSha256: quarantine.bindingSha256,
+			approvedBy: "operator",
+			reason: "reviewed",
+			approvedAt: new Date(NOW.getTime() - 60_000),
+			expiresAt: new Date(NOW.getTime() + 60_000),
+			approvalKeyId: "operator-approval-1",
+		};
+		const attacker = generateKeyPairSync("ed25519");
+		await injectApproval(
+			store,
+			signMcpToolsetApproval({ ...base, privateKey: attacker.privateKey }),
+		);
+		const altered = signMcpToolsetApproval({
+			...base,
+			privateKey: OPERATOR_APPROVAL_KEY.privateKey,
+		});
+		await injectApproval(store, { ...altered, reason: "edited after signing" });
+		await injectApproval(
+			store,
+			signMcpToolsetApproval({
+				...base,
+				approvedAt: new Date(NOW.getTime() - 120_000),
+				expiresAt: new Date(NOW.getTime() - 60_000),
+				privateKey: OPERATOR_APPROVAL_KEY.privateKey,
+			}),
+		);
+		const ignored: McpApprovalEntryRejection[] = [];
+		await expect(attest(ignored)).resolves.toMatchObject({ status: "quarantined" });
+		expect(ignored.sort()).toEqual([
+			"approval_expired",
+			"invalid_approval_signature",
+			"invalid_approval_signature",
+		]);
+
+		const valid = signMcpToolsetApproval({ ...base, privateKey: OPERATOR_APPROVAL_KEY.privateKey });
+		const check = (serverId: string, approvalKeys?: Record<string, string>) =>
+			verifyMcpToolsetApproval(valid, { serverId, approvalKeys, now: NOW });
+		expect(check(SERVER, OPERATOR_APPROVAL_KEYS)).toBeNull();
+		expect(check("mcp://other/server", OPERATOR_APPROVAL_KEYS)).toBe("invalid_approval_signature");
+		expect(check(SERVER)).toBe("untrusted_approval_key");
+		await injectApproval(store, valid);
+		// Honoured only while a configured operator key verifies it.
+		await expect(attest([], {})).resolves.toMatchObject({ status: "quarantined" });
+		await expect(attest()).resolves.toMatchObject({ status: "accepted" });
+	});
+
+	it("refuses to sign with an untrusted key or over a tampered quarantine record", async () => {
+		const store = new MemoryMcpAttestationStore();
+		const { first, quarantine } = await quarantinedFixture(store);
+		const other = generateKeyPairSync("ed25519");
+		const request = {
+			serverId: SERVER,
+			toolsetHash: first.toolsetHash,
+			bindingSha256: quarantine.bindingSha256,
+			approvedBy: "operator",
+			reason: "reviewed",
+			store,
+			now: NOW,
+			approvalKeys: OPERATOR_APPROVAL_KEYS,
+		};
+		await expect(
+			approveQuarantinedMcpToolset({
+				...request,
+				approvalKey: { keyId: "operator-approval-1", privateKey: other.privateKey },
+			}),
+		).resolves.toEqual({ approved: false, reason: "approval_key_untrusted" });
+		await expect(
+			approveQuarantinedMcpToolset({
+				...request,
+				approvalKey: OPERATOR_APPROVAL_KEY,
+				expected: { keyId: "customer-key-2", signerKeySha256: quarantine.signerKeySha256 },
+			}),
+		).resolves.toEqual({ approved: false, reason: "quarantine_mismatch" });
+		// A swapped tool list shown to the reviewer no longer hashes to the toolset.
+		await store.transact(SERVER, (state) => {
+			if (!state?.quarantine) throw new Error("missing quarantine");
+			state.quarantine.tools = [tool("files.read", "Harmless looking description")];
+			return { state, result: undefined };
+		});
+		await expect(
+			approveQuarantinedMcpToolset({ ...request, approvalKey: OPERATOR_APPROVAL_KEY }),
+		).resolves.toEqual({ approved: false, reason: "quarantine_mismatch" });
+	});
+
+	it("seals the state file: an edited, unsealed or re-sealed forged file never approves", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "aidr-mcp-attestation-seal-"));
+		tempDirs.push(directory);
+		const store = new FileMcpAttestationStore(directory);
+		const { attest, quarantine } = await quarantinedFixture(store);
+		const name = (await readdir(directory)).find((entry) => entry.endsWith(".json"));
+		if (!name) throw new Error("missing state file");
+		const path = join(directory, name);
+		const forged = JSON.parse(await readFile(path, "utf8"));
+		forged.approvedToolsets.push({
+			toolsetHash: quarantine.toolsetHash,
+			keyId: quarantine.keyId,
+			signerKeySha256: quarantine.signerKeySha256,
+			bindingSha256: quarantine.bindingSha256,
+			approvedAt: NOW.toISOString(),
+			approvedBy: "agent",
+			reason: "self",
+		});
+		// 1. Plain edit: the seal no longer matches, so the state is refused.
+		await writeFile(path, JSON.stringify(forged));
+		await expect(attest()).resolves.toEqual({ status: "rejected", reason: "state_unavailable" });
+		// 2. Seal stripped: refused as well.
+		const { stateMac: _seal, ...unsealed } = forged;
+		await writeFile(path, JSON.stringify(unsealed));
+		await expect(attest()).resolves.toEqual({ status: "rejected", reason: "state_unavailable" });
+		// 3. Re-sealed with the (same-user readable) seal key: the entry is still unsigned.
+		const key = await readFile(join(directory, ".state-integrity.key"));
+		const canonical = (value: unknown): unknown => {
+			if (Array.isArray(value)) return value.map(canonical);
+			if (!value || typeof value !== "object") return value;
+			const record = value as Record<string, unknown>;
+			return Object.fromEntries(
+				Object.keys(record)
+					.sort()
+					.map((entry) => [entry, canonical(record[entry])]),
+			);
+		};
+		const stateMac = createHmac("sha256", key)
+			.update("AIDR-MCP-ATTESTATION-STATE-V1\0")
+			.update(name)
+			.update("\0")
+			.update(JSON.stringify(canonical(unsealed)))
+			.digest("hex");
+		await writeFile(path, JSON.stringify({ ...unsealed, stateMac }));
+		const ignored: McpApprovalEntryRejection[] = [];
+		await expect(attest(ignored)).resolves.toMatchObject({ status: "quarantined" });
+		expect(ignored).toEqual(["unsigned_approval"]);
+		expect((await stat(join(directory, ".state-integrity.key"))).mode & 0o077).toBe(0);
+	});
+
+	it("requires an absolute, user-owned state directory without group or world write", async () => {
+		await expect(assertPrivateMcpStateDirectory("relative/state")).rejects.toMatchObject({
+			code: "state_dir_not_absolute",
+		});
+		await expect(new FileMcpAttestationStore("relative/state").read(SERVER)).rejects.toBeInstanceOf(
+			McpStateDirectoryError,
+		);
+		if (process.platform === "win32") return;
+		const parent = await mkdtemp(join(tmpdir(), "aidr-mcp-attestation-perm-"));
+		tempDirs.push(parent);
+		const directory = join(parent, "state");
+		await mkdir(directory, { mode: 0o700 });
+		await chmod(directory, 0o777);
+		await expect(assertPrivateMcpStateDirectory(directory)).rejects.toMatchObject({
+			code: "state_dir_group_or_world_writable",
+		});
+		const keys = keyPair();
+		await expect(
+			attestMcpToolManifest({
+				candidate: signMcpToolManifest({
+					manifest: manifest(1),
+					keyId: "customer-key-1",
+					privateKey: keys.privateKey,
+				}),
+				verifier: verifier(keys.publicKeyPem),
+				store: new FileMcpAttestationStore(directory),
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
+			}),
+		).resolves.toEqual({ status: "rejected", reason: "state_unavailable" });
+		await chmod(directory, 0o750);
+		await expect(assertPrivateMcpStateDirectory(directory)).resolves.toBe(true);
+		const created = join(parent, "created", "nested");
+		await expect(assertPrivateMcpStateDirectory(created, { create: true })).resolves.toBe(true);
+		expect((await stat(created)).mode & 0o777).toBe(0o700);
 	});
 });

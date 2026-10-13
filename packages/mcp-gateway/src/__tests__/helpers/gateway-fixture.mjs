@@ -6,6 +6,7 @@ import {
 	signMcpToolManifest,
 } from "@singularityrd/aidr-core";
 import { createMcpGateway } from "../../gateway.mjs";
+import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS, testStateDir } from "./approval-key.mjs";
 
 const running = [];
 afterEach(async () => {
@@ -147,7 +148,8 @@ export function fixture(overrides = {}) {
 	};
 	const gateway = createMcpGateway(
 		{
-			stateDir: ".test-mcp-gateway",
+			stateDir: testStateDir(),
+			approvalKeys: TEST_APPROVAL_KEYS,
 			port: 0,
 			clients,
 			servers,
@@ -193,6 +195,7 @@ export function fixture(overrides = {}) {
 				bindingSha256: reviewed,
 				approvedBy: "security-operator",
 				reason: "approved manifest test",
+				approvalKey: TEST_APPROVAL_KEY,
 			});
 		},
 	};

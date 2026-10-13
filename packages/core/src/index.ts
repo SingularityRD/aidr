@@ -1046,7 +1046,10 @@ export {
 	resetCategoryCache,
 } from "./mcp-aig-categories.js";
 export type {
+	McpApprovalEntryRejection,
+	McpApprovalKeyring,
 	McpApprovalResult,
+	McpApprovalSubject,
 	McpAttestationDecision,
 	McpAttestationStateStore,
 	McpAttestationStateV1,
@@ -1065,17 +1068,26 @@ export type {
 // MCP tool identity, signed schema attestation and drift quarantine.
 export {
 	approveQuarantinedMcpToolset,
+	assertPrivateMcpStateDirectory,
 	attestMcpToolManifest,
 	canonicalMcpToolManifest,
+	DEFAULT_MCP_APPROVAL_LIFETIME_MS,
 	diffMcpTools,
 	FileMcpAttestationStore,
+	hasHonouredMcpApproval,
+	MAX_MCP_APPROVAL_LIFETIME_MS,
+	McpAttestationStateIntegrityError,
+	McpStateDirectoryError,
 	McpToolDefinitionSchema,
 	McpToolManifestV1Schema,
 	MemoryMcpAttestationStore,
+	mcpApprovalBindingHash,
 	mcpManifestHash,
 	mcpToolsetHash,
 	SignedMcpToolManifestV1Schema,
 	signMcpToolManifest,
+	signMcpToolsetApproval,
+	verifyMcpToolsetApproval,
 	verifySignedMcpToolManifest,
 	writeMcpSignerHealthEvidence,
 } from "./mcp-attestation.js";

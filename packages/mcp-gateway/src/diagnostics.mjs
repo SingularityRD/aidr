@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { ArtifactIntegrityError } from "@singularityrd/aidr-core";
+import { ArtifactIntegrityError, McpStateDirectoryError } from "@singularityrd/aidr-core";
 import { GatewayConfigError } from "./config.mjs";
 import { McpGatewayRefusal } from "./coverage.mjs";
 
@@ -39,6 +39,16 @@ const KNOWN_MESSAGES = new Set([
 	"upstream_auth_unavailable",
 	"unknown tenant server",
 	"approval rejected",
+	"approval key required",
+	"approval manifest invalid",
+	"approval key permissions too open",
+	"approval key not encrypted",
+	"approval key passphrase rejected",
+	"approval key not configured",
+	"approval passphrase too short",
+	"approval passphrase mismatch",
+	"approval cancelled",
+	"invalid approval key id",
 ]);
 
 export class OperatorStageError extends Error {
@@ -72,7 +82,11 @@ function detailCode(cause) {
 		const status = cause.result?.status;
 		return typeof status === "string" && CODE.test(status) ? status : "failed";
 	}
-	if (cause instanceof GatewayConfigError || cause instanceof McpGatewayRefusal)
+	if (
+		cause instanceof GatewayConfigError ||
+		cause instanceof McpGatewayRefusal ||
+		cause instanceof McpStateDirectoryError
+	)
 		return CODE.test(cause.code) ? cause.code : null;
 	if (cause instanceof SyntaxError) return "invalid_json";
 	const errno = cause?.code;

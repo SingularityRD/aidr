@@ -4,13 +4,16 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
 	approveQuarantinedMcpToolset,
+	assertPrivateMcpStateDirectory,
 	attestMcpToolManifest,
 	FileMcpAttestationStore,
 	fetchMcpEndpoint,
 	McpToolDefinitionSchema,
 	McpTransportError,
+	mcpApprovalBindingHash,
 	mcpToolsetHash,
 	scanModelOutput,
+	verifySignedMcpToolManifest,
 } from "@singularityrd/aidr-core";
 // readMcpSseMessages is not part of the core package export; it resolves to the
 // same module instance as the package's own mcp-transport import.
@@ -1711,27 +1714,46 @@ export function createMcpGateway(input, dependencies = {}) {
 		return results;
 	}
 
+	/** The operator-configured connection an approval is bound to. */
+	function approvalConnection(server) {
+		return [
+			"gateway-v1",
+			server.tenantId,
+			server.id,
+			server.url,
+			server.transport,
+			server.sessionMode,
+			server.upstreamAuthEnv ?? null,
+			resolvedUpstreamAuth(server) ?? null,
+		];
+	}
+
+	function manifestVerifier(server) {
+		return {
+			trustedSigners: server.trustedSigners,
+			revokedKeyIds: new Set(server.revokedKeyIds ?? []),
+			expectedServerId: server.id,
+			now: now(),
+		};
+	}
+
 	async function attest(server) {
+		const ignored = [];
 		const result = await attestMcpToolManifest({
 			candidate: server.signedManifest,
-			connection: [
-				"gateway-v1",
-				server.tenantId,
-				server.id,
-				server.url,
-				server.transport,
-				server.sessionMode,
-				server.upstreamAuthEnv ?? null,
-				resolvedUpstreamAuth(server) ?? null,
-			],
-			verifier: {
-				trustedSigners: server.trustedSigners,
-				revokedKeyIds: new Set(server.revokedKeyIds ?? []),
-				expectedServerId: server.id,
-				now: now(),
-			},
+			connection: approvalConnection(server),
+			verifier: manifestVerifier(server),
 			store: storeFor(server.tenantId),
+			approvalKeys: config.approvalKeys,
+			onApprovalIgnored: (reason) => ignored.push(reason),
 		});
+		// An approval entry the operator keys did not sign (or that expired) is
+		// never honoured; report it so a forged or stale entry is visible.
+		for (const approvalRejection of ignored) {
+			await audit(server.tenantId, server.id, null, "deny", "approval_entry_ignored", {
+				approvalRejection,
+			});
+		}
 		if (result.status !== "accepted") throw new Error(`manifest_${result.status}`);
 	}
 
@@ -2326,11 +2348,40 @@ export function createMcpGateway(input, dependencies = {}) {
 			ready = false;
 			return new Promise((resolve) => server.close(resolve));
 		},
-		async approve({ tenantId, serverId, toolsetHash, bindingSha256, approvedBy, reason }) {
+		/**
+		 * Operator approval. `approvalKey` ({ keyId, privateKey }) is the operator
+		 * approval private key; the gateway itself never holds it. The expected
+		 * toolset, signer and connection binding are derived from this
+		 * configuration, never from the (writable) state file.
+		 */
+		async approve({
+			tenantId,
+			serverId,
+			toolsetHash,
+			bindingSha256,
+			approvedBy,
+			reason,
+			approvalKey,
+			lifetimeMs,
+		}) {
 			const target = config.servers.find(
 				(item) => item.tenantId === tenantId && item.id === serverId,
 			);
 			if (!target) throw new Error("unknown tenant server");
+			if (!approvalKey) throw new Error("approval key required");
+			await assertPrivateMcpStateDirectory(config.stateDir, { create: true });
+			const verified = verifySignedMcpToolManifest(target.signedManifest, manifestVerifier(target));
+			if (!verified.valid) throw new Error("approval manifest invalid");
+			if (verified.toolsetHash !== toolsetHash)
+				return { approved: false, reason: "toolset_mismatch" };
+			const expectedBinding = mcpApprovalBindingHash({
+				serverId: target.id,
+				keyId: verified.signed.key_id,
+				signerKeySha256: verified.signerKeySha256,
+				connection: approvalConnection(target),
+			});
+			if (expectedBinding !== bindingSha256) return { approved: false, reason: "binding_mismatch" };
+			const approvedAt = now();
 			return approveQuarantinedMcpToolset({
 				serverId,
 				toolsetHash,
@@ -2338,7 +2389,11 @@ export function createMcpGateway(input, dependencies = {}) {
 				approvedBy,
 				reason,
 				store: storeFor(tenantId),
-				now: now(),
+				approvalKey,
+				approvalKeys: config.approvalKeys,
+				expected: { keyId: verified.signed.key_id, signerKeySha256: verified.signerKeySha256 },
+				now: approvedAt,
+				...(lifetimeMs ? { expiresAt: new Date(approvedAt.getTime() + lifetimeMs) } : {}),
 			});
 		},
 		startupSelfCheck(gatewayAddress = null) {
@@ -2347,6 +2402,8 @@ export function createMcpGateway(input, dependencies = {}) {
 		},
 		async listen(port = config.port) {
 			await assertInstalledPrivacySupported();
+			// Fail closed at startup on a state directory another user could modify.
+			await assertPrivateMcpStateDirectory(config.stateDir, { create: true });
 			return new Promise((resolve, reject) => {
 				server.once("error", reject);
 				server.listen(port, "127.0.0.1", async () => {

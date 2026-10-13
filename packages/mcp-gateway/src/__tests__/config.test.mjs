@@ -11,13 +11,15 @@ import {
 	validateGatewayConfig,
 } from "../config.mjs";
 import { tenantAdmissionRefusal } from "../gateway.mjs";
+import { TEST_APPROVAL_KEYS } from "./helpers/approval-key.mjs";
 
 const packageRoot = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
 function config() {
 	const token = "a".repeat(40);
 	return {
-		stateDir: ".test-mcp",
+		stateDir: "/var/lib/aidr/test-mcp",
+		approvalKeys: TEST_APPROVAL_KEYS,
 		port: 7789,
 		clients: [
 			{

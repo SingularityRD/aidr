@@ -13,6 +13,7 @@ import {
 	gatewayBundleOptions,
 	readRuleSets,
 } from "../../scripts/bundle-options.mjs";
+import { TEST_APPROVAL_KEYS } from "./helpers/approval-key.mjs";
 
 const packageRoot = resolve(import.meta.dirname, "../..");
 // Every signed dist entry, including the library export (aidr-mcp-library.mjs).
@@ -143,6 +144,7 @@ test("commercial gateway binaries start only with a complete signed artifact and
 			gatewayConfig,
 			JSON.stringify({
 				stateDir: join(root, "state"),
+				approvalKeys: TEST_APPROVAL_KEYS,
 				port: 0,
 				clients: [
 					{
