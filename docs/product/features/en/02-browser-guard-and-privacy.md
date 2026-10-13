@@ -130,10 +130,12 @@ zips plus `SHA256SUMS`). To load an unpacked build: `chrome://extensions` → De
 | Platforms | Chrome 120+, Edge 120+, Firefox 140+ (ESR); Windows, macOS, Linux |
 
 **Limitations**
-- Only the eight products above are protected. Other AI websites, desktop and mobile apps,
-  API clients and other browsers are not covered. The manifest declares an optional
-  `https://*/*` host permission, but this build has no code path that uses it to protect
-  other sites.
+- Only the eight products above are protected out of the box. Other AI websites, desktop
+  and mobile apps, API clients and other browsers are not covered. The manifest declares an
+  optional `https://*/*` host permission. It is never requested at install: the options page
+  asks each user, from a click, for the exact `https://<host>/*` origins the managed policy
+  configures (the hosts of `customSites`, feature 13b, and the Shadow AI catalog origins,
+  feature 13a), so users see a browser permission prompt for those sites.
 - Site DOMs change without notice, and a redesign can break interception until the adapter
   is updated. The real-browser suite runs against recorded page structures (fixtures) for
   ChatGPT, Gemini, Claude, Copilot and Perplexity, not against the live sites. DeepSeek,
@@ -192,9 +194,29 @@ A scan is marked incomplete when the prompt exceeds 200,000 characters, when the
 time budget runs out, or when encoded content is nested deeper than the decoder unwraps.
 Findings gathered so far are kept, but the result is never reported as clean.
 
-**How to use** — Always on. The only ways to let text through unmasked are `monitor` mode,
-which never blocks, and a site in `disabledSites`, which is monitored the same way (the
-text is still scanned and counted).
+**How to use** — Always on for the send gestures described above. It is not a guarantee
+that nothing leaves the browser unmasked. In this build text reaches the AI service without
+masking through:
+- `monitor` mode, and a site in `disabledSites` (scanned and counted, never blocked);
+- **Send original** in `confirm` mode while `allowSendAnyway` is `true` (the default);
+- a user pause (up to 60 minutes) while `allowUserPause` is `true` (the default);
+- a send the adapter does not recognise: a new button, shortcut or gesture after a site
+  redesign, or a request the page makes by itself (see Limitations and feature 1);
+- voice input, dictation and voice mode: the site sends the audio to the provider for
+  transcription, so it never passes the guard; only text that ends up in the editor and is
+  sent with a recognised gesture is checked;
+- text before it is sent: the prompt editor belongs to the site, so the site's own scripts
+  (drafts, autosave, typing telemetry) can read what is typed, dropped or dictated into it
+  before the guard checks it at send;
+- tabs in which the content script is not running, for example tabs already open when the
+  extension was installed, enabled or updated, until they are reloaded;
+- private windows, guest profiles, other browser profiles and other browsers, where the
+  extension does not run.
+
+Administrators close the policy-controlled paths with `allowSendAnyway: false`,
+`allowUserPause: false` and a managed `mode`, and the browser-level ones with the hardening
+policies in `deploy/browser-guard/README.md` (private browsing, guest mode, other profiles
+and browsers, developer tools, other extensions).
 
 **Example** — A user pastes a 300,000-character log and presses Enter in `auto` mode. The site
 receives nothing. A red bubble titled **Sending blocked** says "AIDR could not finish
@@ -469,8 +491,10 @@ Covered by the real-browser `paste-*` scenarios.
 
 **Limitations**
 - Only pastes into the recognised prompt editor are handled.
-- Text inserted by other means (drag-and-drop of text, browser autofill, voice input) is
-  checked at send time, not on insertion.
+- Text inserted by other means (drag-and-drop of text, browser autofill) is checked at send
+  time, not on insertion; until then it sits in the site's editor, readable by the page.
+- Voice input, dictation and voice mode are not covered: the audio goes to the provider for
+  transcription without passing the guard (feature 2).
 
 ### 7. File and upload protection
 
@@ -1152,6 +1176,10 @@ email to the user.
 
 **Limitations**
 - Each user grants host access once; tabs already open need a reload afterwards.
+- The content script runs in the portal's top frame only (`allFrames: false`). A chat widget
+  embedded in an iframe (an internal portal that loads its assistant from another page or
+  host) is not protected, and the policy cannot detect that case: point `hosts` and the
+  selectors at the page that hosts the editor itself, and test the portal before rollout.
 - Selectors follow the portal's markup; a redesign can require an update of the policy.
 
 ### 13c. AI acceptable-use notice

@@ -373,7 +373,11 @@ exactly the granted hosts (`chrome.scripting.registerContentScripts`, id
 `aidr-custom-sites`, top frame, `document_start`), re-syncs on every policy change
 and grant/revocation, and accepts messages from those hosts as site `custom`.
 Tabs that were already open need a reload. Until access is granted the options page
-shows the site as **Needs access** and nothing runs there.
+shows the site as **Needs access** and nothing runs there. The script runs in the top
+frame only: a portal whose chat editor lives in an iframe (an embedded assistant widget
+served from another page or host) is not protected, and the policy cannot detect that.
+Configure the host and selectors of the page that contains the editor itself, and try
+the portal before rolling the policy out.
 
 ### Shadow AI discovery and control
 

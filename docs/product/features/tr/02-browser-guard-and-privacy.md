@@ -140,8 +140,11 @@ Firefox'ta `about:debugging#/runtime/this-firefox` → *Geçici Eklenti Yükle* 
 **Sınırlamalar**
 - Yalnızca yukarıdaki sekiz ürün korunur. Diğer yapay zekâ siteleri, masaüstü ve mobil
   uygulamalar, API istemcileri ve başka tarayıcılar kapsam dışıdır. Manifest isteğe bağlı
-  bir `https://*/*` izni tanımlar, ancak bu sürümde başka siteleri korumak için bu izni
-  kullanan bir kod yolu yoktur.
+  bir `https://*/*` izni tanımlar. Bu izin kurulumda istenmez: seçenekler sayfası her
+  kullanıcıdan, bir tıklamayla, yalnızca yönetilen politikanın yapılandırdığı
+  `https://<alan adı>/*` kökenlerini ister (`customSites` alan adları, özellik 13b, ve
+  Gölge yapay zekâ kataloğu kökenleri, özellik 13a); kullanıcılar bu siteler için tarayıcının
+  izin istemini görür.
 - Sitelerin sayfa yapısı habersiz değişebilir. Bir yeniden tasarım, bağdaştırıcı
   güncellenene kadar denetimi bozabilir. Gerçek tarayıcı test paketi; ChatGPT, Gemini,
   Claude, Copilot ve Perplexity için canlı sitelere değil, kaydedilmiş sayfa yapılarına
@@ -202,9 +205,33 @@ bütçesi dolduğunda ya da kodlanmış içerik çözücünün açabildiğinden 
 yerleştirildiğinde. O ana kadarki bulgular korunur, ancak sonuç hiçbir zaman "temiz"
 olarak raporlanmaz.
 
-**Nasıl kullanılır** — Her zaman açıktır. Metnin maskelenmeden geçtiği tek durumlar hiç
-engellemeyen `monitor` modu ve aynı biçimde izlenen `disabledSites` listesindeki sitelerdir
-(metin yine taranır ve sayılır).
+**Nasıl kullanılır** — Yukarıda açıklanan gönderim hareketleri için her zaman açıktır.
+Tarayıcıdan maskelenmemiş hiçbir şeyin çıkmayacağı garantisi değildir. Bu sürümde metin
+yapay zekâ hizmetine şu yollarla maskelenmeden ulaşabilir:
+- `monitor` modu ve `disabledSites` listesindeki bir site (taranır ve sayılır, hiç
+  engellenmez);
+- `allowSendAnyway` `true` iken (varsayılan) `confirm` modunda **Orijinali gönder**;
+- `allowUserPause` `true` iken (varsayılan) kullanıcının korumayı duraklatması (en fazla
+  60 dakika);
+- bağdaştırıcının tanımadığı bir gönderim: site yeniden tasarlandıktan sonra yeni bir
+  düğme, kısayol ya da hareket veya sayfanın kendi başına yaptığı bir istek (bkz.
+  Sınırlamalar ve özellik 1);
+- sesle giriş, dikte ve sesli mod: site sesi yazıya dökmek için sağlayıcıya gönderir, bu
+  yüzden ses korumadan hiç geçmez; yalnızca düzenleyiciye düşen ve tanınan bir hareketle
+  gönderilen metin denetlenir;
+- gönderilmeden önceki metin: istem düzenleyicisi siteye aittir; sitenin kendi betikleri
+  (taslaklar, otomatik kayıt, yazma telemetrisi) yazılan, bırakılan ya da dikte edilen
+  metni koruma gönderim anında denetlemeden önce okuyabilir;
+- içerik betiğinin çalışmadığı sekmeler; örneğin eklenti kurulduğunda, etkinleştirildiğinde
+  ya da güncellendiğinde zaten açık olan sekmeler, yeniden yüklenene kadar;
+- eklentinin çalışmadığı gizli pencereler, misafir profilleri, diğer tarayıcı profilleri ve
+  diğer tarayıcılar.
+
+Yöneticiler politikayla kapatılabilen yolları `allowSendAnyway: false`,
+`allowUserPause: false` ve yönetilen bir `mode` ile, tarayıcı düzeyindekileri ise
+`deploy/browser-guard/README.md` içindeki sağlamlaştırma politikalarıyla (gizli gezinme,
+misafir modu, diğer profiller ve tarayıcılar, geliştirici araçları, diğer eklentiler)
+kapatır.
 
 **Örnek** — `auto` modunda kullanıcı 300.000 karakterlik bir log yapıştırıp Enter'a basar.
 Siteye hiçbir şey gitmez. **Gönderim engellendi** başlıklı kırmızı balonda "AIDR bu istemi
@@ -490,8 +517,11 @@ söyler. Gerçek tarayıcıdaki `paste-*` senaryoları bu davranışı kapsar.
 
 **Sınırlamalar**
 - Yalnızca tanınan istem düzenleyicisine yapılan yapıştırmalar ele alınır.
-- Başka yollarla eklenen metin (sürükle-bırak metin, tarayıcı otomatik doldurma, sesle
-  giriş) eklendiği anda değil, gönderim anında denetlenir.
+- Başka yollarla eklenen metin (sürükle-bırak metin, tarayıcı otomatik doldurma) eklendiği
+  anda değil, gönderim anında denetlenir; o zamana kadar sitenin düzenleyicisinde durur ve
+  sayfa tarafından okunabilir.
+- Sesle giriş, dikte ve sesli mod kapsam dışıdır: ses, korumadan geçmeden yazıya dökülmek
+  üzere sağlayıcıya gider (özellik 2).
 
 ### 7. Dosya ve yükleme koruması
 
@@ -1213,6 +1243,10 @@ gösterir.
 **Sınırlamalar**
 - Her kullanıcı site erişimini bir kez verir; zaten açık olan sekmelerin ardından yeniden
   yüklenmesi gerekir.
+- İçerik betiği yalnızca portalın üst çerçevesinde çalışır (`allFrames: false`). Bir iframe
+  içine gömülü sohbet bileşeni (asistanı başka bir sayfadan ya da alan adından yükleyen iç
+  portal) korunmaz ve politika bu durumu algılayamaz: `hosts` ve seçicileri düzenleyiciyi
+  doğrudan barındıran sayfaya yöneltin ve portalı dağıtımdan önce test edin.
 - Seçiciler portalın işaretlemesine bağlıdır; yeniden tasarım politikanın güncellenmesini
   gerektirebilir.
 
