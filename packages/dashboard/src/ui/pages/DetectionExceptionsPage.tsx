@@ -174,6 +174,7 @@ function TenantDetectionExceptions({ tenantId }: { tenantId: string }) {
 					<input
 						value={draft.ruleId}
 						onChange={(e) => setDraft({ ...draft, ruleId: e.target.value })}
+						// i18n-exempt: sample rule id
 						placeholder="CLT-CMD-011"
 						maxLength={100}
 						required

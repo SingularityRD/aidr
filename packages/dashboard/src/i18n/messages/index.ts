@@ -25,6 +25,7 @@ import { governanceScorecardMessages } from "./governance-scorecard";
 import { notificationsMessages } from "./notifications";
 import { oidcSsoMessages } from "./oidc-sso";
 import { onboardingMessages } from "./onboarding";
+import { operatorMessages } from "./operator";
 import { policyMessages } from "./policy";
 import { policyRolloutMessages } from "./policy-rollout";
 import { policyRuntimeMessages } from "./policy-runtime";
@@ -67,6 +68,7 @@ export const pageMessages = {
 	...notificationsMessages,
 	...oidcSsoMessages,
 	...onboardingMessages,
+	...operatorMessages,
 	...policyMessages,
 	...policyRolloutMessages,
 	...policyRuntimeMessages,
@@ -110,6 +112,7 @@ export const messageModules = [
 	notificationsMessages,
 	oidcSsoMessages,
 	onboardingMessages,
+	operatorMessages,
 	policyMessages,
 	policyRolloutMessages,
 	policyRuntimeMessages,

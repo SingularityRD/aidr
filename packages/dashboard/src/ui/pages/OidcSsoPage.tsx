@@ -280,6 +280,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 						<input
 							id="oidc-secret-ref"
 							value={form.client_secret_ref}
+							// i18n-exempt: sample secret reference
 							placeholder="CONTOSO"
 							onChange={(event) =>
 								setForm({ ...form, client_secret_ref: event.target.value.toUpperCase() })
@@ -299,6 +300,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 				<input
 					id="oidc-groups-claim"
 					value={form.groups_claim}
+					// i18n-exempt: claim name
 					placeholder="groups"
 					onChange={(event) => setForm({ ...form, groups_claim: event.target.value })}
 				/>
@@ -431,6 +433,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 				<input
 					id="oidc-change-ref"
 					value={changeRef}
+					// i18n-exempt: sample change reference
 					placeholder="CHG-1042"
 					onChange={(event) => setChangeRef(event.target.value)}
 				/>

@@ -655,6 +655,7 @@ function TenantScimPage({
 					maxLength={120}
 					value={tokenLabel}
 					onChange={(event) => setTokenLabel(event.target.value)}
+					// i18n-exempt: sample label
 					placeholder="Entra production"
 					autoComplete="off"
 				/>
@@ -667,6 +668,7 @@ function TenantScimPage({
 					maxLength={128}
 					value={directoryId}
 					onChange={(event) => setDirectoryId(event.target.value)}
+					// i18n-exempt: sample identifier
 					placeholder="entra-production"
 					autoComplete="off"
 					aria-describedby="scim-directory-id-help"

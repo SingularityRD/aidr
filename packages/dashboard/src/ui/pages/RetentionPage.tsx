@@ -501,6 +501,7 @@ function TenantRetention({
 							maxLength={100}
 							value={caseId}
 							onChange={(e) => setCaseId(e.target.value)}
+							// i18n-exempt: sample case id
 							placeholder="CASE-2026-001"
 							autoComplete="off"
 						/>
