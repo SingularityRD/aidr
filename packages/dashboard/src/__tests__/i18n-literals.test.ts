@@ -118,7 +118,41 @@ function developerOnly(node: ts.Node): boolean {
 	return false;
 }
 
+/** Whether a sentence-like literal is shown to a user (not code or a developer message). */
+function userSentence(node: ts.Node, text: string): boolean {
+	return SENTENCE.test(text) && !developerOnly(node) && !insideCode(node);
+}
+
+/**
+ * The UI text a single node contributes, and whether its children still need
+ * a visit (attributes and string literals are leaves).
+ */
+function uiTextOf(node: ts.Node): { text: string | null; leaf: boolean } {
+	if (ts.isJsxText(node)) {
+		const flagged = !allowed(node.getText()) && !insideCode(node);
+		return { text: flagged ? node.getText().trim() : null, leaf: true };
+	}
+	if (
+		ts.isJsxAttribute(node) &&
+		ATTRIBUTES.has(node.name.getText()) &&
+		node.initializer &&
+		ts.isStringLiteral(node.initializer)
+	) {
+		const value = node.initializer.text;
+		return { text: allowed(value) ? null : value, leaf: true };
+	}
+	if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+		return { text: userSentence(node, node.text) ? node.text : null, leaf: true };
+	}
+	if (ts.isTemplateExpression(node)) {
+		const text = [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(" ");
+		return { text: userSentence(node, text) ? text : null, leaf: false };
+	}
+	return { text: null, leaf: false };
+}
+
 /** English UI text written directly in `file`. */
+
 function literalUiText(file: string): string[] {
 	const source = ts.createSourceFile(
 		file,
@@ -143,36 +177,12 @@ function literalUiText(file: string): string[] {
 		);
 	const visit = (node: ts.Node): void => {
 		if (exemptSubtree(node)) return;
-		if (
-			exempt(node) &&
-			(ts.isStringLiteral(node) || ts.isTemplateExpression(node) || ts.isJsxText(node))
-		)
-			return;
-		if (ts.isJsxText(node)) {
-			if (!allowed(node.getText()) && !insideCode(node)) found.push(node.getText().trim());
-			return;
-		}
-		if (
-			ts.isJsxAttribute(node) &&
-			ATTRIBUTES.has(node.name.getText()) &&
-			node.initializer &&
-			ts.isStringLiteral(node.initializer)
-		) {
-			if (!allowed(node.initializer.text)) found.push(node.initializer.text);
-			return;
-		}
-		if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-			if (SENTENCE.test(node.text) && !developerOnly(node) && !insideCode(node))
-				found.push(node.text);
-			return;
-		}
-		if (ts.isTemplateExpression(node)) {
-			const text = [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(
-				" ",
-			);
-			if (SENTENCE.test(text) && !developerOnly(node) && !insideCode(node)) found.push(text);
-		}
-		ts.forEachChild(node, visit);
+		const isLiteral =
+			ts.isStringLiteral(node) || ts.isTemplateExpression(node) || ts.isJsxText(node);
+		if (isLiteral && exempt(node)) return;
+		const result = uiTextOf(node);
+		if (result.text !== null) found.push(result.text);
+		if (!result.leaf) ts.forEachChild(node, visit);
 	};
 	visit(source);
 	return found;

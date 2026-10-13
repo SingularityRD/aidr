@@ -29,9 +29,9 @@ import {
 	PROFILE_TEMPLATE_DESCRIPTIONS,
 	PROFILE_TEMPLATE_SUMMARIES,
 } from "../enterprise/agent-profile-templates";
-import { en } from "../i18n/en";
 import { AgentProfilesPanel, parseProfileDecisionRow } from "../enterprise/agent-profiles-panel";
 import { useTeam } from "../enterprise/team-provider";
+import { en } from "../i18n/en";
 import { installDashboardMocks, mockedSupabase, TEAM_ID } from "./helpers/dashboard-mocks";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");

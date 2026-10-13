@@ -27,8 +27,8 @@ vi.mock("../lib/supabase", () => ({
 }));
 vi.mock("../enterprise/team-provider", () => ({ useTeam: () => team.value }));
 
-import { frameworkCoverage, parseGovernanceScorecard, topRisks } from "../lib/governance";
 import { en } from "../i18n/en";
+import { frameworkCoverage, parseGovernanceScorecard, topRisks } from "../lib/governance";
 import { GOVERNANCE_STATEMENT, renderGovernanceReport } from "../ui/governance-print";
 import { GovernancePage } from "../ui/pages/GovernancePage";
 import { acceptableUseNotice, managedPolicySnippet } from "../ui/privacy-guard";
