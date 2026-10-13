@@ -175,7 +175,7 @@ describe("release candidate assembler", () => {
 		writeFileSync(join(root, "LICENSE"), "MIT\n");
 		writeFileSync(join(root, "package.nls.json"), "{}\n");
 		writeFileSync(join(root, "package.nls.tr.json"), "{}\n");
-		mkdirSync(join(root, "l10n"));
+		mkdirSync(join(root, "l10n"), { recursive: true });
 		writeFileSync(join(root, "l10n/bundle.l10n.tr.json"), "{}\n");
 		copyFileSync(join(ROOT, "packages/extension/aidr-icon.png"), join(root, "aidr-icon.png"));
 		const manifest = { name: "aidr-fixture", publisher: "aidr-fixture", version: "0.0.0", description: "Synthetic packaging regression", engines: { vscode: "^1.85.0" }, main: "./dist/cursor_extension.js", activationEvents: ["onStartupFinished"], repository: "https://example.invalid/aidr", license: "MIT", files: VSIX_PACKAGE_FILES };
