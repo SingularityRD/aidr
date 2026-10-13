@@ -11,6 +11,10 @@
 //
 // Every run (re)writes <dir>/maintenance-evidence.json and prints it; an
 // incomplete --apply run exits 2, a failed one exits 1.
+//
+// deploy/helm/aidr/files/deployment-maintenance.mjs must stay a byte-identical
+// copy (the chart ships it in a ConfigMap; deploy/helm/chart.test.mjs checks):
+//   cp scripts/deployment-maintenance.mjs deploy/helm/aidr/files/
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 

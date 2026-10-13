@@ -18,6 +18,9 @@ const chartDir = join(here, "aidr");
 const { parse, parseAllDocuments } = createRequire(join(root, "packages/core/package.json"))("yaml");
 const readYaml = (path) => parse(readFileSync(path, "utf8"));
 const CI_VALUES = ["default", "prod", "posture-scanner", "privacy-gateway"];
+// Synthetic age recipient (valid bech32 shape) for rendering encrypted backups.
+const AGE_RECIPIENT = "age10sncrgwzlg4tsr6y7k9tn5qgqc6je72f9u3vdnwfspjtfreueheshljgj2";
+const ENCRYPTED = `backup.encryption.ageRecipients={${AGE_RECIPIENT}}`;
 const KUBE_VERSION = "1.30.0";
 
 function findHelm() {
@@ -294,14 +297,14 @@ test("rendering refuses backups that miss file storage objects", { skip: helmSki
 		assert.notEqual(result.status, 0, `expected failure for ${sets.join(" ")}`);
 		assert.match(result.stderr, message, sets.join(" "));
 	}
-	const acknowledged = renderOk([base], ["backup.enabled=true", "backup.storage.acknowledgeNotBackedUp=true"]);
+	const acknowledged = renderOk([base], ["backup.enabled=true", "backup.storage.acknowledgeNotBackedUp=true", ENCRYPTED]);
 	const cron = acknowledged.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
 	assert.ok(!cron.spec.jobTemplate.spec.template.spec.volumes.some((volume) => volume.name === "storage-data"));
 });
 
 test("rendered storage backup mounts the file volume read-only next to the storage pod", { skip: helmSkip }, () => {
 	const base = join(chartDir, "ci", "default-values.yaml");
-	const docs = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true"]);
+	const docs = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true", ENCRYPTED]);
 	for (const name of ["aidr-backup", "aidr-backup-pre-upgrade"]) {
 		const doc = docs.find((item) => ["CronJob", "Job"].includes(item.kind) && item.metadata.name === name);
 		assert.ok(doc, name);
@@ -315,10 +318,10 @@ test("rendered storage backup mounts the file volume read-only next to the stora
 		assert.equal(term.labelSelector.matchLabels["app.kubernetes.io/component"], "storage");
 		assert.deepEqual(spec.securityContext.supplementalGroups, [1000]);
 		const script = spec.containers[0].command[2];
-		assert.match(script, /\.storage\.tar\.gz\.sha256/);
-		assert.match(script, /\.dump\.sha256/);
+		assert.match(script, /\.storage\.tar\.gz\.age\.sha256/);
+		assert.match(script, /\.dump\.age\.sha256/);
 	}
-	const rwx = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true", "storage.persistence.accessModes={ReadWriteMany}"]);
+	const rwx = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true", "storage.persistence.accessModes={ReadWriteMany}", ENCRYPTED]);
 	const cron = rwx.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
 	assert.equal(cron.spec.jobTemplate.spec.template.spec.affinity, undefined, "ReadWriteMany needs no co-location");
 });
@@ -344,6 +347,151 @@ test("rendered upgrades run the backup hook before migrations and refuse to migr
 	renderOk([base], ["migrations.enabled=false"], ["--is-upgrade"]);
 	// A fresh install has nothing to back up and is not gated.
 	assert.ok(!renderOk([base]).some((doc) => doc.metadata.name === "aidr-backup-pre-upgrade"));
+});
+
+// ---------------------------------------------------------------------------
+// Retention maintenance (CP-3): runs on every Helm install by default.
+// ---------------------------------------------------------------------------
+test("the maintenance CronJob is on by default and runs the shipped maintenance worker", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.maintenance.enabled, true, "retention must not depend on an opt-in");
+	assert.equal(values.maintenance.apply, true);
+	assert.match(values.maintenance.schedule, /^\d+ \* \* \* \*$/, "hourly, like the Compose timer");
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8"));
+	assert.deepEqual(Object.keys(schema.properties.maintenance.properties).sort(), ["activeDeadlineSeconds", "apply", "enabled", "image", "resources", "runAsUser", "schedule"]);
+	assert.equal(
+		readFileSync(join(chartDir, "files", "deployment-maintenance.mjs"), "utf8"),
+		readFileSync(join(root, "scripts", "deployment-maintenance.mjs"), "utf8"),
+		"deploy/helm/aidr/files/deployment-maintenance.mjs is stale: cp scripts/deployment-maintenance.mjs deploy/helm/aidr/files/",
+	);
+	const template = readFileSync(join(chartDir, "templates", "maintenance-cronjob.yaml"), "utf8");
+	assert.match(template, /^\{\{- if \.Values\.maintenance\.enabled \}\}/);
+	assert.match(template, /\.Files\.Get "files\/deployment-maintenance\.mjs"/);
+	assert.match(template, /concurrencyPolicy: Forbid/);
+	assert.match(template, /- --from-env\n\s+\{\{- if \$values\.apply \}\}\n\s+- --apply/);
+	assert.match(template, /include "aidr\.secretEnv" \(dict "root" \. "env" "SERVICE_ROLE_KEY" "key" "service-role-key"\)/);
+	assert.match(template, /value: \{\{ include "aidr\.gatewayUrl" \. \| quote \}\}/);
+	assert.doesNotMatch(template, /\$\{?SERVICE_ROLE_KEY/, "the key is read from the environment, never interpolated into argv");
+	const policies = readFileSync(join(chartDir, "templates", "networkpolicy.yaml"), "utf8");
+	assert.match(policies, /if \.Values\.maintenance\.enabled \}\}\n\s+\{\{- include "aidr\.np\.peer" \(dict "root" \. "component" "maintenance"\)/, "the gateway admits the maintenance pod");
+	assert.match(policies, /selectorLabels" \(dict "root" \. "component" "maintenance"\)[\s\S]*?component" "api-gw"\) \| nindent 8 \}\}\n\s+ports:\n\s+- port: 8000/, "maintenance egress is the gateway only");
+	// The worker accepts plain HTTP only for in-cluster Service names.
+	const script = readFileSync(join(root, "scripts", "deployment-maintenance.mjs"), "utf8");
+	assert.match(script, /--from-env/);
+	assert.match(script, /purge_expired_waitlist_signups/);
+});
+
+test("rendered default values schedule maintenance against the in-cluster gateway", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const docs = renderOk([base]);
+	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-maintenance");
+	assert.ok(cron, "maintenance CronJob");
+	const container = cron.spec.jobTemplate.spec.template.spec.containers[0];
+	assert.deepEqual(container.command, ["node", "/opt/aidr-maintenance/deployment-maintenance.mjs", "/tmp/maintenance", "--from-env", "--apply"]);
+	const env = Object.fromEntries(container.env.map((entry) => [entry.name, entry]));
+	assert.equal(env.AIDR_MAINTENANCE_API_URL.value, "http://aidr-api-gw:8000");
+	assert.deepEqual(env.SERVICE_ROLE_KEY.valueFrom.secretKeyRef, { name: "aidr-platform", key: "service-role-key" });
+	const config = docs.find((doc) => doc.kind === "ConfigMap" && doc.metadata.name === "aidr-maintenance");
+	assert.equal(config.data["deployment-maintenance.mjs"], readFileSync(join(root, "scripts", "deployment-maintenance.mjs"), "utf8").replace(/\n$/, ""));
+	const policy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name === "aidr-maintenance");
+	assert.equal(policy.spec.egress[0].ports[0].port, 8000);
+	const gateway = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name === "aidr-api-gw");
+	assert.ok(JSON.stringify(gateway.spec.ingress).includes('"maintenance"'));
+
+	const off = renderOk([base], ["maintenance.enabled=false"]);
+	assert.ok(!off.some((doc) => doc.metadata?.name === "aidr-maintenance"));
+	const dry = renderOk([base], ["maintenance.apply=false"]);
+	assert.ok(!dry.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-maintenance").spec.jobTemplate.spec.template.spec.containers[0].command.includes("--apply"));
+});
+
+// ---------------------------------------------------------------------------
+// Backups are encrypted and can leave the cluster (OPS-9).
+// ---------------------------------------------------------------------------
+test("backups are sealed with age before they touch the volume and never upload plaintext", () => {
+	const values = readYaml(join(chartDir, "values.yaml")).backup;
+	assert.equal(values.enabled, false, "off by default: the identity custody is an operator decision (README)");
+	assert.deepEqual(values.encryption, { ageRecipients: [], allowPlaintext: false });
+	assert.equal(values.offsite.enabled, false);
+	const helpers = readFileSync(join(chartDir, "templates", "_backup.tpl"), "utf8");
+	const validate = helpers.slice(helpers.indexOf('define "aidr.backup.validate"'), helpers.indexOf('define "aidr.backup.podSpec"'));
+	assert.match(validate, /if and \$backup\.enabled \(empty \$encryption\.ageRecipients\) \(not \$encryption\.allowPlaintext\) -\}\}\s*\{\{- fail /);
+	assert.match(validate, /backup\.offsite\.enabled uploads backups off the cluster and requires backup\.encryption\.ageRecipients/);
+	assert.match(validate, /backup\.offsite\.egressCIDRs is required when networkPolicy\.enabled/);
+	const podSpec = helpers.slice(helpers.indexOf('define "aidr.backup.podSpec"'));
+	const encrypted = podSpec.slice(podSpec.indexOf("{{- if $encrypt }}"), podSpec.indexOf("# PLAINTEXT"));
+	assert.match(podSpec, /set -o pipefail/, "a failing pg_dump or tar fails the pipeline into age");
+	assert.match(encrypted, /pg_dump --format=custom --no-owner \| age /);
+	assert.match(encrypted, /-czf - \. \| age /);
+	assert.doesNotMatch(encrypted, /--file=|\.dump\.partial"|storage\.tar\.gz\.partial"/, "no plaintext artifact in the encrypted branch");
+	assert.match(encrypted, /curl -K - /, "object-store credentials reach curl on stdin, not argv");
+	assert.match(encrypted, /--proto =https/);
+	assert.match(encrypted, /command -v age > \/dev\/null \|\| \{[^}]*exit 1; \}/, "a custom image without age fails instead of writing plaintext");
+	assert.ok(encrypted.indexOf("| age ") < encrypted.indexOf("upload \"${artifact}\""), "only sealed artifacts are uploaded");
+	const dockerfile = readFileSync(join(here, "images", "migrations.Dockerfile"), "utf8");
+	assert.match(dockerfile, /apk add --no-cache age curl/);
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8")).properties.backup.properties;
+	assert.equal(schema.encryption.properties.ageRecipients.items.pattern, "^age1[02-9ac-hj-np-z]{58}$");
+	assert.equal(schema.offsite.properties.endpoint.pattern, "^(|https://[^/?#@]+)$");
+	const readme = readFileSync(join(chartDir, "README.md"), "utf8");
+	for (const needle of ["backup.encryption.ageRecipients", "backup.offsite.enabled", "pgsodium_root.key", "### Key material", "age -d -i", "**off by default**"]) {
+		assert.ok(readme.includes(needle), needle);
+	}
+});
+
+test("rendered backups refuse plaintext and misconfigured off-cluster copies", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const prod = join(chartDir, "ci", "prod-values.yaml");
+	const ack = "backup.storage.acknowledgeNotBackedUp=true";
+	const cases = [
+		[[base], ["backup.enabled=true", ack], /backup\.encryption\.ageRecipients/],
+		[[base], ["backup.enabled=true", ack, "backup.encryption.ageRecipients={age1notarecipient}"], /ageRecipients|age X25519 recipient/],
+		[[base], ["backup.enabled=true", ack, "backup.encryption.allowPlaintext=true", "backup.offsite.enabled=true"], /requires backup\.encryption\.ageRecipients/],
+		[[prod], ["backup.offsite.endpoint=http://s3.example.com"], /offsite|endpoint/],
+		[[prod], ["backup.offsite.egressCIDRs=null"], /egressCIDRs/],
+		[[prod], ["backup.offsite.existingSecret="], /existingSecret/],
+	];
+	for (const [files, sets, message] of cases) {
+		const result = render(files, sets);
+		assert.notEqual(result.status, 0, `expected failure for ${sets.join(" ")}`);
+		assert.match(result.stderr, message, sets.join(" "));
+	}
+	const docs = renderOk([prod]);
+	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
+	const container = cron.spec.jobTemplate.spec.template.spec.containers[0];
+	assert.match(container.command[2], /pg_dump --format=custom --no-owner \| age -r 'age1[a-z0-9]{58}' -r 'age1[a-z0-9]{58}' -o "\$\{base\}\.dump\.age\.partial"/);
+	assert.doesNotMatch(container.command[2], /--file=/);
+	const env = Object.fromEntries(container.env.map((entry) => [entry.name, entry]));
+	assert.equal(env.AIDR_OFFSITE_ENDPOINT.value, "https://s3.eu-west-1.amazonaws.com");
+	assert.deepEqual(env.AWS_SECRET_ACCESS_KEY.valueFrom.secretKeyRef, { name: "aidr-backup-offsite", key: "secret-access-key" });
+	const offsite = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name === "aidr-backup-offsite");
+	assert.deepEqual(offsite.spec.egress, [{ to: [{ ipBlock: { cidr: "10.60.0.0/16" } }], ports: [{ port: 443, protocol: "TCP" }] }]);
+	const plaintext = renderOk([base], ["backup.enabled=true", ack, "backup.encryption.allowPlaintext=true"]);
+	const devCron = plaintext.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
+	assert.match(devCron.spec.jobTemplate.spec.template.spec.containers[0].command[2], /--file="\$\{base\}\.dump\.partial"/);
+});
+
+// ---------------------------------------------------------------------------
+// Posture scanner bridge: only tenant-bound broker auth (OPS-10).
+// ---------------------------------------------------------------------------
+test("the posture scanner bridge accepts only broker authentication", () => {
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8"));
+	assert.deepEqual(schema.properties.postureScanner.properties.bridge.properties.authMode.enum, ["broker"]);
+	assert.equal(readYaml(join(chartDir, "values.yaml")).postureScanner.bridge.authMode, "broker");
+	const template = readFileSync(join(chartDir, "templates", "posture-scanner.yaml"), "utf8");
+	assert.match(template, /\{\{- if ne \$scanner\.bridge\.authMode "broker" -\}\}\n\{\{- fail /);
+	assert.doesNotMatch(template, /BRIDGE_API_KEY|bridge-api-key/, "the shared-key mode cannot be configured");
+	assert.match(template, /- name: BRIDGE_TENANT_REQUIRED\n\s+value: "true"/);
+});
+
+test("rendering refuses the bridge's api_key mode", { skip: helmSkip }, () => {
+	const scanner = join(chartDir, "ci", "posture-scanner-values.yaml");
+	const refused = render([scanner], ["postureScanner.bridge.authMode=api_key"]);
+	assert.notEqual(refused.status, 0);
+	assert.match(refused.stderr, /authMode|broker/);
+	const bridge = renderOk([scanner]).find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-posture-scanner-bridge"));
+	const env = Object.fromEntries(bridge.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry]));
+	assert.equal(env.BRIDGE_AUTH_MODE.value, "broker");
+	assert.equal(env.BRIDGE_API_KEY, undefined);
 });
 
 test("the notification dispatcher CronJob is opt-in, token-authenticated and never sees the service-role key", () => {

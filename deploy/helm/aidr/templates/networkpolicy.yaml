@@ -86,6 +86,9 @@ spec:
         {{- include "aidr.np.ingressController" . | nindent 8 }}
         {{- include "aidr.np.peer" (dict "root" . "component" "dashboard") | nindent 8 }}
         {{- include "aidr.np.peer" (dict "root" . "component" "functions") | nindent 8 }}
+        {{- if .Values.maintenance.enabled }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "maintenance") | nindent 8 }}
+        {{- end }}
       ports:
         - port: 8000
           protocol: TCP
@@ -200,6 +203,26 @@ spec:
           protocol: TCP
     {{- include "aidr.np.cidrs" (dict "cidrs" $np.functionsEgressCIDRs "port" 443) | nindent 4 }}
 ---
+{{- if .Values.maintenance.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "maintenance") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "maintenance") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  egress:
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "api-gw") | nindent 8 }}
+      ports:
+        - port: 8000
+          protocol: TCP
+---
+{{- end }}
 {{- if .Values.notifications.dispatcher.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -238,6 +261,23 @@ spec:
   policyTypes: ["Egress"]
   egress:
     {{- include "aidr.np.db" . | nindent 4 }}
+{{- if and .Values.backup.enabled .Values.backup.offsite.enabled }}
+---
+# Encrypted off-cluster backup copy (backup.offsite): HTTPS to the object store only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "backup-offsite") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "backup") | nindent 6 }}
+  policyTypes: ["Egress"]
+  egress:
+    {{- include "aidr.np.cidrs" (dict "cidrs" .Values.backup.offsite.egressCIDRs "port" 443) | nindent 4 }}
+{{- end }}
 {{- if .Values.postgresql.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

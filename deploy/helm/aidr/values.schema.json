@@ -276,6 +276,30 @@
             "acknowledgeNotBackedUp": { "type": "boolean" }
           }
         },
+        "encryption": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ageRecipients": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^age1[02-9ac-hj-np-z]{58}$" }
+            },
+            "allowPlaintext": { "type": "boolean" }
+          }
+        },
+        "offsite": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "endpoint": { "type": "string", "pattern": "^(|https://[^/?#@]+)$" },
+            "bucket": { "type": "string" },
+            "region": { "type": "string" },
+            "prefix": { "type": "string", "pattern": "^([A-Za-z0-9._-]+/)*$" },
+            "existingSecret": { "type": "string" },
+            "egressCIDRs": { "$ref": "#/definitions/cidrList" }
+          }
+        },
         "image": { "$ref": "#/definitions/image" },
         "resources": { "$ref": "#/definitions/resources" },
         "runAsUser": { "$ref": "#/definitions/uid" },
@@ -287,6 +311,18 @@
             "existingClaim": { "type": "string" }
           }
         }
+      }
+    },
+    "maintenance": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "schedule": { "type": "string", "minLength": 9 },
+        "apply": { "type": "boolean" },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 60 },
+        "image": { "$ref": "#/definitions/image" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "runAsUser": { "$ref": "#/definitions/uid" }
       }
     },
     "notifications": {
@@ -376,7 +412,7 @@
           "properties": {
             "image": { "$ref": "#/definitions/image" },
             "resources": { "$ref": "#/definitions/resources" },
-            "authMode": { "type": "string", "enum": ["broker", "api_key"] },
+            "authMode": { "type": "string", "enum": ["broker"] },
             "minWorkers": { "type": "integer", "minimum": 1 },
             "clientPodLabel": { "type": "object", "minProperties": 1 }
           }
