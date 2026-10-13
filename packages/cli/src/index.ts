@@ -65,6 +65,7 @@ import simulateCommand from "./commands/simulate.js";
 import statusCommand from "./commands/status.js";
 import supportBundleCommand from "./commands/support-bundle.js";
 import uninstallCommand from "./commands/uninstall.js";
+import { initCliLocale, localizeHelp } from "./i18n/index.js";
 
 const program = new Command();
 
@@ -618,5 +619,9 @@ canaryProgram
 	.description("Check the registry, the decoy files and triggers recorded in the audit log")
 	.option("--json", "Emit machine-readable JSON")
 	.action((options) => canaryStatusCommand(options));
+
+// Help text in the user's language (AIDR_LOCALE, config `locale`, LANG); English is unchanged.
+initCliLocale();
+localizeHelp(program);
 
 await program.parseAsync(process.argv);

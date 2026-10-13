@@ -22,7 +22,7 @@ import * as vscode from "vscode";
 
 import type { ExtensionHookHost } from "./hook-responses.js";
 import { assessHostVersion, detectHostVersion, type HostVersionAssessment } from "./host-compat.js";
-
+import { localize } from "./l10n.js";
 import type {
 	ManagedHookHealth,
 	ManagedHookInstallOptions,
@@ -71,7 +71,11 @@ export function activateManagedHooksExtension(
 				const cfg = await loadConfig();
 				if (cfg.mode !== "managed") {
 					void vscode.window.showInformationMessage(
-						`Singularity AIDR enabled for ${target.hostName}. Managed hooks configured at ${health.configPath}.`,
+						localize(
+							"Singularity AIDR enabled for {0}. Managed hooks configured at {1}.",
+							target.hostName,
+							health.configPath,
+						),
 					);
 					return;
 				}
@@ -89,7 +93,11 @@ export function activateManagedHooksExtension(
 				});
 				if (startup.enabled) {
 					void vscode.window.showInformationMessage(
-						`Singularity AIDR enabled for ${target.hostName}. Managed hooks configured at ${health.configPath}.`,
+						localize(
+							"Singularity AIDR enabled for {0}. Managed hooks configured at {1}.",
+							target.hostName,
+							health.configPath,
+						),
 					);
 					// Bundled rules that did not load or verify: protection is degraded, say so.
 					if (startup.rulesIncomplete) {
@@ -103,19 +111,27 @@ export function activateManagedHooksExtension(
 				}
 				if (startup.bootstrap) {
 					const { verification_url: verifyUrl, user_code: userCode } = startup.bootstrap;
+					const openBrowser = localize("Open browser");
 					const choice = await vscode.window.showInformationMessage(
-						`Singularity AIDR hooks installed. To activate managed protection, open ${verifyUrl} and enter code ${userCode}. After authorizing, run Enable protection again to finish activation.`,
+						localize(
+							"Singularity AIDR hooks installed. To activate managed protection, open {0} and enter code {1}. After authorizing, run Enable protection again to finish activation.",
+							verifyUrl,
+							userCode,
+						),
 						{ modal: true },
-						"Open browser",
+						openBrowser,
 					);
-					if (choice === "Open browser") {
+					if (choice === openBrowser) {
 						void vscode.env.openExternal(vscode.Uri.parse(verifyUrl));
 					}
 					return;
 				}
 
 				void vscode.window.showWarningMessage(
-					`Singularity AIDR hooks installed, but managed protection could not activate (${startup.disabled_reason ?? "startup unavailable"}). Check the AIDR configuration and try Enable protection again.`,
+					localize(
+						"Singularity AIDR hooks installed, but managed protection could not activate ({0}). Check the AIDR configuration and try Enable protection again.",
+						startup.disabled_reason ?? localize("startup unavailable"),
+					),
 				);
 			});
 		}),
@@ -127,7 +143,7 @@ export function activateManagedHooksExtension(
 				const scope = getScope(target.scopeSettingKey);
 				const configPath = await target.installer.removeManagedHooks(scope);
 				vscode.window.showInformationMessage(
-					`Singularity AIDR managed hooks removed from ${configPath}.`,
+					localize("Singularity AIDR managed hooks removed from {0}.", configPath),
 				);
 			});
 		}),
@@ -172,22 +188,31 @@ export function activateManagedHooksExtension(
 				const lastVerdict =
 					latest && typeof latest.verdict === "string" && typeof latest.severity === "string"
 						? `${latest.verdict} (${latest.severity})`
-						: "none";
+						: localize("none");
 
 				const message = [
 					...describeHookHealth(health, hostAssessment),
-					`target: ${target.hostName}`,
+					localize("target: {0}", target.hostName),
 					...describeVsCodeLocalHooksSetting(target.hostName),
-					`hooks config: ${health.configPath}`,
-					`hook command: ${
-						health.managedCommands.length > 0 ? health.managedCommands.join(" | ") : "none"
-					}`,
-					`runner bundle: ${health.runnerPath ?? "not found"} (resolved through the stable hook launcher)`,
-					`managed events: ${
-						health.installedEvents.length > 0 ? health.installedEvents.join(", ") : "none"
-					}`,
+					localize("hooks config: {0}", health.configPath),
+					localize(
+						"hook command: {0}",
+						health.managedCommands.length > 0
+							? health.managedCommands.join(" | ")
+							: localize("none"),
+					),
+					localize(
+						"runner bundle: {0} (resolved through the stable hook launcher)",
+						health.runnerPath ?? localize("not found"),
+					),
+					localize(
+						"managed events: {0}",
+						health.installedEvents.length > 0
+							? health.installedEvents.join(", ")
+							: localize("none"),
+					),
 					...describeOutputInspection(target.hostName),
-					`last verdict: ${lastVerdict}`,
+					localize("last verdict: {0}", lastVerdict),
 				].join("\n");
 
 				showHealthReport(health, message);
@@ -326,7 +351,11 @@ export function formatUpdateNotice(result: {
 	currentVersion: string;
 	latestVersion: string;
 }): string {
-	return `Singularity AIDR: Update available v${result.currentVersion} → v${result.latestVersion}. Install it from the Extensions view, or from the VSIX your organisation distributes.`;
+	return localize(
+		"Singularity AIDR: Update available v{0} → v{1}. Install it from the Extensions view, or from the VSIX your organisation distributes.",
+		result.currentVersion,
+		result.latestVersion,
+	);
 }
 
 function isVsCodeLocalHooksEnabled(): boolean {
@@ -340,32 +369,48 @@ function isVsCodeLocalHooksEnabled(): boolean {
 function warnIfVsCodeLocalHooksDisabled(hostName: string): boolean {
 	if (hostName !== "VS Code" || isVsCodeLocalHooksEnabled()) return false;
 	void vscode.window.showWarningMessage(
-		"VS Code Local hooks require chat.useClaudeHooks to be enabled in User Settings. Enable that setting, then run Enable protection again. Singularity AIDR does not change editor settings.",
+		localize(
+			"VS Code Local hooks require chat.useClaudeHooks to be enabled in User Settings. Enable that setting, then run Enable protection again. Singularity AIDR does not change editor settings.",
+		),
 	);
 	return true;
 }
 
 function describeVsCodeLocalHooksSetting(hostName: string): string[] {
 	if (hostName !== "VS Code") return [];
-	const state = isVsCodeLocalHooksEnabled() ? "enabled" : "disabled";
+	const state = isVsCodeLocalHooksEnabled() ? localize("enabled") : localize("disabled");
 	return [
-		`VS Code Local hook setting chat.useClaudeHooks: ${state} (required; Singularity AIDR does not change editor settings)`,
+		localize(
+			"VS Code Local hook setting chat.useClaudeHooks: {0} (required; Singularity AIDR does not change editor settings)",
+			state,
+		),
 	];
 }
 
 function describeOutputInspection(hostName: string): string[] {
 	if (hostName === "Cursor") {
 		return [
-			"tool output inspection: MCP replacement before model consumption; non-MCP advisory only",
-			"assistant response inspection: observe-only after display (host cannot block or replace)",
-			`output inspection limit: ${MAX_INSPECTED_OUTPUT_BYTES} bytes; larger output is coverage-limited, never clean`,
+			localize(
+				"tool output inspection: MCP replacement before model consumption; non-MCP advisory only",
+			),
+			localize(
+				"assistant response inspection: observe-only after display (host cannot block or replace)",
+			),
+			outputInspectionLimitLine(),
 		];
 	}
 	return [
-		"tool output inspection: blocks further model processing",
-		"assistant response inspection: unsupported by the host hook API",
-		`output inspection limit: ${MAX_INSPECTED_OUTPUT_BYTES} bytes; larger output is coverage-limited, never clean`,
+		localize("tool output inspection: blocks further model processing"),
+		localize("assistant response inspection: unsupported by the host hook API"),
+		outputInspectionLimitLine(),
 	];
+}
+
+function outputInspectionLimitLine(): string {
+	return localize(
+		"output inspection limit: {0} bytes; larger output is coverage-limited, never clean",
+		MAX_INSPECTED_OUTPUT_BYTES,
+	);
 }
 
 function getScope(scopeSettingKey: string): ManagedHookScope {
@@ -387,6 +432,6 @@ async function withErrorBoundary(work: () => Promise<void>): Promise<void> {
 		await work();
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		void vscode.window.showErrorMessage(`Singularity AIDR: ${message}`);
+		void vscode.window.showErrorMessage(localize("Singularity AIDR: {0}", message));
 	}
 }

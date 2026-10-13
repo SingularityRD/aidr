@@ -957,6 +957,13 @@ function createVsCodeExtensionDevelopmentPath(): string {
 	});
 	cpSync(path.join(EXTENSION_ROOT, "README.md"), path.join(stageDir, "README.md"), { force: true });
 	cpSync(path.join(EXTENSION_ROOT, "LICENSE"), path.join(stageDir, "LICENSE"), { force: true });
+	for (const file of ["package.nls.json", "package.nls.tr.json"]) {
+		cpSync(path.join(EXTENSION_ROOT, file), path.join(stageDir, file), { force: true });
+	}
+	cpSync(path.join(EXTENSION_ROOT, "l10n"), path.join(stageDir, "l10n"), {
+		recursive: true,
+		force: true,
+	});
 	writeFileSync(
 		path.join(stageDir, "package.json"),
 		`${JSON.stringify(vscodeManifest, null, 2)}\n`,

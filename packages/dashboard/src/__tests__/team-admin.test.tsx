@@ -38,6 +38,7 @@ vi.mock("../lib/supabase", () => ({
 	supabaseEnvError: null,
 }));
 
+import { en } from "../i18n/en";
 import { AppLayout } from "../ui/AppLayout";
 import { TeamPage } from "../ui/pages/TeamPage";
 import {
@@ -96,7 +97,8 @@ describe("Team administration is reachable (AIDR-008)", () => {
 			resolve(REPO_ROOT, "packages/dashboard/src/ui/AppLayout.tsx"),
 			"utf8",
 		);
-		expect(layout).toContain('<NavLink to="/team">Team</NavLink>');
+		expect(layout).toContain('<NavLink to="/team">{t("nav.team")}</NavLink>');
+		expect(en["nav.team"]).toBe("Team");
 	});
 
 	it("never navigates to a route the router does not define", () => {

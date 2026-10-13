@@ -50,9 +50,10 @@ for (const variant of variants) {
 	await mkdir(stageDir, { recursive: true });
 
 	await cp(join(extensionRoot, "dist"), join(stageDir, "dist"), { recursive: true });
-	for (const file of ["README.md", "LICENSE", "aidr-icon.png"]) {
+	for (const file of ["README.md", "LICENSE", "aidr-icon.png", "package.nls.json", "package.nls.tr.json"]) {
 		await cp(join(extensionRoot, file), join(stageDir, file));
 	}
+	await cp(join(extensionRoot, "l10n"), join(stageDir, "l10n"), { recursive: true });
 	const packageFiles = await assertVsixIntegrityEvidence(stageDir, { requireSignature: !values["unsigned-candidate"] });
 
 	const manifest = {
@@ -74,13 +75,13 @@ for (const variant of variants) {
 						type: "string",
 						default: "user",
 						enum: ["workspace", "user"],
-						description: "Where Singularity AIDR installs VS Code hooks.",
+						description: "%config.vscodeScope.description%",
 					},
 					"aidr.hookRunnerPath": {
 						type: "string",
 						scope: "application",
 						default: "",
-						description: "Optional absolute path to an aidr-hook runner script.",
+						description: "%config.hookRunnerPath.description%",
 					},
 				},
 			},

@@ -8,6 +8,7 @@ import {
 } from "../billing/entitlements";
 import { PLAN_FEATURE_LABELS, planById } from "../billing/plans";
 import { useTeam } from "../enterprise/team-provider";
+import { useRichT, useT } from "../i18n/I18nProvider";
 
 type GateState =
 	| { kind: "loading" }
@@ -30,6 +31,8 @@ export function PlanGate({
 	const { currentTeam, isLoading } = useTeam();
 	const tenantId = currentTeam?.tenant_id ?? null;
 	const [state, setState] = useState<GateState>({ kind: "loading" });
+	const t = useT();
+	const richT = useRichT();
 
 	useEffect(() => {
 		if (!tenantId) {
@@ -54,7 +57,7 @@ export function PlanGate({
 	if (state.kind === "loading") {
 		return (
 			<p className="muted" role="status">
-				Checking your plan…
+				{t("plan.checking")}
 			</p>
 		);
 	}
@@ -62,7 +65,7 @@ export function PlanGate({
 		return (
 			<section className="card" role="alert">
 				<h1>{PLAN_FEATURE_LABELS[feature]}</h1>
-				<p>Plan information is unavailable, so this page is not shown. Try again shortly.</p>
+				<p>{t("plan.unavailable")}</p>
 			</section>
 		);
 	}
@@ -72,16 +75,15 @@ export function PlanGate({
 		<section className="card" aria-labelledby="plan-gate-heading" data-plan-gate={feature}>
 			<h1 id="plan-gate-heading">{PLAN_FEATURE_LABELS[feature]}</h1>
 			<p>
-				{PLAN_FEATURE_LABELS[feature]} is included from the{" "}
-				<strong>{requiredPlanName(feature)}</strong> edition. This workspace is on{" "}
-				<strong>{current}</strong>
-				{state.entitlements.source === "admission_inactive"
-					? " because its licence or admission is not active"
-					: ""}
-				.
+				{richT("plan.includedFrom", {
+					feature: PLAN_FEATURE_LABELS[feature],
+					plan: <strong>{requiredPlanName(feature)}</strong>,
+					current: <strong>{current}</strong>,
+					why: state.entitlements.source === "admission_inactive" ? t("plan.inactive") : "",
+				})}
 			</p>
 			<p>
-				<Link to="/billing">View plans and upgrade</Link>
+				<Link to="/billing">{t("plan.upgrade")}</Link>
 			</p>
 		</section>
 	);

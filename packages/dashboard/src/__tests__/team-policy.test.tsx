@@ -38,6 +38,7 @@ vi.mock("../lib/supabase", () => ({
 	supabaseEnvError: null,
 }));
 
+import { en } from "../i18n/en";
 import { AppLayout } from "../ui/AppLayout";
 import { PolicyPage } from "../ui/pages/PolicyPage";
 import {
@@ -99,7 +100,8 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 			resolve(REPO_ROOT, "packages/dashboard/src/ui/AppLayout.tsx"),
 			"utf8",
 		);
-		expect(layout).toContain('<NavLink to="/policies">Policies</NavLink>');
+		expect(layout).toContain('<NavLink to="/policies">{t("nav.policies")}</NavLink>');
+		expect(en["nav.policies"]).toBe("Policies");
 	});
 
 	it("renders the editor and the default policy for a team with no stored policy", async () => {

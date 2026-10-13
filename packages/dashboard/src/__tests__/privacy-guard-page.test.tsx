@@ -29,6 +29,7 @@ vi.mock("../lib/supabase", () => ({
 vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
 
 import { useTeam } from "../enterprise/team-provider";
+import { en } from "../i18n/en";
 import { PrivacyGuardPage } from "../ui/pages/PrivacyGuardPage";
 import {
 	BROWSER_GUARD_DEFAULT_ENTITIES,
@@ -345,6 +346,7 @@ describe("Browser Privacy Guard read model", () => {
 			resolve(REPO_ROOT, "packages/dashboard/src/ui/AppLayout.tsx"),
 			"utf8",
 		);
-		expect(layout).toContain('<NavLink to="/privacy-guard">Browser Privacy</NavLink>');
+		expect(layout).toContain('<NavLink to="/privacy-guard">{t("nav.browserPrivacy")}</NavLink>');
+		expect(en["nav.browserPrivacy"]).toBe("Browser Privacy");
 	});
 });

@@ -106,6 +106,14 @@ artifact.
 - Verified hosts: Cursor 3.19.7 and VS Code 1.137.0. Another major.minor line
   triggers a one-time "unverified host version" warning; protection stays on.
 
+## Language
+
+Command titles, settings and notifications follow the editor's display language
+(English or Turkish; `package.nls*.json` and `l10n/`). The block and approval
+messages written by the hook follow `AIDR_LOCALE`, the `locale` configuration
+key or the shell locale, as described in
+[configuration](../../docs/configuration.md#locale).
+
 ## Provisioned tenant detector policy
 
 The hooks can also evaluate a tool call against an operator-delivered, signed

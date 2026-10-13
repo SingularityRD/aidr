@@ -5,7 +5,16 @@
  */
 
 import type { Verdict } from "@singularityrd/aidr-core";
-import { kv, PAD, SEPARATOR_WIDTH, separatorLine, severityEmoji } from "@singularityrd/aidr-core";
+import {
+	kv,
+	PAD,
+	SEPARATOR_WIDTH,
+	separatorLine,
+	severityEmoji,
+	severityLabel,
+	t,
+	upperCaseFor,
+} from "@singularityrd/aidr-core";
 import type { PendingApproval } from "./approval-tracker.js";
 
 export function artifactTypeLabel(type: string): string {
@@ -18,17 +27,22 @@ export function artifactTypeLabel(type: string): string {
 /** Append category and artifact details to lines array. */
 function appendVerdictDetails(lines: string[], verdict: Verdict): void {
 	// The rule's own severity when a rule decided, so the label matches the rule id.
-	lines.push(kv("Severity", (verdict.ruleSeverity ?? verdict.severity).toUpperCase()));
-	if (verdict.matchedThreatId) lines.push(kv("Rule", verdict.matchedThreatId));
+	lines.push(
+		kv(
+			t("hook.label.severity"),
+			upperCaseFor(severityLabel(verdict.ruleSeverity ?? verdict.severity)),
+		),
+	);
+	if (verdict.matchedThreatId) lines.push(kv(t("hook.label.rule"), verdict.matchedThreatId));
 	if (verdict.artifacts.length > 0) {
 		// biome-ignore lint/style/noNonNullAssertion: length check above guarantees index 0 exists
-		lines.push(kv("Artifact", verdict.artifacts[0]!));
+		lines.push(kv(t("hook.label.artifact"), verdict.artifacts[0]!));
 		for (const a of verdict.artifacts.slice(1)) {
 			lines.push(kv("", a));
 		}
 	}
 	if (verdict.source && verdict.source !== "none") {
-		lines.push(kv("Source", verdict.source));
+		lines.push(kv(t("hook.label.source"), verdict.source));
 	}
 }
 
@@ -44,17 +58,16 @@ export function formatBlockReason(verdict: Verdict): string {
 
 	if (isDeny) {
 		const lines: string[] = [" "];
-		lines.push(`${emoji} ${"Threat".padEnd(PAD)}${reasonText}`);
+		lines.push(`${emoji} ${t("hook.label.threat").padEnd(PAD)}${reasonText}`);
 		appendVerdictDetails(lines, verdict);
-		lines.push(kv("Action", "Blocked"));
+		lines.push(kv(t("hook.label.action"), t("hook.action.blocked")));
 		return lines.join("\n");
 	}
 
-	const header = `🛡️ Singularity AIDR: Suspicious Activity Detected`;
-	const lines: string[] = [header, separatorLine(SEPARATOR_WIDTH)];
-	lines.push(`${emoji} ${"Threat".padEnd(PAD)}${reasonText}`);
+	const lines: string[] = [t("hook.ask.header"), separatorLine(SEPARATOR_WIDTH)];
+	lines.push(`${emoji} ${t("hook.label.threat").padEnd(PAD)}${reasonText}`);
 	appendVerdictDetails(lines, verdict);
-	lines.push(kv("Action", "Requires confirmation"));
+	lines.push(kv(t("hook.label.action"), t("hook.action.requiresConfirmation")));
 	return lines.join("\n");
 }
 

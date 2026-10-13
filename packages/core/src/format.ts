@@ -3,6 +3,7 @@
  * Plain text + Unicode only — no ANSI escape codes.
  */
 
+import { severityLabel, t, upperCaseFor } from "./i18n/index.js";
 import type { SessionStartCoverageFinding, SessionStartResult } from "./session-start.js";
 import type { PluginScanResult, PluginScanUnavailableCheck } from "./types.js";
 import type { VersionCheckResult } from "./version-check.js";
@@ -37,20 +38,25 @@ export function separatorLine(headerLength: number): string {
 }
 
 export function formatUpdateNotice(result: VersionCheckResult): string {
-	return `⬆️  Update available: v${result.currentVersion} → v${result.latestVersion} (https://github.com/singularityrd/aidr)`;
+	return t("session.updateAvailable", {
+		current: result.currentVersion,
+		latest: result.latestVersion,
+	});
 }
 
 function formatRemotePolicyLine(cache?: RemotePolicyCacheInfo | null): string {
 	if (!cache?.enabled || !cache?.present) return "";
+	const policy = cache.policyVersion ?? t("session.policy.defaultName");
 	if (cache.source === "valid" && cache.ttlSeconds != null) {
-		return `${cache.policyVersion ?? "policy"} cached, ${cache.ttlSeconds}s left`;
+		return t("session.policy.cached", { policy, seconds: cache.ttlSeconds });
 	}
 	if (cache.source === "expired") {
-		const suffix = cache.ageSeconds != null ? `, ${cache.ageSeconds}s old` : "";
-		return `${cache.policyVersion ?? "policy"} cache expired${suffix}`;
+		return cache.ageSeconds != null
+			? t("session.policy.expiredAge", { policy, seconds: cache.ageSeconds })
+			: t("session.policy.expired", { policy });
 	}
 	if (cache.source === "invalid") {
-		return "cache invalid";
+		return t("session.policy.invalid");
 	}
 	return "";
 }
@@ -60,10 +66,10 @@ export function formatStartupClean(
 	versionCheck?: VersionCheckResult | null,
 	remotePolicyCache?: RemotePolicyCacheInfo | null,
 ): string {
-	let base = `🛡️ Singularity AIDR v${version} ✅ No threats found`;
+	let base = t("session.clean", { version });
 	const policyLine = formatRemotePolicyLine(remotePolicyCache);
 	if (policyLine) {
-		base = `${base}\n${kv("Policy", policyLine)}`;
+		base = `${base}\n${kv(t("session.label.policy"), policyLine)}`;
 	}
 	if (versionCheck?.updateAvailable) {
 		return `${base}\n${formatUpdateNotice(versionCheck)}`;
@@ -72,7 +78,7 @@ export function formatStartupClean(
 }
 
 export function formatStartupDisabled(version: string, reason: string): string {
-	return `Singularity AIDR v${version} - Disabled (${reason})`;
+	return t("session.disabled", { version, reason });
 }
 
 /**
@@ -87,7 +93,7 @@ export function formatStartupDisabled(version: string, reason: string): string {
  * local mode, an unrecognised reason) use formatStartupDisabled instead.
  */
 function formatStartupLocalOnly(version: string, reason: string): string {
-	return `Singularity AIDR v${version} - Local protection ACTIVE (managed features unavailable: ${reason})`;
+	return t("session.localOnly", { version, reason });
 }
 
 /**
@@ -116,22 +122,22 @@ function isEnforcementStopped(disabledReason: string | undefined): boolean {
 function unavailableCheckLines(pluginKey: string, check: PluginScanUnavailableCheck): string[] {
 	if (check.check === "threat_rules") {
 		return [
-			`⚠️ ${`Plugin`.padEnd(PAD)}${pluginKey}`,
-			`⚠️ Threat rules incomplete — protection degraded (${check.uncheckedCount} rule file(s) missing or unverified).`,
-			kv("Reason", check.reason),
+			`⚠️ ${t("session.label.plugin").padEnd(PAD)}${pluginKey}`,
+			t("session.rulesIncompleteBanner", { count: check.uncheckedCount }),
+			kv(t("session.label.reason"), check.reason),
 		];
 	}
 	const label =
 		check.check === "url_reputation"
-			? "URL reputation"
+			? t("session.check.urlReputation")
 			: check.check === "file_reputation"
-				? "File reputation"
-				: "Plugin file inspection";
+				? t("session.check.fileReputation")
+				: t("session.check.pluginFiles");
 	return [
 		check.check === "plugin_files"
-			? `⚠️ ${label} was incomplete for ${check.uncheckedCount} path(s).`
-			: `⚠️ ${label} was not verified for ${check.uncheckedCount} item(s).`,
-		kv("Reason", check.reason),
+			? t("session.check.incompletePaths", { label, count: check.uncheckedCount })
+			: t("session.check.unverifiedItems", { label, count: check.uncheckedCount }),
+		kv(t("session.label.reason"), check.reason),
 	];
 }
 
@@ -149,12 +155,11 @@ export function formatThreatBanner(
 	const hasUnavailableChecks = results.some(
 		(result) => (result.unavailableChecks?.length ?? 0) > 0,
 	);
-	const headerLabel = hasHighOrCriticalFinding
-		? "Threat Detected"
-		: hasUnavailableChecks
-			? "Review Required"
-			: "Threat Detected";
-	const header = `🛡️ Singularity AIDR v${version} — ${headerLabel}`;
+	const headerLabel =
+		!hasHighOrCriticalFinding && hasUnavailableChecks
+			? t("session.header.reviewRequired")
+			: t("session.header.threatDetected");
+	const header = t("session.header", { version, label: headerLabel });
 	const lines: string[] = [" ", header, separatorLine(SEPARATOR_WIDTH)];
 
 	const MAX_FINDINGS = 5;
@@ -169,24 +174,22 @@ export function formatThreatBanner(
 			first = false;
 
 			const emoji = severityEmoji(f.severity);
-			lines.push(`${emoji} ${`Plugin`.padEnd(PAD)}${result.plugin.key}`);
-			lines.push(kv("Threat", f.title));
-			lines.push(kv("Severity", f.severity.toUpperCase()));
+			lines.push(`${emoji} ${t("session.label.plugin").padEnd(PAD)}${result.plugin.key}`);
+			lines.push(kv(t("session.label.threat"), f.title));
+			lines.push(kv(t("session.label.severity"), upperCaseFor(severityLabel(f.severity))));
 			if (f.artifact) {
-				lines.push(kv("Artifact", f.artifact));
+				lines.push(kv(t("session.label.artifact"), f.artifact));
 			}
-			lines.push(kv("Source", f.sourceFile));
+			lines.push(kv(t("session.label.source"), f.sourceFile));
 			const actionLabel =
-				f.action === "block"
-					? "Block recommendation; review or disable this plugin"
-					: "Review recommended";
-			lines.push(kv("Finding", actionLabel));
+				f.action === "block" ? t("session.finding.block") : t("session.finding.review");
+			lines.push(kv(t("session.label.finding"), actionLabel));
 		}
 
 		const overflow = highCrit.length - MAX_FINDINGS;
 		if (overflow > 0) {
 			lines.push("");
-			lines.push(`   ... and ${overflow} more findings`);
+			lines.push(t("session.moreFindings", { count: overflow }));
 		}
 
 		for (const check of result.unavailableChecks ?? []) {
@@ -199,7 +202,7 @@ export function formatThreatBanner(
 	const policyLine = formatRemotePolicyLine(remotePolicyCache);
 	if (policyLine) {
 		lines.push("");
-		lines.push(kv("Policy", policyLine));
+		lines.push(kv(t("session.label.policy"), policyLine));
 	}
 
 	if (versionCheck?.updateAvailable) {
@@ -225,28 +228,35 @@ function mcpInventorySection(posture: NonNullable<SessionStartResult["posture"]>
 	// as a complete inventory.
 	const gapParts: string[] = [];
 	if ((mcpServersNotEnumerated ?? 0) > 0) {
-		gapParts.push(`${mcpServersNotEnumerated} server entries were unusable`);
+		gapParts.push(t("session.mcp.unusableServers", { count: mcpServersNotEnumerated }));
 	}
 	if ((mcpSourcesNotEnumerated ?? 0) > 0) {
-		gapParts.push(`${mcpSourcesNotEnumerated} source(s) could not be read at all`);
+		gapParts.push(t("session.mcp.unreadableSources", { count: mcpSourcesNotEnumerated }));
 	}
 	const coverageWarning =
 		mcpCoverage && mcpCoverage !== "read"
-			? ` Inventory coverage is ${mcpCoverage}, not complete.`
+			? t("session.mcp.coverageWarning", { coverage: mcpCoverage })
 			: "";
 	const gapNote = gapParts.length > 0 ? ` ${gapParts.join("; ")}.` : "";
-	return `MCP inventory: ${mcpServers} configured, ${riskyMcpServers} with risk indicators, ${invalidSources} unreadable sources, ${unverifiedMcpServers ?? 0} with unverified tool manifests.${coverageWarning}${gapNote} Configuration discovery does not verify server trust.`;
+	return t("session.mcp.inventory", {
+		servers: mcpServers,
+		risky: riskyMcpServers,
+		invalid: invalidSources,
+		unverified: unverifiedMcpServers ?? 0,
+		coverageWarning,
+		gapNote,
+	});
 }
 
 /** Coverage gaps are rendered, never folded into the inventory counts. */
 function mcpCoverageGapSection(findings: SessionStartCoverageFinding[]): string[] {
 	const MAX_COVERAGE_FINDINGS = 5;
-	const lines = ["MCP tool-manifest coverage gaps:"];
+	const lines = [t("session.mcp.coverageGaps")];
 	for (const finding of findings.slice(0, MAX_COVERAGE_FINDINGS)) {
 		lines.push(`  - ${finding.server} (${finding.status}, ${finding.reason}): ${finding.detail}`);
 	}
 	const overflow = findings.length - MAX_COVERAGE_FINDINGS;
-	if (overflow > 0) lines.push(`  ... and ${overflow} more coverage gaps`);
+	if (overflow > 0) lines.push(t("session.mcp.moreGaps", { count: overflow }));
 	return lines;
 }
 
@@ -257,7 +267,7 @@ function scanHeadline(version: string, result: SessionStartResult): string {
 	}
 	if (!result.rulesIncomplete) return formatStartupClean(version, result.versionCheck);
 	// Never "No threats found" when the rule set the scan used was partial.
-	const headline = `🛡️ Singularity AIDR v${version} — Review Required`;
+	const headline = t("session.header", { version, label: t("session.header.reviewRequired") });
 	return result.versionCheck?.updateAvailable
 		? `${headline}\n${formatUpdateNotice(result.versionCheck)}`
 		: headline;
@@ -272,27 +282,32 @@ export function formatSessionStartMessage(version: string, result: SessionStartR
 			? formatStartupDisabled(version, reason)
 			: formatStartupLocalOnly(version, reason);
 		if (reason === "enrollment_repair_required") {
-			return `${base}\nEnrollment could not be confirmed locally. An operator must settle the enrollment outcome and revoke any affected key in the control plane, then start fresh pairing and approve it in the browser. Preserve the installation ID and tenant; do not reuse the previous authorization code.`;
+			return `${base}\n${t("session.enrollmentRepair")}`;
 		}
 		if (!result.bootstrap) return base;
 
 		const lines: string[] = [base, ""];
-		lines.push("To activate Singularity AIDR:");
-		lines.push(kv("Open", result.bootstrap.verification_url));
-		lines.push(kv("Code", result.bootstrap.user_code));
+		lines.push(t("session.activate"));
+		lines.push(kv(t("session.label.open"), result.bootstrap.verification_url));
+		lines.push(kv(t("session.label.code"), result.bootstrap.user_code));
 		if (result.bootstrap.expires_at) {
-			lines.push(kv("Expires", result.bootstrap.expires_at));
+			lines.push(kv(t("session.label.expires"), result.bootstrap.expires_at));
 		}
 		return lines.join("\n");
 	}
 	const sections: string[] = [];
 	const message = scanHeadline(version, result);
 	if (result.rulesIncomplete) {
-		sections.push(`⚠️ Threat ${result.rulesIncomplete.message}. ${result.rulesIncomplete.reason}`);
+		sections.push(
+			t("session.rulesIncomplete", {
+				message: result.rulesIncomplete.message,
+				reason: result.rulesIncomplete.reason,
+			}),
+		);
 	}
 	if (result.posture) {
 		sections.push(mcpInventorySection(result.posture));
-		sections.push(`AI infrastructure policy assessment: ${result.posture.infrastructure}.`);
+		sections.push(t("session.infrastructure", { assessment: result.posture.infrastructure }));
 	}
 	const coverage = result.coverageFindings ?? [];
 	if (coverage.length > 0) sections.push(...mcpCoverageGapSection(coverage));

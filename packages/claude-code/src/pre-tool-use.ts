@@ -22,6 +22,7 @@ import {
 	recordHostObservation,
 	resolveHostAsk,
 	snapshotBeforeAllowedToolCall,
+	t,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -54,8 +55,7 @@ const hostObservation = createHostObservation();
  */
 function redactedResponse(verdict: Verdict, updatedInput: Record<string, unknown>) {
 	const notice = secureCodeNotice(verdict);
-	const systemMessage =
-		`🛡️ Singularity AIDR redacted sensitive data from this tool call before it ran. ${verdict.reasons[0] ?? ""}`.trim();
+	const systemMessage = t("hook.redacted", { reason: verdict.reasons[0] ?? "" }).trim();
 	const additionalContext =
 		"Singularity AIDR data-loss prevention replaced sensitive values in this tool input with redaction markers before it ran. Do not try to recover or re-insert the original values.";
 	return {
@@ -133,7 +133,7 @@ function makeResponse(
 			hookSpecificOutput: {
 				hookEventName: "PreToolUse",
 				permissionDecision: "deny",
-				permissionDecisionReason: `🛡️ Singularity AIDR: blocked pending operator approval\n${dashboard.operatorHold}`,
+				permissionDecisionReason: `${t("hook.reason.operatorHold")}\n${dashboard.operatorHold}`,
 			},
 		};
 	}
@@ -141,13 +141,13 @@ function makeResponse(
 	if (verdict.decision === "ask" && dashboard.dashboardOnly) {
 		// operator_approvals.dashboard_only: the native dialog would let the local
 		// user approve, so the call is blocked and only the dashboard can release it.
-		const notice = dashboard.notice ?? "Only an AIDR dashboard approval can release this action.";
+		const notice = dashboard.notice ?? t("hook.dashboardOnlyNotice");
 		return {
 			systemMessage: `${banner}\n${notice}`,
 			hookSpecificOutput: {
 				hookEventName: "PreToolUse",
 				permissionDecision: "deny",
-				permissionDecisionReason: `🛡️ Singularity AIDR: approval required in the AIDR dashboard\n${notice}`,
+				permissionDecisionReason: `${t("hook.reason.dashboardRequired")}\n${notice}`,
 			},
 		};
 	}
@@ -162,8 +162,8 @@ function makeResponse(
 				permissionDecision: "deny",
 				permissionDecisionReason:
 					verdict.source === "agent_profile"
-						? "🛡️ Singularity AIDR: Blocked by agent permission profile"
-						: "🛡️ Singularity AIDR: Threat Blocked",
+						? t("hook.reason.profileBlocked")
+						: t("hook.reason.threatBlocked"),
 			},
 		};
 	}
@@ -190,10 +190,7 @@ const responder = createHookResponder({
 	deadlineMs: resolvePreToolUseDeadlineMs(process.env),
 	onDeadline: () => ({
 		stdout: `${JSON.stringify(
-			denyResponse(
-				"Singularity AIDR could not finish inspecting this tool call in time. The action was blocked.",
-				"Singularity AIDR inspection timed out",
-			),
+			denyResponse(t("hook.timeout.message"), t("hook.timeout.reason")),
 		)}\n`,
 	}),
 });
@@ -231,12 +228,7 @@ function denyResponse(systemMessage: string, reason: string): Record<string, unk
 }
 
 function writeInspectionFailure(): void {
-	respond(
-		denyResponse(
-			"Singularity AIDR could not inspect this tool call. The action was blocked.",
-			"Singularity AIDR inspection unavailable",
-		),
-	);
+	respond(denyResponse(t("hook.inspectionFailed.message"), t("hook.inspectionFailed.reason")));
 }
 
 /**
@@ -266,8 +258,8 @@ async function readToolCall(): Promise<Record<string, unknown> | null> {
 	if (input.status === "oversized") {
 		respond(
 			denyResponse(
-				`Singularity AIDR could not inspect this tool call: its input exceeded the ${MAX_PRE_TOOL_INPUT_BYTES}-byte inspection limit. The action was blocked.`,
-				"Singularity AIDR input too large to inspect",
+				t("hook.tooLarge.message", { bytes: MAX_PRE_TOOL_INPUT_BYTES }),
+				t("hook.tooLarge.reason"),
 			),
 		);
 		return null;
@@ -324,12 +316,7 @@ async function main(): Promise<void> {
 	// not be what the shell runs: deny, never downgrade to ask. (Undecodable
 	// stdin bytes were already refused by the strict UTF-8 read above.)
 	if (malformedShellCommandReason(toolName, toolInput)) {
-		respond(
-			denyResponse(
-				"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.",
-				"Singularity AIDR malformed command",
-			),
-		);
+		respond(denyResponse(t("hook.malformed.message"), t("hook.malformed.reason")));
 		return;
 	}
 	const sessionId = typeof toolCall.session_id === "string" ? toolCall.session_id : "unknown";

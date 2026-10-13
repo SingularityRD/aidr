@@ -6,6 +6,7 @@ import {
 	type HookResponderOptions,
 	isWellFormedToolCall,
 	malformedShellCommandReason,
+	t,
 } from "@singularityrd/aidr-core";
 import { transformSync } from "esbuild";
 import { describe, expect, it, vi } from "vitest";
@@ -100,6 +101,8 @@ async function runHook(
 			}),
 		isWellFormedToolCall,
 		malformedShellCommandReason,
+		// The real message catalog (the suite pins AIDR_LOCALE=en).
+		t,
 		initSentry: vi.fn(),
 		verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),
 	};
