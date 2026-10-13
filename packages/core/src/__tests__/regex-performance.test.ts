@@ -368,3 +368,28 @@ describe("threat rules do not backtrack on repeated option-like tokens", () => {
 		expect(slow).toEqual([]);
 	});
 });
+
+describe("threat rules stay linear on repeated separator floods", () => {
+	// AISC-004's first gap could cross every `|` of `curl | curl | …`, trying
+	// 300 split points per occurrence: a 3.5 MB Write took ~15s in code inspection,
+	// past the hook timeout. A rule must scan such a flood in near-linear time.
+	const FLOODS = ["curl | ", "wget ; ", "curl && ", "bash -c | "];
+
+	it("matches every rule against 256 KB separator floods within a tight budget", async () => {
+		const threats = await loadThreats(THREATS_DIR);
+		const slow: string[] = [];
+		for (const threat of threats) {
+			const regex = threat.compiledPattern;
+			if (!regex) continue;
+			for (const flood of FLOODS) {
+				const input = flood.repeat(Math.ceil(262_144 / flood.length));
+				const start = process.hrtime.bigint();
+				regex.lastIndex = 0;
+				regex.test(input);
+				const ms = elapsedMsSince(start);
+				if (ms > 400) slow.push(`${threat.id} ${JSON.stringify(flood)} ${ms.toFixed(0)}ms`);
+			}
+		}
+		expect(slow).toEqual([]);
+	});
+});

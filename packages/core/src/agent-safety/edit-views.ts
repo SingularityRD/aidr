@@ -115,6 +115,11 @@ export function isTestFile(filePath: string): boolean {
 	return CODE_EXTENSION.test(path) && (TEST_DIRECTORY.test(path) || TEST_FILE_NAME.test(path));
 }
 
+/** True for a continuous-integration or git-hook definition (the `ci_config` view). */
+export function isCiConfigPath(filePath: string): boolean {
+	return CI_CONFIG.test(normalizedPath(filePath));
+}
+
 /** The line views a file of this path belongs to (empty: not inspected). */
 export function viewsForPath(filePath: string): EditLineView[] {
 	const path = normalizedPath(filePath);

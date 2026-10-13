@@ -66,7 +66,9 @@
   severity: critical
   confidence: 0.95
   action: block
-  pattern: "\\b(?:curl|wget)\\b[^\\n]{0,300}?(?:\\||&&|;)[^\\n]{0,300}?(?:\\b(?:c?pickle|_pickle|dill|cloudpickle|joblib)\\.loads?\\s{0,4}\\(|\\btorch\\.load\\s{0,4}\\((?![^\\n]{0,300}?\\bweights_only\\s{0,4}=\\s{0,4}True\\b))"
+  # The first gap stops at the first separator (a lone & inside a URL is allowed),
+  # so a flood of "curl | " is scanned linearly instead of backtracking.
+  pattern: "\\b(?:curl|wget)\\b(?:[^\\n|;&]|&(?!&)){0,300}(?:\\||&&|;)[^\\n]{0,300}?(?:\\b(?:c?pickle|_pickle|dill|cloudpickle|joblib)\\.loads?\\s{0,4}\\(|\\btorch\\.load\\s{0,4}\\((?![^\\n]{0,300}?\\bweights_only\\s{0,4}=\\s{0,4}True\\b))"
   match_on: ["command", "code:shell", "code:dockerfile", "code:makefile", "code:yaml"]
   title: "Command downloads a file and unpickles it in the same step (remote code execution); verify the file first and load .safetensors weights"
   expires_at: null

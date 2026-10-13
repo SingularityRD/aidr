@@ -21,6 +21,7 @@ import {
 	codeBlocksForToolCall,
 	codeLanguageForPath,
 	isReportableFinding,
+	isScriptContentRule,
 	isSecureCodeRule,
 	matchCodeBlock,
 	SECRET_RULE_ID,
@@ -198,6 +199,15 @@ class FileWalk {
 }
 
 /**
+ * The rules a project scan reports. Script-content rules hold an agent's write
+ * of a script for review; a project's existing install scripts are not what
+ * this report is about.
+ */
+function projectScanRules(threats: readonly Threat[]): Threat[] {
+	return threats.filter((threat) => !isScriptContentRule(threat));
+}
+
+/**
  * Scan a project directory (or a single file) with the code rules in `threats`.
  */
 export async function scanCodePath(
@@ -206,7 +216,7 @@ export async function scanCodePath(
 	options: CodeScanOptions = {},
 ): Promise<CodeScanReport> {
 	const root = resolve(path);
-	const rules = new CodeRuleSet(threats, options.disabledThreats ?? []);
+	const rules = new CodeRuleSet(projectScanRules(threats), options.disabledThreats ?? []);
 	const sources = options.trustedModelSources ?? NO_TRUSTED_MODEL_SOURCES;
 	const maxFindings = options.maxFindings ?? 1000;
 	const report: CodeScanReport = {

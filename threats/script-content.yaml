@@ -1,0 +1,100 @@
+# Script-content rules for Singularity AIDR
+# Author: SingularityRD
+# License: DRL-1.1 (see threats/LICENSE)
+# Schema: id, category, severity, confidence, action, pattern, match_on, title, expires_at, revoked
+#
+# Command-execution patterns in the scripts an agent WRITES (Write / Edit /
+# MultiEdit / apply_patch / MCP write_file and edit_file, heredocs redirected
+# into a file). The same patterns in a command the agent RUNS are covered by
+# commands.yaml, obfuscation.yaml and win-*.yaml; without these rules the only
+# signal on a written `curl … | bash` was URL reputation, which is inert when
+# no reputation endpoint is deployed.
+#
+# Every rule runs only on `code:<language>` text (packages/core/src/code-guard.ts):
+#   code:shell       .sh .bash .zsh .ksh .command, shell rc files, .git/hooks/*,
+#                    and any file whose shebang names a POSIX shell
+#   code:powershell  .ps1 .psm1, and a pwsh/powershell shebang
+#   code:batch       .bat .cmd
+#   code:dockerfile  Dockerfile, Containerfile, *.dockerfile
+#   code:makefile    Makefile, GNUmakefile, *.mk
+#   code:ci_config   CI pipelines and git-hook managers (.github/workflows/,
+#                    .gitlab-ci.yml, Jenkinsfile, .husky/, …; same paths as the
+#                    ci_config edit view)
+#   code:npm_script  the `scripts` values of a package.json
+# Documentation (README.md, docs/*.md) is never one of these, so install
+# instructions that show `curl … | bash` stay allowed. Comment lines (#, //,
+# ::, REM) are skipped.
+#
+# Decision: writing a script is not running it, so download-and-execute and
+# encoded-payload hits are require_approval (ask), not block: CI files,
+# Dockerfiles and installers legitimately fetch toolchains this way and a human
+# can approve the write. Reverse shells are block: they have no ordinary
+# development use, and a script in a git hook, CI job or npm lifecycle script
+# later runs without any further tool call AIDR could inspect.
+#
+# Cost: the code guard runs these over up to 4 MiB of written text, so every
+# alternative starts with a literal token, the comment lookbehind runs only
+# after that token, gaps are bounded and tempered against the alternative's own
+# token, and a gap that must end at a pipe is atomic ((?=(?<g1>…))\k<g1>).
+
+# --- Download piped (or process-substituted) into a shell ---
+- id: "CLT-SCRIPT-001"
+  category: script_content
+  severity: high
+  confidence: 0.9
+  action: require_approval
+  pattern: "(?:\\b(?:curl|wget|fetch)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?=(?<g1>(?:(?!\\b(?:curl|wget|fetch)\\b)(?:\\\\\\r?\\n|[^|\\n])){0,400}))\\k<g1>\\|[ \\t]{0,8}(?:(?:sudo|doas|env|command|exec|nohup|timeout|stdbuf|nice|setsid)\\b[^|\\n]{0,60}?[ \\t]{1,8}){0,3}(?:/[^\\s|]{1,80}/)?(?:ba|z|k|da|a)?sh\\b|\\b(?:ba|z|k|da|a)?sh\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})[ \\t]{1,8}(?:(?:-[A-Za-z]{1,8}[ \\t]{1,8}){0,3}<\\(|-[A-Za-z]{0,8}c[A-Za-z]{0,8}[ \\t]{1,8}[\"']?\\$\\()[ \\t]{0,8}(?:curl|wget)\\b|(?:\\bsource|(?<![\\w.])\\.)(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})[ \\t]{1,8}<\\([ \\t]{0,8}(?:curl|wget)\\b)"
+  match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
+  title: "Script being written downloads code and runs it in a shell (curl/wget | sh, bash <(curl ...), source <(curl ...)); held for review because whoever controls the URL decides what runs when the script does"
+  expires_at: null
+  revoked: false
+
+# --- PowerShell download executed with Invoke-Expression ---
+- id: "CLT-SCRIPT-002"
+  category: script_content
+  severity: high
+  confidence: 0.9
+  action: require_approval
+  pattern: "(?:\\b(?:irm|iwr|invoke-webrequest|invoke-restmethod|curl|wget)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?=(?<g1>(?:(?!\\b(?:irm|iwr|invoke-webrequest|invoke-restmethod|curl|wget)\\b)[^|\\n]){0,400}))\\k<g1>\\|[ \\t]{0,8}\\b(?:iex|invoke-expression)\\b|\\b(?:iex|invoke-expression)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})[ \\t]{0,8}\\(?[ \\t]{0,8}\\(?[ \\t]{0,8}(?:\\b(?:irm|iwr|invoke-webrequest|invoke-restmethod)\\b|new-object\\b[^\\n]{0,80}?\\bnet\\.webclient\\b)|\\bnet\\.webclient\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\bnet\\.webclient\\b)[^\\n]){0,200}?\\.download(?:string|data)\\b(?=(?<g2>[^|\\n]{0,400}))\\k<g2>\\|[ \\t]{0,8}\\b(?:iex|invoke-expression)\\b)"
+  case_insensitive: true
+  match_on: ["code:powershell", "code:batch", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
+  title: "Script being written downloads PowerShell code and runs it with Invoke-Expression (iwr | iex); held for review because whoever controls the URL decides what runs when the script does"
+  expires_at: null
+  revoked: false
+
+# --- Reverse shell ---
+- id: "CLT-SCRIPT-003"
+  category: script_content
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "(?:\\b(?:ba|z|k|da|a)?sh[ \\t]{1,8}-i\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:[^\\n]{0,200}?/dev/(?:tcp|udp)/|[^\\n|]{0,100}\\|[ \\t]{0,8}\\b(?:nc|ncat|netcat)\\b)|\\bexec[ \\t]{1,8}\\d{1,4}<>[ \\t]{0,8}/dev/(?:tcp|udp)/(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\bexec\\b)[^\\n]){0,300}?\\b(?:ba|z|k|da|a)?sh\\b[ \\t]{0,8}[<>]&|\\b(?:nc|ncat|netcat)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\b(?:nc|ncat|netcat)\\b)[^\\n|;&]){0,200}?[ \\t](?:-e|-c|--exec|--sh-exec)[ \\t=]{1,4}(?:(?:/[^\\s/]{1,40}){0,4}/)?(?:ba|z|k|da|a)?sh\\b|\\bmkfifo\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\bmkfifo\\b)[^\\n]){0,300}?\\|[ \\t]{0,8}(?:/[^\\s|]{1,80}/)?(?:ba|z|k|da|a)?sh\\b[^\\n|]{0,200}\\|[ \\t]{0,8}\\b(?:nc|ncat|netcat)\\b|\\bsocat\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?=[^\\n]{0,400}?\\b[Tt][Cc][Pp][46]?(?:-[A-Za-z]{1,10})?:)(?:(?!\\bsocat\\b)[^\\n]){0,400}?\\b[Ee][Xx][Ee][Cc]:[^\\s]{0,40}?(?:ba|z|k|da|a)?sh\\b)"
+  match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
+  title: "Script being written opens a reverse shell (an interactive shell wired to a network socket); blocked because it has no ordinary development use and a hook, CI job or npm script runs it without another inspected tool call"
+  expires_at: null
+  revoked: false
+
+# --- Encoded payload decoded and executed by a shell ---
+- id: "CLT-SCRIPT-004"
+  category: script_content
+  severity: high
+  confidence: 0.9
+  action: require_approval
+  pattern: "(?:\\b(?:base64|base32|basenc)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\b(?:base64|base32|basenc)\\b)[^|\\n]){0,200}?[ \\t](?:-d|-D|--decode)\\b(?=(?<g1>[^|\\n]{0,200}))\\k<g1>\\|[ \\t]{0,8}(?:(?:sudo|doas|env|command|exec|nohup|timeout|stdbuf|nice|setsid)\\b[^|\\n]{0,60}?[ \\t]{1,8}){0,3}(?:/[^\\s|]{1,80}/)?(?:ba|z|k|da|a)?sh\\b|\\bxxd\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\bxxd\\b)[^|\\n]){0,200}?[ \\t]-r\\b(?=(?<g2>[^|\\n]{0,200}))\\k<g2>\\|[ \\t]{0,8}(?:/[^\\s|]{1,80}/)?(?:ba|z|k|da|a)?sh\\b|\\beval\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\beval\\b)[^\\n]){0,300}?\\bbase(?:64|32)\\b(?:(?!\\bbase(?:64|32)\\b)[^\\n]){0,100}?[ \\t](?:-d|-D|--decode)\\b|\\b(?:ba|z|k|da|a)?sh\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})[ \\t]{1,8}-[A-Za-z]{0,8}c[A-Za-z]{0,8}[ \\t]{1,8}[\"']?\\$\\((?:(?!\\$\\()[^\\n]){0,300}?\\bbase(?:64|32)\\b(?:(?!\\bbase(?:64|32)\\b)[^\\n]){0,100}?[ \\t](?:-d|-D|--decode)\\b)"
+  match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
+  title: "Script being written decodes an encoded payload and executes it (base64 -d | sh, eval of decoded text); held for review because the code that runs is hidden from review"
+  expires_at: null
+  revoked: false
+
+# --- PowerShell encoded command or decoded payload executed ---
+- id: "CLT-SCRIPT-005"
+  category: script_content
+  severity: high
+  confidence: 0.9
+  action: require_approval
+  pattern: "(?:\\b(?:powershell|pwsh)(?:\\.exe)?\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\b(?:powershell|pwsh)(?:\\.exe)?\\b)[^\\n]){0,200}?[ \\t][-/]e(?:nc(?:odedcommand)?|c)?[ \\t]{1,8}[\"']?[A-Za-z0-9+/]{40}|\\b(?:iex|invoke-expression)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\b(?:iex|invoke-expression)\\b)[^\\n]){0,300}?\\bfrombase64string\\b|\\bfrombase64string\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?=(?<g1>(?:(?!\\bfrombase64string\\b)[^|\\n]){0,400}))\\k<g1>\\|[ \\t]{0,8}\\b(?:iex|invoke-expression)\\b)"
+  case_insensitive: true
+  match_on: ["code:powershell", "code:batch", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
+  title: "Script being written runs a base64-encoded PowerShell command (-EncodedCommand, FromBase64String | iex); held for review because the code that runs is hidden from review"
+  expires_at: null
+  revoked: false
