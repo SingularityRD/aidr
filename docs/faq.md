@@ -8,7 +8,7 @@ one, it cannot provide a working verification URL. See [Device Auth](device-auth
 
 ## Is Singularity AIDR always running?
 
-On Claude Code, yes - it loads automatically via hooks on every session. On Cursor/VS Code, you need to explicitly enable protection via the command palette. On OpenClaw, it runs once installed as a plugin.
+On Claude Code, yes - it loads automatically via hooks on every session. On Cursor/VS Code (preview — no real-host acceptance evidence yet), you need to explicitly enable protection via the command palette. On OpenClaw, it runs once installed as a plugin.
 
 ## What happens if Singularity AIDR encounters an error?
 

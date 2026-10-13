@@ -24,8 +24,8 @@ is the approval template.
 
 Singularity AIDR has four product lines that share one control plane:
 
-- **AIDR for AI coding agents** — connectors for Claude Code, Cursor, VS Code, OpenClaw,
-  OpenCode and Codex CLI, plus the MCP Gateway, SDK and CLI. The local engine evaluates
+- **AIDR for AI coding agents** — connectors for Claude Code, OpenClaw, OpenCode and
+  Codex CLI, Cursor and VS Code as a preview — no real-host acceptance evidence yet, plus the MCP Gateway, SDK and CLI. The local engine evaluates
   tool calls against 507 YAML threat rules and returns `allow` / `deny` / `ask`.
 - **AIDR Browser Guard** — Chrome/Edge/Firefox extension that masks TR/EN personal data,
   secrets, custom terms and exact-data-match records before prompts reach AI chat
@@ -188,7 +188,7 @@ Binding on any quote, deck or email:
 - **Failure behaviour is per layer**, not blanket "fail-open" or "fail-closed": connector
   entry points and Browser Guard's content script fail closed, detection internals skip
   a failing signal visibly, security controls fail closed, and the host decides what
-  happens when a hook is disabled or killed.
+  happens when a hook is disabled, untrusted or killed.
 - **Reputation checks are optional** and need a configured endpoint; an unavailable
   check is never "clean".
 - **Compliance wording:** "designed to support KVKK/GDPR obligations", never

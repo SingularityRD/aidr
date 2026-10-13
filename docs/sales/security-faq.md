@@ -60,7 +60,9 @@ It depends on the layer, and we state each one:
 
 - **Connector entry points fail closed.** Claude Code, Cursor/VS Code, OpenClaw,
   OpenCode and Codex return a deny on an internal error. Plugin initialisation failures
-  register a deny-all handler instead of leaving the host unguarded.
+  register a deny-all handler instead of leaving the host unguarded. That is the
+  connector's answer; a hook the host disabled, did not trust, killed or timed out gives
+  none (see the last point). Cursor and VS Code are a preview — no real-host acceptance evidence yet.
 - **Browser Guard's content script fails closed.** A missing policy, unreadable editor,
   scan error or incomplete scan blocks the send (except in `monitor` mode).
 - **Detection internals** skip a failing signal, log it and continue. A skipped signal
@@ -69,6 +71,7 @@ It depends on the layer, and we state each one:
   signatures, approvals) fail closed.
 - **The host has the last word.** If a host does not invoke a hook (disabled, untrusted,
   killed), the action proceeds. Codex documents this for untrusted or crashed hooks.
+  Per-host results: [compatibility matrix](../compatibility-matrix.md#host-failure-behaviour).
   AIDR is a guardrail at the hook boundary, not endpoint isolation.
 
 ### Can a compromised or prompt-injected agent approve its own block?

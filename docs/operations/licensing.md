@@ -12,9 +12,17 @@ What the license controls, and what it never controls:
 |------|-------------------------|----------------------|
 | Seat admission, device enrollment and control-plane event ingest (`tenant_admission_capacity`) | Yes (`tenant_admissions.expires_at`) | Degraded: capacity drops to 0, so enrollment and agent event ingest are refused and the dashboard stops receiving new endpoint telemetry |
 | Local detection on every endpoint (hooks, rules, allowlists, audit log) | **No** | **Keeps enforcing.** Detection never depends on a license, enrollment or network access |
+| Signed per-installation entitlement of an enrolled endpoint | No (issued by the control plane) | Missing, invalid or expired beyond its offline grace period: managed-only features stop on that endpoint; local detection keeps deciding every tool call |
 
 This follows the product's enforcement default: a connector evaluates every tool
 call locally, and managed features are an opt-in layer on top.
+
+Separate from licensing, signed release builds verify their own artifacts before they
+inspect anything. That needs the release trust key in each endpoint's
+`integrity.public_keys_pem` ([Integrity verification](../integrity.md)); without it a
+release connector blocks every tool call. Release builds are managed-only (they run in
+`managed` mode whatever `config.json` says), so the trust key is part of every
+installation, including one that never enrolls.
 
 ## What the license can and cannot enforce
 

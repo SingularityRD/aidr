@@ -296,7 +296,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 		<p class="tagline">Detection, response and data privacy for AI agents and the people who use them</p>
 		<div class="rule"></div>
 		<dl class="reach">
-			<dt>Agent connectors</dt><dd>Claude Code · Cursor · VS Code · OpenClaw · OpenCode · Codex CLI</dd>
+			<dt>Agent connectors</dt><dd>Claude Code · OpenClaw · OpenCode · Codex CLI · Cursor · VS Code (Cursor, VS Code: preview — no real-host acceptance evidence yet)</dd>
 			<dt>Browser Guard sites</dt><dd>ChatGPT · Gemini · Claude · Copilot · Perplexity · DeepSeek · Mistral · Grok</dd>
 			<dt>Lifecycle</dt><dd>Discover · Assess · Protect · Control · Inspect · Approve · Prove, governed end to end</dd>
 		</dl>
@@ -360,7 +360,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 			<p class="what">Every tool call reaches the local decision engine before the host acts, and comes back as <span class="v-allow">allow</span> <span class="v-ask">ask</span> <span class="v-deny">deny</span>.</p>
 			<ul class="bul">
 				<li><b><span data-fact="threat-rules">507</span> YAML detection rules</b> in <span data-fact="threat-files">29</span> files: dangerous commands, credential access, persistence, obfuscation, supply chain; Linux, macOS, Windows.</li>
-				<li><b>Fail-closed entry points:</b> on an internal error a connector denies the call instead of letting it through.</li>
+				<li><b>Fail-closed entry points:</b> on an internal error a connector denies the call; a hook the host disabled, did not trust or killed gives no verdict.</li>
 				<li><b>MCP Gateway</b> scans tool results before the model reads them; the <b>SDK</b> and <b>CLI</b> use the same engine.</li>
 				<li><b>Toxic flow and AI safety:</b> session attack chains, runaway loops, test sabotage and irreversible actions wait for a person.</li>
 			</ul>

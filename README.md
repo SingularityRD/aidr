@@ -9,9 +9,9 @@ chat products.
   <img src="images/aidr-logo-shaded.png" alt="Singularity AIDR" width="50%">
 </p>
 
-Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [Cursor / VS Code](docs/platform-guides/cursor.md), [OpenClaw](docs/platform-guides/openclaw.md), [OpenCode](docs/platform-guides/opencode.md) and [Codex](docs/platform-guides/codex.md), and checks them against:
+Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [OpenClaw](docs/platform-guides/openclaw.md), [OpenCode](docs/platform-guides/opencode.md), [Codex](docs/platform-guides/codex.md) and [Cursor / VS Code](docs/platform-guides/cursor.md) (preview — no real-host acceptance evidence yet), and checks them against:
 
-- **Local heuristics** — 494 YAML threat rules in 29 files ([`threats/`](threats/)) for
+- **Local heuristics** — 507 YAML threat rules in 29 files ([`threats/`](threats/)) for
   dangerous commands, credential access, persistence, obfuscation, supply-chain and
   LLM-specific patterns on Linux, macOS and Windows
 - **Package supply-chain checks** — registry existence, file reputation and age analysis
@@ -24,7 +24,7 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 
 | Product line | What it does | Start here |
 | --- | --- | --- |
-| **AIDR for AI coding agents** | Connectors for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI share one local decision engine that returns `allow`, `deny` or `ask`. The [MCP Gateway](packages/mcp-gateway/README.md) inspects MCP tool results before they reach a model, the [SDK](packages/sdk/README.md) adds the same checks to your own applications, and the [CLI](packages/cli/) handles setup, status and AI-infrastructure scans. | [Product overview](docs/product/overview.md) |
+| **AIDR for AI coding agents** | Connectors for Claude Code, OpenClaw, OpenCode and Codex CLI, plus Cursor and VS Code as a preview, share one local decision engine that returns `allow`, `deny` or `ask`. Tested host versions are in the [compatibility matrix](docs/compatibility-matrix.md). The [MCP Gateway](packages/mcp-gateway/README.md) inspects MCP tool results before they reach a model, the [SDK](packages/sdk/README.md) adds the same checks to your own applications, and the [CLI](packages/cli/) handles setup, status and AI-infrastructure scans. | [Product overview](docs/product/overview.md) |
 | **AIDR Browser Guard** | Chrome, Edge and Firefox extension. Masks Turkish and English personal data (T.C. kimlik numbers, IBANs, phone numbers, email addresses, card numbers), secrets and API keys, custom terms and exact-data-match fingerprints before prompts, pastes and files reach ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral or Grok. Placeholders such as `[EMAIL_1]` are restored locally in the response. Supports administrator-managed policy and counts-only telemetry. | [Browser Guard](packages/browser-guard/README.md) |
 | **AIDR Privacy engine** | TR/EN detection and masking with checksum validation, used by Browser Guard, and an optional enterprise gateway. The endpoint native host for NER/OCR ships without a model and is not part of the first-release support scope. | [AIDR Privacy](packages/privacy/README.md) |
 | **AI Security Posture** | Finds weak spots in the AI stack around your agents. `aidr scan --target` fingerprints AI services (146 AI component fingerprints) and matches their versions against 2,000+ CVE rules, with severity and CVSS. `aidr discover` inventories local MCP servers and maps them to 14 MCP risk categories. `aidr scan --skill` and the session-start plugin scan check skills and plugins against the T01–T09 taxonomy. Findings can be uploaded to the dashboard's Posture view as identifiers and digests only; target URLs, file paths and matched text stay on the machine. | [AI Security Posture](docs/ai-security-posture.md) |
@@ -33,13 +33,13 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 
 | Option | Summary | Guide |
 | --- | --- | --- |
-| **Local mode (free)** | Agent connectors evaluate every tool call on the device with no account. Browser Guard masks prompts in the browser. | [Configuration](docs/configuration.md) |
-| **Cloud (SaaS)** | Hosted control plane: dashboard, device enrollment, central policy, audit export, SSO/SCIM. Local enforcement keeps working if the service is unreachable. | [SaaS deployment](docs/deployment/saas.md) |
+| **Local detection (no account)** | Every connector evaluates every tool call on the device; detection needs no account, enrollment or network. Signed release builds are managed-only and need the release trust key (`integrity.public_keys_pem`) before first start, but detect locally before enrollment. Browser Guard masks prompts in the browser. | [Configuration](docs/configuration.md), [Integrity](docs/integrity.md) |
+| **Cloud (SaaS)** | Hosted control plane: dashboard, device enrollment, central policy, audit export, SSO/SCIM. Local enforcement keeps working if the service is unreachable or the entitlement lapses; only managed features stop. | [SaaS deployment](docs/deployment/saas.md) |
 | **On-premises** | Customer-operated control plane on Docker Compose or Kubernetes (Helm), including an air-gapped path with a signed offline license and signed rule/intel packs. | [On-prem deployment](docs/deployment/onprem.md) |
 
 ## Plans
 
-Free (local mode), **Team** (minimum 3 developers), **Business** (minimum 25
+Free, **Team** (minimum 3 developers), **Business** (minimum 25
 developers) and **Enterprise** (on-premises and air-gapped). Pricing is by written quote
 through anil@singularityrd.com; self-service checkout is not enabled. Edition contents
 are listed in the [product catalog](docs/sales/catalog/README.md).
@@ -47,13 +47,26 @@ are listed in the [product catalog](docs/sales/catalog/README.md).
 ## Quick start
 
 Install only a signed, approved release (see [Release status](#release-status)). Source
-builds are for development. Local detection is active as soon as a connector is
-installed; managed features need a control plane and a signed tenant configuration.
+builds are for development.
+
+1. **Provision the release trust key first.** Release builds are managed-only and verify
+   their signed artifacts before inspecting anything. Put the independently distributed
+   Ed25519 public key in `integrity.public_keys_pem` in `~/.singularity-aidr/config.json`
+   (Windows `%USERPROFILE%\.singularity-aidr\config.json`), as described in
+   [Integrity verification](docs/integrity.md). Without it the connector blocks every tool
+   call (`Singularity AIDR inspection unavailable`).
+2. **Install the connector** for your runtime (below). Local detection is active as soon as
+   it is installed, before any enrollment.
+3. **Optionally enroll** for managed features; they need a control plane and a signed
+   tenant configuration.
+
+Check the [compatibility matrix](docs/compatibility-matrix.md) for the tested host
+versions, and the [upgrade notes](docs/upgrade-notes.md) when moving between releases.
 
 | Runtime | Install |
 | --- | --- |
 | **Claude Code** | Extract the signed `aidr-claude-plugin-<version>.tar.gz`, then run `/plugin marketplace add /absolute/path/to/extracted/aidr-claude-plugin` and `/plugin install aidr@aidr`. Requires Node.js >= 22.12.0. [Guide](docs/platform-guides/claude-code.md) |
-| **Cursor / VS Code** | Install the signed `aidr-cursor.vsix` via `Extensions > Install from VSIX`, then run `Singularity AIDR: Enable protection`. [Guide](docs/platform-guides/cursor.md) |
+| **Cursor / VS Code** (preview — no real-host acceptance evidence yet) | Install the signed `aidr-cursor.vsix` via `Extensions > Install from VSIX`, then run `Singularity AIDR: Enable protection`. No Cursor or VS Code version has been accepted on a real host. [Guide](docs/platform-guides/cursor.md) |
 | **OpenClaw** | Install the approved `@singularityrd/aidr-openclaw` version from the private registry. [Guide](docs/platform-guides/openclaw.md) |
 | **OpenCode** | Install the approved `@singularityrd/aidr-opencode` version from the private registry. [Guide](docs/platform-guides/opencode.md) |
 | **Codex CLI** | Install `@singularityrd/aidr-codex`, register `aidr-codex-hook` as a `PreToolUse` and a `UserPromptSubmit` (prompt protection) hook and trust both with `/hooks`. [Guide](docs/platform-guides/codex.md) |
@@ -74,8 +87,11 @@ Private registry credentials and versioned setup are in
 
 - **Connector entry points fail closed.** Claude Code, Cursor/VS Code, OpenClaw,
   OpenCode and Codex return a deny on an internal error. A host that never invokes the
-  hook, or drops a crashed hook, can still proceed; Codex in particular fails open on an
-  untrusted or killed hook process.
+  hook (disabled, removed or untrusted), or kills or times out the hook process, can still
+  proceed: Claude Code was observed to run the call when its hook was disabled or killed,
+  Codex runs it when its hook is untrusted, crashes or times out, and Cursor/VS Code
+  behaviour has not been observed on a real host. Per-host results are in
+  the [compatibility matrix](docs/compatibility-matrix.md#host-failure-behaviour).
 - **Detection internals** skip a failing signal, log it and continue. A skipped signal
   is never reported as a clean result.
 - **Security controls** (authentication, tenant isolation, approvals, webhook signatures)
@@ -107,6 +123,8 @@ replace signed-candidate or live-host acceptance.
 | --- | --- |
 | [Product overview](docs/product/overview.md) | Product lines, architecture and boundaries |
 | [Getting Started](docs/getting-started.md) | Installation for supported runtimes |
+| [Compatibility matrix](docs/compatibility-matrix.md) | Tested host versions, platforms, interception points, host failure behaviour |
+| [Upgrade notes](docs/upgrade-notes.md) | What to do and what changes when upgrading |
 | [Package Installation](docs/package-installation.md) | Private registry installs and prerequisites |
 | [How It Works](docs/how-it-works.md) | Detection layers, data flow, verdicts |
 | [Configuration](docs/configuration.md) | All config options and file paths |

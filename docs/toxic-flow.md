@@ -116,7 +116,9 @@ payload still is.
 - **A record that cannot be read or written** (permissions, I/O) is a skipped detection
   signal. The call is still evaluated by every other layer, the failure is logged, and an
   `allow` is recorded as `toxic_flow_unavailable`, never as a clean result. Connector
-  entry points stay fail-closed as before.
+  entry points stay fail-closed as before; a hook the host disabled, did not trust,
+  killed or timed out is outside that guarantee (see
+  [host failure behaviour](compatibility-matrix.md#host-failure-behaviour)).
 - Residual risk: like the operator approval store, this is not a boundary against arbitrary
   code that already runs as the same OS user with full shell access. It makes tampering
   detectable and turns it into a stricter posture.

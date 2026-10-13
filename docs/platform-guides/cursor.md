@@ -1,5 +1,11 @@
 # Cursor / VS Code
 
+> **Status: preview — no real-host acceptance evidence yet.** The extension returns its verdicts, but no Cursor or VS Code
+> version has been observed enforcing them on a real host (deny, ask-as-deny,
+> `failClosed`, a killed or timed-out hook). See the
+> [compatibility matrix](../compatibility-matrix.md) and the
+> [Real-host acceptance](#real-host-acceptance) section below.
+
 ## Installation
 
 ### Cursor
@@ -80,6 +86,8 @@ The extension bundles `threats/` and `allowlists/` from the repo root into `pack
 See [Release packaging](../../packages/extension/README.md#release-packaging) in the extension README and the [VS Code/Cursor section of the deployment runbook](../runbooks/deployment.md#vs-codecursor-extension-publishing) for VSIX packaging.
 
 ## Real-host acceptance
+
+Tested host versions for every connector, generated from these records: [compatibility matrix](../compatibility-matrix.md). Treat any other host version as unverified.
 
 Cursor and VS Code are **not** covered by `pnpm test:e2e:real-host`: their installers
 could not be downloaded in the environment that produced the real-host records, so

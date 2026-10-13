@@ -25,7 +25,8 @@ doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği me
 > yoktur ve hiçbir kayıt Windows, macOS, arm64, imzalı bir sürüm ya da gerçek bir modeli
 > kapsamaz. Aşağıdaki yetenekleri, yazılımın tasarlanmış ve test edilmiş davranışı olarak
 > değerlendirin; bu kayıtların ötesinde host tarafında kabul edilmiş bir garanti olarak
-> değil.
+> değil. Connector başına test edilmiş host sürümleri
+> [uyumluluk matrisindedir](../../../compatibility-matrix.md).
 
 ## İçindekiler
 
@@ -187,6 +188,9 @@ döndürür; izin gerekçesinde `🛡️ Singularity AIDR: Threat Blocked` yazar
   (yinelenen plugin çakışması).
 
 ### Cursor ve VS Code eklentisi
+
+> **Durum: önizleme — henüz gerçek ortam kabul kanıtı yok.** Hiçbir Cursor ya da VS Code
+> sürümünün eklentinin kararlarını gerçek bir host üzerinde uyguladığı gözlenmedi.
 
 **Ne yapar**
 Tek bir eklenti paketi (`aidr-cursor`; `aidr-cursor.vsix` ve `aidr-vscode.vsix` olarak
@@ -490,7 +494,7 @@ serbest bırakılır.
 **Ne yapar**
 Motor her araç çağrısından artifact'ları (komutlar, URL'ler, dosya yolları, içerik,
 paketler) çıkarır ve bunları YAML tehdit kurallarıyla eşleştirir. Kurallar kod değil,
-veridir: [`threats/`](../../../../threats/) altında **29 dosyada 494 kural** bulunur ve
+veridir: [`threats/`](../../../../threats/) altında **29 dosyada 507 kural** bulunur ve
 Linux, macOS ile Windows'u kapsar.
 
 **Neden önemli**
@@ -509,8 +513,8 @@ denetim kaydı → karar
 
 Her kuralda `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` → `deny`,
 `require_approval` → `ask`, `log` → `allow`), regex `pattern`, `match_on`, `title`,
-`expires_at` ve `revoked` alanları bulunur. 494 kuralın 211'i engeller, 255'i onay ister,
-28'i yalnızca kayıt tutar; 168'i critical, 299'u high, 27'si medium önem derecesindedir.
+`expires_at` ve `revoked` alanları bulunur. 507 kuralın 219'u engeller, 260'ı onay ister,
+28'i yalnızca kayıt tutar; 175'i critical, 305'i high, 27'si medium önem derecesindedir.
 `secure-code.yaml` içindeki 27 kural tavsiye niteliğindedir: yalnızca ajanın yazdığı kodu
 inceler ve eşleşmede ne olacağını `secure_code.action` (varsayılan `warn` ya da `ask`) belirler.
 
@@ -518,12 +522,12 @@ Kural dosyaları:
 
 | Dosya | Kapsam | Kural |
 | --- | --- | --- |
-| `commands.yaml` | Tehlikeli komutlar: pipe-to-shell, reverse shell, yıkıcı işlemler | 31 |
-| `credentials.yaml` | Kimlik bilgisi ifşası | 8 |
+| `commands.yaml` | Tehlikeli komutlar: pipe-to-shell, reverse shell, yıkıcı işlemler | 36 |
+| `credentials.yaml` | Kimlik bilgisi ifşası | 11 |
 | `files.yaml` | Hassas dosya yolları | 19 |
-| `persistence.yaml` | cron, systemd, shell RC, LaunchAgents | 7 |
-| `obfuscation.yaml` | Kodlama ve gizleme teknikleri | 8 |
-| `supply_chain.yaml` | Tedarik zinciri kalıpları | 1 |
+| `persistence.yaml` | cron, systemd, shell RC, LaunchAgents | 8 |
+| `obfuscation.yaml` | Kodlama ve gizleme teknikleri | 11 |
+| `supply_chain.yaml` | Tedarik zinciri kalıpları | 2 |
 | `urls.yaml` | Kötü amaçlı URL ve alan adı kalıpları | 5 |
 | `mining.yaml` | Kripto madenciliği / kaynak gaspı (ATT&CK T1496) | 17 |
 | `self-defense.yaml` | AIDR'yi devre dışı bırakma veya atlatma girişimleri | 9 |
@@ -537,26 +541,26 @@ Kural dosyaları:
 | `agent-safety.yaml` | Yapay zekâ güvenliği korkulukları: ödül istismarı ve sabotaj, özerklik yükseltme, geri alınamaz eylemler | 43 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS varyantları | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows varyantları | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Toplam** | 29 dosya | **494** |
+| **Toplam** | 29 dosya | **507** |
 
 Kategoriye göre kurallar:
 
 | Kategori grubu | Kategoriler (kural sayısı) | Kural |
 | --- | --- | --- |
-| Araç kötüye kullanımı | `tool` | 185 |
-| Gizli bilgiler ve kimlik bilgileri | `secrets` | 50 |
-| MITRE ATT&CK eşlemeli | `credential_access` (16), `defense_evasion` (14), `persistence` (10), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 64 |
+| Araç kötüye kullanımı | `tool` | 192 |
+| Gizli bilgiler ve kimlik bilgileri | `secrets` | 52 |
+| MITRE ATT&CK eşlemeli | `credential_access` (17), `defense_evasion` (15), `persistence` (11), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 67 |
 | Skill ve plugin paketleri | 14 `skill_*` kategorisi (talimat ele geçirme, Unicode kaçakçılığı, bellek zehirleme, uzak payload, gömülü kod, kimlik bilgisi sızdırma, aşırı yetki, yetki yükseltme, kimlik bilgisine erişim, kalıcılık, araç ele geçirme, güvensiz bağımlılık, koda gömülü gizli bilgi, güvensiz kodlama) | 26 |
 | LLM tehditleri | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
 | Kaynak gaspı | `resource_hijacking` | 17 |
 | Ağ çıkışı | `network_egress` | 9 |
 | Öz savunma | `self_defense` | 10 |
-| Tedarik zinciri | `supply_chain` | 5 |
+| Tedarik zinciri | `supply_chain` | 6 |
 | Yapay zekâ model tedarik zinciri | `ai_supply_chain` | 14 |
 | Güvenli kod | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
 | Bağlam zehirleme | `context_poisoning` (14), `context_poisoning_hidden_unicode` (3), `mcp_tool_poisoning` (3), `memory_poisoning` (2), `context_poisoning_permission_widening` (1) | 23 |
 | Yapay zekâ güvenliği | `reward_hacking` (17), `irreversible_action` (14), `autonomy_escalation` (7), `agent_sabotage` (5) | 43 |
-| **Toplam** | | **494** |
+| **Toplam** | | **507** |
 
 Müşteriler kendi kurallarını `~/.singularity-aidr/threats/*.yaml` altına ekleyebilir; aynı
 `id`'ye sahip özel bir kural yerleşik kuralın yerine geçer.
@@ -1773,7 +1777,10 @@ onaylar ve ajanın bir sonraki aynı denemesi bir kez çalışır.
 **Ne yapar**
 AIDR üç arıza katmanını birbirinden ayırır. Connector giriş noktaları ve güvenlik kontrolleri
 **kapalı** (fail-closed) davranır; isteğe bağlı tespit adımları görünür biçimde atlanır ve
-hiçbir zaman temiz olarak raporlanmaz.
+hiçbir zaman temiz olarak raporlanmaz. Connector'ın fail-closed yanıtı, hook'u çalıştıran
+bir host gerektirir: host'un devre dışı bıraktığı, güvenmediği, öldürdüğü ya da zaman
+aşımına uğrattığı bir hook karar üretmez ve kararı host verir (aşağıdaki son sütun ve
+[uyumluluk matrisi](../../../compatibility-matrix.md#host-failure-behaviour)).
 
 **Neden önemli**
 Çöktüğünde çağrıları sessizce geçiren bir koruma sahte bir güven hissi verir. Alıcıların
@@ -2096,7 +2103,7 @@ Eşleme veridir (`threats/mappings/frameworks.yaml`) ve kural kimliğine göre t
 olmayan ya da resmî listelerde bulunmayan bir kimlik kullanan kural bir testi başarısız
 kılar. Eşleşen çerçeve kimlikleri her kararla birlikte yerel denetim kaydına, SIEM
 aktarımlarına ve `aidr audit export` çıktısına taşınır; panel bunları olaylarda gösterir,
-matrisi ise Posture sayfasında sunar. 494 kural için güncel özet: OWASP LLM'de 3 kapsanan,
+matrisi ise Posture sayfasında sunar. 507 kural için güncel özet: OWASP LLM'de 3 kapsanan,
 5 kısmi, 2 uygulanamaz; OWASP Agentic'te 3 kapsanan, 5 kısmi, **2 kapsanmayan** (ASI07
 ajanlar arası iletişim, ASI08 zincirleme hatalar); MITRE ATLAS'ta 35 teknik eşlenmiş
 (9 kapsanan, 26 kısmi).

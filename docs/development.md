@@ -382,7 +382,7 @@ needs bash (Linux, macOS, WSL or Git Bash).
 - **Naming split:** YAML/JSON data uses `snake_case` (`threat_id`, `source_file`). TypeScript uses `camelCase` (`threatId`, `sourceFile`). Conversion functions handle the boundary.
 - **Failure policy is per layer, not a blanket fail-open:**
   - *Detection internals* (a threat rule that errors, an optional reputation lookup, cache/intel/policy load) skip that signal, log it and continue. This must never be reported to the user as a clean result.
-  - *Connector entry points* fail **closed**: Claude Code, OpenClaw, OpenCode, Codex and the Cursor/VS Code hook return a deny (or block) on an internal error rather than silently allowing the call. Extension hooks always exit with code `0` and emit a deny verdict.
+  - *Connector entry points* fail **closed**: Claude Code, OpenClaw, OpenCode, Codex and the Cursor/VS Code hook return a deny (or block) on an internal error rather than silently allowing the call. Extension hooks always exit with code `0` and emit a deny verdict. This is the connector's answer only: a hook the host disabled, did not trust, killed or timed out produces no verdict: Claude Code was observed to run the call when its hook was disabled or killed, and Codex runs it when its hook is untrusted, crashes or times out (see [host failure behaviour](compatibility-matrix.md#host-failure-behaviour)). Cursor and VS Code have no real-host acceptance evidence yet.
   - *Security controls* (auth, tenant isolation, rate limits, webhook signatures, approval) fail closed.
 - **Detection patterns are data.** No hardcoded patterns - all rules live in `threats/*.yaml`.
 - **Versioning:** See [Versioning](#versioning) below.
