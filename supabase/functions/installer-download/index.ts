@@ -1,11 +1,14 @@
 // Customer installer downloads for the dashboard Download page.
 //
 // GET   Header X-AIDR-Tenant-ID. Returns the current installer catalog (version,
-//       release notes URL, per-platform file, size, SHA-256, minimum OS) and, when
-//       this control plane offers managed enrollment to the caller, its public URL.
-// POST  { tenant_id, version, platform }. Returns a short-lived signed Storage URL
-//       for that one installer of the CURRENT version and records an audit row
-//       (tenant, user, version, platform, file, SHA-256; no IP address).
+//       release notes URL, one file per platform and format with size, SHA-256 and
+//       minimum OS) and, when this control plane offers managed enrollment to the
+//       caller, its public URL.
+// POST  { tenant_id, version, platform, format? }. Returns a short-lived signed
+//       Storage URL for that one installer of the CURRENT version and records an
+//       audit row (tenant, user, version, platform, format, file, SHA-256; no IP
+//       address). `format` (msi, deb, rpm, tar.gz, ...) must be one the catalog
+//       lists for that platform; without it the platform's default format is served.
 //
 // Authorization is re-derived for every request and fails closed: a Supabase
 // session (401), the identity barrier, an active membership of an active tenant
@@ -31,6 +34,8 @@ import {
 	loadVerifiedCatalog,
 	type ObjectReader,
 	publicInstallerUrl,
+	requestedFormat,
+	selectInstallerFile,
 } from "../_shared/installer-catalog.ts";
 import { publicPackDownloadOrigin } from "../_shared/pack-download-grant.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
@@ -66,16 +71,18 @@ export interface InstallerDownloadDeps {
 	now?: () => number;
 }
 
-type DownloadRequest = { tenantId: string; version: string; platform: string };
+type DownloadRequest = { tenantId: string; version: string; platform: string; format: string | null };
 
 function parseDownloadRequest(value: unknown): DownloadRequest | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const body = value as Record<string, unknown>;
-	if (Object.keys(body).some((key) => !["tenant_id", "version", "platform"].includes(key))) return null;
+	if (Object.keys(body).some((key) => !["tenant_id", "version", "platform", "format"].includes(key))) return null;
 	if (typeof body.tenant_id !== "string" || !UUID.test(body.tenant_id)) return null;
 	if (typeof body.version !== "string" || body.version.length < 1 || body.version.length > 96) return null;
 	if (typeof body.platform !== "string" || !(INSTALLER_PLATFORMS as readonly string[]).includes(body.platform)) return null;
-	return { tenantId: body.tenant_id.toLowerCase(), version: body.version, platform: body.platform };
+	const format = requestedFormat(body.format);
+	if (format === undefined) return null;
+	return { tenantId: body.tenant_id.toLowerCase(), version: body.version, platform: body.platform, format };
 }
 
 function catalogView(catalog: InstallerCatalog) {
@@ -209,7 +216,7 @@ export function createInstallerDownloadHandler(deps: InstallerDownloadDeps = {})
 			}
 
 			const file = download.version === catalog.version
-				? catalog.files.find((entry) => entry.platform === download.platform)
+				? selectInstallerFile(catalog, download.platform, download.format)
 				: undefined;
 			if (!file) return corsJson(req, 404, { error: "installer_not_found" });
 			const ttl = installerUrlTtlSeconds(runtimeEnv("AIDR_INSTALLER_URL_TTL_SECONDS"));
@@ -225,6 +232,7 @@ export function createInstallerDownloadHandler(deps: InstallerDownloadDeps = {})
 				p_tenant_id: tenantId,
 				p_version: catalog.version,
 				p_platform: file.platform,
+				p_format: file.format,
 				p_file_name: file.file,
 				p_sha256: file.sha256,
 			});
@@ -239,6 +247,7 @@ export function createInstallerDownloadHandler(deps: InstallerDownloadDeps = {})
 				expires_at: new Date(now() + ttl * 1000).toISOString(),
 				version: catalog.version,
 				platform: file.platform,
+				format: file.format,
 				file: file.file,
 				size: file.size,
 				sha256: file.sha256,

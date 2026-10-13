@@ -365,11 +365,13 @@ export async function installerLocation(
 	if (source.kind === "file") return { ok: true, location: source.installer };
 	if (source.kind === "mirror")
 		return { ok: true, location: mirrorLocation(source.location, file.path) };
-	const body = await portalRequest(
-		source,
-		JSON.stringify({ version: catalog.version, platform: file.platform }),
-		deps,
-	);
+	// A multi-format catalog (schema 2) needs the format named; a schema 1 portal may
+	// predate the field and would refuse it.
+	const request =
+		catalog.schema_version === 1
+			? { version: catalog.version, platform: file.platform }
+			: { version: catalog.version, platform: file.platform, format: file.format };
+	const body = await portalRequest(source, JSON.stringify(request), deps);
 	if (failure(body)) return body;
 	if (typeof body.url !== "string" || !secureUrl(body.url, source.allowInsecureLoopback)) {
 		return { ok: false, error: "invalid_response" };

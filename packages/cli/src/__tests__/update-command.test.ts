@@ -104,6 +104,8 @@ function writeMirror(
 		format?: string;
 		key?: KeyObject;
 		publishedBytes?: Buffer;
+		/** More formats of the same platform: a multi-format catalog (schema 2). */
+		variants?: Array<{ file: string; format: string; installer: Buffer }>;
 	},
 ): string {
 	const version = options.version ?? "1.5.0";
@@ -113,9 +115,23 @@ function writeMirror(
 	const [os, arch] = platform.split("-");
 	mkdirSync(join(mirror, version, platform), { recursive: true });
 	writeFileSync(join(mirror, version, platform, file), options.publishedBytes ?? options.installer);
+	const entry = (name: string, installer: Buffer, format: string) => ({
+		platform,
+		os,
+		arch,
+		file: name,
+		path: `${version}/${platform}/${name}`,
+		size: installer.length,
+		sha256: sha(installer),
+		minimum_os: "glibc 2.28",
+		format,
+	});
+	for (const variant of options.variants ?? []) {
+		writeFileSync(join(mirror, version, platform, variant.file), variant.installer);
+	}
 	const catalog = signDoc(
 		{
-			schema_version: 1,
+			schema_version: options.variants ? 2 : 1,
 			type: "aidr-installer-catalog",
 			product_id: "singularity-aidr",
 			version,
@@ -123,17 +139,10 @@ function writeMirror(
 			release_notes_url: null,
 			release: { tag: `v${version}`, git_sha: "a".repeat(40), release_sequence: 8 },
 			files: [
-				{
-					platform,
-					os,
-					arch,
-					file,
-					path: `${version}/${platform}/${file}`,
-					size: options.installer.length,
-					sha256: sha(options.installer),
-					minimum_os: "glibc 2.28",
-					format: options.format ?? "tar.gz",
-				},
+				entry(file, options.installer, options.format ?? "tar.gz"),
+				...(options.variants ?? []).map((variant) =>
+					entry(variant.file, variant.installer, variant.format),
+				),
 			],
 		},
 		key,
@@ -438,6 +447,44 @@ describe("aidr update install and rollback", () => {
 		expect(process.exitCode).toBe(1);
 	});
 
+	it("installs the .rpm of a multi-format catalog on a machine installed from the .rpm", async () => {
+		const rpm = "singularity-aidr-1.5.0-1.x86_64.rpm";
+		const mirror = writeMirror(join(root, "mirror"), {
+			installer: Buffer.from("deb bytes 1.5.0"),
+			file: "singularity-aidr_1.5.0_amd64.deb",
+			format: "deb",
+			variants: [
+				{ file: rpm, format: "rpm", installer: Buffer.from("rpm bytes 1.5.0") },
+				{ file: TAR_NAME, format: "tar.gz", installer: buildTarball("1.5.0") },
+			],
+		});
+		const check = await update({ check: true, json: true, from: mirror }, { installKind: "rpm" });
+		expect(JSON.parse(check.lines.join("\n"))).toMatchObject({
+			status: "available",
+			install_kind: "rpm",
+			available_formats: ["deb", "rpm", "tar.gz"],
+			installer: { file: rpm, format: "rpm" },
+		});
+		const result = await update(
+			{ from: mirror, yes: true },
+			{
+				installKind: "rpm",
+				scenario: {
+					install: () => {
+						rmSync(join(prefix, "bundle"), { recursive: true });
+						writeBundle(join(prefix, "bundle"), "1.5.0");
+					},
+				},
+			},
+		);
+		expect(result.errors).toEqual([]);
+		expect(result.output).toContain(`Downloading ${rpm}`);
+		const rpmCall = result.calls.find(([command]) => command === "rpm");
+		expect(rpmCall?.some((arg) => arg.endsWith(rpm))).toBe(true);
+		expect(result.calls.some(([command]) => command === "dpkg")).toBe(false);
+		expect(bundleVersion(join(prefix, "bundle"))).toBe("1.5.0");
+	});
+
 	it("keeps a failed package transaction's untouched install without a rollback", async () => {
 		const mirror = writeMirror(join(root, "mirror"), {
 			installer: Buffer.from("deb bytes 1.5.0"),
@@ -463,9 +510,30 @@ describe("aidr update install and rollback", () => {
 		expect(bundleVersion(join(prefix, "bundle"))).toBe("1.4.0");
 	});
 
-	it("refuses an installer of another package format", async () => {
+	it("refuses only when the catalog lacks the format this machine was installed with", async () => {
 		const mirror = writeMirror(join(root, "mirror"), { installer: buildTarball("1.5.0") });
 		const result = await update({ from: mirror, yes: true }, { installKind: "rpm" });
+		expect(result.output).toContain(
+			`The signed catalog for v1.5.0 has no .rpm installer for linux-x64; it offers .tar.gz (${TAR_NAME}).`,
+		);
+		expect(installCalls(result.calls)).toEqual([]);
+		expect(process.exitCode).toBe(1);
+		const json = await update({ check: true, json: true, from: mirror }, { installKind: "rpm" });
+		expect(JSON.parse(json.lines.join("\n"))).toMatchObject({
+			status: "no_installer_for_format",
+			install_kind: "rpm",
+			available_formats: ["tar.gz"],
+			installer: null,
+		});
+	});
+
+	it("refuses a provided installer of another package format", async () => {
+		const tarball = buildTarball("1.5.0");
+		writeMirror(join(root, "mirror"), { installer: tarball });
+		const result = await update(
+			{ from: join(root, "mirror", "1.5.0", "linux-x64", TAR_NAME), yes: true },
+			{ installKind: "rpm" },
+		);
 		expect(result.output).toContain(
 			"The available installer is a .tar.gz file, but Singularity AIDR on this machine was installed as .rpm.",
 		);

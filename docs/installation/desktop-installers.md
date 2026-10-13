@@ -208,8 +208,15 @@ downloaded.
    of the signed catalog; otherwise it is deleted.
 3. **Version.** An older version is refused unless you pass
    `--allow-downgrade` (a rollback your administrator asked for).
-4. **Format.** The installer must match how AIDR was installed (MSI, `.deb`,
-   `.rpm` or tarball); `aidr update` does not switch between them.
+4. **Format.** `aidr update` picks the installer that matches how AIDR was
+   installed: the `.msi` on Windows, the `.deb` when the `singularity-aidr`
+   package is registered with dpkg, the `.rpm` when it is registered with rpm,
+   and the `.tar.gz` otherwise. The portal publishes every format of a
+   platform, so this is automatic. It refuses only when the catalog has no
+   installer in that format, and then lists the formats it does offer; ask
+   your administrator to publish yours. It never switches an installation
+   from one format to another, and an installer you pass with `--from` must
+   be in the matching format too.
 
 The **installer-catalog key** is the public half of the key that signs the
 portal catalog (its base64 form is the portal's

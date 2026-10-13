@@ -40,11 +40,15 @@ function keyPair() {
 	};
 }
 
+// Windows .msi; Linux x64 in all three formats, Linux arm64 as a tarball only.
 const INSTALLERS = {
 	"installers/windows-x64/AIDR-Setup-1.4.0-x64.msi": "windows installer bytes\n",
-	"installers/linux-x64/aidr-install-1.4.0-linux-x64.sh": "#!/bin/sh\necho linux installer\n",
-	"installers/linux-arm64/aidr-install-1.4.0-linux-arm64.sh": "#!/bin/sh\necho linux arm installer\n",
+	"installers/linux-x64/singularity-aidr_1.4.0_amd64.deb": "debian package bytes\n",
+	"installers/linux-x64/singularity-aidr-1.4.0-1.x86_64.rpm": "rpm package bytes\n",
+	"installers/linux-x64/singularity-aidr-1.4.0-linux-x64.tar.gz": "linux tarball bytes\n",
+	"installers/linux-arm64/singularity-aidr-1.4.0-linux-arm64.tar.gz": "linux arm tarball bytes\n",
 };
+const formatOf = (name) => (name.endsWith(".tar.gz") ? "tar.gz" : path.extname(name).slice(1));
 
 /** A promoted release bundle signed exactly as scripts/release-sign.mjs does. */
 async function signedBundle({ sums, extraArtifacts = {}, sequence = 7, mutate } = {}) {
@@ -125,8 +129,10 @@ test("verifies the signed release and builds a signed per-version catalog and la
 	const paths = release.objects.map((object) => object.path);
 	assert.deepEqual(paths, [
 		"1.4.0/windows-x64/AIDR-Setup-1.4.0-x64.msi",
-		"1.4.0/linux-x64/aidr-install-1.4.0-linux-x64.sh",
-		"1.4.0/linux-arm64/aidr-install-1.4.0-linux-arm64.sh",
+		"1.4.0/linux-x64/singularity-aidr_1.4.0_amd64.deb",
+		"1.4.0/linux-x64/singularity-aidr-1.4.0-1.x86_64.rpm",
+		"1.4.0/linux-x64/singularity-aidr-1.4.0-linux-x64.tar.gz",
+		"1.4.0/linux-arm64/singularity-aidr-1.4.0-linux-arm64.tar.gz",
 		"1.4.0/SHA256SUMS",
 		"1.4.0/release/aidr-release.manifest.json",
 		"1.4.0/release/aidr-release.manifest.sig",
@@ -139,13 +145,15 @@ test("verifies the signed release and builds a signed per-version catalog and la
 	const catalogRaw = byPath.get("1.4.0/manifest.json").bytes;
 	const catalog = JSON.parse(catalogRaw.toString("utf8"));
 	assert.equal(catalog.type, "aidr-installer-catalog");
+	// Several formats for one platform: catalog schema 2.
+	assert.equal(catalog.schema_version, 2);
 	assert.equal(catalog.release_notes_url, "https://docs.example.com/aidr/releases/1.4.0");
 	assert.equal(catalog.release.release_sequence, 7);
 	assert.equal(catalog.files[0].minimum_os, "Windows 11");
 	assert.equal(catalog.files[1].minimum_os, "glibc 2.28 (e.g. Ubuntu 20.04, RHEL 8)");
 	assert.deepEqual(
 		catalog.files.map((file) => [file.platform, file.format, file.sha256]),
-		Object.entries(INSTALLERS).map(([name, body]) => [name.split("/")[1], path.extname(name).slice(1), digest(Buffer.from(body))]),
+		Object.entries(INSTALLERS).map(([name, body]) => [name.split("/")[1], formatOf(name), digest(Buffer.from(body))]),
 	);
 	assert.equal(
 		catalog.release.manifest_sha256,
@@ -244,14 +252,63 @@ test("an explicit --installer must name a signed artifact", async () => {
 		buildInstallerRelease({ bundle: fixture.bundle, policy: fixture.policy, dryRun: true, installers: ["solaris-sparc=agent.tgz"] }),
 		/unknown platform/,
 	);
-	// Benign twin: a signed non-conventional path is accepted when named explicitly.
+	await assert.rejects(
+		buildInstallerRelease({ bundle: fixture.bundle, policy: fixture.policy, dryRun: true, installers: ["windows-x64=installers/linux-x64/singularity-aidr_1.4.0_amd64.deb"] }),
+		/is not a windows-x64 installer \(allowed: \.msi\)/,
+	);
+	await assert.rejects(
+		buildInstallerRelease({
+			bundle: fixture.bundle,
+			policy: fixture.policy,
+			dryRun: true,
+			installers: ["linux-x64=installers/linux-x64/singularity-aidr_1.4.0_amd64.deb", "linux-x64=installers/linux-x64/singularity-aidr_1.4.0_amd64.deb"],
+		}),
+		/repeats the \.deb installer for linux-x64/,
+	);
+	// Benign twin: one file per platform keeps catalog schema 1, which older endpoints read.
 	const release = await buildInstallerRelease({
 		bundle: fixture.bundle,
 		policy: fixture.policy,
 		dryRun: true,
-		installers: ["linux-arm64=installers/linux-arm64/aidr-install-1.4.0-linux-arm64.sh"],
+		installers: ["linux-arm64=installers/linux-arm64/singularity-aidr-1.4.0-linux-arm64.tar.gz"],
 	});
-	assert.deepEqual(release.catalog.files.map((file) => file.platform), ["linux-arm64"]);
+	assert.deepEqual(release.catalog.files.map((file) => [file.platform, file.format]), [["linux-arm64", "tar.gz"]]);
+	assert.equal(release.catalog.schema_version, 1);
+	// Several formats of one platform can be named explicitly.
+	const formats = await buildInstallerRelease({
+		bundle: fixture.bundle,
+		policy: fixture.policy,
+		dryRun: true,
+		installers: [
+			"linux-x64=installers/linux-x64/singularity-aidr-1.4.0-linux-x64.tar.gz",
+			"linux-x64=installers/linux-x64/singularity-aidr_1.4.0_amd64.deb",
+		],
+	});
+	assert.deepEqual(formats.catalog.files.map((file) => file.format), ["deb", "tar.gz"]);
+	assert.equal(formats.catalog.schema_version, 2);
+});
+
+test("the installers/<platform>/ convention selects by extension, one file per format", async () => {
+	const extra = await signedBundle({ extraArtifacts: { "installers/linux-x64/README.txt": "notes\n" } });
+	const release = await buildInstallerRelease({ bundle: extra.bundle, policy: extra.policy, dryRun: true });
+	assert.deepEqual(release.skipped, ["installers/linux-x64/README.txt"]);
+	assert.ok(!release.catalog.files.some((file) => file.file === "README.txt"));
+	const twice = await signedBundle({ extraArtifacts: { "installers/linux-x64/another_amd64.deb": "second deb\n" } });
+	await assert.rejects(
+		buildInstallerRelease({ bundle: twice.bundle, policy: twice.policy, dryRun: true }),
+		/more than one signed \.deb installer for linux-x64/,
+	);
+	// Every selected format must be in SHA256SUMS, not just one per platform.
+	const withoutRpm = await signedBundle({
+		sums: Object.entries(INSTALLERS)
+			.filter(([name]) => !name.endsWith(".rpm"))
+			.map(([name, body]) => `${digest(Buffer.from(body))}  ${path.posix.basename(name)}\n`)
+			.join(""),
+	});
+	await assert.rejects(
+		buildInstallerRelease({ bundle: withoutRpm.bundle, policy: withoutRpm.policy, dryRun: true }),
+		/SHA256SUMS has no entry for installers\/linux-x64\/singularity-aidr-1\.4\.0-1\.x86_64\.rpm/,
+	);
 });
 
 function fakeStorage({ existing = {}, failPath } = {}) {
@@ -344,7 +401,9 @@ test("the CLI dry-run verifies, stages and reports without touching the network"
 	const report = JSON.parse(dry.stdout);
 	assert.equal(report.status, "dry-run");
 	assert.equal(report.signed, true);
-	assert.equal(report.files.length, 3);
+	assert.equal(report.files.length, 5);
+	assert.equal(report.catalog_schema_version, 2);
+	assert.deepEqual(report.files.map((file) => file.format), ["msi", "deb", "rpm", "tar.gz", "tar.gz"]);
 	assert.ok((await readdir(path.join(out, "1.4.0"))).includes("manifest.json.sig"));
 	const publish = run(["--bundle", fixture.bundle, "--policy", fixture.policy]);
 	assert.equal(publish.status, 1);

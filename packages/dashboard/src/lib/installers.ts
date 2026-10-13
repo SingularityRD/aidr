@@ -40,6 +40,7 @@ export interface InstallerDownload {
 }
 
 const PLATFORM = /^(windows|linux)-(x64|arm64)$/;
+const FORMAT = /^[a-z0-9.]{1,16}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const FILE = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$/;
 
@@ -73,7 +74,8 @@ function readFile(value: unknown): InstallerFile | null {
 		typeof value.sha256 !== "string" ||
 		!SHA256.test(value.sha256) ||
 		typeof value.minimum_os !== "string" ||
-		typeof value.format !== "string"
+		typeof value.format !== "string" ||
+		!FORMAT.test(value.format)
 	)
 		return null;
 	return {
@@ -142,11 +144,12 @@ export async function requestInstallerDownload(
 	tenantId: string,
 	version: string,
 	platform: string,
+	format?: string,
 ): Promise<InstallerResult<InstallerDownload>> {
 	try {
 		const res = await supabase.functions.invoke("installer-download", {
 			method: "POST",
-			body: { tenant_id: tenantId, version, platform },
+			body: { tenant_id: tenantId, version, platform, ...(format ? { format } : {}) },
 		});
 		if (res.error) return failure(res.error, "download_unavailable");
 		const data = res.data as Record<string, unknown> | null;
@@ -185,13 +188,74 @@ export function detectVisitorPlatform(
 	return { os: "unknown", arch };
 }
 
-/** The installer to highlight for the visitor, or null when none matches their OS. */
-export function recommendedInstaller(
+/** Which Linux family a format is for: Debian/Ubuntu .deb, RHEL/Fedora .rpm, any other the tarball. */
+export type LinuxFamily = "debian" | "rhel" | "other";
+
+const LINUX_FAMILY_FORMAT: Record<LinuxFamily, string> = {
+	debian: "deb",
+	rhel: "rpm",
+	other: "tar.gz",
+};
+
+/**
+ * The Linux family the browser names, when it names one (Firefox on Ubuntu or
+ * Fedora usually does; Chrome does not). Unknown is "other", the tarball.
+ */
+export function detectLinuxFamily(nav: Pick<Navigator, "userAgent"> = navigator): LinuxFamily {
+	const agent = nav.userAgent ?? "";
+	if (/\b(ubuntu|debian|linux ?mint|pop!?_os|elementary)\b/i.test(agent)) return "debian";
+	if (/\b(fedora|red ?hat|rhel|centos|rocky|almalinux)\b/i.test(agent)) return "rhel";
+	return "other";
+}
+
+/** One platform with its installers, the recommended format first. */
+export interface InstallerPlatformGroup {
+	platform: string;
+	os: InstallerOs;
+	arch: string;
+	files: InstallerFile[];
+}
+
+function preferredFormat(os: InstallerOs, linux: LinuxFamily): string[] {
+	return os === "windows" ? ["msi"] : [LINUX_FAMILY_FORMAT[linux], LINUX_FAMILY_FORMAT.other];
+}
+
+/**
+ * The catalog grouped by platform (catalog order), each group's files starting
+ * with the format recommended for the visitor: .msi on Windows; on Linux .deb for
+ * Debian/Ubuntu, .rpm for RHEL/Fedora and the tarball otherwise.
+ */
+export function groupInstallers(
 	files: InstallerFile[],
+	linux: LinuxFamily = "other",
+): InstallerPlatformGroup[] {
+	const groups = new Map<string, InstallerPlatformGroup>();
+	for (const file of files) {
+		const group = groups.get(file.platform) ?? {
+			platform: file.platform,
+			os: file.os,
+			arch: file.arch,
+			files: [],
+		};
+		group.files.push(file);
+		groups.set(file.platform, group);
+	}
+	return [...groups.values()].map((group) => {
+		const preferred = preferredFormat(group.os, linux)
+			.map((format) => group.files.find((file) => file.format === format))
+			.find((file) => file !== undefined);
+		const first = preferred ?? group.files[0];
+		return { ...group, files: first ? [first, ...group.files.filter((f) => f !== first)] : [] };
+	});
+}
+
+/** The platform to highlight for the visitor, or null when none matches their OS. */
+export function recommendedPlatform(
+	groups: InstallerPlatformGroup[],
 	visitor: { os: VisitorOs; arch: string },
-): InstallerFile | null {
-	const sameOs = files.filter((file) => file.os === visitor.os);
-	return sameOs.find((file) => file.arch === visitor.arch) ?? sameOs[0] ?? null;
+): InstallerPlatformGroup | null {
+	const sameOs = groups.filter((group) => group.os === visitor.os);
+	return sameOs.find((group) => group.arch === visitor.arch) ?? sameOs[0] ?? null;
 }
 
 /** A command that checks the downloaded file against the published SHA-256. */

@@ -42,6 +42,7 @@ import {
 	detectInstallKind,
 	formatMatches,
 	type InstallKind,
+	installerFormats,
 	privilegedOps,
 	runCommand,
 	stagingDirFor,
@@ -57,6 +58,9 @@ import {
  *    the managed API key (installer-update Edge Function); else update.source.
  * 2. The signed catalog must verify with the pinned installer-catalog key and
  *    the installer bytes must match its SHA-256 and size, before anything runs.
+ *    The installer is the one in the format this machine was installed with
+ *    (.msi, .deb, .rpm or the .tar.gz bundle); a catalog without that format is
+ *    refused with what it does offer.
  * 3. A lower version is refused unless --allow-downgrade.
  * 4. The platform installer runs silently; the new version must pass the
  *    bundle check and `aidr verify`, or the previous bundle is put back.
@@ -158,6 +162,8 @@ interface UpdateRun {
 	mdm: MdmStatus;
 	isRoot: boolean;
 	run: CommandRunner;
+	/** How AIDR was installed here; picks the installer format. */
+	kind: InstallKind;
 	now: () => number;
 	currentVersion: string;
 	source: UpdateSource;
@@ -288,6 +294,7 @@ async function prepare(options: UpdateOptions, deps: UpdateDeps): Promise<Update
 	if (!keys.ok) return fail(keys.message);
 	const source = await resolveSource(options, deps, config);
 	if (!source) return fail(ut("update.noSource"));
+	const run = deps.run ?? runCommand;
 	return {
 		options,
 		deps,
@@ -301,7 +308,8 @@ async function prepare(options: UpdateOptions, deps: UpdateDeps): Promise<Update
 		layout,
 		mdm,
 		isRoot,
-		run: deps.run ?? runCommand,
+		run,
+		kind: deps.installKind ?? detectInstallKind(layout, platformName, run),
 		now: deps.now ?? Date.now,
 		currentVersion: deps.currentVersion ?? VERSION,
 		source,
@@ -325,17 +333,26 @@ function recordCheck(ctx: UpdateRun, check: UpdateCheck): void {
 	);
 }
 
+/** `.msi`, `.deb`, `.rpm` or `.tar.gz`: how a kind of installation is named to the user. */
+function kindLabel(kind: InstallKind): string {
+	return kind === "tar" ? ".tar.gz" : `.${kind}`;
+}
+
 function checkJson(ctx: UpdateRun, check: UpdateCheck): Record<string, unknown> {
 	if (!check.ok) {
 		return { schema_version: 1, status: "error", error: check.error, current: ctx.currentVersion };
 	}
 	const { file } = check;
+	const missing =
+		check.platformFiles.length > 0 ? "no_installer_for_format" : "no_installer_for_platform";
 	return {
 		schema_version: 1,
-		status: file ? check.status : "no_installer_for_platform",
+		status: file ? check.status : missing,
 		current: check.current,
 		latest: check.latest,
 		platform: ctx.platform,
+		install_kind: ctx.kind,
+		available_formats: check.platformFiles.map((entry) => entry.format),
 		installer: file
 			? { file: file.file, size: file.size, sha256: file.sha256, format: file.format }
 			: null,
@@ -498,17 +515,28 @@ async function downloadAndApply(
 	}
 }
 
-/** How this machine was installed, when the catalog's installer can update it. */
+/**
+ * How this machine was installed, when the chosen installer can update it. The
+ * catalog file already matches it, except for an installer the administrator
+ * provides with --from.
+ */
 function installKindFor(ctx: UpdateRun, file: InstallerCatalogFile): InstallKind | null {
-	const kind = ctx.deps.installKind ?? detectInstallKind(ctx.layout, ctx.platformName, ctx.run);
-	if (formatMatches(kind, file.format)) return kind;
-	ctx.fail(
-		ut("update.formatMismatch", {
-			format: `.${file.format}`,
-			kind: kind === "tar" ? ".tar.gz" : `.${kind}`,
-		}),
-	);
+	if (formatMatches(ctx.kind, file.format)) return ctx.kind;
+	ctx.fail(ut("update.formatMismatch", { format: `.${file.format}`, kind: kindLabel(ctx.kind) }));
 	return null;
+}
+
+/** Why the catalog has nothing to install here: no installer for the platform, or not in this format. */
+function missingInstaller(ctx: UpdateRun, check: Extract<UpdateCheck, { ok: true }>): string {
+	if (check.platformFiles.length === 0) {
+		return ut("update.noInstallerForPlatform", { latest: check.latest, platform: ctx.platform });
+	}
+	return ut("update.formatUnavailable", {
+		latest: check.latest,
+		platform: ctx.platform,
+		kind: kindLabel(ctx.kind),
+		offered: check.platformFiles.map((entry) => `.${entry.format} (${entry.file})`).join(", "),
+	});
 }
 
 async function install(ctx: UpdateRun, check: AvailableCheck): Promise<void> {
@@ -562,6 +590,7 @@ export default async function updateCommand(
 		platform: ctx.platform,
 		source: ctx.source,
 		keys: ctx.keys.keys,
+		formats: installerFormats(ctx.kind),
 		deps: { fetch: deps.fetch },
 	});
 	recordCheck(ctx, check);
@@ -571,11 +600,7 @@ export default async function updateCommand(
 		return;
 	}
 	if (!check.ok) return ctx.fail(checkError(check));
-	if (!check.file) {
-		return ctx.fail(
-			ut("update.noInstallerForPlatform", { latest: check.latest, platform: ctx.platform }),
-		);
-	}
+	if (!check.file) return ctx.fail(escapeTerminalText(missingInstaller(ctx, check)));
 	const available: AvailableCheck = { ...check, file: check.file };
 	if (options.check) return reportCheck(ctx, available);
 	await install(ctx, available);

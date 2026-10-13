@@ -5,7 +5,7 @@
 //
 //   latest.json / latest.json.sig                 signed pointer { version, release_sequence, manifest_path, manifest_sha256 }
 //   <version>/manifest.json / manifest.json.sig   signed installer catalog (files, sizes, SHA-256, minimum OS, release notes URL)
-//   <version>/<platform>/<file>                   installer bytes
+//   <version>/<platform>/<file>                   installer bytes (one file per platform AND format)
 //   <version>/SHA256SUMS, <version>/release/*     checksum list and the signed release manifest it came from
 //
 // Both JSON documents are signed over their exact bytes with the release signature
@@ -22,6 +22,19 @@ import { fromBase64, spkiFor, verifyEd25519 } from "./release-version.ts";
 export const INSTALLER_PLATFORMS = ["windows-x64", "windows-arm64", "linux-x64", "linux-arm64"] as const;
 type InstallerPlatform = (typeof INSTALLER_PLATFORMS)[number];
 
+// The formats a platform is published in (scripts/publish-installers.mjs FORMATS
+// mirrors it). A catalog may carry one file per platform and format.
+const INSTALLER_FORMATS = { windows: ["msi"], linux: ["deb", "rpm", "tar.gz"] } as const;
+// Served when a download request names no format (the request shape from before
+// formats existed): the format that installs on every distribution of that OS.
+const DEFAULT_FORMAT = { windows: "msi", linux: "tar.gz" } as const;
+const FORMAT = /^[a-z0-9.]{1,16}$/;
+// Catalog schema 1: at most one file per platform. Schema 2 (multi-format): one
+// file per platform AND format, and every file name ends in `.<format>`. Both verify
+// with the same signature envelope; the publisher writes 1 whenever every platform
+// has a single file, so endpoints that only read schema 1 keep updating.
+const MAX_FORMATS_PER_PLATFORM = 8;
+
 type InstallerFile = {
 	platform: InstallerPlatform;
 	os: "windows" | "linux";
@@ -35,6 +48,7 @@ type InstallerFile = {
 };
 
 export type InstallerCatalog = {
+	schema_version: 1 | 2;
 	version: string;
 	published_at: string;
 	release_notes_url: string | null;
@@ -69,7 +83,6 @@ const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$/;
 const MAX_POINTER_BYTES = 16 * 1024;
 const MAX_CATALOG_BYTES = 256 * 1024;
 const MAX_SIGNATURE_BYTES = 4 * 1024;
-const MAX_FILES = INSTALLER_PLATFORMS.length;
 
 function record(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -145,7 +158,7 @@ function parseFile(value: unknown, version: string): InstallerFile | null {
 		entry.minimum_os.length < 1 ||
 		entry.minimum_os.length > 120 ||
 		typeof entry.format !== "string" ||
-		!/^[a-z0-9.]{1,16}$/.test(entry.format)
+		!FORMAT.test(entry.format)
 	) return null;
 	return {
 		platform: platform as InstallerPlatform,
@@ -173,7 +186,9 @@ function httpsOrNull(value: unknown): string | null | undefined {
 
 /** Strictly parse a verified catalog for `version`; anything unexpected is null. */
 function parseInstallerCatalog(value: Record<string, unknown> | null, version: string): InstallerCatalog | null {
-	if (!value || value.schema_version !== 1 || value.type !== "aidr-installer-catalog" || value.product_id !== PRODUCT_ID) return null;
+	if (!value || value.type !== "aidr-installer-catalog" || value.product_id !== PRODUCT_ID) return null;
+	const schema = value.schema_version;
+	if (schema !== 1 && schema !== 2) return null;
 	if (value.version !== version || typeof value.published_at !== "string" || !Number.isFinite(Date.parse(value.published_at))) return null;
 	const notes = httpsOrNull(value.release_notes_url);
 	const release = record(value.release);
@@ -186,20 +201,54 @@ function parseInstallerCatalog(value: Record<string, unknown> | null, version: s
 		!/^[0-9a-f]{40,64}$/i.test(release.git_sha) ||
 		!Number.isSafeInteger(release.release_sequence)
 	) return null;
-	if (!Array.isArray(value.files) || value.files.length < 1 || value.files.length > MAX_FILES) return null;
+	const maxFiles = INSTALLER_PLATFORMS.length * (schema === 1 ? 1 : MAX_FORMATS_PER_PLATFORM);
+	if (!Array.isArray(value.files) || value.files.length < 1 || value.files.length > maxFiles) return null;
 	const files: InstallerFile[] = [];
 	for (const candidate of value.files) {
 		const file = parseFile(candidate, version);
-		if (!file || files.some((existing) => existing.platform === file.platform)) return null;
+		if (!file) return null;
+		if (schema === 2 && !file.file.toLowerCase().endsWith(`.${file.format}`)) return null;
+		const duplicate = files.some(
+			(existing) => existing.platform === file.platform && (schema === 1 || existing.format === file.format),
+		);
+		if (duplicate) return null;
 		files.push(file);
 	}
 	return {
+		schema_version: schema,
 		version,
 		published_at: value.published_at,
 		release_notes_url: notes,
 		release: { tag: release.tag, git_sha: release.git_sha, release_sequence: release.release_sequence as number },
 		files,
 	};
+}
+
+/** A download request's `format`: absent, or a well-formed format name (checked against the catalog later). */
+export function requestedFormat(value: unknown): string | null | undefined {
+	if (value === undefined) return null;
+	return typeof value === "string" && FORMAT.test(value) ? value : undefined;
+}
+
+/**
+ * The catalog file for `platform` in `format`. Without a format: the platform's only
+ * file, else its default format (DEFAULT_FORMAT), else the first in INSTALLER_FORMATS
+ * order, else the first one listed.
+ */
+export function selectInstallerFile(
+	catalog: InstallerCatalog,
+	platform: string,
+	format: string | null,
+): InstallerFile | undefined {
+	const candidates = catalog.files.filter((entry) => entry.platform === platform);
+	if (format) return candidates.find((entry) => entry.format === format);
+	if (candidates.length <= 1) return candidates[0];
+	const os = candidates[0].os;
+	for (const preferred of [DEFAULT_FORMAT[os], ...INSTALLER_FORMATS[os]]) {
+		const match = candidates.find((entry) => entry.format === preferred);
+		if (match) return match;
+	}
+	return candidates[0];
 }
 
 /**

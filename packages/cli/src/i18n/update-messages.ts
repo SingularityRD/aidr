@@ -32,6 +32,8 @@ export const UPDATE_EN = {
 		"Refusing to go back from v{current} to v{latest}. If your administrator asked for this rollback, run the command again with --allow-downgrade.",
 	"update.noInstallerForPlatform":
 		"The signed catalog for v{latest} has no installer for {platform}.",
+	"update.formatUnavailable":
+		"The signed catalog for v{latest} has no {kind} installer for {platform}; it offers {offered}. Singularity AIDR on this machine was installed as {kind}, so ask your administrator to publish the {kind} installer, or install one of the offered files with your package manager.",
 	"update.formatMismatch":
 		"The available installer is a {format} file, but Singularity AIDR on this machine was installed as {kind}. Install the matching {kind} package with your package manager, or ask your administrator to publish it.",
 	"update.autoOff": "Automatic updates are off (update.auto: off).",
@@ -125,6 +127,8 @@ export const UPDATE_TR: Record<UpdateMessageKey, string> = {
 		"v{current} sürümünden v{latest} sürümüne geri dönülmüyor. Bu geri dönüşü yöneticiniz istediyse komutu --allow-downgrade ile yeniden çalıştırın.",
 	"update.noInstallerForPlatform":
 		"v{latest} sürümünün imzalı kataloğunda {platform} için kurulum dosyası yok.",
+	"update.formatUnavailable":
+		"v{latest} sürümünün imzalı kataloğunda {platform} için {kind} kurulum dosyası yok; sunulanlar: {offered}. Bu makinedeki Singularity AIDR {kind} olarak kurulmuş. Yöneticinizden {kind} dosyasını yayımlamasını isteyin ya da sunulan dosyalardan birini paket yöneticinizle kurun.",
 	"update.formatMismatch":
 		"Sunulan kurulum dosyası {format} biçiminde, ama bu makinedeki Singularity AIDR {kind} olarak kurulmuş. Uygun {kind} paketini paket yöneticinizle kurun ya da yöneticinizden onu yayımlamasını isteyin.",
 	"update.autoOff": "Otomatik güncelleme kapalı (update.auto: off).",

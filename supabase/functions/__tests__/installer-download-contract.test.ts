@@ -55,6 +55,27 @@ function catalogDoc(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+const LINUX_FORMATS = [
+	{ file: "singularity-aidr_1.4.0_amd64.deb", format: "deb" },
+	{ file: "singularity-aidr-1.4.0-1.x86_64.rpm", format: "rpm" },
+	{ file: "singularity-aidr-1.4.0-linux-x64.tar.gz", format: "tar.gz" },
+];
+
+/** Catalog schema 2: Windows .msi and three Linux formats for linux-x64. */
+function multiFormatCatalog() {
+	const [windows] = catalogDoc().files;
+	return catalogDoc({
+		schema_version: 2,
+		files: [
+			windows,
+			...LINUX_FORMATS.map(({ file, format }) => ({
+				platform: "linux-x64", os: "linux", arch: "x64", file, path: `1.4.0/linux-x64/${file}`,
+				size: 2048, sha256: SHA(format), minimum_os: "glibc 2.28", format,
+			})),
+		],
+	});
+}
+
 function bucketObjects({ catalog = catalogDoc(), pointerOverrides = {}, catalogKey = keys.privateKey, pointerKey = keys.privateKey } = {}) {
 	const manifest = signed(catalog, catalogKey);
 	const pointer = signed({
@@ -256,6 +277,11 @@ describe("installer-download catalog", () => {
 			[{ objects: bucketObjects({ pointerOverrides: { manifest_sha256: "0".repeat(64) } }) }, 503, "catalog_integrity_failed"],
 			[{ objects: bucketObjects({ catalog: catalogDoc({ files: [{ ...catalogDoc().files[0], path: "../../other-bucket/x.msi" }] }) }) }, 503, "catalog_integrity_failed"],
 			[{ objects: bucketObjects({ catalog: catalogDoc({ release_notes_url: "javascript:alert(1)" }) }) }, 503, "catalog_integrity_failed"],
+			// Schema 1 allows one file per platform; schema 2 one per platform and format, named by that format.
+			[{ objects: bucketObjects({ catalog: { ...multiFormatCatalog(), schema_version: 1 } }) }, 503, "catalog_integrity_failed"],
+			[{ objects: bucketObjects({ catalog: { ...multiFormatCatalog(), schema_version: 3 } }) }, 503, "catalog_integrity_failed"],
+			[{ objects: bucketObjects({ catalog: catalogDoc({ schema_version: 2, files: [...multiFormatCatalog().files, multiFormatCatalog().files[1]] }) }) }, 503, "catalog_integrity_failed"],
+			[{ objects: bucketObjects({ catalog: catalogDoc({ schema_version: 2, files: [{ ...multiFormatCatalog().files[1], format: "rpm" }] }) }) }, 503, "catalog_integrity_failed"],
 			[{ objects: new Map() }, 404, "installers_unpublished"],
 			[{ storageError: true }, 503, "catalog_unavailable"],
 		];
@@ -301,13 +327,13 @@ describe("installer-download signed URLs", () => {
 			ok: true,
 			url: "https://project.supabase.co/storage/v1/object/sign/aidr-installers/1.4.0/windows-x64/AIDR-Setup-1.4.0-x64.msi?token=signed-token",
 			expires_at: new Date(NOW + 120_000).toISOString(),
-			version: "1.4.0", platform: "windows-x64", file: "AIDR-Setup-1.4.0-x64.msi", size: 4096, sha256: SHA("win"),
+			version: "1.4.0", platform: "windows-x64", format: "msi", file: "AIDR-Setup-1.4.0-x64.msi", size: 4096, sha256: SHA("win"),
 		});
 		expect(signCalls).toEqual([{ bucket: "aidr-installers", path: "1.4.0/windows-x64/AIDR-Setup-1.4.0-x64.msi", ttl: 120, opts: { download: "AIDR-Setup-1.4.0-x64.msi" } }]);
 		const audit = rpcCalls.find((call) => call.name === "record_installer_download");
 		expect(audit?.args).toEqual({
 			p_actor_user_id: USER, p_tenant_id: TENANT, p_version: "1.4.0", p_platform: "windows-x64",
-			p_file_name: "AIDR-Setup-1.4.0-x64.msi", p_sha256: SHA("win"),
+			p_format: "msi", p_file_name: "AIDR-Setup-1.4.0-x64.msi", p_sha256: SHA("win"),
 		});
 		expect(JSON.stringify(audit?.args)).not.toMatch(/ip|user_agent/i);
 		expect(rpcCalls.find((call) => call.name === "consume_tenant_rate_limit")?.args).toMatchObject({ p_endpoint: "installer-download" });
@@ -323,10 +349,55 @@ describe("installer-download signed URLs", () => {
 		expect(signCalls[0].ttl).toBe(900);
 	});
 
+	it("serves the requested format of a multi-format platform and audits the format", async () => {
+		const objects = bucketObjects({ catalog: multiFormatCatalog() });
+		const listed = await (await (await handlerWith({ objects })).handle(get())).json();
+		expect(listed.catalog.files.map((file: { platform: string; format: string }) => `${file.platform}:${file.format}`)).toEqual([
+			"windows-x64:msi", "linux-x64:deb", "linux-x64:rpm", "linux-x64:tar.gz",
+		]);
+		vi.resetModules();
+		for (const { file, format } of LINUX_FORMATS) {
+			const { handle, rpcCalls, signCalls } = await handlerWith({ objects });
+			const body = await (await handle(post({ ...DOWNLOAD, platform: "linux-x64", format }))).json();
+			expect(body).toMatchObject({ ok: true, platform: "linux-x64", format, file, sha256: SHA(format) });
+			expect(signCalls[0].path).toBe(`1.4.0/linux-x64/${file}`);
+			expect(rpcCalls.find((call) => call.name === "record_installer_download")?.args).toMatchObject({ p_format: format, p_file_name: file });
+			vi.resetModules();
+		}
+	});
+
+	it("keeps the request without a format working: the platform's default format is served", async () => {
+		const { handle, rpcCalls } = await handlerWith({ objects: bucketObjects({ catalog: multiFormatCatalog() }) });
+		const body = await (await handle(post({ ...DOWNLOAD, platform: "linux-x64" }))).json();
+		expect(body).toMatchObject({ format: "tar.gz", file: "singularity-aidr-1.4.0-linux-x64.tar.gz" });
+		expect(rpcCalls.find((call) => call.name === "record_installer_download")?.args).toMatchObject({ p_format: "tar.gz" });
+	});
+
+	it("refuses a format the catalog does not list for that platform", async () => {
+		const objects = bucketObjects({ catalog: multiFormatCatalog() });
+		const cases: Array<[unknown, number, string]> = [
+			[{ ...DOWNLOAD, format: "deb" }, 404, "installer_not_found"],
+			[{ ...DOWNLOAD, platform: "linux-x64", format: "pkg" }, 404, "installer_not_found"],
+			[{ ...DOWNLOAD, platform: "linux-x64", format: "../deb" }, 400, "invalid_request"],
+			[{ ...DOWNLOAD, platform: "linux-x64", format: 7 }, 400, "invalid_request"],
+			[{ ...DOWNLOAD, platform: "linux-x64", format: null }, 400, "invalid_request"],
+		];
+		for (const [body, status, error] of cases) {
+			const { handle, signCalls, rpcCalls } = await handlerWith({ objects });
+			const response = await handle(post(body));
+			expect(response.status, error).toBe(status);
+			expect((await response.json()).error).toBe(error);
+			expect(signCalls).toEqual([]);
+			expect(rpcCalls.some((call) => call.name === "record_installer_download")).toBe(false);
+			vi.resetModules();
+		}
+	});
+
 	it("refuses other versions, unpublished platforms and malformed requests without minting a URL", async () => {
 		const cases: Array<[unknown, number, string]> = [
 			[{ ...DOWNLOAD, version: "1.3.0" }, 404, "installer_not_found"],
 			[{ ...DOWNLOAD, platform: "linux-arm64" }, 404, "installer_not_found"],
+			[{ ...DOWNLOAD, format: "rpm" }, 404, "installer_not_found"],
 			[{ ...DOWNLOAD, platform: "macos-arm64" }, 400, "invalid_request"],
 			[{ ...DOWNLOAD, path: "../../aidr-packs/x" }, 400, "invalid_request"],
 			[{ ...DOWNLOAD, tenant_id: "not-a-uuid" }, 400, "invalid_request"],
@@ -363,6 +434,7 @@ describe("installer-download signed URLs", () => {
 
 describe("installer-download deployment contract", () => {
 	const migration = readFileSync(join(ROOT, "supabase", "migrations", "20261013000600_installer_download_portal.sql"), "utf8");
+	const formatMigration = readFileSync(join(ROOT, "supabase", "migrations", "20261013000610_installer_download_format.sql"), "utf8");
 	const config = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
 	const manifest = JSON.parse(readFileSync(join(ROOT, "docs", "production-readiness", "edge-function-contract-manifest.json"), "utf8"));
 
@@ -379,6 +451,22 @@ describe("installer-download deployment contract", () => {
 		expect(migration).not.toMatch(/inet|ip_address|user_agent/i);
 		// The audit RPC accepts exactly the platforms the Edge Function serves.
 		expect(migration).toContain("p_platform not in ('windows-x64', 'windows-arm64', 'linux-x64', 'linux-arm64')");
+	});
+
+	it("records the format in a new migration that keeps the old six-argument call shape", () => {
+		// The applied portal migration is not edited; the new one replaces the function.
+		expect(migration).not.toContain("p_format");
+		expect(formatMigration).toContain("drop function if exists public.record_installer_download(uuid, uuid, text, text, text, text);");
+		expect(formatMigration).toMatch(/p_sha256 text,\s*p_format text default null\s*\) returns jsonb/);
+		expect(formatMigration).toContain("security definer");
+		expect(formatMigration).toContain("set search_path = pg_catalog, public, pg_temp");
+		expect(formatMigration).toContain("(p_format is not null and p_format !~ '^[a-z0-9.]{1,16}$')");
+		expect(formatMigration).toContain("'format', p_format");
+		expect(formatMigration).toContain("t.status = 'active'");
+		expect(formatMigration).toContain("p_platform not in ('windows-x64', 'windows-arm64', 'linux-x64', 'linux-arm64')");
+		expect(formatMigration).toMatch(/revoke all on function public\.record_installer_download\(uuid, uuid, text, text, text, text, text\)\s*from public, anon, authenticated;/);
+		expect(formatMigration).toMatch(/grant execute on function public\.record_installer_download\(uuid, uuid, text, text, text, text, text\)\s*to service_role;/);
+		expect(formatMigration).not.toMatch(/create policy|inet|ip_address|user_agent/i);
 	});
 
 	it("is deployed with gateway JWT verification and listed with this contract test", () => {

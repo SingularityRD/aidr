@@ -27,7 +27,7 @@ import {
 	LINUX_MDM_MARKER,
 	trustedCatalogKeys,
 } from "../update/environment.js";
-import { downloadVerified, loadCatalog } from "../update/source.js";
+import { downloadVerified, installerLocation, loadCatalog } from "../update/source.js";
 
 const sha = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const catalogKey = generateKeyPairSync("ed25519");
@@ -99,6 +99,27 @@ function published(
 	return { pointer, catalog };
 }
 
+/** Catalog schema 2: linux-x64 as .deb, .rpm and .tar.gz. */
+function multiFormatCatalog(overrides: Record<string, unknown> = {}) {
+	const [tarball] = catalogValue().files;
+	const variant = (file: string, format: string) => ({
+		...tarball,
+		file,
+		path: `1.5.0/linux-x64/${file}`,
+		sha256: sha(format),
+		format,
+	});
+	return catalogValue({
+		schema_version: 2,
+		files: [
+			variant("singularity-aidr_1.5.0_amd64.deb", "deb"),
+			variant("singularity-aidr-1.5.0-1.x86_64.rpm", "rpm"),
+			tarball,
+		],
+		...overrides,
+	});
+}
+
 let dir: string;
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "aidr-update-core-"));
@@ -155,6 +176,81 @@ describe("signed installer catalog", () => {
 			error: "signature_invalid",
 		});
 		expect(verifyPublishedCatalog(published(), [])).toEqual({ ok: false, error: "no_trusted_key" });
+	});
+
+	it("reads a multi-format catalog (schema 2) and still reads schema 1", () => {
+		const result = verifyPublishedCatalog(published({ catalog: multiFormatCatalog() }), KEYS);
+		expect(result.ok && result.catalog.schema_version).toBe(2);
+		expect(result.ok && result.catalog.files.map((file) => file.format)).toEqual([
+			"deb",
+			"rpm",
+			"tar.gz",
+		]);
+		const single = verifyPublishedCatalog(published(), KEYS);
+		expect(single.ok && single.catalog.schema_version).toBe(1);
+		const [deb] = multiFormatCatalog().files as Array<Record<string, unknown>>;
+		for (const catalog of [
+			// Schema 1 still allows one file per platform only.
+			{ ...multiFormatCatalog(), schema_version: 1 },
+			{ ...multiFormatCatalog(), schema_version: 3 },
+			// Schema 2: one file per platform AND format, named by its format.
+			multiFormatCatalog({ files: [deb, deb] }),
+			multiFormatCatalog({ files: [{ ...deb, format: "rpm" }] }),
+		]) {
+			expect(verifyPublishedCatalog(published({ catalog }), KEYS)).toEqual({
+				ok: false,
+				error: "catalog_invalid",
+			});
+		}
+	});
+
+	it("picks the installer in the format this machine was installed with", async () => {
+		writeMirror(join(dir, "mirror"), published({ catalog: multiFormatCatalog() }));
+		const source = { kind: "mirror" as const, location: join(dir, "mirror") };
+		const check = (formats?: string[]) =>
+			checkInstallerUpdate({
+				currentVersion: "1.4.0",
+				platform: "linux-x64",
+				source,
+				keys: KEYS,
+				...(formats ? { formats } : {}),
+			});
+		expect(await check(["rpm"])).toMatchObject({
+			ok: true,
+			status: "available",
+			file: { format: "rpm", file: "singularity-aidr-1.5.0-1.x86_64.rpm" },
+		});
+		expect(await check(["tar.gz", "tgz"])).toMatchObject({ file: { format: "tar.gz" } });
+		const missing = await check(["msi"]);
+		expect(missing).toMatchObject({ ok: true, file: null });
+		expect(missing.ok && missing.platformFiles.map((file) => file.format)).toEqual([
+			"deb",
+			"rpm",
+			"tar.gz",
+		]);
+		expect(await check()).toMatchObject({ file: { format: "deb" } });
+	});
+
+	it("names the format to a multi-format portal and not to a schema 1 portal", async () => {
+		const bodies: unknown[] = [];
+		const fetchStub = (async (_url: string | URL, init?: RequestInit) => {
+			bodies.push(JSON.parse(String(init?.body)));
+			return new Response(JSON.stringify({ ok: true, url: "https://cp.example.com/x?token=t" }));
+		}) as unknown as typeof fetch;
+		const source = { kind: "portal" as const, endpoint: "https://cp.example.com", apiKey: "k" };
+		for (const value of [multiFormatCatalog(), catalogValue()]) {
+			const verified = verifyCatalogDocument(signDoc(value), KEYS);
+			if (!verified.ok) throw new Error("fixture catalog does not verify");
+			const file = verified.catalog.files[0];
+			if (!file) throw new Error("fixture catalog has no installer");
+			expect(await installerLocation(source, verified.catalog, file, { fetch: fetchStub })).toEqual(
+				{ ok: true, location: "https://cp.example.com/x?token=t" },
+			);
+		}
+		expect(bodies).toEqual([
+			{ version: "1.5.0", platform: "linux-x64", format: "deb" },
+			{ version: "1.5.0", platform: "linux-x64" },
+		]);
 	});
 
 	it("refuses a signed catalog whose entries escape the published layout", () => {

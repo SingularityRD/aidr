@@ -218,8 +218,14 @@ hazırlar. Yalnızca `https` üzerinden indirilir.
    katalogdakiyle birebir aynı olmalıdır; değilse dosya silinir.
 3. **Sürüm.** Daha eski bir sürüm, `--allow-downgrade` verilmedikçe (yöneticinizin
    istediği bir geri dönüş) reddedilir.
-4. **Biçim.** Kurulum dosyası, AIDR'nin kurulduğu biçimle (MSI, `.deb`, `.rpm`
-   ya da tar arşivi) aynı olmalıdır; `aidr update` biçim değiştirmez.
+4. **Biçim.** `aidr update`, AIDR'nin kurulduğu biçime uyan kurulum dosyasını
+   kendisi seçer: Windows'ta `.msi`; `singularity-aidr` paketi dpkg'de kayıtlıysa
+   `.deb`, rpm'de kayıtlıysa `.rpm`, değilse `.tar.gz`. Portal bir platformun
+   bütün biçimlerini yayımladığı için bu otomatiktir. Yalnızca katalogda o
+   biçimde kurulum dosyası yoksa durur ve katalogdaki biçimleri listeler;
+   yöneticinizden sizin biçiminizi yayımlamasını isteyin. Bir kurulumu bir
+   biçimden diğerine geçirmez; `--from` ile verdiğiniz kurulum dosyası da aynı
+   biçimde olmalıdır.
 
 **Kurulum kataloğu anahtarı**, portal kataloğunu imzalayan anahtarın açık
 kısmıdır (base64 biçimi portaldaki `AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_B64`

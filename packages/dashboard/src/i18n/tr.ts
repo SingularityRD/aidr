@@ -152,6 +152,12 @@ const base: Record<BaseMessageKey, string> = {
 	"downloads.installer.releaseNotes": "Sürüm notları",
 	"downloads.installer.recommended": "Bu bilgisayar için önerilen",
 	"downloads.installer.other": "Diğer platformlar",
+	"downloads.installer.otherFormats": "{platform} için diğer biçimler",
+	"downloads.format.msi": "Windows kurulum paketi (.msi)",
+	"downloads.format.deb": "Debian, Ubuntu (.deb)",
+	"downloads.format.rpm": "RHEL, Fedora (.rpm)",
+	"downloads.format.tarball": "Diğer Linux dağıtımları (.tar.gz)",
+	"downloads.format.other": ".{format} dosyası",
 	"downloads.installer.download": "{file} dosyasını indir",
 	"downloads.installer.preparing": "İndirme hazırlanıyor…",
 	"downloads.installer.started":
@@ -173,7 +179,7 @@ const base: Record<BaseMessageKey, string> = {
 	"downloads.installer.step1":
 		"İşletim sisteminize uygun yükleyiciyi indirin ve SHA-256 değerini denetleyin.",
 	"downloads.installer.step2":
-		"Çalıştırın: Windows'ta çift tıklayın, Linux'ta betiği sh ile çalıştırın.",
+		"Çalıştırın: Windows'ta .msi dosyasına çift tıklayın. Linux'ta .deb dosyasını sudo apt install ./<dosya> ile, .rpm dosyasını sudo dnf install ./<dosya> ile kurun; .tar.gz dosyasını açıp içindeki install.sh betiğini sudo ile çalıştırın.",
 	"downloads.installer.step3":
 		"Yapay zekâ araçlarınızı yeniden başlatın. aidr status komutu korumanın açık olduğunu gösterir.",
 	"downloads.error.entitlement":

@@ -12,17 +12,20 @@
  *      the same primitives as scripts/release-verify.mjs (Ed25519 signature,
  *      trusted signer window, expiry, metadata/inventory bindings, every
  *      artifact digest and size). Nothing is read from an unverified bundle.
- *   2. Select the installers (explicit `--installer <platform>=<path>` or the
- *      `installers/<platform>/<file>` convention) and require each one to be a
- *      signed artifact of that manifest and to appear in SHA256SUMS with the
+ *   2. Select the installers (explicit `--installer <platform>=<path>`, repeatable
+ *      once per format, or the `installers/<platform>/<file>` convention, where the
+ *      file extension names the format: FORMATS below) and require each one to be
+ *      a signed artifact of that manifest and to appear in SHA256SUMS with the
  *      same digest. The bytes that were hashed are the bytes that are uploaded.
+ *      A platform carries one file per format (Windows .msi; Linux .deb, .rpm
+ *      and .tar.gz).
  *   3. Write the storage contract for this version (docs/installation/download-portal.md):
  *
  *        <version>/<platform>/<file>                  installer bytes (immutable)
  *        <version>/SHA256SUMS                          `<sha256>  <platform>/<file>`
  *        <version>/release/aidr-release.manifest.json  signed release manifest (verbatim)
  *        <version>/release/aidr-release.manifest.sig   its Ed25519 signature
- *        <version>/manifest.json                       installer catalog (below)
+ *        <version>/manifest.json                       installer catalog (below; schema 1, or 2 when a platform has several formats)
  *        <version>/manifest.json.sig                   Ed25519 signature over manifest.json bytes
  *        latest.json / latest.json.sig                 signed pointer to the current version
  *
@@ -106,7 +109,19 @@ const DEFAULT_MINIMUM_OS = Object.freeze({
 	windows: "Windows 10 / Windows Server 2016",
 	linux: "glibc 2.28 (e.g. Ubuntu 20.04, RHEL 8)",
 });
-const FORMATS = ["tar.gz", "msix", "msi", "exe", "sh", "deb", "rpm", "tgz", "zip"];
+// The installer formats of each OS, in display order; a file's extension names its
+// format. Adding a format is a data change here and in INSTALLER_FORMATS of
+// supabase/functions/_shared/installer-catalog.ts (and, for `aidr update` to install
+// it, in packages/cli/src/utils/update-installer.ts).
+const FORMATS = Object.freeze({
+	windows: Object.freeze(["msi"]),
+	linux: Object.freeze(["deb", "rpm", "tar.gz"]),
+});
+// Catalog schema 1 lists one file per platform; schema 2 one per platform and format.
+// A release with a single file per platform keeps writing schema 1 so endpoints that
+// only read schema 1 keep updating (docs/installation/download-portal.md).
+const SINGLE_FORMAT_SCHEMA = 1;
+const MULTI_FORMAT_SCHEMA = 2;
 const INSTALLER_VERSION_RE = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,64})?$/;
 const FILE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$/;
 const KEY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -141,25 +156,78 @@ export function parseSha256Sums(text) {
 	return entries;
 }
 
+function splitPair(value, label) {
+	const separator = value.indexOf("=");
+	const key = separator > 0 ? value.slice(0, separator).trim() : "";
+	const rest = separator > 0 ? value.slice(separator + 1).trim() : "";
+	if (!key || !rest) fail(`${label} must be <platform>=<value>: ${value}`);
+	if (!PLATFORMS.includes(key)) fail(`${label} names an unknown platform ${key} (allowed: ${PLATFORMS.join(", ")})`);
+	return [key, rest];
+}
+
 function parsePairs(values, label) {
 	const pairs = new Map();
 	for (const value of values ?? []) {
-		const separator = value.indexOf("=");
-		const key = separator > 0 ? value.slice(0, separator).trim() : "";
-		const rest = separator > 0 ? value.slice(separator + 1).trim() : "";
-		if (!key || !rest) fail(`${label} must be <platform>=<value>: ${value}`);
-		if (!PLATFORMS.includes(key)) fail(`${label} names an unknown platform ${key} (allowed: ${PLATFORMS.join(", ")})`);
+		const [key, rest] = splitPair(value, label);
 		if (pairs.has(key)) fail(`${label} repeats platform ${key}`);
 		pairs.set(key, rest);
 	}
 	return pairs;
 }
 
-function installerFormat(file) {
+/** The format a platform's installer file is published as (by extension), or null. */
+function installerFormat(platform, file) {
 	const lower = file.toLowerCase();
-	const format = FORMATS.find((extension) => lower.endsWith(`.${extension}`));
-	if (!format) fail(`installer ${file} has an unsupported file type (allowed: ${FORMATS.join(", ")})`);
-	return format;
+	return FORMATS[platform.split("-")[0]]?.find((format) => lower.endsWith(`.${format}`)) ?? null;
+}
+
+function selectionKey(platform, format) {
+	return `${platform}\u0000${format}`;
+}
+
+/** Explicit `--installer <platform>=<bundle path>` choices; any number of formats per platform. */
+function explicitSelection(values) {
+	const selection = new Map();
+	for (const value of values ?? []) {
+		const [platform, artifactPath] = splitPair(value, "--installer");
+		const format = installerFormat(platform, path.posix.basename(artifactPath));
+		if (!format) {
+			fail(`--installer ${artifactPath} is not a ${platform} installer (allowed: ${FORMATS[platform.split("-")[0]].map((entry) => `.${entry}`).join(", ")})`);
+		}
+		if (selection.has(selectionKey(platform, format))) fail(`--installer repeats the .${format} installer for ${platform}`);
+		selection.set(selectionKey(platform, format), { platform, format, artifactPath });
+	}
+	return selection;
+}
+
+/** Every signed `installers/<platform>/<file>` whose extension is a format of that platform. */
+function conventionSelection(artifactPaths) {
+	const selection = new Map();
+	const skipped = [];
+	for (const artifactPath of artifactPaths) {
+		const match = CONVENTION_RE.exec(artifactPath);
+		if (!match) continue;
+		const [, platform, file] = match;
+		if (!PLATFORMS.includes(platform)) fail(`signed installer ${artifactPath} uses an unknown platform directory`);
+		const format = installerFormat(platform, file);
+		if (!format) {
+			skipped.push(artifactPath);
+			continue;
+		}
+		if (selection.has(selectionKey(platform, format))) {
+			fail(`more than one signed .${format} installer for ${platform}; pass --installer explicitly`);
+		}
+		selection.set(selectionKey(platform, format), { platform, format, artifactPath });
+	}
+	if (selection.size === 0) fail("the signed release contains no installers/<platform>/<file> artifacts; pass --installer");
+	return { selection, skipped };
+}
+
+/** Platform order, then the platform's format order. */
+function selectionOrder(left, right) {
+	const formats = FORMATS[left.platform.split("-")[0]];
+	return PLATFORMS.indexOf(left.platform) - PLATFORMS.indexOf(right.platform) ||
+		formats.indexOf(left.format) - formats.indexOf(right.format);
 }
 
 function httpsUrl(value, label) {
@@ -205,18 +273,10 @@ export async function buildInstallerRelease(options) {
 	if (!INSTALLER_VERSION_RE.test(version)) fail(`release version ${version} is not a publishable installer version`);
 	const signedArtifacts = new Map(releaseManifest.artifacts.map((artifact) => [artifact.path, artifact]));
 
-	let selection = parsePairs(options.installers, "--installer");
-	if (selection.size === 0) {
-		for (const artifactPath of signedArtifacts.keys()) {
-			const match = CONVENTION_RE.exec(artifactPath);
-			if (!match) continue;
-			if (!PLATFORMS.includes(match[1])) fail(`signed installer ${artifactPath} uses an unknown platform directory`);
-			if (selection.has(match[1])) fail(`more than one signed installer for ${match[1]}; pass --installer explicitly`);
-			selection.set(match[1], artifactPath);
-		}
-		if (selection.size === 0) fail("the signed release contains no installers/<platform>/<file> artifacts; pass --installer");
-	}
-	selection = new Map([...selection].sort(([left], [right]) => PLATFORMS.indexOf(left) - PLATFORMS.indexOf(right)));
+	let selection = explicitSelection(options.installers);
+	let skipped = [];
+	if (selection.size === 0) ({ selection, skipped } = conventionSelection(signedArtifacts.keys()));
+	const selected = [...selection.values()].sort(selectionOrder);
 	const minimumOs = parsePairs(options.minOs, "--min-os");
 
 	const sumsPath = options.sha256sums ?? path.join(bundle.bundle, "SHA256SUMS");
@@ -234,12 +294,12 @@ export async function buildInstallerRelease(options) {
 	const objects = [];
 	const files = [];
 	const seenNames = new Set();
-	for (const [platform, artifactPath] of selection) {
+	for (const { platform, format, artifactPath } of selected) {
 		const signed = signedArtifacts.get(artifactPath);
 		if (!signed) fail(`installer ${artifactPath} is not an artifact of the signed release manifest`);
 		const file = path.posix.basename(artifactPath);
 		if (!FILE_NAME_RE.test(file)) fail(`installer file name ${file} is not portable`);
-		if (seenNames.has(file)) fail(`installer file name ${file} is used by more than one platform`);
+		if (seenNames.has(file)) fail(`installer file name ${file} is used by more than one installer`);
 		seenNames.add(file);
 		const listed = sums.get(artifactPath) ?? sums.get(file);
 		if (!listed) fail(`SHA256SUMS has no entry for ${artifactPath}`);
@@ -260,15 +320,16 @@ export async function buildInstallerRelease(options) {
 			size: bytes.byteLength,
 			sha256: signed.sha256,
 			minimum_os: minimumOs.get(platform) ?? DEFAULT_MINIMUM_OS[osName],
-			format: installerFormat(file),
+			format,
 		});
 		objects.push({ path: objectPath, bytes, contentType: "application/octet-stream", immutable: true });
 	}
 
 	const signatureRaw = signatureRecord.raw;
 	const publishedAt = now.toISOString();
+	const singleFormat = new Set(files.map((entry) => entry.platform)).size === files.length;
 	const catalog = {
-		schema_version: 1,
+		schema_version: singleFormat ? SINGLE_FORMAT_SCHEMA : MULTI_FORMAT_SCHEMA,
 		type: CATALOG_TYPE,
 		product_id: releaseManifest.product_id,
 		channel: releaseManifest.channel,
@@ -321,6 +382,7 @@ export async function buildInstallerRelease(options) {
 
 	return {
 		version,
+		skipped,
 		signed: Boolean(signing),
 		signerFingerprint: signing?.fingerprint ?? null,
 		catalog,
@@ -464,7 +526,10 @@ async function main() {
 		signed: release.signed,
 		signer_fingerprint: release.signerFingerprint,
 		release_sequence: release.latest.release_sequence,
-		files: release.catalog.files.map(({ platform, file, size, sha256: digest }) => ({ platform, file, size, sha256: digest })),
+		catalog_schema_version: release.catalog.schema_version,
+		files: release.catalog.files.map(({ platform, format, file, size, sha256: digest }) => ({ platform, format, file, size, sha256: digest })),
+		// Signed files under installers/<platform>/ whose extension is not a published format.
+		skipped: release.skipped,
 	};
 	if (options.dryRun) {
 		const outDir = options.out ?? (await mkdtemp(path.join(os.tmpdir(), "aidr-installers-")));
