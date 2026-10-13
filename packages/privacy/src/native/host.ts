@@ -16,9 +16,9 @@ import { FrameDecoder, encodeFrame } from './framing.js';
 import { NativeSession } from './session.js';
 import { deriveEdmKey, readEdmSecret } from './edm.js';
 import { isAbsolute } from 'node:path';
+import { once } from 'node:events';
 /** Idle time before a one-document client's host exits, and before a persistent (Browser Guard) host exits. */
 const IDLE_MS=120_000,PERSISTENT_IDLE_MS=15*60_000;
-import { once } from 'node:events';
 async function main():Promise<void>{
   let text:PrivacyEngine|undefined,ner:LocalNerProcess|undefined,visual:VisualPrivacyEngine|undefined,session:NativeSession|undefined,edmSecret:Buffer|undefined;
   let timer:ReturnType<typeof setTimeout>|undefined;const decoder=new FrameDecoder();

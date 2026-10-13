@@ -94,12 +94,12 @@ export function buildShadowRules(policy: ShadowAiPolicy): DnrRule[] {
 		id: RULE_ID_BY_SERVICE.get(s.id) as number,
 		priority: 1,
 		action: { type: "block" },
-		condition: s.paths.length
-			? {
-					regexFilter: scopeRegexFilter(s.hosts, s.paths),
-					resourceTypes: ["main_frame", "sub_frame"],
-				}
-			: { requestDomains: [...s.hosts], resourceTypes: ["main_frame", "sub_frame"] },
+		condition: {
+			...(s.paths.length
+				? { regexFilter: scopeRegexFilter(s.hosts, s.paths) }
+				: { requestDomains: [...s.hosts] }),
+			resourceTypes: ["main_frame", "sub_frame"],
+		},
 	}));
 }
 
@@ -344,22 +344,14 @@ export class ShadowAiMonitor {
 	}
 
 	/** Shows blocked.html when this module's rule for `service` is installed. */
-	private redirectIfBlocked(tabId: number, service: AiService): Promise<boolean> {
-		return redirectBlockedService(this.deps.chrome, tabId, service);
+	private async redirectIfBlocked(tabId: number, service: AiService): Promise<boolean> {
+		const { chrome } = this.deps;
+		if (!chrome.declarativeNetRequest.getDynamicRules || !chrome.tabs.update) return false;
+		const rules = await chrome.declarativeNetRequest.getDynamicRules();
+		if (!shadowRuleInstalled(rules, service)) return false;
+		await chrome.tabs.update(tabId, {
+			url: chrome.runtime.getURL(`${BLOCKED_PAGE_PATH}?service=${service.id}`),
+		});
+		return true;
 	}
-}
-
-/** Navigates `tabId` to blocked.html when this module's rule for `service` is installed. */
-async function redirectBlockedService(
-	chrome: Pick<ChromeApi, "declarativeNetRequest" | "runtime" | "tabs">,
-	tabId: number,
-	service: AiService,
-): Promise<boolean> {
-	if (!chrome.declarativeNetRequest.getDynamicRules || !chrome.tabs.update) return false;
-	const rules = await chrome.declarativeNetRequest.getDynamicRules();
-	if (!shadowRuleInstalled(rules, service)) return false;
-	await chrome.tabs.update(tabId, {
-		url: chrome.runtime.getURL(`${BLOCKED_PAGE_PATH}?service=${service.id}`),
-	});
-	return true;
 }

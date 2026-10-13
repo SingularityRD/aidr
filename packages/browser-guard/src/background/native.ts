@@ -8,7 +8,7 @@
  * One persistent host process: the bridge opens one native-messaging port and keeps it, so
  * the host process and its NER worker (model loaded once) serve every scan instead of a new
  * process per scan. Scans are queued on that connection (one document at a time, at most
- * MAX_QUEUED waiting); each keeps its own deadline. The host is started in advance by
+ * NATIVE_MAX_QUEUED waiting); each keeps its own deadline. The host is started in advance by
  * `status()` (the popup and policy load call it) with a longer start-up budget
  * (NATIVE_CONNECT_TIMEOUT_MS), so the first prompt does not pay for the cold start. A scan
  * that times out mid-exchange, or any protocol error, ends the connection (fail closed: the
@@ -75,7 +75,6 @@ const MAX_OUTPUT_BYTES = 2 * NATIVE_MAX_TEXT_BYTES;
 const NATIVE_FINDING_SCORE = 0.9;
 /** Scans waiting for (or running on) the one host connection; more are answered `null` at once. */
 export const NATIVE_MAX_QUEUED = 8;
-const MAX_QUEUED = NATIVE_MAX_QUEUED;
 /** `edm-keys` request limits (the host's own limits, packages/privacy/src/native/session.ts). */
 const MAX_KEY_REQUEST = 16;
 const DATASET_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
@@ -808,7 +807,7 @@ export function createNativeBridge(
 		limitMs: number,
 		run: (conn: Connection, isOpen: () => boolean) => Promise<T | typeof FAILURE>,
 	): Promise<T | typeof FAILURE | Interrupted> => {
-		if (queued >= MAX_QUEUED) return "busy";
+		if (queued >= NATIVE_MAX_QUEUED) return "busy";
 		queued++;
 		const job = { open: true, conn: undefined as Connection | undefined };
 		try {

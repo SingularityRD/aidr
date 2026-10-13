@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from train_b import GAZ_KEYS, MAX_CHARS, Vocab, encode, load, load_model  # noqa: E402
+from train_b import GAZ_KEYS, MAX_CHARS, Vocab, encode, featurize, load, load_model, norm  # noqa: E402
 
 EDGE = [
     "İSTANBUL'da IŞIK ve ılık; İzmir'deki Iğdır",
@@ -64,8 +64,6 @@ def main(argv=None) -> int:
     # Reduced vocabulary: every word/char the fixture texts use, plus distractor-free filler.
     keep_words = set()
     for t in texts:
-        from train_b import featurize, norm
-
         _, words, _ = featurize(t)
         keep_words |= {norm(w) for w in words}
     words = ["<pad>", "<unk>"] + [w for w in full.words[2:] if w in keep_words]

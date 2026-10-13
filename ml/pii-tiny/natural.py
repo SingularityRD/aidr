@@ -19,7 +19,7 @@ import re
 import sys
 from pathlib import Path
 
-from gen import ASCII, Pools, suffix, tr_lower, tr_upper
+from gen import ASCII, Pools, name_of, suffix, tr_lower, tr_upper
 
 MARK = re.compile(r"\[\[([PAL]):([^\[\]]+)\]\]")
 LABEL = {"P": "PERSON", "A": "ADDRESS", "L": "LOCATION"}
@@ -76,16 +76,15 @@ def new_name(original: str, pools: Pools, rng: random.Random) -> str | None:
     words = original.replace(".", ". ").split()
     if not words or len(words) > 4 or any(not re.fullmatch(r"[\w'’.-]+", w) for w in words):
         return None  # handles, e-mail-like user names, odd tokens: keep the original
-    name = lambda x: x["name"] if isinstance(x, dict) else x  # noqa: E731
     tr = rng.random() < 0.6
     firsts = pools.tr_first if tr else pools.en_first
     lasts = pools.tr_last if tr else pools.en_last
     if len(words) == 1:
-        v = name(rng.choice(firsts)) if rng.random() < 0.7 else rng.choice(lasts)
+        v = name_of(rng.choice(firsts)) if rng.random() < 0.7 else rng.choice(lasts)
     elif len(words) == 2 and words[0].endswith("."):
-        v = f"{name(rng.choice(firsts))[0]}. {rng.choice(lasts)}"
+        v = f"{name_of(rng.choice(firsts))[0]}. {rng.choice(lasts)}"
     else:
-        given = [name(rng.choice(firsts)) for _ in range(len(words) - 1)]
+        given = [name_of(rng.choice(firsts)) for _ in range(len(words) - 1)]
         v = " ".join(given + [rng.choice(lasts)])
     return apply_style(v, style(original), tr)
 
@@ -114,10 +113,10 @@ def variant(plain: str, spans: list[dict], pools: Pools, rng: random.Random) -> 
         if s["label"] == "PERSON" and rest[:1].isalpha():
             return None  # "Kerim'cim" typed as "Kerimcim": a swapped name would get the wrong harmony
         if s["label"] == "PERSON" and rest[:1] in ("'", "’"):
-            case = next((c for rx, c in CASE_OF if rx.match(rest)), None)
-            if case is None:
+            hit = next(((c, m) for rx, c in CASE_OF if (m := rx.match(rest))), None)
+            if hit is None:
                 return None
-            m = next(rx.match(rest) for rx, c in CASE_OF if c == case)
+            case, m = hit
             sfx = suffix(repl.split()[-1], case)
             if rest[0] == "’":
                 sfx = "’" + sfx[1:]
