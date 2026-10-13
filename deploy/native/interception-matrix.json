@@ -912,7 +912,7 @@
       "connector": "claude-code",
       "condition": "large-binary-response",
       "outcome": "explicitly-unsupported",
-      "reason": "Large output is marked incomplete, but Claude PostToolUse runs after the tool and only supported response shapes can be replaced. Unsupported, malformed, oversized, or immutable results may remain visible to the host/model; no real-host same-turn acceptance exists.",
+      "reason": "Large output is marked incomplete and replaced, and input above the parse ceiling, a missed deadline or an internal error is answered with a quarantine replacement chosen by tool name (MCP text block, Bash required fields). Claude PostToolUse still runs after the tool, other built-in result shapes that cannot be parsed or are unknown cannot be replaced (the host rejects a guessed shape and keeps the original), and no real-host same-turn acceptance exists for large or MCP results.",
       "evidence": [
         {
           "kind": "failure-policy",

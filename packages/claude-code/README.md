@@ -28,8 +28,17 @@ model are not covered.
   Unsafe or uninspectable recognized MCP result envelopes are replaced by a
   text-only MCP error result; supported built-in results use shape-preserving
   replacements.
-  Unknown shapes or oversized hook input are reported as coverage-unavailable
-  rather than claimed as quarantined. Live Claude-host acceptance of replacement
+  Output that cannot be inspected in full fails closed: a result beyond the
+  262,144-character scan window, hook input up to the 16 MiB parse ceiling
+  (`AIDR_POST_TOOL_USE_MAX_INPUT_BYTES`, 1–64 MiB), the internal deadline
+  (`AIDR_POST_TOOL_USE_DEADLINE_MS`, default 4 s) and internal errors all answer
+  with a quarantine replacement, never a clean result. When the result could not
+  be parsed (input above the ceiling, deadline before stdin closed) or its shape is
+  unknown, the replacement is chosen by tool name: a text block for MCP tools and
+  the required `stdout`/`stderr`/`interrupted` fields for Bash. For other built-in
+  tools in that situation Claude Code would reject a guessed shape and keep the
+  original, so the hook says plainly that the output may remain available instead
+  of claiming a quarantine. Live Claude-host acceptance of replacement
   outputs covers a Bash result only (see above); MCP and other result shapes are
   not host-accepted, and PostToolUse cannot undo tool execution.
 - Records decisions in the local audit log and, when a managed control plane is

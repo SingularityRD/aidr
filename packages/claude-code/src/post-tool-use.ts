@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Singularity AIDR PostToolUse hook entry point.
- * Detects user approvals of ask verdicts and records them for MCP allowlist flow.
- * Always exits 0 and returns valid JSON.
+ * Inspects the tool result before Claude sees it and replaces risky or
+ * uninspectable output with a quarantine notice (`updatedToolOutput`); also
+ * records approvals of ask verdicts. Always exits 0 and returns valid JSON.
  */
 
 import {
@@ -21,7 +22,12 @@ import pino from "pino";
 import { consumePendingApproval } from "./approval-tracker.js";
 import { resolveAssetDir } from "./assets.js";
 import { approvedActionContext } from "./format.js";
-import { MAX_POST_TOOL_INPUT_BYTES, readStdinJson } from "./hook-input.js";
+import {
+	type PostToolInputProgress,
+	readPostToolStdin,
+	resolvePostToolInputLimit,
+	toolNameFromInputPrefix,
+} from "./hook-input.js";
 import {
 	postToolInspectionUnavailable,
 	scanCachedProvisionedToolResponse,
@@ -36,8 +42,36 @@ import {
 
 const logger: Logger = pino({ level: "warn" }, pino.destination(2));
 
+/**
+ * What is known about the current result, for answers given before (or
+ * instead of) a completed inspection: the deadline, malformed input and
+ * internal errors must still withhold the output, never only annotate it.
+ */
+const current: {
+	/** Leading input bytes, so an incomplete read still names its tool. */
+	input: PostToolInputProgress;
+	toolName?: string;
+	toolResponse?: unknown;
+	/** The final answer once inspection finished; `undefined` until then. */
+	inspected?: Record<string, unknown>;
+} = { input: { prefix: "" } };
+
+/** Answer for a run that did not complete: its settled verdict, else a fail-closed one. */
+function reportIncompleteRun(reason: string): void {
+	if (current.inspected) {
+		process.stdout.write(`${JSON.stringify(current.inspected)}\n`);
+	} else {
+		reportUnavailableCoverage(reason);
+	}
+}
+
 function reportUnavailableCoverage(reason: string): void {
-	process.stdout.write(`${JSON.stringify(postToolInspectionUnavailable(reason))}\n`);
+	const answer = quarantineInspectedToolOutput(
+		postToolInspectionUnavailable(reason),
+		current.toolResponse,
+		current.toolName ?? toolNameFromInputPrefix(current.input.prefix),
+	);
+	process.stdout.write(`${JSON.stringify(answer)}\n`);
 }
 
 async function main(): Promise<void> {
@@ -47,21 +81,17 @@ async function main(): Promise<void> {
 		logger,
 	});
 
-	let input: Awaited<ReturnType<typeof readStdinJson>>;
+	const maxInputBytes = resolvePostToolInputLimit(process.env);
+	let input: Awaited<ReturnType<typeof readPostToolStdin>>;
 	try {
-		input = await readStdinJson();
+		input = await readPostToolStdin(maxInputBytes, process.stdin, current.input);
 	} catch {
 		reportUnavailableCoverage("Could not read PostToolUse input.");
 		return;
 	}
 	if (input.status === "oversized") {
-		const reason = `Singularity AIDR PostToolUse input exceeded the ${MAX_POST_TOOL_INPUT_BYTES}-byte processing limit; the tool already completed, its result shape could not be inspected, and no replacement was attempted. Inspection coverage is unavailable and the original output may remain available to the host; treat it as untrusted.`;
-		process.stdout.write(
-			`${JSON.stringify({
-				decision: "block",
-				reason,
-				hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: reason },
-			})}\n`,
+		reportUnavailableCoverage(
+			`PostToolUse input exceeded the ${maxInputBytes}-byte processing limit.`,
 		);
 		return;
 	}
@@ -75,6 +105,9 @@ async function main(): Promise<void> {
 		return;
 	}
 	const hookInput = parsed as Record<string, unknown>;
+	const toolName = typeof hookInput.tool_name === "string" ? hookInput.tool_name : undefined;
+	current.toolName = toolName;
+	current.toolResponse = hookInput.tool_response;
 	if (!("tool_response" in hookInput)) {
 		reportUnavailableCoverage("Received PostToolUse input without a tool response.");
 		return;
@@ -111,15 +144,19 @@ async function main(): Promise<void> {
 		inspection = quarantineInspectedToolOutput(
 			toolResponseInspectionResult(scan),
 			hookInput.tool_response,
+			toolName,
 		);
 	} catch {
-		inspection = quarantineFailedToolInspection(hookInput.tool_response);
+		inspection = quarantineFailedToolInspection(hookInput.tool_response, toolName);
 	}
+	// The verdict for the output is now settled: a later deadline answers with
+	// it rather than with a blanket "unavailable".
+	current.inspected = inspection ?? {};
 	// The output scanner already blocks canary content; this adds the audit entry
 	// and, in managed mode, the incident. Never changes the response.
 	await recordToolOutputCanaries({
 		sessionId,
-		toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+		toolName: toolName ?? "unknown",
 		toolOutput: hookInput.tool_response,
 		agentRuntime: "claude-code",
 		logger,
@@ -132,7 +169,7 @@ async function main(): Promise<void> {
 		await recordToolOutputFlow(
 			{
 				sessionId,
-				toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+				toolName: toolName ?? "unknown",
 				toolInput:
 					toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
 						? (toolInput as Record<string, unknown>)
@@ -150,7 +187,7 @@ async function main(): Promise<void> {
 		await recordToolOutcome(
 			{
 				sessionId,
-				toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+				toolName: toolName ?? "unknown",
 				toolInput:
 					toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
 						? (toolInput as Record<string, unknown>)
@@ -166,7 +203,7 @@ async function main(): Promise<void> {
 	const toolInputForQuarantine = hookInput.tool_input;
 	const fileQuarantine = await quarantineAgentWrittenFiles({
 		sessionId,
-		toolName: typeof hookInput.tool_name === "string" ? hookInput.tool_name : "unknown",
+		toolName: toolName ?? "unknown",
 		toolInput:
 			toolInputForQuarantine &&
 			typeof toolInputForQuarantine === "object" &&
@@ -190,15 +227,16 @@ async function main(): Promise<void> {
 
 /**
  * Watchdog below the host's 5 s PostToolUse timeout: an inspection that has
- * not answered by then reports unavailable coverage (never a clean result)
- * instead of being killed silently. `AIDR_POST_TOOL_USE_DEADLINE_MS` overrides it.
+ * not answered by then withholds the output (never a clean result) instead of
+ * being killed silently; one that already finished answers with its verdict.
+ * `AIDR_POST_TOOL_USE_DEADLINE_MS` overrides it.
  */
 let answered = false;
 const watchdog = setTimeout(
 	() => {
 		if (answered) return;
 		answered = true;
-		reportUnavailableCoverage("PostToolUse inspection did not finish in time.");
+		reportIncompleteRun("PostToolUse inspection did not finish in time.");
 		exitAfterStdoutFlush(0);
 	},
 	resolveHookDeadlineMs(
@@ -209,7 +247,7 @@ const watchdog = setTimeout(
 
 main()
 	.catch(() => {
-		if (!answered) reportUnavailableCoverage("Failed while processing PostToolUse input.");
+		if (!answered) reportIncompleteRun("Failed while processing PostToolUse input.");
 	})
 	.finally(() => {
 		if (answered) return;
