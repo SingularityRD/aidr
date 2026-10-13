@@ -187,7 +187,7 @@ describe("version-check contract", () => {
 		await handle(request());
 		expect(db.writes).toEqual([]);
 		expect(JSON.stringify(db.rpcCalls)).not.toContain("iid-secret-123");
-		expect(db.rpcCalls.map((call) => call.p_key)).toEqual(["version-check:global:v1"]);
+		expect(db.rpcCalls.map((call) => call.p_key)).toEqual(["version-check:v1:unsigned-aggregate"]);
 	});
 
 	it("fails closed when rate-limit storage is unavailable and answers 429 over budget", async () => {
@@ -217,6 +217,29 @@ describe("version-check contract", () => {
 		const keys = db.rpcCalls.map((call) => String(call.p_key));
 		expect(keys.filter((key) => key.startsWith("version-check:v1:client:"))).toHaveLength(1);
 		expect(keys.join(" ")).not.toContain(ip);
+	});
+
+	it("keeps signed and unsigned callers in separate aggregate buckets (CP-6)", async () => {
+		const db = database();
+		env.AIDR_LATEST_RELEASE_VERSION = "0.9.0";
+		env.AIDR_DEVICE_START_INGRESS_SECRET = INGRESS_SECRET;
+		env.AIDR_VERSION_CHECK_RATE_LIMIT_PER_MINUTE = "2";
+		const signed = (ip: string): Record<string, string> => {
+			const timestamp = String(Math.floor(Date.now() / 1000));
+			const signature = createHmac("sha256", INGRESS_SECRET).update(`version-check:v1\n${timestamp}\n${ip}`).digest("hex");
+			return { "x-aidr-client-ip": ip, "x-aidr-client-timestamp": timestamp, "x-aidr-client-signature": signature };
+		};
+		// A direct caller (no proof, or a forged one) exhausts the unsigned aggregate...
+		expect((await handle(request())).status).toBe(200);
+		expect((await handle(request(undefined, { "x-aidr-client-ip": "203.0.113.1", "x-aidr-client-timestamp": "1", "x-aidr-client-signature": "f".repeat(64) }))).status).toBe(200);
+		expect((await handle(request())).status).toBe(429);
+		// ...and attested installations behind the ingress still get their answer.
+		expect((await handle(request(undefined, signed("198.51.100.7")))).status).toBe(200);
+		expect((await handle(request(undefined, signed("198.51.100.8")))).status).toBe(200);
+		const keys = db.rpcCalls.map((call) => String(call.p_key));
+		expect(keys.filter((key) => key === "version-check:v2:signed-aggregate")).toHaveLength(2);
+		expect(keys.filter((key) => key === "version-check:v1:unsigned-aggregate")).toHaveLength(3);
+		expect(keys).not.toContain("version-check:global:v1");
 	});
 
 	it("validates method, body and configuration", async () => {

@@ -13,10 +13,13 @@
 // send an API-key bearer; it is ignored here — this endpoint is public and
 // grants nothing.
 //
-// Abuse controls, fail closed: a deployment-wide aggregate bucket always
-// applies, plus a per-client bucket keyed by the SHA-256 of a proxy-attested
-// client IP (never caller-supplied proxy headers) when the shared ingress
-// secret is configured. A rate-limit storage failure answers 503.
+// Abuse controls, fail closed: when the shared ingress secret is configured and
+// the request carries a valid proxy proof, the attested client gets its own
+// bucket keyed by the SHA-256 of its IP (never caller-supplied proxy headers),
+// then a signed aggregate. Every other caller (no ingress, or a forged/stale
+// proof) consumes only the unsigned aggregate, so a direct caller of the
+// function URL cannot exhaust the budget installations behind the ingress use
+// (same split as device-poll). A rate-limit storage failure answers 503.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, type EnvReader, loadConfig, runtimeEnv } from "../_shared/config.ts";
@@ -31,7 +34,8 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 const MAX_BODY_BYTES = 4 * 1024;
 export const VERSION_CHECK_INGRESS_CONTEXT = "version-check:v1";
-const AGGREGATE_RATE_LIMIT_KEY = "version-check:global:v1";
+export const VERSION_CHECK_UNSIGNED_AGGREGATE_KEY = "version-check:v1:unsigned-aggregate";
+export const VERSION_CHECK_SIGNED_AGGREGATE_KEY = "version-check:v2:signed-aggregate";
 const CLIENT_RATE_LIMIT_PREFIX = "version-check:v1:client:";
 const DEFAULT_AGGREGATE_PER_MINUTE = 6_000;
 const DEFAULT_CLIENT_PER_MINUTE = 30;
@@ -91,14 +95,19 @@ export async function handleVersionCheck(req: Request): Promise<Response> {
 	// Per-client first, so one attested caller is stopped before it can spend the
 	// deployment-wide budget every other install shares.
 	const ingressSecret = env(INGRESS_SECRET_ENV);
-	if (validIngressSecret(ingressSecret)) {
-		const ip = await verifiedIngressIp(req, ingressSecret, VERSION_CHECK_INGRESS_CONTEXT);
-		if (ip) {
-			const client = await limited(db, `${CLIENT_RATE_LIMIT_PREFIX}${await ingressIpBucket(ip)}`, clientLimit);
-			if (client) return client;
-		}
+	const ip = validIngressSecret(ingressSecret)
+		? await verifiedIngressIp(req, ingressSecret, VERSION_CHECK_INGRESS_CONTEXT)
+		: null;
+	if (ip) {
+		const client = await limited(db, `${CLIENT_RATE_LIMIT_PREFIX}${await ingressIpBucket(ip)}`, clientLimit);
+		if (client) return client;
 	}
-	const aggregate = await limited(db, AGGREGATE_RATE_LIMIT_KEY, aggregateLimit);
+	// Signed and unsigned callers never share an aggregate (CP-6).
+	const aggregate = await limited(
+		db,
+		ip ? VERSION_CHECK_SIGNED_AGGREGATE_KEY : VERSION_CHECK_UNSIGNED_AGGREGATE_KEY,
+		aggregateLimit,
+	);
 	if (aggregate) return aggregate;
 
 	const latest = await resolveLatestRelease(env);
