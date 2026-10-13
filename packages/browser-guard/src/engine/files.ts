@@ -1442,7 +1442,7 @@ export function isDocumentContent(file: GuardFile): boolean {
 }
 
 /** Bytes read from the start of a file too large to read whole (PDF / OLE / ZIP signatures). */
-export const SNIFF_HEAD_BYTES = 4096;
+const SNIFF_HEAD_BYTES = 4096;
 /** Bytes read from its end: the ZIP end-of-central-directory record plus the longest comment. */
 const SNIFF_TAIL_BYTES = 0xffff + 22;
 /** Largest central directory read to list a large ZIP's entries (bigger: fail closed). */
