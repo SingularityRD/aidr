@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Singularity AIDR quick start</title>
+<style>
+  :root { --ink: #10213a; --muted: #4a5a70; --accent: #128a80; --line: #d8e1ec; --bg: #ffffff; --code: #eef3f8; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e6edf5; --muted: #a9b6c6; --accent: #4fd1c5; --line: #2a3a52; --bg: #0b1626; --code: #15243a; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 "Segoe UI", Tahoma, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 28px 0 8px; border-top: 1px solid var(--line); padding-top: 20px; }
+  p, li { color: var(--muted); }
+  strong { color: var(--ink); }
+  code { background: var(--code); padding: 1px 6px; border-radius: 4px; font: 14px Consolas, monospace; color: var(--ink); }
+  ol, ul { padding-left: 22px; }
+  .lead { font-size: 16px; }
+  .brand { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="brand" lang="en">Singularity AIDR</span> quick start</h1>
+  <p class="lead">Singularity AIDR checks what your AI coding tools do (commands, files and web requests) and stops harmful actions before they run.</p>
+
+  <h2>1. Restart your AI tools</h2>
+  <p>Setup connected Singularity AIDR to the AI tools it found for your account (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw). A tool that was already open uses the protection after a restart.</p>
+  <ul>
+    <li><strong>Cursor and VS Code:</strong> run <code>Singularity AIDR: Enable protection</code> from the command palette.</li>
+    <li><strong>Codex:</strong> trust the hooks once with <code>/hooks</code> in Codex.</li>
+  </ul>
+
+  <h2>2. Check that it works</h2>
+  <p>Open a new terminal (the folder of the <code>aidr</code> command was just added to your PATH) and run:</p>
+  <ol>
+    <li><code>aidr status</code> shows which AI tools are protected and what is still needed.</li>
+    <li><code>aidr verify</code> sends a harmless test through each connected tool and reports PASS or FAIL.</li>
+  </ol>
+  <p>The Setup Assistant walks you through the same steps: <code>aidr assistant</code>.</p>
+
+  <h2>3. When something is blocked</h2>
+  <p>The message in your AI tool says why Singularity AIDR stopped the action and what you can do next. Approving a blocked action is done by a person outside the AI tool, never by the AI tool itself.</p>
+
+  <h2>4. Installed an AI tool later?</h2>
+  <p>Run <code>aidr setup</code> once in a terminal. It connects Singularity AIDR to the new tool.</p>
+
+  <h2>5. Updates and removal</h2>
+  <ul>
+    <li><code>aidr update --check</code> shows whether a newer version is available; <code>aidr update</code> installs it after checking its signature.</li>
+    <li>To remove Singularity AIDR, use Windows Settings &gt; Apps &gt; Singularity AIDR &gt; Uninstall.</li>
+  </ul>
+
+  <h2>Third-party software</h2>
+  <p>The third-party components and their licences are listed in <code>THIRD_PARTY_NOTICES.txt</code> in this folder.</p>
+</main>
+</body>
+</html>

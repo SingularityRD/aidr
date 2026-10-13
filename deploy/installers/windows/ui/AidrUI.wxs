@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Singularity AIDR install wizard (WiX 5, WixToolset.UI.wixext). Built with
+  aidr.wxs by build-msi.ps1, once per culture (aidr.en-US.wxl, aidr.tr-TR.wxl);
+  the Turkish build becomes a language transform embedded in the English MSI.
+
+  First install:  AidrWelcomeDlg -> AidrLicenseDlg -> AidrScopeDlg -> AidrCompanyDlg
+                  -> AidrReadyDlg -> ProgressDlg -> AidrExitDlg
+  Maintenance:    MaintenanceWelcomeDlg -> MaintenanceTypeDlg (repair/remove) -> VerifyReadyDlg
+                  -> ProgressDlg -> AidrExitDlg
+  The support dialogs (progress, errors, cancel, files in use, resume) are the
+  extension's own, localized by the extension for both cultures.
+
+  Nothing here runs in a silent install (/qn): the wizard only sets the same
+  public properties a command line can (MSIINSTALLPERUSER, ALLUSERS,
+  ENROLLMENT_URL, ENROLLMENT_CODE). Every string is a !(loc.Aidr*) entry
+  present in both .wxl files (installers.test.mjs checks it).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <!-- Wizard choices. AIDR_SCOPE / AIDR_CONNECTION only drive the dialogs. -->
+    <Property Id="AIDR_SCOPE" Value="machine" />
+    <Property Id="AIDR_CONNECTION" Value="local" />
+    <!-- Finish page checkbox: checked by default; AIDR_LAUNCH_ASSISTANT="" unchecks it. -->
+    <Property Id="AIDR_LAUNCH_ASSISTANT" Value="1" />
+    <!-- The SaaS control plane (packages/core/src/clients/control-plane-url.ts), prefilled when connecting. -->
+    <Property Id="AIDR_DEFAULT_CONTROL_PLANE" Value="https://aidr.singularityrd.com" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!-- An existing per-user install preselects "Only for me" (a scope change would not upgrade it). -->
+    <Property Id="AIDR_PERUSER_EXE">
+      <DirectorySearch Id="AidrPerUserBin" Path="[LocalAppDataFolder]Programs\Singularity AIDR\bundle\bin" Depth="0">
+        <FileSearch Id="AidrPerUserExe" Name="aidr.exe" />
+      </DirectorySearch>
+    </Property>
+    <SetProperty Id="AIDR_SCOPE" Value="user" Sequence="ui" After="AppSearch"
+                 Condition="MSIINSTALLPERUSER = 1 OR AIDR_PERUSER_EXE" />
+    <!-- Company details given on the command line preselect "Connect to my company". -->
+    <SetProperty Id="AIDR_CONNECTION" Value="company" Sequence="ui" After="AppSearch"
+                 Condition="ENROLLMENT_URL OR ENROLLMENT_CODE" />
+
+    <!-- Format check of the company address and enrollment code (sets AIDR_ENROLLMENT_ERROR). -->
+    <CustomAction Id="AidrValidateEnrollmentInput" BinaryRef="AidrInstallerActions" DllEntry="ValidateEnrollmentInput"
+                  Execute="immediate" Return="check" />
+    <!--
+      Finish page: open the Setup Assistant without waiting. An immediate action
+      from the wizard runs in the wizard's own process: the interactive user,
+      not elevated (Windows Installer elevates only the installation service).
+      When the whole wizard runs elevated (msiexec started from an administrator
+      prompt, MsiRunningElevated), the checkbox is hidden and nothing is launched.
+    -->
+    <CustomAction Id="AidrLaunchAssistant" FileRef="AidrExe" ExeCommand="assistant"
+                  Execute="immediate" Return="asyncNoWait" />
+
+    <UI Id="AidrUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="CancelDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="MaintenanceWelcomeDlg" />
+      <DialogRef Id="MaintenanceTypeDlg" />
+      <DialogRef Id="VerifyReadyDlg" />
+      <DialogRef Id="OutOfDiskDlg" />
+
+      <!-- 1. Welcome -->
+      <Dialog Id="AidrWelcomeDlg" Width="370" Height="270" Title="!(loc.AidrDialogTitle)">
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="WixUI_Bmp_Dialog" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeTitle)" />
+        <Control Id="Value" Type="Text" X="135" Y="70" Width="220" Height="50" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeValue)" />
+        <Control Id="Version" Type="Text" X="135" Y="125" Width="220" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeVersion)" />
+        <Control Id="Continue" Type="Text" X="135" Y="150" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeContinue)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUIBack)" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="AidrLicenseDlg" Condition="NOT Installed" />
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- 2. License agreement -->
+      <Dialog Id="AidrLicenseDlg" Width="370" Height="270" Title="!(loc.AidrDialogTitle)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="290" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrLicenseTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrLicenseDescription)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="LicenseText" Type="ScrollableText" X="20" Y="60" Width="330" Height="140" Sunken="yes" TabSkip="no">
+          <Text SourceFile="$(sys.SOURCEFILEDIR)eula.$(var.AidrCulture).rtf" />
+        </Control>
+        <Control Id="Accept" Type="CheckBox" X="20" Y="207" Width="330" Height="18" CheckBoxValue="1" Property="AIDR_LICENSE_ACCEPTED" Text="!(loc.AidrLicenseAccept)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="AidrWelcomeDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)"
+                 DisableCondition='AIDR_LICENSE_ACCEPTED &lt;&gt; "1"' EnableCondition='AIDR_LICENSE_ACCEPTED = "1"'>
+          <Publish Event="NewDialog" Value="AidrScopeDlg" Condition='AIDR_LICENSE_ACCEPTED = "1"' />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- 3. Install scope: per-user (no elevation) or per-machine (elevation). -->
+      <Dialog Id="AidrScopeDlg" Width="370" Height="270" Title="!(loc.AidrDialogTitle)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="290" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrScopeTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrScopeDescription)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Scope" Type="RadioButtonGroup" X="20" Y="60" Width="330" Height="130" Property="AIDR_SCOPE">
+          <RadioButtonGroup Property="AIDR_SCOPE">
+            <RadioButton Value="user" X="0" Y="0" Width="330" Height="16" Text="!(loc.AidrScopeUser)" />
+            <RadioButton Value="machine" X="0" Y="60" Width="330" Height="16" Text="!(loc.AidrScopeMachine)" />
+          </RadioButtonGroup>
+        </Control>
+        <Control Id="UserHelp" Type="Text" X="38" Y="78" Width="312" Height="36" NoPrefix="yes" Text="!(loc.AidrScopeUserHelp)" />
+        <Control Id="MachineHelp" Type="Text" X="38" Y="138" Width="312" Height="36" NoPrefix="yes" Text="!(loc.AidrScopeMachineHelp)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="AidrLicenseDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <!-- The same properties as a command-line install: MSIINSTALLPERUSER=1 ALLUSERS=2, or per-machine. -->
+          <Publish Property="ALLUSERS" Value="2" Order="1" Condition='AIDR_SCOPE = "user"' />
+          <Publish Property="MSIINSTALLPERUSER" Value="1" Order="2" Condition='AIDR_SCOPE = "user"' />
+          <Publish Property="INSTALLFOLDER" Value="[LocalAppDataFolder]Programs\Singularity AIDR\" Order="3" Condition='AIDR_SCOPE = "user"' />
+          <Publish Property="ALLUSERS" Value="1" Order="4" Condition='AIDR_SCOPE = "machine"' />
+          <Publish Property="MSIINSTALLPERUSER" Value="{}" Order="5" Condition='AIDR_SCOPE = "machine"' />
+          <Publish Property="INSTALLFOLDER" Value="[ProgramFiles64Folder]Singularity AIDR\" Order="6" Condition='AIDR_SCOPE = "machine"' />
+          <!-- Re-resolve the folder (and [#AidrExe], which the Finish page launches) for the chosen scope. -->
+          <Publish Event="SetTargetPath" Value="INSTALLFOLDER" Order="7" />
+          <Publish Property="ENROLLMENT_URL" Value="[AIDR_DEFAULT_CONTROL_PLANE]" Order="8" Condition="NOT ENROLLMENT_URL" />
+          <Publish Event="NewDialog" Value="AidrCompanyDlg" Order="9" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- 4. Company connection (optional). -->
+      <Dialog Id="AidrCompanyDlg" Width="370" Height="270" Title="!(loc.AidrDialogTitle)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="290" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrCompanyTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrCompanyDescription)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Connection" Type="RadioButtonGroup" X="20" Y="54" Width="330" Height="52" Property="AIDR_CONNECTION">
+          <RadioButtonGroup Property="AIDR_CONNECTION">
+            <RadioButton Value="local" X="0" Y="0" Width="330" Height="16" Text="!(loc.AidrCompanyLocal)" />
+            <RadioButton Value="company" X="0" Y="34" Width="330" Height="16" Text="!(loc.AidrCompanyConnect)" />
+          </RadioButtonGroup>
+        </Control>
+        <Control Id="LocalHelp" Type="Text" X="38" Y="71" Width="312" Height="15" NoPrefix="yes" Text="!(loc.AidrCompanyLocalHelp)" />
+        <Control Id="UrlLabel" Type="Text" X="38" Y="110" Width="312" Height="10" Text="!(loc.AidrCompanyUrlLabel)"
+                 DisableCondition='AIDR_CONNECTION &lt;&gt; "company"' EnableCondition='AIDR_CONNECTION = "company"' />
+        <Control Id="Url" Type="Edit" X="38" Y="122" Width="312" Height="18" Property="ENROLLMENT_URL" Text="{512}"
+                 DisableCondition='AIDR_CONNECTION &lt;&gt; "company"' EnableCondition='AIDR_CONNECTION = "company"' />
+        <Control Id="CodeLabel" Type="Text" X="38" Y="146" Width="312" Height="10" Text="!(loc.AidrCompanyCodeLabel)"
+                 DisableCondition='AIDR_CONNECTION &lt;&gt; "company"' EnableCondition='AIDR_CONNECTION = "company"' />
+        <!-- The enrollment code is a one-time secret: masked here, Hidden in the log (aidr.wxs). -->
+        <Control Id="Code" Type="Edit" X="38" Y="158" Width="312" Height="18" Property="ENROLLMENT_CODE" Password="yes" Text="{80}"
+                 DisableCondition='AIDR_CONNECTION &lt;&gt; "company"' EnableCondition='AIDR_CONNECTION = "company"' />
+        <Control Id="CompanyHelp" Type="Text" X="38" Y="182" Width="312" Height="40" NoPrefix="yes" Text="!(loc.AidrCompanyHelp)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="AidrScopeDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="DoAction" Value="AidrValidateEnrollmentInput" Order="1" Condition='AIDR_CONNECTION = "company"' />
+          <Publish Event="SpawnDialog" Value="AidrEnrollmentInvalidDlg" Order="2" Condition='AIDR_CONNECTION = "company" AND AIDR_ENROLLMENT_ERROR' />
+          <Publish Event="NewDialog" Value="AidrReadyDlg" Order="3" Condition='AIDR_CONNECTION = "local" OR NOT AIDR_ENROLLMENT_ERROR' />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <Dialog Id="AidrEnrollmentInvalidDlg" Width="260" Height="95" Title="!(loc.AidrDialogTitle)">
+        <Control Id="UrlProblem" Type="Text" X="15" Y="15" Width="230" Height="45" NoPrefix="yes" Text="!(loc.AidrInvalidUrl)"
+                 ShowCondition='AIDR_ENROLLMENT_ERROR = "url"' HideCondition='AIDR_ENROLLMENT_ERROR &lt;&gt; "url"' />
+        <Control Id="CodeProblem" Type="Text" X="15" Y="15" Width="230" Height="45" NoPrefix="yes" Text="!(loc.AidrInvalidCode)"
+                 ShowCondition='AIDR_ENROLLMENT_ERROR = "code"' HideCondition='AIDR_ENROLLMENT_ERROR &lt;&gt; "code"' />
+        <Control Id="OK" Type="PushButton" X="190" Y="68" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIOK)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+      </Dialog>
+
+      <!-- 5. Ready -->
+      <Dialog Id="AidrReadyDlg" Width="370" Height="270" Title="!(loc.AidrDialogTitle)" TrackDiskSpace="yes">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="290" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrReadyTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrReadyDescription)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="ScopeUser" Type="Text" X="25" Y="60" Width="320" Height="15" NoPrefix="yes" Text="!(loc.AidrReadyScopeUser)"
+                 ShowCondition='AIDR_SCOPE = "user"' HideCondition='AIDR_SCOPE &lt;&gt; "user"' />
+        <Control Id="ScopeMachine" Type="Text" X="25" Y="60" Width="320" Height="15" NoPrefix="yes" Text="!(loc.AidrReadyScopeMachine)"
+                 ShowCondition='AIDR_SCOPE = "machine"' HideCondition='AIDR_SCOPE &lt;&gt; "machine"' />
+        <Control Id="Folder" Type="Text" X="25" Y="78" Width="320" Height="24" NoPrefix="yes" Text="!(loc.AidrReadyFolder)" />
+        <Control Id="Local" Type="Text" X="25" Y="106" Width="320" Height="15" NoPrefix="yes" Text="!(loc.AidrReadyLocal)"
+                 ShowCondition='AIDR_CONNECTION = "local"' HideCondition='AIDR_CONNECTION &lt;&gt; "local"' />
+        <Control Id="Company" Type="Text" X="25" Y="106" Width="320" Height="24" NoPrefix="yes" Text="!(loc.AidrReadyCompany)"
+                 ShowCondition='AIDR_CONNECTION = "company"' HideCondition='AIDR_CONNECTION &lt;&gt; "company"' />
+        <Control Id="Setup" Type="Text" X="25" Y="138" Width="320" Height="40" NoPrefix="yes" Text="!(loc.AidrReadySetup)"
+                 ShowCondition="NOT AIDR_SKIP_SETUP" HideCondition="AIDR_SKIP_SETUP" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="AidrCompanyDlg" />
+        </Control>
+        <!-- Per-machine: the UAC shield says Windows will ask for administrator approval. -->
+        <Control Id="Install" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" ElevationShield="yes" Text="!(loc.AidrReadyInstall)"
+                 ShowCondition='AIDR_SCOPE = "machine"' HideCondition='AIDR_SCOPE &lt;&gt; "machine"'>
+          <Publish Property="ENROLLMENT_URL" Value="{}" Order="1" Condition='AIDR_CONNECTION = "local"' />
+          <Publish Property="ENROLLMENT_CODE" Value="{}" Order="2" Condition='AIDR_CONNECTION = "local"' />
+          <Publish Event="EndDialog" Value="Return" Order="3" Condition="OutOfDiskSpace &lt;&gt; 1" />
+          <Publish Event="SpawnDialog" Value="OutOfDiskDlg" Order="4" Condition="OutOfDiskSpace = 1" />
+        </Control>
+        <Control Id="InstallNoShield" Type="PushButton" X="236" Y="243" Width="56" Height="17" ElevationShield="no" Text="!(loc.AidrReadyInstall)"
+                 ShowCondition='AIDR_SCOPE = "user"' HideCondition='AIDR_SCOPE &lt;&gt; "user"'>
+          <Publish Property="ENROLLMENT_URL" Value="{}" Order="1" Condition='AIDR_CONNECTION = "local"' />
+          <Publish Property="ENROLLMENT_CODE" Value="{}" Order="2" Condition='AIDR_CONNECTION = "local"' />
+          <Publish Event="EndDialog" Value="Return" Order="3" Condition="OutOfDiskSpace &lt;&gt; 1" />
+          <Publish Event="SpawnDialog" Value="OutOfDiskDlg" Order="4" Condition="OutOfDiskSpace = 1" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- 6. Finish (install, repair and removal). -->
+      <Dialog Id="AidrExitDlg" Width="370" Height="270" Title="!(loc.AidrDialogTitle)">
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="WixUI_Bmp_Dialog" />
+        <Control Id="TitleInstalled" Type="Text" X="135" Y="20" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrExitTitleInstalled)"
+                 ShowCondition="NOT Installed" HideCondition="Installed" />
+        <Control Id="TitleRepaired" Type="Text" X="135" Y="20" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrExitTitleRepaired)"
+                 ShowCondition='Installed AND REMOVE &lt;&gt; "ALL"' HideCondition='NOT Installed OR REMOVE = "ALL"' />
+        <Control Id="TitleRemoved" Type="Text" X="135" Y="20" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrExitTitleRemoved)"
+                 ShowCondition='Installed AND REMOVE = "ALL"' HideCondition='NOT Installed OR REMOVE &lt;&gt; "ALL"' />
+        <Control Id="TextInstalled" Type="Text" X="135" Y="70" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrExitTextInstalled)"
+                 ShowCondition="NOT Installed" HideCondition="Installed" />
+        <Control Id="TextRepaired" Type="Text" X="135" Y="70" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrExitTextRepaired)"
+                 ShowCondition='Installed AND REMOVE &lt;&gt; "ALL"' HideCondition='NOT Installed OR REMOVE = "ALL"' />
+        <Control Id="TextRemoved" Type="Text" X="135" Y="70" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrExitTextRemoved)"
+                 ShowCondition='Installed AND REMOVE = "ALL"' HideCondition='NOT Installed OR REMOVE &lt;&gt; "ALL"' />
+        <Control Id="LaunchAssistant" Type="CheckBox" X="135" Y="140" Width="220" Height="17" Property="AIDR_LAUNCH_ASSISTANT" CheckBoxValue="1"
+                 Text="!(loc.AidrExitLaunchAssistant)"
+                 ShowCondition="NOT Installed AND NOT MsiRunningElevated" HideCondition="Installed OR MsiRunningElevated" />
+        <Control Id="ElevatedHint" Type="Text" X="135" Y="140" Width="220" Height="50" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrExitElevatedHint)"
+                 ShowCondition="NOT Installed AND MsiRunningElevated" HideCondition="Installed OR NOT MsiRunningElevated" />
+        <Control Id="QuickStart" Type="Hyperlink" X="135" Y="165" Width="220" Height="14" Text="!(loc.AidrExitQuickStart)"
+                 ShowCondition="NOT Installed AND NOT MsiRunningElevated" HideCondition="Installed OR MsiRunningElevated" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUIBack)" />
+        <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIFinish)">
+          <Publish Event="DoAction" Value="AidrLaunchAssistant" Order="1"
+                   Condition="AIDR_LAUNCH_ASSISTANT = 1 AND NOT Installed AND NOT MsiRunningElevated" />
+          <Publish Event="EndDialog" Value="Return" Order="999" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUICancel)" />
+      </Dialog>
+
+      <!-- Maintenance (repair / remove) uses the extension's dialogs. -->
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="1" Condition="Installed AND NOT PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="AidrWelcomeDlg" Order="2" Condition="Installed AND PATCH" />
+    </UI>
+
+    <UIRef Id="WixUI_Common" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+
+    <InstallUISequence>
+      <Show Dialog="AidrWelcomeDlg" Before="ProgressDlg" Condition="NOT Installed OR PATCH" />
+      <Show Dialog="AidrExitDlg" OnExit="success" />
+    </InstallUISequence>
+    <AdminUISequence>
+      <Show Dialog="AidrExitDlg" OnExit="success" />
+    </AdminUISequence>
+  </Fragment>
+</Wix>

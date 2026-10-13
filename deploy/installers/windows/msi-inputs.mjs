@@ -8,6 +8,7 @@
 //     --trust-key <pem> --trust-key-fingerprint <sha256> --version 0.6.0[-rc.N] \
 //     --signing signed|unsigned [--catalog-key <pem>]
 
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -24,6 +25,14 @@ import {
 const UPGRADE_CODE = "6B3E5F0A-4C1D-4E8B-9A57-2D0C7E1F4A93";
 /** Active Setup component id (per-user `aidr setup` at each user's next logon). */
 const ACTIVE_SETUP_ID = "{0D9B6C2E-7A41-4F35-B8E2-5C3A91D0E6F4}";
+/**
+ * Wizard cultures, all in one MSI: the first is the package itself, each other
+ * one an embedded language transform named by its LCID (build-msi.ps1).
+ */
+export const MSI_CULTURES = Object.freeze([
+	Object.freeze({ culture: "en-US", lcid: 1033 }),
+	Object.freeze({ culture: "tr-TR", lcid: 1055 }),
+]);
 
 export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, signing, catalogKey }) {
 	checkVersion(version);
@@ -54,6 +63,10 @@ export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, sign
 		outputName: `${PACKAGE_NAME}-${version}-windows-${arch}${signing === "unsigned" ? "-UNSIGNED" : ""}.msi`,
 		upgradeCode: UPGRADE_CODE,
 		activeSetupId: ACTIVE_SETUP_ID,
+		// New for every build, as WiX's default was; shared by the culture builds
+		// so the Turkish one is a language transform of the English one.
+		productCode: randomUUID().toUpperCase(),
+		cultures: MSI_CULTURES,
 	};
 }
 

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  English strings of the Singularity AIDR install wizard (ui/AidrUI.wxs, aidr.wxs).
+  Every Id here has a Turkish entry in aidr.tr-TR.wxl (installers.test.mjs checks
+  both ways). Buttons and the support dialogs come from WixToolset.UI.wixext.
+-->
+<WixLocalization Culture="en-US" Codepage="1252" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="AidrPackageLanguage" Value="1033" />
+  <String Id="AidrDowngradeError" Value="A newer version of Singularity AIDR is already installed." />
+  <String Id="AidrDialogTitle" Value="[ProductName] Setup" />
+
+  <String Id="AidrWelcomeTitle" Value="{\WixUI_Font_Bigger}Welcome to Singularity AIDR" />
+  <String Id="AidrWelcomeValue" Value="Singularity AIDR checks what your AI coding tools do (commands, files and web requests) and stops harmful actions before they run." />
+  <String Id="AidrWelcomeVersion" Value="Version [ProductVersion]" />
+  <String Id="AidrWelcomeContinue" Value="Click Next to continue, or Cancel to exit Setup." />
+
+  <String Id="AidrLicenseTitle" Value="{\WixUI_Font_Title}License agreement" />
+  <String Id="AidrLicenseDescription" Value="Please read the license agreement carefully." />
+  <String Id="AidrLicenseAccept" Value="I &amp;accept the terms of the license agreement" />
+
+  <String Id="AidrScopeTitle" Value="{\WixUI_Font_Title}Who should be protected?" />
+  <String Id="AidrScopeDescription" Value="Choose who can use Singularity AIDR on this computer." />
+  <String Id="AidrScopeUser" Value="Only for &amp;me" />
+  <String Id="AidrScopeUserHelp" Value="Installs in your user folder and protects your AI tools only. No administrator rights are needed." />
+  <String Id="AidrScopeMachine" Value="For &amp;all users of this computer" />
+  <String Id="AidrScopeMachineHelp" Value="Installs in Program Files and protects every user of this computer (other users when they next sign in). Windows asks for administrator approval." />
+
+  <String Id="AidrCompanyTitle" Value="{\WixUI_Font_Title}Company connection (optional)" />
+  <String Id="AidrCompanyDescription" Value="Protection works on this computer either way." />
+  <String Id="AidrCompanyLocal" Value="&amp;Local protection only (no account)" />
+  <String Id="AidrCompanyLocalHelp" Value="Choose this if your company has not given you connection details." />
+  <String Id="AidrCompanyConnect" Value="&amp;Connect to my company" />
+  <String Id="AidrCompanyUrlLabel" Value="Company address (from your IT team):" />
+  <String Id="AidrCompanyCodeLabel" Value="Enrollment code (optional):" />
+  <String Id="AidrCompanyHelp" Value="Without a code, your AI tool shows a short code and a link the first time it starts, and this computer is approved there. Setup keeps the code in a file only your account can open and deletes it once it has been used." />
+
+  <String Id="AidrInvalidUrl" Value="The company address must start with https:// and contain only a server name and a path, for example https://aidr.example.com." />
+  <String Id="AidrInvalidCode" Value="The enrollment code is not complete. It starts with aidr_enroll_ and is 55 characters long. Copy it again from your company's console." />
+
+  <String Id="AidrReadyTitle" Value="{\WixUI_Font_Title}Ready to install" />
+  <String Id="AidrReadyDescription" Value="Check your choices, then click Install." />
+  <String Id="AidrReadyScopeUser" Value="Protects: only your account" />
+  <String Id="AidrReadyScopeMachine" Value="Protects: all users of this computer (needs administrator approval)" />
+  <String Id="AidrReadyFolder" Value="Folder: [INSTALLFOLDER]" />
+  <String Id="AidrReadyLocal" Value="Company connection: none (local protection only)" />
+  <String Id="AidrReadyCompany" Value="Company connection: [ENROLLMENT_URL]" />
+  <String Id="AidrReadySetup" Value="After installing, Setup finds your AI tools (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw) and connects Singularity AIDR to them." />
+  <String Id="AidrReadyInstall" Value="&amp;Install" />
+
+  <String Id="AidrExitTitleInstalled" Value="{\WixUI_Font_Bigger}Singularity AIDR is installed" />
+  <String Id="AidrExitTextInstalled" Value="Restart your AI tools so they use the protection. To check it, open a new terminal and run: aidr status" />
+  <String Id="AidrExitTitleRepaired" Value="{\WixUI_Font_Bigger}Singularity AIDR was repaired" />
+  <String Id="AidrExitTextRepaired" Value="Restart your AI tools so they use the repaired files." />
+  <String Id="AidrExitTitleRemoved" Value="{\WixUI_Font_Bigger}Singularity AIDR was removed" />
+  <String Id="AidrExitTextRemoved" Value="Your AI tools no longer use Singularity AIDR. Your settings and audit log stay in the .singularity-aidr folder of your user folder." />
+  <String Id="AidrExitLaunchAssistant" Value="&amp;Open the Singularity AIDR Setup Assistant" />
+  <String Id="AidrExitElevatedHint" Value="Setup ran as administrator, so the Setup Assistant does not open from here. Open it later in a normal terminal: aidr assistant. The quick start is in [INSTALLFOLDER]docs." />
+  <String Id="AidrExitQuickStart" Value="&lt;a href=&quot;[#AidrQuickStartEn]&quot;&gt;View quick start&lt;/a&gt;" />
+</WixLocalization>

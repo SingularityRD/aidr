@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Singularity AIDR hızlı başlangıç</title>
+<style>
+  :root { --ink: #10213a; --muted: #4a5a70; --accent: #128a80; --line: #d8e1ec; --bg: #ffffff; --code: #eef3f8; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e6edf5; --muted: #a9b6c6; --accent: #4fd1c5; --line: #2a3a52; --bg: #0b1626; --code: #15243a; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 "Segoe UI", Tahoma, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 28px 0 8px; border-top: 1px solid var(--line); padding-top: 20px; }
+  p, li { color: var(--muted); }
+  strong { color: var(--ink); }
+  code { background: var(--code); padding: 1px 6px; border-radius: 4px; font: 14px Consolas, monospace; color: var(--ink); }
+  ol, ul { padding-left: 22px; }
+  .lead { font-size: 16px; }
+  .brand { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="brand" lang="en">Singularity AIDR</span> hızlı başlangıç</h1>
+  <p class="lead"><span lang="en">Singularity AIDR</span>, yapay zekâ kodlama araçlarınızın yaptıklarını (komutlar, dosyalar ve web istekleri) denetler ve zararlı işlemleri çalışmadan önce durdurur.</p>
+
+  <h2>1. Yapay zekâ araçlarınızı yeniden başlatın</h2>
+  <p>Kurulum, hesabınızda bulduğu yapay zekâ araçlarına (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw) <span lang="en">Singularity AIDR</span>'yi bağladı. Zaten açık olan bir araç korumayı yeniden başlatıldıktan sonra kullanır.</p>
+  <ul>
+    <li><strong>Cursor ve VS Code:</strong> komut paletinden <code>Singularity AIDR: Enable protection</code> komutunu çalıştırın.</li>
+    <li><strong>Codex:</strong> Codex içinde <code>/hooks</code> ile hook'lara bir kez güvenin.</li>
+  </ul>
+
+  <h2>2. Çalıştığını denetleyin</h2>
+  <p>Yeni bir terminal açın (<code>aidr</code> komutunun klasörü PATH'e yeni eklendi) ve şunları çalıştırın:</p>
+  <ol>
+    <li><code>aidr status</code> hangi yapay zekâ araçlarının korunduğunu ve neyin eksik olduğunu gösterir.</li>
+    <li><code>aidr verify</code> bağlı her araçtan zararsız bir deneme geçirir ve PASS ya da FAIL bildirir.</li>
+  </ol>
+  <p>Kurulum Yardımcısı aynı adımlarda size yol gösterir: <code>aidr assistant</code>.</p>
+
+  <h2>3. Bir işlem engellendiğinde</h2>
+  <p>Yapay zekâ aracınızdaki mesaj, <span lang="en">Singularity AIDR</span>'nin işlemi neden durdurduğunu ve ne yapabileceğinizi söyler. Engellenen bir işlemi yapay zekâ aracı değil, aracın dışındaki bir kişi onaylar.</p>
+
+  <h2>4. Sonradan bir yapay zekâ aracı mı kurdunuz?</h2>
+  <p>Bir terminalde <code>aidr setup</code> komutunu bir kez çalıştırın. <span lang="en">Singularity AIDR</span>'yi yeni araca bağlar.</p>
+
+  <h2>5. Güncelleme ve kaldırma</h2>
+  <ul>
+    <li><code>aidr update --check</code> daha yeni bir sürüm olup olmadığını gösterir; <code>aidr update</code> imzasını denetledikten sonra kurar.</li>
+    <li><span lang="en">Singularity AIDR</span>'yi kaldırmak için Windows Ayarlar &gt; Uygulamalar &gt; <span lang="en">Singularity AIDR</span> &gt; Kaldır yolunu kullanın.</li>
+  </ul>
+
+  <h2>Üçüncü taraf yazılımlar</h2>
+  <p>Üçüncü taraf bileşenler ve lisansları bu klasördeki <code>THIRD_PARTY_NOTICES.txt</code> dosyasında listelenir.</p>
+</main>
+</body>
+</html>

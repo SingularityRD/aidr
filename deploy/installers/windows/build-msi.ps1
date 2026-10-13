@@ -18,8 +18,17 @@
   3. Unsigned local build: only with -Unsigned; the file name ends in -UNSIGNED.
   There is no third path: no thumbprint and no -Unsigned is an error.
 
-  Requires WiX Toolset 5 (`dotnet tool install --global wix --version 5.0.2`)
-  and, for signing, signtool.exe from the Windows SDK.
+  The install wizard (ui\AidrUI.wxs) is built once per culture (en-US, tr-TR,
+  the strings in ui\aidr.<culture>.wxl) with the same ProductCode and payload.
+  The English MSI is the package; every other culture is embedded in it as a
+  language transform (storage named by its LCID, summary languages
+  "1033,1055"), which Windows Installer applies when the user's display
+  language matches. One MSI is published; `TRANSFORMS=:1055` forces Turkish.
+  The company connection page's custom actions (ca\) are built with dotnet.
+
+  Requires WiX Toolset 5 (`dotnet tool install --global wix --version 5.0.2`;
+  this script adds the pinned WixToolset.UI.wixext extension), the .NET SDK
+  (custom actions, net472) and, for signing, signtool.exe from the Windows SDK.
 
 .EXAMPLE
   ./deploy/installers/windows/build-msi.ps1 -SeaDir bin\aidr-sea -TrustKey release-public.pem `
@@ -47,6 +56,10 @@ $signing = if ($SignThumbprint) { 'signed' } elseif ($Unsigned) { 'unsigned' } e
 if (-not $signing) { throw 'Pass -SignThumbprint for a release build or -Unsigned for a local build.' }
 if ($SignThumbprint -and $Unsigned) { throw '-SignThumbprint and -Unsigned are mutually exclusive.' }
 
+# The WiX UI extension, pinned to the WiX version the release workflow installs.
+$WixUiExtension = 'WixToolset.UI.wixext'
+$WixUiExtensionVersion = '5.0.2'
+
 function Invoke-Checked([string]$File, [string[]]$Arguments) {
   & $File @Arguments
   if ($LASTEXITCODE -ne 0) { throw "$File $($Arguments -join ' ') exited with $LASTEXITCODE" }
@@ -62,6 +75,139 @@ function Find-SignTool {
   return $found.FullName
 }
 
+function Install-WixUiExtension {
+  $listed = (& wix extension list -g 2>&1 | Out-String)
+  $pattern = "$([regex]::Escape($WixUiExtension))\s+$([regex]::Escape($WixUiExtensionVersion))"
+  if ($listed -notmatch $pattern) {
+    Invoke-Checked 'wix' @('extension', 'add', '-g', "$WixUiExtension/$WixUiExtensionVersion")
+  }
+}
+
+# --- Windows Installer automation (the WiLangId / WiSubStg / WiGenXfm steps) ---
+$Call = [Reflection.BindingFlags]::InvokeMethod
+$Get = [Reflection.BindingFlags]::GetProperty
+$Set = [Reflection.BindingFlags]::SetProperty
+
+function Invoke-Com($Target, [string]$Member, [Reflection.BindingFlags]$Kind, [object[]]$Arguments = @()) {
+  return $Target.GetType().InvokeMember($Member, $Kind, $null, $Target, $Arguments)
+}
+
+function Close-Com([object[]]$Objects) {
+  foreach ($object in $Objects) {
+    if ($null -ne $object) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($object) }
+  }
+  [GC]::Collect()
+  [GC]::WaitForPendingFinalizers()
+}
+
+function Get-MsiProperty($Database, [string]$Name) {
+  $view = Invoke-Com $Database 'OpenView' $Call @('SELECT `Value` FROM `Property` WHERE `Property` = ''' + $Name + '''')
+  $record = $null
+  try {
+    [void](Invoke-Com $view 'Execute' $Call)
+    $record = Invoke-Com $view 'Fetch' $Call
+    if ($null -eq $record) { return $null }
+    return [string](Invoke-Com $record 'StringData' $Get @(1))
+  } finally {
+    [void](Invoke-Com $view 'Close' $Call)
+    Close-Com @($record, $view)
+  }
+}
+
+# Generate the transform base -> localized and embed it in base as storage "<lcid>".
+function Add-LanguageTransform([string]$Base, [string]$Localized, [int]$Lcid, [string]$Work) {
+  $installer = New-Object -ComObject WindowsInstaller.Installer
+  $mst = Join-Path $Work "$Lcid.mst"
+  $baseDb = Invoke-Com $installer 'OpenDatabase' $Call @($Base, 0)
+  $localizedDb = Invoke-Com $installer 'OpenDatabase' $Call @($Localized, 0)
+  try {
+    if (-not (Invoke-Com $localizedDb 'GenerateTransform' $Call @($baseDb, $mst))) {
+      throw "The $Lcid build does not differ from the base MSI."
+    }
+    [void](Invoke-Com $localizedDb 'CreateTransformSummaryInfo' $Call @($baseDb, $mst, 0, 0))
+  } finally {
+    Close-Com @($localizedDb, $baseDb)
+  }
+  # Only text, dialogs and the language differ between the culture builds; a
+  # large transform means the payload differed (a second cabinet), which must
+  # not ship.
+  $size = (Get-Item -LiteralPath $mst).Length
+  if ($size -gt 4MB) { throw "The $Lcid language transform is $size bytes: the culture builds differ in more than their text." }
+  $db = Invoke-Com $installer 'OpenDatabase' $Call @($Base, 1)
+  $view = $null; $record = $null
+  try {
+    $view = Invoke-Com $db 'OpenView' $Call @('SELECT `Name`, `Data` FROM `_Storages`')
+    $record = Invoke-Com $installer 'CreateRecord' $Call @(2)
+    [void](Invoke-Com $record 'StringData' $Set @(1, [string]$Lcid))
+    [void](Invoke-Com $record 'SetStream' $Call @(2, $mst))
+    [void](Invoke-Com $view 'Execute' $Call)
+    [void](Invoke-Com $view 'Modify' $Call @(3, $record))
+    [void](Invoke-Com $view 'Close' $Call)
+    [void](Invoke-Com $db 'Commit' $Call)
+  } finally {
+    Close-Com @($record, $view, $db, $installer)
+  }
+  return $mst
+}
+
+# Summary "Template": "<platform>;1033" -> "<platform>;1033,1055".
+function Set-PackageLanguages([string]$Msi, [int[]]$Lcids) {
+  $installer = New-Object -ComObject WindowsInstaller.Installer
+  $db = Invoke-Com $installer 'OpenDatabase' $Call @($Msi, 1)
+  $info = $null
+  try {
+    $info = Invoke-Com $db 'SummaryInformation' $Get @(1)
+    $template = [string](Invoke-Com $info 'Property' $Get @(7))
+    if ($template -notmatch "^[A-Za-z0-9]+;$($Lcids[0])$") { throw "Unexpected MSI template '$template'." }
+    $platform = $template.Split(';')[0]
+    [void](Invoke-Com $info 'Property' $Set @(7, "$platform;$($Lcids -join ',')"))
+    [void](Invoke-Com $info 'Persist' $Call)
+    [void](Invoke-Com $db 'Commit' $Call)
+  } finally {
+    Close-Com @($info, $db, $installer)
+  }
+}
+
+# Apply each transform to a copy of the base, as msiexec does for that display
+# language, and check it switches the language without changing the product.
+function Test-LanguageTransforms([string]$Msi, [string]$BaseCopy, [hashtable]$Transforms, [string]$Work) {
+  $installer = New-Object -ComObject WindowsInstaller.Installer
+  $db = Invoke-Com $installer 'OpenDatabase' $Call @($Msi, 0)
+  $info = $null; $view = $null; $names = @()
+  try {
+    $info = Invoke-Com $db 'SummaryInformation' $Get @(0)
+    $template = [string](Invoke-Com $info 'Property' $Get @(7))
+    $identity = @('ProductCode', 'UpgradeCode', 'ProductVersion') | ForEach-Object { Get-MsiProperty $db $_ }
+    $view = Invoke-Com $db 'OpenView' $Call @('SELECT `Name` FROM `_Storages`')
+    [void](Invoke-Com $view 'Execute' $Call)
+    while ($null -ne ($record = Invoke-Com $view 'Fetch' $Call)) {
+      $names += [string](Invoke-Com $record 'StringData' $Get @(1))
+      Close-Com @($record)
+    }
+    [void](Invoke-Com $view 'Close' $Call)
+  } finally {
+    Close-Com @($view, $info, $db)
+  }
+  $expected = "1033," + (($Transforms.Keys | Sort-Object) -join ',')
+  if (-not $template.EndsWith(";$expected")) { throw "MSI languages are '$template', expected '...;$expected'." }
+  foreach ($lcid in $Transforms.Keys) {
+    if ($names -notcontains [string]$lcid) { throw "The $lcid language transform is not embedded." }
+    $copy = Join-Path $Work "verify-$lcid.msi"
+    Copy-Item -LiteralPath $BaseCopy -Destination $copy
+    $check = Invoke-Com $installer 'OpenDatabase' $Call @($copy, 1)
+    try {
+      [void](Invoke-Com $check 'ApplyTransform' $Call @($Transforms[$lcid], 0))
+      if ((Get-MsiProperty $check 'ProductLanguage') -ne [string]$lcid) { throw "The $lcid transform does not set ProductLanguage=$lcid." }
+      $after = @('ProductCode', 'UpgradeCode', 'ProductVersion') | ForEach-Object { Get-MsiProperty $check $_ }
+      if (($after -join '|') -cne ($identity -join '|')) { throw "The $lcid transform changes the product identity." }
+    } finally {
+      Close-Com @($check)
+      Remove-Item -LiteralPath $copy -Force -ErrorAction SilentlyContinue
+    }
+  }
+  Close-Com @($installer)
+}
+
 $stage = Join-Path ([IO.Path]::GetTempPath()) ("aidr-msi-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage | Out-Null
 try {
@@ -75,6 +221,9 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'MSI inputs were rejected (see above).' }
   $inputs = $inputsJson | ConvertFrom-Json
 
+  # The wizard bitmaps must be the ones the committed SVG sources render to.
+  Invoke-Checked 'node' @((Join-Path $here 'ui\render-bitmaps.mjs'), '--check')
+
   if ($signing -eq 'signed') {
     $signtool = Find-SignTool
     $exes = Get-ChildItem (Join-Path $bundle 'bin') -Filter *.exe | ForEach-Object { $_.FullName }
@@ -85,11 +234,22 @@ try {
     Invoke-Checked 'node' @((Join-Path $repo 'packages\claude-code\scripts\build-sea.mjs'), '--remanifest', $bundle, '--public-key', (Resolve-Path $TrustKey).Path)
   }
 
+  # Company connection custom actions (embedded as a Binary; the MSI signature covers them).
+  $actions = Join-Path $stage 'actions'
+  Invoke-Checked 'dotnet' @('build', (Join-Path $here 'ca\AidrInstallerActions.csproj'), '-c', 'Release', '-o', $actions, '--nologo')
+  $actionsDll = Join-Path $actions 'AidrInstallerActions.CA.dll'
+  if (-not (Test-Path -LiteralPath $actionsDll)) { throw "$actionsDll was not built." }
+
+  Install-WixUiExtension
+
   New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
   $msi = Join-Path (Resolve-Path $OutDir) $inputs.outputName
   if (Test-Path $msi) { throw "$msi already exists" }
-  Invoke-Checked 'wix' @('build', (Join-Path $here 'aidr.wxs'), '-arch', $inputs.arch,
+  # One cabinet cache for every culture build: the payload (and its cabinet) is identical.
+  $cabinets = Join-Path $stage 'cabinets'
+  $common = @('-arch', $inputs.arch, '-ext', $WixUiExtension, '-cc', $cabinets,
     '-d', "ProductVersion=$($inputs.productVersion)",
+    '-d', "ProductCode=$($inputs.productCode)",
     '-d', "UpgradeCode=$($inputs.upgradeCode)",
     '-d', "ActiveSetupId=$($inputs.activeSetupId)",
     '-d', "ActiveSetupVersion=$($inputs.activeSetupVersion)",
@@ -97,7 +257,26 @@ try {
     '-d', "TrustKey=$((Resolve-Path $TrustKey).Path)",
     '-d', "HasCatalogKey=$($inputs.hasCatalogKey)",
     '-d', "CatalogKey=$(if ($CatalogKey) { (Resolve-Path $CatalogKey).Path } else { '' })",
-    '-o', $msi)
+    '-d', "InstallerActionsDll=$actionsDll")
+  $built = @{}
+  foreach ($culture in $inputs.cultures) {
+    $out = Join-Path $stage "aidr.$($culture.culture).msi"
+    Invoke-Checked 'wix' (@('build', (Join-Path $here 'aidr.wxs'), (Join-Path $here 'ui\AidrUI.wxs')) + $common +
+      @('-culture', $culture.culture, '-loc', (Join-Path $here "ui\aidr.$($culture.culture).wxl"),
+        '-d', "AidrCulture=$($culture.culture)", '-o', $out))
+    $built[$culture.culture] = $out
+  }
+
+  $baseCulture = $inputs.cultures[0]
+  $package = Join-Path $stage 'package.msi'
+  Copy-Item -LiteralPath $built[$baseCulture.culture] -Destination $package
+  $transforms = @{}
+  foreach ($culture in ($inputs.cultures | Select-Object -Skip 1)) {
+    $transforms[[int]$culture.lcid] = Add-LanguageTransform -Base $package -Localized $built[$culture.culture] -Lcid $culture.lcid -Work $stage
+  }
+  Set-PackageLanguages -Msi $package -Lcids @($inputs.cultures | ForEach-Object { [int]$_.lcid })
+  Test-LanguageTransforms -Msi $package -BaseCopy $built[$baseCulture.culture] -Transforms $transforms -Work $stage
+  Move-Item -LiteralPath $package -Destination $msi
 
   if ($signing -eq 'signed') {
     Invoke-Checked $signtool @('sign', '/sha1', $SignThumbprint, '/fd', 'sha256', '/tr', $TimestampServer, '/td', 'sha256', '/d', 'Singularity AIDR', $msi)

@@ -72,10 +72,85 @@ başka her kod gerçek bir kurulum sorunudur.
 
 1. AIDR panelindeki İndirme sayfasından `singularity-aidr-<sürüm>-windows-x64.msi`
    dosyasını indirin.
-2. Çift tıklayın ve onay penceresini kabul edin. Kurulum sonunda sizin için
-   `aidr setup` çalışır.
+2. Çift tıklayın ve sihirbazı izleyin ([sayfalar aşağıda](#windows-kurulum-sihirbazı)).
+   Kurulum sonunda sizin için `aidr setup` çalışır.
 3. Yapay zekâ araçlarınızı (Claude Code, Cursor, VS Code, ...) yeniden başlatın.
    Yeni bir terminal açıp `aidr status`, ardından `aidr verify` çalıştırın.
+
+#### Windows kurulum sihirbazı
+
+Windows görüntüleme dili Türkçe ise sihirbaz Türkçe, değilse İngilizce açılır;
+iki dil de tek MSI dosyasındadır. Ekran görüntüleri henüz yayımlanmadı: aşağıdaki
+her yer tutucu, ekran görüntüsünün neyi göstereceğini anlatır.
+
+1. **Hoş geldiniz**: ürün adı, ne yaptığını anlatan tek satır ve sürüm.
+   *Ekran görüntüsü yer tutucusu: solda kalkan işaretli lacivert panel; sağda
+   "Singularity AIDR'ye hoş geldiniz", tek satırlık açıklama ve "Sürüm 0.6.0".*
+2. **Lisans sözleşmesi**: okuyun ve devam etmek için "kabul ediyorum"u işaretleyin.
+   *Ekran görüntüsü yer tutucusu: lisans metni kutusu ve altında onay kutusu.*
+3. **Kimler korunsun?**
+   - *Yalnızca benim için*: `%LOCALAPPDATA%\Programs\Singularity AIDR\`
+     konumuna sizin hesabınız için kurar; yönetici yetkisi gerekmez.
+   - *Bu bilgisayarın tüm kullanıcıları için* (varsayılan):
+     `C:\Program Files\Singularity AIDR\` konumuna kurar; Windows yönetici
+     onayı ister (Kur düğmesinde kalkan simgesi vardır). Diğer kullanıcılar bir
+     sonraki oturum açışlarında hazırlanır.
+   Mevcut bir "Yalnızca benim için" kurulumu önceden seçili gelir; böylece
+   yükseltme kapsamını korur. Kapsamı değiştirmek için önce kaldırın.
+   *Ekran görüntüsü yer tutucusu: her biri tek satır açıklamalı iki seçenek.*
+4. **Şirket bağlantısı (isteğe bağlı)**:
+   - *Yalnızca yerel koruma (hesap gerekmez)* (varsayılan): koruma bu
+     bilgisayarda çalışır; başka bir şey girmeniz gerekmez.
+   - *Şirketime bağlan*: BT ekibinizin verdiği şirket adresi (yalnızca
+     `https://`; Singularity AIDR hizmetiyle önceden doldurulur, şirket içi
+     konsol için değiştirin) ve isteğe bağlı olarak konsoldan alınan kayıt kodu
+     (`aidr_enroll_…`, 55 karakter, yazarken gizlenir). Devam etmeden önce
+     biçim denetlenir. Bkz.
+     [Yükleyiciden şirket bağlantısı](#yükleyiciden-şirket-bağlantısı).
+   *Ekran görüntüsü yer tutucusu: iki seçenek; "Şirketime bağlan" seçilene kadar
+   adres ve kod alanları soluk görünür.*
+5. **Kuruluma hazır**: kimlerin korunacağı, klasör, şirket bağlantısı ve
+   kurulumun ne yapacağı. Ardından ilerleme sayfası.
+6. **Son**: işaretli gelen "Singularity AIDR Kurulum Yardımcısını aç" sizin
+   için `aidr assistant` komutunu kendi hesabınızla, yönetici yetkisi olmadan
+   başlatır; kurulum onu beklemeden kapanır. "Hızlı başlangıç kılavuzunu
+   görüntüle", kurulum klasörünün `docs\quick-start.<dil>.html` dosyasındaki
+   çevrim dışı kılavuzu açar. Yükleyiciyi yönetici olarak açılmış bir komut
+   isteminden başlattıysanız yardımcı oradan başlatılmaz; sayfa, `aidr assistant`
+   komutunu normal bir terminalde çalıştırmanızı söyler.
+   *Ekran görüntüsü yer tutucusu: "Singularity AIDR kuruldu", sonraki adım
+   (`aidr status`), işaretli yardımcı kutusu ve hızlı başlangıç bağlantısı.*
+
+Onarma ve kaldırma (Ayarlar > Uygulamalar ya da MSI'yi yeniden çalıştırmak)
+standart Windows Installer sayfalarını kullanır ve aynı Son sayfasıyla biter.
+
+#### Yükleyiciden şirket bağlantısı
+
+Kayıt kodu tek kullanımlık bir gizli bilgidir; yükleyici onu hiçbir zaman komut
+satırına ya da günlüğüne yazmaz: alan gizlenir, `ENROLLMENT_CODE` gizli bir
+özelliktir ve sizin hesabınızla çalışan bir özel eylem onu adresle birlikte
+yalnızca sizin hesabınızın açabildiği
+`%USERPROFILE%\.singularity-aidr\installer-enrollment.json` dosyasına yazar.
+Yükleyicinin çalıştırdığı `aidr setup` bunu uygular:
+`~/.singularity-aidr/config.json` içinde `mode: "managed"`,
+`control_plane.endpoint` ve `auth.enrollment_token` (ticari derleme belirteci
+Windows kimlik bilgisi kasasında tutar); ardından dosyayı siler. Kayıt, bir
+yapay zekâ aracı bir sonraki açılışında tamamlanır; kod yoksa yapay zekâ aracı
+bu bilgisayarı şirketinizin konsolunda onaylamanız için kısa bir kod ve bir
+bağlantı gösterir.
+
+- Singularity AIDR'yi bir şirket konsoluna bağlamak yalnızca operatörün
+  yapabileceği bir işlemdir: setup dosyayı yalnızca yükleyici çalıştırdığında ya
+  da siz bir terminalde `aidr setup` çalıştırıp `connect` yazdığınızda uygular.
+  Onaysız bir çalıştırma (örneğin bir yapay zekâ aracından) hiçbir şeyi
+  değiştirmez ve dosyayı yerinde bırakır.
+- 3 günden eski ya da beklenen biçimde olmayan bir dosya kullanılmadan silinir;
+  güncel bilgilerle yeniden kurun.
+- Zaten kayıtlı bir bilgisayar bağlantısını korur; yükleyicideki bilgiler
+  kullanılmadan silinir.
+- `AIDR_SKIP_SETUP=1` ile dosya kullanıcının ilk `aidr setup` çalıştırmasını bekler.
+- Yerel koruma bağlantıya bağlı değildir: bağlantı kaydedilemezse setup bunu
+  söyler ve koruma açık kalır.
 
 ### Debian / Ubuntu
 
@@ -151,6 +226,20 @@ msiexec /i singularity-aidr-<sürüm>-windows-x64.msi /qn /l*v aidr-install.log
   `msiexec /i … /qn AIDR_SKIP_SETUP=1`.
 - `AIDR_MDM_MANAGED=1` güncellemeyi MDM'nize bırakır: uç noktalar kendini
   güncellemez ([Cihaz yönetimiyle yönetilen makineler](#cihaz-yönetimiyle-yönetilen-makineler-intune-sccm-gpo-yapılandırma-yönetimi)).
+- Sessiz kurulum yeni bir özellik gerektirmez: sihirbaz eklenmeden önceki gibi
+  davranır. Sihirbazın şirket sayfasının iki isteğe bağlı genel özelliği vardır;
+  yalnızca **kullanıcı bağlamındaki** kurulumlar içindir:
+  `ENROLLMENT_URL=https://aidr.example.com` ve `ENROLLMENT_CODE=aidr_enroll_…`
+  (biri yeterlidir; yalnızca `ENROLLMENT_CODE` verilirse Singularity AIDR hizmeti
+  kullanılır). Biçimi bozuk bir değer kurulumu başarısız kılar ve günlüğe
+  değerini değil, özelliğin adını yazar. `ENROLLMENT_CODE` msiexec günlüğünde
+  gizlenir; ancak komut satırındaki bir değer msiexec çalışırken diğer
+  programlarca görülebilir ve dağıtım aracınızca saklanabilir: kısa ömürlü
+  kodlar kullanın. Sistem bağlamındaki kurulumda bağlanacak etkileşimli kullanıcı
+  yoktur ve iki özellik de yok sayılır; bu kullanıcıları yönetilen yapılandırmayla
+  kaydedin ([`mode`](../configuration.md#mode), [`auth`](../configuration.md#auth)).
+- **Dil:** görüntüleme dili Türkçe olduğunda MSI Türkçe görünür.
+  `TRANSFORMS=:1055` Türkçe sihirbazı zorlar; sessiz kurulum iki dilde de aynıdır.
 - **Yönetici hakkı olmadan kullanıcı başına kurulum:**
   `msiexec /i … MSIINSTALLPERUSER=1 ALLUSERS=2`
   `%LOCALAPPDATA%\Programs\Singularity AIDR\` konumuna kurar ve `bundle\bin`
@@ -348,3 +437,29 @@ derlemesini paketler; isteğe bağlı katalog anahtarı (`--catalog-key`,
 `-CatalogKey`) `aidr update` için `config/installer-catalog-public.pem` olarak
 kurulur. Sertifikasız yerel bir MSI `-Unsigned` gerektirir ve adı
 `…-UNSIGNED.msi` ile biter; sürüm iş akışı eksik bir sırda başarısız olur.
+
+Windows derlemesi sihirbazı (`windows/ui/AidrUI.wxs`, metinler
+`windows/ui/aidr.en-US.wxl` ve `aidr.tr-TR.wxl` içinde) her dil için aynı
+ProductCode ve aynı içerikle bir kez derler, Türkçe derlemeyi İngilizce MSI'ye
+dil dönüşümü olarak gömer (`1055` adlı depolama, özet dilleri `1033,1055`) ve
+dönüşümün yalnızca dili değiştirdiğini denetler. **Her sürüm ve mimari için tek
+bir MSI yayımlanır.** Derleme için WiX 5 ve `WixToolset.UI.wixext` 5.0.2
+(betik kendisi ekler), şirket sayfasının özel eylemleri (`windows/ca/`, C#,
+net472) için .NET SDK gerekir. Sihirbaz görselleri (`windows/ui/banner.bmp`
+493×58, `dialog.bmp` 493×312) `banner.svg` ve `dialog.svg` dosyalarından
+`node deploy/installers/windows/ui/render-bitmaps.mjs` ile üretilir; güncel
+değillerse derleme durur. Lisans sayfası, incelenmiş metin gelene kadar bir yer
+tutucudur (`<EULA TEXT — legal review required>`, `windows/ui/eula.*.rtf`).
+
+`pnpm test:installers` sihirbaz kaynaklarını her işletim sisteminde yapısal
+olarak denetler. Bir sürümden önce gerçek bir Windows makinesinde şunlar
+doğrulanmalıdır: sihirbaz İngilizce ve Türkçe görüntüleme dilinde Türkçe
+(ve `TRANSFORMS=:1055` ile) görünür; "Yalnızca benim için" UAC sormadan
+`%LOCALAPPDATA%\Programs` altına kurar, "tüm kullanıcılar için" onay ister;
+şirket sayfası bozuk adresi ya da kodu reddeder, aktarım dosyasının erişim
+listesi yalnızca kullanıcıyı içerir, `aidr setup` onu uygulayıp siler ve
+`msiexec /l*v` günlüğünde kayıt kodu görünmez; Son sayfası yardımcıyı
+kullanıcı olarak yükseltilmemiş başlatır (Görev Yöneticisi, "Yükseltilmiş:
+Hayır") ve yönetici komut isteminden başlatılan kurulumda başlatmaz;
+`msiexec /qn` `AIDR_SKIP_SETUP`/`AIDR_MDM_MANAGED` ile ve onlarsız, sistem
+bağlamında da önceki gibi davranır; onarma, kaldırma ve ana sürüm yükseltmesi.
