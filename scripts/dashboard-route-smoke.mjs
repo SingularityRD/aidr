@@ -272,7 +272,8 @@ async function structuralChecks() {
 	assertIncludes(apiKeys, "setCreatedEnrollToken(null)", "enrollment token clear action");
 	assertIncludes(agents, 'allowed ?? t("common.unavailable")', "agent limit fail-closed rendering");
 	assertIncludes(autoSecOps, 'autosecops-runtime', "AutoSecOps dashboard bridge");
-	assertIncludes(autoSecOps, "No synthetic or cached AutoSecOps data", "AutoSecOps fail-closed rendering");
+	assertIncludes(autoSecOps, 't("aso.noSynthetic")', "AutoSecOps fail-closed rendering");
+	assertIncludes(catalog, "No synthetic or cached AutoSecOps data", "AutoSecOps fail-closed wording");
 	assertIncludes(login, 'id="login-email"', "login email input id");
 	assertIncludes(login, "const captchaReady = !captchaConfigured || Boolean(captchaToken)", "optional CAPTCHA login path");
 	assertIncludes(await read("packages/dashboard/src/ui/pages/public/VerifyPage.tsx"), "signInReturnTo", "verify code survives sign-in redirect");

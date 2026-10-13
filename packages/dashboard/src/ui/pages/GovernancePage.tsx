@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { useRichT, useT } from "../../i18n/I18nProvider";
 import {
-	CONTROL_STATUS_LABEL,
+	type ControlStatus,
 	capabilityTitle,
 	evidenceDetail,
 	type FrameworkCoverage,
@@ -19,13 +21,21 @@ import {
 	settingsProblem,
 	topRisks,
 } from "../../lib/governance";
-import { GOVERNANCE_STATEMENT, renderGovernanceReport } from "../governance-print";
+import { renderGovernanceReport } from "../governance-print";
 import { siteLabel } from "../privacy-guard";
 
 type Load =
 	| { kind: "loading" }
 	| { kind: "error"; message: string }
 	| { kind: "ready"; card: GovernanceScorecard };
+
+const SEVERITY_LABEL: Readonly<Record<RiskSeverity, DashboardMessageKey>> = {
+	critical: "common.severity.critical",
+	high: "common.severity.high",
+	medium: "common.severity.medium",
+	low: "common.severity.low",
+	info: "common.severity.info",
+};
 
 const RISK_BADGE: Readonly<Record<RiskSeverity, string>> = {
 	critical: "badge badge-deny",
@@ -57,17 +67,18 @@ function saveFile(name: string, content: string, type: string) {
 }
 
 export function GovernancePage() {
+	const t = useT();
 	const { currentTeam, currentRole, isLoading, roleResolved } = useTeam();
 	if (isLoading || (currentTeam && !roleResolved)) {
-		return <div role="status">Resolving the managed tenant…</div>;
+		return <div role="status">{t("gsc.resolving")}</div>;
 	}
-	if (!currentTeam) return <div role="alert">Select a team to view the governance scorecard.</div>;
+	if (!currentTeam) return <div role="alert">{t("gsc.selectTeam")}</div>;
 	if (currentRole !== "owner" && currentRole !== "admin") {
 		return (
 			<section className="card">
-				<h1>AI governance</h1>
+				<h1>{t("gsc.title")}</h1>
 				<div className="notice" role="alert">
-					Only workspace owners and admins can view the governance scorecard.
+					{t("gsc.ownersOnly")}
 				</div>
 			</section>
 		);
@@ -76,7 +87,7 @@ export function GovernancePage() {
 		<TenantGovernancePage
 			key={currentTeam.id}
 			tenantId={currentTeam.id}
-			workspaceName={currentTeam.name ?? "Workspace"}
+			workspaceName={currentTeam.name ?? t("gsc.workspace")}
 		/>
 	);
 }
@@ -88,6 +99,7 @@ function TenantGovernancePage({
 	tenantId: string;
 	workspaceName: string;
 }) {
+	const t = useT();
 	const [windowDays, setWindowDays] = useState<GovernanceWindow>(30);
 	const [load, setLoad] = useState<Load>({ kind: "loading" });
 	const [tick, setTick] = useState(0);
@@ -141,11 +153,11 @@ function TenantGovernancePage({
 					style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}
 				>
 					<div>
-						<p className="eyebrow">Governance</p>
-						<h1>AI governance</h1>
-						<p className="muted">{GOVERNANCE_STATEMENT}</p>
+						<p className="eyebrow">{t("gsc.eyebrow")}</p>
+						<h1>{t("gsc.title")}</h1>
+						<p className="muted">{t("gsc.statement")}</p>
 					</div>
-					<div className="row" role="group" aria-label="Reporting window">
+					<div className="row" role="group" aria-label={t("gsc.window")}>
 						{GOVERNANCE_WINDOWS.map((days) => (
 							<button
 								key={days}
@@ -154,7 +166,7 @@ function TenantGovernancePage({
 								aria-pressed={days === windowDays}
 								onClick={() => setWindowDays(days)}
 							>
-								{days} days
+								{t("common.days", { count: days })}
 							</button>
 						))}
 						<button
@@ -162,14 +174,14 @@ function TenantGovernancePage({
 							className="button button-secondary button-sm"
 							onClick={() => setTick((value) => value + 1)}
 						>
-							Refresh
+							{t("common.refresh")}
 						</button>
 					</div>
 				</div>
 				{card ? (
 					<div className="row" style={{ marginTop: 8, flexWrap: "wrap" }}>
 						<button type="button" className="button button-secondary button-sm" onClick={print}>
-							Print / save as PDF
+							{t("gsc.print")}
 						</button>
 						<button
 							type="button"
@@ -182,11 +194,13 @@ function TenantGovernancePage({
 								)
 							}
 						>
-							Download printable HTML
+							{t("gsc.download")}
 						</button>
 						<span className="muted small">
-							Period {card.period.from.slice(0, 10)} to {card.period.to.slice(0, 10)} (UTC). Counts
-							only.
+							{t("gsc.period", {
+								from: card.period.from.slice(0, 10),
+								to: card.period.to.slice(0, 10),
+							})}
 						</span>
 					</div>
 				) : null}
@@ -195,7 +209,7 @@ function TenantGovernancePage({
 						{load.message}
 					</div>
 				) : null}
-				{load.kind === "loading" ? <p role="status">Loading the governance scorecard…</p> : null}
+				{load.kind === "loading" ? <p role="status">{t("gsc.loading")}</p> : null}
 			</section>
 
 			{card ? (
@@ -231,20 +245,19 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 }
 
 function RisksCard({ card }: { card: GovernanceScorecard }) {
+	const t = useT();
 	const risks = topRisks(card);
 	return (
 		<section className="card" aria-labelledby="governance-risks">
-			<h2 id="governance-risks">Top risks</h2>
-			<p className="muted small">
-				Derived from this period's counts; each item links to where it is handled.
-			</p>
+			<h2 id="governance-risks">{t("gsc.risks")}</h2>
+			<p className="muted small">{t("gsc.risksLead")}</p>
 			{risks.length === 0 ? (
-				<p className="muted">No risks derived from this period's data.</p>
+				<p className="muted">{t("gsc.noRisks")}</p>
 			) : (
 				<ul className="stack" style={{ paddingLeft: 0, listStyle: "none" }}>
 					{risks.map((risk) => (
 						<li key={risk.id} data-testid={`risk-${risk.id}`}>
-							<span className={RISK_BADGE[risk.severity]}>{risk.severity}</span>{" "}
+							<span className={RISK_BADGE[risk.severity]}>{t(SEVERITY_LABEL[risk.severity])}</span>{" "}
 							<Link to={risk.href}>
 								<b>{risk.title}</b>
 							</Link>
@@ -258,14 +271,12 @@ function RisksCard({ card }: { card: GovernanceScorecard }) {
 }
 
 function CoverageCard({ coverage }: { coverage: FrameworkCoverage[] }) {
+	const t = useT();
+	const richT = useRichT();
 	return (
 		<section className="card" aria-labelledby="governance-coverage">
-			<h2 id="governance-coverage">Framework coverage</h2>
-			<p className="muted small">
-				Share of the mapped controls that Singularity AIDR supports <i>and</i> that this workspace
-				has deployed (full support counts 1, partial 0.5). It describes product controls, not your
-				organisation's compliance; controls marked customer responsibility count as zero.
-			</p>
+			<h2 id="governance-coverage">{t("gsc.coverage")}</h2>
+			<p className="muted small">{richT("gsc.coverageLead", { and: <i>{t("gsc.and")}</i> })}</p>
 			<div className="grid">
 				{coverage.map((item) => (
 					<div
@@ -279,9 +290,13 @@ function CoverageCard({ coverage }: { coverage: FrameworkCoverage[] }) {
 							<div className="usage-fill" style={{ width: `${item.inPlacePercent}%` }} />
 						</div>
 						<div className="stat-hint">
-							{item.availablePercent}% if every mapped capability were deployed ·{" "}
-							{item.counts.in_place} in place, {item.counts.partly_in_place} partly,{" "}
-							{item.counts.not_deployed} not deployed, {item.counts.customer} customer
+							{t("gsc.coverageHint", {
+								available: item.availablePercent,
+								inPlace: item.counts.in_place,
+								partly: item.counts.partly_in_place,
+								notDeployed: item.counts.not_deployed,
+								customer: item.counts.customer,
+							})}
 						</div>
 					</div>
 				))}
@@ -291,38 +306,44 @@ function CoverageCard({ coverage }: { coverage: FrameworkCoverage[] }) {
 }
 
 function UsageCard({ card }: { card: GovernanceScorecard }) {
+	const t = useT();
+	const richT = useRichT();
 	const u = card.usage;
 	const empty = u.agents.enrolled === 0 && u.browserInstalls.enrolled === 0;
 	return (
 		<section className="card" aria-labelledby="governance-usage">
-			<h2 id="governance-usage">AI usage</h2>
+			<h2 id="governance-usage">{t("gsc.usage")}</h2>
 			{empty ? (
 				<p className="muted">
-					No coding agents or browser installs are enrolled yet.{" "}
-					<Link to="/onboarding">Connect agents</Link> or{" "}
-					<Link to="/privacy-guard">enroll browsers</Link> to populate this view.
+					{richT("gsc.usageEmpty", {
+						connect: <Link to="/onboarding">{t("gsc.connectAgents")}</Link>,
+						enroll: <Link to="/privacy-guard">{t("gsc.enrollBrowsers")}</Link>,
+					})}
 				</p>
 			) : null}
 			<div className="grid">
 				<Stat
-					label="Coding agents active"
+					label={t("gsc.agentsActive")}
 					value={n(u.agents.active)}
-					hint={`of ${n(u.agents.enrolled)} enrolled`}
+					hint={t("gsc.ofEnrolled", { count: n(u.agents.enrolled) })}
 				/>
 				<Stat
-					label="Browser installs active"
+					label={t("gsc.browsersActive")}
 					value={n(u.browserInstalls.active)}
-					hint={`of ${n(u.browserInstalls.enrolled)} enrolled`}
+					hint={t("gsc.ofEnrolled", { count: n(u.browserInstalls.enrolled) })}
 				/>
 				<Stat
-					label="AI sites in use"
+					label={t("gsc.sitesInUse")}
 					value={n(u.aiSites.distinct)}
-					hint={u.aiSites.bySite.map((row) => siteLabel(row.site)).join(", ") || "none reported"}
+					hint={
+						u.aiSites.bySite.map((row) => siteLabel(row.site, t)).join(", ") ||
+						t("gsc.noneReported")
+					}
 				/>
 				<Stat
-					label="MCP servers reported"
+					label={t("gsc.mcpReported")}
 					value={n(u.mcpServers.distinct)}
-					hint={`${n(u.mcpServers.notApproved)} not approved`}
+					hint={t("gsc.notApproved", { count: n(u.mcpServers.notApproved) })}
 				/>
 			</div>
 		</section>
@@ -330,28 +351,43 @@ function UsageCard({ card }: { card: GovernanceScorecard }) {
 }
 
 function TrendCard({ card }: { card: GovernanceScorecard }) {
+	const t = useT();
 	const max = Math.max(1, ...card.trend.map((d) => d.allow + d.ask + d.deny));
 	const d = card.decisions;
 	return (
 		<section className="card" aria-labelledby="governance-trend">
-			<h2 id="governance-trend">Agent decisions</h2>
+			<h2 id="governance-trend">{t("gsc.decisions")}</h2>
 			<p className="muted small">
-				{n(d.allow)} allowed · {n(d.ask)} held for approval · {n(d.deny)} denied in{" "}
-				{card.windowDays} days, per UTC day.
+				{t("gsc.decisionsLead", {
+					allow: n(d.allow),
+					ask: n(d.ask),
+					deny: n(d.deny),
+					days: card.windowDays,
+				})}
 			</p>
 			{d.allow + d.ask + d.deny === 0 ? (
-				<p className="muted">No decisions were reported in this window.</p>
+				<p className="muted">{t("gsc.noDecisions")}</p>
 			) : (
 				<div
 					className="privacy-series"
 					role="img"
-					aria-label={`${d.allow} allowed, ${d.ask} held for approval, ${d.deny} denied over ${card.windowDays} days`}
+					aria-label={t("gsc.trendLabel", {
+						allow: d.allow,
+						ask: d.ask,
+						deny: d.deny,
+						days: card.windowDays,
+					})}
 				>
 					{card.trend.map((day) => (
 						<div
 							key={day.day}
 							className="privacy-series-day"
-							title={`${day.day}: ${day.allow} allowed, ${day.ask} ask, ${day.deny} denied`}
+							title={t("gsc.dayTitle", {
+								day: day.day,
+								allow: day.allow,
+								ask: day.ask,
+								deny: day.deny,
+							})}
 						>
 							<div
 								className="privacy-series-stack"
@@ -366,17 +402,17 @@ function TrendCard({ card }: { card: GovernanceScorecard }) {
 				</div>
 			)}
 			<details style={{ marginTop: 10 }}>
-				<summary className="small">Daily table</summary>
+				<summary className="small">{t("gsc.dailyTable")}</summary>
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Day (UTC)</th>
-								<th>Allowed</th>
-								<th>Ask</th>
-								<th>Denied</th>
-								<th>Browser masked</th>
-								<th>Browser blocked</th>
+								<th>{t("gsc.col.day")}</th>
+								<th>{t("gsc.col.allowed")}</th>
+								<th>{t("gsc.col.ask")}</th>
+								<th>{t("gsc.col.denied")}</th>
+								<th>{t("gsc.col.masked")}</th>
+								<th>{t("gsc.col.blocked")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -399,66 +435,70 @@ function TrendCard({ card }: { card: GovernanceScorecard }) {
 }
 
 function OversightCard({ card }: { card: GovernanceScorecard }) {
+	const t = useT();
 	const a = card.approvals;
 	const o = card.oversight;
 	const decided = a.approved + a.denied;
 	return (
 		<section className="card" aria-labelledby="governance-oversight">
-			<h2 id="governance-oversight">Human oversight</h2>
-			<p className="muted small">
-				How held (ask) agent actions were decided by people outside the agent. Dashboard approvals
-				are counted from their requests; local operator approvals only when a connector reported the
-				release.
-			</p>
+			<h2 id="governance-oversight">{t("gsc.oversight")}</h2>
+			<p className="muted small">{t("gsc.oversightLead")}</p>
 			<div className="grid">
 				<Stat
-					label="Approval requests"
+					label={t("gsc.approvalRequests")}
 					value={n(a.requested)}
-					hint={`${n(a.pending)} pending now`}
+					hint={t("gsc.pendingNow", { count: n(a.pending) })}
 				/>
 				<Stat
-					label="Approve / deny"
+					label={t("gsc.approveDeny")}
 					value={`${n(a.approved)} / ${n(a.denied)}`}
-					hint={decided ? `${Math.round((100 * a.approved) / decided)}% approved` : "no decisions"}
+					hint={
+						decided
+							? t("gsc.approvedShare", { percent: Math.round((100 * a.approved) / decided) })
+							: t("gsc.noDecisionsShort")
+					}
 				/>
 				<Stat
-					label="Median decision time"
+					label={t("gsc.medianTime")}
 					value={duration(a.medianDecisionSeconds)}
-					hint={`90th percentile ${duration(a.p90DecisionSeconds)}`}
+					hint={t("gsc.p90", { time: duration(a.p90DecisionSeconds) })}
 				/>
 				<Stat
-					label="Expired without decision"
+					label={t("gsc.expired")}
 					value={n(a.expiredWithoutDecision)}
-					hint="the action stayed blocked"
+					hint={t("gsc.stayedBlocked")}
 				/>
 				<Stat
-					label="Released after approval"
+					label={t("gsc.released")}
 					value={n(card.decisions.releasedByDashboard + card.decisions.releasedByOperator)}
-					hint={`${n(card.decisions.releasedByDashboard)} dashboard · ${n(card.decisions.releasedByOperator)} local operator`}
+					hint={t("gsc.releasedHint", {
+						dashboard: n(card.decisions.releasedByDashboard),
+						operator: n(card.decisions.releasedByOperator),
+					})}
 				/>
 			</div>
-			<h3>Approvers</h3>
+			<h3>{t("gsc.approvers")}</h3>
 			<p className="muted small">
-				A review prompt appears for an approver with at least {o.thresholds.minDecisions} decisions
-				of which at least {Math.round(o.thresholds.fastShare * 100)}% were approvals made within{" "}
-				{o.thresholds.fastSeconds} s of the request. It asks you to check for automatic approval
-				(automation bias); it is not a finding about the person. Thresholds are set under Scheduled
-				summary below.
+				{t("gsc.approversLead", {
+					min: o.thresholds.minDecisions,
+					share: Math.round(o.thresholds.fastShare * 100),
+					seconds: o.thresholds.fastSeconds,
+				})}
 			</p>
 			{o.byApprover.length === 0 ? (
-				<p className="muted">No approval decisions in this window.</p>
+				<p className="muted">{t("gsc.noApprovals")}</p>
 			) : (
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Approver</th>
-								<th>Decisions</th>
-								<th>Approved</th>
-								<th>Denied</th>
-								<th>Fast approvals</th>
-								<th>Median time</th>
-								<th>Review</th>
+								<th>{t("gsc.col.approver")}</th>
+								<th>{t("gsc.col.decisions")}</th>
+								<th>{t("gsc.col.approved")}</th>
+								<th>{t("gsc.col.denied")}</th>
+								<th>{t("gsc.col.fast")}</th>
+								<th>{t("gsc.col.median")}</th>
+								<th>{t("gsc.col.review")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -473,7 +513,7 @@ function OversightCard({ card }: { card: GovernanceScorecard }) {
 									<td>
 										{row.review ? (
 											<span className="badge badge-ask" data-testid="review-prompt">
-												Review pattern
+												{t("gsc.reviewPattern")}
 											</span>
 										) : (
 											"—"
@@ -490,21 +530,30 @@ function OversightCard({ card }: { card: GovernanceScorecard }) {
 }
 
 function IncidentsPostureCard({ card }: { card: GovernanceScorecard }) {
+	const t = useT();
 	const i = card.incidents;
 	return (
 		<section className="card" aria-labelledby="governance-incidents">
-			<h2 id="governance-incidents">Incidents and AI tool-chain posture</h2>
+			<h2 id="governance-incidents">{t("gsc.incidents")}</h2>
 			<div className="grid">
-				<Stat label="Incidents reported" value={n(i.reported)} hint={`${n(i.open)} still open`} />
 				<Stat
-					label="Open critical / high"
-					value={`${n(i.openBySeverity.critical)} / ${n(i.openBySeverity.high)}`}
-					hint={i.statusUnknown ? `${n(i.statusUnknown)} without a reported status` : undefined}
+					label={t("gsc.incidentsReported")}
+					value={n(i.reported)}
+					hint={t("gsc.stillOpen", { count: n(i.open) })}
 				/>
 				<Stat
-					label="Posture findings"
+					label={t("gsc.openCritical")}
+					value={`${n(i.openBySeverity.critical)} / ${n(i.openBySeverity.high)}`}
+					hint={i.statusUnknown ? t("gsc.noStatus", { count: n(i.statusUnknown) }) : undefined}
+				/>
+				<Stat
+					label={t("gsc.findings")}
 					value={n(card.posture.findings)}
-					hint={`${n(card.posture.critical)} critical · ${n(card.posture.high)} high · ${n(card.posture.cveConfirmed)} confirmed CVE`}
+					hint={t("gsc.findingsHint", {
+						critical: n(card.posture.critical),
+						high: n(card.posture.high),
+						cve: n(card.posture.cveConfirmed),
+					})}
 				/>
 			</div>
 		</section>
@@ -512,36 +561,40 @@ function IncidentsPostureCard({ card }: { card: GovernanceScorecard }) {
 }
 
 function BrowserGuardCard({ card }: { card: GovernanceScorecard }) {
+	const t = useT();
+	const richT = useRichT();
 	const g = card.browserGuard;
 	const active = card.usage.browserInstalls.active;
 	return (
 		<section className="card" aria-labelledby="governance-browser">
-			<h2 id="governance-browser">Browser Guard and acceptable use</h2>
+			<h2 id="governance-browser">{t("gsc.browser")}</h2>
 			<div className="grid">
-				<Stat label="Sends scanned" value={n(g.scans)} />
-				<Stat label="Masked" value={n(g.masked)} hint={`${n(g.itemsMasked)} items replaced`} />
-				<Stat label="Warned / blocked" value={`${n(g.warned)} / ${n(g.blocked)}`} />
+				<Stat label={t("gsc.scanned")} value={n(g.scans)} />
+				<Stat
+					label={t("gsc.masked")}
+					value={n(g.masked)}
+					hint={t("gsc.itemsReplaced", { count: n(g.itemsMasked) })}
+				/>
+				<Stat label={t("gsc.warnedBlocked")} value={`${n(g.warned)} / ${n(g.blocked)}`} />
 			</div>
-			<h3>Acceptable-use acknowledgements</h3>
+			<h3>{t("gsc.ack")}</h3>
 			<p className="muted small">
-				Browser installs that pressed "I understand" on the acceptable-use notice, per notice
-				version (counts only; publish the notice from{" "}
-				<Link to="/privacy-guard">Browser Privacy</Link>).
+				{richT("gsc.ackLead", {
+					link: <Link to="/privacy-guard">{t("nav.browserGuard")}</Link>,
+				})}
 			</p>
 			{card.acceptableUse.length === 0 ? (
-				<p className="muted">
-					No acknowledgements reported. Publish a notice in the Browser Guard managed policy.
-				</p>
+				<p className="muted">{t("gsc.noAck")}</p>
 			) : (
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Notice</th>
-								<th>Version</th>
-								<th>Installs acknowledged</th>
-								<th>Of active browsers</th>
-								<th>Last acknowledged</th>
+								<th>{t("gsc.col.notice")}</th>
+								<th>{t("gsc.col.version")}</th>
+								<th>{t("gsc.col.installsAck")}</th>
+								<th>{t("gsc.col.ofActive")}</th>
+								<th>{t("gsc.col.lastAck")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -565,42 +618,47 @@ function BrowserGuardCard({ card }: { card: GovernanceScorecard }) {
 }
 
 function PolicyCard({ card }: { card: GovernanceScorecard }) {
+	const t = useT();
 	const p = card.policies;
 	const row = (label: string, value: GovernanceScorecard["policies"]["runtime"]) => (
 		<tr key={label}>
 			<td>{label}</td>
-			<td>{value ? (value.version === null ? "—" : `v${value.version}`) : "not configured"}</td>
-			<td>{value ? `${n(value.ageDays)} days ago` : "—"}</td>
+			<td>
+				{value ? (value.version === null ? "—" : `v${value.version}`) : t("gsc.notConfigured")}
+			</td>
+			<td>{value ? t("gsc.daysAgo", { count: n(value.ageDays) }) : "—"}</td>
 		</tr>
 	);
 	return (
 		<section className="card" aria-labelledby="governance-policies">
-			<h2 id="governance-policies">Policy freshness</h2>
+			<h2 id="governance-policies">{t("gsc.policies")}</h2>
 			<div className="table-wrap">
 				<table className="table">
 					<thead>
 						<tr>
-							<th>Policy</th>
-							<th>Version</th>
-							<th>Last changed</th>
+							<th>{t("gsc.col.policy")}</th>
+							<th>{t("gsc.col.version")}</th>
+							<th>{t("gsc.col.lastChanged")}</th>
 						</tr>
 					</thead>
 					<tbody>
-						{row("Runtime policy", p.runtime)}
-						{row("DLP policy", p.dlp)}
-						{row("Team policy", p.team)}
+						{row(t("gsc.runtimePolicy"), p.runtime)}
+						{row(t("gsc.dlpPolicy"), p.dlp)}
+						{row(t("gsc.teamPolicy"), p.team)}
 					</tbody>
 				</table>
 			</div>
 			<p className="muted small">
-				Revisions in this window: {n(p.runtimeRevisionsInPeriod)} runtime,{" "}
-				{n(p.dlpRevisionsInPeriod)} DLP. MFA{" "}
-				{card.identity.requireMfa ? "required" : "not required"}, single sign-on{" "}
-				{card.identity.ssoRequired ? "required" : "not required"}, telemetry kept{" "}
-				{card.identity.telemetryRetentionDays === null
-					? "without a retention policy"
-					: `${n(card.identity.telemetryRetentionDays)} days`}
-				.
+				{t("gsc.revisions", {
+					runtime: n(p.runtimeRevisionsInPeriod),
+					dlp: n(p.dlpRevisionsInPeriod),
+					mfa: card.identity.requireMfa ? t("gsc.required") : t("gsc.notRequired"),
+					sso: card.identity.ssoRequired ? t("gsc.required") : t("gsc.notRequired"),
+					retention:
+						card.identity.telemetryRetentionDays === null
+							? t("gsc.noRetention")
+							: t("common.days", { count: n(card.identity.telemetryRetentionDays) }),
+				})}
 			</p>
 		</section>
 	);
@@ -615,6 +673,7 @@ function DigestCard({
 	card: GovernanceScorecard;
 	onSaved: () => void;
 }) {
+	const t = useT();
 	const [form, setForm] = useState<GovernanceSettings>(card.settings);
 	const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -645,8 +704,12 @@ function DigestCard({
 		setStatus({
 			tone: "ok",
 			text: result.value.digestEnabled
-				? `Saved. Next summary: ${result.value.digestNextAt ? new Date(result.value.digestNextAt).toUTCString() : "scheduled"}.`
-				: "Saved. Scheduled summaries are off.",
+				? t("gsc.saved", {
+						time: result.value.digestNextAt
+							? new Date(result.value.digestNextAt).toUTCString()
+							: t("gsc.scheduled"),
+					})
+				: t("gsc.savedOff"),
 		});
 		onSaved();
 	}
@@ -663,20 +726,19 @@ function DigestCard({
 			tone: result.value.status === "sent" ? "ok" : "error",
 			text:
 				result.value.status === "no_recipients"
-					? "No owner or admin has an e-mail address, so nothing was sent."
-					: `Test summary delivered to ${result.value.delivered} of ${result.value.recipients} recipient(s).`,
+					? t("gsc.noRecipients")
+					: t("gsc.testDelivered", {
+							delivered: result.value.delivered,
+							recipients: result.value.recipients,
+						}),
 		});
 		onSaved();
 	}
 
 	return (
 		<section className="card" aria-labelledby="governance-digest">
-			<h2 id="governance-digest">Scheduled summary</h2>
-			<p className="muted small">
-				A counts-only e-mail to this workspace's owners (and admins) with the figures above. No
-				prompt text, page addresses or approver identities are included. Delivery needs the
-				deployment's mail transport and its hourly maintenance run.
-			</p>
+			<h2 id="governance-digest">{t("gsc.digest")}</h2>
+			<p className="muted small">{t("gsc.digestLead")}</p>
 			<form
 				noValidate
 				className="stack"
@@ -691,11 +753,11 @@ function DigestCard({
 						checked={form.digestEnabled}
 						onChange={(event) => setForm({ ...form, digestEnabled: event.target.checked })}
 					/>
-					Send a scheduled governance summary
+					{t("gsc.digestEnable")}
 				</label>
 				<div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
 					<label className="label" htmlFor="governance-digest-cadence">
-						Frequency
+						{t("gsc.frequency")}
 					</label>
 					<select
 						id="governance-digest-cadence"
@@ -708,11 +770,11 @@ function DigestCard({
 							})
 						}
 					>
-						<option value="weekly">Weekly (Monday 06:00 UTC)</option>
-						<option value="monthly">Monthly (1st, 06:00 UTC)</option>
+						<option value="weekly">{t("gsc.weekly")}</option>
+						<option value="monthly">{t("gsc.monthly")}</option>
 					</select>
 					<label className="label" htmlFor="governance-digest-recipients">
-						Recipients
+						{t("gsc.recipients")}
 					</label>
 					<select
 						id="governance-digest-recipients"
@@ -725,14 +787,14 @@ function DigestCard({
 							})
 						}
 					>
-						<option value="owners_admins">Owners and admins</option>
-						<option value="owners">Owners only</option>
+						<option value="owners_admins">{t("gsc.ownersAdmins")}</option>
+						<option value="owners">{t("gsc.ownersOnlyOption")}</option>
 					</select>
 				</div>
 				<fieldset className="row" style={{ flexWrap: "wrap", gap: 12, border: 0, padding: 0 }}>
-					<legend className="small">Human-oversight review thresholds</legend>
+					<legend className="small">{t("gsc.thresholds")}</legend>
 					<label className="label">
-						Fast approval (seconds)
+						{t("gsc.fastSeconds")}
 						<input
 							className="input"
 							type="number"
@@ -745,7 +807,7 @@ function DigestCard({
 						/>
 					</label>
 					<label className="label">
-						Minimum decisions
+						{t("gsc.minDecisions")}
 						<input
 							className="input"
 							type="number"
@@ -758,7 +820,7 @@ function DigestCard({
 						/>
 					</label>
 					<label className="label">
-						Fast-approval share (%)
+						{t("gsc.fastShare")}
 						<input
 							className="input"
 							type="number"
@@ -773,7 +835,7 @@ function DigestCard({
 				</fieldset>
 				<div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
 					<button type="submit" className="button button-sm" disabled={busy}>
-						Save settings
+						{t("gsc.saveSettings")}
 					</button>
 					<button
 						type="button"
@@ -781,7 +843,7 @@ function DigestCard({
 						disabled={busy}
 						onClick={() => void test()}
 					>
-						Send a test summary now
+						{t("gsc.sendTest")}
 					</button>
 				</div>
 				<div
@@ -794,26 +856,37 @@ function DigestCard({
 			</form>
 			<p className="muted small">
 				{card.settings.digestLastAt
-					? `Last scheduled summary ${new Date(card.settings.digestLastAt).toUTCString()} (${card.settings.digestLastStatus ?? "unknown"}).`
-					: "No scheduled summary has been sent yet."}
+					? t("gsc.lastSummary", {
+							time: new Date(card.settings.digestLastAt).toUTCString(),
+							status: card.settings.digestLastStatus ?? t("common.unknown"),
+						})
+					: t("gsc.noSummary")}
 			</p>
 			{card.recentDeliveries.length ? (
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Time</th>
-								<th>Kind</th>
-								<th>Period</th>
-								<th>Status</th>
-								<th>Delivered</th>
+								<th>{t("gsc.col.time")}</th>
+								<th>{t("gsc.col.kind")}</th>
+								<th>{t("gsc.col.period")}</th>
+								<th>{t("common.status")}</th>
+								<th>{t("gsc.col.delivered")}</th>
 							</tr>
 						</thead>
 						<tbody>
 							{card.recentDeliveries.map((row) => (
 								<tr key={`${row.createdAt}-${row.trigger}`}>
 									<td className="mono">{new Date(row.createdAt).toLocaleString()}</td>
-									<td>{row.trigger === "test" ? "Test" : row.cadence}</td>
+									<td>
+										{row.trigger === "test"
+											? t("gsc.test")
+											: row.cadence === "weekly"
+												? t("gsc.weekly")
+												: row.cadence === "monthly"
+													? t("gsc.monthly")
+													: row.cadence}
+									</td>
 									<td className="mono">
 										{row.periodFrom.slice(0, 10)} – {row.periodTo.slice(0, 10)}
 									</td>
@@ -832,21 +905,25 @@ function DigestCard({
 }
 
 const COVERAGE_TEXT = {
-	full: "Full",
-	partial: "Partial",
-	"customer-responsibility": "Customer",
-} as const;
+	full: "gsc.cov.full",
+	partial: "gsc.cov.partial",
+	"customer-responsibility": "gsc.cov.customer",
+} as const satisfies Record<string, DashboardMessageKey>;
+
+const CONTROL_STATUS: Readonly<Record<ControlStatus, DashboardMessageKey>> = {
+	in_place: "gsc.ctl.inPlace",
+	partly_in_place: "gsc.ctl.partly",
+	not_deployed: "gsc.ctl.notDeployed",
+	not_observable: "gsc.ctl.notObservable",
+	customer: "gsc.ctl.customer",
+};
 
 function MatrixCard({ coverage }: { coverage: FrameworkCoverage[] }) {
+	const t = useT();
 	return (
 		<section className="card" aria-labelledby="governance-matrix">
-			<h2 id="governance-matrix">Framework control matrix</h2>
-			<p className="muted small">
-				How Singularity AIDR capabilities map to each framework, with the evidence source that shows
-				it and the status in this workspace. Full: the capability performs the activity for the AI
-				tools it guards. Partial: it supports part of it. Customer: your organisation performs it;
-				product data is input only.
-			</p>
+			<h2 id="governance-matrix">{t("gsc.matrix")}</h2>
+			<p className="muted small">{t("gsc.matrixLead")}</p>
 			{coverage.map((item) => (
 				<details key={item.framework.id}>
 					<summary>
@@ -857,10 +934,10 @@ function MatrixCard({ coverage }: { coverage: FrameworkCoverage[] }) {
 						<table className="table">
 							<thead>
 								<tr>
-									<th>Control</th>
-									<th>Coverage</th>
-									<th>Status here</th>
-									<th>Capabilities and evidence</th>
+									<th>{t("gsc.col.control")}</th>
+									<th>{t("gsc.col.coverage")}</th>
+									<th>{t("gsc.col.statusHere")}</th>
+									<th>{t("gsc.col.capabilities")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -870,12 +947,14 @@ function MatrixCard({ coverage }: { coverage: FrameworkCoverage[] }) {
 											<b className="mono">{a.control.id}</b>
 											<div className="small">{a.control.title}</div>
 										</td>
-										<td>{COVERAGE_TEXT[a.control.coverage]}</td>
-										<td>{CONTROL_STATUS_LABEL[a.status]}</td>
+										<td>{t(COVERAGE_TEXT[a.control.coverage])}</td>
+										<td>{t(CONTROL_STATUS[a.status])}</td>
 										<td className="small">
 											{a.control.capabilities.map(capabilityTitle).join("; ") || "—"}
 											<div className="muted">
-												Evidence: {a.control.evidence.map(evidenceDetail).join(" ") || "—"}
+												{t("gsc.evidence", {
+													items: a.control.evidence.map(evidenceDetail).join(" ") || "—",
+												})}
 											</div>
 											<div className="muted">{a.control.note}</div>
 										</td>

@@ -3,13 +3,19 @@ import { agentsMessages } from "./agents";
 import { apiKeysMessages } from "./api-keys";
 import { approvalsMessages } from "./approvals";
 import { auditMessages } from "./audit";
+import { autosecopsMessages } from "./autosecops";
 import { billingMessages } from "./billing";
 import { billingPlanMessages } from "./billing-plan";
 import { commonMessages } from "./common";
 import { dashboardMessages } from "./dashboard";
 import { discoveryMessages } from "./discovery";
 import { downloadCenterMessages } from "./download-center";
+import { frameworkMessages } from "./framework";
+import { governanceMessages } from "./governance";
+import { governanceChangeMessages } from "./governance-change";
 import { governanceErrorsMessages } from "./governance-errors";
+import { governanceRequestsMessages } from "./governance-requests";
+import { governanceScorecardMessages } from "./governance-scorecard";
 import { notificationsMessages } from "./notifications";
 import { onboardingMessages } from "./onboarding";
 import { policyMessages } from "./policy";
@@ -29,12 +35,18 @@ export const pageMessages = {
 	...apiKeysMessages,
 	...approvalsMessages,
 	...auditMessages,
+	...autosecopsMessages,
 	...billingMessages,
 	...billingPlanMessages,
 	...dashboardMessages,
 	...discoveryMessages,
 	...downloadCenterMessages,
+	...frameworkMessages,
+	...governanceMessages,
+	...governanceChangeMessages,
 	...governanceErrorsMessages,
+	...governanceRequestsMessages,
+	...governanceScorecardMessages,
 	...notificationsMessages,
 	...onboardingMessages,
 	...policyMessages,
@@ -55,12 +67,18 @@ export const messageModules = [
 	apiKeysMessages,
 	approvalsMessages,
 	auditMessages,
+	autosecopsMessages,
 	billingMessages,
 	billingPlanMessages,
 	dashboardMessages,
 	discoveryMessages,
 	downloadCenterMessages,
+	frameworkMessages,
+	governanceMessages,
+	governanceChangeMessages,
 	governanceErrorsMessages,
+	governanceRequestsMessages,
+	governanceScorecardMessages,
 	notificationsMessages,
 	onboardingMessages,
 	policyMessages,

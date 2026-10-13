@@ -1,3 +1,4 @@
+import type { DashboardMessageKey } from "../i18n/en";
 import { englishT, type Translate } from "../i18n/I18nProvider";
 import { readAllPages } from "./paged-read";
 import { supabase } from "./supabase";
@@ -46,18 +47,19 @@ export type AssetStatus = (typeof ASSET_STATUSES)[number];
 export type RiskTier = (typeof RISK_TIERS)[number];
 export type DataCategory = (typeof DATA_CATEGORIES)[number];
 
-export const ASSET_TYPE_LABEL: Record<AssetType, string> = {
-	coding_agent: "Coding agent / connector",
-	mcp_server: "MCP server",
-	ai_site: "AI chat site / SaaS",
-	model_service: "Model / AI service",
+/** Catalog keys: render with `t(ASSET_TYPE_LABEL[type])`. */
+export const ASSET_TYPE_LABEL: Record<AssetType, DashboardMessageKey> = {
+	coding_agent: "gov.type.codingAgent",
+	mcp_server: "gov.type.mcpServer",
+	ai_site: "gov.type.aiSite",
+	model_service: "gov.type.modelService",
 };
-export const STATUS_LABEL: Record<AssetStatus, string> = {
-	proposed: "Proposed",
-	approved: "Approved",
-	restricted: "Restricted",
-	banned: "Banned",
-	retired: "Retired",
+export const STATUS_LABEL: Record<AssetStatus, DashboardMessageKey> = {
+	proposed: "gov.status.proposed",
+	approved: "gov.status.approved",
+	restricted: "gov.status.restricted",
+	banned: "gov.status.banned",
+	retired: "gov.status.retired",
 };
 export const STATUS_BADGE: Record<AssetStatus, string> = {
 	proposed: "badge badge-neutral",
@@ -66,28 +68,34 @@ export const STATUS_BADGE: Record<AssetStatus, string> = {
 	banned: "badge badge-error",
 	retired: "badge badge-neutral",
 };
-export const RISK_LABEL: Record<RiskTier, string> = {
-	unassessed: "Not assessed",
-	minimal: "Minimal",
-	limited: "Limited",
-	high: "High",
-	prohibited: "Prohibited",
+export const RISK_LABEL: Record<RiskTier, DashboardMessageKey> = {
+	unassessed: "gov.risk.unassessed",
+	minimal: "gov.risk.minimal",
+	limited: "gov.risk.limited",
+	high: "gov.risk.high",
+	prohibited: "gov.risk.prohibited",
 };
-export const CATEGORY_LABEL: Record<DataCategory, string> = {
-	personal_data: "Personal data",
-	special_category: "Special category data",
-	source_code: "Source code",
-	secrets: "Secrets / credentials",
-	customer_data: "Customer data",
+export const CATEGORY_LABEL: Record<DataCategory, DashboardMessageKey> = {
+	personal_data: "gov.cat.personal",
+	special_category: "gov.cat.special",
+	source_code: "gov.cat.sourceCode",
+	secrets: "gov.cat.secrets",
+	customer_data: "gov.cat.customer",
 };
-export const SOURCE_LABEL: Record<string, string> = {
-	manual: "Manual",
-	intake: "Intake request",
-	fleet: "Enrolled agents",
-	posture: "MCP inventory",
-	browser_telemetry: "Browser Guard",
-	discovery: "Discovery",
+const SOURCE_LABEL: Record<string, DashboardMessageKey> = {
+	manual: "gov.source.manual",
+	intake: "gov.source.intake",
+	fleet: "gov.source.fleet",
+	posture: "gov.source.posture",
+	browser_telemetry: "nav.browserGuard",
+	discovery: "gov.source.discovery",
 };
+
+/** Where a register entry came from; an unknown source is shown as stored. */
+export function sourceLabel(source: string, t: Translate = englishT): string {
+	const key = Object.hasOwn(SOURCE_LABEL, source) ? SOURCE_LABEL[source] : undefined;
+	return key ? t(key) : source;
+}
 
 export interface AiAsset {
 	id: string;
@@ -697,12 +705,11 @@ export function enforcementOf(
 	return "none";
 }
 
-export const ENFORCEMENT_LABEL: Record<Enforcement, string> = {
-	connector_deny: "Blocked by connectors",
-	connector_ask: "Connectors ask for approval",
-	browser_block:
-		"Blocked by Browser Guard (signed dashboard policy; built-in sites also via blockedSites)",
-	none: "Register only",
+export const ENFORCEMENT_LABEL: Record<Enforcement, DashboardMessageKey> = {
+	connector_deny: "gov.effect.deny",
+	connector_ask: "gov.effect.ask",
+	browser_block: "gov.effect.browser",
+	none: "gov.effect.none",
 };
 
 /**
