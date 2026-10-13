@@ -644,7 +644,9 @@ export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 export {
 	allowVerdict,
 	evaluateToolCall,
+	REPUTATION_NOT_CHECKED_CATEGORY,
 	recordCanaryTrigger,
+	reputationNotCheckedVerdict,
 	type ToolDelegationContext,
 	type ToolEvaluationContext,
 	type ToolEvaluationRequest,

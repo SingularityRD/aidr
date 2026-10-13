@@ -22,6 +22,15 @@ export const SDKConfigSchema = z
 		environment: z.enum(["production", "staging", "development"]).default("production"),
 		/** Share fetch URLs with the configured reputation provider. Off unless explicitly enabled. */
 		urlReputationEnabled: z.boolean().default(false),
+		/**
+		 * What a `fetch` gets while `urlReputationEnabled` is false and local rules
+		 * found nothing (same semantics as core `url_check.unchecked_action`).
+		 * `allow` (default): the call proceeds, labelled `reputation_not_checked` in
+		 * `metadata.category` and the reason (never a clean reputation result).
+		 * `ask`: every such fetch is held for review. An installed AIDR config with
+		 * `url_check.unchecked_action: ask` also selects `ask`.
+		 */
+		urlReputationUncheckedAction: z.enum(["allow", "ask"]).default("allow"),
 		/** Include query parameters in reputation requests; credentials/fragments are always withheld. */
 		includeUrlQueryParameters: z.boolean().default(false),
 		logger: z.any().optional(), // pino.Logger compatible

@@ -261,10 +261,24 @@ snapshot with a different value before the tool runs.
 ### URL reputation and data sharing
 
 The SDK keeps URL reputation requests **off by default**. Fetch URLs are still
-checked by local heuristics; because remote reputation was not consulted, a
-fetch that would otherwise be allowed returns `ask` and requires review. To
-share eligible URLs with the configured reputation provider, explicitly enable
-it:
+checked by local heuristics, the same way the core evaluator handles
+`url_check.enabled: false`:
+
+- A local rule hit still denies or asks as usual.
+- A fetch the local rules found nothing in is **allowed but not presented as
+  clean**: `result.metadata.category` is `"reputation_not_checked"`
+  (`metadata.leg: "url_reputation"`, `metadata.uncheckedUrls` lists the URLs) and
+  the reason says "Not checked by a reputation service ... this is not a clean
+  reputation result". Such results are not cached.
+- `urlReputationUncheckedAction: "ask"` (default `"allow"`) restores the strict
+  behaviour: every such fetch returns an indeterminate `ask` and requires review.
+  An installed AIDR config with `url_check.unchecked_action: "ask"` has the same
+  effect; the stricter setting wins.
+
+An **enabled** leg that cannot answer (unreachable endpoint, error, more than 16
+URLs) is never treated as not-checked-and-allowed: the fetch returns an
+indeterminate `ask` ("was NOT verified"). To share eligible URLs with the
+configured reputation provider, explicitly enable it:
 
 ```ts
 const client = new AIDRClient({

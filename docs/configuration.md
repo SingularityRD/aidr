@@ -342,6 +342,12 @@ clean. No first-party reputation endpoint is deployed today, so enabling the leg
 without your own `endpoint` makes every URL call ask (the leg is enabled but
 cannot run).
 
+The SDK (`AIDRClient`) applies the same rule to `fetch` checks: with
+`urlReputationEnabled: false` a fetch local rules find nothing in is allowed with
+`metadata.category: "reputation_not_checked"`, and `urlReputationUncheckedAction:
+"ask"` (or this installed `url_check.unchecked_action: ask`) holds it for review.
+See the [SDK README](../packages/sdk/README.md#url-reputation-and-data-sharing).
+
 Example (Supabase Edge Function):
 
 ```json

@@ -2258,7 +2258,9 @@ uygulama ekiplerinin aynı karar sözleşmesini kendi araçlarının önüne koy
 
 Express/Next.js genel bir HTTP 403 döndürür (`error` + `requestId`; gerekçe sunucu tarafındaki `onBlocked` kancasına gider) ve kimlik bilgisi taşımayan istek başlıklarını da inceler. `guardToolOutput` sonuçları inceler
 (varsayılan 256 KiB) ve bulguları engeller veya maskeler. URL itibarı varsayılan olarak
-kapalıdır (açmak için `urlReputationEnabled: true`). Hiç kural yüklenemezse `init()` açıkça
+kapalıdır (açmak için `urlReputationEnabled: true`); bu durumda yerel kuralların bir şey bulmadığı
+fetch `reputation_not_checked` olarak izin alır, asla temiz sayılmaz (`urlReputationUncheckedAction: "ask"`
+incelemeye tutar). Hiç kural yüklenemezse `init()` açıkça
 hata verir.
 
 **Nasıl kullanılır**

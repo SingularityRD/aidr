@@ -2193,7 +2193,8 @@ application teams put the same verdict contract in front of their own tools.
 
 Express/Next.js return a generic HTTP 403 (`error` + `requestId`; the reason goes to the server-side `onBlocked` hook) and also inspect non-credential request headers. `guardToolOutput` inspects results
 (256 KiB default) and blocks or redacts findings. URL reputation is off by default
-(`urlReputationEnabled: true` to opt in). `init()` fails loudly if no rules can be loaded.
+(`urlReputationEnabled: true` to opt in); meanwhile a fetch local rules find nothing in is allowed as
+`reputation_not_checked`, never as clean (`urlReputationUncheckedAction: "ask"` holds it for review). `init()` fails loudly if no rules can be loaded.
 
 **How to use**
 

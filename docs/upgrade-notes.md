@@ -91,8 +91,11 @@ call. See [Licensing](operations/licensing.md).
   control plane rejects raw addresses, so upgrade every collector before its next upload.
 - SDK: the LangChain, LlamaIndex, AutoGen and CrewAI adapters and the `aidr-sdk` executable are
   removed (use `createGenericMiddleware` / `createMiddleware`). URL reputation is off by
-  default; a `fetch` check that local rules would allow returns `ask` when reputation is
-  unavailable. Set `urlReputationEnabled: true` to opt in.
+  default; like core `url_check.unchecked_action`, a `fetch` that local rules find nothing in
+  is allowed with `metadata.category: "reputation_not_checked"` (never reported as clean),
+  and `urlReputationUncheckedAction: "ask"` restores hold-for-review. An enabled reputation
+  leg that cannot answer still returns an indeterminate `ask`. Set `urlReputationEnabled:
+  true` to opt in.
 - MCP Gateway: `tools/call` arguments are inspected before they reach the upstream server
   (`arguments_blocked`, `approval_required`, `detection_unavailable`); server-initiated
   sampling, elicitation and roots are denied by default.
