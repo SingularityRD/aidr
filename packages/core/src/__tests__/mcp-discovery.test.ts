@@ -13,6 +13,18 @@ import {
 import { discoverMcpServers } from "../mcp-discovery.js";
 import { defaultMcpConfigPaths } from "../mcp-inventory.js";
 
+// Operator approval key: approvals are honoured only when signed by a configured key.
+const operatorApproval = generateKeyPairSync("ed25519");
+const OPERATOR_APPROVAL_KEY = {
+	keyId: "operator-approval-1",
+	privateKey: operatorApproval.privateKey,
+};
+const OPERATOR_APPROVAL_KEYS = {
+	"operator-approval-1": operatorApproval.publicKey
+		.export({ type: "spki", format: "pem" })
+		.toString(),
+};
+
 function keyPair(): { privateKey: KeyObject; publicKeyPem: string } {
 	const pair = generateKeyPairSync("ed25519");
 	return {
@@ -362,6 +374,7 @@ describe("MCP discovery evidence", () => {
 
 			const store = new MemoryMcpAttestationStore();
 			const decision = await attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: signed,
 				verifier: { trustedSigners: keyring, expectedServerId: "filesystem" },
 				connection: [
@@ -375,7 +388,13 @@ describe("MCP discovery evidence", () => {
 			if (decision.status !== "quarantined") throw new Error("expected quarantine");
 
 			const quarantined = await discoverMcpServers([path], {
-				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: signed }, store },
+				attestation: {
+					tenantId: "tenant-a",
+					keyring,
+					manifests: { filesystem: signed },
+					store,
+					approvalKeys: OPERATOR_APPROVAL_KEYS,
+				},
 			});
 			expect(quarantined.servers[0]?.attestation).toMatchObject({
 				status: "quarantined",
@@ -387,6 +406,7 @@ describe("MCP discovery evidence", () => {
 			});
 
 			await approveQuarantinedMcpToolset({
+				approvalKey: OPERATOR_APPROVAL_KEY,
 				serverId: "filesystem",
 				toolsetHash: decision.toolsetHash,
 				bindingSha256: (await store.read("filesystem"))?.quarantine?.bindingSha256 ?? "",
@@ -395,7 +415,13 @@ describe("MCP discovery evidence", () => {
 				store,
 			});
 			const approved = await discoverMcpServers([path], {
-				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: signed }, store },
+				attestation: {
+					tenantId: "tenant-a",
+					keyring,
+					manifests: { filesystem: signed },
+					store,
+					approvalKeys: OPERATOR_APPROVAL_KEYS,
+				},
 			});
 			expect(approved.servers[0]?.attestation).toEqual({
 				status: "approved",
@@ -428,6 +454,7 @@ describe("MCP discovery evidence", () => {
 					keyring,
 					manifests: { filesystem: changedSigned },
 					store,
+					approvalKeys: OPERATOR_APPROVAL_KEYS,
 				},
 			});
 			expect(unseen.servers[0]?.attestation).toMatchObject({
@@ -435,6 +462,7 @@ describe("MCP discovery evidence", () => {
 				reason: "manifest_not_observed",
 			});
 			const change = await attestMcpToolManifest({
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 				candidate: changedSigned,
 				verifier: { trustedSigners: keyring, expectedServerId: "filesystem" },
 				connection: [
@@ -447,7 +475,13 @@ describe("MCP discovery evidence", () => {
 			});
 			expect(change.status).toBe("quarantined");
 			const stale = await discoverMcpServers([path], {
-				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: signed }, store },
+				attestation: {
+					tenantId: "tenant-a",
+					keyring,
+					manifests: { filesystem: signed },
+					store,
+					approvalKeys: OPERATOR_APPROVAL_KEYS,
+				},
 			});
 			expect(stale.servers[0]?.attestation).toMatchObject({
 				status: "rejected",
@@ -459,11 +493,13 @@ describe("MCP discovery evidence", () => {
 					keyring,
 					manifests: { filesystem: changedSigned },
 					store,
+					approvalKeys: OPERATOR_APPROVAL_KEYS,
 				},
 			});
 			expect(pending.servers[0]?.attestation.status).toBe("quarantined");
 			if (change.status !== "quarantined") throw new Error("expected changed quarantine");
 			await approveQuarantinedMcpToolset({
+				approvalKey: OPERATOR_APPROVAL_KEY,
 				serverId: "filesystem",
 				toolsetHash: change.toolsetHash,
 				bindingSha256: (await store.read("filesystem"))?.quarantine?.bindingSha256 ?? "",
@@ -477,11 +513,18 @@ describe("MCP discovery evidence", () => {
 					keyring,
 					manifests: { filesystem: changedSigned },
 					store,
+					approvalKeys: OPERATOR_APPROVAL_KEYS,
 				},
 			});
 			expect(accepted.servers[0]?.attestation.status).toBe("approved");
 			const superseded = await discoverMcpServers([path], {
-				attestation: { tenantId: "tenant-a", keyring, manifests: { filesystem: signed }, store },
+				attestation: {
+					tenantId: "tenant-a",
+					keyring,
+					manifests: { filesystem: signed },
+					store,
+					approvalKeys: OPERATOR_APPROVAL_KEYS,
+				},
 			});
 			expect(superseded.servers[0]?.attestation.status).toBe("rejected");
 		} finally {

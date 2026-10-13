@@ -2172,7 +2172,10 @@ hatası döndürür. Sunucunun başlattığı `sampling`, `elicitation`, `roots`
 mesajları `serverInitiated` politikasına tabidir (varsayılan `deny`, alternatif `ignore`);
 gateway iletilen `initialize` mesajından bu yetenekleri çıkarır. Yeni veya değişmiş bir araç
 seti, bir operatör `aidr-mcp-approve` ile onaylayana kadar karantinada tutulur; bu komut hiçbir
-zaman bir MCP aracı veya HTTP uç noktası değildir.
+zaman bir MCP aracı veya HTTP uç noktası değildir. Her onay, operatörün parolayla korunan onay
+anahtarıyla imzalanır (`aidr-mcp-approve --generate-key` ile oluşturulur; gateway yalnızca açık
+anahtarı `approvalKeys` altında tutar). Bu nedenle gateway durum dizinine yalnızca yazabilen bir
+süreç bir araç setini onaylayamaz.
 
 **Nasıl kullanılır**
 
@@ -2180,7 +2183,7 @@ zaman bir MCP aracı veya HTTP uç noktası değildir.
 node packages/mcp-gateway/dist/aidr-mcp-gateway.mjs /secure/path/gateway.json
 # istemciyi Authorization: Bearer <token> ile http://127.0.0.1:7789/mcp/<serverId> adresine yönlendirin
 
-node packages/mcp-gateway/dist/aidr-mcp-approve.mjs /secure/path/gateway.json \
+node packages/mcp-gateway/dist/aidr-mcp-approve.mjs --key /operator/aidr-approval-key.pem /secure/path/gateway.json \
   tenant-a server-a <toolsetHash> <bindingSha256> <operatorId> "approved ticket and reason"
 ```
 

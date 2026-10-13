@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { scanMcpToolMetadata } from "./context-poisoning.js";
+import type { McpServerCategoryMatch } from "./mcp-aig-categories.js";
 import {
+	hasHonouredMcpApproval,
+	type McpApprovalKeyring,
 	type McpAttestationStateStore,
 	type McpAttestationStateV1,
 	type McpManifestRejectionReason,
@@ -9,7 +12,6 @@ import {
 	type SignedMcpToolManifestV1,
 	verifySignedMcpToolManifest,
 } from "./mcp-attestation.js";
-import type { McpServerCategoryMatch } from "./mcp-aig-categories.js";
 import type { McpSecretFinding } from "./mcp-config-secrets.js";
 import { inspectMcpServerInventory, type McpInventoryItem } from "./mcp-inventory.js";
 import { redactMcpLaunch } from "./mcp-launch-redaction.js";
@@ -55,6 +57,11 @@ export interface McpDiscoveryAttestationOptions {
 	manifests?: McpSignedManifestIndex;
 	/** Tenant attestation state, where operator approvals and quarantines are recorded. */
 	store?: McpAttestationStateStore;
+	/**
+	 * Operator approval public keys. A recorded approval is reported as approved
+	 * only when one of these keys signed it; absent means none can be.
+	 */
+	approvalKeys?: McpApprovalKeyring;
 	/** Verification time; defaults to the wall clock. */
 	now?: Date;
 }
@@ -299,15 +306,7 @@ async function attestDiscoveredServer(
 			reason: "quarantined_pending_operator_approval",
 		};
 	}
-	const approved = state.approvedToolsets.some(
-		(entry) =>
-			state.activeToolsetHash === verified.toolsetHash &&
-			entry.toolsetHash === verified.toolsetHash &&
-			entry.keyId === verified.signed.key_id &&
-			entry.signerKeySha256 === verified.signerKeySha256 &&
-			entry.bindingSha256 === bindingSha256,
-	);
-	if (approved) {
+	if (discoveryApprovalHonoured(state, verified, bindingSha256, options)) {
 		return { ...verifiedEvidence, status: "approved", approval_state: "available" };
 	}
 	return {
@@ -316,6 +315,35 @@ async function attestDiscoveredServer(
 		approval_state: "available",
 		reason: "not_approved",
 	};
+}
+
+/**
+ * Only an operator-signed, unexpired approval of the active toolset counts;
+ * without the operator approval keys nothing can be reported as approved.
+ */
+function discoveryApprovalHonoured(
+	state: McpAttestationStateV1,
+	verified: { toolsetHash: string; signerKeySha256: string; signed: SignedMcpToolManifestV1 },
+	bindingSha256: string,
+	options: McpDiscoveryAttestationOptions,
+): boolean {
+	return (
+		state.activeToolsetHash === verified.toolsetHash &&
+		hasHonouredMcpApproval(
+			state.approvedToolsets,
+			{
+				toolsetHash: verified.toolsetHash,
+				keyId: verified.signed.key_id,
+				signerKeySha256: verified.signerKeySha256,
+				bindingSha256,
+			},
+			{
+				serverId: verified.signed.manifest.server_id,
+				approvalKeys: options.approvalKeys,
+				now: options.now,
+			},
+		)
+	);
 }
 
 function toolMetadataEvidence(

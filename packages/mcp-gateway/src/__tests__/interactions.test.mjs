@@ -12,6 +12,7 @@ import { fetchMcpEndpoint, readMcpSseMessages } from "../../../core/dist/mcp-tra
 import { GATEWAY_CAPACITY } from "../config.mjs";
 import { createMcpGateway } from "../gateway.mjs";
 import { runStdioBridge } from "../stdio.mjs";
+import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS, testStateDir } from "./helpers/approval-key.mjs";
 
 const running = [];
 afterEach(async () => {
@@ -109,7 +110,8 @@ async function fixture({
 	}));
 	const gateway = createMcpGateway(
 		{
-			stateDir: ".unused-memory-state",
+			stateDir: testStateDir(),
+			approvalKeys: TEST_APPROVAL_KEYS,
 			port: 0,
 			routingRequired: routing,
 			...(tenantQuotas ? { tenantQuotas } : {}),
@@ -212,6 +214,7 @@ async function fixture({
 			bindingSha256,
 			approvedBy: "operator",
 			reason: "Controlled protocol peer",
+			approvalKey: TEST_APPROVAL_KEY,
 		});
 	}
 	return { gateway, post, route, credentials };

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -11,12 +11,23 @@ import { diagnosticReason, OperatorStageError, stage } from "../diagnostics.mjs"
 
 const src = resolve(import.meta.dirname, "..");
 const TOKEN = "t".repeat(40);
+const PASSPHRASE = "diagnostics operator passphrase";
+const approvalKeyPair = generateKeyPairSync("ed25519", {
+	publicKeyEncoding: { type: "spki", format: "pem" },
+	privateKeyEncoding: {
+		type: "pkcs8",
+		format: "pem",
+		cipher: "aes-256-cbc",
+		passphrase: PASSPHRASE,
+	},
+});
 let root;
 let home;
 
 function validConfig() {
 	return {
 		stateDir: join(root, "state"),
+		approvalKeys: { operator: approvalKeyPair.publicKey },
 		port: 0,
 		clients: [
 			{
@@ -40,11 +51,11 @@ function validConfig() {
 	};
 }
 
-function run(entry, args, env = {}) {
+function run(entry, args, env = {}, input = "") {
 	return spawnSync(process.execPath, [join(src, entry), ...args], {
 		env: { ...process.env, HOME: home, USERPROFILE: home, ...env },
 		encoding: "utf8",
-		input: "",
+		input,
 		timeout: 20_000,
 	});
 }
@@ -117,15 +128,24 @@ describe("operator CLI diagnostics", () => {
 
 	it("reports approval and stdio binding failures without echoing arguments", async () => {
 		const config = await writeConfig("valid.json", validConfig());
-		const approval = run("approve.mjs", [
-			config,
-			"tenant-z",
-			"server-a",
-			"a".repeat(64),
-			"b".repeat(64),
-			"operator",
-			"ticket SECRET-REASON",
-		]);
+		const keyFile = join(root, "approval-key.pem");
+		await writeFile(keyFile, approvalKeyPair.privateKey, { mode: 0o600 });
+		const approval = run(
+			"approve.mjs",
+			[
+				"--key",
+				keyFile,
+				config,
+				"tenant-z",
+				"server-a",
+				"a".repeat(64),
+				"b".repeat(64),
+				"operator",
+				"ticket SECRET-REASON",
+			],
+			{},
+			`${PASSPHRASE}\n`,
+		);
 		assert.equal(approval.status, 1);
 		assert.equal(
 			approval.stderr,

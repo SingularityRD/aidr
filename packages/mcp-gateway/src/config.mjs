@@ -1,5 +1,5 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-import { isAbsolute, resolve } from "node:path";
+import { createHash, createPublicKey, timingSafeEqual } from "node:crypto";
+import { isAbsolute, normalize, resolve } from "node:path";
 import { DlpPolicySchema, validateAgentProfileDocument } from "@singularityrd/aidr-core";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
@@ -449,6 +449,44 @@ function validateScopes(clients, servers) {
 	}
 }
 
+function validateStateDir(value) {
+	if (typeof value !== "string" || !value.trim()) throw new GatewayConfigError("invalid stateDir");
+	// A relative stateDir resolves against each process's working directory, so
+	// the gateway and aidr-mcp-approve could silently use different stores.
+	if (!isAbsolute(value)) throw new GatewayConfigError("stateDir must be absolute");
+	return normalize(value);
+}
+
+const MAX_APPROVAL_KEYS = 16;
+
+/**
+ * Operator approval public keys (key id -> Ed25519 SPKI PEM). An approval in
+ * the state directory is honoured only when one of these keys signed it, so a
+ * gateway without them could never serve a tool: refuse the configuration.
+ */
+function validateApprovalKeys(value) {
+	if (value === undefined) throw new GatewayConfigError("missing approvalKeys");
+	if (!record(value)) throw new GatewayConfigError("invalid approvalKeys");
+	const entries = Object.entries(value);
+	if (entries.length === 0 || entries.length > MAX_APPROVAL_KEYS)
+		throw new GatewayConfigError("invalid approvalKeys");
+	const keys = {};
+	for (const [keyId, pem] of entries) {
+		if (!validId(keyId) || typeof pem !== "string")
+			throw new GatewayConfigError("invalid approvalKeys");
+		let publicKey;
+		try {
+			publicKey = createPublicKey(pem);
+		} catch {
+			throw new GatewayConfigError("invalid approval key");
+		}
+		if (publicKey.type !== "public" || publicKey.asymmetricKeyType !== "ed25519")
+			throw new GatewayConfigError("invalid approval key");
+		keys[keyId] = publicKey.export({ type: "spki", format: "pem" }).toString();
+	}
+	return keys;
+}
+
 export function validateGatewayConfig(input) {
 	// The caller may retain or expose its input object. Validate and retain a
 	// detached immutable snapshot so later mutations cannot widen tenant scope,
@@ -458,6 +496,7 @@ export function validateGatewayConfig(input) {
 		input,
 		[
 			"stateDir",
+			"approvalKeys",
 			"port",
 			"maxBodyBytes",
 			"clients",
@@ -481,8 +520,8 @@ export function validateGatewayConfig(input) {
 		throw new GatewayConfigError("invalid stdioUpstreamCredentials");
 	if (input.routingRequired !== undefined && typeof input.routingRequired !== "boolean")
 		throw new GatewayConfigError("invalid routing requirement");
-	if (typeof input.stateDir !== "string" || !input.stateDir.trim())
-		throw new GatewayConfigError("invalid stateDir");
+	const stateDir = validateStateDir(input.stateDir);
+	const approvalKeys = validateApprovalKeys(input.approvalKeys);
 	const port = input.port ?? 7789;
 	if (!Number.isSafeInteger(port) || port < 0 || port > 65535)
 		throw new GatewayConfigError("invalid port");
@@ -509,7 +548,8 @@ export function validateGatewayConfig(input) {
 		throw new GatewayConfigError("mandatory routing requires client credential negative probes");
 	validateScopes(clients, servers);
 	return freezeTree({
-		stateDir: resolve(input.stateDir),
+		stateDir,
+		approvalKeys,
 		port,
 		maxBodyBytes,
 		clients,
