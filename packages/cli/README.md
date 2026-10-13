@@ -143,7 +143,7 @@ signed approval for ingestion on the execution host.
 | `aidr doctor [--json]` | Hosts detected, hooks registered, rule count, core version, mode, DLP policy status, agent permission profiles, approval store and last verdict; exits `1` when any check fails |
 | `aidr support-bundle [--out <path>] [--audit-entries <n>] [--json]` | Write a redacted `.tar.gz` diagnostic bundle (versions, doctor checks, hook registrations, config, recent verdict metadata, threat-rule hashes) and list its contents; never overwrites, uploads nothing, aborts if a redaction check fails. See [docs/support-diagnostics.md](../../docs/support-diagnostics.md) |
 | `aidr pending [--json]` | Blocked agent actions (`ask` verdicts) waiting for an operator decision |
-| `aidr approve <actionId>` | **Operator only.** Approve one retry of exactly that call; 15-minute default (`--ttl <minutes>`), single-use, `--permit-allowlist` to also let the agent allowlist it once |
+| `aidr approve [id]` | **Operator only.** Approve one retry of exactly that call. The id may be its first 8+ characters; with no id an interactive terminal shows a numbered list to pick from; 15-minute default (`--ttl <minutes>`), single-use, `--permit-allowlist` to also let the agent allowlist it once |
 | `aidr allowlist list [--json]` | Show allowlist entries (commands appear as hashes) |
 | `aidr allowlist add <url\|command\|file_path> <value>` | **Operator only.** Add a permanent exception |
 | `aidr allowlist remove <type> <value>` | Remove an entry (command text or hash prefix) |

@@ -68,7 +68,7 @@ reference in §4 is not.
 | Minimum | 1 protected agent | 3 developers | 25 developers | By agreement |
 | Deployment | Local mode; cloud dashboard | Cloud | Cloud or on-prem (Docker Compose) | On-prem (Docker Compose or Helm) or air-gapped |
 | Event retention | 7 days | 90 days | 365 days | Contractual |
-| Catalog features | Local detection, dashboard | + Browser Privacy Guard, Entra ID SSO | + SIEM export, SCIM, AI security posture | + air-gapped deployment, dedicated support |
+| Catalog features | Local detection, dashboard | + Browser Guard, Entra ID SSO | + SIEM export, SCIM, AI security posture | + air-gapped deployment, dedicated support |
 | Motion | Download | Quote now; self-serve once checkout is accepted | Founder-led | Founder-led |
 
 ### Free — one protected agent

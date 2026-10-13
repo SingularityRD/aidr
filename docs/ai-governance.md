@@ -105,7 +105,7 @@ managed-policy JSON for banned built-in AI chat sites; deploy it through your
 browser management (Chrome/Edge policy for the extension).
 
 Shadow AI allow/block from the dashboard: owners and administrators allow or
-block a detected AI service on Browser Privacy Guard → Shadow AI (or here, as an
+block a detected AI service on Browser Guard → Shadow AI (or here, as an
 `ai_site` entry with the catalog id). Each decision is an `upsert_asset` call:
 AAL2, audited (`ai_asset.created` / `ai_asset.status_changed`), optimistic
 versioning, and four-eyes when relaxing a ban with four-eyes on. Enrolled
@@ -124,7 +124,7 @@ The `shadowAi` managed-policy snippet remains the alternative for browsers
 without a control plane.
 
 Require native NER from the dashboard: owners and administrators can make
-Browser Guard's native NER mandatory for every enrolled browser (Browser Privacy
+Browser Guard's native NER mandatory for every enrolled browser (Browser Guard
 Guard → Require native NER). The `update_browser_guard_settings` action (AAL2,
 rate-limited) calls the `update_browser_guard_settings` RPC, which re-checks
 owner/admin on an active tenant under row locks, stores

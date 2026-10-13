@@ -65,9 +65,9 @@ file contents. The telemetry redactor is also applied to them.
 - `ask` / `deny`: fixed.
 - `monitor`: the call is allowed. The finding is recorded in the audit log (`toxic_flow_monitor`) so you can tune the settings before you enforce them.
 
-An `ask` blocks the call until a human approves it out of band, as every other `ask`
+An `ask` blocks the call until a person approves it outside the agent, as every other `ask`
 does. In Claude Code the native permission dialog asks the user. In OpenClaw, OpenCode and
-Codex the operator approves it with `aidr approve <actionId>` in their own terminal. The
+Codex the user approves it with `aidr approve <first 8 characters of the id>` in their own terminal. The
 agent cannot approve its own block.
 
 Other layers still decide first. A call that another layer denied is not recorded, because

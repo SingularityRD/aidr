@@ -661,8 +661,9 @@ MCP gateway) gets it. See [Toxic-flow detection](toxic-flow.md) for the model.
   `injection_to_action` (`AIDR-FLOW-003`), `bulk_sensitive_access` (`AIDR-FLOW-004`). The verdict
   category is `toxic_flow` and the reason names the chain, the earlier steps (tool plus a redacted
   target summary and age) and this call.
-- An `ask` is a block pending out-of-band approval like any other (`aidr pending` /
-  `aidr approve <actionId>` on soft-gated connectors, the native dialog in Claude Code).
+- An `ask` is blocked until a person approves it, like any other (`aidr pending` /
+  `aidr approve <first 8 characters of the id>` in the user's own terminal on soft-gated
+  connectors, the native dialog in Claude Code).
 - Calls the operator allowlisted are recorded but never escalated.
 - Failure policy: a state file that cannot be read or written is a skipped signal; the call is
   evaluated by every other layer and an `allow` is marked `toxic_flow_unavailable` in the audit
@@ -811,7 +812,7 @@ noise over 40 spawns per variant.
 
 One of `"paranoid"`, `"balanced"`, or `"relaxed"`. Default: `"balanced"`. See [How It Works](how-it-works.md#sensitivity-presets).
 
-In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw, OpenCode and Codex, and a deny can never be released by an operator approval. Those connectors cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a human approves it out of band with `aidr approve` (see [Operator approvals](#operator-approvals)); the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
+In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw, OpenCode and Codex, and a deny can never be released by an operator approval. Those connectors cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a person approves it in their own terminal with `aidr approve` (see [Operator approvals](#operator-approvals)); the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
 
 ### `locale`
 
@@ -857,9 +858,10 @@ VS Code hooks. OpenClaw, OpenCode and Codex always use the operator channel.
   record is informational only: it has no integrity MAC, is stored apart from
   approvable asks, and `aidr approve` refuses it.
 - `"operator"`: the host's dialog is never shown. The call is **denied** with the
-  same approval reference the soft-gated connectors use (`actionId: "…"`, plus
-  "you cannot approve this action yourself"), the ask is recorded as an
-  approvable pending ask, and after `aidr approve <actionId>` in the user's own
+  same block message the soft-gated connectors use (its first step is the command to
+  run, `aidr approve <first 8 characters of the id>`, followed by the full approval
+  reference and the line telling the agent it cannot approve the action), the ask is
+  recorded as an approvable pending ask, and after `aidr approve` in the user's own
   terminal exactly **one** retry of the identical call is released — the same
   HMAC-signed store, OS-vault key and single-use consumption ledger as every other
   operator approval. In `paranoid` sensitivity the ask is a plain deny, as on the
@@ -1069,25 +1071,30 @@ sent to the AIDR dashboard for an administrator to approve — see
    `aidr pending` says "showing 16 of 40 (truncated)" when a call had more
    artifacts than are previewed. The CLI escapes again at display time.
 2. The operator reviews open asks with `aidr pending` (times in the machine's
-   local time zone) and approves one with `aidr approve <actionId>`. The id may
+   local time zone) and approves one with `aidr approve <id>`. The id may
    be shortened to a unique prefix of at least 8 hex characters; in an
    interactive terminal `aidr approve` with no id lists the waiting asks
    numbered to pick from. The CLI prints what will be released and requires
    the operator to type `approve` in an interactive terminal. For automation it
    accepts `--yes` only when `AIDR_OPERATOR_NONINTERACTIVE=1` is also set, and
-   then the id is required.
+   then the full 64-character id is required. After approval it prints "Approved.
+   Ask the agent to retry within 15 minutes." (the `--ttl` minutes).
 3. The approval records `{actionId, artifactDigest, tool, approvedAt, expiresAt,
    approver}`. It expires after 15 minutes (`--ttl <minutes>`, 1–1440) and is
    **single-use**: the first retry of the identical call (same tool, same
    artifacts, same session) spends it, and later retries are blocked again. A
    different command, tool or session is never released by it, and a `deny` —
    including a paranoid-promoted `ask` — is never released at all.
-4. `aidr approve <actionId> --permit-allowlist` additionally lets the agent's
+4. `aidr approve <id> --permit-allowlist` additionally lets the agent's
    `aidr_allowlist_add` tool turn each approved artifact into one permanent
    allowlist entry. Without that flag the agent cannot allowlist anything.
 
 | CLI | Purpose |
 |-----|---------|
+| `aidr setup [--dry-run] [--host <ids>] [--no-install] [--release-key <file.pem>] [--force] [--yes]` | Configure AIDR and install or update the connector of every detected AI tool (idempotent). `--release-key` sets up the release public key (Ed25519 PEM) for a manual install after operator confirmation; the desktop installers provision it themselves. Exit code `0` protected, `3` no supported AI tool found yet (nothing changed, not an error; the installers still complete), `1` a real problem |
+| `aidr status [--json]` | Measured installation state, ending with one line: protected tools, tools to restart, manual steps |
+| `aidr verify [--json]` | Pass a harmless canary (data only, never executed) through each registered connector's hook; PASS / FAIL / SKIP per AI tool |
+| `aidr update [--check] [--from <location>] [--catalog <location>] [--allow-downgrade] [--yes] [--json]` | Desktop-installer endpoints only: verify the signed catalog and the installer's SHA-256, install, run `aidr verify`, roll back on failure; see [`update`](#update) |
 | `aidr pending [--json]` | List asks waiting for a decision (and say so when approvals are disabled) |
 | `aidr approve [actionId\|prefix] [--ttl <min>] [--permit-allowlist] [--yes]` | Approve one retry (operator only); no id in a terminal = pick from a numbered list |
 | `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |

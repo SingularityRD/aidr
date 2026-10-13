@@ -69,7 +69,7 @@ installing one (`aidr setup`). Any other non-zero code is a real setup problem.
 ### Windows
 
 1. Download `singularity-aidr-<version>-windows-x64.msi` from the AIDR
-   dashboard's Download page.
+   dashboard's **Downloads** page.
 2. Double-click it and accept the prompt. Setup runs for you at the end.
 3. Restart your AI tools (Claude Code, Cursor, VS Code, ...). Open a new
    terminal and run `aidr status`, then `aidr verify`.
@@ -123,6 +123,28 @@ entry point as data — nothing is executed — and reports per host:
 
 Neither command proves that a host executes the hook; that needs the host
 itself (see the [first-customer runbook](../../deploy/FIRST_CUSTOMER.md)).
+
+`aidr doctor` prints one line per check (configuration, release key, detection,
+connectors, DLP, profiles, approvals, last verdict) and exits non-zero when one
+fails; `aidr doctor --verbose` adds the reason, the path and the fix under each
+line.
+
+## Approving a blocked action
+
+Some actions are held until a person approves them (for example `terraform
+destroy` or reading `.env`). On Codex, OpenCode and OpenClaw (and on every host
+with `operator_approvals.mode: "operator"`) the block message starts with the
+command to run in your own terminal, for example:
+
+```sh
+aidr approve 3f9c2a7b   # the first 8 characters of the id are enough; type "approve"
+aidr approve            # no id: pick from a numbered list of waiting actions
+aidr pending            # list everything that is waiting
+```
+
+AIDR then prints "Approved. Ask the agent to retry within 15 minutes."; the
+approval allows that one call once. The AI tool itself can never approve.
+Claude Code shows its own Yes / No dialog by default instead.
 
 ## Silent and managed deployment
 
@@ -322,6 +344,9 @@ every registration and rerun setup for the installing user.
 - **Every tool call is blocked with "the release key … is not set up"** — run
   `aidr setup` as that user (it sets up the key the installer ships), or
   `aidr setup --release-key <file.pem>` for a manual install.
+- **Anything else** — `aidr doctor --verbose` shows the reason and the fix for
+  each failing check; send it, or the archive from `aidr support-bundle`, to
+  support.
 - **Installer size** — one self-contained program serves the CLI and every
   hook, so the installed bundle is about 150 MB (it was about 900 MB with one
   program per hook).

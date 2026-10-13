@@ -2,7 +2,7 @@
 
 Türkçe: [download-portal.tr.md](download-portal.tr.md)
 
-Customers download the AIDR installer from the dashboard **Download** page
+Customers download the AIDR installer from the dashboard **Downloads** page
 (`/downloads`, also step 1 of onboarding). The page detects the visitor's
 operating system, highlights the matching installer, lists the other platforms
 with size, SHA-256 and a copyable checksum command, and shows the Browser Guard

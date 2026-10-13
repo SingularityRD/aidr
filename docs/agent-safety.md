@@ -20,8 +20,8 @@ network access.
 
 An `ask` is a block pending human approval, exactly like every other AIDR `ask`: Claude Code,
 Cursor and VS Code show their native confirmation dialog; OpenClaw, OpenCode and Codex keep the
-call blocked until an operator approves the exact call out of band (`aidr pending`,
-`aidr approve <actionId>`) or, in managed mode, in the dashboard. The agent is never given a
+call blocked until a person approves the exact call in their own terminal (`aidr pending`,
+`aidr approve <first 8 characters of the id>`) or, in managed mode, in the dashboard. The agent is never given a
 way to approve its own block. Every verdict names the specific reason, for example
 *"Test skipped or disabled in a test file (it.skip / xit / @pytest.mark.skip / t.Skip /
 @Disabled)"* or *"Runaway guard paused this session for human review: The same tool call was

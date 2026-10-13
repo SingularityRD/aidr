@@ -142,7 +142,7 @@ settings and receipts are deleted with the telemetry phase.
 ## 4. AI acceptable-use notice (AI literacy)
 
 Administrators publish an acceptable-use notice in the Browser Guard managed policy
-(key `acceptableUse`; the **Browser Privacy** page builds the JSON):
+(key `acceptableUse`; the **Browser Guard** page builds the JSON):
 
 ```json
 {

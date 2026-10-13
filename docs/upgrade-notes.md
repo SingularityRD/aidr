@@ -72,8 +72,8 @@ call. See [Licensing](operations/licensing.md).
 - **Session toxic-flow detection** (`toxic_flow`, on by default): the call that completes a
   private-data + untrusted-content + external-communication chain is asked (balanced) or
   denied (paranoid). See [Toxic flow](toxic-flow.md).
-- **Operator approvals**: an `ask` is released only by an out-of-band operator approval
-  (`aidr approve <actionId>`, or the dashboard in managed mode). No connector gives the agent
+- **Operator approvals**: an `ask` is released only by a person's approval outside the agent
+  (`aidr approve <first 8 characters of the id>` in their own terminal, or the dashboard in managed mode). No connector gives the agent
   an approval tool. See [Configuration](configuration.md#operator_approvals).
 - **Shell argv inspection**: argv-array shell commands are normalised and inspected; a
   command that is neither a string nor valid argv is denied as `malformed_command`.

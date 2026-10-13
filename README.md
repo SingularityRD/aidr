@@ -27,15 +27,15 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 | **AIDR for AI coding agents** | Connectors for Claude Code, OpenClaw, OpenCode and Codex CLI, plus Cursor and VS Code as a preview, share one local decision engine that returns `allow`, `deny` or `ask`. Tested host versions are in the [compatibility matrix](docs/compatibility-matrix.md). The [MCP Gateway](packages/mcp-gateway/README.md) inspects MCP tool results before they reach a model, the [SDK](packages/sdk/README.md) adds the same checks to your own applications, and the [CLI](packages/cli/) handles setup, status and AI-infrastructure scans. | [Product overview](docs/product/overview.md) |
 | **AIDR Browser Guard** | Chrome, Edge and Firefox extension. Masks Turkish and English personal data (T.C. kimlik numbers, IBANs, phone numbers, email addresses, card numbers), secrets and API keys, custom terms and exact-data-match fingerprints before prompts, pastes and files reach ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral or Grok. Placeholders such as `[EMAIL_1]` are restored locally in the response. Supports administrator-managed policy and counts-only telemetry. | [Browser Guard](packages/browser-guard/README.md) |
 | **AIDR Privacy engine** | TR/EN detection and masking with checksum validation, used by Browser Guard, and an optional enterprise gateway. The endpoint native host for NER/OCR ships without a model and is not part of the first-release support scope. | [AIDR Privacy](packages/privacy/README.md) |
-| **AI Security Posture** | Finds weak spots in the AI stack around your agents. `aidr scan --target` fingerprints AI services (146 AI component fingerprints) and matches their versions against 2,000+ CVE rules, with severity and CVSS. `aidr discover` inventories local MCP servers and maps them to 14 MCP risk categories. `aidr scan --skill` and the session-start plugin scan check skills and plugins against the T01–T09 taxonomy. Findings can be uploaded to the dashboard's Posture view as identifiers and digests only; target URLs, file paths and matched text stay on the machine. | [AI Security Posture](docs/ai-security-posture.md) |
+| **AI Security Posture** | Finds weak spots in the AI stack around your agents. `aidr scan --target` fingerprints AI services (146 AI component fingerprints) and matches their versions against 2,000+ CVE rules, with severity and CVSS. `aidr discover` inventories local MCP servers and maps them to 14 MCP risk categories. `aidr scan --skill` and the session-start plugin scan check skills and plugins against the T01–T09 taxonomy. Findings can be uploaded to the dashboard's Security posture page as identifiers and digests only; target URLs, file paths and matched text stay on the machine. | [AI Security Posture](docs/ai-security-posture.md) |
 
 ## Deployment options
 
 | Option | Summary | Guide |
 | --- | --- | --- |
-| **Local detection (no account)** | Every connector evaluates every tool call on the device; detection needs no account, enrollment or network. Signed release builds are managed-only and need the release trust key (`integrity.public_keys_pem`) before first start, but detect locally before enrollment. Browser Guard masks prompts in the browser. | [Configuration](docs/configuration.md), [Integrity](docs/integrity.md) |
+| **Local detection (no account)** | Every connector evaluates every tool call on the device; detection needs no account, enrollment or network. Signed release builds are managed-only and need the release trust key before first start (the Windows/Linux installers set it up; a manual install runs `aidr setup --release-key <file.pem>`), but detect locally before enrollment. Browser Guard masks prompts in the browser. | [Configuration](docs/configuration.md), [Integrity](docs/integrity.md) |
 | **Cloud (SaaS)** | Hosted control plane: dashboard, device enrollment, central policy, audit export, SSO/SCIM. Local enforcement keeps working if the service is unreachable or the entitlement lapses; only managed features stop. | [SaaS deployment](docs/deployment/saas.md) |
-| **On-premises** | Customer-operated control plane on Docker Compose or Kubernetes (Helm), including an air-gapped path with a signed offline license and signed rule/intel packs. | [On-prem deployment](docs/deployment/onprem.md) |
+| **On-premises** | Customer-operated control plane on Docker Compose or Kubernetes (Helm), including an air-gapped path with a signed offline license and signed rule/intel packs. A Compose installation upgrades with one command (`pnpm onprem:upgrade --to <new release directory>`: backup, checks, upgrade, health check). | [On-prem deployment](docs/deployment/onprem.md), [Upgrading](docs/operations/onprem-upgrade.md) |
 
 ## Plans
 
@@ -48,20 +48,25 @@ are listed in the [product catalog](docs/sales/catalog/README.md).
 
 **Zero to protected in one page:** [Quickstart (English)](docs/quickstart.md) ·
 [Hızlı başlangıç (Türkçe)](docs/quickstart.tr.md). It covers a developer laptop (Windows
-or Linux installer, then `aidr status` and `aidr verify`), an office user (Browser Guard),
-the IT admin (silent install, Browser Guard force-install, approvals) and on-prem. All
-guides by role: [Installation guides](docs/installation/README.md).
+or Linux installer from the dashboard **Downloads** page, then `aidr status` and
+`aidr verify`; `aidr update` keeps it current), an office user (Browser Guard from the
+browser stores), the IT admin (silent install, Browser Guard force-install or self-hosted
+updates, approvals with `aidr approve <first 8 characters of the id>`) and on-prem. macOS
+installers are not offered. All guides by role:
+[Installation guides](docs/installation/README.md).
 
 The connector-by-connector path below is for hosts and systems the desktop installers do
 not cover, such as macOS. Install only a signed, approved release (see [Release status](#release-status)). Source
 builds are for development.
 
 1. **Provision the release trust key first.** Release builds are managed-only and verify
-   their signed artifacts before inspecting anything. Put the independently distributed
-   Ed25519 public key in `integrity.public_keys_pem` in `~/.singularity-aidr/config.json`
+   their signed artifacts before inspecting anything. Run
+   `aidr setup --release-key <file.pem>` with the independently distributed Ed25519
+   public key; it writes `integrity.public_keys_pem` in `~/.singularity-aidr/config.json`
    (Windows `%USERPROFILE%\.singularity-aidr\config.json`), as described in
    [Integrity verification](docs/integrity.md). Without it the connector blocks every tool
-   call (`Singularity AIDR inspection unavailable`).
+   call and says why ("cannot verify its own installation (release verification key
+   missing)").
 2. **Install the connector** for your runtime (below). Local detection is active as soon as
    it is installed, before any enrollment.
 3. **Optionally enroll** for managed features; they need a control plane and a signed
@@ -78,8 +83,8 @@ versions, and the [upgrade notes](docs/upgrade-notes.md) when moving between rel
 | **OpenCode** | Install the approved `@singularityrd/aidr-opencode` version from the private registry. [Guide](docs/platform-guides/opencode.md) |
 | **Codex CLI** | Install `@singularityrd/aidr-codex`, register `aidr-codex-hook` as a `PreToolUse` and a `UserPromptSubmit` (prompt protection) hook and trust both with `/hooks`. [Guide](docs/platform-guides/codex.md) |
 | **MCP Gateway** | Run the loopback gateway with a signed configuration and point MCP clients at it. [Gateway README](packages/mcp-gateway/README.md) |
-| **Browser Guard** | Deploy the extension to Chrome, Edge or Firefox, or push it with enterprise browser policy using [`managed_schema.json`](packages/browser-guard/static/managed_schema.json). [Browser Guard](packages/browser-guard/README.md) |
-| **CLI** | `aidr setup` (detects the installed agent hosts and installs or updates their connectors; `--dry-run` to preview), `aidr status`, `aidr uninstall`, `aidr scan --target <url>`. [Package Installation](docs/package-installation.md) |
+| **Browser Guard** | Install from the unlisted Chrome Web Store / Edge Add-ons listings (the stores keep it updated) or the Mozilla-signed Firefox XPI, or push it with enterprise browser policy using [`managed_schema.json`](packages/browser-guard/static/managed_schema.json); networks without store access host the signed package and its update feed themselves. [Browser Guard](packages/browser-guard/README.md), [enterprise deployment](docs/installation/browser-guard-enterprise.md) |
+| **CLI** | `aidr setup` (detects the installed AI tools and installs or updates their connectors; `--dry-run` to preview; `--release-key <file.pem>` for a manual install; exit code `3` = no AI tool found yet), `aidr status`, `aidr verify` (harmless canary through each hook: PASS / FAIL / SKIP), `aidr doctor` (`--verbose` explains each check), `aidr pending` / `aidr approve [id]` (first 8 characters of the id, or a numbered pick), `aidr update` (installer endpoints; `update.auto`), `aidr uninstall`, `aidr scan --target <url>`. [Package Installation](docs/package-installation.md) |
 
 Private registry credentials and versioned setup are in
 [Package Installation](docs/package-installation.md); the full flow is in

@@ -119,7 +119,9 @@ Approval is an **out-of-band, human-only action**:
    ask in the operator approval store (`~/.singularity-aidr/approvals.json`)
 2. The model reports that reference to the user and stops
 3. In their own terminal the user runs `aidr pending` to review the call and
-   `aidr approve <actionId>` to approve it (interactive confirmation). The
+   `aidr approve <first 8 characters of the id>` (the command the block message shows,
+   or `aidr approve` alone to pick from a numbered list) to approve it (interactive
+   confirmation). The
    approval is HMAC-protected, bound to the exact tool and artifact set, expires
    after 15 minutes by default and is single-use. Alternatively the user
    permanently allowlists the artifact with `aidr allowlist add`.
@@ -138,8 +140,8 @@ dashboard the only channel. Local mode is unchanged. See
 Singularity AIDR also provides:
 
 - `aidr_allowlist_add` to permanently allow a URL/command/file path (**requires a
-  prior out-of-band approval** granted with `aidr approve <actionId>
-  --permit-allowlist`; knowing an `actionId` is not approval)
+  prior approval by the user in their own terminal** granted with
+  `aidr approve <id> --permit-allowlist`; knowing an `actionId` is not approval)
 - `aidr_allowlist_remove` to remove an allowlisted entry
 
 ### Honest limitation
