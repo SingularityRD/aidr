@@ -25,7 +25,7 @@ import {
 	type TelemetryConfig,
 	type UserSettings,
 } from "../types.js";
-import { SITE_HOSTS } from "./dnr.js";
+import { SITE_HOSTS, SITE_PATHS } from "./dnr.js";
 import { sha256Hex } from "./sha256.js";
 
 const MIB = 1024 * 1024;
@@ -350,7 +350,13 @@ const HOSTNAME_PATTERN =
 	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 /** Labels must not carry control characters. */
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
-const BUILT_IN_HOSTS: ReadonlySet<string> = new Set(Object.values(SITE_HOSTS).flat());
+/** Hosts a built-in site runs on, shared hosts (Microsoft 365) included. */
+const BUILT_IN_HOSTS: ReadonlySet<string> = new Set([
+	...Object.values(SITE_HOSTS).flat(),
+	...Object.values(SITE_PATHS)
+		.flat()
+		.map((p) => p.host),
+]);
 
 /**
  * Normalises one configured custom-site host: a bare hostname or an `https://host[/]`

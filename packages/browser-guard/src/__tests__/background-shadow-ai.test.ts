@@ -91,6 +91,7 @@ describe("policy: customSites", () => {
 		["single label", [{ ...INTERNAL, hosts: ["intranet"] }]],
 		["IP address", [{ ...INTERNAL, hosts: ["10.0.0.5"] }]],
 		["built-in host", [{ ...INTERNAL, hosts: ["chatgpt.com"] }]],
+		["shared Microsoft 365 host", [{ ...INTERNAL, hosts: ["m365.cloud.microsoft"] }]],
 		["no hosts", [{ ...INTERNAL, hosts: [] }]],
 		[
 			"too many hosts",
