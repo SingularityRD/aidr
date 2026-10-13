@@ -671,7 +671,7 @@
       "point": "post-tool-output",
       "status": "unsupported",
       "hostBoundary": null,
-      "reason": "The declared connector contract records output-before-model-consumption enforcement as unavailable and canBlockOutputBeforeModelConsumption as false; Codex exposes no output-side hook for this connector.",
+      "reason": "The declared connector contract records output-before-model-consumption enforcement as unavailable and canBlockOutputBeforeModelConsumption as false; the PostToolUse handler runs after the tool and its result replacement is taken from host source, not observed on a real host.",
       "evidence": [
         {
           "kind": "host-capability-record",
@@ -680,7 +680,7 @@
         }
       ],
       "limitations": [
-        "Tool output is not inspected at all on this connector."
+        "Tool output is inspected only after execution: the PostToolUse handler (matcher ^(Bash|mcp__.+)$) blocks Bash and MCP results that carry secrets, injection or canaries. The codex-cli 0.141.0 source replaces a blocked result with the reason, but no real-host record shows it, so pre-model output enforcement is not claimed."
       ]
     },
     {

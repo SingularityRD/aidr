@@ -1,7 +1,7 @@
 # @singularityrd/aidr-codex
 
 Singularity AIDR's `PreToolUse` connector for the **OpenAI Codex CLI** (`codex`)
-evaluates named `Bash` and `apply_patch` calls only when an enabled, trusted hook
+evaluates named `Bash`, `apply_patch` and MCP (`mcp__*`) calls only when an enabled, trusted hook
 forwards them and returns a verdict. Codex enforces that verdict; disabled,
 untrusted, crashed, timed-out, or out-of-matcher paths can proceed. The same hook,
 registered for `UserPromptSubmit`, also provides prompt protection (secrets block,
@@ -53,7 +53,7 @@ configuration and package are installed, register the hook with Codex:
 ```toml
 # ~/.codex/config.toml
 [[hooks.PreToolUse]]
-matcher = "^(Bash|apply_patch)$"
+matcher = "^(Bash|apply_patch|mcp__.+)$"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
@@ -86,7 +86,7 @@ Or equivalently, in `~/.codex/hooks.json`:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(Bash|apply_patch)$",
+        "matcher": "^(Bash|apply_patch|mcp__.+)$",
         "hooks": [{ "type": "command", "command": "aidr-codex-hook", "timeout": 10 }]
       }
     ],
@@ -202,8 +202,12 @@ injected instructions, leaked secrets and canary values.
 In codex-cli 0.141.0's source (`codex-rs/core/src/tools/registry.rs` at
 `rust-v0.141.0`) a `PostToolUse` block makes Codex hand the model the reason in
 place of the tool result; the tool itself already ran. That replacement has not
-been observed in a live Codex session, so `--health` keeps reporting output
-inspection as `post_execution_observation` and `inlineOutputBlocking: false`.
+been observed in a live Codex session (the real-host record covers `PreToolUse`
+and `UserPromptSubmit` only), so **no pre-model output enforcement is claimed for
+Codex**: `--health` reports output inspection as `post_execution_observation` and
+`inlineOutputBlocking: false`, and the support matrix lists the output side as a
+known bypass. Do not sell tool-output DLP on Codex until a real-host run shows the
+replacement.
 
 Findings also feed session-level detection: secrets become private data and
 injection payloads untrusted content for toxic-flow chains
@@ -323,9 +327,21 @@ verified on the endpoint.
 
 ## Scope
 
-The packaged matcher covers `Bash` and `apply_patch` tool calls before
-execution. It does not inspect or quarantine their output before the model
-consumes it. MCP and other local function tools are outside this matcher;
-hosted tools such as `WebSearch` do not pass through the tool-hook path, and
-some specialized paths may opt out. Only the named, tested tool and host
-versions belong in an enforcement claim.
+The shipped matchers (`CODEX_SHIPPED_MATCHERS` in `src/coverage.ts`, reported by
+`--health` as `toolMatchers`):
+
+| Event | Matcher | Covers |
+|---|---|---|
+| `PreToolUse` | `^(Bash\|apply_patch\|mcp__.+)$` | shell commands (incl. unified exec), `apply_patch`, MCP tool calls, before they run |
+| `PostToolUse` | `^(Bash\|mcp__.+)$` | `Bash` and MCP results, after the tool ran (observation; see above) |
+
+Enforcement evidence differs per path. A real host (`codex-cli` 0.141.0) refused a
+`Bash` call; MCP tool names reaching the hook follow the 0.141.0 source and
+reference (`mcp__<server>__<tool>`) and the connector's own tests, not a real-host
+record. Not covered, and listed by `--health` as `uncoveredToolPaths`: other local
+function tools such as `update_plan` (outside the matcher), hosted tools such as
+`WebSearch` (never hooked by the host), specialized paths that opt out of the
+hook path, `write_stdin` polls (they do not re-run `PreToolUse`) and `apply_patch`
+output. Tool output is not withheld from the model on a proven basis (see
+"Tool-output inspection"). Only the named, tested tool and host versions belong in
+an enforcement claim.

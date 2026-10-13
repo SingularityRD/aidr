@@ -256,9 +256,9 @@ const codex = {
 		const hook = path.join(REPO_ROOT, "packages", "codex", "dist", "pre-tool-use.cjs");
 		const command = mode === "crash" ? `node "${CRASH_HOOK}"` : `node "${hook}"`;
 		if (mode !== "absent") {
-			// PascalCase event names, as packages/codex/README.md documents.
+			// PascalCase event names and the shipped matcher, as packages/codex/README.md documents.
 			const hooks = {
-				PreToolUse: [{ matcher: "^(Bash|apply_patch)$", hooks: [{ type: "command", command, timeout: 10 }] }],
+				PreToolUse: [{ matcher: "^(Bash|apply_patch|mcp__.+)$", hooks: [{ type: "command", command, timeout: 10 }] }],
 			};
 			if (mode === "installed") hooks.UserPromptSubmit = [{ hooks: [{ type: "command", command, timeout: 10 }] }];
 			writeFileSync(path.join(codexHome, "hooks.json"), `${JSON.stringify({ hooks }, null, 2)}\n`);
