@@ -2157,7 +2157,7 @@ application teams put the same verdict contract in front of their own tools.
 | `ask` without `onAsk`, or `onAsk` false/throws | Blocks |
 | Indeterminate (check failed or inconsistent) | Blocks; approvable only with `allowApprovalOfIndeterminateResults: true` |
 
-Express/Next.js return HTTP 403 with an explicit reason. `guardToolOutput` inspects results
+Express/Next.js return a generic HTTP 403 (`error` + `requestId`; the reason goes to the server-side `onBlocked` hook) and also inspect non-credential request headers. `guardToolOutput` inspects results
 (256 KiB default) and blocks or redacts findings. URL reputation is off by default
 (`urlReputationEnabled: true` to opt in). `init()` fails loudly if no rules can be loaded.
 
@@ -2166,7 +2166,7 @@ Express/Next.js return HTTP 403 with an explicit reason. `guardToolOutput` inspe
 ```ts
 import { AIDRClient, createMiddleware } from "@singularityrd/aidr-sdk";
 
-const client = new AIDRClient({ apiKey: process.env.AIDR_API_KEY! });
+const client = new AIDRClient({}); // local mode: no API key needed
 const middleware = createMiddleware(client, {
   onAsk: async (result) => await askOperatorInTerminal(result), // caller-supplied, out of band
 });

@@ -5,20 +5,39 @@ import { z } from "zod";
  * SDK Configuration Schema
  */
 
-export const SDKConfigSchema = z.object({
-	apiKey: z.string().trim().min(1, "API key is required"),
-	baseUrl: z.string().url().optional(),
-	timeout: z.number().min(1000).max(60000).default(5000),
-	retries: z.number().int().min(0).max(5).default(2),
-	cache: z.boolean().default(true),
-	cacheTtl: z.number().min(60000).max(86400000).default(300000), // 5 minutes
-	environment: z.enum(["production", "staging", "development"]).default("production"),
-	/** Share fetch URLs with the configured reputation provider. Off unless explicitly enabled. */
-	urlReputationEnabled: z.boolean().default(false),
-	/** Include query parameters in reputation requests; credentials/fragments are always withheld. */
-	includeUrlQueryParameters: z.boolean().default(false),
-	logger: z.any().optional(), // pino.Logger compatible
-});
+export const SDKConfigSchema = z
+	.object({
+		/**
+		 * Bearer credential for the remote URL-reputation leg. Optional: local
+		 * enforcement (the default — rules evaluated in-process, no network) needs no
+		 * account or key. A key that is given but blank is rejected as a
+		 * misconfiguration (for example an empty environment variable).
+		 */
+		apiKey: z.string().trim().min(1, "apiKey, when given, must not be empty").optional(),
+		baseUrl: z.string().url().optional(),
+		timeout: z.number().min(1000).max(60000).default(5000),
+		retries: z.number().int().min(0).max(5).default(2),
+		cache: z.boolean().default(true),
+		cacheTtl: z.number().min(60000).max(86400000).default(300000), // 5 minutes
+		environment: z.enum(["production", "staging", "development"]).default("production"),
+		/** Share fetch URLs with the configured reputation provider. Off unless explicitly enabled. */
+		urlReputationEnabled: z.boolean().default(false),
+		/** Include query parameters in reputation requests; credentials/fragments are always withheld. */
+		includeUrlQueryParameters: z.boolean().default(false),
+		logger: z.any().optional(), // pino.Logger compatible
+	})
+	.superRefine((config, ctx) => {
+		// The only remote leg the SDK calls is URL reputation; enabling it without a
+		// credential would send unauthenticated lookups that can only fail.
+		if (config.urlReputationEnabled && !config.apiKey) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["apiKey"],
+				message:
+					"apiKey is required when urlReputationEnabled is true (local-only enforcement needs no key)",
+			});
+		}
+	});
 
 export type SDKConfig = z.infer<typeof SDKConfigSchema>;
 /** Constructor input; fields with schema defaults may be omitted. */

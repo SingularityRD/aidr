@@ -2222,7 +2222,7 @@ uygulama ekiplerinin aynı karar sözleşmesini kendi araçlarının önüne koy
 | `onAsk` olmadan `ask`, ya da `onAsk` false döndürür / hata fırlatır | Engeller |
 | Belirsiz (kontrol başarısız veya tutarsız) | Engeller; yalnızca `allowApprovalOfIndeterminateResults: true` ile onaylanabilir |
 
-Express/Next.js açık bir gerekçeyle HTTP 403 döndürür. `guardToolOutput` sonuçları inceler
+Express/Next.js genel bir HTTP 403 döndürür (`error` + `requestId`; gerekçe sunucu tarafındaki `onBlocked` kancasına gider) ve kimlik bilgisi taşımayan istek başlıklarını da inceler. `guardToolOutput` sonuçları inceler
 (varsayılan 256 KiB) ve bulguları engeller veya maskeler. URL itibarı varsayılan olarak
 kapalıdır (açmak için `urlReputationEnabled: true`). Hiç kural yüklenemezse `init()` açıkça
 hata verir.
@@ -2232,7 +2232,7 @@ hata verir.
 ```ts
 import { AIDRClient, createMiddleware } from "@singularityrd/aidr-sdk";
 
-const client = new AIDRClient({ apiKey: process.env.AIDR_API_KEY! });
+const client = new AIDRClient({}); // yerel mod: API anahtarı gerekmez
 const middleware = createMiddleware(client, {
   onAsk: async (result) => await askOperatorInTerminal(result), // çağıran sağlar, bant dışı
 });

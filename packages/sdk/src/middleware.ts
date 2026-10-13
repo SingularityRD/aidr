@@ -1,7 +1,54 @@
+import { randomUUID } from "node:crypto";
 import { type AIDRClient, HTTP_REQUEST_ACTION, MAX_CONTEXT_BODY_CHARS } from "./client.js";
 import type { CheckRequest, CheckResult, MiddlewareFn } from "./config.js";
 import { type ApprovalCallback, enforceCheckResult } from "./enforcement.js";
+import { type IncomingHeaderValue, partitionHeaders } from "./http-headers.js";
 import { assertPrivacyCallbacksAllowed } from "./privacy-text.js";
+
+/**
+ * A blocked or failed HTTP request, reported to the server-side
+ * `onBlocked` hook. This is where the full verdict goes: the remote caller
+ * only ever sees the generic body plus `requestId`, so the two can be joined
+ * in the application's own (trusted) logs.
+ */
+export type BlockedRequestEvent =
+	| {
+			kind: "blocked";
+			requestId: string;
+			method: string;
+			/** Enforcement message (deny / ask / indeterminate), as `wrap()` would throw. */
+			reason: string;
+			result: CheckResult;
+	  }
+	| {
+			kind: "error";
+			requestId: string;
+			method: string;
+			/** The original error (may name filesystem paths); never sent to the client. */
+			error: Error;
+	  };
+
+/** Generic body of every SDK 403. Deliberately carries no rule id or reason. */
+export const BLOCKED_RESPONSE_ERROR = "Request blocked by security policy";
+/** Generic message of the error passed to `next()` / returned when the check itself fails. */
+export const CHECK_UNAVAILABLE_ERROR = "Security check unavailable";
+
+/**
+ * The error Express receives through `next(err)` when the security check could
+ * not run (rule data missing, invalid configuration, ...). Its message and stack
+ * are fixed so Express's development error page cannot render internal paths;
+ * the original error goes to `onBlocked` only.
+ */
+export class AIDRSecurityCheckUnavailableError extends Error {
+	readonly status = 503;
+	readonly statusCode = 503;
+	readonly expose = false;
+	constructor(readonly requestId: string) {
+		super(CHECK_UNAVAILABLE_ERROR);
+		this.name = "AIDRSecurityCheckUnavailableError";
+		this.stack = `${this.name}: ${this.message} (request ${requestId})`;
+	}
+}
 
 /**
  * Options for the SDK middleware surface (`wrap`, `express`, `nextjs`).
@@ -24,6 +71,29 @@ export interface MiddlewareEnforcementOptions {
 	 * broken check can never be turned into an approval.
 	 */
 	allowApprovalOfIndeterminateResults?: boolean;
+	/**
+	 * `express()` / `nextjs()` only. Include the enforcement `reason` and the full
+	 * `CheckResult` (rule id, matched reasons) in 403 bodies. Defaults to `false`:
+	 * the remote caller is untrusted, and returning the rule that fired gives it an
+	 * oracle for evading detection. Enable only for trusted internal callers; for
+	 * logs use `onBlocked` instead.
+	 */
+	exposeDecisionDetails?: boolean;
+	/**
+	 * `express()` / `nextjs()` only. Server-side hook called for every blocked
+	 * request and every failed check, with the full verdict or error and the
+	 * `requestId` the client received. A throwing hook is ignored (the request
+	 * stays blocked). Suppressed while installed mandatory privacy routing is on.
+	 */
+	onBlocked?: (event: BlockedRequestEvent) => void | Promise<void>;
+	/**
+	 * `express()` / `nextjs()` only. Inspect request header values (default
+	 * `true`). Credential headers are never inspected or forwarded; see
+	 * `http-headers.ts`.
+	 */
+	inspectHeaders?: boolean;
+	/** Extra header names to treat as credentials (withheld from inspection and context). */
+	sensitiveHeaders?: readonly string[];
 }
 
 /**
@@ -96,6 +166,33 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 					}
 				: undefined,
 		});
+
+	/** Header context for an HTTP check: non-credential values plus withheld names. */
+	const headerContext = (
+		headers: Record<string, IncomingHeaderValue> | undefined,
+	): Record<string, unknown> => {
+		if (options.inspectHeaders === false) return {};
+		const { inspected, withheld } = partitionHeaders(headers, options.sensitiveHeaders);
+		return {
+			headers: inspected,
+			...(withheld.length > 0 ? { withheldHeaders: withheld } : {}),
+		};
+	};
+
+	const report = async (event: BlockedRequestEvent): Promise<void> => {
+		if (!options.onBlocked) return;
+		try {
+			await assertPrivacyCallbacksAllowed();
+			await options.onBlocked(event);
+		} catch {
+			// A logging hook can neither unblock the request nor leak through it.
+		}
+	};
+
+	const blockedBody = (requestId: string, reason: string, result: CheckResult) =>
+		options.exposeDecisionDetails
+			? { error: BLOCKED_RESPONSE_ERROR, requestId, reason, details: result }
+			: { error: BLOCKED_RESPONSE_ERROR, requestId };
 
 	const api = {
 		/**
@@ -175,27 +272,38 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 		 *
 		 * The request is checked as an `http_request`: `req.url` (route + query) is
 		 * inspected as content with embedded URLs extracted (never as a local file
-		 * path), and a parsed `req.body` is walked by the core generic extractor.
+		 * path), a parsed `req.body` is walked by the core generic extractor, and
+		 * non-credential header values are inspected the same way (credential
+		 * headers such as `Authorization` / `Cookie` are withheld entirely).
 		 * A body over `MAX_CONTEXT_BODY_CHARS` is denied as not fully inspected.
 		 * Mount a body parser before this middleware for bodies to be inspected.
 		 *
 		 * Responds 403 for anything that is not an explicit allow (deny, ask
 		 * without an approving `onAsk`, indeterminate/failed check, inconsistent
-		 * result). The response `reason` states which case applied.
+		 * result). The body is generic, `{ error, requestId }`, unless
+		 * `exposeDecisionDetails` is set; the verdict goes to `onBlocked`. A check
+		 * that cannot run calls `next()` with an `AIDRSecurityCheckUnavailableError`
+		 * whose message and stack carry no internal detail.
 		 */
 		express: () => {
 			return async (
-				req: { method: string; url: string; body?: unknown; headers?: Record<string, string> },
+				req: {
+					method: string;
+					url: string;
+					body?: unknown;
+					headers?: Record<string, IncomingHeaderValue>;
+				},
 				res: { status: (code: number) => { json: (data: unknown) => void } },
 				next: (error?: Error) => void,
 			): Promise<void> => {
+				const requestId = randomUUID();
 				try {
 					const checkRequest: CheckRequest = {
 						action: HTTP_REQUEST_ACTION,
 						resource: req.url,
 						context: {
 							method: req.method,
-							headers: req.headers,
+							...headerContext(req.headers),
 							body: req.body,
 						},
 					};
@@ -207,18 +315,27 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 					await chain.execute(checkRequest, result);
 
 					if (!outcome.execute) {
-						res.status(403).json({
-							error: "Security check failed",
+						await report({
+							kind: "blocked",
+							requestId,
+							method: req.method,
 							reason: outcome.message,
-							details: result,
+							result,
 						});
+						res.status(403).json(blockedBody(requestId, outcome.message, result));
 						return;
 					}
 
 					await client.assertCallerOperationAllowed();
 					next();
 				} catch (error) {
-					next(error instanceof Error ? error : new Error(String(error)));
+					await report({
+						kind: "error",
+						requestId,
+						method: req.method,
+						error: error instanceof Error ? error : new Error(String(error)),
+					});
+					next(new AIDRSecurityCheckUnavailableError(requestId));
 				}
 			};
 		},
@@ -226,49 +343,63 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 		/**
 		 * Next.js API route middleware.
 		 *
-		 * Checked like `express()`: the path + query as an `http_request` route and,
-		 * for methods with a body, a bounded copy of the body read from a clone (the
-		 * handler still receives the original stream).
+		 * Checked like `express()`: the path + query as an `http_request` route,
+		 * non-credential headers and, for methods with a body, a bounded copy of the
+		 * body read from a clone (the handler still receives the original stream).
 		 *
-		 * Returns a 403 response for anything that is not an explicit allow (see
-		 * `express()` above), or `null` to continue to the route handler.
+		 * Returns a generic 403 response for anything that is not an explicit allow
+		 * (see `express()` above), a generic 503 when the check cannot run, or
+		 * `null` to continue to the route handler.
 		 */
 		nextjs: () => {
 			return async (request: Request): Promise<Response | null> => {
-				const url = new URL(request.url);
-				const body = await readBoundedBody(request);
-				const checkRequest: CheckRequest = {
-					action: HTTP_REQUEST_ACTION,
-					resource: `${url.pathname}${url.search}`,
-					context: {
-						method: request.method,
-						headers: Object.fromEntries(request.headers),
-						...(body === undefined ? {} : { body }),
-					},
-				};
-
-				const result = await client.check(checkRequest);
-				const outcome = await enforce(result);
-
-				// Execute middleware chain
-				await chain.execute(checkRequest, result);
-
-				if (!outcome.execute) {
-					return new Response(
-						JSON.stringify({
-							error: "Security check failed",
-							reason: outcome.message,
-							details: result,
-						}),
-						{
-							status: 403,
-							headers: { "Content-Type": "application/json" },
+				const requestId = randomUUID();
+				const json = (status: number, body: unknown) =>
+					new Response(JSON.stringify(body), {
+						status,
+						headers: { "Content-Type": "application/json" },
+					});
+				try {
+					const url = new URL(request.url);
+					const body = await readBoundedBody(request);
+					const checkRequest: CheckRequest = {
+						action: HTTP_REQUEST_ACTION,
+						resource: `${url.pathname}${url.search}`,
+						context: {
+							method: request.method,
+							...headerContext(Object.fromEntries(request.headers)),
+							...(body === undefined ? {} : { body }),
 						},
-					);
-				}
+					};
 
-				await client.assertCallerOperationAllowed();
-				return null; // Continue to handler
+					const result = await client.check(checkRequest);
+					const outcome = await enforce(result);
+
+					// Execute middleware chain
+					await chain.execute(checkRequest, result);
+
+					if (!outcome.execute) {
+						await report({
+							kind: "blocked",
+							requestId,
+							method: request.method,
+							reason: outcome.message,
+							result,
+						});
+						return json(403, blockedBody(requestId, outcome.message, result));
+					}
+
+					await client.assertCallerOperationAllowed();
+					return null; // Continue to handler
+				} catch (error) {
+					await report({
+						kind: "error",
+						requestId,
+						method: request.method,
+						error: error instanceof Error ? error : new Error(String(error)),
+					});
+					return json(503, { error: CHECK_UNAVAILABLE_ERROR, requestId });
+				}
 			};
 		},
 	};

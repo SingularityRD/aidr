@@ -2006,13 +2006,13 @@ application teams put the same verdict contract in front of their own tools.</p>
 <tr><td><code>ask</code> + caller-supplied <code>onAsk</code> returns <code>true</code></td><td>Executes</td></tr>
 <tr><td><code>ask</code> without <code>onAsk</code>, or <code>onAsk</code> false/throws</td><td>Blocks</td></tr>
 <tr><td>Indeterminate (check failed or inconsistent)</td><td>Blocks; approvable only with <code>allowApprovalOfIndeterminateResults:<wbr> true</code></td></tr></tbody></table></div>
-<p>Express/Next.js return HTTP 403 with an explicit reason. <code>guardToolOutput</code> inspects results
+<p>Express/Next.js return a generic HTTP 403 (<code>error</code> + <code>requestId</code>; the reason goes to the server-side <code>onBlocked</code> hook) and also inspect non-credential request headers. <code>guardToolOutput</code> inspects results
 (256 KiB default) and blocks or redacts findings. URL reputation is off by default
 (<code>urlReputationEnabled:<wbr> true</code> to opt in). <code>init()</code> fails loudly if no rules can be loaded.</p>
 <p class="label"><strong>How to use</strong></p>
 <pre data-lang="ts"><code>import { AIDRClient, createMiddleware } from &quot;@singularityrd/aidr-sdk&quot;;
 
-const client = new AIDRClient({ apiKey: process.env.AIDR_API_KEY! });
+const client = new AIDRClient({}); // local mode: no API key needed
 const middleware = createMiddleware(client, {
   onAsk: async (result) =&gt; await askOperatorInTerminal(result), // caller-supplied, out of band
 });
