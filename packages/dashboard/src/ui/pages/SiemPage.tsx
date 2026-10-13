@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useRichT, useT } from "../../i18n/I18nProvider";
 import {
 	buildSyslogAdapter,
 	DEFAULT_SYSLOG_FORM,
@@ -13,6 +14,8 @@ const PORT_DEFAULTS: Record<SyslogTransportChoice, string> = {
 };
 
 export function SiemPage() {
+	const t = useT();
+	const richT = useRichT();
 	const [values, setValues] = useState<SyslogFormValues>(DEFAULT_SYSLOG_FORM);
 	const [touched, setTouched] = useState(false);
 	const result = useMemo(() => buildSyslogAdapter(values), [values]);
@@ -31,18 +34,18 @@ export function SiemPage() {
 	return (
 		<div className="stack">
 			<header className="card">
-				<h1>SIEM syslog destination</h1>
+				<h1>{t("siem.title")}</h1>
 				<p className="muted">
-					Generate the <code>adapter</code> block for the host SIEM config (
-					<code>SINGULARITY_AIDR_SIEM_CONFIG_PATH</code>). Delivery runs on the host from the
-					durable local queue; nothing entered here is sent to the control plane, and no certificate
-					check can be disabled.
+					{richT("siem.lead", {
+						adapter: <code>adapter</code>,
+						path: <code>SINGULARITY_AIDR_SIEM_CONFIG_PATH</code>,
+					})}
 				</p>
 			</header>
 			<section className="card" aria-labelledby="siem-syslog-heading">
-				<h2 id="siem-syslog-heading">Collector</h2>
+				<h2 id="siem-syslog-heading">{t("siem.collector")}</h2>
 				<label className="label" htmlFor="siem-transport">
-					Transport
+					{t("siem.transport")}
 				</label>
 				<select
 					id="siem-transport"
@@ -53,12 +56,12 @@ export function SiemPage() {
 						setValues((current) => ({ ...current, transport, port: PORT_DEFAULTS[transport] }));
 					}}
 				>
-					<option value="tls">TLS (RFC 5425 style, certificate verified)</option>
-					<option value="tcp">TCP (RFC 6587 octet counting, unencrypted)</option>
-					<option value="udp">UDP (unacknowledged, unencrypted)</option>
+					<option value="tls">{t("siem.tls")}</option>
+					<option value="tcp">{t("siem.tcp")}</option>
+					<option value="udp">{t("siem.udp")}</option>
 				</select>
 				<label className="label" htmlFor="siem-host">
-					Collector host
+					{t("siem.host")}
 				</label>
 				<input
 					id="siem-host"
@@ -67,7 +70,7 @@ export function SiemPage() {
 					onChange={(event) => update("host", event.target.value)}
 				/>
 				<label className="label" htmlFor="siem-port">
-					Port
+					{t("siem.port")}
 				</label>
 				<input
 					id="siem-port"
@@ -76,7 +79,7 @@ export function SiemPage() {
 					onChange={(event) => update("port", event.target.value)}
 				/>
 				<label className="label" htmlFor="siem-facility">
-					Facility (0-23)
+					{t("siem.facility")}
 				</label>
 				<input
 					id="siem-facility"
@@ -85,7 +88,7 @@ export function SiemPage() {
 					onChange={(event) => update("facility", event.target.value)}
 				/>
 				<label className="label" htmlFor="siem-app-name">
-					Application name
+					{t("siem.appName")}
 				</label>
 				<input
 					id="siem-app-name"
@@ -93,7 +96,7 @@ export function SiemPage() {
 					onChange={(event) => update("appName", event.target.value)}
 				/>
 				<label className="label" htmlFor="siem-hostname">
-					Reporting hostname (optional)
+					{t("siem.hostname")}
 				</label>
 				<input
 					id="siem-hostname"
@@ -103,7 +106,7 @@ export function SiemPage() {
 				{values.transport === "tls" ? (
 					<>
 						<label className="label" htmlFor="siem-ca">
-							Private CA certificate (PEM, optional)
+							{t("siem.ca")}
 						</label>
 						<textarea
 							id="siem-ca"
@@ -112,7 +115,7 @@ export function SiemPage() {
 							onChange={(event) => update("caCertificatePem", event.target.value)}
 						/>
 						<label className="label" htmlFor="siem-pins">
-							Public-key pins, SHA-256 (optional)
+							{t("siem.pins")}
 						</label>
 						<input
 							id="siem-pins"
@@ -127,7 +130,7 @@ export function SiemPage() {
 							checked={values.allowPlaintextTransport}
 							onChange={(event) => update("allowPlaintextTransport", event.target.checked)}
 						/>{" "}
-						I accept that incident data is sent unencrypted on this link
+						{t("siem.plaintext")}
 					</label>
 				)}
 				<label className="label">
@@ -136,7 +139,7 @@ export function SiemPage() {
 						checked={values.allowPrivateNetwork}
 						onChange={(event) => update("allowPrivateNetwork", event.target.checked)}
 					/>{" "}
-					The collector is on a private (on-premises) network
+					{t("siem.private")}
 				</label>
 			</section>
 			{touched && !result.ok ? (
@@ -150,17 +153,14 @@ export function SiemPage() {
 			) : null}
 			{result.ok ? (
 				<section className="card" aria-labelledby="siem-config-heading">
-					<h2 id="siem-config-heading">Host configuration</h2>
+					<h2 id="siem-config-heading">{t("siem.config")}</h2>
 					{result.warnings.map((message) => (
 						<p key={message} className="notice" role="note">
 							{message}
 						</p>
 					))}
-					<pre aria-label="Generated SIEM configuration">{configJson}</pre>
-					<p className="muted small">
-						Save the file with owner-only permissions on the host. Loopback, link-local and
-						cloud-metadata destinations are always refused by the sender.
-					</p>
+					<pre aria-label={t("siem.configLabel")}>{configJson}</pre>
+					<p className="muted small">{t("siem.saveNote")}</p>
 				</section>
 			) : null}
 		</div>

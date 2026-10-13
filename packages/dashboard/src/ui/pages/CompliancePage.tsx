@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import { type Translate, useDashboardLocale, useRichT, useT } from "../../i18n/I18nProvider";
 import {
 	COMPLIANCE_SECTION_KEYS,
 	type CompliancePeriod,
@@ -16,10 +17,10 @@ import { csvBundleZip, reportFileStem, sectionBlocks } from "../compliance-expor
 import { PRINT_LABELS, type PrintLanguage, renderPrintableReport } from "../compliance-print";
 
 const PRESETS = [
-	{ value: "30", label: "Last 30 days", days: 30 },
-	{ value: "90", label: "Last 90 days", days: 90 },
-	{ value: "180", label: "Last 180 days", days: 180 },
-	{ value: "365", label: "Last 365 days", days: 365 },
+	{ value: "30", days: 30 },
+	{ value: "90", days: 90 },
+	{ value: "180", days: 180 },
+	{ value: "365", days: 365 },
 ] as const;
 
 type Status =
@@ -45,17 +46,18 @@ function today(): string {
 }
 
 export function CompliancePage() {
+	const t = useT();
 	const { currentTeam, currentRole, isLoading, roleResolved } = useTeam();
 	if (isLoading || (currentTeam && !roleResolved)) {
-		return <div role="status">Resolving the managed tenant…</div>;
+		return <div role="status">{t("gsc.resolving")}</div>;
 	}
-	if (!currentTeam) return <div role="alert">Select a team to generate a compliance report.</div>;
+	if (!currentTeam) return <div role="alert">{t("cmp.selectTeam")}</div>;
 	if (currentRole !== "owner" && currentRole !== "admin") {
 		return (
 			<section className="card">
-				<h1>Compliance evidence report</h1>
+				<h1>{t("cmp.title")}</h1>
 				<div className="notice" role="alert">
-					Only workspace owners and admins can generate compliance reports.
+					{t("cmp.ownersOnly")}
 				</div>
 			</section>
 		);
@@ -64,11 +66,15 @@ export function CompliancePage() {
 }
 
 function TenantCompliancePage({ tenantId }: { tenantId: string }) {
+	const t = useT();
+	const richT = useRichT();
+	const locale = useDashboardLocale();
 	const [preset, setPreset] = useState<string>("90");
 	const [fromDay, setFromDay] = useState("");
 	const [toDay, setToDay] = useState(today());
 	const [status, setStatus] = useState<Status>({ kind: "idle" });
-	const [language, setLanguage] = useState<PrintLanguage>("en");
+	// The printable report defaults to the console language.
+	const [language, setLanguage] = useState<PrintLanguage>(locale);
 
 	async function generate() {
 		let period: CompliancePeriod;
@@ -96,15 +102,9 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 	return (
 		<div className="stack">
 			<section className="card">
-				<p className="eyebrow">Security and data protection</p>
-				<h1>Compliance evidence report</h1>
-				<p className="muted">
-					A signed, tenant-scoped evidence bundle for security and DPO teams, designed to support
-					KVKK and GDPR accountability work: protection coverage, data-protection activity (counts
-					only), policies in force, access and identity, incidents, AI security posture, data flows
-					and retention evidence. It is not a certification and does not state that your
-					organization is compliant.
-				</p>
+				<p className="eyebrow">{t("cmp.eyebrow")}</p>
+				<h1>{t("cmp.title")}</h1>
+				<p className="muted">{t("cmp.lead")}</p>
 				<form
 					className="row"
 					style={{ alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}
@@ -114,7 +114,7 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 					}}
 				>
 					<label className="label">
-						Period
+						{t("cmp.period")}
 						<select
 							className="input"
 							value={preset}
@@ -122,16 +122,16 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 						>
 							{PRESETS.map((option) => (
 								<option key={option.value} value={option.value}>
-									{option.label}
+									{t("cmp.last", { count: option.days })}
 								</option>
 							))}
-							<option value="custom">Custom range</option>
+							<option value="custom">{t("cmp.custom")}</option>
 						</select>
 					</label>
 					{preset === "custom" ? (
 						<>
 							<label className="label">
-								From (UTC)
+								{t("cmp.from")}
 								<input
 									className="input"
 									type="date"
@@ -142,7 +142,7 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 								/>
 							</label>
 							<label className="label">
-								To (UTC, inclusive)
+								{t("cmp.to")}
 								<input
 									className="input"
 									type="date"
@@ -155,16 +155,11 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 						</>
 					) : null}
 					<button className="button" type="submit" disabled={status.kind === "loading"}>
-						{status.kind === "loading" ? "Generating…" : "Generate report"}
+						{status.kind === "loading" ? t("cmp.generating") : t("cmp.generate")}
 					</button>
 				</form>
-				<p className="muted small">
-					At most 366 days. Requires an owner or admin session with multi-factor authentication
-					(AAL2). Every generated report is recorded in the workspace audit log.
-				</p>
-				{status.kind === "loading" ? (
-					<div role="status">Collecting evidence and sealing the report…</div>
-				) : null}
+				<p className="muted small">{t("cmp.limits")}</p>
+				{status.kind === "loading" ? <div role="status">{t("cmp.collecting")}</div> : null}
 				{status.kind === "error" ? (
 					<div className="notice notice-danger" role="alert">
 						{status.message}
@@ -174,13 +169,13 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 
 			{report ? (
 				<>
-					<ReportHeader report={report} />
+					<ReportHeader report={report} labels={PRINT_LABELS[locale]} />
 					<section className="card" aria-labelledby="compliance-downloads">
-						<h2 id="compliance-downloads">Download</h2>
+						<h2 id="compliance-downloads">{t("cmp.download")}</h2>
 						<p className="muted small">
-							The JSON file is the authoritative artifact. Verify it offline with{" "}
-							<code>aidr compliance verify &lt;report.json&gt;</code>. CSV and printable editions
-							are derived from it in this browser.
+							{richT("cmp.downloadLead", {
+								command: <code>aidr compliance verify &lt;report.json&gt;</code>,
+							})}
 						</p>
 						<div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
 							<button
@@ -194,7 +189,7 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 									)
 								}
 							>
-								Download JSON
+								{t("cmp.downloadJson")}
 							</button>
 							<button
 								type="button"
@@ -207,17 +202,21 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 									)
 								}
 							>
-								Download CSV bundle (.zip)
+								{t("cmp.downloadCsv")}
 							</button>
 							<label className="label">
-								Printable report language
+								{t("cmp.printLanguage")}
 								<select
 									className="input"
 									value={language}
 									onChange={(event) => setLanguage(event.target.value as PrintLanguage)}
 								>
-									<option value="en">English</option>
-									<option value="tr">Türkçe</option>
+									<option value="en" lang="en">
+										English
+									</option>
+									<option value="tr" lang="tr">
+										Türkçe
+									</option>
 								</select>
 							</label>
 							<button
@@ -238,7 +237,7 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 									view.print();
 								}}
 							>
-								Print / save as PDF
+								{t("gsc.print")}
 							</button>
 							<button
 								type="button"
@@ -251,19 +250,24 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 									)
 								}
 							>
-								Download printable HTML
+								{t("gsc.download")}
 							</button>
 						</div>
 					</section>
 					{COMPLIANCE_SECTION_KEYS.map((key) => (
-						<SectionPreview key={key} sectionKey={key} section={report.sections[key]} />
+						<SectionPreview
+							key={key}
+							sectionKey={key}
+							section={report.sections[key]}
+							language={locale}
+						/>
 					))}
 					<section className="card" aria-labelledby="compliance-limitations">
-						<h2 id="compliance-limitations">What this report does not prove</h2>
+						<h2 id="compliance-limitations">{t("cmp.limitations")}</h2>
 						<ul>
 							{report.limitations.map((text) => (
 								<li key={text} className="small">
-									{text}
+									{PRINT_LABELS[locale].limitations[text] ?? text}
 								</li>
 							))}
 						</ul>
@@ -274,37 +278,45 @@ function TenantCompliancePage({ tenantId }: { tenantId: string }) {
 	);
 }
 
-function ReportHeader({ report }: { report: ComplianceReport }) {
+function ReportHeader({
+	report,
+	labels,
+}: {
+	report: ComplianceReport;
+	labels: (typeof PRINT_LABELS)[PrintLanguage];
+}) {
+	const t = useT();
+	const locale = useDashboardLocale();
 	const signature = report.integrity.signature;
 	const profile = report.sections.tenant_profile;
 	return (
-		<section className="card" aria-label="Report summary">
+		<section className="card" aria-label={t("cmp.summary")}>
 			<div className="row space-between" style={{ alignItems: "flex-start" }}>
 				<div>
 					<h2>{String(profile.name ?? "")}</h2>
 					<p className="muted small">
-						{report.period.from.slice(0, 10)} – {report.period.to.slice(0, 10)} ·{" "}
-						{report.period.days} days · generated {new Date(report.generated_at).toLocaleString()}
+						{t("cmp.periodLine", {
+							from: report.period.from.slice(0, 10),
+							to: report.period.to.slice(0, 10),
+							days: report.period.days,
+							time: new Date(report.generated_at).toLocaleString(),
+						})}
 					</p>
 				</div>
-				<span className="badge">{signature ? "Signed" : "Hash only"}</span>
+				<span className="badge">{signature ? t("cmp.signed") : t("cmp.hashOnly")}</span>
 			</div>
 			<dl className="kv">
-				<dt>Report ID</dt>
+				<dt>{t("cmp.reportId")}</dt>
 				<dd className="mono">{report.report_id}</dd>
 				<dt>SHA-256</dt>
 				<dd className="mono" style={{ overflowWrap: "anywhere" }}>
-					{report.integrity.sha256}{" "}
-					<span className="muted small">(recomputed in this browser)</span>
+					{report.integrity.sha256} <span className="muted small">{t("cmp.recomputed")}</span>
 				</dd>
-				<dt>Signature</dt>
-				<dd>
-					{signature
-						? `Ed25519, key ${signature.key_id}`
-						: "Not signed: this deployment has no compliance signing key configured."}
-				</dd>
+				<dt>{t("cmp.signature")}</dt>
+				<dd>{signature ? t("cmp.signedWith", { key: signature.key_id }) : t("cmp.unsigned")}</dd>
 			</dl>
-			<p className="small">{report.statement}</p>
+			{/* The signed statement is English; the Turkish rendering is the print edition's translation. */}
+			<p className="small">{locale === "en" ? report.statement : labels.statement}</p>
 		</section>
 	);
 }
@@ -322,36 +334,40 @@ function get(section: JsonObject, path: string): JsonValue | undefined {
 	return value;
 }
 
-function highlights(key: ComplianceSectionKey, section: JsonObject): Array<[string, string]> {
+function highlights(
+	key: ComplianceSectionKey,
+	section: JsonObject,
+	t: Translate,
+): Array<[string, string]> {
 	const yesNo = (value: JsonValue | undefined) =>
-		value === true ? "Yes" : value === false ? "No" : "Not configured";
+		value === true ? t("cmp.yes") : value === false ? t("cmp.no") : t("cmp.notConfigured");
 	switch (key) {
 		case "tenant_profile":
 			return [
-				["Region", String(get(section, "region") ?? "Not recorded")],
-				["Retention", `${num(get(section, "retention_days"))} days`],
-				["Status", String(get(section, "status") ?? "—")],
+				[t("cmp.h.region"), String(get(section, "region") ?? t("cmp.notRecorded"))],
+				[t("cmp.h.retention"), t("common.days", { count: num(get(section, "retention_days")) })],
+				[t("cmp.h.status"), String(get(section, "status") ?? "—")],
 			];
 		case "protection_coverage":
 			return [
-				["Enrolled agents", num(get(section, "totals.enrolled"))],
-				["Active in period", num(get(section, "totals.active_in_period"))],
-				["Browser installs active", num(get(section, "totals.browser_installs_active_in_period"))],
+				[t("cmp.h.enrolled"), num(get(section, "totals.enrolled"))],
+				[t("cmp.h.active"), num(get(section, "totals.active_in_period"))],
+				[t("cmp.h.browsersActive"), num(get(section, "totals.browser_installs_active_in_period"))],
 			];
 		case "data_protection_activity":
 			return [
-				["Browser sends masked", num(get(section, "browser_guard.totals.masked"))],
-				["Browser sends blocked", num(get(section, "browser_guard.totals.blocked"))],
-				["Agent DLP decisions", num(get(section, "agent_decisions.data_protection.decisions"))],
+				[t("cmp.h.masked"), num(get(section, "browser_guard.totals.masked"))],
+				[t("cmp.h.blocked"), num(get(section, "browser_guard.totals.blocked"))],
+				[t("cmp.h.dlp"), num(get(section, "agent_decisions.data_protection.decisions"))],
 			];
 		case "policy_inventory": {
 			const dlp = get(section, "dlp.current.version");
 			const runtime = get(section, "runtime.current.version");
 			return [
-				["DLP policy", typeof dlp === "number" ? `v${dlp}` : "None"],
-				["Runtime policy", typeof runtime === "number" ? `v${runtime}` : "None"],
+				[t("cmp.h.dlpPolicy"), typeof dlp === "number" ? `v${dlp}` : t("cmp.none")],
+				[t("cmp.h.runtimePolicy"), typeof runtime === "number" ? `v${runtime}` : t("cmp.none")],
 				[
-					"Agent-callable approval",
+					t("cmp.h.agentApproval"),
 					yesNo(get(section, "approval_settings.agent_callable_approval")),
 				],
 			];
@@ -367,35 +383,35 @@ function highlights(key: ComplianceSectionKey, section: JsonObject): Array<[stri
 					admin.mfa_verified === true,
 			).length;
 			return [
-				["MFA required", yesNo(get(section, "identity_policy.require_mfa"))],
-				["SSO required", yesNo(get(section, "identity_policy.sso_required"))],
-				["Owners/admins with MFA", `${withMfa} of ${list.length}`],
+				[t("cmp.h.mfa"), yesNo(get(section, "identity_policy.require_mfa"))],
+				[t("cmp.h.sso"), yesNo(get(section, "identity_policy.sso_required"))],
+				[t("cmp.h.adminsMfa"), t("cmp.h.ofTotal", { count: withMfa, total: list.length })],
 			];
 		}
 		case "incidents":
 			return [
-				["Incidents", num(get(section, "incidents.total"))],
-				["Plugin scans with findings", num(get(section, "plugin_scans_with_findings"))],
+				[t("cmp.h.incidents"), num(get(section, "incidents.total"))],
+				[t("cmp.h.pluginScans"), num(get(section, "plugin_scans_with_findings"))],
 			];
 		case "ai_security_posture":
 			return [
-				["CVE findings", num(get(section, "cve.findings"))],
-				["Critical CVEs", num(get(section, "cve.by_severity.critical") ?? 0)],
-				["MCP findings", num(get(section, "mcp.findings"))],
+				[t("cmp.h.cve"), num(get(section, "cve.findings"))],
+				[t("cmp.h.criticalCve"), num(get(section, "cve.by_severity.critical") ?? 0)],
+				[t("cmp.h.mcp"), num(get(section, "mcp.findings"))],
 			];
 		case "data_flows": {
 			const flows = get(section, "flows");
 			return [
-				["Data flows", num(Array.isArray(flows) ? flows.length : undefined)],
-				["Open unknowns", num(get(section, "open_unknowns"))],
-				["Matrix status", String(get(section, "matrix_status") ?? "—")],
+				[t("cmp.h.flows"), num(Array.isArray(flows) ? flows.length : undefined)],
+				[t("cmp.h.unknowns"), num(get(section, "open_unknowns"))],
+				[t("cmp.h.matrix"), String(get(section, "matrix_status") ?? "—")],
 			];
 		}
 		case "retention_deletion":
 			return [
-				["Telemetry within retention", yesNo(get(section, "telemetry.within_policy"))],
-				["Legal hold active", yesNo(get(section, "legal_holds.active"))],
-				["Exports pending clean-up", num(get(section, "audit_exports.expired_pending_cleanup"))],
+				[t("cmp.h.telemetry"), yesNo(get(section, "telemetry.within_policy"))],
+				[t("cmp.h.legalHold"), yesNo(get(section, "legal_holds.active"))],
+				[t("cmp.h.exports"), num(get(section, "audit_exports.expired_pending_cleanup"))],
 			];
 	}
 }
@@ -403,18 +419,21 @@ function highlights(key: ComplianceSectionKey, section: JsonObject): Array<[stri
 function SectionPreview({
 	sectionKey,
 	section,
+	language,
 }: {
 	sectionKey: ComplianceSectionKey;
 	section: JsonObject;
+	language: PrintLanguage;
 }) {
-	const meta = PRINT_LABELS.en.sections[sectionKey];
+	const t = useT();
+	const meta = PRINT_LABELS[language].sections[sectionKey];
 	const headingId = `compliance-${sectionKey}`;
 	return (
 		<section className="card" aria-labelledby={headingId}>
 			<h2 id={headingId}>{meta.title}</h2>
 			<p className="muted small">{meta.proves}</p>
 			<dl className="kv">
-				{highlights(sectionKey, section).map(([label, value]) => (
+				{highlights(sectionKey, section, t).map(([label, value]) => (
 					<div key={label} style={{ display: "contents" }}>
 						<dt>{label}</dt>
 						<dd>{value}</dd>
@@ -422,7 +441,8 @@ function SectionPreview({
 				))}
 			</dl>
 			<details>
-				<summary>All fields</summary>
+				<summary>{t("cmp.allFields")}</summary>
+
 				{sectionBlocks(section).map((block) => (
 					<div key={block.path || "fields"} className="table-wrap">
 						{block.path ? <h3 className="small">{block.path}</h3> : null}

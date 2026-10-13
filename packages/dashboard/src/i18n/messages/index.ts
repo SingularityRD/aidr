@@ -7,9 +7,12 @@ import { autosecopsMessages } from "./autosecops";
 import { billingMessages } from "./billing";
 import { billingPlanMessages } from "./billing-plan";
 import { commonMessages } from "./common";
+import { complianceMessages } from "./compliance";
 import { dashboardMessages } from "./dashboard";
+import { detectionExceptionsMessages } from "./detection-exceptions";
 import { discoveryMessages } from "./discovery";
 import { downloadCenterMessages } from "./download-center";
+import { evidenceMessages } from "./evidence";
 import { frameworkMessages } from "./framework";
 import { governanceMessages } from "./governance";
 import { governanceChangeMessages } from "./governance-change";
@@ -23,7 +26,9 @@ import { policyRolloutMessages } from "./policy-rollout";
 import { policyRuntimeMessages } from "./policy-runtime";
 import { postureMessages } from "./posture";
 import { privacyGuardMessages } from "./privacy-guard";
+import { retentionMessages } from "./retention";
 import { settingsMessages } from "./settings";
+import { siemMessages } from "./siem";
 import { teamMessages } from "./team";
 import { usageMessages } from "./usage";
 
@@ -38,9 +43,12 @@ export const pageMessages = {
 	...autosecopsMessages,
 	...billingMessages,
 	...billingPlanMessages,
+	...complianceMessages,
 	...dashboardMessages,
+	...detectionExceptionsMessages,
 	...discoveryMessages,
 	...downloadCenterMessages,
+	...evidenceMessages,
 	...frameworkMessages,
 	...governanceMessages,
 	...governanceChangeMessages,
@@ -54,7 +62,9 @@ export const pageMessages = {
 	...policyRuntimeMessages,
 	...postureMessages,
 	...privacyGuardMessages,
+	...retentionMessages,
 	...settingsMessages,
+	...siemMessages,
 	...teamMessages,
 	...usageMessages,
 };
@@ -70,9 +80,12 @@ export const messageModules = [
 	autosecopsMessages,
 	billingMessages,
 	billingPlanMessages,
+	complianceMessages,
 	dashboardMessages,
+	detectionExceptionsMessages,
 	discoveryMessages,
 	downloadCenterMessages,
+	evidenceMessages,
 	frameworkMessages,
 	governanceMessages,
 	governanceChangeMessages,
@@ -86,7 +99,9 @@ export const messageModules = [
 	policyRuntimeMessages,
 	postureMessages,
 	privacyGuardMessages,
+	retentionMessages,
 	settingsMessages,
+	siemMessages,
 	teamMessages,
 	usageMessages,
 ];

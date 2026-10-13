@@ -26,6 +26,8 @@
  */
 
 import { useMemo } from "react";
+import type { DashboardMessageKey } from "../i18n/en";
+import { type Translate, useRichT, useT } from "../i18n/I18nProvider";
 
 /* ── Status unions ────────────────────────────────────────────────────────
  *
@@ -62,11 +64,11 @@ const RESPONSE_ACTION_VALUES: readonly string[] = [
 ];
 const RESPONSE_OUTCOME_VALUES: readonly string[] = ["success", "failure", "skipped", "unavailable"];
 
-const DECISION_LABEL: Record<EvidenceDecision, string> = {
-	allow: "Allow",
-	ask: "Ask",
-	deny: "Deny",
-	unrecorded: "Decision not recorded",
+const DECISION_LABEL: Record<EvidenceDecision, DashboardMessageKey> = {
+	allow: "ev.decision.allow",
+	ask: "ev.decision.ask",
+	deny: "ev.decision.deny",
+	unrecorded: "ev.decision.unrecorded",
 };
 
 const DECISION_CLASS: Record<EvidenceDecision, string> = {
@@ -84,14 +86,14 @@ const DECISION_RANK: Record<EvidenceDecision, number> = {
 	unrecorded: 0,
 };
 
-const RESPONSE_ACTION_LABEL: Record<EvidenceResponseAction, string> = {
-	block: "Block",
-	contain: "Contain",
-	quarantine: "Quarantine",
-	notify: "Notify",
-	snapshot: "Snapshot",
-	rollback: "Rollback",
-	unrecorded: "Response not recorded",
+const RESPONSE_ACTION_LABEL: Record<EvidenceResponseAction, DashboardMessageKey> = {
+	block: "ev.action.block",
+	contain: "ev.action.contain",
+	quarantine: "ev.action.quarantine",
+	notify: "ev.action.notify",
+	snapshot: "ev.action.snapshot",
+	rollback: "ev.action.rollback",
+	unrecorded: "ev.action.unrecorded",
 };
 
 const RESPONSE_ACTION_CLASS: Record<EvidenceResponseAction, string> = {
@@ -104,12 +106,12 @@ const RESPONSE_ACTION_CLASS: Record<EvidenceResponseAction, string> = {
 	unrecorded: "badge badge-neutral",
 };
 
-const RESPONSE_OUTCOME_LABEL: Record<EvidenceResponseOutcome, string> = {
-	success: "Success",
-	failure: "Failed",
-	skipped: "Skipped",
-	unavailable: "Unavailable",
-	unrecorded: "Outcome not recorded",
+const RESPONSE_OUTCOME_LABEL: Record<EvidenceResponseOutcome, DashboardMessageKey> = {
+	success: "ev.outcome.success",
+	failure: "ev.outcome.failure",
+	skipped: "ev.outcome.skipped",
+	unavailable: "ev.outcome.unavailable",
+	unrecorded: "ev.outcome.unrecorded",
 };
 
 const RESPONSE_OUTCOME_CLASS: Record<EvidenceResponseOutcome, string> = {
@@ -224,7 +226,8 @@ function readClock(payload: Readonly<Record<string, unknown>>): EvidenceClock | 
 	const source = nested ?? payload;
 	const counter = source.logicalCounter ?? source.logical_counter;
 	const wallClockUtc = asString(source.wallClockUtc) ?? asString(source.wall_clock_utc);
-	if (!Number.isSafeInteger(counter) || (counter as number) < 0 || wallClockUtc === null) return null;
+	if (!Number.isSafeInteger(counter) || (counter as number) < 0 || wallClockUtc === null)
+		return null;
 	const skew = source.observedSkewMs ?? source.observed_skew_ms;
 	return {
 		wallClockUtc,
@@ -294,7 +297,10 @@ interface EvidenceIncidentGroup {
 	lastObservedAtMs: number;
 }
 
-function byObservedAt(a: { timestampMs: number; id: string }, b: { timestampMs: number; id: string }): number {
+function byObservedAt(
+	a: { timestampMs: number; id: string },
+	b: { timestampMs: number; id: string },
+): number {
 	return a.timestampMs - b.timestampMs || a.id.localeCompare(b.id);
 }
 
@@ -415,8 +421,8 @@ function clockSummaryOf(rows: readonly EvidenceAuditRow[]): ClockSummary {
 	};
 }
 
-function formatObserved(ms: number): string {
-	return Number.isFinite(ms) ? new Date(ms).toLocaleString() : "time not recorded";
+function formatObserved(ms: number, t: Translate): string {
+	return Number.isFinite(ms) ? new Date(ms).toLocaleString() : t("ev.timeNotRecorded");
 }
 
 /* ── Panels ─────────────────────────────────────────────────────────────── */
@@ -427,28 +433,27 @@ function formatObserved(ms: number): string {
  * this panel may say about a local chain is that it is local.
  */
 function AnchorPanel({ anchor }: { anchor: EvidenceAnchorOutcome | null }) {
+	const t = useT();
+	const richT = useRichT();
 	const anchored = anchor?.status === "anchored";
 	return (
 		<div className="notice" role="status" aria-live="polite">
 			<span className={anchored ? "badge badge-success" : "badge badge-warning"}>
-				{anchored ? "Anchored" : "Unanchored"}
+				{anchored ? t("ev.anchored") : t("ev.unanchored")}
 			</span>
 			{anchored && anchor ? (
 				<span>
 					{" "}
-					Archive reference <span className="mono">{anchor.reference ?? "reference not reported"}</span>{" "}
-					at <span className="mono">{anchor.anchoredAtUtc ?? "time not reported"}</span>.
+					{richT("ev.archiveRef", {
+						reference: <span className="mono">{anchor.reference ?? t("ev.refNotReported")}</span>,
+						time: <span className="mono">{anchor.anchoredAtUtc ?? t("ev.timeNotReported")}</span>,
+					})}
 				</span>
 			) : (
 				<span>
 					{" "}
-					No archive returned proof for this chain head, so the records shown here are local
-					records.{" "}
-					{anchor ? (
-						<span className="mono">{anchor.reason}</span>
-					) : (
-						<span>No anchor result was supplied.</span>
-					)}
+					{t("ev.localOnly")}{" "}
+					{anchor ? <span className="mono">{anchor.reason}</span> : <span>{t("ev.noAnchor")}</span>}
 				</span>
 			)}
 		</div>
@@ -464,35 +469,31 @@ function ClockPanel({
 	chain: EvidenceChainVerification | null;
 	isLoading: boolean;
 }) {
+	const t = useT();
 	return (
 		<div style={{ marginTop: 14 }}>
-			<h3 style={{ margin: 0, fontSize: "var(--text-base)" }}>Device clocks</h3>
-			<p className="muted small">
-				Ordering is by the per-device logical counter, never by the host wall clock. A skew no
-				record reported is shown as not reported.
-			</p>
+			<h3 style={{ margin: 0, fontSize: "var(--text-base)" }}>{t("ev.clocks")}</h3>
+			<p className="muted small">{t("ev.clocksLead")}</p>
 
 			{isLoading ? (
 				<p className="muted" role="status" aria-live="polite">
-					Loading evidence records…
+					{t("ev.loading")}
 				</p>
 			) : null}
 
 			{summary.devices.length === 0 ? (
 				<p className="muted" role="status" aria-live="polite">
-					No device logical clock is recorded in these rows.
-					{summary.source === "rows"
-						? " Wall-clock time is the only ordering available for them."
-						: ""}
+					{t("ev.noClock")}
+					{summary.source === "rows" ? t("ev.wallClockOnly") : ""}
 				</p>
 			) : (
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Device</th>
-								<th>Highest logical counter</th>
-								<th>Records</th>
+								<th>{t("ev.col.device")}</th>
+								<th>{t("ev.col.counter")}</th>
+								<th>{t("ev.col.records")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -509,85 +510,110 @@ function ClockPanel({
 			)}
 
 			<p className="muted small" role="status" aria-live="polite">
-				Largest observed clock skew:{" "}
-				{summary.maxObservedSkewMs === null
-					? "not reported by any record"
-					: `${summary.maxObservedSkewMs} ms`}
+				{t("ev.skew", {
+					skew:
+						summary.maxObservedSkewMs === null
+							? t("ev.skewNotReported")
+							: `${summary.maxObservedSkewMs} ms`,
+				})}
 			</p>
 
 			{summary.unattributedClockRows > 0 ? (
 				<p className="muted small" role="status" aria-live="polite">
-					{summary.unattributedClockRows} record(s) carry a logical clock but no device id, so they
-					are not attributed to a device.
+					{t("ev.unattributed", { count: summary.unattributedClockRows })}
 				</p>
 			) : null}
 
 			<p className="muted small" role="status" aria-live="polite">
 				{chain === null
-					? "No receipt-chain verification was supplied for these rows; the counters above are read straight from the records."
+					? t("ev.noChain")
 					: chain.valid && chain.head
-						? `Chain verified: ${chain.checked} record(s) checked; head ${chain.head.receiptId} at logical counter ${chain.head.logicalCounter}.`
-						: `Chain not verifiable: ${chain.findings.length} finding(s) reported (${chain.findings
-								.map((finding) => finding.code)
-								.join(", ")}).`}
+						? t("ev.chainVerified", {
+								checked: chain.checked,
+								head: chain.head.receiptId,
+								counter: chain.head.logicalCounter,
+							})
+						: t("ev.chainInvalid", {
+								count: chain.findings.length,
+								codes: chain.findings.map((finding) => finding.code).join(", "),
+							})}
 			</p>
 		</div>
 	);
 }
 
-function describeStep(step: ResponseStep): string {
-	const target = step.target ?? "target not recorded";
-	const snapshot = step.snapshotId ? ` (snapshot ${step.snapshotId})` : "";
+function describeStep(step: ResponseStep, t: Translate): string {
+	const target = step.target ?? t("ev.targetNotRecorded");
+	const snapshot = step.snapshotId ? t("ev.snapshotOf", { id: step.snapshotId }) : "";
 	const reason = step.reason ? ` — ${step.reason}` : "";
-	if (step.action === "rollback") return `restored ${target}${snapshot}${reason}`;
-	if (step.action === "snapshot") return `preserved ${target}${snapshot}${reason}`;
+	if (step.action === "rollback") return `${t("ev.restored", { target })}${snapshot}${reason}`;
+	if (step.action === "snapshot") return `${t("ev.preserved", { target })}${snapshot}${reason}`;
 	return `${target}${snapshot}${reason}`;
 }
 
 function StepItem({ step }: { step: ResponseStep }) {
+	const t = useT();
 	return (
 		<li className="row" style={{ gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-			<span className={RESPONSE_ACTION_CLASS[step.action]}>{RESPONSE_ACTION_LABEL[step.action]}</span>
+			<span className={RESPONSE_ACTION_CLASS[step.action]}>
+				{t(RESPONSE_ACTION_LABEL[step.action])}
+			</span>
 			<span className="mono" style={{ fontSize: 12 }}>
-				{describeStep(step)}
+				{describeStep(step, t)}
 			</span>
 			<span className={RESPONSE_OUTCOME_CLASS[step.outcome]}>
-				{RESPONSE_OUTCOME_LABEL[step.outcome]}
+				{t(RESPONSE_OUTCOME_LABEL[step.outcome])}
 			</span>
-			<span className="muted small">{formatObserved(step.observedAtMs)}</span>
+			<span className="muted small">{formatObserved(step.observedAtMs, t)}</span>
 		</li>
 	);
 }
 
 function IncidentGroup({ group }: { group: EvidenceIncidentGroup }) {
+	const t = useT();
 	const scope = group.scope;
-	const heading = scope ? (scope.kind === "incident" ? "Incident " : "Session ") : "Uncorrelated — ";
+	const heading = scope
+		? scope.kind === "incident"
+			? t("ev.incident")
+			: t("ev.session")
+		: t("ev.uncorrelated");
 	const agents = [
 		...new Set(group.rows.map((row) => row.agentId).filter((id): id is string => Boolean(id))),
 	].sort();
-	const agentLabel = agents.length > 0 ? `agent ${agents.join(", ")}` : "agent not recorded";
+	const agentLabel =
+		agents.length > 0 ? t("ev.agent", { ids: agents.join(", ") }) : t("ev.agentNotRecorded");
 	const listLabel = scope
-		? `Response steps for ${scope.id} on ${agentLabel}`
-		: `Response steps for uncorrelated records on ${agentLabel}`;
+		? t("ev.stepsFor", { id: scope.id, agent: agentLabel })
+		: t("ev.stepsUncorrelated", { agent: agentLabel });
 	const observed =
 		group.firstObservedAtMs === group.lastObservedAtMs
-			? formatObserved(group.firstObservedAtMs)
-			: `${formatObserved(group.firstObservedAtMs)} to ${formatObserved(group.lastObservedAtMs)}`;
+			? formatObserved(group.firstObservedAtMs, t)
+			: t("ev.range", {
+					from: formatObserved(group.firstObservedAtMs, t),
+					to: formatObserved(group.lastObservedAtMs, t),
+				});
 	// Provenance per record, not an identity graph: the agent ids the records
 	// themselves name, and nothing inferred from them.
 
 	return (
-		<section className="card" aria-label={`${heading}${scope ? scope.id : "records"}, ${agentLabel}`}>
+		<section
+			className="card"
+			aria-label={`${heading}${scope ? scope.id : t("ev.records")}, ${agentLabel}`}
+		>
 			<div className="row space-between" style={{ alignItems: "baseline" }}>
 				<h3 style={{ margin: 0, fontSize: "var(--text-base)" }}>
 					{heading}
-					<span className="mono">{scope ? scope.id : "no correlation id in payload"}</span>
+					<span className="mono">{scope ? scope.id : t("ev.noCorrelation")}</span>
 				</h3>
-				<span className={DECISION_CLASS[group.decision]}>{DECISION_LABEL[group.decision]}</span>
+				<span className={DECISION_CLASS[group.decision]}>{t(DECISION_LABEL[group.decision])}</span>
 			</div>
 			<p className="muted small">
-				{group.rows.length} record(s), {group.steps.length} response step(s) — observed {observed}
-				{agents.length > 0 ? ` · agent ${agents.join(", ")}` : ""}
+				{t("ev.groupSummary", {
+					records: group.rows.length,
+					steps: group.steps.length,
+					observed,
+				})}
+				{agents.length > 0 ? ` · ${agentLabel}` : ""}
 			</p>
 			{group.steps.length > 0 ? (
 				<ol aria-label={listLabel} style={{ margin: 0, paddingLeft: 18 }}>
@@ -596,10 +622,7 @@ function IncidentGroup({ group }: { group: EvidenceIncidentGroup }) {
 					))}
 				</ol>
 			) : (
-				<p className="muted small">
-					No response step is recorded in this payload. That is the absence of a step here, not
-					evidence that no response was taken elsewhere.
-				</p>
+				<p className="muted small">{t("ev.noSteps")}</p>
 			)}
 		</section>
 	);
@@ -614,6 +637,7 @@ export function EvidenceView({
 	isLoading = false,
 	error = null,
 }: EvidenceViewProps) {
+	const t = useT();
 	const incidents = useMemo(() => groupIncidents(rows), [rows]);
 	const rowSummary = useMemo(() => clockSummaryOf(rows), [rows]);
 	const summary = useMemo<ClockSummary>(
@@ -632,11 +656,8 @@ export function EvidenceView({
 	return (
 		<div className="stack">
 			<div className="card">
-				<h2 style={{ margin: 0 }}>Evidence chain</h2>
-				<p className="muted small">
-					Grouped by the agent attached to each record and its payload correlation id. Response steps
-					are shown in the order they were observed, including any rollback.
-				</p>
+				<h2 style={{ margin: 0 }}>{t("ev.title")}</h2>
+				<p className="muted small">{t("ev.lead")}</p>
 				<AnchorPanel anchor={anchor} />
 				<ClockPanel summary={summary} chain={chain} isLoading={isLoading} />
 				{error ? (
@@ -649,9 +670,7 @@ export function EvidenceView({
 			{incidents.length === 0
 				? error === null && (
 						<div className="card">
-							<p className="muted">
-								{isLoading ? "Loading evidence records…" : "No audit records were supplied."}
-							</p>
+							<p className="muted">{isLoading ? t("ev.loading") : t("ev.noRecords")}</p>
 						</div>
 					)
 				: incidents.map((group) => <IncidentGroup key={group.key} group={group} />)}
