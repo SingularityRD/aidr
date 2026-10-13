@@ -171,7 +171,7 @@ export function assertSecurityHeaders(headers, label = "deployment response") {
 }
 
 async function structuralChecks() {
-	const [main, onboarding, apiKeys, agents, autoSecOps, login, billing, landing, commercial, publicLayout, publicInfo, routeError, returnTo, session, scim, vercel, index, packageJson, browserManifest] = await Promise.all([
+	const [main, onboarding, apiKeys, agents, autoSecOps, login, billing, landing, commercial, publicLayout, publicInfo, routeError, returnTo, session, scim, vercel, index, packageJson, browserManifest, enCatalog] = await Promise.all([
 		read("packages/dashboard/src/main.tsx"),
 		read("packages/dashboard/src/ui/pages/OnboardingPage.tsx"),
 		read("packages/dashboard/src/ui/pages/ApiKeysPage.tsx"),
@@ -191,6 +191,7 @@ async function structuralChecks() {
 		read("packages/dashboard/index.html"),
 		read("packages/dashboard/package.json"),
 		read("packages/dashboard/tests/browser-smoke.manifest.json"),
+		read("packages/dashboard/src/i18n/en.ts"),
 	]);
 	const manifest = JSON.parse(browserManifest);
 	if (manifest.version !== 1 || !Array.isArray(manifest.scenarios) || manifest.scenarios.length < 5) {
@@ -268,11 +269,14 @@ async function structuralChecks() {
 
 	// A public page must expose support/legal links and never open a new tab
 	// without an opener policy.
-	assertIncludes(publicLayout, 'aria-label="Support and legal"', "support/legal navigation");
+	// Labels are translated; the English catalog carries the text.
+	assertIncludes(publicLayout, 'aria-label={t("public.footerLabel")}', "support/legal navigation");
+	assertIncludes(enCatalog, '"public.footerLabel": "Support and legal"', "support/legal navigation label");
 	assertRegex(`${publicLayout}\n${publicInfo}`, /target="_blank"[\s\S]{0,80}rel="noreferrer"/, "external link opener policy");
 	assertIncludes(publicInfo, "No live status feed is configured", "status feed fail-closed notice");
 	assertIncludes(publicInfo, "Terms URL is not configured", "terms URL fail-closed notice");
-	assertIncludes(routeError, "Retry", "route error retry action");
+	assertIncludes(routeError, 't("error.retry")', "route error retry action");
+	assertIncludes(enCatalog, '"error.retry": "Retry"', "route error retry label");
 
 	const vercelConfig = JSON.parse(vercel);
 	if (!Array.isArray(vercelConfig.rewrites) || vercelConfig.rewrites.length === 0) {

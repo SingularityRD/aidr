@@ -18,6 +18,9 @@ import {
 	removeManagedHooks,
 } from "../cursor_hook_installer.js";
 
+/** Like VS Code, resolve extension-relative paths against the package root, not the cwd. */
+const EXTENSION_ROOT = path.resolve(__dirname, "..", "..");
+
 const tempHomes: string[] = [];
 let home: string;
 
@@ -46,7 +49,9 @@ describe("Cursor managed hook configuration", () => {
 			"utf8",
 		);
 
-		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+		const context = {
+			asAbsolutePath: (relativePath: string) => path.resolve(EXTENSION_ROOT, relativePath),
+		};
 		const health = await installManagedHooks({ context: context as never, scope: "user" });
 		const hooksFile = JSON.parse(await readFile(health.configPath, "utf8")) as {
 			hooks: Record<string, Array<Record<string, unknown>>>;
@@ -100,7 +105,9 @@ describe("Cursor managed hook configuration", () => {
 				hooks: { beforeSubmitPrompt: [{ command: "customer-audit" }] },
 			}),
 		);
-		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+		const context = {
+			asAbsolutePath: (relativePath: string) => path.resolve(EXTENSION_ROOT, relativePath),
+		};
 
 		await installManagedHooks({ context: context as never, scope: "user" });
 		await installManagedHooks({ context: context as never, scope: "user" });
@@ -122,7 +129,9 @@ describe("Cursor managed hook configuration", () => {
 	it("refuses malformed customer hooks on install and removal without overwriting them", async () => {
 		const configPath = path.join(home, ".cursor", "hooks.json");
 		await mkdir(path.dirname(configPath), { recursive: true });
-		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+		const context = {
+			asAbsolutePath: (relativePath: string) => path.resolve(EXTENSION_ROOT, relativePath),
+		};
 
 		for (const original of ['{"hooks":', '{"version":1,"hooks":[]}']) {
 			await writeFile(configPath, original, "utf8");
@@ -141,7 +150,9 @@ describe("Cursor managed hook configuration", () => {
 			configPath,
 			JSON.stringify({ version: 1, hooks: {}, customerField: { enabled: true } }),
 		);
-		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+		const context = {
+			asAbsolutePath: (relativePath: string) => path.resolve(EXTENSION_ROOT, relativePath),
+		};
 
 		await installManagedHooks({ context: context as never, scope: "user" });
 		expect(JSON.parse(await readFile(configPath, "utf8")).customerField).toEqual({ enabled: true });

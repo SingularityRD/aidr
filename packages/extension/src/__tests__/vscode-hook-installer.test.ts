@@ -14,6 +14,9 @@ vi.mock("vscode", () => ({
 
 import { installManagedHooks, removeManagedHooks } from "../vscode_hook_installer.js";
 
+/** Like VS Code, resolve extension-relative paths against the package root, not the cwd. */
+const EXTENSION_ROOT = path.resolve(__dirname, "..", "..");
+
 const tempHomes: string[] = [];
 let home: string;
 
@@ -31,7 +34,9 @@ describe("VS Code Local managed hook configuration", () => {
 	});
 
 	it("inspects every Local tool including editFiles and MCP tools", async () => {
-		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+		const context = {
+			asAbsolutePath: (relativePath: string) => path.resolve(EXTENSION_ROOT, relativePath),
+		};
 		const health = await installManagedHooks({ context: context as never, scope: "user" });
 		const settings = JSON.parse(await readFile(health.configPath, "utf8")) as {
 			hooks: {
@@ -39,9 +44,7 @@ describe("VS Code Local managed hook configuration", () => {
 			};
 		};
 
-		expect(settings.hooks.PreToolUse).toContainEqual(
-			expect.objectContaining({ matcher: "*" }),
-		);
+		expect(settings.hooks.PreToolUse).toContainEqual(expect.objectContaining({ matcher: "*" }));
 		expect(health.configPath).toBe(path.join(home, ".claude", "settings.json"));
 		expect(health.installedEvents).toEqual(["UserPromptSubmit", "PreToolUse", "PostToolUse"]);
 	});
@@ -58,7 +61,9 @@ describe("VS Code Local managed hook configuration", () => {
 				},
 			}),
 		);
-		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+		const context = {
+			asAbsolutePath: (relativePath: string) => path.resolve(EXTENSION_ROOT, relativePath),
+		};
 
 		await installManagedHooks({ context: context as never, scope: "user" });
 		const health = await installManagedHooks({ context: context as never, scope: "user" });
@@ -90,7 +95,9 @@ describe("VS Code Local managed hook configuration", () => {
 	it("refuses malformed customer settings on install and removal without overwriting them", async () => {
 		const configPath = path.join(home, ".claude", "settings.json");
 		await mkdir(path.dirname(configPath), { recursive: true });
-		const context = { asAbsolutePath: (relativePath: string) => relativePath };
+		const context = {
+			asAbsolutePath: (relativePath: string) => path.resolve(EXTENSION_ROOT, relativePath),
+		};
 
 		for (const original of ['{"hooks":', '{"hooks":{"PreToolUse":"customer-hook"}}']) {
 			await writeFile(configPath, original, "utf8");

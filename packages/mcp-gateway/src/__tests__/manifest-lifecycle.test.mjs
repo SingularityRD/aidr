@@ -13,9 +13,11 @@ import { fixture, rpc } from "./helpers/gateway-fixture.mjs";
 const DAY = 24 * 60 * 60 * 1000;
 
 function times(issuedOffset, expiresOffset) {
+	// One clock reading: two would let a 7-day window come out a millisecond too long.
+	const now = Date.now();
 	return {
-		issuedAt: new Date(Date.now() + issuedOffset).toISOString(),
-		expiresAt: new Date(Date.now() + expiresOffset).toISOString(),
+		issuedAt: new Date(now + issuedOffset).toISOString(),
+		expiresAt: new Date(now + expiresOffset).toISOString(),
 	};
 }
 
