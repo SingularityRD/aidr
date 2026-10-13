@@ -318,8 +318,8 @@ export const STEPS = Object.freeze([
 	step({
 		id: "docs-facts",
 		group: "docs-facts",
-		name: "Brochure facts, feature-guide renderer, documentation link and compatibility matrix tests",
-		run: "node --test scripts/brochure-facts.test.mjs scripts/render-feature-guide.test.mjs scripts/check-doc-links.test.mjs scripts/compatibility-matrix.test.mjs",
+		name: "Brochure facts, feature-guide renderer, documentation link, claim and compatibility matrix tests",
+		run: "node --test scripts/brochure-facts.test.mjs scripts/render-feature-guide.test.mjs scripts/check-doc-links.test.mjs scripts/check-doc-claims.test.mjs scripts/compatibility-matrix.test.mjs",
 		quick: true,
 		timeoutMs: 3 * MIN,
 	}),

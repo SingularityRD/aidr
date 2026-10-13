@@ -172,6 +172,7 @@
 		"verify:doc-links": "node scripts/check-doc-links.mjs",
 		"compatibility:matrix": "node scripts/generate-compatibility-matrix.mjs",
 		"verify:compatibility-matrix": "node --test scripts/compatibility-matrix.test.mjs",
+		"verify:doc-claims": "node scripts/check-doc-claims.mjs",
 		"verify:helm": "node --test deploy/helm/chart.test.mjs deploy/helm/tools.test.mjs",
 		"verify:customer-kit": "node --test scripts/customer-kit-verify.test.mjs",
 		"verify:dlp-delivery": "node --test scripts/provision-dlp-detector.test.mjs",
