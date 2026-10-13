@@ -11,6 +11,7 @@ import { commonMessages } from "./common";
 import { complianceMessages } from "./compliance";
 import { dashboardMessages } from "./dashboard";
 import { detectionExceptionsMessages } from "./detection-exceptions";
+import { directoryAuthorityMessages } from "./directory-authority";
 import { discoveryMessages } from "./discovery";
 import { downloadCenterMessages } from "./download-center";
 import { enterpriseAuthMessages } from "./enterprise-auth";
@@ -22,6 +23,7 @@ import { governanceErrorsMessages } from "./governance-errors";
 import { governanceRequestsMessages } from "./governance-requests";
 import { governanceScorecardMessages } from "./governance-scorecard";
 import { notificationsMessages } from "./notifications";
+import { oidcSsoMessages } from "./oidc-sso";
 import { onboardingMessages } from "./onboarding";
 import { policyMessages } from "./policy";
 import { policyRolloutMessages } from "./policy-rollout";
@@ -29,6 +31,8 @@ import { policyRuntimeMessages } from "./policy-runtime";
 import { postureMessages } from "./posture";
 import { privacyGuardMessages } from "./privacy-guard";
 import { retentionMessages } from "./retention";
+import { samlMessages } from "./saml";
+import { scimMessages } from "./scim";
 import { settingsMessages } from "./settings";
 import { siemMessages } from "./siem";
 import { teamMessages } from "./team";
@@ -49,6 +53,7 @@ export const pageMessages = {
 	...complianceMessages,
 	...dashboardMessages,
 	...detectionExceptionsMessages,
+	...directoryAuthorityMessages,
 	...discoveryMessages,
 	...downloadCenterMessages,
 	...enterpriseAuthMessages,
@@ -60,6 +65,7 @@ export const pageMessages = {
 	...governanceRequestsMessages,
 	...governanceScorecardMessages,
 	...notificationsMessages,
+	...oidcSsoMessages,
 	...onboardingMessages,
 	...policyMessages,
 	...policyRolloutMessages,
@@ -67,6 +73,8 @@ export const pageMessages = {
 	...postureMessages,
 	...privacyGuardMessages,
 	...retentionMessages,
+	...samlMessages,
+	...scimMessages,
 	...settingsMessages,
 	...siemMessages,
 	...teamMessages,
@@ -88,6 +96,7 @@ export const messageModules = [
 	complianceMessages,
 	dashboardMessages,
 	detectionExceptionsMessages,
+	directoryAuthorityMessages,
 	discoveryMessages,
 	downloadCenterMessages,
 	enterpriseAuthMessages,
@@ -99,6 +108,7 @@ export const messageModules = [
 	governanceRequestsMessages,
 	governanceScorecardMessages,
 	notificationsMessages,
+	oidcSsoMessages,
 	onboardingMessages,
 	policyMessages,
 	policyRolloutMessages,
@@ -106,6 +116,8 @@ export const messageModules = [
 	postureMessages,
 	privacyGuardMessages,
 	retentionMessages,
+	samlMessages,
+	scimMessages,
 	settingsMessages,
 	siemMessages,
 	teamMessages,
