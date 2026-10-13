@@ -34,6 +34,7 @@ from app.models.schemas import (
     ThreatIntelResponse,
     TaskStatusResponse,
 )
+from app import metrics
 from app.utils.aig_client import AIGClient, AIGClientError, AIGSubmissionAmbiguous, get_aig_client
 from app.task_registry import (
     QuotaExceeded,
@@ -120,6 +121,7 @@ async def _submit_task(
         except AIGSubmissionAmbiguous as exc:
             # AIG has no idempotency-key contract. Retain the reservation so a
             # retry cannot create a second task after a lost/invalid response.
+            metrics.record_upstream_failure("ambiguous")
             raise HTTPException(
                 status_code=503,
                 detail="AIG submission outcome is unknown; retry is blocked pending reconciliation",
@@ -127,6 +129,7 @@ async def _submit_task(
         except RetryError as exc:
             last_error = exc.last_attempt.exception()
             if isinstance(last_error, AIGSubmissionAmbiguous):
+                metrics.record_upstream_failure("ambiguous")
                 raise HTTPException(
                     status_code=503,
                     detail="AIG submission outcome is unknown; retry is blocked pending reconciliation",
@@ -135,12 +138,14 @@ async def _submit_task(
                 task_registry.release_submission(reservation)
             except TaskRegistryUnavailable:
                 logger.error("task submission reservation release failed")
+            metrics.record_upstream_failure("unavailable")
             raise HTTPException(status_code=502, detail="AIG upstream is unavailable") from exc
         except AIGClientError as exc:
             try:
                 task_registry.release_submission(reservation)
             except TaskRegistryUnavailable:
                 logger.error("task submission reservation release failed")
+            metrics.record_upstream_failure("rejected")
             raise HTTPException(
                 status_code=502,
                 detail="AIG upstream rejected or could not accept the scan request",
@@ -149,6 +154,7 @@ async def _submit_task(
             # Unexpected failures after entering the client are ambiguous too.
             # Prefer an auditable stuck reservation over a duplicate scan.
             logger.error("AIG task submission failed with an unknown outcome")
+            metrics.record_upstream_failure("ambiguous")
             raise HTTPException(
                 status_code=503,
                 detail="AIG submission outcome is unknown; retry is blocked pending reconciliation",

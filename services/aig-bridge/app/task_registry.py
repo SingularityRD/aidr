@@ -510,6 +510,39 @@ class TaskRegistry:
                 for record in self._tasks.values()
             )
 
+    def active_counts_by_status(self) -> Dict[str, int]:
+        """Return the cross-tenant count of reserved/queued/running tasks.
+
+        Read-only (no pruning: only terminal rows are ever pruned), and it
+        returns counts per fixed state, never tenant or task identifiers.
+        """
+
+        counts = {state: 0 for state in sorted(ACTIVE_STATES)}
+        if self.backend == "postgres":
+            with self._postgres_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT status, COUNT(*) AS count FROM aig_bridge_tasks "
+                        "WHERE status IN ('reserved','queued','running') GROUP BY status"
+                    )
+                    for row in cursor.fetchall():
+                        counts[str(_value(row, "status", 0))] = int(_value(row, "count", 1))
+            return counts
+        with self._lock:
+            if self.db_path:
+                with self._connect() as connection:
+                    rows = connection.execute(
+                        "SELECT status, COUNT(*) FROM aig_bridge_tasks "
+                        "WHERE status IN ('reserved','queued','running') GROUP BY status"
+                    ).fetchall()
+                for status, count in rows:
+                    counts[str(status)] = int(count)
+                return counts
+            for record in self._tasks.values():
+                if record.status in ACTIVE_STATES:
+                    counts[record.status] += 1
+            return counts
+
     def admit(self, tenant_id: str, *, limit: Optional[int] = None) -> None:
         """Check quota; register/reserve performs the authoritative locked check."""
 

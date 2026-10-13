@@ -11,5 +11,20 @@ scrape_configs:
     scrape_interval: 15s
     scrape_timeout: 5s
 
+  # Optional AI Security Posture scanner bridge (docker-compose.posture-scanner.yml).
+  # /metrics is disabled (404) until BRIDGE_METRICS_TOKEN is set on the bridge;
+  # use a separate monitoring-only token, not BRIDGE_API_KEY.
+  - job_name: aidr-posture-scanner-bridge
+    scheme: http
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/aidr_bridge_metrics_token
+    static_configs:
+      - targets:
+          - aig-bridge:8099
+    scrape_interval: 30s
+    scrape_timeout: 5s
+
 rule_files:
   - prometheus-alerts.yml
