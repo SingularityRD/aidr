@@ -92,7 +92,7 @@ promoted release. It:
 Without the signing key, key id, `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY`
 it stops before uploading; nothing is ever published unsigned.
 
-The coordinator wires this step into `.github/workflows/release-promote.yml`
+The promote job of `.github/workflows/release-promote.yml` runs this step
 (`promote` job, after "Publish final GitHub release from the same bundle"):
 
 ```yaml

@@ -660,3 +660,20 @@ test("release-promote: the anti-rollback floor survives a lost artifact and a mi
 		assert.doesNotMatch(text, /--genesis|--record\b/u, `${jobId} must not record or claim genesis`);
 	}
 });
+
+test("release-promote: installers reach the download portal only verified and signed, after the final release", () => {
+	const promote = workflow("release-promote.yml").jobs.promote;
+	const names = promote.steps.map((step) => step.name);
+	const publish = stepNamed(promote, "Publish installers to the download portal");
+	assert.ok(names.indexOf("Publish final GitHub release from the same bundle (pinned)") < names.indexOf(publish.name));
+	assert.ok(publish.run.includes("node .trusted-release-verifier/scripts/publish-installers.mjs"), "runs the trusted verifier copy");
+	assert.ok(publish.run.includes('--policy "${AIDR_RELEASE_SIGNER_POLICY_PATH}"'), "verifies the bundle with the signer policy");
+	assert.match(publish.run, /exit 0/u, "an unconfigured portal is skipped with a notice");
+	assert.match(publish.run, /-ne 4 \]\][\s\S]{0,400}exit 1/u, "a partly configured portal fails the promotion");
+	assert.doesNotMatch(publish.run, /--allow-downgrade/u, "promotion never moves latest.json backwards");
+	assert.deepEqual([...secretsIn(publish.env)].sort(), [
+		"AIDR_DOWNLOADS_SERVICE_ROLE_KEY",
+		"AIDR_DOWNLOADS_SUPABASE_URL",
+		"AIDR_INSTALLER_MANIFEST_SIGNING_KEY_PEM",
+	]);
+});

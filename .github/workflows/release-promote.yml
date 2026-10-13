@@ -438,6 +438,47 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Customers download installers from the dashboard (docs/installation/download-portal.md).
+      # Not configured at all -> skipped with a notice; partly configured -> fails; never unsigned.
+      - name: Publish installers to the download portal
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.AIDR_DOWNLOADS_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AIDR_DOWNLOADS_SERVICE_ROLE_KEY }}
+          AIDR_INSTALLERS_BUCKET: ${{ vars.AIDR_INSTALLERS_BUCKET }}
+          AIDR_INSTALLER_MANIFEST_KEY_ID: ${{ vars.AIDR_INSTALLER_MANIFEST_KEY_ID }}
+          CATALOG_KEY_PEM: ${{ secrets.AIDR_INSTALLER_MANIFEST_SIGNING_KEY_PEM }}
+          RELEASE_NOTES_BASE_URL: ${{ vars.AIDR_RELEASE_NOTES_BASE_URL }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          configured=0
+          for value in "${SUPABASE_URL}" "${SUPABASE_SERVICE_ROLE_KEY}" "${AIDR_INSTALLER_MANIFEST_KEY_ID}" "${CATALOG_KEY_PEM}"; do
+            [[ -n "${value}" ]] && configured=$((configured + 1))
+          done
+          if [[ "${configured}" -eq 0 ]]; then
+            echo "::notice::Download portal not configured; installers stay in the GitHub release and promotion evidence only."
+            exit 0
+          fi
+          if [[ "${configured}" -ne 4 ]]; then
+            echo "Download portal is partly configured: set AIDR_DOWNLOADS_SUPABASE_URL, AIDR_DOWNLOADS_SERVICE_ROLE_KEY, AIDR_INSTALLER_MANIFEST_SIGNING_KEY_PEM and the AIDR_INSTALLER_MANIFEST_KEY_ID variable." >&2
+            exit 1
+          fi
+          notes=()
+          if [[ -n "${RELEASE_NOTES_BASE_URL}" ]]; then
+            notes=(--release-notes-url "${RELEASE_NOTES_BASE_URL%/}/${RELEASE_TAG}")
+          fi
+          key_path="${RUNNER_TEMP}/aidr-installer-catalog-key.pem"
+          umask 077
+          printf '%s\n' "${CATALOG_KEY_PEM}" > "${key_path}"
+          trap 'rm -f "${key_path}"' EXIT
+          node .trusted-release-verifier/scripts/publish-installers.mjs \
+            --bundle release-output \
+            --policy "${AIDR_RELEASE_SIGNER_POLICY_PATH}" \
+            --signing-key "${key_path}" \
+            --key-id "${AIDR_INSTALLER_MANIFEST_KEY_ID}" \
+            "${notes[@]}"
+
       - name: Archive promotion evidence (pinned)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
