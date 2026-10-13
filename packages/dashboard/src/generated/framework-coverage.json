@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "matrix": {
-    "rule_count": 507,
-    "rule_files": 29,
+    "rule_count": 510,
+    "rule_files": 30,
     "frameworks": [
       {
         "id": "owasp_llm",
@@ -36,7 +36,7 @@
             "title": "Sensitive Information Disclosure",
             "status": "covered",
             "rationale": "For an agent's tool calls the rules cover the main disclosure paths: reading credential, key, cloud, keychain and browser stores, known API-key formats in commands or content, and exfiltration over HTTP, DNS, archives and cloud or code repositories. Personal data inside model responses is out of scope for these rules and is handled by the separate DLP/privacy engine.",
-            "rule_count": 88,
+            "rule_count": 91,
             "example_rules": [
               "CLT-CMD-013",
               "CLT-CMD-020",
@@ -186,7 +186,7 @@
             "title": "Identity and Privilege Abuse",
             "status": "covered",
             "rationale": "Credential dumping, credential-store and key access, alternate-credential execution, sudo/UAC abuse, account creation and group changes, and access to AIDR's own approval key are detected. Delegated agent identity (tokens issued to the agent) is verified by the delegated-credential feature, not by these rules.",
-            "rule_count": 114,
+            "rule_count": 117,
             "example_rules": [
               "CLT-AGENT-AUTO-001",
               "CLT-AGENT-AUTO-002",
@@ -507,7 +507,7 @@
             "title": "Unsecured Credentials",
             "status": "covered",
             "rationale": "Reads, copies and archives of credential files, SSH and cloud keys, keychains, browser stores, registry credentials, cloud metadata credentials and plaintext secrets are detected.",
-            "rule_count": 60,
+            "rule_count": 63,
             "example_rules": [
               "CLT-CRED-001",
               "CLT-CRED-002",
@@ -792,8 +792,9 @@
             "title": "Steal Web Session Cookie",
             "status": "partial",
             "rationale": "Access to Safari and Windows browser cookie/credential stores is detected.",
-            "rule_count": 2,
+            "rule_count": 3,
             "example_rules": [
+              "CLT-CRED-READ-001",
               "CLT-MAC-FILE-008",
               "CLT-WIN-FILE-010"
             ],
@@ -2227,6 +2228,40 @@
       ],
       "mitre_atlas": [
         "AML.T0053",
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-READ-001": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0055",
+        "AML.T0113"
+      ]
+    },
+    "CLT-CRED-READ-002": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
+        "AML.T0055"
+      ]
+    },
+    "CLT-CRED-READ-003": {
+      "owasp_llm": [
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "mitre_atlas": [
         "AML.T0055"
       ]
     },
