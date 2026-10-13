@@ -20,6 +20,12 @@
  * Out of scope (README "Limitations"): forms submitted natively (or `new FormData(form)`)
  * read a shadow/detached input's files without the getter, and a page can undo this
  * hook, as it runs in the page's own JavaScript world.
+ *
+ * Footprint in the page: the hook leaves no named global or property behind. All state
+ * lives in this closure; a second copy of the script in the same page detects the first
+ * through the relay ping (the one the isolated guard uses) instead of a window flag. The
+ * patched prototype members and the relay events remain observable to a page that looks
+ * for them (README "Limitations").
  */
 import {
 	isDocumentRooted,
@@ -37,24 +43,30 @@ type Win = Window & typeof globalThis;
 /** How long a selection waits for the guard (sanitising can OCR several images). */
 const RELAY_TIMEOUT_MS = 10 * 60_000;
 
-const HOOK_FLAG = "__aidrFileInputHook";
-
 export interface FileInputHook {
 	/** Removes the hook (tests). */
 	uninstall(): void;
+}
+
+/** True when a hook is already installed in this window (it cancels the relay ping). */
+function hookAnswers(w: Win): boolean {
+	try {
+		return !w.dispatchEvent(new w.Event(RELAY_PING, { cancelable: true }));
+	} catch {
+		return false;
+	}
 }
 
 export function installFileInputHook(
 	win: Window,
 	options: { timeoutMs?: number } = {},
 ): FileInputHook | null {
-	const w = win as Win & Record<string, unknown>;
-	if (w[HOOK_FLAG]) return null;
+	const w = win as Win;
+	if (hookAnswers(w)) return null;
 	const proto = w.HTMLInputElement?.prototype;
 	const filesDesc = proto && Object.getOwnPropertyDescriptor(proto, "files");
 	const valueDesc = proto && Object.getOwnPropertyDescriptor(proto, "value");
 	if (!proto || !filesDesc?.get || !filesDesc.set || !valueDesc?.set) return null;
-	w[HOOK_FLAG] = true;
 
 	const timeoutMs = options.timeoutMs ?? RELAY_TIMEOUT_MS;
 	const nativeFiles = filesDesc.get;
@@ -188,7 +200,6 @@ export function installFileInputHook(
 			w.removeEventListener(RELAY_RESULT, onResult, true);
 			w.removeEventListener(RELAY_PING, onPing, true);
 			for (const resolve of [...waiting.values()]) resolve(null);
-			delete w[HOOK_FLAG];
 		},
 	};
 }

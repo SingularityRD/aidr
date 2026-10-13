@@ -302,7 +302,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 | `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install. The options page requests exact `https://<host>/*` origins, from a click, only for what the managed policy configures: the hosts of `customSites`, and the Shadow AI catalog origins when `shadowAi` is on (or the origins of explicitly blocked services). No `tabs`, `webNavigation`, `history` or `<all_urls>` permission is requested: the extension sees a tab's URL only on origins it was granted |
 | `content_scripts` | `content.js` and `content-main.js` (`world: "MAIN"`), both `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only. `content-main.js` runs in the page's JavaScript world with no extension APIs and no data: it only hooks `<input type=file>` (`click`, `showPicker`, the `files` getter) so detached and shadow-DOM file inputs are handed to `content.js` for checking (see [Limitations](#limitations)). Custom sites get both scripts |
-| `web_accessible_resources` | none | nothing is exposed to web pages, so a page cannot fingerprint the extension by probing its resources. A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
+| `web_accessible_resources` | none | no extension resource is exposed to web pages, so a page cannot detect the extension by probing its resources. That does not make the extension invisible: the page-world hook in `content-main.js` is observable to a page that looks for it (the patched `HTMLInputElement` `files` getter, `click` and `showPicker`, and the `aidr-file-*` relay events). It sets no global name or flag on `window`; see [Limitations](#limitations). A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
 | `incognito` | `not_allowed` | the extension does not run in private windows |
 | CSP (`extension_pages`) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` | no remote code; `connect-src 'self'` so the options page can load the packaged `_locales` for the language override; `https:` because the control-plane URL is configurable per tenant; loopback HTTP for local development |
 
@@ -551,7 +551,12 @@ to regenerate the dataset with stable fingerprints.
   than checked, while one in a closed shadow root cannot be seen at all. The
   Chromium and Firefox page-world relay is covered by unit tests (jsdom), not yet by
   the real-browser E2E suite. `window.showOpenFilePicker()` (File System Access API)
-  is not intercepted.
+  is not intercepted. The hook is not hidden from the page: it defines no global
+  name, flag or symbol on `window` (its state is kept in a closure), but a page can
+  still tell that `HTMLInputElement.prototype.files`, `click` and `showPicker` are not
+  the browser's own functions and can listen for the `aidr-file-hook-ping`,
+  `aidr-file-scan` and `aidr-file-result` events, so a site can detect that Browser
+  Guard is installed.
 - Restoring works on text the site renders in the page. Content the site
   exports, copies to the clipboard itself, or shares by link contains the
   placeholders, not the originals.
