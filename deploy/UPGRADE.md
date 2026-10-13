@@ -1,5 +1,35 @@
 # AIDR self-hosted upgrade and recovery runbook
 
+## The one-command path
+
+Once the target release is prepared in its own directory and the release owner's
+compatibility contract is in place (see [Required release evidence](#required-release-evidence)),
+run from the target release's kit, in the approved maintenance window:
+
+```sh
+pnpm onprem:upgrade --to /srv/aidr-target --dry-run   # the plan; changes nothing
+pnpm onprem:upgrade --to /srv/aidr-target             # or: node scripts/onprem-upgrade.mjs ...
+```
+
+`scripts/onprem-upgrade.mjs` runs the steps below in order with these tools and stops
+at the first failure, printing (in English or Turkish) what happened, the state the
+installation is in and the exact recovery command: `deployment-upgrade.mjs check`
+(compatibility, read-only), `deployment-backup.mjs backup` and `verify`,
+`deployment-upgrade.mjs preflight` and `apply` (atomic migration, install, restart,
+online doctor), the online doctor again, and read-only post-upgrade checks. It never
+restores automatically; recovery stays the isolated restore described in
+[Failure and recovery](#failure-and-recovery). Defaults: installation `/srv/aidr`,
+contract `/secure/aidr-upgrade/upgrade-compatibility.json`, backup key
+`/secure/aidr-recovery.key`, backups under `/backups`, recovery journal
+`/var/lib/aidr-backup/recovery-journal.json`. Continue an interrupted run with
+`--resume`. Operator guide (EN/TR):
+[docs/operations/onprem-upgrade.md](../docs/operations/onprem-upgrade.md).
+
+The rest of this runbook is the contract each step enforces and the manual
+equivalent of every step.
+
+## Scope
+
 This runbook applies to the generated single-host, self-hosted deployment. A
 managed cloud project uses the cloud provider's database migration, backup,
 point-in-time recovery and deployment workflow; do not point this tool at it.

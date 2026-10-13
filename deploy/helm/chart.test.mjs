@@ -353,6 +353,53 @@ test("rendered upgrades run the backup hook before migrations and refuse to migr
 });
 
 // ---------------------------------------------------------------------------
+// values.example.yaml: the commented customer starting point.
+// ---------------------------------------------------------------------------
+const EXAMPLE_VALUES = join(chartDir, "values.example.yaml");
+
+function unknownKeys(example, defaults, prefix = "") {
+	if (!example || typeof example !== "object" || Array.isArray(example)) return [];
+	return Object.entries(example).flatMap(([key, value]) => {
+		const path = prefix ? `${prefix}.${key}` : key;
+		if (!defaults || typeof defaults !== "object" || !(key in defaults)) return [path];
+		// Free-form maps (selectors, annotations) accept any key.
+		const target = defaults[key];
+		if (target && typeof target === "object" && !Array.isArray(target) && Object.keys(target).length === 0) return [];
+		if (["matchLabels"].includes(key)) return [];
+		return unknownKeys(value, target, path);
+	});
+}
+
+test("values.example.yaml uses only real chart keys and keeps the secure upgrade gates", () => {
+	const example = readYaml(EXAMPLE_VALUES);
+	assert.deepEqual(unknownKeys(example, readYaml(join(chartDir, "values.yaml"))), []);
+	assert.match(example.publicUrls.dashboard, /^https:\/\//);
+	assert.match(example.publicUrls.api, /^https:\/\//);
+	assert.ok(example.secrets.existingSecret && example.secrets.functionsExistingSecret);
+	assert.equal(example.backup.enabled, true);
+	assert.equal(example.backup.preUpgrade.enabled, true);
+	assert.equal(example.backup.storage.enabled, true, "file storage objects are backed up");
+	assert.ok(example.backup.encryption.ageRecipients.length > 0);
+	assert.equal(example.backup.encryption.allowPlaintext, undefined);
+	assert.equal(example.migrations?.allowWithoutBackup, undefined, "the example never disables the backup gate");
+	assert.equal(example.networkPolicy.enabled, true);
+	const text = readFileSync(EXAMPLE_VALUES, "utf8");
+	assert.match(text, /CHANGE/);
+	assert.match(readFileSync(join(chartDir, "README.md"), "utf8"), /## Upgrade in 3 commands/);
+});
+
+test("values.example.yaml lints and renders for install and upgrade", { skip: helmSkip }, () => {
+	const lint = runHelm(["lint", chartDir, "--strict", "--kube-version", KUBE_VERSION, "-f", EXAMPLE_VALUES]);
+	assert.equal(lint.status, 0, `${lint.stdout}${lint.stderr}`);
+	assert.ok(renderOk([EXAMPLE_VALUES]).some((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup"));
+	const upgrade = renderOk([EXAMPLE_VALUES], [], ["--is-upgrade"]);
+	const backupHook = upgrade.find((doc) => doc.kind === "Job" && doc.metadata.name === "aidr-backup-pre-upgrade");
+	assert.equal(backupHook?.metadata.annotations["helm.sh/hook"], "pre-upgrade");
+	assert.ok(upgrade.some((doc) => doc.kind === "Job" && doc.metadata.name === "aidr-migrations"));
+	assert.ok(!upgrade.some((doc) => doc.kind === "Secret"), "the chart renders no Secret");
+});
+
+// ---------------------------------------------------------------------------
 // Retention maintenance (CP-3): runs on every Helm install by default.
 // ---------------------------------------------------------------------------
 test("the maintenance CronJob is on by default and runs the shipped maintenance worker", () => {

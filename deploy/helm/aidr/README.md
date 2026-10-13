@@ -46,8 +46,11 @@ node scripts/deployment-bootstrap.mjs --deployment ~/aidr-credentials --email ow
   --name "Example Corp" --seats 250 --license-expires-at 2027-09-30T00:00:00Z --license-reference "PO-1234"
 ```
 
-Minimal `my-values.yaml` (see `ci/default-values.yaml`; `ci/prod-values.yaml` shows a
-production shape):
+Start from [`values.example.yaml`](values.example.yaml): a commented file with the
+settings most customers change (registry, addresses, TLS, database, e-mail, backups,
+network allow-lists), each marked `CHANGE` where a value is yours. The smallest
+`my-values.yaml` that renders (see `ci/default-values.yaml`; `ci/prod-values.yaml` shows
+a production shape):
 
 ```yaml
 global:
@@ -223,6 +226,29 @@ The API gateway keeps the upstream Supabase key checks: protected `/auth/v1` and
 needs the service-role key, CORS is pinned to `publicUrls.dashboard`, and API keys are
 substituted from the Secret at container start into an in-memory volume, never into the
 ConfigMap.
+
+## Upgrade in 3 commands
+
+With backups on (as in [`values.example.yaml`](values.example.yaml)) the chart backs
+up, migrates and rolls out by itself, in that order, and stops before the database
+changes if the backup fails:
+
+```bash
+# 1. Put the new release's images in your registry (vendor-signed images: verify them
+#    first as in docs/operations/kubernetes.md, "Vendor-built, signed images and chart").
+node deploy/helm/build-images.mjs --output .aidr-images-0.6.1 --registry registry.example.internal --build --push
+# 2. Upgrade: encrypted backup Job -> atomic migrations Job -> new pods.
+helm upgrade aidr deploy/helm/aidr --namespace aidr -f my-values.yaml --wait --timeout 30m
+# 3. Confirm every component is available on the new version.
+kubectl -n aidr wait --for=condition=Available deployment -l app.kubernetes.io/instance=aidr --timeout=10m
+```
+
+If step 2 fails, `kubectl -n aidr logs job/aidr-backup-pre-upgrade` or
+`job/aidr-migrations` says why. A failed backup or migration leaves the old pods
+serving and the schema unchanged; fix the cause and run step 2 again. `helm rollback`
+does not undo a committed migration: going back across one needs the database
+restore in [Backups](#backups). Start from `values.example.yaml` for the common
+customer settings.
 
 ## Upgrade
 
