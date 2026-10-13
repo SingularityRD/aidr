@@ -16,6 +16,7 @@ import { coachingFor } from "../engine/coaching.js";
 import { createDetectionEngine } from "../engine/detect.js";
 import { sanitizeFile } from "../engine/files.js";
 import { createVault } from "../engine/vault.js";
+import { guardRunsInFrame } from "../sites/frames.js";
 import { adapterForUrl } from "../sites/index.js";
 import { type BootedGuard, bootContentGuard, type RuntimeLike } from "./boot.js";
 
@@ -42,8 +43,18 @@ export function bootContentScript(runtime: RuntimeLike): BootedGuard {
 	});
 }
 
+/** True in the top frame; reading `window.top` is allowed cross-origin (identity only). */
+function isTopFrame(): boolean {
+	try {
+		return window.top === window.self;
+	} catch {
+		return false;
+	}
+}
+
 const runtime = typeof chrome !== "undefined" ? chrome?.runtime : undefined;
-if (runtime?.id) {
+// Subframes: only the Microsoft 365 Copilot pane (../sites/frames.ts) is guarded.
+if (runtime?.id && guardRunsInFrame(isTopFrame(), location.href)) {
 	const scope = globalThis as unknown as Record<string, unknown>;
 	// Re-injection must not install a second set of listeners.
 	if (!scope[BOOT_FLAG]) {

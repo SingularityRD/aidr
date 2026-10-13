@@ -6,6 +6,7 @@ import blockedSite from "./blocked-site.mjs";
 import editResend from "./edit-resend.mjs";
 import editing from "./editing.mjs";
 import fileUpload from "./file-upload.mjs";
+import frames from "./frames.mjs";
 import managedAiSites from "./managed-ai-sites.mjs";
 import modes from "./modes.mjs";
 import paste from "./paste.mjs";
@@ -26,6 +27,7 @@ export const SCENARIOS = [
 	...editing,
 	...editResend,
 	...blockedSite,
+	...frames,
 	...managedAiSites,
 ];
 

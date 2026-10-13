@@ -111,6 +111,37 @@ SITES.poe = {
 	endpoint: "/api/chat",
 };
 
+/**
+ * Microsoft 365 Copilot pane inside an Office web app (scenarios/frames.mjs). The Office
+ * page (`office`) is not a protected site: it only embeds the pane (`m365pane`) as a
+ * cross-origin iframe served at a Microsoft 365 Copilot host, where the extension's
+ * `all_frames` content scripts run. `office` has its own comment box and endpoint so the
+ * scenario can show that the Office page itself is left alone.
+ */
+SITES.office = {
+	siteId: "office",
+	origin: "https://word-edit.officeapps.live.com",
+	path: "/we/wordeditorframe.aspx?ui=en-US",
+	fixture: "office-word.html",
+	kind: "textarea",
+	editor: "#doc-comment",
+	send: "#doc-comment-post",
+	response: "#comments article",
+	endpoint: "/we/api/comment",
+};
+
+SITES.m365pane = {
+	siteId: "copilot",
+	origin: "https://copilot.cloud.microsoft",
+	path: "/pane?hostApp=Word",
+	fixture: "m365-copilot-pane.html",
+	kind: "prosemirror",
+	editor: "#m365-chat-editor-target-element",
+	send: "button.fai-SendButton",
+	response: '[data-testid="markdown-reply"]',
+	endpoint: "/m365/api/chat",
+};
+
 export const UPLOAD_PATH = "/__fixture__/upload";
 export const KIT_PATH = "/__fixture__/kit.js";
 

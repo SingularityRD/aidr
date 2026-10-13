@@ -1,18 +1,15 @@
+import { M365_COPILOT_HOSTS } from "./frames";
 import { defineAdapter } from "./generic";
 
-/**
- * Hosts of Microsoft 365 Copilot Chat (the Entra ID, work-account Copilot). It runs at
- * `m365.cloud.microsoft/chat` (where `www.microsoft365.com/chat` and `www.office.com/chat`
- * redirect) and on the dedicated `copilot.cloud.microsoft` host. `m365.cloud.microsoft` also
- * serves the rest of the Microsoft 365 web home; the guard runs on the whole host (a
- * content script cannot be scoped to a path that an SPA enters without a page load), while
- * blocking and Shadow AI counting are scoped to its `/chat` path (see ./catalog.ts and
- * background/dnr.ts).
+/*
+ * Hosts of Microsoft 365 Copilot Chat (the Entra ID, work-account Copilot), defined in
+ * ./frames.ts. It runs at `m365.cloud.microsoft/chat` (where `www.microsoft365.com/chat` and
+ * `www.office.com/chat` redirect) and on the dedicated `copilot.cloud.microsoft` host.
+ * `m365.cloud.microsoft` also serves the rest of the Microsoft 365 web home; the guard runs
+ * on the whole host (a content script cannot be scoped to a path that an SPA enters without
+ * a page load), while blocking and Shadow AI counting are scoped to its `/chat` path (see
+ * ./catalog.ts and background/dnr.ts).
  */
-const M365_COPILOT_HOSTS = Object.freeze([
-	"m365.cloud.microsoft",
-	"copilot.cloud.microsoft",
-]);
 
 /**
  * Microsoft Copilot: the consumer product (`copilot.microsoft.com`, React composer
@@ -24,8 +21,10 @@ const M365_COPILOT_HOSTS = Object.freeze([
  * The Microsoft 365 selectors come first: they are ids and test ids that only that composer
  * carries, while the consumer fallbacks (`textarea[placeholder]`) would also match other
  * fields on the Microsoft 365 home. The Copilot pane inside the Office web apps (Word, Excel,
- * PowerPoint, Outlook on the web) is rendered in a cross-origin iframe; Browser Guard runs in
- * the top frame only, so that pane is not covered (README "Limitations").
+ * PowerPoint, Outlook on the web) is rendered in a cross-origin iframe: on the Microsoft 365
+ * Copilot hosts the guard also runs in subframes (./frames.ts), so that pane is guarded with
+ * this adapter when it is served from one of those hosts. Which origin a live tenant uses for
+ * the pane, and its markup, are unverified (BG-LIVE).
  */
 export const copilot = defineAdapter({
 	id: "copilot",

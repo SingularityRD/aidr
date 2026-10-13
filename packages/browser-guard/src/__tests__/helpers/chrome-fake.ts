@@ -124,6 +124,8 @@ class FakeStorageArea implements StorageAreaApi {
 interface SentTabMessage {
 	readonly tabId: number;
 	readonly message: unknown;
+	/** `options.frameId` when the worker addressed one frame. */
+	readonly frameId?: number;
 }
 
 export interface ChromeFake {
@@ -243,10 +245,14 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 				if (!tab) throw new Error(`No tab with id: ${tabId}`);
 				return { ...tab };
 			},
-			async sendMessage(tabId: number, message: unknown) {
+			async sendMessage(tabId: number, message: unknown, options?: { frameId?: number }) {
 				if (!tabs.some((t) => t.id === tabId))
 					throw new Error("Could not establish connection. Receiving end does not exist.");
-				tabMessages.push({ tabId, message: clone(message) });
+				tabMessages.push({
+					tabId,
+					message: clone(message),
+					...(options?.frameId === undefined ? {} : { frameId: options.frameId }),
+				});
 				return undefined;
 			},
 			async update(tabId: number, properties: { url: string }) {

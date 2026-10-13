@@ -109,7 +109,11 @@ after them (`textarea`, `[contenteditable="true"]`, `[role="textbox"]`,
 `button[type="submit"]`, a button whose label contains "send"). This keeps interception
 working through small redesigns. Supported editors: plain `textarea`, ProseMirror, Quill
 and generic `contenteditable`. The content script runs at `document_start` in the top frame
-only (`all_frames: false`). It does not run in private windows (`incognito: not_allowed`).
+only (`all_frames: false`), with one exception: on the two Microsoft 365 Copilot hosts
+(`m365.cloud.microsoft`, `copilot.cloud.microsoft`) it also runs in subframes
+(`all_frames: true`), because the Office web apps (Word, Excel, PowerPoint, Outlook on the
+web) embed the Copilot pane as a cross-origin iframe. The Office pages themselves get no
+script and no extra permission. It does not run in private windows (`incognito: not_allowed`).
 
 **How to use** — Install the extension (feature 14). No per-site setup is needed. To build it
 yourself: `pnpm build:browser-guard` (development) or `pnpm package:browser-guard` (release
@@ -140,6 +144,15 @@ zips plus `SHA256SUMS`). To load an unpacked build: `chrome://extensions` → De
   is updated. The real-browser suite runs against recorded page structures (fixtures) for
   ChatGPT, Gemini, Claude, Copilot and Perplexity, not against the live sites. DeepSeek,
   Mistral and Grok adapters are covered by unit tests only.
+- The Copilot pane inside the Office web apps is guarded when it is served from a
+  Microsoft 365 Copilot host: masking, paste and file checks, local restore and fail-closed
+  sends work as on the top-level page, and its counts are reported as site `copilot` (taken
+  from the frame's own URL). It keeps its own vault record and is counted once per send.
+  Which origin a live tenant uses for the pane, and its markup, are **not verified**
+  (BG-LIVE): a pane served from another host is not covered. The real-browser scenario
+  `frame-copilot-office` proves the frame coverage against a fixture, not against
+  Microsoft 365. A pane in a tab that was open before the extension started is guarded
+  after a reload.
 - Private (incognito) windows are not protected. Restrict them with browser management
   where that matters.
 - The automated real-browser tests run in Chromium. Firefox builds are checked with
@@ -1163,7 +1176,10 @@ a sanctioned visit. Covered by the real-browser `shadow-ai` scenario.
   365 Copilot Chat is the one path-scoped entry (`m365-copilot`): its dedicated host
   `copilot.cloud.microsoft` and only the `/chat` path of `m365.cloud.microsoft` are counted
   and blocked, so the rest of the Microsoft 365 home keeps working. The Copilot pane inside
-  the Office web apps is not a separate catalog entry.
+  the Office web apps is not a separate catalog entry and its visits are not counted (only
+  top-level tab URLs are). A block of `m365-copilot` (or `blockedSites: ["copilot"]`) stops
+  the pane's own frame when it loads from a Copilot host (on `m365.cloud.microsoft` only
+  `/chat`); the Office app itself is never blocked or redirected.
 - Hugging Face, DeepL and Grammarly are catalogued by host, so blocking them blocks the whole
   site (model hub, translator, marketing pages).
 
