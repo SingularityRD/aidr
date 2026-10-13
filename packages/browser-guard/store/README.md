@@ -30,6 +30,13 @@ outside the limits, without its "not covered" section or with unverifiable claim
 justifications, privacy pages with scripts or external resources, and images of the
 wrong size. `<PRIVACY_CONTACT_EMAIL>` is reported as a notice until it is replaced.
 
+The self-hosted packages (`-selfhosted-`, see below) pass the same rules except one: each
+must carry exactly its browser's https update URL (Chrome/Edge `update_url` ending in
+`/update.xml`, Firefox `browser_specific_settings.gecko.update_url` ending in
+`/updates.json`, both on the same feed). The validator also fails when a self-hosted
+package differs from its store package in anything but that URL, and when a store
+package carries any update URL.
+
 ## Images
 
 Generated from the real extension on the hermetic E2E fixtures (no real AI service is
@@ -57,6 +64,19 @@ host, so regenerate all images on one machine and commit them together (about 0.
 | `SHA256SUMS` | all three |
 
 All three are reproducible: the same tag gives the same SHA-256.
+
+With `BROWSER_GUARD_UPDATE_BASE_URL=https://<host>/browser-guard` (or
+`--update-base-url`), the build also writes the self-hosted channel, for browsers that
+update from an HTTPS feed instead of a store:
+
+| File | Use |
+|---|---|
+| `aidr-browser-guard-chrome-selfhosted-<version>.zip` | signed as a CRX3 by `scripts/update-feed.mjs` with the owner's extension key; `update_url` = `<base>/update.xml` |
+| `aidr-browser-guard-firefox-selfhosted-<version>.zip` | uploaded to AMO (unlisted) instead of the Firefox zip; `gecko.update_url` = `<base>/updates.json` |
+
+`scripts/update-feed.mjs` turns them into a feed directory for any static HTTPS host
+(`update.xml`, `updates.json`, `packages/`, `SHA256SUMS`); see its header and
+["Hosting Browser Guard updates internally"](../../../docs/installation/browser-guard-enterprise.md#10-hosting-browser-guard-updates-internally).
 
 ## What only the owner can do
 
@@ -103,6 +123,21 @@ All three are reproducible: the same tag gives the same SHA-256.
    are still on the draft GitHub release). A store with only some of them fails the job,
    so a misconfiguration is never silent. API keys expire or are rotated by the stores;
    replace them in the environment when they do.
+6. **Self-hosted update channel (optional).** For customers who cannot use the stores
+   (isolated networks) and for self-distributed Firefox updates:
+   - Create the extension key once, offline, and keep it like a release signing key
+     (it fixes the self-hosted extension ID for good; losing it means a new ID and new
+     customer policies): `openssl genrsa -out browser-guard-crx.pem 3072`.
+   - Print its ID: `BROWSER_GUARD_CRX_KEY_PEM="$(cat browser-guard-crx.pem)" node packages/browser-guard/scripts/update-feed.mjs --print-extension-id`.
+   - Create the GitHub environment `browser-guard-self-hosted` with **required
+     reviewers** and the secret `BROWSER_GUARD_CRX_KEY_PEM` (the PEM text). Set the
+     repository variables `BROWSER_GUARD_UPDATE_BASE_URL` (the HTTPS folder that will
+     serve the publisher feed, for example `https://downloads.<your domain>/browser-guard`)
+     and `BROWSER_GUARD_CRX_EXTENSION_ID` (the printed ID). Give that ID to customers as
+     `<SELF_HOSTED_EXTENSION_ID>`.
+   - With the variable set, a release without the key or the pinned ID fails: nothing is
+     ever signed with another key. Without the variable the release has store packages
+     only (notice in the job summary).
 
 ### Every release
 
@@ -118,7 +153,22 @@ All three are reproducible: the same tag gives the same SHA-256.
    days; nothing reaches users before you publish and the review passes.
 4. Firefox: download the signed XPI from the AMO Developer Hub when signing finishes and
    publish it where customers' `policies.json` `install_url` points.
-5. Publish the draft GitHub release.
+5. Self-hosted channel (when configured): the `self-hosted-feed` job signed the CRX (it is
+   on the draft release) and uploaded the feed artifact `aidr-browser-guard-update-feed-<version>`.
+   Add the signed XPI and merge it with the feed you host, then upload the result (packages
+   first, `update.xml` / `updates.json` last):
+
+   ```bash
+   node packages/browser-guard/scripts/update-feed.mjs \
+     --base-url "$BROWSER_GUARD_UPDATE_BASE_URL" --out feed-next --previous feed-hosted \
+     --chrome-crx aidr-browser-guard-<version>.crx --extension-id <SELF_HOSTED_EXTENSION_ID> \
+     --firefox-xpi <signed>.xpi --firefox-zip aidr-browser-guard-firefox-selfhosted-<version>.zip
+   ```
+
+   No key is needed here: the CRX signature and ID are verified, the signed XPI must be
+   the attested build plus Mozilla's signature and point at this feed, and versions must
+   go up.
+6. Publish the draft GitHub release.
 
 ### Rollback
 

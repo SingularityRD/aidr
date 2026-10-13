@@ -18,8 +18,8 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ENTRIES, PACKAGE_ROOT, TARGETS, manifestVersion } from "./build.mjs";
-import { createZip } from "./zip.mjs";
+import { ENTRIES, PACKAGE_ROOT, TARGETS, manifestVersion, selfHostedArchiveName } from "./build.mjs";
+import { createZip, readZip } from "./zip.mjs";
 
 export const REPO_ROOT = resolve(PACKAGE_ROOT, "..", "..");
 const PACKAGE_DIR = relative(REPO_ROOT, PACKAGE_ROOT).split(sep).join("/");
@@ -99,7 +99,7 @@ export async function bundleInputs(packageRoot = PACKAGE_ROOT) {
 	return [...inputs].sort();
 }
 
-function reviewerNotes({ version, esbuildVersion, firefoxSha, nodeEngine }) {
+function reviewerNotes({ version, esbuildVersion, firefoxSha, nodeEngine, selfHosted }) {
 	return `# Singularity AIDR Browser Guard ${version}: build instructions for reviewers
 
 This archive holds every source file the extension's bundles are built from
@@ -124,6 +124,26 @@ The build is deterministic (sorted zip entries, fixed timestamps and permissions
 the hash matches when the same esbuild version is used. \`dist/firefox/\` holds the
 unpacked files. Readable copies of the bundles: \`node scripts/build.mjs\` (no
 \`--release\`) writes unminified bundles with inline source maps.
+${selfHosted ? selfHostedNotes(version, selfHosted) : ""}`;
+}
+
+function selfHostedNotes(version, { baseUrl, sha }) {
+	const name = selfHostedArchiveName("firefox", version);
+	return `
+## Self-distributed package
+
+The unlisted version is the self-distributed package \`${name}\`. It is the package
+above with exactly one difference: \`browser_specific_settings.gecko.update_url\` is
+\`${baseUrl}/updates.json\`, the publisher's update manifest. Rebuild it with
+
+\`\`\`bash
+node scripts/build.mjs --release --zip --update-base-url ${baseUrl}
+sha256sum dist/${name}
+\`\`\`
+
+Expected SHA-256 of \`dist/${name}\`:
+
+    ${sha}
 `;
 }
 
@@ -154,13 +174,31 @@ export async function writeSourceArchive({ outDir = join(PACKAGE_ROOT, "dist"), 
 
 	const esbuildVersion = createRequire(join(PACKAGE_ROOT, "package.json"))("esbuild/package.json").version;
 	const firefoxSha = createHash("sha256").update(readFileSync(join(outDir, firefoxZip))).digest("hex");
+	// The self-distributed (update_url) package goes to AMO when the release builds one.
+	let selfHosted = null;
+	const selfHostedZip = join(outDir, selfHostedArchiveName("firefox", version));
+	if (existsSync(selfHostedZip)) {
+		const bytes = readFileSync(selfHostedZip);
+		const manifest = JSON.parse(readZip(bytes).get("manifest.json").toString("utf8"));
+		const updateUrl = String(manifest.browser_specific_settings?.gecko?.update_url ?? "");
+		selfHosted = {
+			baseUrl: updateUrl.slice(0, updateUrl.lastIndexOf("/")),
+			sha: createHash("sha256").update(bytes).digest("hex"),
+		};
+	}
 	const entries = [...files]
 		.filter((file) => statSync(file).isFile())
 		.map((file) => ({ name: toPosix(relative(REPO_ROOT, file)), data: readFileSync(file) }));
 	entries.push({
 		name: "AMO-REVIEWER-NOTES.md",
 		data: Buffer.from(
-			reviewerNotes({ version, esbuildVersion, firefoxSha, nodeEngine: packageJson.engines?.node ?? ">=22.12.0" }),
+			reviewerNotes({
+				version,
+				esbuildVersion,
+				firefoxSha,
+				nodeEngine: packageJson.engines?.node ?? ">=22.12.0",
+				selfHosted,
+			}),
 		),
 	});
 

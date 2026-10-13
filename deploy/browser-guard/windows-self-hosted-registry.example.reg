@@ -1,0 +1,94 @@
+Windows Registry Editor Version 5.00
+
+; Singularity AIDR Browser Guard, SELF-HOSTED build: example machine policy for Google Chrome and Microsoft Edge.
+; The extension is installed and updated from your own HTTPS server (update.xml + CRX, see
+; docs/installation/browser-guard-enterprise.md "Hosting Browser Guard updates internally"), not from the stores.
+; Replace <SELF_HOSTED_EXTENSION_ID> (the ID of the self-hosted build, which differs from the store IDs),
+; <INTERNAL_HOST> and the REPLACE_WITH_* values, then import with: reg import windows-self-hosted-registry.example.reg
+; "override_update_url": true makes the browser take updates from the policy URL, not the URL inside the package.
+; Scalars are REG_SZ / REG_DWORD; lists and objects are REG_SZ JSON strings (Chrome and Edge accept
+; JSON-encoded values for array and object keys of an extension managed-storage schema).
+
+; ---- Google Chrome ----
+; Hardening: no Incognito, no Guest profile, no DevTools, no other extensions (see README.md).
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"IncognitoModeAvailability"=dword:00000001
+"BrowserGuestModeEnabled"=dword:00000000
+"DeveloperToolsAvailability"=dword:00000002
+"ExtensionSettings"="{\"<SELF_HOSTED_EXTENSION_ID>\":{\"installation_mode\":\"force_installed\",\"update_url\":\"https://<INTERNAL_HOST>/browser-guard/update.xml\",\"override_update_url\":true,\"toolbar_pin\":\"force_pinned\"}}"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ExtensionInstallBlocklist]
+"1"="*"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ExtensionInstallAllowlist]
+"1"="<SELF_HOSTED_EXTENSION_ID>"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist]
+"1"="<SELF_HOSTED_EXTENSION_ID>;https://<INTERNAL_HOST>/browser-guard/update.xml"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\<SELF_HOSTED_EXTENSION_ID>\policy]
+"policyId"="acme-browser-guard-2026-09"
+"mode"="auto"
+"enabledEntities"="[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"
+"neverRestore"="[\"SECRET\",\"PRIVATE_KEY\"]"
+"literals"="[{\"value\":\"Project Nightingale\",\"type\":\"INTERNAL\"},{\"value\":\"ACME-CONFIDENTIAL\",\"type\":\"CLASSIFIED\"}]"
+"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keySource\":\"native-host\",\"minEntropyBits\":64,\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
+"detectSignals"=dword:00000001
+"signalAction"="warn"
+"blockedSites"="[\"deepseek\"]"
+"disabledSites"="[]"
+"customSites"="[{\"id\":\"acme-gpt\",\"label\":\"ACME GPT\",\"hosts\":[\"gpt.acme.example\"],\"editorSelectors\":[\"textarea#prompt\"],\"sendButtonSelectors\":[\"button.send\"],\"responseSelectors\":[\".answer\"]}]"
+"shadowAi"="{\"mode\":\"block-unsanctioned\",\"sanctioned\":[\"chatgpt\",\"copilot\",\"gemini\"],\"blocked\":[\"deepseek\"]}"
+"allowUserPause"=dword:00000000
+"allowSendAnyway"=dword:00000000
+"maskPaste"=dword:00000001
+"fileHandling"="scan"
+"maxFileBytes"=dword:00500000
+"restoreResponses"=dword:00000001
+"useNativeHost"=dword:00000000
+"requireNativeNer"=dword:00000000
+"telemetry"="{\"controlPlaneUrl\":\"https://aidr.example.com\",\"apiKey\":\"REPLACE_WITH_TENANT_API_KEY\"}"
+"language"="auto"
+"allowUserOverrides"=dword:00000000
+
+; ---- Microsoft Edge ----
+; Hardening: no InPrivate, no Guest profile, no DevTools, no other extensions (see README.md).
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"InPrivateModeAvailability"=dword:00000001
+"BrowserGuestModeEnabled"=dword:00000000
+"DeveloperToolsAvailability"=dword:00000002
+"ExtensionSettings"="{\"<SELF_HOSTED_EXTENSION_ID>\":{\"installation_mode\":\"force_installed\",\"update_url\":\"https://<INTERNAL_HOST>/browser-guard/update.xml\",\"override_update_url\":true,\"toolbar_state\":\"force_shown\"}}"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallBlocklist]
+"1"="*"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallAllowlist]
+"1"="<SELF_HOSTED_EXTENSION_ID>"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist]
+"1"="<SELF_HOSTED_EXTENSION_ID>;https://<INTERNAL_HOST>/browser-guard/update.xml"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\<SELF_HOSTED_EXTENSION_ID>\policy]
+"policyId"="acme-browser-guard-2026-09"
+"mode"="auto"
+"enabledEntities"="[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"
+"neverRestore"="[\"SECRET\",\"PRIVATE_KEY\"]"
+"literals"="[{\"value\":\"Project Nightingale\",\"type\":\"INTERNAL\"},{\"value\":\"ACME-CONFIDENTIAL\",\"type\":\"CLASSIFIED\"}]"
+"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keySource\":\"native-host\",\"minEntropyBits\":64,\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
+"detectSignals"=dword:00000001
+"signalAction"="warn"
+"blockedSites"="[\"deepseek\"]"
+"disabledSites"="[]"
+"customSites"="[{\"id\":\"acme-gpt\",\"label\":\"ACME GPT\",\"hosts\":[\"gpt.acme.example\"],\"editorSelectors\":[\"textarea#prompt\"],\"sendButtonSelectors\":[\"button.send\"],\"responseSelectors\":[\".answer\"]}]"
+"shadowAi"="{\"mode\":\"block-unsanctioned\",\"sanctioned\":[\"chatgpt\",\"copilot\",\"gemini\"],\"blocked\":[\"deepseek\"]}"
+"allowUserPause"=dword:00000000
+"allowSendAnyway"=dword:00000000
+"maskPaste"=dword:00000001
+"fileHandling"="scan"
+"maxFileBytes"=dword:00500000
+"restoreResponses"=dword:00000001
+"useNativeHost"=dword:00000000
+"requireNativeNer"=dword:00000000
+"telemetry"="{\"controlPlaneUrl\":\"https://aidr.example.com\",\"apiKey\":\"REPLACE_WITH_TENANT_API_KEY\"}"
+"language"="auto"
+"allowUserOverrides"=dword:00000000

@@ -742,6 +742,79 @@ describe("deployment examples", () => {
 		);
 	});
 
+	describe("self-hosted (internal update URL) templates", () => {
+		const ID = "<SELF_HOSTED_EXTENSION_ID>";
+		const URL = "https://<INTERNAL_HOST>/browser-guard/update.xml";
+		const settings = (pin: Record<string, string>) => ({
+			[ID]: {
+				installation_mode: "force_installed",
+				update_url: URL,
+				override_update_url: true,
+				...pin,
+			},
+		});
+
+		it("Chrome: force-installs the pinned self-hosted ID from the internal update.xml, same policy and hardening", () => {
+			const policy = JSON.parse(readDeploy("chrome-self-hosted-policy.example.json"));
+			expect(policy.ExtensionSettings).toEqual(settings({ toolbar_pin: "force_pinned" }));
+			expect(policy.ExtensionInstallForcelist).toEqual([`${ID};${URL}`]);
+			expect(policy.ExtensionInstallForcelist[0].split(";")).toEqual([ID, URL]);
+			expect(policy).toMatchObject(hardening("IncognitoModeAvailability", ID));
+			expect(Object.keys(policy["3rdparty"].extensions)).toEqual([ID]);
+			expect(policy["3rdparty"].extensions[ID]).toEqual(canonical);
+		});
+
+		it("Windows: Chrome and Edge both use the self-hosted ID, the internal URL and override_update_url", () => {
+			const text = readDeploy("windows-self-hosted-registry.example.reg");
+			expect(text).toMatch(/^Windows Registry Editor Version 5\.00\r?\n/);
+			const keys = parseReg(text);
+			for (const [base, privateMode, pin] of [
+				[
+					"HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome",
+					"IncognitoModeAvailability",
+					{ toolbar_pin: "force_pinned" },
+				],
+				[
+					"HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+					"InPrivateModeAvailability",
+					{ toolbar_state: "force_shown" },
+				],
+			] as const) {
+				const { ExtensionSettings, ...rest } = keys[base];
+				expect(rest).toEqual({
+					[privateMode]: 1,
+					BrowserGuestModeEnabled: 0,
+					DeveloperToolsAvailability: 2,
+				});
+				expect(JSON.parse(String(ExtensionSettings))).toEqual(settings(pin));
+				expect(keys[`${base}\\ExtensionInstallForcelist`]).toEqual({ "1": `${ID};${URL}` });
+				expect(keys[`${base}\\ExtensionInstallBlocklist`]).toEqual({ "1": "*" });
+				expect(keys[`${base}\\ExtensionInstallAllowlist`]).toEqual({ "1": ID });
+				expect(fromRegistry(keys[`${base}\\3rdparty\\extensions\\${ID}\\policy`])).toEqual(
+					canonical,
+				);
+			}
+		});
+
+		it("never mixes in a store ID or a store update URL", () => {
+			for (const file of [
+				"chrome-self-hosted-policy.example.json",
+				"windows-self-hosted-registry.example.reg",
+			]) {
+				const text = readDeploy(file);
+				for (const store of [
+					CHROME_ID,
+					EDGE_ID,
+					"clients2.google.com",
+					"edge.microsoft.com/extensionwebstorebase",
+				]) {
+					expect(text, `${file} mentions ${store}`).not.toContain(store);
+				}
+				expect(text).not.toMatch(/http:\/\//);
+			}
+		});
+	});
+
 	const schemaFile = join(PACKAGE_ROOT, "static", "managed_schema.json");
 	it("every example key is declared in static/managed_schema.json", () => {
 		const schema = JSON.parse(readFileSync(schemaFile, "utf8"));

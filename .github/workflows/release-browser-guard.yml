@@ -12,6 +12,15 @@ name: Browser Guard Release
 # skipped with a notice (the GitHub draft release still carries every package);
 # a partly configured store fails that job loudly. That job checks out nothing and
 # runs no repository code next to the store credentials.
+#
+# Self-hosted channel (optional; outside the stores, for air-gapped and internal hosting):
+# with the repository variable BROWSER_GUARD_UPDATE_BASE_URL set, the build also makes the
+# -selfhosted- packages (the store packages plus the browser's update URL, nothing else),
+# and the self-hosted-feed job signs the Chrome/Edge one as a CRX3 with the owner key
+# (secret BROWSER_GUARD_CRX_KEY_PEM, environment browser-guard-self-hosted), checks the ID
+# against the pinned variable BROWSER_GUARD_CRX_EXTENSION_ID and builds the update feed
+# (update.xml, packages/, SHA256SUMS). A missing key or pin fails the release: nothing is
+# signed with another key. The CRX goes on the draft release; the feed is an artifact.
 
 on:
   push:
@@ -38,6 +47,8 @@ jobs:
       version: ${{ steps.identity.outputs.version }}
       package_version: ${{ steps.identity.outputs.package_version }}
       sha: ${{ steps.identity.outputs.sha }}
+      self_hosted: ${{ steps.channel.outputs.self_hosted }}
+      update_base_url: ${{ steps.channel.outputs.update_base_url }}
     steps:
       - name: Checkout protected tag (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,6 +111,27 @@ jobs:
             echo "sha=${tag_sha}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Resolve the self-hosted update channel
+        id: channel
+        shell: bash
+        env:
+          UPDATE_BASE_URL: ${{ vars.BROWSER_GUARD_UPDATE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${UPDATE_BASE_URL}" ]]; then
+            echo "self_hosted=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice title=self-hosted::BROWSER_GUARD_UPDATE_BASE_URL is not set: store packages only, no self-hosted update feed."
+            exit 0
+          fi
+          [[ "${UPDATE_BASE_URL}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$ ]] || {
+            echo "BROWSER_GUARD_UPDATE_BASE_URL must be a plain https:// URL (no credentials, query or fragment)." >&2
+            exit 1
+          }
+          {
+            echo "self_hosted=true"
+            echo "update_base_url=${UPDATE_BASE_URL%/}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Frozen dependency install (no lifecycle mutation)
         run: pnpm install --frozen-lockfile --ignore-scripts
 
@@ -128,6 +160,9 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ steps.identity.outputs.package_version }}
+          SELF_HOSTED: ${{ steps.channel.outputs.self_hosted }}
+          # Read by build.mjs and validate-store.mjs: adds and requires the -selfhosted- packages.
+          BROWSER_GUARD_UPDATE_BASE_URL: ${{ steps.channel.outputs.update_base_url }}
         run: |
           set -euo pipefail
           dist=packages/browser-guard/dist
@@ -146,6 +181,13 @@ jobs:
             [[ -f "${dist}/${zip}" ]] || { echo "Missing ${zip}" >&2; exit 1; }
             cp "${dist}/${zip}" "${output}/"
           done
+          if [[ "${SELF_HOSTED}" == "true" ]]; then
+            for target in chrome-selfhosted firefox-selfhosted; do
+              zip="aidr-browser-guard-${target}-${VERSION}.zip"
+              [[ -f "${dist}/${zip}" ]] || { echo "Missing ${zip}" >&2; exit 1; }
+              cp "${dist}/${zip}" "${output}/"
+            done
+          fi
           cp "${dist}/SHA256SUMS" "${output}/SHA256SUMS"
           # SHA256SUMS must list exactly the staged zips, nothing more.
           listed="$(awk '{print $2}' "${output}/SHA256SUMS" | sort)"
@@ -156,6 +198,8 @@ jobs:
       - name: Offline store validation of the staged packages
         env:
           VERSION: ${{ steps.identity.outputs.version }}
+          # Set: the -selfhosted- packages must be present and carry exactly this feed's URLs.
+          BROWSER_GUARD_UPDATE_BASE_URL: ${{ steps.channel.outputs.update_base_url }}
         run: node packages/browser-guard/scripts/validate-store.mjs --dist release-output-browser-guard --version "${VERSION}"
 
       - name: Clean-source gate after release build
@@ -175,9 +219,81 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  self-hosted-feed:
+    name: Sign the self-hosted Chrome/Edge package and build the update feed
+    needs: build
+    if: needs.build.outputs.self_hosted == 'true'
+    runs-on: ubuntu-22.04
+    # The owner's CRX key lives only in this environment; add required reviewers to it.
+    # The job runs update-feed.mjs from the verified tag commit with Node built-ins only:
+    # no dependency install, no package manager, no build.
+    environment: browser-guard-self-hosted
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.package_version }}
+      UPDATE_BASE_URL: ${{ needs.build.outputs.update_base_url }}
+    steps:
+      - name: Checkout the verified tag commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Browser Guard release bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-browser-guard-${{ needs.build.outputs.version }}
+          path: release-output-browser-guard
+
+      - name: Recheck the bundle before signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release-output-browser-guard && sha256sum --check --strict SHA256SUMS)
+
+      - name: Sign the CRX3 and build the update feed (fails closed without the key)
+        shell: bash
+        env:
+          BROWSER_GUARD_CRX_KEY_PEM: ${{ secrets.BROWSER_GUARD_CRX_KEY_PEM }}
+          EXTENSION_ID: ${{ vars.BROWSER_GUARD_CRX_EXTENSION_ID }}
+        run: |
+          set -euo pipefail
+          [[ -n "${BROWSER_GUARD_CRX_KEY_PEM}" ]] || {
+            echo "::error::BROWSER_GUARD_CRX_KEY_PEM is not set in the browser-guard-self-hosted environment: the self-hosted package is not signed. Add the owner's extension key, or unset BROWSER_GUARD_UPDATE_BASE_URL." >&2
+            exit 1
+          }
+          [[ "${EXTENSION_ID}" =~ ^[a-p]{32}$ ]] || {
+            echo "::error::Pin the self-hosted extension ID in the BROWSER_GUARD_CRX_EXTENSION_ID variable (print it with: node packages/browser-guard/scripts/update-feed.mjs --print-extension-id)." >&2
+            exit 1
+          }
+          # The key reaches the script through the environment only, never argv or disk.
+          node packages/browser-guard/scripts/update-feed.mjs \
+            --base-url "${UPDATE_BASE_URL}" \
+            --out update-feed \
+            --chrome-zip "release-output-browser-guard/aidr-browser-guard-chrome-selfhosted-${VERSION}.zip" \
+            --extension-id "${EXTENSION_ID}"
+          (cd update-feed && sha256sum --check --strict SHA256SUMS)
+          echo "| self-hosted | CRX ${VERSION} signed for ${EXTENSION_ID}; feed for ${UPDATE_BASE_URL} (artifact aidr-browser-guard-update-feed-${VERSION}) |" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the update feed (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidr-browser-guard-update-feed-${{ needs.build.outputs.version }}
+          path: update-feed/
+          if-no-files-found: error
+          retention-days: 30
+
   attest-publish:
     name: Attest and publish Browser Guard draft release
-    needs: build
+    needs: [build, self-hosted-feed]
+    # Runs when the feed job succeeded or was skipped (no self-hosted channel), never after a failure.
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.self-hosted-feed.result == 'success' || needs.self-hosted-feed.result == 'skipped') }}
     runs-on: ubuntu-22.04
     environment: browser-guard-release
     permissions:
@@ -191,16 +307,34 @@ jobs:
           name: aidr-browser-guard-${{ needs.build.outputs.version }}
           path: release-output-browser-guard
 
+      - name: Download the update feed (pinned)
+        if: needs.build.outputs.self_hosted == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-browser-guard-update-feed-${{ needs.build.outputs.version }}
+          path: update-feed
+
       - name: Recheck bundle across the runner boundary
         shell: bash
         env:
           VERSION: ${{ needs.build.outputs.package_version }}
+          SELF_HOSTED: ${{ needs.build.outputs.self_hosted }}
         run: |
           set -euo pipefail
           cd release-output-browser-guard
           sha256sum --check --strict SHA256SUMS
-          expected="$(printf '%s\n' "aidr-browser-guard-chrome-${VERSION}.zip" "aidr-browser-guard-firefox-${VERSION}.zip" "aidr-browser-guard-source-${VERSION}.zip" SHA256SUMS | sort)"
+          names=("aidr-browser-guard-chrome-${VERSION}.zip" "aidr-browser-guard-firefox-${VERSION}.zip" "aidr-browser-guard-source-${VERSION}.zip" SHA256SUMS)
+          if [[ "${SELF_HOSTED}" == "true" ]]; then
+            names+=("aidr-browser-guard-chrome-selfhosted-${VERSION}.zip" "aidr-browser-guard-firefox-selfhosted-${VERSION}.zip")
+          fi
+          expected="$(printf '%s\n' "${names[@]}" | sort)"
           [[ "$(ls -1 | sort)" == "${expected}" ]] || { echo "Unexpected files in the release bundle." >&2; ls -la >&2; exit 1; }
+          if [[ "${SELF_HOSTED}" == "true" ]]; then
+            # The signed CRX joins the draft release next to the zips it was built from.
+            (cd ../update-feed && sha256sum --check --strict SHA256SUMS)
+            crx="aidr-browser-guard-${VERSION}.crx"
+            cp "../update-feed/packages/${crx}" "${crx}"
+          fi
 
       - name: Attest the Browser Guard zips (pinned)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -222,6 +356,8 @@ jobs:
   store-drafts:
     name: Upload store drafts for the owner to publish
     needs: [build, attest-publish]
+    # Explicit: the optional self-hosted-feed job upstream may be skipped.
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.attest-publish.result == 'success' }}
     runs-on: ubuntu-22.04
     # Store credentials live only in this environment; add required reviewers to it
     # so every upload is approved by a person. No checkout: nothing from the tag runs here.
@@ -230,6 +366,7 @@ jobs:
       contents: read
     env:
       VERSION: ${{ needs.build.outputs.package_version }}
+      SELF_HOSTED: ${{ needs.build.outputs.self_hosted }}
       AMO_ADDON_ID: browser-guard@singularityrd.com
     steps:
       - name: Download Browser Guard release bundle (pinned)
@@ -383,6 +520,11 @@ jobs:
           set -euo pipefail
           umask 077
           zip="release-output-browser-guard/aidr-browser-guard-firefox-${VERSION}.zip"
+          # With the self-hosted channel, Mozilla signs the package that carries the feed's
+          # gecko.update_url, so self-hosted Firefox copies update themselves.
+          if [[ "${SELF_HOSTED}" == "true" ]]; then
+            zip="release-output-browser-guard/aidr-browser-guard-firefox-selfhosted-${VERSION}.zip"
+          fi
           source="release-output-browser-guard/aidr-browser-guard-source-${VERSION}.zip"
           api="https://addons.mozilla.org/api/v5/addons"
           trap 'rm -f "${RUNNER_TEMP}/amo-auth"' EXIT

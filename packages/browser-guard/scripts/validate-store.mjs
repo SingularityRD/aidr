@@ -3,7 +3,7 @@
  * Offline store validation for the Browser Guard upload packages and listing kit.
  *
  *   node scripts/validate-store.mjs                 # dist/ zips of package.json's version + store/
- *   node scripts/validate-store.mjs --dist <dir> --store <dir> [--version <x.y.z>]
+ *   node scripts/validate-store.mjs --dist <dir> --store <dir> [--version <x.y.z>] [--update-base-url <https url>]
  *
  * Checks the exact zips that are uploaded (aidr-browser-guard-{chrome,firefox}-<version>.zip)
  * against the rules of the Chrome Web Store, Microsoft Edge Add-ons and addons.mozilla.org
@@ -18,13 +18,31 @@
  * the store limits, keep their "not covered" section and avoid unverifiable claims, and
  * the screenshots and promo tiles have the store sizes.
  *
+ * Self-hosted packages (aidr-browser-guard-{chrome,firefox}-selfhosted-<version>.zip, built
+ * with --update-base-url) are checked when present, and required when --update-base-url (or
+ * BROWSER_GUARD_UPDATE_BASE_URL) is given: they must pass every store rule except the update
+ * URL, carry exactly the channel's https update URL (Chrome/Edge `update_url` ending in
+ * /update.xml, Firefox `gecko.update_url` ending in /updates.json), and hold byte-identical
+ * files to the store package, with the update URL as the only manifest difference.
+ *
  * Exit code 0 = no violation, 1 = violations (each printed with the file it concerns),
  * 2 = usage error or missing input.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GECKO_ID, ICON_SIZES, manifestVersion, scanBundle, scanHtml } from "./build.mjs";
+import {
+	GECKO_ID,
+	ICON_SIZES,
+	SELF_HOSTED_FEED_FILES,
+	UPDATE_BASE_URL_ENV,
+	manifestVersion,
+	normalizeUpdateBaseUrl,
+	scanBundle,
+	scanHtml,
+	selfHostedArchiveName,
+	selfHostedUpdateUrl,
+} from "./build.mjs";
 import { readZip } from "./zip.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -170,10 +188,16 @@ export function manifestReferences(manifest) {
  * Validates one store package.
  * @param {"chrome" | "firefox"} target
  * @param {Map<string, Buffer>} files package entries (path -> bytes)
- * @param {{ justifications?: object; label?: string; expectedVersion?: string }} options
+ * `channel: "self-hosted"` swaps the "no update URL" rule for "exactly the channel's https
+ * update URL" (`expectedUpdateUrl` pins it); every other store rule still applies.
+ * @param {{ justifications?: object; label?: string; expectedVersion?: string; channel?: "store" | "self-hosted"; expectedUpdateUrl?: string }} options
  * @returns {string[]} violations
  */
-export function validatePackage(target, files, { justifications, label = target, expectedVersion } = {}) {
+export function validatePackage(
+	target,
+	files,
+	{ justifications, label = target, expectedVersion, channel = "store", expectedUpdateUrl } = {},
+) {
 	const problems = [];
 	const at = (message) => problems.push(`${label}: ${message}`);
 
@@ -184,7 +208,14 @@ export function validatePackage(target, files, { justifications, label = target,
 
 	if (manifest.manifest_version !== 3) at(`manifest_version must be 3 (found ${manifest.manifest_version})`);
 	if ("key" in manifest) at('manifest.json has a "key" field: store builds must not carry one (the store assigns the id)');
-	if ("update_url" in manifest) at('manifest.json has an "update_url": store builds are updated by the store');
+	if (channel === "store") {
+		if ("update_url" in manifest) at('manifest.json has an "update_url": store builds are updated by the store');
+		if (manifest.browser_specific_settings?.gecko && "update_url" in manifest.browser_specific_settings.gecko) {
+			at('browser_specific_settings.gecko has an "update_url": store builds are updated by the store');
+		}
+	} else {
+		for (const problem of selfHostedUpdateUrlProblems(target, manifest, expectedUpdateUrl)) at(problem);
+	}
 
 	// Version: 1-4 dot-separated integers 0-65535 without leading zeros, not all zero.
 	const version = String(manifest.version ?? "");
@@ -327,6 +358,76 @@ export function validatePackage(target, files, { justifications, label = target,
 	return problems;
 }
 
+/** Update URL rules of a self-hosted package (the only manifest field it may add). */
+export function selfHostedUpdateUrlProblems(target, manifest, expectedUpdateUrl) {
+	const problems = [];
+	const gecko = manifest.browser_specific_settings?.gecko;
+	const [field, value, misplaced] =
+		target === "chrome"
+			? ["update_url", manifest.update_url, gecko && "update_url" in gecko ? "browser_specific_settings.gecko.update_url" : null]
+			: ["browser_specific_settings.gecko.update_url", gecko?.update_url, "update_url" in manifest ? "update_url" : null];
+	if (misplaced) problems.push(`${misplaced} is not read by this browser; the self-hosted update URL belongs in ${field}`);
+	if (typeof value !== "string" || value === "") {
+		problems.push(`self-hosted build needs ${field} (the browser would never update it)`);
+		return problems;
+	}
+	let normalized = null;
+	try {
+		normalized = selfHostedUpdateUrl(target, value.slice(0, value.lastIndexOf("/")));
+	} catch (error) {
+		problems.push(`${field} ${value}: ${error.message}`);
+	}
+	if (normalized !== null && normalized !== value) problems.push(`${field} ${value} must end in /${SELF_HOSTED_FEED_FILES[target]}`);
+	if (expectedUpdateUrl && value !== expectedUpdateUrl) problems.push(`${field} is ${value}, expected ${expectedUpdateUrl}`);
+	return problems;
+}
+
+/** Removes the self-hosted update URL so a self-hosted manifest can be compared with the store one. */
+function withoutUpdateUrl(manifest) {
+	const copy = structuredClone(manifest);
+	delete copy.update_url;
+	if (copy.browser_specific_settings?.gecko) delete copy.browser_specific_settings.gecko.update_url;
+	return copy;
+}
+
+function canonicalJson(value) {
+	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+	if (value && typeof value === "object") {
+		return `{${Object.keys(value)
+			.sort()
+			.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+			.join(",")}}`;
+	}
+	return JSON.stringify(value);
+}
+
+/**
+ * The self-hosted package may differ from the store package only by its update URL:
+ * the same file set, byte-identical files, and manifests equal once the URL is removed.
+ */
+export function selfHostedDiffProblems(storeFiles, selfHostedFiles, label = "self-hosted") {
+	const problems = [];
+	const names = new Set([...storeFiles.keys(), ...selfHostedFiles.keys()]);
+	for (const name of [...names].sort()) {
+		if (name === "manifest.json") continue;
+		const a = storeFiles.get(name);
+		const b = selfHostedFiles.get(name);
+		if (!a) problems.push(`${label}: ${name} is not in the store package`);
+		else if (!b) problems.push(`${label}: ${name} is missing (it is in the store package)`);
+		else if (!a.equals(b)) problems.push(`${label}: ${name} differs from the store package`);
+	}
+	try {
+		const store = JSON.parse(storeFiles.get("manifest.json").toString("utf8"));
+		const self = JSON.parse(selfHostedFiles.get("manifest.json").toString("utf8"));
+		if (canonicalJson(withoutUpdateUrl(self)) !== canonicalJson(withoutUpdateUrl(store))) {
+			problems.push(`${label}: manifest.json differs from the store manifest beyond the update URL`);
+		}
+	} catch (error) {
+		problems.push(`${label}: cannot compare manifest.json with the store package (${error.message})`);
+	}
+	return problems;
+}
+
 function readText(file, problems, label) {
 	if (!existsSync(file)) {
 		problems.push(`${label}: missing`);
@@ -435,31 +536,78 @@ export function validateListingKit(storeDir, packageRoot = PACKAGE_ROOT) {
 	return { problems, notices, justifications };
 }
 
-/** Validates the release zips in `distDir` and the listing kit in `storeDir`. */
-export function validateRelease({ distDir, storeDir, version, packageRoot = PACKAGE_ROOT }) {
+function readPackage(distDir, name, problems) {
+	const bytes = readFileSync(join(distDir, name));
+	if (bytes.length > LIMITS.packageBytes) problems.push(`${name}: ${bytes.length} bytes exceeds ${LIMITS.packageBytes}`);
+	try {
+		return readZip(bytes);
+	} catch (error) {
+		problems.push(`${name}: not a readable zip (${error.message})`);
+		return null;
+	}
+}
+
+function feedBase(target, files) {
+	try {
+		const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
+		const url = target === "chrome" ? manifest.update_url : manifest.browser_specific_settings?.gecko?.update_url;
+		return typeof url === "string" ? url.slice(0, url.lastIndexOf("/")) : null;
+	} catch {
+		return null; // reported by validatePackage
+	}
+}
+
+/**
+ * Validates the release zips in `distDir` and the listing kit in `storeDir`. Self-hosted
+ * packages are validated when present and required when `updateBaseUrl` is given.
+ */
+export function validateRelease({ distDir, storeDir, version, packageRoot = PACKAGE_ROOT, updateBaseUrl }) {
 	const kit = validateListingKit(storeDir, packageRoot);
 	const problems = [...kit.problems];
 	const { version: numeric } = manifestVersion(version);
 	const packages = [];
+	let base = null;
+	if (updateBaseUrl) {
+		try {
+			base = normalizeUpdateBaseUrl(updateBaseUrl);
+		} catch (error) {
+			problems.push(`--update-base-url: ${error.message}`);
+		}
+	}
+	const feedBases = new Set();
 	for (const target of ["chrome", "firefox"]) {
 		const name = `aidr-browser-guard-${target}-${numeric}.zip`;
-		const file = join(distDir, name);
-		if (!existsSync(file)) {
+		if (!existsSync(join(distDir, name))) {
 			problems.push(`${name}: missing in ${distDir} (run pnpm package:browser-guard)`);
 			continue;
 		}
-		const bytes = readFileSync(file);
-		if (bytes.length > LIMITS.packageBytes) problems.push(`${name}: ${bytes.length} bytes exceeds ${LIMITS.packageBytes}`);
-		let files;
-		try {
-			files = readZip(bytes);
-		} catch (error) {
-			problems.push(`${name}: not a readable zip (${error.message})`);
-			continue;
-		}
+		const files = readPackage(distDir, name, problems);
+		if (!files) continue;
 		problems.push(...validatePackage(target, files, { justifications: kit.justifications, label: name, expectedVersion: numeric }));
 		packages.push(name);
+
+		const selfName = selfHostedArchiveName(target, numeric);
+		if (!existsSync(join(distDir, selfName))) {
+			if (updateBaseUrl) problems.push(`${selfName}: missing in ${distDir} (build with --update-base-url ${updateBaseUrl})`);
+			continue;
+		}
+		const selfFiles = readPackage(distDir, selfName, problems);
+		if (!selfFiles) continue;
+		problems.push(
+			...validatePackage(target, selfFiles, {
+				justifications: kit.justifications,
+				label: selfName,
+				expectedVersion: numeric,
+				channel: "self-hosted",
+				expectedUpdateUrl: base ? selfHostedUpdateUrl(target, base) : undefined,
+			}),
+			...selfHostedDiffProblems(files, selfFiles, selfName),
+		);
+		const feed = feedBase(target, selfFiles);
+		if (feed) feedBases.add(feed);
+		packages.push(selfName);
 	}
+	if (feedBases.size > 1) problems.push(`self-hosted packages point at different update feeds: ${[...feedBases].sort().join(", ")}`);
 	return { problems, notices: kit.notices, packages };
 }
 
@@ -467,10 +615,16 @@ function parseArgs(argv) {
 	const options = {};
 	for (let i = 0; i < argv.length; i++) {
 		const flag = argv[i];
-		const key = { "--dist": "distDir", "--store": "storeDir", "--version": "version" }[flag];
-		if (!key || !argv[i + 1]) throw new Error(`usage: validate-store.mjs [--dist <dir>] [--store <dir>] [--version <x.y.z>] (bad argument ${flag})`);
+		const key = { "--dist": "distDir", "--store": "storeDir", "--version": "version", "--update-base-url": "updateBaseUrl" }[flag];
+		if (!key || !argv[i + 1]) {
+			throw new Error(
+				`usage: validate-store.mjs [--dist <dir>] [--store <dir>] [--version <x.y.z>] [--update-base-url <https url>] (bad argument ${flag})`,
+			);
+		}
 		options[key] = argv[++i];
 	}
+	const fromEnv = process.env[UPDATE_BASE_URL_ENV]?.trim();
+	if (!options.updateBaseUrl && fromEnv) options.updateBaseUrl = fromEnv;
 	return options;
 }
 
@@ -487,6 +641,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 		distDir: resolve(options.distDir ?? join(PACKAGE_ROOT, "dist")),
 		storeDir: resolve(options.storeDir ?? join(PACKAGE_ROOT, "store")),
 		version,
+		updateBaseUrl: options.updateBaseUrl,
 	});
 	for (const notice of notices) console.log(`[browser-guard store] notice: ${notice}`);
 	if (problems.length > 0) {

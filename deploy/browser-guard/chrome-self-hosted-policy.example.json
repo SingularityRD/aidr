@@ -1,0 +1,127 @@
+{
+  "ExtensionSettings": {
+    "<SELF_HOSTED_EXTENSION_ID>": {
+      "installation_mode": "force_installed",
+      "update_url": "https://<INTERNAL_HOST>/browser-guard/update.xml",
+      "override_update_url": true,
+      "toolbar_pin": "force_pinned"
+    }
+  },
+  "ExtensionInstallForcelist": [
+    "<SELF_HOSTED_EXTENSION_ID>;https://<INTERNAL_HOST>/browser-guard/update.xml"
+  ],
+  "IncognitoModeAvailability": 1,
+  "BrowserGuestModeEnabled": false,
+  "DeveloperToolsAvailability": 2,
+  "ExtensionInstallBlocklist": [
+    "*"
+  ],
+  "ExtensionInstallAllowlist": [
+    "<SELF_HOSTED_EXTENSION_ID>"
+  ],
+  "3rdparty": {
+    "extensions": {
+      "<SELF_HOSTED_EXTENSION_ID>": {
+        "policyId": "acme-browser-guard-2026-09",
+        "mode": "auto",
+        "enabledEntities": [
+          "PERSON",
+          "EMAIL",
+          "PHONE",
+          "TC_KIMLIK",
+          "IBAN",
+          "CREDIT_CARD",
+          "ADDRESS",
+          "US_SSN",
+          "DATE_OF_BIRTH",
+          "PASSPORT",
+          "NATIONAL_ID",
+          "TAX_ID",
+          "BANK_ACCOUNT",
+          "IP_ADDRESS",
+          "MAC_ADDRESS",
+          "SECRET",
+          "PRIVATE_KEY",
+          "INTERNAL",
+          "CLASSIFIED",
+          "HEALTH_ID",
+          "LICENSE_PLATE"
+        ],
+        "neverRestore": [
+          "SECRET",
+          "PRIVATE_KEY"
+        ],
+        "literals": [
+          {
+            "value": "Project Nightingale",
+            "type": "INTERNAL"
+          },
+          {
+            "value": "ACME-CONFIDENTIAL",
+            "type": "CLASSIFIED"
+          }
+        ],
+        "exactData": [
+          {
+            "datasetId": "crm-customers-example",
+            "keySource": "native-host",
+            "minEntropyBits": 64,
+            "fingerprints": [
+              "REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"
+            ],
+            "type": "PERSON"
+          }
+        ],
+        "detectSignals": true,
+        "signalAction": "warn",
+        "blockedSites": [
+          "deepseek"
+        ],
+        "disabledSites": [],
+        "customSites": [
+          {
+            "id": "acme-gpt",
+            "label": "ACME GPT",
+            "hosts": [
+              "gpt.acme.example"
+            ],
+            "editorSelectors": [
+              "textarea#prompt"
+            ],
+            "sendButtonSelectors": [
+              "button.send"
+            ],
+            "responseSelectors": [
+              ".answer"
+            ]
+          }
+        ],
+        "shadowAi": {
+          "mode": "block-unsanctioned",
+          "sanctioned": [
+            "chatgpt",
+            "copilot",
+            "gemini"
+          ],
+          "blocked": [
+            "deepseek"
+          ]
+        },
+        "allowUserPause": false,
+        "allowSendAnyway": false,
+        "maskPaste": true,
+        "fileHandling": "scan",
+        "maxFileBytes": 5242880,
+        "restoreResponses": true,
+        "useNativeHost": false,
+        "requireNativeNer": false,
+        "telemetry": {
+          "controlPlaneUrl": "https://aidr.example.com",
+          "apiKey": "REPLACE_WITH_TENANT_API_KEY"
+        },
+        "language": "auto",
+        "allowUserOverrides": false
+      }
+    }
+  }
+}

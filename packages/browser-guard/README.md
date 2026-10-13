@@ -252,6 +252,15 @@ dist/aidr-browser-guard-source-<ver>.zip   source code for the AMO review (scrip
 dist/SHA256SUMS                            sha256sum -c compatible
 ```
 
+Self-hosted channel (browsers update from an HTTPS feed instead of a store): with
+`BROWSER_GUARD_UPDATE_BASE_URL=https://<host>/browser-guard` the release build also
+writes `dist/aidr-browser-guard-{chrome,firefox}-selfhosted-<ver>.zip` (the store
+packages plus the update URL), and `node scripts/update-feed.mjs` signs the Chrome/Edge
+one as a CRX3 with the owner key (`BROWSER_GUARD_CRX_KEY_PEM`; nothing is produced
+without it) and writes the feed (`update.xml`, `updates.json`, `packages/`,
+`SHA256SUMS`). See [`store/README.md`](store/README.md) and
+["Hosting Browser Guard updates internally"](../../docs/installation/browser-guard-enterprise.md#10-hosting-browser-guard-updates-internally).
+
 The listing kit (descriptions EN/TR, single-purpose statement, permission
 justifications, data-usage answers, privacy policy pages, screenshots and promo
 tiles) and the owner's publishing steps are in [`store/`](store/README.md).
