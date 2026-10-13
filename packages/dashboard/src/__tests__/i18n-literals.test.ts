@@ -25,6 +25,7 @@ const UI_DIRS = ["ui/pages", "ui", "enterprise", "onboarding", "billing", "compo
 const ALLOWED_TEXT = new Set([
 	"AIDR",
 	"Singularity AIDR",
+	"Singularity",
 	"Browser Guard",
 	"AutoSecOps",
 	"Claude Code",
@@ -75,22 +76,15 @@ const WORD = /[A-Za-z]{2,}/;
  * hold. The list may only shrink: a new literal anywhere fails the test.
  */
 const PENDING: Record<string, number> = {
-	"components/Turnstile.tsx": 3,
 	"enterprise/agent-profile-editor.tsx": 38,
 	"enterprise/agent-profiles-panel.tsx": 30,
-	"enterprise/auth.tsx": 38,
 	"enterprise/dlp-editor.tsx": 127,
 	"enterprise/dlp-history.tsx": 31,
-	"ui/PublicLayout.tsx": 2,
-	"ui/pages/AuthCallbackPage.tsx": 15,
 	"ui/pages/CompliancePage.tsx": 2,
 	"ui/pages/DetectionExceptionsPage.tsx": 1,
 	"ui/pages/DirectoryAuthorityPanel.tsx": 25,
-	"ui/pages/OidcBreakGlassPage.tsx": 12,
-	"ui/pages/OidcCallbackPage.tsx": 4,
 	"ui/pages/OidcSsoPage.tsx": 73,
 	"ui/pages/OperatorPage.tsx": 100,
-	"ui/pages/RecoveryPage.tsx": 30,
 	"ui/pages/RetentionPage.tsx": 1,
 	"ui/pages/SamlPolicyPanel.tsx": 46,
 	"ui/pages/ScimPage.tsx": 99,

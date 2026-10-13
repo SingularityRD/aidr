@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { supabase } from "../../lib/supabase";
 import { ShieldIcon } from "../icons";
 import { bindInvitePending, clearInvitePending, markInvitePending } from "../invite-pending";
@@ -44,12 +46,22 @@ function missingCodeVerifier(error: unknown): boolean {
 	);
 }
 
-function callbackErrorMessage(cause: unknown): string {
-	if (missingCodeVerifier(cause))
-		return "Open the sign-in link in the browser where you requested it, or request a new link.";
-	if (cause instanceof Error && cause.message === FRAGMENT_REJECTED)
-		return "This sign-in link format is not accepted. Ask your administrator for a new invitation link.";
-	return "Authentication could not be completed.";
+function callbackErrorKey(cause: unknown): DashboardMessageKey {
+	if (missingCodeVerifier(cause)) return "cb.verifier";
+	if (cause instanceof Error && cause.message === FRAGMENT_REJECTED) return "cb.fragment";
+	return "cb.failed";
+}
+
+const ROLE_LABELS: Record<string, DashboardMessageKey> = {
+	owner: "common.role.owner",
+	admin: "common.role.admin",
+	member: "common.role.member",
+	viewer: "common.role.viewer",
+};
+
+function roleLabel(role: string, t: Translate): string {
+	const key = Object.hasOwn(ROLE_LABELS, role) ? ROLE_LABELS[role] : undefined;
+	return key ? t(key) : role;
 }
 
 /** Sign out locally; the pending-invite gate is dropped only once that succeeded. */
@@ -85,7 +97,7 @@ async function verifyInvite(tokenHash: string): Promise<InviteConfirmation> {
 	if (memberships.error) throw new Error("invite_membership_unavailable");
 	const rows = (memberships.data ?? []) as unknown as MembershipRow[];
 	return {
-		email: user.email ?? "this account",
+		email: user.email ?? "",
 		memberships: rows.flatMap((row) => {
 			const team = Array.isArray(row.teams) ? row.teams[0] : row.teams;
 			return team ? [{ workspace: team.name, role: row.role }] : [];
@@ -94,8 +106,10 @@ async function verifyInvite(tokenHash: string): Promise<InviteConfirmation> {
 }
 
 export function AuthCallbackPage() {
+	const t = useT();
+	const richT = useRichT();
 	const navigate = useNavigate();
-	const [error, setError] = useState<string | null>(null);
+	const [error, setError] = useState<DashboardMessageKey | null>(null);
 	const [confirmation, setConfirmation] = useState<InviteConfirmation | null>(null);
 	const [deciding, setDeciding] = useState(false);
 	const started = useRef(false);
@@ -156,7 +170,7 @@ export function AuthCallbackPage() {
 			} catch (cause) {
 				scrubCallbackUrl();
 				if (inviteAttempted) await discardInviteSession();
-				if (active.current) setError(callbackErrorMessage(cause));
+				if (active.current) setError(callbackErrorKey(cause));
 			}
 		}
 
@@ -189,29 +203,30 @@ export function AuthCallbackPage() {
 						</span>
 						<div>
 							<h1 className="auth-title" id="invite-confirm-title">
-								Confirm invitation
+								{t("cb.confirmTitle")}
 							</h1>
 							<p className="auth-subtitle">
-								You are signing in as <strong>{confirmation.email}</strong>.
+								{richT("cb.signingInAs", {
+									email: <strong>{confirmation.email || t("cb.thisAccount")}</strong>,
+								})}
 							</p>
 						</div>
 					</div>
 					{confirmation.memberships.length > 0 ? (
-						<ul className="notice" aria-label="Workspace access">
+						<ul className="notice" aria-label={t("cb.access")}>
 							{confirmation.memberships.map((membership) => (
 								<li key={`${membership.workspace}:${membership.role}`}>
-									You are joining workspace <strong>{membership.workspace}</strong> as role{" "}
-									<strong>{membership.role}</strong>.
+									{richT("cb.joining", {
+										workspace: <strong>{membership.workspace}</strong>,
+										role: <strong>{roleLabel(membership.role, t)}</strong>,
+									})}
 								</li>
 							))}
 						</ul>
 					) : (
-						<div className="notice">No workspace membership is attached to this account yet.</div>
+						<div className="notice">{t("cb.noMembership")}</div>
 					)}
-					<p className="auth-subtitle">
-						Continue only if you expected this invitation. If you did not, cancel and this browser
-						will be signed out.
-					</p>
+					<p className="auth-subtitle">{t("cb.expected")}</p>
 					<div
 						className="row"
 						style={{ marginTop: 14, flexWrap: "wrap", justifyContent: "center", gap: 8 }}
@@ -222,10 +237,10 @@ export function AuthCallbackPage() {
 							disabled={deciding}
 							onClick={() => void cancelInvite()}
 						>
-							Cancel
+							{t("common.cancel")}
 						</button>
 						<button className="button" type="button" disabled={deciding} onClick={acceptInvite}>
-							Continue
+							{t("cb.continue")}
 						</button>
 					</div>
 				</div>
@@ -241,8 +256,8 @@ export function AuthCallbackPage() {
 						<ShieldIcon size={26} />
 					</span>
 					<div>
-						<h1 className="auth-title">Signing in…</h1>
-						<p className="auth-subtitle">Completing Supabase authentication.</p>
+						<h1 className="auth-title">{t("cb.signingIn")}</h1>
+						<p className="auth-subtitle">{t("cb.completing")}</p>
 					</div>
 				</div>
 				{error ? null : (
@@ -252,7 +267,7 @@ export function AuthCallbackPage() {
 				)}
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
-						{error}
+						{t(error)}
 					</div>
 				) : null}
 				{error ? (
@@ -265,7 +280,7 @@ export function AuthCallbackPage() {
 							type="button"
 							onClick={() => navigate("/login")}
 						>
-							Return to sign in
+							{t("cb.return")}
 						</button>
 					</div>
 				) : null}

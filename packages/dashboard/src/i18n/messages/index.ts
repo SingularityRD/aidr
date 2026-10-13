@@ -3,6 +3,7 @@ import { agentsMessages } from "./agents";
 import { apiKeysMessages } from "./api-keys";
 import { approvalsMessages } from "./approvals";
 import { auditMessages } from "./audit";
+import { authPagesMessages } from "./auth-pages";
 import { autosecopsMessages } from "./autosecops";
 import { billingMessages } from "./billing";
 import { billingPlanMessages } from "./billing-plan";
@@ -12,6 +13,7 @@ import { dashboardMessages } from "./dashboard";
 import { detectionExceptionsMessages } from "./detection-exceptions";
 import { discoveryMessages } from "./discovery";
 import { downloadCenterMessages } from "./download-center";
+import { enterpriseAuthMessages } from "./enterprise-auth";
 import { evidenceMessages } from "./evidence";
 import { frameworkMessages } from "./framework";
 import { governanceMessages } from "./governance";
@@ -40,6 +42,7 @@ export const pageMessages = {
 	...apiKeysMessages,
 	...approvalsMessages,
 	...auditMessages,
+	...authPagesMessages,
 	...autosecopsMessages,
 	...billingMessages,
 	...billingPlanMessages,
@@ -48,6 +51,7 @@ export const pageMessages = {
 	...detectionExceptionsMessages,
 	...discoveryMessages,
 	...downloadCenterMessages,
+	...enterpriseAuthMessages,
 	...evidenceMessages,
 	...frameworkMessages,
 	...governanceMessages,
@@ -77,6 +81,7 @@ export const messageModules = [
 	apiKeysMessages,
 	approvalsMessages,
 	auditMessages,
+	authPagesMessages,
 	autosecopsMessages,
 	billingMessages,
 	billingPlanMessages,
@@ -85,6 +90,7 @@ export const messageModules = [
 	detectionExceptionsMessages,
 	discoveryMessages,
 	downloadCenterMessages,
+	enterpriseAuthMessages,
 	evidenceMessages,
 	frameworkMessages,
 	governanceMessages,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { completeOidcFlow } from "../../auth/oidc-sso";
+import { useT } from "../../i18n/I18nProvider";
 import { ShieldIcon } from "../icons";
 import { sanitizeReturnTo } from "../return-to";
 
@@ -13,9 +14,12 @@ function scrubCallbackUrl() {
 
 /** IdP redirect target. The authorization code is consumed exactly once and removed from the URL first. */
 export function OidcCallbackPage() {
+	const t = useT();
 	const navigate = useNavigate();
 	const { search } = useLocation();
 	const [error, setError] = useState<string | null>(null);
+	// True when the generic failure text should be shown in the viewer's language.
+	const [failed, setFailed] = useState(false);
 	const started = useRef(false);
 	const active = useRef(false);
 
@@ -40,7 +44,7 @@ export function OidcCallbackPage() {
 				});
 			})
 			.catch(() => {
-				if (active.current) setError("Single sign-on failed. Try again.");
+				if (active.current) setFailed(true);
 			});
 		return () => {
 			active.current = false;
@@ -55,16 +59,16 @@ export function OidcCallbackPage() {
 						<ShieldIcon size={26} />
 					</span>
 					<div>
-						<h1 className="auth-title">Single sign-on</h1>
+						<h1 className="auth-title">{t("nav.sso")}</h1>
 					</div>
 				</div>
-				{error ? (
+				{error || failed ? (
 					<div role="alert">
-						<p>{error}</p>
-						<Link to="/login">Back to sign-in</Link>
+						<p>{error ?? t("oidc.failed")}</p>
+						<Link to="/login">{t("oidc.backToSignIn")}</Link>
 					</div>
 				) : (
-					<p role="status">Completing sign-in…</p>
+					<p role="status">{t("oidc.completing")}</p>
 				)}
 			</div>
 		</div>

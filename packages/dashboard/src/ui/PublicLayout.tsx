@@ -50,7 +50,7 @@ export function PublicLayout() {
 			</main>
 			<footer className="footer">
 				<div className="muted small">
-					&copy; {new Date().getFullYear()} {t("public.footer")}
+					© {new Date().getFullYear()} {t("public.footer")}
 				</div>
 				<nav className="footer-links" aria-label={t("public.footerLabel")}>
 					<Link to="/support">{t("public.support")}</Link>
