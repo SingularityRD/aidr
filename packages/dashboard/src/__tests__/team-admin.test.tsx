@@ -97,7 +97,8 @@ describe("Team administration is reachable (AIDR-008)", () => {
 			resolve(REPO_ROOT, "packages/dashboard/src/ui/AppLayout.tsx"),
 			"utf8",
 		);
-		expect(layout).toContain('<NavLink to="/team">{t("nav.team")}</NavLink>');
+		// Navigation is data (NAV_SECTIONS); every signed-in role sees Team.
+		expect(layout).toContain('{ to: "/team", label: "nav.team" }');
 		expect(en["nav.team"]).toBe("Team");
 	});
 
@@ -177,9 +178,11 @@ describe("Team administration is reachable (AIDR-008)", () => {
 
 		renderTeamRoute();
 
-		await waitFor(() => expect(screen.getByRole("link", { name: "Policies" })).toBeInTheDocument());
+		await waitFor(() =>
+			expect(screen.getByRole("link", { name: "Team policy" })).toBeInTheDocument(),
+		);
 		expect(screen.getByRole("link", { name: "Team" })).toHaveAttribute("href", "/team");
-		expect(screen.getByRole("link", { name: "Policies" })).toHaveAttribute("href", "/policies");
+		expect(screen.getByRole("link", { name: "Team policy" })).toHaveAttribute("href", "/policies");
 	});
 
 	it("hides the policy navigation entry from a viewer and keeps the member list read-only", async () => {
@@ -208,7 +211,7 @@ describe("Team administration is reachable (AIDR-008)", () => {
 		expect(within(row as HTMLElement).getByText("Owner")).toBeInTheDocument();
 
 		await waitFor(() =>
-			expect(screen.queryByRole("link", { name: "Policies" })).not.toBeInTheDocument(),
+			expect(screen.queryByRole("link", { name: "Team policy" })).not.toBeInTheDocument(),
 		);
 	});
 

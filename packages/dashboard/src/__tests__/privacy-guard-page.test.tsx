@@ -346,7 +346,8 @@ describe("Browser Privacy Guard read model", () => {
 			resolve(REPO_ROOT, "packages/dashboard/src/ui/AppLayout.tsx"),
 			"utf8",
 		);
-		expect(layout).toContain('<NavLink to="/privacy-guard">{t("nav.browserPrivacy")}</NavLink>');
-		expect(en["nav.browserPrivacy"]).toBe("Browser Privacy");
+		expect(layout).toContain('{ to: "/privacy-guard", label: "nav.browserGuard" }');
+		// One product name everywhere: the extension is "Browser Guard".
+		expect(en["nav.browserGuard"]).toBe("Browser Guard");
 	});
 });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import { useRichT, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
@@ -53,6 +54,8 @@ function isSeatUsageRow(value: unknown): value is SeatUsageRow {
 
 export function AgentsPage() {
 	const { currentTeam } = useTeam();
+	const t = useT();
+	const richT = useRichT();
 	const tenantId = currentTeam?.id;
 	const [agents, setAgents] = useState<AgentRow[] | null>(null);
 	const [seatUsage, setSeatUsage] = useState<SeatUsageRow | null>(null);
@@ -98,8 +101,8 @@ export function AgentsPage() {
 					setAgents(null);
 					setError(
 						agentsRes.error
-							? readErrorMessage(agentsRes.error, "Failed to load agents")
-							: "Agent data is unavailable.",
+							? readErrorMessage(agentsRes.error, t("agents.loadFailed"))
+							: t("agents.unavailable"),
 					);
 				} else {
 					setAgents(agentsRes.data);
@@ -110,8 +113,8 @@ export function AgentsPage() {
 					setSeatUsage(null);
 					setSeatUsageError(
 						seatRes.error
-							? readErrorMessage(seatRes.error, "Failed to load seat usage")
-							: "Seat usage data is unavailable.",
+							? readErrorMessage(seatRes.error, t("agents.seatsLoadFailed"))
+							: t("agents.seatsUnavailable"),
 					);
 				} else {
 					setSeatUsageError(null);
@@ -122,16 +125,16 @@ export function AgentsPage() {
 				setLoadedTenantId(activeTenantId);
 				setAgents(null);
 				setSeatUsage(null);
-				setError(readErrorMessage(cause, "Failed to load agents"));
-				setSeatUsageError("Seat usage data is unavailable.");
+				setError(readErrorMessage(cause, t("agents.loadFailed")));
+				setSeatUsageError(t("agents.seatsUnavailable"));
 			}
 		}
 
 		void load();
-		const t = setInterval(load, 5000);
+		const timer = setInterval(load, 5000);
 		return () => {
 			cancelled = true;
-			clearInterval(t);
+			clearInterval(timer);
 		};
 	}, [tenantId]);
 
@@ -144,20 +147,22 @@ export function AgentsPage() {
 			<div className="card">
 				<div className="row space-between" style={{ alignItems: "flex-start", gap: 16 }}>
 					<div>
-						<h1>Agents</h1>
-						<p className="muted">{currentTeam?.name ?? "Select a team to view its agents."}</p>
+						<h1>{t("nav.agents")}</h1>
+						<p className="muted">{currentTeam?.name ?? t("agents.noTeam")}</p>
 						<p className="muted">
-							Known installations (unique <code>iid</code>). Allowed:{" "}
-							<b>{allowed ?? "unavailable"}</b>. Recorded:{" "}
-							<b>{agentsForTeam?.length ?? "unavailable"}</b>.
+							{richT("agents.summary", {
+								iid: <code>iid</code>,
+								allowed: <b>{allowed ?? t("common.unavailable")}</b>,
+								recorded: <b>{agentsForTeam?.length ?? t("common.unavailable")}</b>,
+							})}
 						</p>
 					</div>
 					<span className="badge badge-neutral">
 						{agentsForTeam === null
-							? "unavailable"
+							? t("common.unavailable")
 							: agentsForTeam.length > 0
-								? "agents recorded"
-								: "no agents"}
+								? t("agents.badge.recorded")
+								: t("agents.badge.none")}
 					</span>
 				</div>
 				{loadedTenantId === tenantId && error ? (
@@ -167,7 +172,7 @@ export function AgentsPage() {
 				) : null}
 				{loadedTenantId === tenantId && seatUsageError ? (
 					<div className="notice notice-danger" role="alert" aria-live="polite">
-						Seat usage data is unavailable; do not infer the allowed-agent limit. {seatUsageError}
+						{t("agents.seatsWarning")} {seatUsageError}
 					</div>
 				) : null}
 			</div>
@@ -177,11 +182,11 @@ export function AgentsPage() {
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Name</th>
-								<th>Runtime</th>
-								<th>Last seen</th>
+								<th>{t("common.name")}</th>
+								<th>{t("agents.runtime")}</th>
+								<th>{t("agents.lastSeen")}</th>
 								<th className="right">
-									<span className="sr-only">Actions</span>
+									<span className="sr-only">{t("notify.table.actions")}</span>
 								</th>
 							</tr>
 						</thead>
@@ -194,7 +199,7 @@ export function AgentsPage() {
 									</td>
 									<td>
 										<span className="badge badge-neutral badge-plain">
-											{a.agent_runtime ?? "unknown"}
+											{a.agent_runtime ?? t("common.unknown")}
 										</span>
 										{a.agent_runtime_version ? (
 											<span className="muted small"> {a.agent_runtime_version}</span>
@@ -203,7 +208,7 @@ export function AgentsPage() {
 									<td className="mono">{new Date(a.last_seen).toLocaleString()}</td>
 									<td className="right">
 										<Link className="button button-secondary button-sm" to={`/agents/${a.id}`}>
-											View
+											{t("agents.view")}
 										</Link>
 									</td>
 								</tr>
@@ -211,14 +216,15 @@ export function AgentsPage() {
 							{agentsForTeam === null ? (
 								<tr>
 									<td colSpan={4} className="muted">
-										Agent data is unavailable.
+										{t("agents.unavailable")}
 									</td>
 								</tr>
 							) : agentsForTeam.length === 0 ? (
 								<tr>
 									<td colSpan={4} className="muted">
-										No agents yet. Go to <Link to="/onboarding">Onboarding</Link> to connect your
-										first agent.
+										{richT("agents.empty", {
+											link: <Link to="/onboarding">{t("nav.onboarding")}</Link>,
+										})}
 									</td>
 								</tr>
 							) : null}

@@ -1,4 +1,12 @@
-import { createContext, Fragment, type ReactNode, useContext, useEffect, useState } from "react";
+import {
+	createContext,
+	Fragment,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useEffect,
+	useState,
+} from "react";
 import { type DashboardMessageKey, en } from "./en";
 import { tr } from "./tr";
 
@@ -39,6 +47,15 @@ export function translate(
 ): string {
 	return format(template(locale, key), params);
 }
+
+/** A bound translator, as returned by {@link useT}. */
+export type Translate = (key: DashboardMessageKey, params?: MessageParams) => string;
+
+/**
+ * English translator for helpers called outside a component (and their unit
+ * tests); components pass their own `useT()` result instead.
+ */
+export const englishT: Translate = (key, params) => translate("en", key, params);
 
 /** The saved choice, then the browser language; never throws. */
 export function detectDashboardLocale(): DashboardLocale {
@@ -93,10 +110,15 @@ function useLocale(): I18nContextValue {
 	return useContext(I18nContext) ?? { locale: "en", setLocale: () => {} };
 }
 
-/** `t(key, params)` in the current locale. */
-export function useT(): (key: DashboardMessageKey, params?: MessageParams) => string {
+/** `t(key, params)` in the current locale; stable until the locale changes. */
+export function useT(): Translate {
 	const { locale } = useLocale();
-	return (key, params) => translate(locale, key, params);
+	return useCallback<Translate>((key, params) => translate(locale, key, params), [locale]);
+}
+
+/** The current locale, for locale-aware number and date formatting. */
+export function useDashboardLocale(): DashboardLocale {
+	return useLocale().locale;
 }
 
 /**

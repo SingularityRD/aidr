@@ -1,24 +1,13 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { TeamProvider, useTeam } from "../enterprise/team-provider";
+import type { DashboardMessageKey } from "../i18n/en";
 import { LanguageToggle, useT } from "../i18n/I18nProvider";
 import { supabaseEnvError } from "../lib/supabase";
 import { signOut } from "./session";
 import { ThemeToggle } from "./ThemeToggle";
 import { usePendingApprovalCount } from "./use-pending-approvals";
 
-/**
- * Team navigation entries.
- *
- * "Team" is shown to every authenticated user because every role may read the
- * membership list ("Team Members" in AdminPanel is read-only for members and
- * viewers). "Policies" is hidden only once the caller's role is known to lack
- * policy-edit rights — while the role is still loading the link stays visible,
- * because hiding a capability on an unresolved role would make a slow or
- * failed lookup look like a permission decision. The page and row-level
- * security both re-check the permission, so link visibility is never the
- * control.
- */
 function ManagedOutlet() {
 	const { currentTeam, isLoading, error } = useTeam();
 	const t = useT();
@@ -35,35 +24,112 @@ function ManagedOutlet() {
 	return <Outlet />;
 }
 
-function TeamNavLinks() {
-	const { canEditPolicy, currentRole, roleResolved } = useTeam();
-	const t = useT();
-
-	return (
-		<>
-			<NavLink to="/team">{t("nav.team")}</NavLink>
-			{currentRole === "owner" ? <NavLink to="/scim">{t("nav.scim")}</NavLink> : null}
-			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/retention">{t("nav.retention")}</NavLink>
-			) : null}
-			{currentRole === "owner" ? <NavLink to="/sso">{t("nav.sso")}</NavLink> : null}
-			{!roleResolved || canEditPolicy ? (
-				<NavLink to="/policies">{t("nav.policies")}</NavLink>
-			) : null}
-			{canEditPolicy ? <NavLink to="/siem">{t("nav.siem")}</NavLink> : null}
-			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/compliance">{t("nav.compliance")}</NavLink>
-			) : null}
-			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/governance">{t("nav.governance")}</NavLink>
-			) : null}
-			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/governance/detection-exceptions">{t("nav.detectionExceptions")}</NavLink>
-			) : null}
-			<NavLink to="/governance/register">{t("nav.aiRegister")}</NavLink>
-		</>
-	);
+interface NavAccess {
+	canEditPolicy: boolean;
+	currentRole: string | null;
+	roleResolved: boolean;
 }
+
+interface NavItem {
+	to: string;
+	label: DashboardMessageKey;
+	/** Omitted: shown to every signed-in member. */
+	show?: (access: NavAccess) => boolean;
+}
+
+interface NavSection {
+	id: string;
+	label: DashboardMessageKey;
+	items: readonly NavItem[];
+}
+
+const isOwner = ({ currentRole }: NavAccess) => currentRole === "owner";
+const isOwnerOrAdmin = ({ currentRole }: NavAccess) =>
+	currentRole === "owner" || currentRole === "admin";
+
+/**
+ * Console navigation, grouped by task. Each label is also the heading of the
+ * page it opens (the page renders the same catalog key), so the link and the
+ * page always use the same words.
+ *
+ * Visibility only declutters the menu: every page and row-level security
+ * re-check the permission, so link visibility is never the control. "Team
+ * policy" is hidden only once the caller's role is known to lack policy-edit
+ * rights — while the role is still loading the link stays visible, because
+ * hiding a capability on an unresolved role would make a slow or failed
+ * lookup look like a permission decision. "Team" is shown to every
+ * authenticated user because every role may read the membership list.
+ */
+export const NAV_SECTIONS: readonly NavSection[] = [
+	{
+		id: "overview",
+		label: "nav.section.overview",
+		items: [
+			{ to: "/dashboard", label: "nav.dashboard" },
+			{ to: "/events", label: "nav.events" },
+			{ to: "/discovery", label: "nav.discovery" },
+			{ to: "/posture", label: "nav.posture" },
+		],
+	},
+	{
+		id: "protection",
+		label: "nav.section.protection",
+		items: [
+			{
+				to: "/policies",
+				label: "nav.policies",
+				show: ({ canEditPolicy, roleResolved }) => !roleResolved || canEditPolicy,
+			},
+			{
+				to: "/governance/detection-exceptions",
+				label: "nav.detectionExceptions",
+				show: isOwnerOrAdmin,
+			},
+			{ to: "/privacy-guard", label: "nav.browserGuard" },
+			{ to: "/autosecops", label: "nav.autosecops" },
+		],
+	},
+	{
+		id: "response",
+		label: "nav.section.response",
+		items: [
+			{ to: "/approvals", label: "nav.approvals" },
+			{ to: "/incidents", label: "nav.incidents" },
+		],
+	},
+	{
+		id: "devices",
+		label: "nav.section.devices",
+		items: [
+			{ to: "/onboarding", label: "nav.onboarding" },
+			{ to: "/downloads", label: "nav.downloads" },
+			{ to: "/agents", label: "nav.agents" },
+			{ to: "/api-keys", label: "nav.apiKeys" },
+		],
+	},
+	{
+		id: "governance",
+		label: "nav.section.governance",
+		items: [
+			{ to: "/governance", label: "nav.governance", show: isOwnerOrAdmin },
+			{ to: "/governance/register", label: "nav.aiRegister" },
+			{ to: "/compliance", label: "nav.compliance", show: isOwnerOrAdmin },
+		],
+	},
+	{
+		id: "admin",
+		label: "nav.section.admin",
+		items: [
+			{ to: "/team", label: "nav.team" },
+			{ to: "/settings", label: "nav.settings" },
+			{ to: "/billing", label: "nav.billing" },
+			{ to: "/sso", label: "nav.sso", show: isOwner },
+			{ to: "/scim", label: "nav.scim", show: isOwner },
+			{ to: "/retention", label: "nav.retention", show: isOwnerOrAdmin },
+			{ to: "/siem", label: "nav.siem", show: ({ canEditPolicy }) => canEditPolicy },
+		],
+	},
+];
 
 /**
  * Dashboard approvals link. The pending-count badge is read only for roles
@@ -90,6 +156,39 @@ function ApprovalsNavLink() {
 	);
 }
 
+function NavSections() {
+	const { canEditPolicy, currentRole, roleResolved } = useTeam();
+	const t = useT();
+	const access: NavAccess = { canEditPolicy, currentRole, roleResolved };
+	return (
+		<div className="nav-sections">
+			{NAV_SECTIONS.map((section) => {
+				const items = section.items.filter((item) => !item.show || item.show(access));
+				if (items.length === 0) return null;
+				const headingId = `nav-section-${section.id}`;
+				return (
+					<div key={section.id} className="nav-section" role="group" aria-labelledby={headingId}>
+						<p className="nav-section-title" id={headingId}>
+							{t(section.label)}
+						</p>
+						{items.map((item) =>
+							item.to === "/approvals" ? (
+								<ApprovalsNavLink key={item.to} />
+							) : (
+								// "/governance" must not stay highlighted on its sub-pages,
+								// which have their own entries.
+								<NavLink key={item.to} to={item.to} end={item.to === "/governance"}>
+									{t(item.label)}
+								</NavLink>
+							),
+						)}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
 export function AppLayout() {
 	const navigate = useNavigate();
 	const [signingOut, setSigningOut] = useState(false);
@@ -104,13 +203,15 @@ export function AppLayout() {
 				</a>
 				<header className="console-topbar">
 					<Link to="/" className="brand-link">
-						<span className="brand-word" aria-hidden="true">
+						<span className="brand-word" aria-hidden="true" lang="en">
 							AIDR
 						</span>
 						<span className="brand-sub" aria-hidden="true">
 							{t("layout.controlPlane")}
 						</span>
-						<span className="sr-only">Singularity AIDR</span>
+						<span className="sr-only" lang="en">
+							Singularity AIDR
+						</span>
 					</Link>
 					<div className="header-actions">
 						<LanguageToggle />
@@ -119,21 +220,7 @@ export function AppLayout() {
 				</header>
 				<main className="main">
 					<nav className="navcard" aria-label={t("layout.navLabel")}>
-						<NavLink to="/onboarding">{t("nav.connect")}</NavLink>
-						<NavLink to="/downloads">{t("nav.downloads")}</NavLink>
-						<NavLink to="/dashboard">{t("nav.dashboard")}</NavLink>
-						<NavLink to="/billing">{t("nav.billing")}</NavLink>
-						<NavLink to="/api-keys">{t("nav.apiKeys")}</NavLink>
-						<NavLink to="/agents">{t("nav.agents")}</NavLink>
-						<NavLink to="/events">{t("nav.events")}</NavLink>
-						<NavLink to="/discovery">{t("nav.discovery")}</NavLink>
-						<NavLink to="/posture">{t("nav.posture")}</NavLink>
-						<NavLink to="/incidents">{t("nav.incidents")}</NavLink>
-						<ApprovalsNavLink />
-						<NavLink to="/privacy-guard">{t("nav.browserPrivacy")}</NavLink>
-						<NavLink to="/autosecops">{t("nav.autosecops")}</NavLink>
-						<NavLink to="/settings">{t("nav.settings")}</NavLink>
-						<TeamNavLinks />
+						<NavSections />
 						<span className="navcard-signout">
 							<button
 								className="button button-secondary button-sm"

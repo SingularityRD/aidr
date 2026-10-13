@@ -1,3 +1,4 @@
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import { readAllPages } from "./paged-read";
 import { supabase } from "./supabase";
 
@@ -708,12 +709,12 @@ export const ENFORCEMENT_LABEL: Record<Enforcement, string> = {
  * A publication filed for four-eyes approval (HTTP 202 from policy-management).
  * Returns operator copy, or null when the response is not a pending change.
  */
-export function pendingPolicyChangeNotice(data: unknown): string | null {
+export function pendingPolicyChangeNotice(data: unknown, t: Translate = englishT): string | null {
 	if (
 		!isRecord(data) ||
 		data.pending_approval !== true ||
 		typeof data.change_request_id !== "string"
 	)
 		return null;
-	return "Four-eyes change control is on: nothing was published. The change is waiting for a second owner or administrator under AI governance → Change control.";
+	return t("governance.pendingChange");
 }

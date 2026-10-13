@@ -28,6 +28,7 @@ vi.mock("../lib/supabase", () => ({
 vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
 
 import { useTeam } from "../enterprise/team-provider";
+import { I18nProvider } from "../i18n/I18nProvider";
 import {
 	APPROVAL_COLUMNS,
 	countPendingApprovals,
@@ -141,6 +142,7 @@ function setup(
 		invoke?: Invoke;
 		governance?: Invoke;
 		separation?: { require_distinct_approver: boolean | null; effective: boolean };
+		locale?: "en" | "tr";
 	} = {},
 ) {
 	const mocks = installDashboardMocks({
@@ -165,9 +167,11 @@ function setup(
 		roleResolved: true,
 	} as unknown as ReturnType<typeof useTeam>);
 	render(
-		<MemoryRouter>
-			<ApprovalsPage />
-		</MemoryRouter>,
+		<I18nProvider initialLocale={options.locale ?? "en"}>
+			<MemoryRouter>
+				<ApprovalsPage />
+			</MemoryRouter>
+		</I18nProvider>,
 	);
 	return mocks;
 }
@@ -178,6 +182,44 @@ afterEach(() => {
 });
 
 describe("ApprovalsPage", () => {
+	it("titles a card with the rule's human name and says what, why and what happens next", async () => {
+		setup({ data: [row({ threat_ids: ["CLT-CMD-001", "CLT-CRED-004"] })] });
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		expect(
+			within(card).getByRole("heading", {
+				name: "Remote code execution via curl pipe to shell (+1 more)",
+			}),
+		).toBeInTheDocument();
+		expect(within(card).getByText("What the agent tried")).toBeInTheDocument();
+		expect(within(card).getByText("Why it was held")).toBeInTheDocument();
+		expect(within(card).getByText("Reading credential or secret file")).toBeInTheDocument();
+		// The rule id stays visible next to its name for operators and auditors.
+		expect(within(card).getByText("CLT-CMD-001")).toBeInTheDocument();
+		expect(within(card).getByText("Critical")).toBeInTheDocument();
+		expect(
+			within(card).getByText(/run once more on host-a, only within 15 minutes/),
+		).toBeInTheDocument();
+	});
+
+	it("falls back to a plain heading for rules the dashboard does not know", async () => {
+		setup();
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		expect(
+			within(card).getByRole("heading", { name: "Action held for review (+1 more)" }),
+		).toBeInTheDocument();
+		expect(within(card).getAllByText("Rule not in this dashboard's catalog")).toHaveLength(2);
+	});
+
+	it("renders the approval card in Turkish", async () => {
+		setup({ data: [row({ threat_ids: ["CLT-CMD-001"] })], locale: "tr" });
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		expect(within(card).getByText("Ajanın yapmak istediği")).toBeInTheDocument();
+		expect(within(card).getByText("Neden bekletildi")).toBeInTheDocument();
+		expect(within(card).getByRole("button", { name: "Onayla" })).toBeInTheDocument();
+		expect(within(card).getByRole("button", { name: "Reddet" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Onaylar", level: 1 })).toBeInTheDocument();
+	});
+
 	it("lists pending requests with tool, threats, redacted summary, agent and a live countdown", async () => {
 		setup();
 		const cards = await screen.findAllByTestId("approval-pending");
@@ -213,9 +255,9 @@ describe("ApprovalsPage", () => {
 		fireEvent.click(screen.getByRole("tab", { name: "History" }));
 		const table = await screen.findByTestId("approval-history");
 		expect(within(table).getByText("WebFetch")).toBeInTheDocument();
-		expect(within(table).getByText("expired")).toBeInTheDocument();
+		expect(within(table).getByText("Expired")).toBeInTheDocument();
 		expect(within(table).getByText("Write")).toBeInTheDocument();
-		expect(within(table).getByText("denied")).toBeInTheDocument();
+		expect(within(table).getByText("Denied")).toBeInTheDocument();
 		expect(within(table).getByText("Unexpected write outside the repo")).toBeInTheDocument();
 		expect(within(table).queryByText("Bash")).not.toBeInTheDocument();
 	});

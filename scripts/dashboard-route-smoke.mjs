@@ -262,7 +262,7 @@ async function structuralChecks() {
 	assertIncludes(apiKeys, "navigator.clipboard.writeText", "API secret copy action");
 	assertIncludes(apiKeys, "setCreatedKey(null)", "API key clear action");
 	assertIncludes(apiKeys, "setCreatedEnrollToken(null)", "enrollment token clear action");
-	assertIncludes(agents, 'allowed ?? "unavailable"', "agent limit fail-closed rendering");
+	assertIncludes(agents, 'allowed ?? t("common.unavailable")', "agent limit fail-closed rendering");
 	assertIncludes(autoSecOps, 'autosecops-runtime', "AutoSecOps dashboard bridge");
 	assertIncludes(autoSecOps, "No synthetic or cached AutoSecOps data", "AutoSecOps fail-closed rendering");
 	assertIncludes(login, 'id="login-email"', "login email input id");

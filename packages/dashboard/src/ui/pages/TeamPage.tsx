@@ -1,5 +1,6 @@
 import { AdminPanel } from "../../enterprise/admin-panel";
 import { TeamAuditPanel } from "../../enterprise/team-audit-panel";
+import { useT } from "../../i18n/I18nProvider";
 
 /**
  * Team administration surface (AIDR-008).
@@ -12,16 +13,16 @@ import { TeamAuditPanel } from "../../enterprise/team-audit-panel";
  * calling the API directly either.
  */
 export function TeamPage() {
+	const t = useT();
 	return (
 		<div className="stack">
 			<div className="card">
 				<div className="pill" style={{ marginBottom: 8 }}>
-					Administration
+					{t("team.pill")}
 				</div>
-				<h1>Team</h1>
+				<h1>{t("nav.team")}</h1>
 				<p className="muted" style={{ maxWidth: 760 }}>
-					Manage team membership and roles. Owners and administrators can invite, re-role and remove
-					members; members and viewers get a read-only view of the same team.
+					{t("team.intro")}
 				</p>
 			</div>
 			<AdminPanel />

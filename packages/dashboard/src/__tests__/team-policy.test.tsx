@@ -100,8 +100,9 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 			resolve(REPO_ROOT, "packages/dashboard/src/ui/AppLayout.tsx"),
 			"utf8",
 		);
-		expect(layout).toContain('<NavLink to="/policies">{t("nav.policies")}</NavLink>');
-		expect(en["nav.policies"]).toBe("Policies");
+		expect(layout).toMatch(/to: "\/policies",\s+label: "nav.policies"/);
+		// The link and the page heading share one label.
+		expect(en["nav.policies"]).toBe("Team policy");
 	});
 
 	it("renders the editor and the default policy for a team with no stored policy", async () => {
@@ -109,8 +110,11 @@ describe("Team policy editor is reachable (AIDR-009)", () => {
 
 		renderPolicyRoute();
 
-		await waitFor(() =>
-			expect(screen.getByRole("heading", { name: "Security Policy Editor" })).toBeInTheDocument(),
+		// The first render in this file also pays for the lazy module imports.
+		await waitFor(
+			() =>
+				expect(screen.getByRole("heading", { name: "Security Policy Editor" })).toBeInTheDocument(),
+			{ timeout: 5000 },
 		);
 		expect(screen.getByRole("heading", { name: "Team policy", level: 1 })).toBeInTheDocument();
 		expect(screen.getByText("✓ Valid policy")).toBeInTheDocument();

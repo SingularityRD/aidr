@@ -1,7 +1,9 @@
-import type { DashboardMessageKey } from "./en";
+import type { BaseMessageKey, DashboardMessageKey } from "./en";
+import { pageMessages } from "./messages";
+import { turkish } from "./messages/define";
 
-/** Turkish dashboard strings; the type makes a missing or extra key a compile error. */
-export const tr: Record<DashboardMessageKey, string> = {
+/** Turkish shell strings; the type makes a missing or extra key a compile error. */
+const base: Record<BaseMessageKey, string> = {
 	"language.switchToLabel": "Paneli İngilizceye geçir",
 	"theme.toDark": "Koyu temaya geç",
 	"theme.toLight": "Açık temaya geç",
@@ -15,30 +17,36 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"layout.signOut": "Oturumu kapat",
 	"layout.envIncomplete": "Panel ortam yapılandırması eksik.",
 	"layout.pendingCount": ", bekleyen: ",
-	"nav.connect": "Bağlan",
+	"nav.section.overview": "Genel bakış",
+	"nav.section.protection": "Koruma",
+	"nav.section.response": "Onaylar ve vakalar",
+	"nav.section.devices": "Cihazlar ve indirmeler",
+	"nav.section.governance": "Yönetişim ve uyum",
+	"nav.section.admin": "Yönetim",
+	"nav.onboarding": "İlk kurulum",
 	"nav.downloads": "İndirmeler",
-	"nav.dashboard": "Panel",
+	"nav.dashboard": "Genel durum",
 	"nav.billing": "Faturalandırma",
-	"nav.apiKeys": "API Anahtarları",
+	"nav.apiKeys": "API anahtarları",
 	"nav.agents": "Ajanlar",
-	"nav.events": "Olaylar",
+	"nav.events": "Etkinlik akışı",
 	"nav.discovery": "Keşif",
-	"nav.posture": "Güvenlik Duruşu",
-	"nav.incidents": "Olay Kayıtları",
+	"nav.posture": "Güvenlik durumu",
+	"nav.incidents": "Güvenlik vakaları",
 	"nav.approvals": "Onaylar",
-	"nav.browserPrivacy": "Tarayıcı Gizliliği",
+	"nav.browserGuard": "Browser Guard",
 	"nav.autosecops": "AutoSecOps",
 	"nav.settings": "Ayarlar",
 	"nav.team": "Ekip",
 	"nav.scim": "Dizin senkronizasyonu",
 	"nav.retention": "Yasal saklama ve veri saklama",
 	"nav.sso": "Çoklu oturum açma (SSO)",
-	"nav.policies": "Politikalar",
+	"nav.policies": "Ekip politikası",
 	"nav.siem": "SIEM aktarımı",
-	"nav.compliance": "Uyum",
-	"nav.governance": "Yönetişim",
+	"nav.compliance": "Uyum raporu",
+	"nav.governance": "Yapay zekâ yönetişimi",
 	"nav.detectionExceptions": "Tespit istisnaları",
-	"nav.aiRegister": "Yapay zekâ envanteri",
+	"nav.aiRegister": "Yapay zekâ varlık envanteri",
 
 	"public.navLabel": "Genel",
 	"public.editions": "Sürümler",
@@ -211,3 +219,6 @@ export const tr: Record<DashboardMessageKey, string> = {
 	"onboarding.advanced.body":
 		"Bu adımları yalnızca yükleyiciyi çalıştıramıyorsanız ya da tek bir bağlayıcıyı elle kaydetmek için kullanın.",
 };
+
+/** Turkish dashboard strings: the shell above plus every page message module. */
+export const tr: Record<DashboardMessageKey, string> = { ...base, ...turkish(pageMessages) };

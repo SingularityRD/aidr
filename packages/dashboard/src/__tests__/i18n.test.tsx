@@ -42,13 +42,19 @@ import { LoginPage } from "../ui/pages/LoginPage";
 
 const SRC = resolve(__dirname, "..");
 
+/** Product, plan and protocol names that stay the same in Turkish. */
+const UNTRANSLATED_NAMES = new Set(["Browser Guard", "Singularity AIDR", "Claude Code"]);
+
 function placeholders(text: string): string[] {
 	return [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1] as string).sort();
 }
 
 function sources(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {
-		if (entry === "__tests__" || entry === "en.ts" || entry === "tr.ts") continue;
+		// The catalogs themselves (en.ts, tr.ts and the page message modules)
+		// define the keys, so they cannot count as a use.
+		if (entry === "__tests__" || entry === "en.ts" || entry === "tr.ts" || entry === "messages")
+			continue;
 		const path = join(dir, entry);
 		if (statSync(path).isDirectory()) sources(path, out);
 		else if (/\.tsx?$/.test(entry)) out.push(path);
@@ -89,7 +95,9 @@ describe("dashboard catalog parity", () => {
 	it("translates (no Turkish value is a copied English sentence)", () => {
 		const copied = Object.entries(en).filter(
 			([key, english]) =>
-				tr[key as keyof typeof en] === english && /[a-z]{3,} [a-z]{3,}/i.test(english),
+				tr[key as keyof typeof en] === english &&
+				!UNTRANSLATED_NAMES.has(english) &&
+				/[a-z]{3,} [a-z]{3,}/i.test(english),
 		);
 		expect(copied).toEqual([]);
 		expect(Object.keys(DASHBOARD_CATALOGS).sort()).toEqual(["en", "tr"]);
