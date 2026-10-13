@@ -811,8 +811,37 @@ describe("background: blocked sites (declarativeNetRequest)", () => {
 	it("covers all eight supported sites with unique rule ids", () => {
 		expect(Object.keys(SITE_HOSTS)).toHaveLength(8);
 		const rules = buildBlockRules(Object.keys(SITE_HOSTS) as never);
-		expect(rules).toHaveLength(16);
-		expect(new Set(rules.map((r) => r.id)).size).toBe(16);
+		// Two per site, plus the path rule for Microsoft 365 Copilot Chat.
+		expect(rules).toHaveLength(17);
+		expect(new Set(rules.map((r) => r.id)).size).toBe(17);
+		expect(new Set(DNR_RULE_IDS)).toEqual(new Set(rules.map((r) => r.id)));
+	});
+
+	it("blocks Copilot on its own hosts and only /chat of the shared Microsoft 365 host (BG-10)", async () => {
+		const rules = buildBlockRules(["copilot"]);
+		expect(rules.flatMap((r) => r.condition.requestDomains ?? [])).not.toContain(
+			"m365.cloud.microsoft",
+		);
+		const filter = new RegExp(
+			rules.find((r) => r.condition.regexFilter)?.condition.regexFilter ?? "^$",
+		);
+		expect(filter.test("https://m365.cloud.microsoft/chat/")).toBe(true);
+		expect(filter.test("https://m365.cloud.microsoft/home")).toBe(false);
+		expect(siteForNavigation("https://m365.cloud.microsoft/chat?auth=2")).toBe("copilot");
+		expect(siteForNavigation("https://copilot.cloud.microsoft/")).toBe("copilot");
+		expect(siteForNavigation("https://m365.cloud.microsoft/apps")).toBeNull();
+		// The content script runs on the whole host, so its messages are accepted there.
+		expect(siteForUrl("https://m365.cloud.microsoft/")).toBe("copilot");
+		const t = await setup({ managed: { blockedSites: ["copilot"] } });
+		const home = "https://m365.cloud.microsoft/home";
+		const chat = "https://m365.cloud.microsoft/chat";
+		t.fake.events.onUpdated.dispatch(4, { url: home }, { id: 4, url: home });
+		t.fake.events.onUpdated.dispatch(4, { url: chat }, { id: 4, url: chat });
+		await vi.waitFor(() =>
+			expect(t.fake.tabUpdates).toEqual([
+				{ tabId: 4, url: `${EXTENSION_BASE}blocked.html?site=copilot` },
+			]),
+		);
 	});
 
 	it("applies managed blockedSites and replaces rules on change", async () => {
@@ -820,7 +849,7 @@ describe("background: blocked sites (declarativeNetRequest)", () => {
 		expect(t.fake.dnrRules.size).toBe(4);
 		await t.fake.managed.adminReplace({ blockedSites: ["gemini"] });
 		await t.bg.reload(false);
-		const domains = [...t.fake.dnrRules.values()].flatMap((r) => r.condition.requestDomains);
+		const domains = [...t.fake.dnrRules.values()].flatMap((r) => r.condition.requestDomains ?? []);
 		expect(new Set(domains)).toEqual(new Set(["gemini.google.com"]));
 		await t.fake.managed.adminReplace({});
 		await t.bg.reload(false);

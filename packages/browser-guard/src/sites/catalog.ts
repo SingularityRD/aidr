@@ -5,9 +5,11 @@
  *
  * Only exact hostnames that serve the product itself are listed. Services that live on a
  * path of a general-purpose host (Notion AI on notion.so, GitHub Copilot on github.com,
- * Copilot in Bing on bing.com, Microsoft 365 Copilot on the Office host) are left out on
- * purpose: blocking or counting them by host would also hit the unrelated product. Where a
- * host also serves non-AI content (Hugging Face, DeepL, Grammarly) the entry says so.
+ * Copilot in Bing on bing.com) are left out on purpose: blocking or counting them by host
+ * would also hit the unrelated product. The one exception is a path scope (`paths`):
+ * Microsoft 365 Copilot Chat lives at `m365.cloud.microsoft/chat`, and only that path (not
+ * the rest of the Microsoft 365 home) is counted and blocked. Where a host also serves
+ * non-AI content (Hugging Face, DeepL, Grammarly) the entry says so.
  *
  * Ids are stable identifiers shared with the telemetry contract (`service_id`,
  * docs/contracts/privacy-telemetry.md), the ingest projection and the dashboard; the
@@ -17,6 +19,14 @@
  */
 import type { AiServiceCategory } from "../types.js";
 
+/** One path of a shared host: `path` and everything below it (`/chat`, `/chat/x`, `/chat?q`). */
+export interface AiServicePath {
+	/** Exact lowercase hostname; subdomains are not matched. */
+	readonly host: string;
+	/** Starts with "/", no trailing "/". */
+	readonly path: string;
+}
+
 export interface AiService {
 	/** `^[a-z0-9][a-z0-9-]{0,31}$`; stable. */
 	readonly id: string;
@@ -24,6 +34,8 @@ export interface AiService {
 	readonly category: AiServiceCategory;
 	/** Exact lowercase hostnames (HTTPS); subdomains of these are matched too. */
 	readonly hosts: readonly string[];
+	/** Paths of shared hosts that also belong to the service (usually empty). */
+	readonly paths: readonly AiServicePath[];
 }
 
 export const AI_SERVICE_CATEGORIES: readonly AiServiceCategory[] = Object.freeze([
@@ -41,7 +53,15 @@ const service = (
 	name: string,
 	category: AiServiceCategory,
 	hosts: readonly string[],
-): AiService => Object.freeze({ id, name, category, hosts: Object.freeze([...hosts]) });
+	paths: readonly AiServicePath[] = [],
+): AiService =>
+	Object.freeze({
+		id,
+		name,
+		category,
+		hosts: Object.freeze([...hosts]),
+		paths: Object.freeze(paths.map((p) => Object.freeze({ ...p }))),
+	});
 
 export const AI_SERVICES: readonly AiService[] = Object.freeze([
 	// Built-in protected sites (ids equal their SiteId; masking runs there by default).
@@ -49,6 +69,15 @@ export const AI_SERVICES: readonly AiService[] = Object.freeze([
 	service("gemini", "Google Gemini", "chat", ["gemini.google.com"]),
 	service("claude", "Claude", "chat", ["claude.ai"]),
 	service("copilot", "Microsoft Copilot", "chat", ["copilot.microsoft.com"]),
+	// Protected as part of the `copilot` site; a separate service so an organisation can
+	// sanction the work-account Copilot and still block the consumer one.
+	service(
+		"m365-copilot",
+		"Microsoft 365 Copilot Chat",
+		"chat",
+		["copilot.cloud.microsoft"],
+		[{ host: "m365.cloud.microsoft", path: "/chat" }],
+	),
 	service("perplexity", "Perplexity", "search", ["www.perplexity.ai", "perplexity.ai"]),
 	service("deepseek", "DeepSeek", "chat", ["chat.deepseek.com"]),
 	service("mistral", "Mistral Le Chat", "chat", ["chat.mistral.ai"]),
@@ -157,9 +186,45 @@ export function isAiServiceId(id: unknown): id is string {
 	return typeof id === "string" && BY_ID.has(id);
 }
 
+const BY_PATH_HOST: ReadonlyMap<string, ReadonlyArray<readonly [string, AiService]>> = (() => {
+	const map = new Map<string, Array<readonly [string, AiService]>>();
+	for (const s of AI_SERVICES) {
+		for (const p of s.paths) map.set(p.host, [...(map.get(p.host) ?? []), [p.path, s] as const]);
+	}
+	return map;
+})();
+
+/** True when `pathname` is `path` or below it. */
+export function pathInScope(pathname: string, path: string): boolean {
+	return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * declarativeNetRequest `regexFilter` (RE2) matching the given hosts (and their
+ * subdomains, like `requestDomains`) and path scopes, over http and https.
+ */
+export function scopeRegexFilter(
+	hosts: readonly string[],
+	paths: readonly AiServicePath[],
+): string {
+	const parts: string[] = [];
+	if (hosts.length) {
+		parts.push(
+			`^https?://(?:[^/?#@]*\\.)?(?:${hosts.map(escapeRegex).join("|")})(?::[0-9]+)?(?:[/?#]|$)`,
+		);
+	}
+	for (const p of paths) {
+		parts.push(`^https?://${escapeRegex(p.host)}(?::[0-9]+)?${escapeRegex(p.path)}(?:[/?#]|$)`);
+	}
+	return parts.join("|");
+}
+
 /**
  * Service serving `hostname`: an exact catalog host, else the longest catalog host it is
  * a subdomain of (the same scope a declarativeNetRequest `requestDomains` rule covers).
+ * Path-scoped hosts (`paths`) are not matched here: see `serviceForUrl`.
  */
 export function serviceForHost(hostname: unknown): AiService | null {
 	if (typeof hostname !== "string" || hostname.length === 0 || hostname.length > 253) return null;
@@ -183,10 +248,19 @@ export function serviceForUrl(url: unknown): AiService | null {
 		return null;
 	}
 	if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
-	return serviceForHost(parsed.hostname);
+	const scoped = BY_PATH_HOST.get(parsed.hostname)?.find(([path]) =>
+		pathInScope(parsed.pathname, path),
+	);
+	return scoped ? scoped[1] : serviceForHost(parsed.hostname);
 }
 
 /** `https://<host>/*` host-permission patterns for the given services (deduplicated). */
 export function serviceOrigins(services: readonly AiService[]): string[] {
-	return [...new Set(services.flatMap((s) => s.hosts.map((h) => `https://${h}/*`)))];
+	return [
+		...new Set(
+			services.flatMap((s) =>
+				[...s.hosts, ...s.paths.map((p) => p.host)].map((h) => `https://${h}/*`),
+			),
+		),
+	];
 }

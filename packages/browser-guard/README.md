@@ -13,7 +13,7 @@ network access.
 | | |
 |---|---|
 | Browsers | Chrome 120+, Edge 120+ (Chromium), Firefox 140+ (ESR) |
-| Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
+| Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`) and Microsoft 365 Copilot Chat (`m365.cloud.microsoft`, `copilot.cloud.microsoft`; same site id `copilot`), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
 | Languages | English, Turkish |
 | Data sent anywhere | Nothing by default. When an administrator connects a control plane, only counts per entity type are sent (see [Privacy](#privacy)). |
 
@@ -404,7 +404,12 @@ sent as aggregated `shadow_ai_usage` events at each flush
 the `tabs` permission would give visibility without a grant, but it exposes every
 URL the user visits and shows a "Read your browsing history" warning, so it is not
 used. Services on a path of a general-purpose host (Notion AI, GitHub Copilot, Bing)
-are not in the catalog; blocking them by host would break the host product.
+are not in the catalog; blocking them by host would break the host product. The one
+path-scoped entry is Microsoft 365 Copilot Chat (`m365-copilot`): its own host
+`copilot.cloud.microsoft` plus only `/chat` (and below) on the shared
+`m365.cloud.microsoft` host are counted and blocked (a `regexFilter` rule), never the
+rest of Microsoft 365. It is a separate service from consumer Copilot (`copilot`), so the
+work-account Copilot can be sanctioned while the consumer one is blocked.
 
 #### Allow / block from the dashboard
 
@@ -503,6 +508,16 @@ to regenerate the dataset with stable fingerprints.
 - Site adapters depend on each product's DOM. A site redesign can break
   interception until the adapter is updated; the real-browser suite in `e2e/`
   guards against regressions on recorded page structures.
+- Microsoft 365 Copilot Chat (`m365.cloud.microsoft/chat`, `copilot.cloud.microsoft`)
+  shares the site id `copilot` with consumer Copilot, so `disabledSites` and
+  `blockedSites` act on both (a `blockedSites` entry blocks only `/chat` of the shared
+  Microsoft 365 host); use the Shadow AI ids `copilot` / `m365-copilot` to treat them
+  differently. The guard runs on the whole `m365.cloud.microsoft` host, because the
+  Microsoft 365 home enters `/chat` without a page load. Its selectors are covered by
+  unit tests against representative markup, not by the real-browser suite or a live
+  tenant. The Copilot pane inside the Office web apps (Word, Excel, PowerPoint, Outlook
+  on the web) runs in a cross-origin iframe and is not covered: Browser Guard runs in
+  the top frame only.
 - Free-form names and addresses without a label ("Name:", "Adres:") need the
   optional native host (NER), which ships without model weights or accuracy
   evidence. Without it, rule detection covers structured identifiers, labelled

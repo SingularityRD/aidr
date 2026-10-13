@@ -51,8 +51,43 @@ describe("Shadow AI catalog", () => {
 
 	it("uses the built-in site ids and hosts for the protected sites", () => {
 		for (const adapter of ADAPTERS) {
+			if (adapter.id === "copilot") continue;
 			expect(serviceById(adapter.id)?.hosts).toEqual(adapter.hosts);
 		}
+		// Copilot is one protected site but two Shadow AI services (consumer + Microsoft 365).
+		const m365 = serviceById("m365-copilot") as AiService;
+		expect([
+			...(serviceById("copilot")?.hosts ?? []),
+			...m365.paths.map((p) => p.host),
+			...m365.hosts,
+		]).toEqual(adapterForUrl("https://copilot.microsoft.com/").hosts);
+	});
+
+	it("catalogs Microsoft 365 Copilot Chat by host and by its /chat path only (BG-10)", () => {
+		expect(serviceById("m365-copilot")?.category).toBe("chat");
+		for (const url of [
+			"https://m365.cloud.microsoft/chat",
+			"https://m365.cloud.microsoft/chat/",
+			"https://m365.cloud.microsoft/chat?auth=2&origindomain=microsoft365",
+			"https://copilot.cloud.microsoft/",
+			"https://copilot.cloud.microsoft/en-us/chat",
+		])
+			expect(serviceForUrl(url)?.id).toBe("m365-copilot");
+		// The rest of the Microsoft 365 home is not an AI service.
+		for (const url of [
+			"https://m365.cloud.microsoft/",
+			"https://m365.cloud.microsoft/apps",
+			"https://m365.cloud.microsoft/chatter",
+			"https://m365.cloud.microsoft.evil.test/chat",
+			"https://x.m365.cloud.microsoft/chat",
+		])
+			expect(serviceForUrl(url)).toBeNull();
+		expect(serviceForHost("m365.cloud.microsoft")).toBeNull();
+		expect(serviceForUrl("https://copilot.microsoft.com/")?.id).toBe("copilot");
+		expect(serviceOrigins([serviceById("m365-copilot") as AiService])).toEqual([
+			"https://copilot.cloud.microsoft/*",
+			"https://m365.cloud.microsoft/*",
+		]);
 	});
 
 	it("never lists a host that is only a path of a general-purpose product", () => {

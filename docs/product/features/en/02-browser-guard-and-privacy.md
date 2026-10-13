@@ -92,7 +92,7 @@ the prompt box, the send button, the answers and the file inputs are.
 | `chatgpt` | ChatGPT | `chatgpt.com`, `chat.openai.com` |
 | `gemini` | Gemini | `gemini.google.com` |
 | `claude` | Claude | `claude.ai` |
-| `copilot` | Microsoft Copilot | `copilot.microsoft.com` |
+| `copilot` | Microsoft Copilot (consumer) and Microsoft 365 Copilot Chat | `copilot.microsoft.com`, `m365.cloud.microsoft`, `copilot.cloud.microsoft` |
 | `perplexity` | Perplexity | `www.perplexity.ai`, `perplexity.ai` |
 | `deepseek` | DeepSeek | `chat.deepseek.com` |
 | `mistral` | Mistral Le Chat | `chat.mistral.ai` |
@@ -1081,8 +1081,11 @@ a sanctioned visit. Covered by the real-browser `shadow-ai` scenario.
   a managed policy cannot grant it silently. Without it blocks still apply, but the user
   sees the browser's own blocked page and nothing is counted.
 - Services that live on a path of a general-purpose site (Notion AI, GitHub Copilot, Copilot
-  in Bing, Microsoft 365 Copilot) are not in the catalog; blocking by host would break the
-  whole product.
+  in Bing) are not in the catalog; blocking by host would break the whole product. Microsoft
+  365 Copilot Chat is the one path-scoped entry (`m365-copilot`): its dedicated host
+  `copilot.cloud.microsoft` and only the `/chat` path of `m365.cloud.microsoft` are counted
+  and blocked, so the rest of the Microsoft 365 home keeps working. The Copilot pane inside
+  the Office web apps is not a separate catalog entry.
 - Hugging Face, DeepL and Grammarly are catalogued by host, so blocking them blocks the whole
   site (model hub, translator, marketing pages).
 

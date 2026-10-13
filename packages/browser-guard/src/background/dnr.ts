@@ -16,8 +16,11 @@
  * The host list is kept here on purpose (the background must not depend on the
  * content-side site adapters). It mirrors the adapters' exact HTTPS hosts;
  * `requestDomains` also covers their subdomains, which is the safe direction for
- * a block rule.
+ * a block rule. A host the site shares with another product (`SITE_PATHS`: Microsoft 365
+ * Copilot Chat on `m365.cloud.microsoft`) is blocked only on the site's path, with one more
+ * rule using a `regexFilter`, so the rest of that host keeps working.
  */
+import { type AiServicePath, pathInScope, scopeRegexFilter } from "../sites/catalog.js";
 import type { SiteId } from "../types.js";
 import type { ChromeApi, DnrRule, TabInfo } from "./storage.js";
 
@@ -28,12 +31,18 @@ export const SITE_HOSTS: Readonly<Record<SupportedSite, readonly string[]>> = Ob
 	chatgpt: Object.freeze(["chatgpt.com", "chat.openai.com"]),
 	gemini: Object.freeze(["gemini.google.com"]),
 	claude: Object.freeze(["claude.ai"]),
-	copilot: Object.freeze(["copilot.microsoft.com"]),
+	copilot: Object.freeze(["copilot.microsoft.com", "copilot.cloud.microsoft"]),
 	perplexity: Object.freeze(["www.perplexity.ai", "perplexity.ai"]),
 	deepseek: Object.freeze(["chat.deepseek.com"]),
 	mistral: Object.freeze(["chat.mistral.ai"]),
 	grok: Object.freeze(["grok.com"]),
 });
+
+/** Paths of shared hosts that belong to a site (the content script runs on the whole host). */
+export const SITE_PATHS: Readonly<Partial<Record<SupportedSite, readonly AiServicePath[]>>> =
+	Object.freeze({
+		copilot: Object.freeze([Object.freeze({ host: "m365.cloud.microsoft", path: "/chat" })]),
+	});
 
 const SUPPORTED_SITES = Object.keys(SITE_HOSTS) as SupportedSite[];
 
@@ -44,12 +53,24 @@ const BLOCKED_PAGE_PATH = "/blocked.html";
 const DNR_RULE_ID_BASE = 7300;
 const navigationRuleId = (i: number) => DNR_RULE_ID_BASE + i * 2 + 1;
 const frameRuleId = (i: number) => DNR_RULE_ID_BASE + i * 2 + 2;
+/** One more rule per site with `SITE_PATHS` (7381..; below the Shadow AI range 7401..). */
+const pathRuleId = (i: number) => DNR_RULE_ID_BASE + 80 + i + 1;
+const sitePaths = (site: SupportedSite): readonly AiServicePath[] => SITE_PATHS[site] ?? [];
 export const DNR_RULE_IDS: readonly number[] = Object.freeze(
-	SUPPORTED_SITES.flatMap((_, i) => [navigationRuleId(i), frameRuleId(i)]),
+	SUPPORTED_SITES.flatMap((site, i) => [
+		navigationRuleId(i),
+		frameRuleId(i),
+		...(sitePaths(site).length ? [pathRuleId(i)] : []),
+	]),
 );
 
+/** Exact hosts the content script runs on: the site hosts plus its shared hosts. */
 const HOST_TO_SITE: ReadonlyMap<string, SupportedSite> = new Map(
-	SUPPORTED_SITES.flatMap((site) => SITE_HOSTS[site].map((host) => [host, site] as const)),
+	SUPPORTED_SITES.flatMap((site) =>
+		[...SITE_HOSTS[site], ...sitePaths(site).map((p) => p.host)].map(
+			(host) => [host, site] as const,
+		),
+	),
 );
 
 /**
@@ -88,6 +109,18 @@ export function buildBlockRules(blockedSites: readonly SiteId[]): DnrRule[] {
 				condition: { requestDomains: [...SITE_HOSTS[site]], resourceTypes: ["sub_frame"] },
 			},
 		);
+		const paths = sitePaths(site);
+		if (paths.length) {
+			rules.push({
+				id: pathRuleId(i),
+				priority: 1,
+				action: { type: "block" },
+				condition: {
+					regexFilter: scopeRegexFilter([], paths),
+					resourceTypes: ["main_frame", "sub_frame"],
+				},
+			});
+		}
 	});
 	return rules;
 }
@@ -124,6 +157,8 @@ export function siteForNavigation(url: unknown): SupportedSite | null {
 	const host = parsed.hostname.toLowerCase();
 	for (const site of SUPPORTED_SITES) {
 		if (SITE_HOSTS[site].some((h) => host === h || host.endsWith(`.${h}`))) return site;
+		if (sitePaths(site).some((p) => host === p.host && pathInScope(parsed.pathname, p.path)))
+			return site;
 	}
 	return null;
 }

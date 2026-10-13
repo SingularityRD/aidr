@@ -96,7 +96,7 @@ alanlarının sayfada nerede olduğunu bilir.
 | `chatgpt` | ChatGPT | `chatgpt.com`, `chat.openai.com` |
 | `gemini` | Gemini | `gemini.google.com` |
 | `claude` | Claude | `claude.ai` |
-| `copilot` | Microsoft Copilot | `copilot.microsoft.com` |
+| `copilot` | Microsoft Copilot (bireysel) ve Microsoft 365 Copilot Chat | `copilot.microsoft.com`, `m365.cloud.microsoft`, `copilot.cloud.microsoft` |
 | `perplexity` | Perplexity | `www.perplexity.ai`, `perplexity.ai` |
 | `deepseek` | DeepSeek | `chat.deepseek.com` |
 | `mistral` | Mistral Le Chat | `chat.mistral.ai` |
@@ -1138,8 +1138,11 @@ ziyaret olarak sayılır. Gerçek tarayıcı senaryosu `shadow-ai` bu davranış
   uygulanır, ancak kullanıcı tarayıcının kendi engelleme sayfasını görür ve hiçbir şey
   sayılmaz.
 - Genel amaçlı bir sitenin bir yolunda çalışan hizmetler (Notion AI, GitHub Copilot, Bing'deki
-  Copilot, Microsoft 365 Copilot) katalogda yoktur; alan adıyla engellemek ürünün tamamını
-  bozardı.
+  Copilot) katalogda yoktur; alan adıyla engellemek ürünün tamamını bozardı. Microsoft 365
+  Copilot Chat yol kapsamlı tek kayıttır (`m365-copilot`): kendi alan adı
+  `copilot.cloud.microsoft` ve `m365.cloud.microsoft` üzerinde yalnızca `/chat` yolu sayılır ve
+  engellenir; Microsoft 365 giriş sayfasının geri kalanı çalışmaya devam eder. Office web
+  uygulamalarının içindeki Copilot bölmesi ayrı bir katalog kaydı değildir.
 - Hugging Face, DeepL ve Grammarly alan adıyla kataloglanmıştır; engellendiklerinde sitenin
   tamamı (model merkezi, çevirmen, tanıtım sayfaları) engellenir.
 
