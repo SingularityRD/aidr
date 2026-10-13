@@ -316,3 +316,52 @@ test("CLI refuses to issue an air-gapped license for a non-enterprise plan", (t)
 	assert.match(issued.stderr, /air-gapped deployment \(air_gapped_deployment\) requires the enterprise plan/);
 	assert.equal(existsSync(out), false, "no license file is written");
 });
+
+test("customer_id is an optional signed term: absent stays valid, present must match its pattern", () => {
+	const keys = registry([devEntry()]);
+	const legacy = signLicense(payload(), { privateKey: devKey, keyId: "aidr-license-dev-1" });
+	assert.equal(verifyLicense(legacy, { publicKeys: keys, now: inTerm }).payload.customer_id, undefined);
+
+	const bound = signLicense(payload({ customer_id: "bilgem" }), { privateKey: devKey, keyId: "aidr-license-dev-1" });
+	assert.equal(verifyLicense(bound, { publicKeys: keys, now: inTerm }).payload.customer_id, "bilgem");
+	// customer_id is covered by the signature: changing or dropping it breaks verification.
+	const dropped = Object.fromEntries(Object.entries(bound.payload).filter(([key]) => key !== "customer_id"));
+	for (const changed of [{ ...bound.payload, customer_id: "havelsan" }, dropped]) {
+		assert.throws(() => verifyLicense({ ...bound, payload: changed }, { publicKeys: keys, now: inTerm }), (error) => error.code === "bad_signature");
+	}
+	for (const customer_id of ["", "a", "Bilgem", "-bilgem", "bil gem", "bilgem_1", "x".repeat(33), 7, null]) {
+		assert.throws(
+			() => signLicense(payload({ customer_id }), { privateKey: devKey, keyId: "aidr-license-dev-1" }),
+			(error) => error.code === "invalid_payload" && /customer_id/.test(error.message),
+			`customer_id ${JSON.stringify(customer_id)} must be refused`,
+		);
+	}
+	for (const customer_id of ["ab", "bilgem", "havelsan-2", "9lives", "x".repeat(32)]) {
+		assert.equal(signLicense(payload({ customer_id }), { privateKey: devKey, keyId: "aidr-license-dev-1" }).payload.customer_id, customer_id);
+	}
+	const terms = { licenseId: "LIC-1", customer: "Example", planId: "enterprise", seats: "10", deployment: "onprem", issuedAt: "2026-09-01T00:00:00Z", expiresAt: "2027-09-01T00:00:00Z" };
+	assert.equal(buildPayload({ ...terms, customerId: "bilgem" }).customer_id, "bilgem");
+	assert.equal("customer_id" in buildPayload(terms), false);
+});
+
+test("CLI --customer-id signs the customer id into the license and the verifier reports it", (t) => {
+	const directory = mkdtempSync(join(tmpdir(), "aidr-license-customer-"));
+	t.after(() => rmSync(directory, { recursive: true, force: true }));
+	const keyPath = join(directory, "license-signing.pem");
+	writeFileSync(keyPath, devKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+	const registryPath = join(directory, "license-public-keys.json");
+	writeFileSync(registryPath, JSON.stringify({ format: PUBLIC_KEYS_FORMAT, schema_version: 1, keys: [devEntry()] }));
+	const out = join(directory, "license.json");
+	const base = ["--key-id", "aidr-license-dev-1", "--license-id", "LIC-CLI-3", "--customer", "TÜBİTAK BİLGEM", "--plan-id", "enterprise", "--seats", "40", "--deployment", "onprem", "--issued-at", "2026-09-01T00:00:00Z", "--expires-at", "2027-09-01T00:00:00Z", "--public-keys", registryPath, "--private-key-file", keyPath];
+	const bad = spawnSync(process.execPath, [issueScript, ...base, "--customer-id", "BILGEM", "--out", out], { encoding: "utf8" });
+	assert.equal(bad.status, 1);
+	assert.match(bad.stderr, /customer_id must be/);
+	assert.equal(existsSync(out), false);
+	const issued = spawnSync(process.execPath, [issueScript, ...base, "--customer-id", "bilgem", "--out", out], { encoding: "utf8" });
+	assert.equal(issued.status, 0, issued.stderr);
+	assert.match(issued.stdout, /customer id bilgem/);
+	assert.equal(JSON.parse(readFileSync(out, "utf8")).payload.customer_id, "bilgem");
+	const verified = spawnSync(process.execPath, [verifyScript, "--license-file", out, "--public-keys", registryPath, "--now", "2027-01-01T00:00:00Z"], { encoding: "utf8" });
+	assert.equal(verified.status, 0, verified.stderr);
+	assert.equal(JSON.parse(verified.stdout).customer_id, "bilgem");
+});

@@ -12,6 +12,7 @@ What the license controls, and what it never controls:
 |------|-------------------------|----------------------|
 | Seat admission, device enrollment and control-plane event ingest (`tenant_admission_capacity`) | Yes (`tenant_admissions.expires_at`) | Degraded: capacity drops to 0, so enrollment and agent event ingest are refused and the dashboard stops receiving new endpoint telemetry |
 | Local detection on every endpoint (hooks, rules, allowlists, audit log) | **No** | **Keeps enforcing.** Detection never depends on a license, enrollment or network access |
+| Accepting **new** signed rule/intel update packs on a licensed endpoint (per-customer builds) | Yes: a pack is accepted only while its signed `issued_at` is within `expires_at + grace_days`, and only if its optional audience names the license's `customer_id` | New packs are refused; rules and packs already installed keep enforcing. See [customer builds](customer-builds.md) |
 | Signed per-installation entitlement of an enrolled endpoint | No (issued by the control plane) | Missing, invalid or expired beyond its offline grace period: managed-only features stop on that endpoint; local detection keeps deciding every tool call |
 
 This follows the product's enforcement default: a connector evaluates every tool
@@ -78,6 +79,7 @@ database checks are vendor-operated there.
   "payload": {
     "license_id": "LIC-2026-0042",
     "customer": "Example Customer AG",
+    "customer_id": "example-ag",
     "plan_id": "enterprise",
     "seats": 250,
     "features": ["managed_policy", "premium_intel"],
@@ -99,6 +101,11 @@ database checks are vendor-operated there.
   `airgap` license requires `enterprise` (catalog feature `air_gapped_deployment`):
   `license-issue.mjs` will not sign one for another plan and the verifier refuses
   it with `plan_feature_required`.
+- `customer_id` is optional: `^[a-z0-9][a-z0-9-]{1,31}$` (2..32 lowercase
+  letters, digits and `-`). It names the customer a per-customer build is made
+  for, binds the license to that customer's [customer packet](customer-builds.md)
+  and to update packs addressed to that customer, and doubles as a leak-trace
+  mark. Licenses issued without it stay valid; a customer packet requires it.
 - Unknown fields are refused, so a term this verifier does not understand is
   never silently ignored.
 
@@ -110,6 +117,9 @@ database checks are vendor-operated there.
 | `valid` | `not_before` ≤ now < `expires_at` | enabled | enforced |
 | `grace` | `expires_at` ≤ now < `expires_at + grace_days` | enabled, with warnings | enforced |
 | `expired` | after the grace period | degraded | enforced |
+
+The customer packet verifier and the endpoint report the `valid` state as
+`active`; the conditions are the same.
 
 ## Trust root and key rotation
 
@@ -242,9 +252,25 @@ node scripts/license-issue.mjs --private-key-file /secure/aidr-license-2026-1.pe
   --grace-days 14 --public-keys deploy/onprem/license-public-keys.json --out LIC-2026-0042.json
 ```
 
+Add `--customer-id <id>` (for example `--customer-id example-ag`) when the
+license goes into a per-customer installer: the
+[customer packet](customer-builds.md) that carries it requires the id, and the
+id is signed with the other terms.
+
 The issuer validates every term, self-verifies the signature, checks that the
 key is `active` in the registry passed with `--public-keys`, and never
 overwrites an existing output file.
+
+## Customer packets
+
+A per-customer installer carries a vendor-signed customer packet
+(`aidr-customer-packet-v1`) that embeds the license together with the
+customer id, an optional control-plane URL, sensitivity preset and display
+name. It is signed with a key from the same registry, under a separate
+signature domain, so a license signature never verifies as a packet. Issue and
+verify it with `scripts/customer-packet-issue.mjs` and
+`scripts/customer-packet-verify.mjs`; the runbook is
+[Per-customer builds](customer-builds.md).
 
 ## Limits
 

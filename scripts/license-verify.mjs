@@ -26,6 +26,11 @@
  * at MAX_LICENSE_TERM_DAYS from its `issued_at`, a leaked retired key cannot mint
  * a license that outlives that bound by back-dating `issued_at`.
  *
+ * Optional `customer_id` (`^[a-z0-9][a-z0-9-]{1,31}$`) names the customer a
+ * per-customer build is made for. It binds a license to a customer packet
+ * (scripts/customer-packet-verify.mjs) and to update packs addressed to that
+ * customer, and doubles as a leak-trace mark. Licenses without it stay valid.
+ *
  * Enforcement is operator-side: the operator controls the host, its clock, the
  * registry file and the database, and the database does not re-verify the
  * signature. See docs/operations/licensing.md ("What the license can and cannot
@@ -49,13 +54,15 @@ export const DEFAULT_PUBLIC_KEYS_PATH = resolve(
 	"../deploy/onprem/license-public-keys.json",
 );
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MAX_DOCUMENT_BYTES = 64 * 1024;
+export const MAX_DOCUMENT_BYTES = 64 * 1024;
 const LICENSE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const KEY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+export const KEY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+/** Customer id carried by a license, a customer packet and an update-pack audience. */
+export const CUSTOMER_ID = /^[a-z0-9][a-z0-9-]{1,31}$/;
 const PLAN_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const FEATURE = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
-const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
-const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+export const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+export const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const PAYLOAD_KEYS = [
 	"customer",
 	"deployment",
@@ -68,6 +75,8 @@ const PAYLOAD_KEYS = [
 	"plan_id",
 	"seats",
 ];
+/** Signed terms a license may carry but need not (older licenses lack them). */
+const OPTIONAL_PAYLOAD_KEYS = ["customer_id"];
 export const DEPLOYMENTS = ["onprem", "airgap"];
 /** Catalog editions (public.plans, 20260925000010_plan_catalog.sql). */
 export const PLAN_IDS = ["free", "team", "business", "enterprise"];
@@ -90,7 +99,7 @@ export class LicenseError extends Error {
 	}
 }
 
-function isPlainObject(value) {
+export function isPlainObject(value) {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -116,7 +125,7 @@ export function licenseSigningMessage(payload) {
 	return Buffer.from(`${LICENSE_FORMAT}\n${canonicalJson(payload)}`, "utf8");
 }
 
-function timestamp(value, field) {
+export function timestamp(value, field) {
 	if (typeof value !== "string" || !ISO_UTC.test(value) || !Number.isFinite(Date.parse(value))) {
 		throw new LicenseError("invalid_payload", `${field} must be an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)`);
 	}
@@ -130,7 +139,7 @@ function timestamp(value, field) {
 export function validateLicensePayload(payload) {
 	if (!isPlainObject(payload)) throw new LicenseError("invalid_payload", "license payload must be an object");
 	const keys = Object.keys(payload).sort();
-	const unknown = keys.filter((key) => !PAYLOAD_KEYS.includes(key));
+	const unknown = keys.filter((key) => !PAYLOAD_KEYS.includes(key) && !OPTIONAL_PAYLOAD_KEYS.includes(key));
 	const missing = PAYLOAD_KEYS.filter((key) => !keys.includes(key));
 	if (unknown.length) throw new LicenseError("invalid_payload", `license payload has unknown field(s): ${unknown.join(", ")}`);
 	if (missing.length) throw new LicenseError("invalid_payload", `license payload is missing: ${missing.join(", ")}`);
@@ -145,6 +154,9 @@ export function validateLicensePayload(payload) {
 		/[\x00-\x1f\x7f]/.test(payload.customer)
 	) {
 		throw new LicenseError("invalid_payload", "customer must be 1..120 printable characters without surrounding whitespace");
+	}
+	if (payload.customer_id !== undefined && (typeof payload.customer_id !== "string" || !CUSTOMER_ID.test(payload.customer_id))) {
+		throw new LicenseError("invalid_payload", "customer_id must be 2..32 characters of [a-z0-9-], starting with a letter or digit");
 	}
 	if (typeof payload.plan_id !== "string" || !PLAN_ID.test(payload.plan_id)) {
 		throw new LicenseError("invalid_payload", "plan_id must be 1..64 characters of [a-z0-9._-]");
@@ -235,7 +247,7 @@ export function parsePublicKeyRegistry(registry) {
 	return keys;
 }
 
-function requireRegularFile(path, label) {
+export function requireRegularFile(path, label) {
 	let stats;
 	try {
 		stats = lstatSync(path);
@@ -271,6 +283,31 @@ export function readLicenseFile(path) {
 		throw new LicenseError("invalid_document", `license file ${absolute} is not JSON`);
 	}
 	return { document, sha256: createHash("sha256").update(bytes).digest("hex") };
+}
+
+/**
+ * Check that a registry key may have signed a document claiming `issuedAt`:
+ * the claim must fall in the key's validity window, a retired key must not claim
+ * issuance after `retired_at`, and the verifier's clock (`now`) ends a retired
+ * key's acceptance. Shared by the license and the customer-packet verifiers.
+ */
+export function assertSigningKeyUsable(key, { issuedAt, now, subject }) {
+	if (issuedAt < key.notBefore || (key.notAfter !== null && issuedAt > key.notAfter)) {
+		throw new LicenseError("key_window", `${subject} issued_at is outside the validity window of signing key ${key.keyId}`);
+	}
+	if (key.status === "retired") {
+		// issued_at is signer-chosen; retirement bounds it, and the verifier's own
+		// clock bounds how long anything signed by the retired key is honoured.
+		if (issuedAt > key.retiredAt) {
+			throw new LicenseError("key_window", `${subject} claims issuance after signing key ${key.keyId} was retired`);
+		}
+		if (now >= key.retiredAt + RETIRED_KEY_ACCEPTANCE_DAYS * DAY_MS) {
+			throw new LicenseError(
+				"retired_key_expired",
+				`signing key ${key.keyId} was retired at ${new Date(key.retiredAt).toISOString()}; it verifies nothing after ${new Date(key.retiredAt + RETIRED_KEY_ACCEPTANCE_DAYS * DAY_MS).toISOString()}`,
+			);
+		}
+	}
 }
 
 /**
@@ -317,22 +354,7 @@ export function verifyLicense(document, { publicKeys, now = Date.now() } = {}) {
 	}
 	// Only a signature-verified payload is interpreted.
 	const { issuedAt, notBefore, expiresAt } = validateLicensePayload(document.payload);
-	if (issuedAt < key.notBefore || (key.notAfter !== null && issuedAt > key.notAfter)) {
-		throw new LicenseError("key_window", `license issued_at is outside the validity window of signing key ${document.key_id}`);
-	}
-	if (key.status === "retired") {
-		// issued_at is signer-chosen; retirement bounds it, and the verifier's own
-		// clock bounds how long anything signed by the retired key is honoured.
-		if (issuedAt > key.retiredAt) {
-			throw new LicenseError("key_window", `license claims issuance after signing key ${document.key_id} was retired`);
-		}
-		if (now >= key.retiredAt + RETIRED_KEY_ACCEPTANCE_DAYS * DAY_MS) {
-			throw new LicenseError(
-				"retired_key_expired",
-				`signing key ${document.key_id} was retired at ${new Date(key.retiredAt).toISOString()}; it verifies nothing after ${new Date(key.retiredAt + RETIRED_KEY_ACCEPTANCE_DAYS * DAY_MS).toISOString()}`,
-			);
-		}
-	}
+	assertSigningKeyUsable(key, { issuedAt, now, subject: "license" });
 
 	const graceEndsAt = expiresAt + document.payload.grace_days * DAY_MS;
 	let status;
@@ -397,6 +419,7 @@ if (invoked) {
 			status: result.status,
 			license_id: payload.license_id,
 			customer: payload.customer,
+			...(payload.customer_id === undefined ? {} : { customer_id: payload.customer_id }),
 			plan_id: payload.plan_id,
 			seats: payload.seats,
 			features: payload.features,

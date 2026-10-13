@@ -189,6 +189,7 @@ export const ONPREM_EXTRA_SUITE_PATTERNS = Object.freeze([
 	/^deployment-[\w-]+\.test\.mjs$/u,
 	/^airgap-[\w-]+\.test\.mjs$/u,
 	/^customer-kit[\w-]*\.test\.mjs$/u,
+	/^customer-packet[\w-]*\.test\.mjs$/u,
 	/^license[\w-]*\.test\.mjs$/u,
 	/^import-offline-pack[\w-]*\.test\.mjs$/u,
 	/^onprem-[\w-]+\.test\.mjs$/u,
@@ -546,7 +547,7 @@ export const STEPS = Object.freeze([
 	step({
 		id: "onprem-extra",
 		group: "onprem",
-		name: "Other on-prem node suites (license, offline pack, onprem-*, deployment-*)",
+		name: "Other on-prem node suites (license, customer packet, offline pack, onprem-*, deployment-*)",
 		expand: "onprem-extra",
 		nodeLeg: "prefer-24",
 		quick: true,
