@@ -244,6 +244,16 @@ describe("simulate formatting", () => {
 		const table = formatTable(report);
 		expect(table).toContain("Attack Simulation Self-Test");
 		expect(table).toContain("Overall detection score: 100%");
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			const turkish = formatTable(report);
+			expect(turkish).toContain("Genel tespit puanı: %100");
+			expect(turkish).toContain("Kategori");
+			expect(turkish).toContain("BAŞARILI");
+			expect(formatHtml(report)).toContain('<html lang="tr">');
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("renders self-contained HTML without vendor names", () => {

@@ -226,16 +226,28 @@ export async function auditTailCommand(
 	}
 	const log = await tryReadAllEntries(deps);
 	if (!log) return;
-	const redacted = log.entries.slice(-count).map(redactAuditEntry);
 	if (options.json) {
-		for (const entry of redacted) console.log(JSON.stringify(entry));
+		for (const entry of log.entries.slice(-count).map(redactAuditEntry))
+			console.log(JSON.stringify(entry));
 		return;
 	}
-	if (redacted.length === 0) {
+	// The readable view skips rows with nothing to read (an incident roll-up
+	// carries no timestamp, decision or tool of its own; the verdicts it groups
+	// are listed individually). `--json` keeps every entry.
+	const shown = log.entries.filter(isReadableRow).slice(-count).map(redactAuditEntry);
+	if (shown.length === 0) {
 		console.log("The audit log has no entries yet.");
 		return;
 	}
-	for (const entry of redacted) console.log(formatLine(entry));
+	for (const entry of shown) console.log(formatLine(entry));
+}
+
+/** Whether a row prints anything beyond its type name. */
+function isReadableRow(entry: AuditEntry): boolean {
+	if (entry.type === "incident_record") return false;
+	return (
+		field(entry, "timestamp") !== "" || decisionOf(entry) !== "" || field(entry, "tool_name") !== ""
+	);
 }
 
 function exportBody(entries: AuditEntry[], format: "jsonl" | "csv"): string {

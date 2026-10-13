@@ -1,5 +1,6 @@
 import { userInfo } from "node:os";
 import { createInterface } from "node:readline";
+import { ct } from "../i18n/index.js";
 
 /**
  * Human confirmation for operator-only actions (`aidr approve`, `aidr allowlist add`,
@@ -54,12 +55,21 @@ export interface OperatorCommandDeps {
 	streams?: ConfirmationStreams;
 }
 
-function readLine(streams: ConfirmationStreams, query: string): Promise<string> {
+/**
+ * One line from the operator. Terminal mode (cursor and line-editing escape
+ * sequences) only when the output really is a terminal, so a log or pipe never
+ * receives raw escape codes.
+ */
+export function readOperatorLine(streams: ConfirmationStreams, query: string): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const rl = createInterface({ input: streams.input, output: streams.output, terminal: true });
+		const rl = createInterface({
+			input: streams.input,
+			output: streams.output,
+			terminal: streams.output.isTTY === true,
+		});
 		let answered = false;
 		rl.once("close", () => {
-			if (!answered) reject(new OperatorConfirmationError("Confirmation input ended."));
+			if (!answered) reject(new OperatorConfirmationError(ct("confirm.inputEnded")));
 		});
 		rl.question(query, (answer) => {
 			answered = true;
@@ -77,25 +87,23 @@ export async function confirmOperatorAction(options: ConfirmOptions): Promise<Co
 	if (options.yes) {
 		if (env[OPERATOR_NONINTERACTIVE_ENV] !== "1") {
 			throw new OperatorConfirmationError(
-				`--yes is honoured only when ${OPERATOR_NONINTERACTIVE_ENV}=1 is also set by the operator. ` +
-					"Run the command in an interactive terminal to confirm it by hand.",
+				ct("confirm.yesNeedsEnv", { env: `${OPERATOR_NONINTERACTIVE_ENV}=1` }),
 			);
 		}
-		streams.output.write(`${options.prompt}\nConfirmed non-interactively (--yes).\n`);
+		streams.output.write(`${options.prompt}\n${ct("confirm.nonInteractive")}\n`);
 		return "non-interactive";
 	}
 
 	if (!streams.input.isTTY || !streams.output.isTTY) {
 		throw new OperatorConfirmationError(
-			"This operator-only command needs an interactive terminal for confirmation. " +
-				`For operator automation pass --yes with ${OPERATOR_NONINTERACTIVE_ENV}=1.`,
+			ct("confirm.needsTerminal", { env: `${OPERATOR_NONINTERACTIVE_ENV}=1` }),
 		);
 	}
 
 	streams.output.write(`${options.prompt}\n`);
-	const answer = await readLine(streams, `Type "${options.word}" to confirm: `);
+	const answer = await readOperatorLine(streams, ct("confirm.type", { word: options.word }));
 	if (answer.trim().toLowerCase() !== options.word) {
-		throw new OperatorConfirmationError("Not confirmed; nothing was changed.");
+		throw new OperatorConfirmationError(ct("confirm.notConfirmed"));
 	}
 	return "interactive";
 }

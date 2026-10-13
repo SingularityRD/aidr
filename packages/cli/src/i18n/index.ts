@@ -48,9 +48,64 @@ export function initCliLocale(): void {
 	}
 }
 
-/** Every description in the command tree (commands, options, arguments). */
+/**
+ * `aidr --help` lists two dozen commands; grouped, a new administrator finds the
+ * few they need first. Headings are Commander help-group titles, so the help
+ * localizer translates them like every other title.
+ */
+export const HELP_GROUPS = [
+	{ heading: "Setup:", commands: ["setup", "config", "uninstall"] },
+	{ heading: "Daily use:", commands: ["status", "verify", "audit", "privacy", "scan"] },
+	{ heading: "Approvals:", commands: ["pending", "approve", "allowlist", "exception"] },
+	{ heading: "Diagnostics:", commands: ["doctor", "support-bundle", "simulate", "coverage"] },
+	{
+		heading: "Advanced:",
+		commands: [
+			"collect",
+			"discover",
+			"aibom",
+			"learning",
+			"compliance",
+			"quarantine",
+			"restore",
+			"profile",
+			"canary",
+		],
+	},
+] as const;
+
+/**
+ * Put every top-level command under its heading, in the order above. A command
+ * missing from the table stays under "Advanced:" so it is never hidden; the
+ * built-in `help` command joins "Diagnostics:".
+ */
+export function groupCommands(program: Command): void {
+	// Position within the table: group first, then the order listed there.
+	const order = new Map<string, { group: number; position: number }>();
+	HELP_GROUPS.forEach((group, index) => {
+		group.commands.forEach((name, position) => {
+			order.set(name, { group: index, position });
+		});
+	});
+	const fallback = { group: HELP_GROUPS.length - 1, position: Number.MAX_SAFE_INTEGER };
+	const place = (command: Command) => order.get(command.name()) ?? fallback;
+	for (const command of program.commands) {
+		command.helpGroup(HELP_GROUPS[place(command).group]?.heading ?? "Advanced:");
+	}
+	// Commander lists groups, and commands within a group, in this array's order.
+	const sorted = [...program.commands].sort(
+		(a, b) => place(a).group - place(b).group || place(a).position - place(b).position,
+	);
+	(program.commands as Command[]).splice(0, sorted.length, ...sorted);
+	program.commandsGroup("Diagnostics:");
+	program.helpCommand(true);
+}
+
+/** Every description in the command tree (commands, options, arguments, group headings). */
 export function collectHelpTexts(program: Command): Set<string> {
 	const texts = new Set<string>();
+	// Only top-level commands carry a help group (see groupCommands).
+	for (const command of program.commands) if (command.helpGroup()) texts.add(command.helpGroup());
 	const walk = (command: Command): void => {
 		if (command.description()) texts.add(command.description());
 		for (const option of command.options) if (option.description) texts.add(option.description);

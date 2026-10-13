@@ -1,4 +1,5 @@
 import { resolvePath, VERSION } from "@singularityrd/aidr-core";
+import { type CliMessageKey, ct } from "../i18n/index.js";
 import { createConfig } from "../utils/config-manager.js";
 import {
 	type ConnectorInstallOptions,
@@ -43,15 +44,15 @@ interface SetupDeps extends OperatorCommandDeps {
 	standaloneRoot?: string | null;
 }
 
-const ACTION_TEXT: Record<HostInstallResult["action"], string> = {
-	already_installed: "already installed",
-	installed: "installed",
-	updated: "updated",
-	would_install: "would install",
-	would_update: "would update",
-	manual: "manual step needed",
-	failed: "FAILED",
-	skipped_not_detected: "not detected",
+const ACTION_TEXT: Record<HostInstallResult["action"], CliMessageKey> = {
+	already_installed: "setup.action.alreadyInstalled",
+	installed: "setup.action.installed",
+	updated: "setup.action.updated",
+	would_install: "setup.action.wouldInstall",
+	would_update: "setup.action.wouldUpdate",
+	manual: "setup.action.manual",
+	failed: "setup.action.failed",
+	skipped_not_detected: "setup.action.notDetected",
 };
 
 /** Parse `--host a,b`; unknown ids are an error, never silently ignored. */
@@ -73,9 +74,9 @@ export function parseHosts(value: string | undefined): HostId[] | undefined {
 }
 
 function printHostResults(results: HostInstallResult[]): void {
-	console.log("Connectors:");
+	console.log(ct("setup.connectors"));
 	for (const entry of results) {
-		console.log(`  ${entry.label.padEnd(12)} ${ACTION_TEXT[entry.action]} — ${entry.detail}`);
+		console.log(`  ${entry.label.padEnd(12)} ${ct(ACTION_TEXT[entry.action])} — ${entry.detail}`);
 		for (const change of entry.changes) console.log(`               ${change}`);
 	}
 }
@@ -98,7 +99,7 @@ async function confirmed(
 		return true;
 	} catch (error) {
 		console.error(
-			`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was changed.`,
+			`${error instanceof OperatorConfirmationError ? error.message : String(error)} ${ct("setup.nothingChanged")}`,
 		);
 		process.exitCode = 1;
 		return false;
@@ -149,7 +150,7 @@ async function confirmArtifacts(
 }
 
 async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): Promise<void> {
-	console.log(`\n🛡️  AIDR Setup${options.dryRun ? " (dry run — nothing will be changed)" : ""}\n`);
+	console.log(`\n🛡️  ${ct("setup.title")}${options.dryRun ? ct("setup.titleDryRun") : ""}\n`);
 
 	if (options.force && !options.dryRun && !(await confirmForce(options, deps))) return;
 	if (!options.dryRun && !(await confirmArtifacts(options, deps))) return;
@@ -159,67 +160,67 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 		const home = deps.home ?? resolvePath("~");
 		const hostEnv = deps.env ?? process.env;
 
-		console.error("Detecting environment...");
+		console.error(ct("setup.detecting"));
 		// Home-based only, the same measurement `aidr status` prints (PRD-14).
 		const env = await detectEnvironment(home, hostEnv);
+		const detected = env.detectedHosts ?? [];
+		// Finding nothing to protect is not a success: no ✓ for it.
 		console.error(
-			env.detectedHosts && env.detectedHosts.length > 0
-				? `✓ Agent hosts found: ${env.detectedHosts.join(", ")}`
-				: "✓ No supported agent host found in this home directory",
+			detected.length > 0
+				? `✓ ${ct("setup.hostsFound", { hosts: detected.join(", ") })}`
+				: `! ${ct("setup.noHosts")}`,
 		);
 
 		if (options.dryRun) {
-			console.error("Skipping config creation (dry run).");
+			console.error(ct("setup.skipConfig"));
 		} else {
-			console.error("Creating config...");
+			console.error(ct("setup.creatingConfig"));
 			// Local mode needs no credential, so no vault either; a managed config's
 			// credential goes to the OS vault or the encrypted file store.
 			const config = await createConfig(env, options.force || false, {
 				secretStoreSelection: options.secretStore,
 			});
+			// The reused branch must stay distinct (config.outcome === "reused"):
+			// a rerun reports that no changes were needed, never a fresh success.
 			console.error(
 				config.outcome === "reused"
-					? `✓ Config already present: ${config.path}`
-					: `✓ Config: ${config.path}`,
+					? `✓ ${ct("setup.configReused", { path: config.path })}`
+					: `✓ ${ct("setup.configCreated", { path: config.path })}`,
 			);
 			if (config.warning) console.warn(`⚠ ${config.warning}`);
 			if (config.outcome === "reused") {
-				console.log("\n✅ Setup verified — no changes were needed to the configuration.");
-				console.log(`  Existing config reused: ${config.path}`);
+				console.log(`\n${ct("setup.rerunNoChanges")}`);
+				console.log(`  ${ct("setup.rerunConfig", { path: config.path })}`);
 			}
 		}
 
-		console.error("Loading threat database...");
+		console.error(ct("setup.loadingRules"));
 		const ruleCount = await loadBundledThreatCount();
 		if (ruleCount <= 0) {
-			console.error(
-				"No threat rules could be loaded. Detection would not be active - refusing to report success.",
-			);
+			console.error(ct("setup.noRules"));
 			process.exit(1);
 		}
-		console.error(`✓ ${ruleCount} rules active`);
-
-		console.error("Testing protection...");
 		const detection = await verifyDetection();
 		if (!detection.ok) {
-			console.error(`Detection self-test failed: ${detection.reason}`);
+			console.error(ct("setup.selfTestFailed", { reason: detection.reason }));
 			process.exit(1);
 		}
-		console.error(`✓ Detection verified (${detection.detail})`);
+		// One line: the count is what loaded, the self-test proves it matches.
+		console.error(`✓ ${ct("setup.detectionOk", { rules: ruleCount })}`);
 
 		if (options.install === false) {
 			// Guidance only: the previous behaviour, for operators who install by hand.
 			const guidance = await installHooks(env);
-			console.log("\n✅ Setup complete (connector install skipped: --no-install).\n");
-			console.log("Next steps:");
-			console.log("  1. Install the connector below — until you do, tool calls are NOT inspected");
-			console.log("  2. View status:  aidr status");
+			console.log(`\n${ct("setup.noInstallDone")}\n`);
+			console.log(ct("setup.nextSteps"));
+			console.log(`  1. ${ct("setup.noInstallStep1")}`);
+			console.log(`  2. ${ct("setup.noInstallStep2")}`);
 			console.log("");
 			for (const line of guidance.followUp) console.log(line);
 			return;
 		}
 
-		console.error(options.dryRun ? "Planning connector installs..." : "Installing connectors...");
+		console.error(options.dryRun ? ct("setup.planning") : ct("setup.installing"));
 		const installOptions: ConnectorInstallOptions = {
 			hosts,
 			dryRun: options.dryRun,
@@ -261,27 +262,40 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 		printHostResults(results);
 		const failed = results.filter((entry) => entry.action === "failed");
 		const pending = results.filter((entry) => entry.followUp.length > 0);
+		// A host that was found (or asked for) but has no working connector after
+		// this run: its tool calls are not inspected, so setup did not succeed.
+		const unprotected = results.filter(
+			(entry) => entry.action !== "skipped_not_detected" && entry.state !== "installed",
+		);
 		console.log("");
 		if (options.dryRun) {
-			console.log("Dry run: no file was written and no host command was run.");
-		} else if (active.length > 0 && failed.length === 0) {
-			console.log("✅ Setup complete!");
+			console.log(ct("setup.dryRunDone"));
+		} else if (active.length > 0 && failed.length === 0 && unprotected.length === 0) {
+			console.log(ct("setup.complete"));
 			console.log(
-				`  Registered for: ${active.map((entry) => entry.label).join(", ")} (host execution not yet verified).`,
+				`  ${ct("setup.registeredFor", { hosts: active.map((entry) => entry.label).join(", ") })}`,
 			);
 		} else {
-			console.log("⚠ Setup finished, but Protection is NOT yet active for every agent:");
-			console.log("  tool calls of a host without a registered connector are NOT inspected.");
+			// Protection is NOT yet active for every agent: say so, never ✅.
+			console.log(ct("setup.incomplete"));
+			console.log(`  ${ct("setup.incompleteDetail")}`);
+			if (unprotected.length > 0) {
+				console.log(
+					`  ${ct("setup.unprotected", { hosts: unprotected.map((entry) => entry.label).join(", ") })}`,
+				);
+			}
 		}
 		if (pending.length > 0) {
 			console.log("");
-			console.log("Next steps:");
+			console.log(ct("setup.nextSteps"));
 			for (const entry of pending) for (const line of entry.followUp) console.log(line);
 		}
 		console.log("");
-		console.log("Verify with: aidr status   and   aidr verify   (restart the agent hosts first)");
+		console.log(options.dryRun ? ct("setup.dryRunNext") : ct("setup.verifyNext"));
 		console.log("");
-		if (failed.length > 0) process.exitCode = 1;
+		if (!options.dryRun && (failed.length > 0 || unprotected.length > 0 || active.length === 0)) {
+			process.exitCode = 1;
+		}
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(`Setup failed: ${message}`);

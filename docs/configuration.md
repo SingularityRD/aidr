@@ -1033,10 +1033,14 @@ sent to the AIDR dashboard for an administrator to approve — see
    `…(truncated)`. The record also keeps the total artifact count, so
    `aidr pending` says "showing 16 of 40 (truncated)" when a call had more
    artifacts than are previewed. The CLI escapes again at display time.
-2. The operator reviews open asks with `aidr pending` and approves one with
-   `aidr approve <actionId>`. The CLI prints what will be released and requires
+2. The operator reviews open asks with `aidr pending` (times in the machine's
+   local time zone) and approves one with `aidr approve <actionId>`. The id may
+   be shortened to a unique prefix of at least 8 hex characters; in an
+   interactive terminal `aidr approve` with no id lists the waiting asks
+   numbered to pick from. The CLI prints what will be released and requires
    the operator to type `approve` in an interactive terminal. For automation it
-   accepts `--yes` only when `AIDR_OPERATOR_NONINTERACTIVE=1` is also set.
+   accepts `--yes` only when `AIDR_OPERATOR_NONINTERACTIVE=1` is also set, and
+   then the id is required.
 3. The approval records `{actionId, artifactDigest, tool, approvedAt, expiresAt,
    approver}`. It expires after 15 minutes (`--ttl <minutes>`, 1–1440) and is
    **single-use**: the first retry of the identical call (same tool, same
@@ -1050,12 +1054,12 @@ sent to the AIDR dashboard for an administrator to approve — see
 | CLI | Purpose |
 |-----|---------|
 | `aidr pending [--json]` | List asks waiting for a decision (and say so when approvals are disabled) |
-| `aidr approve <actionId> [--ttl <min>] [--permit-allowlist] [--yes]` | Approve one retry (operator only) |
+| `aidr approve [actionId\|prefix] [--ttl <min>] [--permit-allowlist] [--yes]` | Approve one retry (operator only); no id in a terminal = pick from a numbered list |
 | `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |
-| `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted |
+| `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted (the readable view skips incident roll-up rows; `--json` keeps them) |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
 | `aidr audit verify [--json] [--expect-root <fp>] [--response-chain <path>]` | Verify the signed verdict log and, when enabled, the Ed25519-signed response-action chain offline (`--response-chain <path>` checks only that file) and print the first broken link. Both modes share one exit-code contract: `0` verified, `1` broken (edited, reordered, deleted or truncated entry, forged or missing signature, tampered retention manifest), `2` unverifiable (configuration or log unreadable, log or signing key missing, or no signed chain enabled). A broken chain outranks an unverifiable one. Never creates a signing key |
-| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
+| `aidr doctor [--json] [--verbose]` | One line per check (details with `--verbose`): hosts, hook registration, release verification key, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
 | `aidr support-bundle [--out <path>] [--audit-entries <n>] [--json]` | Write a redacted diagnostic bundle for a support case; see [support-diagnostics.md](support-diagnostics.md) |
 | `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles (see [Agent permission profiles](agent-profiles.md)) |
 

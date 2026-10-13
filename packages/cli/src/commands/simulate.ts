@@ -27,6 +27,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import {
 	type Artifact,
 	type Config,
+	currentLocale,
 	evaluateToolCall,
 	extractFromToolCall,
 	loadConfig,
@@ -35,6 +36,7 @@ import {
 	scanPrompt,
 	type Verdict,
 } from "@singularityrd/aidr-core";
+import { type CliMessageKey, ct } from "../i18n/index.js";
 import { resolveBundledDataDirs } from "../utils/test-protection.js";
 import {
 	loadSimulationCorpus,
@@ -707,11 +709,9 @@ export function buildReport(input: {
 export const DEFAULT_MIN_SCORE = 90;
 
 function verdictLine(report: SimulationReport): string {
-	if (report.totals.counted === 0)
-		return "FAIL — no fixture could be scored, so nothing was verified";
-	return report.passed
-		? `PASS — score ${report.score}% >= minimum ${report.minScore}%`
-		: `FAIL — score ${report.score}% < minimum ${report.minScore}%`;
+	if (report.totals.counted === 0) return ct("simulate.verdictNone");
+	const values = { score: report.score, min: report.minScore };
+	return report.passed ? ct("simulate.verdictPass", values) : ct("simulate.verdictFail", values);
 }
 
 function clampScore(value: string | undefined): number {
@@ -740,66 +740,75 @@ function round1(value: number): number {
  * Output formatting.
  * ------------------------------------------------------------------ */
 
-const CATEGORY_LABELS: Record<SimCategory, string> = {
-	injection: "Prompt injection",
-	exfiltration: "Data exfiltration",
-	destructive: "Destructive commands",
-	encoding: "Obfuscation / encoding",
-	"supply-chain": "Supply chain",
-	mcp: "MCP tool poisoning",
-	"self-defense": "Self-defense",
-	privacy: "Personal data / secrets",
+const CATEGORY_LABELS: Record<SimCategory, CliMessageKey> = {
+	injection: "simulate.category.injection",
+	exfiltration: "simulate.category.exfiltration",
+	destructive: "simulate.category.destructive",
+	encoding: "simulate.category.encoding",
+	"supply-chain": "simulate.category.supplyChain",
+	mcp: "simulate.category.mcp",
+	"self-defense": "simulate.category.selfDefense",
+	privacy: "simulate.category.privacy",
 };
 
+function categoryLabel(category: SimCategory): string {
+	return ct(CATEGORY_LABELS[category]);
+}
+
 function pct(numerator: number, denominator: number): string {
-	if (denominator === 0) return "n/a";
+	if (denominator === 0) return ct("simulate.na");
 	return `${round1((numerator / denominator) * 100)}%`;
 }
 
 export function formatTable(report: SimulationReport): string {
 	const lines: string[] = [];
-	lines.push("Singularity AIDR — Attack Simulation Self-Test");
+	lines.push(ct("simulate.title"));
 	lines.push(
-		`Mode: ${report.mode}${report.connector ? ` (${report.connector})` : ""}   Sensitivity: ${report.sensitivity}`,
+		ct("simulate.modeLine", {
+			mode: `${report.mode}${report.connector ? ` (${report.connector})` : ""}`,
+			sensitivity: report.sensitivity,
+		}),
 	);
 	lines.push("");
-	const header = `${"Category".padEnd(24)}${"Detected".padStart(12)}${"Rate".padStart(9)}${"Benign FP".padStart(12)}`;
+	const header = `${ct("simulate.colCategory").padEnd(24)}${ct("simulate.colDetected").padStart(12)}${ct("simulate.colRate").padStart(9)}${ct("simulate.colBenignFp").padStart(12)}`;
 	lines.push(header);
 	lines.push("-".repeat(header.length));
 	for (const c of report.categories) {
 		lines.push(
-			`${CATEGORY_LABELS[c.category].padEnd(24)}${`${c.detected}/${c.counted}`.padStart(12)}${pct(c.detected, c.counted).padStart(9)}${`${c.benignFalsePositives}/${c.benignCounted}`.padStart(12)}`,
+			`${categoryLabel(c.category).padEnd(24)}${`${c.detected}/${c.counted}`.padStart(12)}${pct(c.detected, c.counted).padStart(9)}${`${c.benignFalsePositives}/${c.benignCounted}`.padStart(12)}`,
 		);
 	}
 	lines.push("-".repeat(header.length));
 	lines.push(
-		`${"TOTAL".padEnd(24)}${`${report.totals.detected}/${report.totals.counted}`.padStart(12)}${`${report.score}%`.padStart(9)}${`${report.totals.benignFalsePositives}/${report.totals.benignCounted}`.padStart(12)}`,
+		`${ct("simulate.total").padEnd(24)}${`${report.totals.detected}/${report.totals.counted}`.padStart(12)}${`${report.score}%`.padStart(9)}${`${report.totals.benignFalsePositives}/${report.totals.benignCounted}`.padStart(12)}`,
 	);
 	lines.push("");
-	lines.push(`Overall detection score: ${report.score}%`);
-	lines.push(`Benign false-positive rate: ${report.falsePositiveRate}%`);
+	lines.push(ct("simulate.score", { score: report.score }));
+	lines.push(ct("simulate.fpRate", { rate: report.falsePositiveRate }));
 	if (report.totals.aborted > 0) {
-		lines.push(`Not counted (uninspected / disabled): ${report.totals.aborted}`);
+		lines.push(ct("simulate.notCounted", { count: report.totals.aborted }));
 	}
 	if (report.misses.length > 0) {
 		lines.push("");
-		lines.push("Misses (malicious fixtures the product did not flag to the expected level):");
+		lines.push(ct("simulate.missesTitle"));
 		for (const miss of report.misses) {
 			lines.push(
-				`  - [${miss.category}] ${miss.id}: expected >= ${miss.expected}, got ${miss.actual} — ${miss.description}`,
+				`  - [${miss.category}] ${miss.id}: ${ct("simulate.missLine", { expected: miss.expected, actual: miss.actual })} — ${miss.description}`,
 			);
 		}
 	}
 	if (report.falsePositives.length > 0) {
 		lines.push("");
-		lines.push("Benign twins that were incorrectly flagged:");
+		lines.push(ct("simulate.fpTitle"));
 		for (const fp of report.falsePositives) {
-			lines.push(`  - [${fp.category}] ${fp.id}: flagged as ${fp.actual} — ${fp.description}`);
+			lines.push(
+				`  - [${fp.category}] ${fp.id}: ${ct("simulate.fpLine", { actual: fp.actual })} — ${fp.description}`,
+			);
 		}
 	}
 	if (report.aborted.length > 0) {
 		lines.push("");
-		lines.push("Uninspected / not scored:");
+		lines.push(ct("simulate.abortedTitle"));
 		for (const a of report.aborted) {
 			lines.push(`  - [${a.category}] ${a.id}: ${a.reason}`);
 		}
@@ -817,11 +826,16 @@ function escapeHtml(value: string): string {
 		.replace(/"/g, "&quot;");
 }
 
+/** A catalog text, escaped for HTML. */
+function h(key: CliMessageKey): string {
+	return escapeHtml(ct(key));
+}
+
 export function formatHtml(report: SimulationReport): string {
 	const rows = report.categories
 		.map(
 			(c) => `      <tr>
-        <td>${escapeHtml(CATEGORY_LABELS[c.category])}</td>
+        <td>${escapeHtml(categoryLabel(c.category))}</td>
         <td class="num">${c.detected}/${c.counted}</td>
         <td class="num">${pct(c.detected, c.counted)}</td>
         <td class="num">${c.benignFalsePositives}/${c.benignCounted}</td>
@@ -831,8 +845,8 @@ export function formatHtml(report: SimulationReport): string {
 
 	const missRows =
 		report.misses.length === 0
-			? '<p class="ok">No misses: every counted fixture was flagged to at least its expected level.</p>'
-			: `<table><thead><tr><th>Case</th><th>Category</th><th>Expected</th><th>Actual</th><th>Description</th></tr></thead><tbody>${report.misses
+			? `<p class="ok">${h("simulate.html.noMisses")}</p>`
+			: `<table><thead><tr><th>${h("simulate.html.case")}</th><th>${h("simulate.colCategory")}</th><th>${h("simulate.html.expected")}</th><th>${h("simulate.html.actual")}</th><th>${h("simulate.html.description")}</th></tr></thead><tbody>${report.misses
 					.map(
 						(m) =>
 							`<tr><td>${escapeHtml(m.id)}</td><td>${escapeHtml(m.category)}</td><td>${m.expected}</td><td class="miss">${m.actual}</td><td>${escapeHtml(m.description)}</td></tr>`,
@@ -841,8 +855,8 @@ export function formatHtml(report: SimulationReport): string {
 
 	const fpRows =
 		report.falsePositives.length === 0
-			? '<p class="ok">No false positives: every benign twin was allowed.</p>'
-			: `<table><thead><tr><th>Case</th><th>Category</th><th>Flagged as</th><th>Description</th></tr></thead><tbody>${report.falsePositives
+			? `<p class="ok">${h("simulate.html.noFp")}</p>`
+			: `<table><thead><tr><th>${h("simulate.html.case")}</th><th>${h("simulate.colCategory")}</th><th>${h("simulate.html.flaggedAs")}</th><th>${h("simulate.html.description")}</th></tr></thead><tbody>${report.falsePositives
 					.map(
 						(f) =>
 							`<tr><td>${escapeHtml(f.id)}</td><td>${escapeHtml(f.category)}</td><td class="miss">${f.actual}</td><td>${escapeHtml(f.description)}</td></tr>`,
@@ -850,14 +864,14 @@ export function formatHtml(report: SimulationReport): string {
 					.join("")}</tbody></table>`;
 
 	const verdictClass = report.passed ? "pass" : "fail";
-	const verdictText = report.passed ? "PASS" : "FAIL";
+	const verdictText = report.passed ? ct("simulate.pass") : ct("simulate.fail");
 
 	return `<!doctype html>
-<html lang="en">
+<html lang="${currentLocale()}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AIDR Attack Simulation Report</title>
+<title>${h("simulate.html.title")}</title>
 <style>
   :root { color-scheme: light dark; --bg:#f6f7f9; --card:#ffffff; --fg:#1c2330; --muted:#5b6472; --line:#e2e6ec; --accent:#1f6feb; --pass:#127436; --fail:#b42318; --pass-bg:#e7f5ec; --fail-bg:#fdecea; }
   @media (prefers-color-scheme: dark) { :root { --bg:#0f1117; --card:#171b23; --fg:#e6e9ef; --muted:#9aa3b2; --line:#262c38; --accent:#4c8dff; --pass:#4ac47c; --fail:#ff7a6b; --pass-bg:#12281c; --fail-bg:#2a1512; } }
@@ -886,25 +900,31 @@ export function formatHtml(report: SimulationReport): string {
 </head>
 <body>
   <div class="wrap">
-    <h1>AI Agent Security — Attack Simulation Report</h1>
-    <p class="sub">Defensive self-test of the local detection engine. Generated ${escapeHtml(report.generatedAt)} · mode: ${escapeHtml(report.mode)}${report.connector ? ` (${escapeHtml(report.connector)})` : ""} · sensitivity: ${escapeHtml(report.sensitivity)}</p>
+    <h1>${h("simulate.html.heading")}</h1>
+    <p class="sub">${escapeHtml(
+			ct("simulate.html.sub", {
+				generated: report.generatedAt,
+				mode: `${report.mode}${report.connector ? ` (${report.connector})` : ""}`,
+				sensitivity: report.sensitivity,
+			}),
+		)}</p>
     <div class="cards">
-      <div class="card"><div class="label">Detection score</div><div class="value">${report.score}%</div></div>
-      <div class="card"><div class="label">Detected</div><div class="value">${report.totals.detected}/${report.totals.counted}</div></div>
-      <div class="card"><div class="label">Benign false positives</div><div class="value">${report.falsePositiveRate}%</div></div>
-      <div class="card"><div class="label">Result</div><div class="value"><span class="verdict ${verdictClass}">${verdictText}</span></div></div>
+      <div class="card"><div class="label">${h("simulate.html.scoreCard")}</div><div class="value">${report.score}%</div></div>
+      <div class="card"><div class="label">${h("simulate.colDetected")}</div><div class="value">${report.totals.detected}/${report.totals.counted}</div></div>
+      <div class="card"><div class="label">${h("simulate.html.fpCard")}</div><div class="value">${report.falsePositiveRate}%</div></div>
+      <div class="card"><div class="label">${h("simulate.html.result")}</div><div class="value"><span class="verdict ${verdictClass}">${escapeHtml(verdictText)}</span></div></div>
     </div>
     <table>
-      <thead><tr><th>Category</th><th class="num">Detected</th><th class="num">Rate</th><th class="num">Benign FP</th></tr></thead>
+      <thead><tr><th>${h("simulate.colCategory")}</th><th class="num">${h("simulate.colDetected")}</th><th class="num">${h("simulate.colRate")}</th><th class="num">${h("simulate.colBenignFp")}</th></tr></thead>
       <tbody>
 ${rows}
       </tbody>
     </table>
-    <h2>Misses</h2>
+    <h2>${h("simulate.html.misses")}</h2>
     ${missRows}
-    <h2>False positives</h2>
+    <h2>${h("simulate.html.fps")}</h2>
     ${fpRows}
-    <footer>This report reflects locally shipped detection rules evaluated against defanged test fixtures. No commands were executed and no network requests were made during the self-test.</footer>
+    <footer>${h("simulate.html.footer")}</footer>
   </div>
 </body>
 </html>
@@ -924,7 +944,7 @@ export function formatReport(report: SimulationReport, format: string): string {
 export default async function simulateCommand(options: SimulateOptions): Promise<void> {
 	const format = (options.format ?? "table").trim().toLowerCase();
 	if (!["table", "json", "html"].includes(format)) {
-		process.stderr.write(`Unknown --format: ${options.format}. Use table, json or html.\n`);
+		process.stderr.write(`${ct("simulate.badFormat", { format: String(options.format) })}\n`);
 		process.exitCode = 1;
 		return;
 	}
@@ -934,7 +954,7 @@ export default async function simulateCommand(options: SimulateOptions): Promise
 		report = await runSimulation(options);
 	} catch (error) {
 		process.stderr.write(
-			`aidr simulate failed: ${error instanceof Error ? error.message : String(error)}\n`,
+			`${ct("simulate.failed", { error: error instanceof Error ? error.message : String(error) })}\n`,
 		);
 		process.exitCode = 1;
 		return;
@@ -943,7 +963,7 @@ export default async function simulateCommand(options: SimulateOptions): Promise
 	const rendered = formatReport(report, format);
 	if (options.output) {
 		await writeFile(options.output, rendered, { mode: 0o600 });
-		process.stdout.write(`Wrote ${format} report to ${options.output}\n`);
+		process.stdout.write(`${ct("simulate.wrote", { format, path: options.output })}\n`);
 	} else {
 		process.stdout.write(`${rendered}\n`);
 	}

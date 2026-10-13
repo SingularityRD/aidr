@@ -207,8 +207,14 @@ function codeOnly(source: string): string {
 }
 
 describe("setup output does not contradict itself", () => {
+	// The setup wording lives in the CLI message catalog (EN/TR) since setup was
+	// localized; the branch structure stays in setup.ts. Both are checked.
+	const setupText = () =>
+		codeOnly(readFileSync(join(cliSrc, "commands", "setup.ts"), "utf-8")) +
+		codeOnly(readFileSync(join(cliSrc, "i18n", "messages.ts"), "utf-8"));
+
 	it("never tells the user to proceed normally while protection is inactive", () => {
-		const code = codeOnly(readFileSync(join(cliSrc, "commands", "setup.ts"), "utf-8"));
+		const code = setupText();
 
 		expect(code).not.toMatch(/Start using your AI agent normally/i);
 		// And it must actively warn instead.
@@ -216,7 +222,7 @@ describe("setup output does not contradict itself", () => {
 	});
 
 	it("does not print an unconditional success line for a rerun", () => {
-		const code = codeOnly(readFileSync(join(cliSrc, "commands", "setup.ts"), "utf-8"));
+		const code = setupText();
 		// The success message must be branched on the outcome.
 		expect(code).toMatch(/config\.outcome === "reused"|config\.outcome === 'reused'/);
 		expect(code).toMatch(/no changes were needed/i);

@@ -66,7 +66,7 @@ import statusCommand from "./commands/status.js";
 import supportBundleCommand from "./commands/support-bundle.js";
 import uninstallCommand from "./commands/uninstall.js";
 import verifyCommand from "./commands/verify.js";
-import { initCliLocale, localizeHelp } from "./i18n/index.js";
+import { groupCommands, initCliLocale, localizeHelp } from "./i18n/index.js";
 
 const program = new Command();
 
@@ -364,9 +364,10 @@ learningProgram
 program
 	.command("doctor")
 	.description(
-		"Check hosts, hook registration, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems",
+		"Check AI tools, hook registration, release key, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems",
 	)
 	.option("--json", "Emit a machine-readable report")
+	.option("-v, --verbose", "Explain each check (paths, reasons, key storage)")
 	.action((options) => doctorCommand(options));
 
 program
@@ -389,14 +390,20 @@ program
 
 program
 	.command("pending")
-	.description("List blocked agent actions waiting for an out-of-band operator approval")
+	.description(
+		"List blocked agent actions waiting for your approval (given only in your own terminal)",
+	)
 	.option("--json", "Emit machine-readable JSON")
 	.action((options) => pendingCommand(options));
 
 program
-	.command("approve <actionId>")
+	.command("approve")
 	.description(
 		"Operator only: approve ONE retry of a blocked call (interactive confirmation; 15-minute default)",
+	)
+	.argument(
+		"[actionId]",
+		"The id from `aidr pending`, or its first 8+ characters; omit it in a terminal to pick from a list",
 	)
 	.option("--ttl <minutes>", "Minutes the approval stays usable (1-1440)", "15")
 	.option("--permit-allowlist", "Also let the agent add these artifacts to the allowlist once")
@@ -631,6 +638,7 @@ canaryProgram
 
 // Help text in the user's language (AIDR_LOCALE, config `locale`, LANG); English is unchanged.
 initCliLocale();
+groupCommands(program);
 localizeHelp(program);
 
 // No top-level await: the standalone (SEA) build bundles this entry as CommonJS.
