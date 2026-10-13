@@ -342,6 +342,7 @@ defaults:
     ai-supply-chain.yaml: [LLM03, ASI04, AML.T0010.003]
     canary.yaml: [LLM06, ASI10, AML.T0053]
     commands.yaml: [LLM06, ASI02, AML.T0053]
+    credential-reads.yaml: [LLM02, ASI03, AML.T0055]
     credentials.yaml: [LLM02, ASI03, AML.T0053, AML.T0055]
     files.yaml: [LLM06, ASI02, AML.T0053]
     mac-commands.yaml: [LLM06, ASI02, AML.T0053]
@@ -454,6 +455,11 @@ rules:
   CLT-CMD-037: [LLM05, ASI05, AML.T0050]
   CLT-CMD-038: [LLM05, ASI05, AML.T0050]
   CLT-CMD-039: [LLM05, ASI05, AML.T0050, AML.T0072]
+
+  # credential-reads.yaml
+  CLT-CRED-READ-001: [AML.T0113]
+  CLT-CRED-READ-002: []
+  CLT-CRED-READ-003: []
 
   # credentials.yaml
   CLT-CRED-001: []

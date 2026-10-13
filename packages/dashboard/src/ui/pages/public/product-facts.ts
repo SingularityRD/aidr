@@ -8,9 +8,9 @@
 import { PLAN_CATALOG, type PlanDefinition, QUOTE_NOTICE } from "../../../billing/plans";
 
 /** `- id:` entries across `threats/*.yaml`. */
-export const SHIPPED_THREAT_RULES = 507;
+export const SHIPPED_THREAT_RULES = 510;
 /** YAML files under `threats/`. */
-export const THREAT_RULE_FILES = 29;
+export const THREAT_RULE_FILES = 30;
 /** AI Security Posture CVE rule files in the bundled vulnerability dataset, shown as a lower bound. */
 export const AIG_CVE_RULES_FLOOR = 2000;
 /** AI Security Posture AI component fingerprint files in the bundled dataset. */

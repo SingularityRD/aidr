@@ -11,7 +11,7 @@ chat products.
 
 Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [OpenClaw](docs/platform-guides/openclaw.md), [OpenCode](docs/platform-guides/opencode.md), [Codex](docs/platform-guides/codex.md) and [Cursor / VS Code](docs/platform-guides/cursor.md) (preview — no real-host acceptance evidence yet), and checks them against:
 
-- **Local heuristics** — 511 YAML threat rules in 29 files ([`threats/`](threats/)) for
+- **Local heuristics** — 514 YAML threat rules in 30 files ([`threats/`](threats/)) for
   dangerous commands, credential access, persistence, obfuscation, supply-chain and
   LLM-specific patterns on Linux, macOS and Windows
 - **Package supply-chain checks** — registry existence, file reputation and age analysis
