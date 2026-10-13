@@ -42,7 +42,7 @@ platform and architecture named in the table.
 | VS Code | Windows, Linux, macOS | x64, arm64 | user | .vsix install via MDM or the extension gallery | extension uninstall |
 | OpenClaw | Windows, Linux, macOS | x64 | user, service | openclaw plugin install | openclaw plugin uninstall |
 | OpenCode | Windows, Linux, macOS | x64, arm64 | user, service | opencode plugin add | opencode plugin remove |
-| Codex CLI | Windows, Linux, macOS | x64, arm64 | user | install the approved @singularityrd/aidr-codex package; register its PreToolUse and UserPromptSubmit command handlers in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks | remove only the AIDR PreToolUse and UserPromptSubmit handlers from ~/.codex/config.toml or ~/.codex/hooks.json; uninstall the @singularityrd/aidr-codex package |
+| Codex CLI | Windows, Linux, macOS | x64, arm64 | user | install the approved @singularityrd/aidr-codex package; register its PreToolUse (matcher ^(Bash\|apply_patch\|mcp__.+)$), UserPromptSubmit and PostToolUse command handlers in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks | remove only the AIDR PreToolUse, UserPromptSubmit and PostToolUse handlers from ~/.codex/config.toml or ~/.codex/hooks.json; uninstall the @singularityrd/aidr-codex package |
 
 ## Interception points
 
@@ -79,7 +79,7 @@ Notes per connector:
   - Hook or plugin disabled / not trusted: A disabled or unregistered plugin means the host never starts the PreToolUse process, so no verdict is produced and the tool call proceeds.
   - Hook process killed or crashed: Observed on Claude Code 2.1.282 (linux/x64): a PreToolUse hook process SIGKILLed before it writes a verdict is treated as a non-blocking hook error and the tool call runs. In-process errors are converted into an explicit deny; the connector's inspection deadline and integrity-failure paths were observed to block on the same host.
   - Offline: Detection is local by default and needs no network; the network-dependent reputation legs report themselves unavailable and are never treated as clean.
-  - Large or binary tool output: Large output is marked incomplete, but Claude PostToolUse runs after the tool and only supported response shapes can be replaced. Unsupported, malformed, oversized, or immutable results may remain visible to the host/model; no real-host same-turn acceptance exists.
+  - Large or binary tool output: Large output is marked incomplete and replaced, and input above the parse ceiling, a missed deadline or an internal error is answered with a quarantine replacement chosen by tool name (MCP text block, Bash required fields). Claude PostToolUse still runs after the tool, other built-in result shapes that cannot be parsed or are unknown cannot be replaced (the host rejects a guessed shape and keeps the original), and no real-host same-turn acceptance exists for large or MCP results.
 - **Cursor**: handled hook failures return deny and managed entries request failClosed: true; real-host enforcement of timeout or process termination remains unverified.
   - Hook or plugin disabled / not trusted: A disabled extension means the host never runs the hook, so no verdict is produced and the tool call proceeds.
   - Hook process killed or crashed: The entry point answers any in-process error with a deny response, but a hook process killed before it writes that response is not covered by the guarantee and has not been observed on a real host.
@@ -177,8 +177,8 @@ Not observed on a real host:
 Known bypasses:
 
 - Host fails open when hook execution is unavailable
-- No output-side (pre-model) interception exists for this host
-- The packaged matcher covers Bash and apply_patch only; MCP and other local function tools do not invoke the AIDR hook
+- No output-side (pre-model) interception is claimed for this host: the PostToolUse handler inspects Bash and MCP results after execution, and the 0.141.0 host source replaces a blocked result with the reason, but no real-host run has observed that replacement
+- The packaged PreToolUse matcher ^(Bash\|apply_patch\|mcp__.+)$ covers Bash, apply_patch and MCP (mcp__*) tools; MCP coverage follows the 0.141.0 host source and has no real-host record, and other local function tools (for example update_plan) do not invoke the AIDR hook
 - Hosted and specialized tool paths may bypass the host tool-hook path
 - Prompt protection needs the UserPromptSubmit handler registered and trusted separately; an untrusted, crashed or timed-out prompt hook lets the prompt through, and codex exec shows no reason text for a blocked prompt
 

@@ -53,7 +53,7 @@ exactly 4 pages. Look at the PNG previews before committing.
 
 | Claim | Source |
 | --- | --- |
-| 507 YAML rules in 29 files (`node scripts/check-doc-claims.mjs` checks every count in the customer docs) | `grep -h '^- id:' threats/*.yaml \| wc -l`; `ls threats/*.yaml \| wc -l` |
+| 511 YAML rules in 29 files (`node scripts/check-doc-claims.mjs` checks every count in the customer docs) | `grep -h '^- id:' threats/*.yaml \| wc -l`; `ls threats/*.yaml \| wc -l` |
 | 2,000+ CVE rules, 146 AI components | files under `vendor/ai-infra-guard/data/vuln` and `data/fingerprints`; floor in `packages/dashboard/src/ui/pages/public/product-facts.ts` |
 | Connectors, Browser Guard sites and browsers | `product-facts.ts` (`AGENT_CONNECTORS`, `BROWSER_GUARD_SITES`, `BROWSER_GUARD_BROWSERS`) |
 | 14 MCP risk categories, T01–T09 skill/plugin categories, posture dashboard | `packages/core/src/mcp-aig-categories.ts` (`mcp-01`…`mcp-14`), `threats/skill-scan.yaml`, `docs/ai-security-posture.md` |
