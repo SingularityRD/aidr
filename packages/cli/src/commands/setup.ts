@@ -101,10 +101,49 @@ async function confirmForce(options: SetupOptions, deps: OperatorCommandDeps): P
 	}
 }
 
+/**
+ * A plugin directory or VSIX is code the host will run. Installing one is an
+ * operator action: without this, an agent could run `aidr setup
+ * --claude-plugin-dir <its own directory>` to load arbitrary code into its host.
+ * Host-registry installs with a fixed package spec need no confirmation.
+ */
+async function confirmArtifacts(
+	options: SetupOptions,
+	deps: OperatorCommandDeps,
+): Promise<boolean> {
+	const artifacts = [
+		options.claudePluginDir && `  Claude Code plugin directory: ${options.claudePluginDir}`,
+		options.cursorVsix && `  Cursor extension: ${options.cursorVsix}`,
+		options.vscodeVsix && `  VS Code extension: ${options.vscodeVsix}`,
+	].filter((line): line is string => typeof line === "string");
+	if (artifacts.length === 0) return true;
+	try {
+		await confirmOperatorAction({
+			prompt: [
+				"Singularity AIDR — install connector artifacts",
+				...artifacts,
+				"Install only artifacts you verified against the signed release bundle.",
+			].join("\n"),
+			word: "install",
+			yes: options.yes,
+			env: deps.env,
+			streams: deps.streams,
+		});
+		return true;
+	} catch (error) {
+		console.error(
+			`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was changed.`,
+		);
+		process.exitCode = 1;
+		return false;
+	}
+}
+
 async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): Promise<void> {
 	console.log(`\n🛡️  AIDR Setup${options.dryRun ? " (dry run — nothing will be changed)" : ""}\n`);
 
 	if (options.force && !options.dryRun && !(await confirmForce(options, deps))) return;
+	if (!options.dryRun && !(await confirmArtifacts(options, deps))) return;
 
 	try {
 		const hosts = parseHosts(options.host);

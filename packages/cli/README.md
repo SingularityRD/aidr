@@ -47,7 +47,11 @@ that is already in place.
   file is backed up next to itself first. Every result is re-measured, so setup
   reports a host as installed only when `aidr status` would. `--dry-run` shows
   the plan without writing anything; `--no-install` only configures and prints
-  the manual steps. Setup exits `1` when an install failed.
+  the manual steps. Setup exits `1` when an install failed. Installing a plugin
+  directory or VSIX loads code into the host, so `--claude-plugin-dir`,
+  `--cursor-vsix` and `--vscode-vsix` need the same operator confirmation as
+  `aidr uninstall` (type `install`, or `--yes` with
+  `AIDR_OPERATOR_NONINTERACTIVE=1`).
 
 Setup is not a substitute for the customer acceptance procedure: a registration
 does not prove the host executes it, so run a host-side deny canary.
@@ -138,7 +142,8 @@ signed approval for ingestion on the execution host.
 | `aidr privacy scan [file] [--json] [--mask] [--types <list>] [--fail-on none\|any\|secret]` | Local TR/EN personal-data and secret scan of a file or stdin; see [Privacy scan](#privacy-scan) |
 | `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles; `aidr profile show <template> --template` prints a shipped template. See `docs/agent-profiles.md` |
 | `aidr aibom [--format cyclonedx-json\|json] [-o file] [--path <project>] [--config <paths…>] [--scan-report <file>]` | AI Bill of Materials (CycloneDX 1.6): agents and their protection state, MCP servers with the 14 risk-category flags, AI SDKs/frameworks/models from the project's manifests, model files, skills/plugins and known vulnerabilities. Secrets are redacted; exits `1` when a source could not be read. See [AI-BOM](../../docs/ai-bom.md) |
-| `aidr config`, `aidr scan`, `aidr collect`, `aidr discover`, `aidr uninstall` | See `aidr <command> --help` |
+| `aidr uninstall [--dry-run] [--keep-data] [--host <ids>] [--hooks-only]` | **Operator only.** Remove the connector of every host, the AIDR-managed hooks, `~/.singularity-aidr` and the AIDR vault items; see [Uninstall](../../docs/getting-started.md#uninstall) |
+| `aidr config`, `aidr scan`, `aidr collect`, `aidr discover` | See `aidr <command> --help` |
 
 ### Operator-only commands
 

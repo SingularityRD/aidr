@@ -164,6 +164,25 @@ describe("aidr setup connector install", () => {
 		expect(stdout.join("\n")).toContain("install connector by hand");
 	});
 
+	it("needs operator confirmation before installing a plugin directory or VSIX", async () => {
+		const input = Object.assign(new PassThrough(), { isTTY: false });
+		const output = Object.assign(new PassThrough(), { isTTY: false });
+		output.resume();
+		await setupCommand(
+			{ claudePluginDir: "/tmp/agent-supplied" },
+			{ env: {}, streams: { input, output } },
+		);
+		expect(installConnectors).not.toHaveBeenCalled();
+		expect(createConfig).not.toHaveBeenCalled();
+		expect(process.exitCode).toBe(1);
+
+		await setupCommand(
+			{ cursorVsix: "/verified/aidr-cursor.vsix", yes: true },
+			{ env: { [OPERATOR_NONINTERACTIVE_ENV]: "1" }, streams: { input, output } },
+		);
+		expect(installConnectors).toHaveBeenCalledTimes(1);
+	});
+
 	it("rejects an unknown host instead of ignoring it", () => {
 		expect(() => parseHosts("codex,emacs")).toThrow(/Unknown host emacs/);
 		expect(parseHosts("Claude, code")).toEqual(["claude-code", "vscode"]);
