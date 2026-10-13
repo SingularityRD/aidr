@@ -46,7 +46,14 @@ are listed in the [product catalog](docs/sales/catalog/README.md).
 
 ## Quick start
 
-Install only a signed, approved release (see [Release status](#release-status)). Source
+**Zero to protected in one page:** [Quickstart (English)](docs/quickstart.md) ·
+[Hızlı başlangıç (Türkçe)](docs/quickstart.tr.md). It covers a developer laptop (Windows
+or Linux installer, then `aidr status` and `aidr verify`), an office user (Browser Guard),
+the IT admin (silent install, Browser Guard force-install, approvals) and on-prem. All
+guides by role: [Installation guides](docs/installation/README.md).
+
+The connector-by-connector path below is for hosts and systems the desktop installers do
+not cover, such as macOS. Install only a signed, approved release (see [Release status](#release-status)). Source
 builds are for development.
 
 1. **Provision the release trust key first.** Release builds are managed-only and verify
