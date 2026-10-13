@@ -8,7 +8,9 @@
  * has since expired refuses the rollback), and four-eyes change control
  * applies exactly as it does to a normal save.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { englishT, type Translate, useT } from "../i18n/I18nProvider";
 import { pendingPolicyChangeNotice } from "../lib/ai-governance";
 import { diffDocuments, diffStats } from "../lib/json-diff";
 import { invokePolicyManagement, policyManagementMessage } from "../lib/policy-management";
@@ -68,12 +70,13 @@ interface Comparison {
 async function readRevision(
 	tenantId: string,
 	version: number,
+	t: Translate = englishT,
 ): Promise<{ ok: true; policy: Record<string, unknown> } | { ok: false; message: string }> {
 	const result = await invokePolicyManagement(
 		{ action: "read_dlp_policy_revision", tenant_id: tenantId, version },
 		"dlp_history_unavailable",
 	);
-	if (!result.ok) return { ok: false, message: policyManagementMessage(result.code) };
+	if (!result.ok) return { ok: false, message: policyManagementMessage(result.code, t) };
 	const revision = result.data.revision;
 	if (
 		!isRecord(revision) ||
@@ -81,7 +84,7 @@ async function readRevision(
 		!isRecord(revision.policy) ||
 		revision.policy.tenantId !== tenantId
 	) {
-		return { ok: false, message: "The revision could not be verified." };
+		return { ok: false, message: t("dh.unverified") };
 	}
 	return { ok: true, policy: revision.policy };
 }
@@ -119,6 +122,7 @@ function RevisionRow({
 	onConfirm: (version: number) => void;
 	onRestore: (version: number) => void;
 }) {
+	const t = useT();
 	const current = revision.version === currentVersion;
 	return (
 		<tr>
@@ -126,7 +130,7 @@ function RevisionRow({
 				v{revision.version}
 				{current ? (
 					<span className="pill" style={{ marginLeft: 6 }}>
-						current
+						{t("dh.current")}
 					</span>
 				) : null}
 			</td>
@@ -140,20 +144,20 @@ function RevisionRow({
 						<button
 							type="button"
 							className="btn btn-secondary btn-sm"
-							aria-label={`Compare version ${revision.version} with current`}
+							aria-label={t("dh.compareLabel", { version: revision.version })}
 							onClick={() => onCompare(revision.version, currentVersion)}
 						>
-							Diff vs current
+							{t("dh.diffCurrent")}
 						</button>
 					) : null}
 					{revision.version > 1 ? (
 						<button
 							type="button"
 							className="btn btn-secondary btn-sm"
-							aria-label={`Show changes in version ${revision.version}`}
+							aria-label={t("dh.changesLabel", { version: revision.version })}
 							onClick={() => onCompare(revision.version - 1, revision.version)}
 						>
-							Changes
+							{t("dh.changes")}
 						</button>
 					) : null}
 					{canManage && !current ? (
@@ -162,20 +166,20 @@ function RevisionRow({
 								type="button"
 								className="btn btn-danger btn-sm"
 								disabled={busy}
-								aria-label={`Confirm rollback to version ${revision.version}`}
+								aria-label={t("dh.confirmLabel", { version: revision.version })}
 								onClick={() => onRestore(revision.version)}
 							>
-								Confirm rollback
+								{t("dh.confirm")}
 							</button>
 						) : (
 							<button
 								type="button"
 								className="btn btn-secondary btn-sm"
 								disabled={busy}
-								aria-label={`Roll back to version ${revision.version}`}
+								aria-label={t("dh.rollBackLabel", { version: revision.version })}
 								onClick={() => onConfirm(revision.version)}
 							>
-								Roll back
+								{t("dh.rollBack")}
 							</button>
 						)
 					) : null}
@@ -196,6 +200,10 @@ export function DlpPolicyHistory({
 	canManage: boolean;
 	onRestored: (version: number, policy: unknown) => void;
 }) {
+	const t = useT();
+	// The loader reads the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [history, setHistory] = useState<HistoryState>({ kind: "loading" });
 	const [comparison, setComparison] = useState<Comparison | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -207,6 +215,7 @@ export function DlpPolicyHistory({
 	const load = useCallback(
 		// `_version` only ties a reload to the revision it follows.
 		async (before?: number, _version?: number) => {
+			const t = translator.current;
 			const result = await invokePolicyManagement(
 				{
 					action: "dlp_policy_history",
@@ -216,7 +225,7 @@ export function DlpPolicyHistory({
 				"dlp_history_unavailable",
 			);
 			if (!result.ok) {
-				setHistory({ kind: "error", message: policyManagementMessage(result.code) });
+				setHistory({ kind: "error", message: policyManagementMessage(result.code, t) });
 				return;
 			}
 			const rows = Array.isArray(result.data.revisions)
@@ -224,7 +233,7 @@ export function DlpPolicyHistory({
 				: null;
 			const next = result.data.next_before_version;
 			if (!rows || rows.some((row) => row === null)) {
-				setHistory({ kind: "error", message: "The revision history could not be verified." });
+				setHistory({ kind: "error", message: t("dh.historyUnverified") });
 				return;
 			}
 			setHistory((current) => ({
@@ -256,15 +265,16 @@ export function DlpPolicyHistory({
 	async function compare(base: number, target: number) {
 		setComparison({ base, target, lines: null, error: null });
 		const [left, right] = await Promise.all([
-			readRevision(tenantId, base),
-			readRevision(tenantId, target),
+			readRevision(tenantId, base, t),
+			readRevision(tenantId, target, t),
 		]);
 		if (!left.ok || !right.ok) {
 			setComparison({
 				base,
 				target,
 				lines: null,
-				error: (!left.ok ? left.message : null) ?? (!right.ok ? right.message : "Unavailable"),
+				error:
+					(!left.ok ? left.message : null) ?? (!right.ok ? right.message : t("dh.unavailable")),
 			});
 			return;
 		}
@@ -288,26 +298,25 @@ export function DlpPolicyHistory({
 		if (!result.ok) {
 			setNotice({
 				tone: "error",
-				message: [policyManagementMessage(result.code), ...validationIssues(result.body)].join(" "),
+				message: [policyManagementMessage(result.code, t), ...validationIssues(result.body)].join(
+					" ",
+				),
 			});
 			return;
 		}
-		const pending = pendingPolicyChangeNotice(result.data);
+		const pending = pendingPolicyChangeNotice(result.data, t);
 		if (pending) {
-			setNotice({
-				tone: "success",
-				message: `Rollback to version ${version} filed for approval. ${pending}`,
-			});
+			setNotice({ tone: "success", message: t("dh.filed", { version, pending }) });
 			return;
 		}
 		const saved = result.data.version;
 		if (saved !== currentVersion + 1 || result.data.restored_from !== version) {
-			setNotice({ tone: "error", message: "The rollback was not confirmed." });
+			setNotice({ tone: "error", message: t("dh.notConfirmed") });
 			return;
 		}
 		setNotice({
 			tone: "success",
-			message: `Version ${version} restored as version ${saved}. Not delivered: signed provisioning must distribute it.`,
+			message: t("dh.restored", { version, saved: String(saved) }),
 		});
 		onRestored(saved, result.data.policy);
 	}
@@ -318,11 +327,9 @@ export function DlpPolicyHistory({
 				className="card row"
 				style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}
 			>
-				<span className="muted small">
-					Every saved revision is kept: compare revisions or roll back to an earlier one.
-				</span>
+				<span className="muted small">{t("dh.teaser")}</span>
 				<button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(true)}>
-					Show revision history
+					{t("dh.show")}
 				</button>
 			</section>
 		);
@@ -332,12 +339,10 @@ export function DlpPolicyHistory({
 		<section className="card stack" aria-labelledby="dlp-history-heading">
 			<div>
 				<h3 id="dlp-history-heading" style={{ margin: 0 }}>
-					Revision history
+					{t("dh.title")}
 				</h3>
 				<p className="muted small" style={{ margin: "6px 0 0" }}>
-					Every saved DLP revision is kept. Compare any revision with the current one, or roll back:
-					a rollback saves the earlier content as a new revision after re-validating it, and goes
-					through four-eyes approval when that is on.
+					{t("dh.lead")}
 				</p>
 			</div>
 			{notice ? (
@@ -349,23 +354,23 @@ export function DlpPolicyHistory({
 				</div>
 			) : null}
 			{history.kind === "loading" ? (
-				<p role="status">Loading revisions…</p>
+				<p role="status">{t("dh.loading")}</p>
 			) : history.kind === "error" ? (
 				<p role="alert">{history.message}</p>
 			) : history.revisions.length === 0 ? (
-				<p className="muted">No DLP revision has been saved yet.</p>
+				<p className="muted">{t("dh.empty")}</p>
 			) : (
 				<>
 					<div className="table-wrap">
-						<table className="table" aria-label="DLP policy revisions">
+						<table className="table" aria-label={t("dh.tableLabel")}>
 							<thead>
 								<tr>
-									<th>Version</th>
-									<th>Saved</th>
-									<th>Labels</th>
-									<th>Rules</th>
-									<th>Exceptions</th>
-									<th>Actions</th>
+									<th>{t("dh.col.version")}</th>
+									<th>{t("dh.col.saved")}</th>
+									<th>{t("dh.col.labels")}</th>
+									<th>{t("dh.col.rules")}</th>
+									<th>{t("dh.col.exceptions")}</th>
+									<th>{t("dh.col.actions")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -391,7 +396,7 @@ export function DlpPolicyHistory({
 							className="btn btn-secondary btn-sm"
 							onClick={() => void load(history.nextBefore ?? undefined)}
 						>
-							Load older revisions
+							{t("dh.loadOlder")}
 						</button>
 					) : null}
 				</>
@@ -402,6 +407,7 @@ export function DlpPolicyHistory({
 }
 
 function ComparisonView({ comparison }: { comparison: Comparison }) {
+	const t = useT();
 	const stats = useMemo(
 		() => (comparison.lines ? diffStats(comparison.lines) : null),
 		[comparison],
@@ -409,18 +415,18 @@ function ComparisonView({ comparison }: { comparison: Comparison }) {
 	return (
 		<div className="stack" style={{ gap: 6 }}>
 			<b>
-				Version {comparison.base} → version {comparison.target}
-				{stats ? ` (+${stats.added} / −${stats.removed} lines)` : ""}
+				{t("dh.compareTitle", { base: comparison.base, target: comparison.target })}
+				{stats ? t("dh.lines", { added: stats.added, removed: stats.removed }) : ""}
 			</b>
 			{comparison.error ? (
 				<p role="alert">{comparison.error}</p>
 			) : comparison.lines ? (
 				<DiffView
 					lines={comparison.lines}
-					label={`DLP diff from version ${comparison.base} to version ${comparison.target}`}
+					label={t("dh.diffLabel", { base: comparison.base, target: comparison.target })}
 				/>
 			) : (
-				<p role="status">Loading diff…</p>
+				<p role="status">{t("dh.loadingDiff")}</p>
 			)}
 		</div>
 	);

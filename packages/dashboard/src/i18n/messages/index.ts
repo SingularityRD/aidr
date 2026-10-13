@@ -1,4 +1,5 @@
 import { activityMessages } from "./activity";
+import { agentProfilesMessages } from "./agent-profiles";
 import { agentsMessages } from "./agents";
 import { apiKeysMessages } from "./api-keys";
 import { approvalsMessages } from "./approvals";
@@ -13,6 +14,8 @@ import { dashboardMessages } from "./dashboard";
 import { detectionExceptionsMessages } from "./detection-exceptions";
 import { directoryAuthorityMessages } from "./directory-authority";
 import { discoveryMessages } from "./discovery";
+import { dlpMessages } from "./dlp";
+import { dlpHistoryMessages } from "./dlp-history";
 import { downloadCenterMessages } from "./download-center";
 import { enterpriseAuthMessages } from "./enterprise-auth";
 import { evidenceMessages } from "./evidence";
@@ -43,6 +46,7 @@ import { usageMessages } from "./usage";
 export const pageMessages = {
 	...commonMessages,
 	...activityMessages,
+	...agentProfilesMessages,
 	...agentsMessages,
 	...apiKeysMessages,
 	...approvalsMessages,
@@ -56,6 +60,8 @@ export const pageMessages = {
 	...detectionExceptionsMessages,
 	...directoryAuthorityMessages,
 	...discoveryMessages,
+	...dlpMessages,
+	...dlpHistoryMessages,
 	...downloadCenterMessages,
 	...enterpriseAuthMessages,
 	...evidenceMessages,
@@ -87,6 +93,7 @@ export const pageMessages = {
 export const messageModules = [
 	commonMessages,
 	activityMessages,
+	agentProfilesMessages,
 	agentsMessages,
 	apiKeysMessages,
 	approvalsMessages,
@@ -100,6 +107,8 @@ export const messageModules = [
 	detectionExceptionsMessages,
 	directoryAuthorityMessages,
 	discoveryMessages,
+	dlpMessages,
+	dlpHistoryMessages,
 	downloadCenterMessages,
 	enterpriseAuthMessages,
 	evidenceMessages,

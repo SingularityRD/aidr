@@ -9,20 +9,33 @@
  * panel also shows the shipped templates and the profile decisions agents
  * have reported.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate, useRichT, useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { AgentProfileEditor } from "./agent-profile-editor";
 import {
 	PROFILE_CHECK_LABELS,
+	PROFILE_TEMPLATE_DESCRIPTIONS,
 	PROFILE_TEMPLATE_SUMMARIES,
+	PROFILE_TOOL_CLASS_LABELS,
 	PROFILE_TOOL_CLASSES,
 } from "./agent-profile-templates";
 import { useTeam } from "./team-provider";
 
 const RECENT_LIMIT = 200;
-const ACTION_LABELS = { allow: "Allow", ask: "Ask", deny: "Deny" } as const;
-const DECISIONS_UNAVAILABLE = "Recent profile decisions are unavailable.";
+const ACTION_LABELS = {
+	allow: "ap.action.allow",
+	ask: "ap.action.ask",
+	deny: "ap.action.deny",
+} as const satisfies Record<string, DashboardMessageKey>;
+
+/** A rule family in the viewer's language; an unknown family is shown as reported. */
+function checkLabel(check: string, t: Translate): string {
+	const key = Object.hasOwn(PROFILE_CHECK_LABELS, check) ? PROFILE_CHECK_LABELS[check] : undefined;
+	return key ? t(key) : check;
+}
 
 export interface ProfileDecisionRow {
 	id: string;
@@ -63,7 +76,8 @@ type Load =
 	| { state: "error"; message: string }
 	| { state: "ready"; rows: ProfileDecisionRow[]; agents: Map<string, string> };
 
-async function loadDecisions(tenantId: string): Promise<Load> {
+async function loadDecisions(tenantId: string, t: Translate = englishT): Promise<Load> {
+	const unavailable = t("ap.decisionsUnavailable");
 	try {
 		const [events, agents] = await Promise.all([
 			supabase
@@ -77,7 +91,7 @@ async function loadDecisions(tenantId: string): Promise<Load> {
 			supabase.from("agents").select("id,iid,display_name").eq("tenant_id", tenantId),
 		]);
 		if (events.error || !Array.isArray(events.data)) {
-			return { state: "error", message: readErrorMessage(events.error, DECISIONS_UNAVAILABLE) };
+			return { state: "error", message: readErrorMessage(events.error, unavailable) };
 		}
 		const names = new Map<string, string>();
 		if (!agents.error && Array.isArray(agents.data)) {
@@ -95,11 +109,12 @@ async function loadDecisions(tenantId: string): Promise<Load> {
 			.filter((row): row is ProfileDecisionRow => row !== null);
 		return { state: "ready", rows, agents: names };
 	} catch (cause) {
-		return { state: "error", message: readErrorMessage(cause, DECISIONS_UNAVAILABLE) };
+		return { state: "error", message: readErrorMessage(cause, unavailable) };
 	}
 }
 
 function DecisionSummary({ rows }: { rows: ProfileDecisionRow[] }) {
+	const t = useT();
 	const byCheck = useMemo(() => {
 		const counts = new Map<string, { deny: number; ask: number }>();
 		for (const row of rows) {
@@ -111,18 +126,18 @@ function DecisionSummary({ rows }: { rows: ProfileDecisionRow[] }) {
 	}, [rows]);
 	return (
 		<div className="table-wrap">
-			<table className="table" aria-label="Profile decisions by rule family">
+			<table className="table" aria-label={t("ap.byFamily")}>
 				<thead>
 					<tr>
-						<th>Rule family</th>
-						<th>Denied</th>
-						<th>Held for approval</th>
+						<th>{t("ap.col.family")}</th>
+						<th>{t("ap.col.denied")}</th>
+						<th>{t("ap.col.held")}</th>
 					</tr>
 				</thead>
 				<tbody>
 					{byCheck.map(([check, counts]) => (
 						<tr key={check}>
-							<td>{PROFILE_CHECK_LABELS[check] ?? check}</td>
+							<td>{checkLabel(check, t)}</td>
 							<td>{counts.deny}</td>
 							<td>{counts.ask}</td>
 						</tr>
@@ -134,6 +149,11 @@ function DecisionSummary({ rows }: { rows: ProfileDecisionRow[] }) {
 }
 
 export function AgentProfilesPanel() {
+	const t = useT();
+	const richT = useRichT();
+	// The loader reads the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const { currentTeam, canManageTeam } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const [load, setLoad] = useState<Load>({ state: "loading" });
@@ -142,7 +162,7 @@ export function AgentProfilesPanel() {
 		if (!tenantId) return;
 		let cancelled = false;
 		setLoad({ state: "loading" });
-		void loadDecisions(tenantId).then((result) => {
+		void loadDecisions(tenantId, translator.current).then((result) => {
 			if (!cancelled) setLoad(result);
 		});
 		return () => {
@@ -154,47 +174,40 @@ export function AgentProfilesPanel() {
 		<section className="card stack" aria-labelledby="agent-profiles-heading">
 			<div>
 				<div className="pill" style={{ marginBottom: 8 }}>
-					Least privilege
+					{t("ap.eyebrow")}
 				</div>
-				<h2 id="agent-profiles-heading">Agent permission profiles</h2>
+				<h2 id="agent-profiles-heading">{t("ap.title")}</h2>
 				<p className="muted" style={{ maxWidth: 760 }}>
-					A profile limits what one agent may do — which tools, command prefixes, file paths,
-					network domains and MCP servers or tools — per connector and optionally per repository.
-					Profiles only add restrictions: threat detection still runs, and a profile never overrides
-					a threat block (deny &gt; ask &gt; allow).
+					{t("ap.lead")}
 				</p>
 			</div>
 
 			<div className="notice notice-warning" role="status">
-				<b>Staged here, enforced once an operator signs it.</b>
+				<b>{t("ap.stagedTitle")}</b>
 				<div className="muted small" style={{ marginTop: 6 }}>
-					Connectors only trust the Ed25519-signed tenant detector bundle, and the signing key stays
-					with your policy administrator. Edit, validate and stage the document here (with four-eyes
-					approval when it is on); the operator then signs that exact staged revision with one
-					command. A managed profile overrides the agent's local profile file, which can only narrow
-					it. A broken managed profile blocks every call on that connector until it is fixed.
+					{t("ap.stagedBody")}
 				</div>
 			</div>
 
 			<div>
-				<h3>Edit and stage profiles</h3>
+				<h3>{t("ap.editTitle")}</h3>
 				{tenantId ? (
 					<AgentProfileEditor tenantId={tenantId} canManage={canManageTeam === true} />
 				) : (
-					<p className="muted">Select a managed tenant to edit its profiles.</p>
+					<p className="muted">{t("ap.selectTenantEdit")}</p>
 				)}
 			</div>
 
 			<div>
-				<h3>Shipped templates</h3>
+				<h3>{t("ap.templates")}</h3>
 				<div className="table-wrap">
-					<table className="table" aria-label="Agent permission profile templates">
+					<table className="table" aria-label={t("ap.templatesLabel")}>
 						<thead>
 							<tr>
-								<th>Template</th>
-								<th>Default</th>
+								<th>{t("ap.col.template")}</th>
+								<th>{t("ap.col.default")}</th>
 								{PROFILE_TOOL_CLASSES.map((toolClass) => (
-									<th key={toolClass}>{toolClass.replace("_", " ")}</th>
+									<th key={toolClass}>{t(PROFILE_TOOL_CLASS_LABELS[toolClass])}</th>
 								))}
 							</tr>
 						</thead>
@@ -203,11 +216,15 @@ export function AgentProfilesPanel() {
 								<tr key={template.name}>
 									<td>
 										<code>{template.name}</code>
-										<div className="muted small">{template.description}</div>
+										<div className="muted small">
+											{Object.hasOwn(PROFILE_TEMPLATE_DESCRIPTIONS, template.name)
+												? t(PROFILE_TEMPLATE_DESCRIPTIONS[template.name] as DashboardMessageKey)
+												: template.description}
+										</div>
 									</td>
-									<td>{ACTION_LABELS[template.default]}</td>
+									<td>{t(ACTION_LABELS[template.default])}</td>
 									{PROFILE_TOOL_CLASSES.map((toolClass) => (
-										<td key={toolClass}>{ACTION_LABELS[template.tools[toolClass]]}</td>
+										<td key={toolClass}>{t(ACTION_LABELS[template.tools[toolClass]])}</td>
 									))}
 								</tr>
 							))}
@@ -215,36 +232,36 @@ export function AgentProfilesPanel() {
 					</table>
 				</div>
 				<p className="muted small">
-					Print one with <code>aidr profile show &lt;template&gt; --template</code>, scope it with{" "}
-					<code>applies_to</code>, and dry-run calls with <code>aidr profile test</code>.
+					{richT("ap.templatesHint", {
+						show: <code>aidr profile show &lt;template&gt; --template</code>,
+						applies: <code>applies_to</code>,
+						test: <code>aidr profile test</code>,
+					})}
 				</p>
 			</div>
 
 			<div>
-				<h3>Recent profile decisions</h3>
+				<h3>{t("ap.recent")}</h3>
 				{!tenantId ? (
-					<p className="muted">Select a managed tenant to see reported profile decisions.</p>
+					<p className="muted">{t("ap.selectTenantDecisions")}</p>
 				) : load.state === "loading" ? (
-					<p role="status">Loading profile decisions…</p>
+					<p role="status">{t("ap.loadingDecisions")}</p>
 				) : load.state === "error" ? (
 					<p role="alert">{load.message}</p>
 				) : load.rows.length === 0 ? (
-					<p className="muted">
-						No agent has reported a profile decision yet. Decisions appear here once enrolled agents
-						with a profile block or hold a call.
-					</p>
+					<p className="muted">{t("ap.noDecisions")}</p>
 				) : (
 					<>
 						<DecisionSummary rows={load.rows} />
 						<div className="table-wrap">
-							<table className="table" aria-label="Recent profile decisions">
+							<table className="table" aria-label={t("ap.recentLabel")}>
 								<thead>
 									<tr>
-										<th>Time</th>
-										<th>Agent</th>
-										<th>Tool</th>
-										<th>Decision</th>
-										<th>Rule family</th>
+										<th>{t("ap.col.time")}</th>
+										<th>{t("ap.col.agent")}</th>
+										<th>{t("ap.col.tool")}</th>
+										<th>{t("ap.col.decision")}</th>
+										<th>{t("ap.col.family")}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -255,8 +272,8 @@ export function AgentProfilesPanel() {
 											<td>
 												<code>{row.toolName}</code>
 											</td>
-											<td>{row.decision === "deny" ? "Denied" : "Held for approval"}</td>
-											<td>{PROFILE_CHECK_LABELS[row.check] ?? row.check}</td>
+											<td>{row.decision === "deny" ? t("ap.col.denied") : t("ap.col.held")}</td>
+											<td>{checkLabel(row.check, t)}</td>
 										</tr>
 									))}
 								</tbody>

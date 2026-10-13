@@ -80,10 +80,6 @@ const WORD = /[A-Za-z]{2,}/;
  * hold. The list may only shrink: a new literal anywhere fails the test.
  */
 const PENDING: Record<string, number> = {
-	"enterprise/agent-profile-editor.tsx": 38,
-	"enterprise/agent-profiles-panel.tsx": 30,
-	"enterprise/dlp-editor.tsx": 127,
-	"enterprise/dlp-history.tsx": 31,
 	"ui/pages/public/LandingPage.tsx": 47,
 	"ui/pages/public/PilotPage.tsx": 28,
 	"ui/pages/public/PricingPage.tsx": 29,
