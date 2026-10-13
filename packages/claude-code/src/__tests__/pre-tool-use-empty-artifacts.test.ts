@@ -2,8 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import {
+	ArtifactIntegrityError,
 	createHookResponder,
+	formatAgentBlockReason,
+	formatBlockMessage,
 	type HookResponderOptions,
+	integrityFailureMessage,
 	isWellFormedToolCall,
 	malformedShellCommandReason,
 	t,
@@ -45,6 +49,7 @@ async function runHook(
 		env?: Record<string, string>;
 		verdictOverride?: Record<string, unknown>;
 		overrideNotice?: string;
+		integrityError?: Error;
 	} = {},
 ) {
 	const output: string[] = [];
@@ -101,10 +106,15 @@ async function runHook(
 			}),
 		isWellFormedToolCall,
 		malformedShellCommandReason,
-		// The real message catalog (the suite pins AIDR_LOCALE=en).
+		// The real message catalog and message builders (the suite pins AIDR_LOCALE=en).
 		t,
+		formatAgentBlockReason,
+		formatBlockMessage,
+		integrityFailureMessage,
 		initSentry: vi.fn(),
-		verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),
+		verifyArtifactIntegrityAndLog: options.integrityError
+			? vi.fn().mockRejectedValue(options.integrityError)
+			: vi.fn().mockResolvedValue({ status: "skipped" }),
 	};
 	const pino = Object.assign(() => ({}), { destination: () => ({}) });
 	const modules: Record<string, unknown> = {
@@ -345,6 +355,23 @@ describe("PreToolUse input and runtime failures", () => {
 		expect(evaluate).toHaveBeenCalledOnce();
 		expect(response.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
 		expect(JSON.stringify(response)).not.toMatch(/secret-tool-input|secret-evaluator-failure/);
+	});
+
+	it("explains a missing release key instead of an unexplained inspection failure", async () => {
+		const input = JSON.stringify({ tool_name: "Bash", tool_input: { command: "git status" } });
+		const { response, evaluate } = await runHook(input, "allow", {
+			integrityError: new ArtifactIntegrityError("claude-code/dist", { status: "no_public_keys" }),
+		});
+		expect(evaluate).not.toHaveBeenCalled();
+		expect(response.hookSpecificOutput).toMatchObject({
+			permissionDecision: "deny",
+			permissionDecisionReason:
+				"Singularity AIDR cannot verify its own installation; every action is blocked",
+		});
+		expect(String(response.systemMessage)).toContain(
+			"Singularity AIDR blocked this action because it cannot verify its own installation (release verification key missing). Nothing runs until this is fixed. Ask your IT admin to run: aidr setup --release-key <key.pem> (details: aidr doctor)",
+		);
+		expect(String(response.systemMessage)).not.toContain("could not inspect");
 	});
 });
 

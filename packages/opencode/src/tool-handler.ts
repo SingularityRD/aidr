@@ -160,7 +160,7 @@ export function createToolHandlers(
 			}
 
 			if (verdict.decision === "deny") {
-				throw new AidrVerdictBlockError(formatDenyMessage(verdict, responseActions));
+				throw new AidrVerdictBlockError(formatDenyMessage(verdict, responseActions, artifacts));
 			}
 
 			// ask — actionId is always set for ask verdicts

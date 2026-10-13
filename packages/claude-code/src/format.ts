@@ -4,17 +4,8 @@
  * This file keeps Claude Code-specific verdict formatting.
  */
 
-import type { Verdict } from "@singularityrd/aidr-core";
-import {
-	kv,
-	PAD,
-	SEPARATOR_WIDTH,
-	separatorLine,
-	severityEmoji,
-	severityLabel,
-	t,
-	upperCaseFor,
-} from "@singularityrd/aidr-core";
+import type { Artifact, Verdict } from "@singularityrd/aidr-core";
+import { formatBlockMessage } from "@singularityrd/aidr-core";
 import type { PendingApproval } from "./approval-tracker.js";
 
 export function artifactTypeLabel(type: string): string {
@@ -24,51 +15,24 @@ export function artifactTypeLabel(type: string): string {
 	return type;
 }
 
-/** Append category and artifact details to lines array. */
-function appendVerdictDetails(lines: string[], verdict: Verdict): void {
-	// The rule's own severity when a rule decided, so the label matches the rule id.
-	lines.push(
-		kv(
-			t("hook.label.severity"),
-			upperCaseFor(severityLabel(verdict.ruleSeverity ?? verdict.severity)),
-		),
-	);
-	if (verdict.matchedThreatId) lines.push(kv(t("hook.label.rule"), verdict.matchedThreatId));
-	if (verdict.artifacts.length > 0) {
-		// biome-ignore lint/style/noNonNullAssertion: length check above guarantees index 0 exists
-		lines.push(kv(t("hook.label.artifact"), verdict.artifacts[0]!));
-		for (const a of verdict.artifacts.slice(1)) {
-			lines.push(kv("", a));
-		}
-	}
-	if (verdict.source && verdict.source !== "none") {
-		lines.push(kv(t("hook.label.source"), verdict.source));
-	}
-}
-
 /**
- * Format block/ask reason for PreToolUse verdicts.
- * For deny: details-only block (branding goes in permissionDecisionReason, this goes in systemMessage).
- * For ask: full branded banner with separator (shown once in confirmation dialog).
+ * The person-facing block or ask text for a PreToolUse verdict, in the shared
+ * shape (core `block-message.ts`): what was stopped, why, and what to do. A
+ * deny goes in `systemMessage`; an ask is shown in Claude Code's own
+ * confirmation dialog, where the user's next step is Yes or No. Neither is
+ * the agent's field: on a deny the agent reads `formatAgentBlockReason`.
  */
-export function formatBlockReason(verdict: Verdict): string {
-	const isDeny = verdict.decision === "deny";
-	const emoji = severityEmoji(verdict.ruleSeverity ?? verdict.severity);
-	const reasonText = verdict.reasons.length > 0 ? verdict.reasons[0] : verdict.category;
-
-	if (isDeny) {
-		const lines: string[] = [" "];
-		lines.push(`${emoji} ${t("hook.label.threat").padEnd(PAD)}${reasonText}`);
-		appendVerdictDetails(lines, verdict);
-		lines.push(kv(t("hook.label.action"), t("hook.action.blocked")));
-		return lines.join("\n");
-	}
-
-	const lines: string[] = [t("hook.ask.header"), separatorLine(SEPARATOR_WIDTH)];
-	lines.push(`${emoji} ${t("hook.label.threat").padEnd(PAD)}${reasonText}`);
-	appendVerdictDetails(lines, verdict);
-	lines.push(kv(t("hook.label.action"), t("hook.action.requiresConfirmation")));
-	return lines.join("\n");
+export function formatBlockReason(
+	verdict: Verdict,
+	artifacts?: readonly Artifact[],
+	dashboardNotice?: string | null,
+): string {
+	return formatBlockMessage(verdict, {
+		approval: verdict.decision === "ask" ? { kind: "host_dialog" } : { kind: "none" },
+		artifacts,
+		dashboardNotice,
+		audience: "user",
+	});
 }
 
 /**

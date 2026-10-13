@@ -77,6 +77,7 @@ import {
 	MAX_ARTIFACT_SIZE,
 } from "./extractors.js";
 import { HeuristicsEngine } from "./heuristics.js";
+import { registerReasonDisplay } from "./i18n/display.js";
 import {
 	correlateIncidents,
 	normalizeAuditEntriesToSignals,
@@ -2614,6 +2615,52 @@ async function runEvaluationPipeline(
 	return verdict;
 }
 
+/**
+ * The "not checked by a reputation service" note, in plain words. The English
+ * text goes into the verdict and the audit log; the Turkish one is registered
+ * for display.
+ */
+function reputationNotCheckedNote(
+	urlCount: number,
+	packageCount: number,
+	heuristicsEnabled: boolean,
+): string {
+	const en: string[] = [];
+	const tr: string[] = [];
+	if (urlCount > 0) {
+		en.push(`${urlCount} URL${urlCount === 1 ? "" : "s"} (URL reputation is not set up)`);
+		tr.push(`${urlCount} URL (URL itibar denetimi kurulu değil)`);
+	}
+	if (packageCount > 0) {
+		en.push(
+			`${packageCount} package${packageCount === 1 ? "" : "s"} (package reputation is not set up)`,
+		);
+		tr.push(`${packageCount} paket (paket itibar denetimi kurulu değil)`);
+	}
+	const localEn = [
+		heuristicsEnabled ? "local threat rules" : null,
+		packageCount > 0 ? "the offline look-alike package check" : null,
+	].filter((signal): signal is string => signal !== null);
+	const localTr = [
+		heuristicsEnabled ? "yerel tehdit kuralları" : null,
+		packageCount > 0 ? "çevrimdışı benzer ad denetimi" : null,
+	].filter((signal): signal is string => signal !== null);
+	const decidedEn =
+		localEn.length > 0
+			? `Only ${localEn.join(" and ")} looked at ${urlCount + packageCount === 1 ? "it" : "them"} and found nothing`
+			: "Local threat rules are turned off in the configuration";
+	const decidedTr =
+		localTr.length > 0
+			? `Yalnızca ${localTr.join(" ve ")} baktı ve bir şey bulmadı`
+			: "Yerel tehdit kuralları yapılandırmada kapalı";
+	const note = `Not checked by a reputation service: ${en.join(" and ")}. ${decidedEn}; this is not a clean reputation result.`;
+	registerReasonDisplay(note, {
+		en: note,
+		tr: `Bir itibar hizmetiyle denetlenmedi: ${tr.join(" ve ")}. ${decidedTr}; bu temiz bir itibar sonucu değildir.`,
+	});
+	return note;
+}
+
 /** Category of an allow decided by local detection while a reputation leg is not enabled. */
 export const REPUTATION_NOT_CHECKED_CATEGORY = "reputation_not_checked";
 
@@ -2633,24 +2680,7 @@ export function reputationNotCheckedVerdict(
 	heuristicsEnabled: boolean,
 ): Verdict {
 	if (urls.length === 0 && packages.length === 0) return verdict;
-	const parts: string[] = [];
-	if (urls.length > 0) {
-		parts.push(`${urls.length} URL${urls.length === 1 ? "" : "s"} (url_check is not enabled)`);
-	}
-	if (packages.length > 0) {
-		parts.push(
-			`${packages.length} package${packages.length === 1 ? "" : "s"} (package_check is not enabled)`,
-		);
-	}
-	const localSignals = [
-		heuristicsEnabled ? "local threat rules" : null,
-		packages.length > 0 ? "the offline typosquat check" : null,
-	].filter((signal): signal is string => signal !== null);
-	const local =
-		localSignals.length > 0
-			? `Decided by ${localSignals.join(" and ")}, which found nothing`
-			: "Local threat rules are disabled by configuration";
-	const note = `Not checked by a reputation service: ${parts.join(" and ")}. ${local}; this is not a clean reputation result.`;
+	const note = reputationNotCheckedNote(urls.length, packages.length, heuristicsEnabled);
 	if (verdict.decision !== "allow" || verdict.category !== "none" || verdict.transformedInput) {
 		return verdict.decision === "allow"
 			? { ...verdict, reasons: [...verdict.reasons, note] }
@@ -3028,10 +3058,12 @@ async function checkPackages(
 				? findTyposquat(result.packageName, result.registry)
 				: null;
 		if (hit) {
-			kept.push({
-				...result,
-				details: `Package '${hit.packageName}' is one edit away from the widely used ${hit.registry} package '${hit.resembles}' and may be a typosquat. Package reputation is not configured, so this was decided from local data only; confirm the name before installing.`,
+			const details = `Package '${hit.packageName}' looks like a misspelling of the popular ${hit.registry} package '${hit.resembles}' (one character different) and may be a fake look-alike (typosquat). Check the name before installing. No package reputation service is set up, so only local data was used.`;
+			registerReasonDisplay(details, {
+				en: details,
+				tr: `'${hit.packageName}' paketi, yaygın kullanılan ${hit.registry} paketi '${hit.resembles}' adına çok benziyor (tek karakter farklı) ve taklit bir paket (typosquat) olabilir. Kurmadan önce adı kontrol edin. Paket itibar hizmeti kurulu olmadığından yalnızca yerel veriler kullanıldı.`,
 			});
+			kept.push({ ...result, details });
 		} else {
 			notChecked.push(result.packageName);
 		}

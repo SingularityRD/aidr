@@ -35,6 +35,7 @@
     - command
     - modified_path
   title: "Attempt to remove or overwrite the Singularity AIDR installation"
+  title_tr: "Singularity AIDR kurulumunu silme ya da üzerine yazma girişimi"
   expires_at: null
   revoked: false
 
@@ -47,6 +48,7 @@
   pattern: "\\.singularity-aidr[\\\\/]((allowlist|config|approvals|operator-approval-key)\\.json|operator-approval\\.key)"
   match_on: file_path
   title: "Access Singularity AIDR configuration files"
+  title_tr: "Singularity AIDR yapılandırma dosyalarına erişim"
   expires_at: null
   revoked: false
 
@@ -76,6 +78,7 @@
     - command
     - modified_path
   title: "Attempt to remove or rewrite an agent host's hook or plugin configuration"
+  title_tr: "Bir yapay zekâ aracının kanca ya da eklenti yapılandırmasını silme veya değiştirme girişimi"
   expires_at: null
   revoked: false
 
@@ -95,6 +98,7 @@
   pattern: "\"heuristics_enabled\"\\s*:\\s*false|\"url_check\"\\s*:\\s*\\{[^}]{0,300}\"enabled\"\\s*:\\s*false|\"AIDR_(?:THREATS|ALLOWLISTS)_DIR\"\\s{0,10}:|(?:^|\\n|[{,])[ \\t]{0,20}(?:(?:export|set|declare[ \\t]{1,4}-x)[ \\t]{1,10})?AIDR_(?:THREATS|ALLOWLISTS)_DIR[ \\t]{0,10}=|(?:^|\\n)[ \\t]{0,20}setenv[ \\t]{1,10}AIDR_(?:THREATS|ALLOWLISTS)_DIR\\b|\"disableAllHooks\"\\s{0,10}:\\s{0,10}true|\"aidr@[\\w.-]{1,64}\"\\s{0,10}:\\s{0,10}false|\"aidr-openclaw\"\\s{0,10}:\\s{0,10}\\{[^}]{0,300}\"enabled\"\\s{0,10}:\\s{0,10}false|(?:^|\\n)[ \\t]{0,20}codex_hooks[ \\t]{0,10}=[ \\t]{0,10}false"
   match_on: content
   title: "Attempt to disable Singularity AIDR or its hooks via configuration"
+  title_tr: "Singularity AIDR'yi ya da kancalarını yapılandırma yoluyla devre dışı bırakma girişimi"
   expires_at: null
   revoked: false
 
@@ -108,6 +112,7 @@
   case_insensitive: true
   match_on: command
   title: "Attempt to forge a Singularity AIDR approval record"
+  title_tr: "Sahte bir Singularity AIDR onay kaydı oluşturma girişimi"
   expires_at: null
   revoked: false
 
@@ -121,6 +126,7 @@
   case_insensitive: true
   match_on: command
   title: "Attempt to disable the AIDR agent service"
+  title_tr: "AIDR hizmetini devre dışı bırakma girişimi"
   expires_at: null
   revoked: false
 
@@ -175,6 +181,7 @@
   case_insensitive: true
   match_on: command_normalized
   title: "Attempt to self-approve a Singularity AIDR block, forge an operator approval or weaken its protection"
+  title_tr: "Bir Singularity AIDR engelini kendi kendine onaylama, operatör onayını taklit etme ya da korumayı zayıflatma girişimi"
   expires_at: null
   revoked: false
 
@@ -201,6 +208,7 @@
     - file_path_normalized
     - content_normalized
   title: "Agent access to the Singularity AIDR state directory"
+  title_tr: "Yapay zekâ aracının Singularity AIDR durum dizinine erişimi"
   expires_at: null
   revoked: false
 
@@ -229,5 +237,6 @@
     - file_path_normalized
     - content_normalized
   title: "Agent access to the Singularity AIDR approval key, vault entries or MCP approval API"
+  title_tr: "Yapay zekâ aracının Singularity AIDR onay anahtarına, kasa kayıtlarına ya da MCP onay API'sine erişimi"
   expires_at: null
   revoked: false

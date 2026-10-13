@@ -18,13 +18,18 @@ export const tr: Record<MessageKey, string> = {
 	"common.unknown": "bilinmiyor",
 	"common.none": "yok",
 
-	"block.deny.headline": "Singularity AIDR bu eylemi engelledi.",
-	"block.line.severity": "Önem: {severity}",
-	"block.line.rule": "Kural: {rule}",
-	"block.line.category": "Kategori: {category}",
-	"block.line.reason": "Neden: {reason}",
-	"block.line.artifacts": "Öğeler: {artifacts}",
-	"block.line.response": "Müdahale: {response}",
+	"block.deny.headline": "🛡️ Singularity AIDR bu işlemi engelledi.",
+	"block.ask.headline": "🛡️ Singularity AIDR bu işlemi siz onaylayana kadar durdurdu.",
+	"block.line.stopped": "Durdurulan: {what}",
+	"block.line.why": "Neden: {reason} ({details}).",
+	"block.line.also": "Ayrıca bulunan: {reasons}.",
+	"block.detail.rule": "kural {rule}",
+	"block.more": "{what} (+{count} öğe daha)",
+	"block.artifact.command": "komut",
+	"block.artifact.url": "URL",
+	"block.artifact.file_path": "dosya",
+	"block.artifact.content": "içerik",
+	"block.line.response": "Singularity AIDR'nin yaptığı: {response}",
 	"block.response.failed": "müdahale eylemleri başarısız oldu: {failures} - hiçbir şey korunmadı",
 	"block.response.rollback": "geri alma: {target}, {snapshot} anlık görüntüsünden geri yüklendi",
 	"block.response.preserved":
@@ -32,19 +37,33 @@ export const tr: Record<MessageKey, string> = {
 	"block.response.snapshot": "{snapshot} anlık görüntüsü",
 	"block.response.vault": "(kasa)",
 	"block.response.unknownSnapshot": "(bilinmiyor)",
+	"block.deny.next":
+		"Ne yapabilirsiniz: Bunun yanlış alarm olduğunu düşünüyorsanız {rule} kuralını BT veya güvenlik ekibinize bildirin; ekip süreli bir istisna tanımlayarak izin verebilir. Ayrıntılar: `aidr audit tail`.",
+	"block.deny.nextNoRule":
+		"Ne yapabilirsiniz: Bunun yanlış alarm olduğunu düşünüyorsanız BT veya güvenlik ekibinize bildirin. Ayrıntılar: `aidr audit tail`.",
+	"block.ask.cli":
+		"Bir kez izin vermek için kendi terminalinizde şunu çalıştırın (15 dakika geçerli), sonra yapay zekâ aracından yeniden denemesini isteyin:\n  {command}",
+	"block.ask.notRecorded":
+		"Bu istek onay için kaydedilemedi, bu yüzden terminalden izin verilemez. Nedenini görmek için kendi terminalinizde `aidr doctor` komutunu çalıştırın.",
+	"block.ask.dashboardOnly":
+		"Buna yalnızca bir yönetici, Singularity AIDR panelinden izin verebilir.",
+	"block.ask.hostDialog": "Bir kez izin vermek için Evet'i, engelli kalması için Hayır'ı seçin.",
+	"block.ask.next":
+		"Ayrıntılar: `aidr pending`. Bunun yanlış alarm olduğunu düşünüyorsanız {rule} kuralını BT veya güvenlik ekibinize bildirin.",
+	"block.ask.nextNoRule":
+		"Ayrıntılar: `aidr pending`. Bunun yanlış alarm olduğunu düşünüyorsanız BT veya güvenlik ekibinize bildirin.",
+	"block.ask.reference": "Onay referansı: {actionId}",
+	"block.agent.deny": "Yapay zekâ aracı için: Bu çağrıyı yeniden deneme ve engeli aşmaya çalışma.",
+	"block.agent.ask":
+		"Yapay zekâ aracı için: Bu işlemi kendin onaylayamazsın ve erişebildiğin hiçbir araç onaylayamaz. Kullanıcıya neyin durdurulduğunu ve nasıl izin verebileceğini söyle, sonra dur: bu çağrıyı yeniden deneme ve engeli aşmaya çalışma.",
+	"block.agent.short":
+		"🛡️ Singularity AIDR bu işlemi engelledi: {reason}. Yeniden deneme ve engeli aşmaya çalışma; ayrıntılar kullanıcıya gösterildi.",
+	"block.agent.askShort":
+		"🛡️ Singularity AIDR bu işlemi kullanıcı onaylayana kadar durdurdu: {reason}. Bunu kendin onaylayamazsın ve erişebildiğin hiçbir araç onaylayamaz; yeniden deneme ve engeli aşmaya çalışma. Kullanıcıya nasıl izin verebileceği gösterildi.",
+	"codex.dlpRewrite":
+		"Bu araç çağrısı önce maskelenmesi gereken hassas veriler içeriyor ve Codex bir araç çağrısının girdisini güvenle değiştiremediği için çağrı engellendi. Hassas değerleri çıkarıp yeniden deneyin.",
 	"block.configUnreadable":
-		"Singularity AIDR yapılandırmasını okuyamadığı için bu eylem onaya sunulmak yerine engellendi.",
-	"ask.headline":
-		"Singularity AIDR bu eylemi şüpheli buldu ve kullanıcı açıkça onaylayana kadar engelledi.",
-	"ask.reference": 'Onay referansı: actionId: "{actionId}"',
-	"ask.agentInstructions":
-		"Bu eylemi kendin onaylayamazsın ve erişebildiğin hiçbir araç da onaylayamaz.\nOnay, bant dışı ve yalnızca bir insanın verebileceği bir işlemdir. Yukarıdaki referansı kullanıcıya bildir ve\nburada dur: bu araç çağrısını yeniden DENEME ve engeli aşmaya ÇALIŞMA. Eylem, kullanıcı\nbant dışında onaylayana ya da öğeyi kalıcı olarak izin listesine ekleyene kadar engelli kalır.",
-	"ask.user.dashboardOnly":
-		"(Kullanıcı için: bu eylemi yalnızca AIDR panelinden verilen bir onay serbest bırakabilir.)",
-	"ask.user.notRecorded":
-		"(Kullanıcı için: bu onay isteği operatör onayı için KAYDEDİLEMEDİ — operatör onayları\nkapalı ya da onay deposu kullanılamıyor, bu yüzden `aidr approve` bu eylemi serbest bırakamaz.\nNedenini görmek için kendi terminalinizde `aidr doctor` komutunu çalıştırın.)",
-	"ask.user.cli":
-		"(Kullanıcı için: kendi terminalinizde `aidr pending` ile inceleyip `aidr approve <actionId>` ile\nonaylayın; onay, bu çağrının birebir aynısının 15 dakika içinde bir kez yeniden denenmesini kapsar.)",
+		"Singularity AIDR yapılandırmasını okuyamadığı için bu işlem onaya sunulmak yerine engellendi.",
 	"dashboard.requested":
 		"AIDR panelinde onay istendi: {requestId}\n(Kullanıcı için: bu isteği bir AIDR yöneticisinin panelden onaylaması gerekir; onay\nbu çağrının birebir aynısının bir kez yeniden denenmesini kapsar.)",
 	"dashboard.denied":
@@ -57,29 +76,14 @@ export const tr: Record<MessageKey, string> = {
 		"Onay isteği AIDR paneline gönderilemedi ({reason}); eylem engelli kalıyor.",
 	"dashboard.unavailable": "AIDR paneli onayları kullanılamıyor ({reason}); eylem engelli kalıyor.",
 
-	"hook.label.threat": "Tehdit",
-	"hook.label.severity": "Önem",
-	"hook.label.rule": "Kural",
-	"hook.label.artifact": "Öğe",
-	"hook.label.source": "Kaynak",
-	"hook.label.action": "Eylem",
-	"hook.action.blocked": "Engellendi",
-	"hook.action.requiresConfirmation": "Onay gerekiyor",
-	"hook.ask.header": "🛡️ Singularity AIDR: Şüpheli Etkinlik Algılandı",
-	"hook.reason.threatBlocked": "🛡️ Singularity AIDR: Tehdit Engellendi",
-	"hook.reason.profileBlocked": "🛡️ Singularity AIDR: Ajan izin profili tarafından engellendi",
-	"hook.reason.operatorHold": "🛡️ Singularity AIDR: operatör onayı bekleniyor, eylem engellendi",
-	"hook.reason.dashboardRequired": "🛡️ Singularity AIDR: AIDR panelinden onay gerekiyor",
-	"hook.dashboardOnlyNotice":
-		"Bu eylemi yalnızca AIDR panelinden verilen bir onay serbest bırakabilir.",
 	"hook.timeout.message":
-		"Singularity AIDR bu araç çağrısının incelemesini zamanında bitiremedi. Eylem engellendi.",
+		"Singularity AIDR bu araç çağrısının incelemesini zamanında bitiremediği için çağrı engellendi. Yeniden deneyin; sorun sürerse kendi terminalinizde `aidr doctor` komutunu çalıştırın.",
 	"hook.timeout.reason": "Singularity AIDR incelemesi zaman aşımına uğradı",
 	"hook.inspectionFailed.message":
-		"Singularity AIDR bu araç çağrısını inceleyemedi. Eylem engellendi.",
+		"Singularity AIDR bu araç çağrısını inceleyemediği için çağrı engellendi. Yeniden deneyin; sorun sürerse kendi terminalinizde `aidr doctor` komutunu çalıştırın.",
 	"hook.inspectionFailed.reason": "Singularity AIDR incelemesi kullanılamıyor",
 	"hook.tooLarge.message":
-		"Singularity AIDR bu araç çağrısını inceleyemedi: girdisi {bytes} baytlık inceleme sınırını aştı. Eylem engellendi.",
+		"Singularity AIDR bu araç çağrısını inceleyemedi çünkü girdisi {bytes} baytlık inceleme sınırından büyük; çağrı engellendi. İşi daha küçük adımlara bölün.",
 	"hook.tooLarge.reason": "Singularity AIDR: girdi incelenemeyecek kadar büyük",
 	"hook.malformed.message":
 		"Singularity AIDR bu komutu engelledi: komut bozuk (metin ya da argv değil veya NUL ya da geçersiz UTF-8 metin içeriyor) ve güvenilir biçimde incelenemez.",
@@ -89,6 +93,23 @@ export const tr: Record<MessageKey, string> = {
 	"hook.sessionScanTimeout":
 		"Singularity AIDR kurulu eklentileri taramayı zamanında bitiremedi; eklenti tarama sonucu yok. Araç çağrıları incelenmeye devam ediyor.",
 	"hook.sessionStartFailed": "Singularity AIDR koruması başlatılamadı; oturum korunmuyor.",
+	"hook.sessionStartIntegrity":
+		"Singularity AIDR kendi kurulumunu doğrulayamıyor ({cause}); bu yüzden sorun giderilene kadar bu oturumdaki tüm araç çağrıları engelleniyor. BT yöneticinizden `aidr doctor` komutunu çalıştırmasını isteyin.",
+	"hook.sessionStartNoKey":
+		"Singularity AIDR kendi kurulumunu doğrulayamıyor (sürüm doğrulama anahtarı eksik); bu yüzden sorun giderilene kadar bu oturumdaki tüm araç çağrıları engelleniyor. BT yöneticinizden şunu çalıştırmasını isteyin: aidr setup --release-key <anahtar.pem> (ayrıntı: aidr doctor)",
+
+	"integrity.noKey.message":
+		"Singularity AIDR kendi kurulumunu doğrulayamadığı için bu işlemi engelledi (sürüm doğrulama anahtarı eksik). Bu sorun giderilene kadar hiçbir komut çalışmaz. BT yöneticinizden şunu çalıştırmasını isteyin: aidr setup --release-key <anahtar.pem> (ayrıntı: aidr doctor)",
+	"integrity.failed.message":
+		"Singularity AIDR kendi kurulumunu doğrulayamadığı için bu işlemi engelledi ({cause}). Bu sorun giderilene kadar hiçbir komut çalışmaz. BT yöneticinizden Singularity AIDR'yi imzalı bir sürümden yeniden kurmasını isteyin (ayrıntı: aidr doctor)",
+	"integrity.reason": "Singularity AIDR kendi kurulumunu doğrulayamıyor; tüm işlemler engelleniyor",
+	"integrity.agent": "Yapay zekâ aracı için: Bunu kendin düzeltmeye çalışma; kullanıcıya bildir.",
+	"integrity.cause.revoked": "bu sürüm kuruluşunuz tarafından geri çekildi",
+	"integrity.cause.signature": "sürüm imzası eksik ya da geçersiz",
+	"integrity.cause.files": "dosyaları değiştirilmiş ya da eksik",
+	"integrity.cause.io": "dosyaları okunamadı",
+	"init.failed.message":
+		"Singularity AIDR başlatılamadı ({code}); bu yüzden sorun giderilene kadar tüm araç çağrıları engelleniyor. BT yöneticinizden `aidr doctor` komutunu çalıştırmasını isteyin.",
 	"prompt.notSent.uninspected":
 		"🛡️ Singularity AIDR bu istemi gizli bilgiler açısından inceleyemediği için istem gönderilmedi. Yeniden deneyin; sorun sürerse `aidr status` komutunu çalıştırın.",
 	"prompt.sent.uninspected":

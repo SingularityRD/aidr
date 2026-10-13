@@ -39,6 +39,7 @@ import {
 	logVerdict,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
+import { type BlockApproval, formatBlockMessage } from "./block-message.js";
 import { isInvalidConfig, loadConfig } from "./config.js";
 import {
 	DASHBOARD_APPROVAL_SOURCE,
@@ -48,7 +49,7 @@ import {
 } from "./dashboard-approvals.js";
 import type { ToolEvaluationContext, ToolEvaluationRequest } from "./evaluator.js";
 import { allowVerdict, evaluateToolCall } from "./evaluator.js";
-import { severityLabel, t } from "./i18n/index.js";
+import { t } from "./i18n/index.js";
 import {
 	consumeOperatorApproval,
 	findOperatorAllowlistGrant,
@@ -65,7 +66,6 @@ import {
 	rollbackPreOperationSnapshot,
 	runPreAllowedResponseActions,
 	runResponseActions,
-	summarizeResponseActions,
 } from "./response-actions.js";
 import {
 	DEFAULT_RESPONSE_AUDIT_CONFIG,
@@ -1161,62 +1161,16 @@ export function summarizeArtifacts(artifacts: Artifact[]): string {
 }
 
 /**
- * Line telling the user what the runtime DID, so a response action is visible
- * rather than silent. Returns null only when nothing was attempted or every
- * action was a deliberate skip (not something the user must act on).
+ * The deny message every soft-gated connector (OpenCode, OpenClaw, Codex)
+ * hands its host: what was stopped, why, what the user can do, and one line
+ * for the agent (see `block-message.ts`).
  */
-function responseLine(actions?: ResponseActionRecord[]): string | null {
-	if (!actions || actions.length === 0) return null;
-	const parts: string[] = [];
-
-	const succeeded = summarizeResponseActions(actions);
-	if (succeeded) parts.push(succeeded);
-
-	// A FAILED action must be reported even when nothing succeeded, otherwise the
-	// user is told only that the call was blocked and never learns that the
-	// runtime tried and failed to preserve anything.
-	const failures = actions.filter((a) => a.outcome === "failure");
-	if (failures.length > 0) {
-		parts.push(
-			t("block.response.failed", {
-				failures: failures
-					.map((f) => `${f.action} (${f.reason ?? t("common.unknown")})`)
-					.join(", "),
-			}),
-		);
-	}
-
-	return parts.length > 0 ? parts.join("; ") : null;
-}
-
-/**
- * The severity line, and the rule line when a rule or policy decided the
- * verdict. The label is the rule's own severity whenever one is known, so a
- * `high` rule is never shown as `warning` next to its id.
- */
-function verdictRuleLines(verdict: Verdict): string[] {
-	const lines = [
-		t("block.line.severity", { severity: severityLabel(verdict.ruleSeverity ?? verdict.severity) }),
-	];
-	if (verdict.matchedThreatId) lines.push(t("block.line.rule", { rule: verdict.matchedThreatId }));
-	return lines;
-}
-
-export function formatDenyMessage(verdict: Verdict, actions?: ResponseActionRecord[]): string {
-	const reasons =
-		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 5).join("; ") : verdict.category;
-
-	const lines = [
-		t("block.deny.headline"),
-		...verdictRuleLines(verdict),
-		t("block.line.category", { category: verdict.category }),
-		t("block.line.reason", { reason: reasons }),
-	];
-
-	const responded = responseLine(actions);
-	if (responded) lines.push(t("block.line.response", { response: responded }));
-
-	return lines.join("\n");
+export function formatDenyMessage(
+	verdict: Verdict,
+	actions?: ResponseActionRecord[],
+	artifacts?: Artifact[],
+): string {
+	return formatBlockMessage(verdict, { responseActions: actions, artifacts });
 }
 
 /**
@@ -1258,6 +1212,10 @@ export function formatDashboardApprovalNotice(
  * approval store (approvals disabled, or the store is broken), and the message
  * says so instead of sending the user to `aidr approve`. Pass
  * `dashboardApproval` too, so a managed-mode request id reaches the user.
+ *
+ * The user's step comes first; the agent line says it cannot approve and must
+ * stop. The approval command is for the user's own terminal: the agent running
+ * it is denied (CLT-SELF-007) and it needs a TTY confirmation.
  */
 export function formatAskMessage(
 	actionId: string,
@@ -1267,35 +1225,17 @@ export function formatAskMessage(
 	pendingRecorded?: boolean,
 	dashboardApproval?: DashboardApprovalOutcome,
 ): string {
-	const reasons =
-		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 3).join("; ") : verdict.category;
-
-	const lines = [
-		t("ask.headline"),
-		...verdictRuleLines(verdict),
-		t("block.line.category", { category: verdict.category }),
-		t("block.line.reason", { reason: reasons }),
-		t("block.line.artifacts", { artifacts: summarizeArtifacts(artifacts) }),
-	];
-
-	const responded = responseLine(actions);
-	if (responded) lines.push(t("block.line.response", { response: responded }));
-
-	// The actionId token is kept verbatim in every locale: users and scripts
-	// copy it into `aidr approve`.
-	lines.push("", t("ask.reference", { actionId }), t("ask.agentInstructions"));
-	const dashboardNotice = formatDashboardApprovalNotice(dashboardApproval);
-	if (dashboardNotice) lines.push(dashboardNotice);
-	if (dashboardApproval?.dashboardOnly) {
-		// The local CLI is not an approval channel under dashboard_only.
-		if (!dashboardNotice) lines.push(t("ask.user.dashboardOnly"));
-	} else if (pendingRecorded === false) {
-		lines.push(t("ask.user.notRecorded"));
-	} else {
-		lines.push(t("ask.user.cli"));
-	}
-
-	return lines.join("\n");
+	const approval: BlockApproval = dashboardApproval?.dashboardOnly
+		? { kind: "dashboard" }
+		: pendingRecorded === false
+			? { kind: "not_recorded" }
+			: { kind: "cli", actionId };
+	return formatBlockMessage(verdict, {
+		approval,
+		artifacts,
+		responseActions: actions,
+		dashboardNotice: formatDashboardApprovalNotice(dashboardApproval),
+	});
 }
 
 // ── Allowlist tool logic ───────────────────────────────────────────

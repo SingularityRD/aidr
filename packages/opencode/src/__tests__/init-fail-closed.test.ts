@@ -58,7 +58,10 @@ async function expectEveryToolBlocked(expectedCode: string) {
 	const hooks = await loadPlugin();
 	const before = hooks["tool.execute.before"];
 	expect(before).toBeTypeOf("function");
-	const message = `AIDR failed to initialise: ${expectedCode}; tool calls are blocked until fixed`;
+	const message =
+		expectedCode === "integrity_hash_mismatch"
+			? "Singularity AIDR blocked this action because it cannot verify its own installation (its files were changed or are missing)"
+			: `Singularity AIDR could not start (${expectedCode}), so every tool call is blocked until this is fixed.`;
 	for (const [tool, args] of [
 		["bash", { command: "ls" }],
 		["read", { filePath: "README.md" }],
@@ -91,7 +94,7 @@ describe("OpenCode plugin initialisation fails closed", () => {
 				{ tool: "bash", sessionID: "s", callID: "c" },
 				{ args: { command: "ls" } },
 			),
-		).rejects.toThrow("AIDR failed to initialise: ENOENT; tool calls are blocked until fixed");
+		).rejects.toThrow("Singularity AIDR could not start (ENOENT), so every tool call is blocked");
 		// The raw error text (local paths) is logged, never returned to the agent.
 		await expect(
 			hooks["tool.execute.before"]?.(

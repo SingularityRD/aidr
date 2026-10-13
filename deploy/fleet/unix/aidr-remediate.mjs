@@ -341,6 +341,20 @@ function hasUnexpectedManagedHooks(settings) {
 		entries.some((entry) => entry.hooks.some((hook) => hook.statusMessage === MANAGED_MARKER)));
 }
 
+/**
+ * Whether a hook answer is the Singularity AIDR deny for the canary command.
+ * The block text is localized and reworded across releases, so this checks
+ * the decision, the product prefix and the rule id (or the English rule title
+ * an older hook printed), never the exact wording.
+ */
+function isAidrCanaryDeny(verdict) {
+	const reason = verdict?.hookSpecificOutput?.permissionDecisionReason;
+	const message = verdict?.systemMessage;
+	return typeof reason === "string" && reason.startsWith("🛡️ Singularity AIDR") &&
+		typeof message === "string" &&
+		(message.includes("CLT-CMD-001") || message.includes("Remote code execution via curl pipe to shell"));
+}
+
 /** Run the built connector's own deny canary; a bundle that cannot deny is not repaired into place. */
 function runCanary(connectorPath) {
 	const probe = spawnSync(process.execPath, [join(connectorPath, "dist", "pre-tool-use.cjs")], {
@@ -365,8 +379,7 @@ function runCanary(connectorPath) {
 	}
 	if (probe.status !== 0 || verdict?.hookSpecificOutput?.hookEventName !== "PreToolUse" ||
 		verdict?.hookSpecificOutput?.permissionDecision !== "deny" ||
-		verdict?.hookSpecificOutput?.permissionDecisionReason !== "🛡️ Singularity AIDR: Threat Blocked" ||
-		typeof verdict?.systemMessage !== "string" || !verdict.systemMessage.includes("Remote code execution via curl pipe to shell")) {
+		!isAidrCanaryDeny(verdict)) {
 		return { ok: false, detail: "The installed hook failed the local deny canary." };
 	}
 	return { ok: true, detail: "deny" };

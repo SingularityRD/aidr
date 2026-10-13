@@ -15,6 +15,7 @@ import {
 	discoverPlugins,
 	getLogger,
 	initSentry,
+	integrityFailureMessage,
 	type Logger,
 	resolveHookDeadlineMs,
 	runPluginScan,
@@ -82,9 +83,13 @@ async function main(): Promise<void> {
 	responder.answer({ stdout: `${JSON.stringify({ systemMessage })}\n` });
 }
 
-main().catch(() => {
+main().catch((error: unknown) => {
+	// A failed release integrity check does not leave the session unprotected:
+	// the PreToolUse hook denies every call. The banner says so, with the fix.
+	const systemMessage =
+		integrityFailureMessage(error)?.sessionStart ?? t("hook.sessionStartFailed");
 	responder.answer({
-		stdout: `${JSON.stringify({ systemMessage: t("hook.sessionStartFailed") })}\n`,
+		stdout: `${JSON.stringify({ systemMessage })}\n`,
 		exitCode: 1,
 	});
 });

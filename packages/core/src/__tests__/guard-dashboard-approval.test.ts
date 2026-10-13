@@ -141,7 +141,7 @@ describe("guardToolCall with managed dashboard approvals", () => {
 			blocked.dashboardApproval,
 		);
 		expect(message).toContain(`Approval requested in the AIDR dashboard: ${requestId}`);
-		expect(message).toContain("no tool available to you can approve it");
+		expect(message).toContain("you cannot approve this action and no tool available to you can");
 
 		// Still undecided: stays blocked, no second request.
 		const pending = await guard();

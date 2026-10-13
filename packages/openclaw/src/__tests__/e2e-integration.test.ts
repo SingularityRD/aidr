@@ -72,7 +72,7 @@ async function expectAllowed(handler: ToolCallHandler, event: ToolCallEvent): Pr
 async function expectBlocked(handler: ToolCallHandler, event: ToolCallEvent): Promise<void> {
 	const result = await handler(event);
 	expect(result?.block, `expected ${JSON.stringify(event)} to be blocked`).toBe(true);
-	expect(result?.blockReason).toMatch(/Singularity AIDR (blocked|flagged) this action/);
+	expect(result?.blockReason).toMatch(/Singularity AIDR (blocked|stopped) this action/);
 }
 
 // --- Tests ---

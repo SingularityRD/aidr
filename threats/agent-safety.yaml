@@ -48,6 +48,7 @@
     - command
     - command_normalized
   title: "Force-push rewrites the history of a protected branch (main / master / release)"
+  title_tr: "Zorla gönderme (force push) korumalı bir dalın geçmişini yeniden yazıyor (main / master / release)"
   expires_at: null
   revoked: false
 
@@ -409,6 +410,7 @@
     - command
     - command_normalized
   title: "Irreversible action: database data destroyed through a SQL client (DROP / TRUNCATE / DELETE without WHERE)"
+  title_tr: "Geri alınamaz işlem: SQL istemcisiyle veritabanı verisi yok ediliyor (DROP / TRUNCATE / WHERE olmadan DELETE)"
   expires_at: null
   revoked: false
 
@@ -422,6 +424,7 @@
     - command
     - command_normalized
   title: "Irreversible action: database dropped or reset by a framework tool (rails db:drop / prisma migrate reset / FLUSHALL)"
+  title_tr: "Geri alınamaz işlem: bir çatı aracıyla veritabanı siliniyor ya da sıfırlanıyor (rails db:drop / prisma migrate reset / FLUSHALL)"
   expires_at: null
   revoked: false
 
@@ -435,6 +438,7 @@
     - command
     - command_normalized
   title: "Irreversible action: infrastructure destroyed or applied without review (terraform destroy / apply -auto-approve / pulumi destroy)"
+  title_tr: "Geri alınamaz işlem: altyapı yok ediliyor ya da incelenmeden uygulanıyor (terraform destroy / apply -auto-approve / pulumi destroy)"
   expires_at: null
   revoked: false
 
@@ -448,6 +452,7 @@
     - command
     - command_normalized
   title: "Irreversible action: Kubernetes namespace, volume or bulk deletion (kubectl delete namespace / --all / helm uninstall)"
+  title_tr: "Geri alınamaz işlem: Kubernetes ad alanı, birimi ya da toplu silme (kubectl delete namespace / --all / helm uninstall)"
   expires_at: null
   revoked: false
 
@@ -461,6 +466,7 @@
     - command
     - command_normalized
   title: "Irreversible action: AWS resource deleted (s3 rb --force / ec2 terminate-instances / delete-db-instance)"
+  title_tr: "Geri alınamaz işlem: AWS kaynağı siliniyor (s3 rb --force / ec2 terminate-instances / delete-db-instance)"
   expires_at: null
   revoked: false
 
@@ -474,6 +480,7 @@
     - command
     - command_normalized
   title: "Irreversible action: Google Cloud resource deleted (gcloud ... delete / gsutil rm -r / bq rm)"
+  title_tr: "Geri alınamaz işlem: Google Cloud kaynağı siliniyor (gcloud ... delete / gsutil rm -r / bq rm)"
   expires_at: null
   revoked: false
 
@@ -487,6 +494,7 @@
     - command
     - command_normalized
   title: "Irreversible action: Azure resource deleted (az group delete / az ... delete / keyvault purge)"
+  title_tr: "Geri alınamaz işlem: Azure kaynağı siliniyor (az group delete / az ... delete / keyvault purge)"
   expires_at: null
   revoked: false
 
@@ -500,6 +508,7 @@
     - command
     - command_normalized
   title: "Irreversible action: hosted app, project, repository or release destroyed (heroku apps:destroy / gh repo delete / npm unpublish)"
+  title_tr: "Geri alınamaz işlem: barındırılan uygulama, proje, depo ya da sürüm yok ediliyor (heroku apps:destroy / gh repo delete / npm unpublish)"
   expires_at: null
   revoked: false
 
@@ -513,6 +522,7 @@
     - command
     - command_normalized
   title: "Irreversible action: pull request merged past branch protection (gh pr merge --admin) or repository made public"
+  title_tr: "Geri alınamaz işlem: çekme isteği dal korumasını aşarak birleştiriliyor (gh pr merge --admin) ya da depo herkese açılıyor"
   expires_at: null
   revoked: false
 
@@ -526,6 +536,7 @@
     - command
     - command_normalized
   title: "Irreversible action: package or release published to a registry (npm publish / twine upload / cargo publish / gh release create)"
+  title_tr: "Geri alınamaz işlem: paket ya da sürüm bir paket deposunda yayımlanıyor (npm publish / twine upload / cargo publish / gh release create)"
   expires_at: null
   revoked: false
 
@@ -539,6 +550,7 @@
     - command
     - command_normalized
   title: "Irreversible action: container image pushed to a public registry (docker push to Docker Hub / ghcr.io / quay.io)"
+  title_tr: "Geri alınamaz işlem: kapsayıcı imajı herkese açık bir kayıt sunucusuna gönderiliyor (Docker Hub / ghcr.io / quay.io'ya docker push)"
   expires_at: null
   revoked: false
 
@@ -552,6 +564,7 @@
     - command
     - command_normalized
   title: "Irreversible action: email, SMS or chat message sent on the user's behalf (sendmail / mail -s / aws ses send-email / Slack webhook)"
+  title_tr: "Geri alınamaz işlem: kullanıcı adına e-posta, SMS ya da sohbet mesajı gönderiliyor (sendmail / mail -s / aws ses send-email / Slack webhook)"
   expires_at: null
   revoked: false
 
@@ -565,6 +578,7 @@
     - command
     - command_normalized
   title: "Irreversible action: payment, refund or payout made through the Stripe CLI or API"
+  title_tr: "Geri alınamaz işlem: Stripe CLI ya da API ile ödeme, iade veya para aktarımı yapılıyor"
   expires_at: null
   revoked: false
 
@@ -578,5 +592,6 @@
     - command
     - command_normalized
   title: "Irreversible action: deployment to production (vercel --prod / firebase deploy / fly deploy / kubectl apply to prod)"
+  title_tr: "Geri alınamaz işlem: canlı ortama (production) dağıtım (vercel --prod / firebase deploy / fly deploy / prod ortamına kubectl apply)"
   expires_at: null
   revoked: false

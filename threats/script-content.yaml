@@ -46,6 +46,7 @@
   pattern: "(?:\\b(?:curl|wget|fetch)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?=(?<g1>(?:(?!\\b(?:curl|wget|fetch)\\b)(?:\\\\\\r?\\n|[^|\\n])){0,400}))\\k<g1>\\|[ \\t]{0,8}(?:(?:sudo|doas|env|command|exec|nohup|timeout|stdbuf|nice|setsid)\\b[^|\\n]{0,60}?[ \\t]{1,8}){0,3}(?:/[^\\s|]{1,80}/)?(?:ba|z|k|da|a)?sh\\b|\\b(?:ba|z|k|da|a)?sh\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})[ \\t]{1,8}(?:(?:-[A-Za-z]{1,8}[ \\t]{1,8}){0,3}<\\(|-[A-Za-z]{0,8}c[A-Za-z]{0,8}[ \\t]{1,8}[\"']?\\$\\()[ \\t]{0,8}(?:curl|wget)\\b|(?:\\bsource|(?<![\\w.])\\.)(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})[ \\t]{1,8}<\\([ \\t]{0,8}(?:curl|wget)\\b)"
   match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
   title: "Script being written downloads code and runs it in a shell (curl/wget | sh, bash <(curl ...), source <(curl ...)); held for review because whoever controls the URL decides what runs when the script does"
+  title_tr: "Yazılan betik internetten kod indirip kabukta çalıştırıyor (curl/wget | sh, bash <(curl ...), source <(curl ...)); betik çalıştığında neyin çalışacağına adresi kontrol eden kişi karar verdiği için incelemeye alındı"
   expires_at: null
   revoked: false
 
@@ -59,6 +60,7 @@
   case_insensitive: true
   match_on: ["code:powershell", "code:batch", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
   title: "Script being written downloads PowerShell code and runs it with Invoke-Expression (iwr | iex); held for review because whoever controls the URL decides what runs when the script does"
+  title_tr: "Yazılan betik PowerShell kodu indirip Invoke-Expression ile çalıştırıyor (iwr | iex); betik çalıştığında neyin çalışacağına adresi kontrol eden kişi karar verdiği için incelemeye alındı"
   expires_at: null
   revoked: false
 
@@ -71,6 +73,7 @@
   pattern: "(?:\\b(?:ba|z|k|da|a)?sh[ \\t]{1,8}-i\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:[^\\n]{0,200}?/dev/(?:tcp|udp)/|[^\\n|]{0,100}\\|[ \\t]{0,8}\\b(?:nc|ncat|netcat)\\b)|\\bexec[ \\t]{1,8}\\d{1,4}<>[ \\t]{0,8}/dev/(?:tcp|udp)/(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\bexec\\b)[^\\n]){0,300}?\\b(?:ba|z|k|da|a)?sh\\b[ \\t]{0,8}[<>]&|\\b(?:nc|ncat|netcat)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\b(?:nc|ncat|netcat)\\b)[^\\n|;&]){0,200}?[ \\t](?:-e|-c|--exec|--sh-exec)[ \\t=]{1,4}(?:(?:/[^\\s/]{1,40}){0,4}/)?(?:ba|z|k|da|a)?sh\\b|\\bmkfifo\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\bmkfifo\\b)[^\\n]){0,300}?\\|[ \\t]{0,8}(?:/[^\\s|]{1,80}/)?(?:ba|z|k|da|a)?sh\\b[^\\n|]{0,200}\\|[ \\t]{0,8}\\b(?:nc|ncat|netcat)\\b|\\bsocat\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?=[^\\n]{0,400}?\\b[Tt][Cc][Pp][46]?(?:-[A-Za-z]{1,10})?:)(?:(?!\\bsocat\\b)[^\\n]){0,400}?\\b[Ee][Xx][Ee][Cc]:[^\\s]{0,40}?(?:ba|z|k|da|a)?sh\\b)"
   match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
   title: "Script being written opens a reverse shell (an interactive shell wired to a network socket); blocked because it has no ordinary development use and a hook, CI job or npm script runs it without another inspected tool call"
+  title_tr: "Yazılan betik ters kabuk açıyor (ağ soketine bağlı etkileşimli kabuk); olağan bir geliştirme kullanımı olmadığı ve bir kanca, CI işi ya da npm betiği onu incelenmeden çalıştırabileceği için engellendi"
   expires_at: null
   revoked: false
 
@@ -83,6 +86,7 @@
   pattern: "(?:\\b(?:base64|base32|basenc)\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\b(?:base64|base32|basenc)\\b)[^|\\n]){0,200}?[ \\t](?:-d|-D|--decode)\\b(?=(?<g1>[^|\\n]{0,200}))\\k<g1>\\|[ \\t]{0,8}(?:(?:sudo|doas|env|command|exec|nohup|timeout|stdbuf|nice|setsid)\\b[^|\\n]{0,60}?[ \\t]{1,8}){0,3}(?:/[^\\s|]{1,80}/)?(?:ba|z|k|da|a)?sh\\b|\\bxxd\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\bxxd\\b)[^|\\n]){0,200}?[ \\t]-r\\b(?=(?<g2>[^|\\n]{0,200}))\\k<g2>\\|[ \\t]{0,8}(?:/[^\\s|]{1,80}/)?(?:ba|z|k|da|a)?sh\\b|\\beval\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})(?:(?!\\beval\\b)[^\\n]){0,300}?\\bbase(?:64|32)\\b(?:(?!\\bbase(?:64|32)\\b)[^\\n]){0,100}?[ \\t](?:-d|-D|--decode)\\b|\\b(?:ba|z|k|da|a)?sh\\b(?<!(?:^|\\n)[ \\t]{0,40}(?:#|//|::|[Rr][Ee][Mm][ \\t])[^\\n]{0,200})[ \\t]{1,8}-[A-Za-z]{0,8}c[A-Za-z]{0,8}[ \\t]{1,8}[\"']?\\$\\((?:(?!\\$\\()[^\\n]){0,300}?\\bbase(?:64|32)\\b(?:(?!\\bbase(?:64|32)\\b)[^\\n]){0,100}?[ \\t](?:-d|-D|--decode)\\b)"
   match_on: ["code:shell", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
   title: "Script being written decodes an encoded payload and executes it (base64 -d | sh, eval of decoded text); held for review because the code that runs is hidden from review"
+  title_tr: "Yazılan betik kodlanmış bir yükü çözüp çalıştırıyor (base64 -d | sh, çözülen metnin eval ile çalıştırılması); çalışacak kod gözden gizlendiği için incelemeye alındı"
   expires_at: null
   revoked: false
 
@@ -96,5 +100,6 @@
   case_insensitive: true
   match_on: ["code:powershell", "code:batch", "code:dockerfile", "code:makefile", "code:ci_config", "code:npm_script"]
   title: "Script being written runs a base64-encoded PowerShell command (-EncodedCommand, FromBase64String | iex); held for review because the code that runs is hidden from review"
+  title_tr: "Yazılan betik base64 ile kodlanmış bir PowerShell komutu çalıştırıyor (-EncodedCommand, FromBase64String | iex); çalışacak kod gözden gizlendiği için incelemeye alındı"
   expires_at: null
   revoked: false

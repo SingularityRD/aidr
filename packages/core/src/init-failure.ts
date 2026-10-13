@@ -11,7 +11,9 @@
  * carry local paths or configuration details and are logged, not surfaced.
  */
 
+import { t } from "./i18n/index.js";
 import { ArtifactIntegrityError } from "./integrity/runtime.js";
+import type { IntegrityStatus } from "./integrity/verify.js";
 
 const MAX_CODE_LENGTH = 64;
 
@@ -38,7 +40,75 @@ export function initFailureCode(error: unknown): string {
 	return "init_error";
 }
 
-/** The block reason every tool call receives while a connector is uninitialised. */
-export function formatInitFailureMessage(code: string): string {
-	return `AIDR failed to initialise: ${sanitizeCode(code)}; tool calls are blocked until fixed`;
+/**
+ * The block reason every tool call receives while a connector is
+ * uninitialised: the cause in plain words and who fixes it. A failed release
+ * integrity check gets the integrity message (see {@link integrityFailureMessage}).
+ */
+export function formatInitFailureMessage(code: string, error?: unknown): string {
+	const integrity = integrityFailureMessage(error);
+	if (integrity) return integrity.message;
+	return t("init.failed.message", { code: sanitizeCode(code) });
+}
+
+/** The integrity result of an `ArtifactIntegrityError`, also across bundle copies of the class. */
+function integrityStatusOf(error: unknown): IntegrityStatus | null {
+	if (error instanceof ArtifactIntegrityError) return error.result.status;
+	if (error instanceof Error && error.name === "ArtifactIntegrityError") {
+		const status = (error as { result?: { status?: unknown } }).result?.status;
+		return typeof status === "string" ? (status as IntegrityStatus) : "invalid_manifest";
+	}
+	return null;
+}
+
+function integrityCause(status: IntegrityStatus): string {
+	switch (status) {
+		case "revoked":
+			return t("integrity.cause.revoked");
+		case "io_error":
+			return t("integrity.cause.io");
+		case "missing_file":
+		case "hash_mismatch":
+		case "unlisted_file":
+		case "path_traversal":
+			return t("integrity.cause.files");
+		default:
+			return t("integrity.cause.signature");
+	}
+}
+
+/** What every connector says when its own release integrity check failed. */
+export interface IntegrityFailureMessage {
+	/** Full message: cause, consequence and the administrator's fix. */
+	message: string;
+	/** Short reason for hosts with a separate, model-facing reason field. */
+	reason: string;
+	/** Session-start banner: the whole session is blocked, not "unprotected". */
+	sessionStart: string;
+}
+
+/**
+ * The message for a failed release integrity check, or null when `error` is
+ * not one. The installation cannot vouch for its own code, so every call is
+ * denied; the message says so and names the administrator's next step. A
+ * missing release verification key gets its own wording because its fix is
+ * `aidr setup --release-key`, not a reinstall.
+ */
+export function integrityFailureMessage(error: unknown): IntegrityFailureMessage | null {
+	const status = integrityStatusOf(error);
+	if (!status) return null;
+	const agent = t("integrity.agent");
+	if (status === "no_public_keys") {
+		return {
+			message: `${t("integrity.noKey.message")}\n${agent}`,
+			reason: t("integrity.reason"),
+			sessionStart: t("hook.sessionStartNoKey"),
+		};
+	}
+	const cause = integrityCause(status);
+	return {
+		message: `${t("integrity.failed.message", { cause })}\n${agent}`,
+		reason: t("integrity.reason"),
+		sessionStart: t("hook.sessionStartIntegrity", { cause }),
+	};
 }

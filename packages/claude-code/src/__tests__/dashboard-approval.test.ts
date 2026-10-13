@@ -115,9 +115,11 @@ describe("Claude Code PreToolUse with managed dashboard approvals", () => {
 		const blocked = await runHook();
 		expect(hookOutput(blocked).permissionDecision).toBe("deny");
 		const requestId = cp.onlyRequestId();
-		expect(hookOutput(blocked).permissionDecisionReason).toContain(
+		// The person reads the request id; the agent is told it cannot approve.
+		expect(String(blocked.systemMessage)).toContain(
 			`Approval requested in the AIDR dashboard: ${requestId}`,
 		);
+		expect(hookOutput(blocked).permissionDecisionReason).toContain("You cannot approve it");
 
 		cp.approve(requestId);
 		expect(await runHook()).toEqual({});

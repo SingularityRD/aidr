@@ -14,8 +14,11 @@ import {
 	describeSecureCodeWarnings,
 	evaluateToolCall,
 	extractFromToolCall,
+	formatAgentBlockReason,
+	formatBlockMessage,
 	formatDashboardApprovalNotice,
 	initSentry,
+	integrityFailureMessage,
 	isWellFormedToolCall,
 	type Logger,
 	malformedShellCommandReason,
@@ -108,8 +111,36 @@ interface DashboardNote {
 	operatorHold?: string;
 }
 
+/** Secure-code findings of a blocked or held call, listed under its message. */
+function withSecureCodeFindings(message: string, verdict: Verdict): string {
+	return verdict.warnings?.length
+		? `${message}\n${describeSecureCodeWarnings(verdict.warnings, false).userMessage}`
+		: message;
+}
+
+/** A deny whose person-facing text and agent-facing reason are separate fields. */
+function denyWithBanner(systemMessage: string, reason: string): Record<string, unknown> {
+	return {
+		systemMessage,
+		hookSpecificOutput: {
+			hookEventName: "PreToolUse",
+			permissionDecision: "deny",
+			permissionDecisionReason: reason,
+		},
+	};
+}
+
+/**
+ * Claude Code shows `systemMessage` to the person and hands
+ * `permissionDecisionReason` to the model (and shows it in the transcript).
+ * Every block therefore puts the full "what / why / what to do" text in
+ * `systemMessage` and one line for the agent in the reason, so the user does
+ * not read the same banner twice. An ask that may go to Claude Code's own
+ * dialog carries the full text there instead.
+ */
 function makeResponse(
 	verdict: Verdict,
+	artifacts: readonly Artifact[],
 	dashboard: DashboardNote = { notice: null, dashboardOnly: false },
 ): Record<string, unknown> {
 	if (verdict.decision === "allow") {
@@ -118,62 +149,45 @@ function makeResponse(
 			: warnedResponse(verdict);
 	}
 
-	// A blocked or held call that also carries secure-code findings lists them
-	// under the banner.
-	const banner = verdict.warnings?.length
-		? `${formatBlockReason(verdict)}\n${describeSecureCodeWarnings(verdict.warnings, false).userMessage}`
-		: formatBlockReason(verdict);
-
 	if (verdict.decision === "ask" && dashboard.operatorHold) {
-		// Operator mode: never show the native dialog. The deny reason carries the
-		// approval reference; the agent cannot approve it (no tool can, and
-		// CLT-SELF-007 denies the agent running `aidr approve`).
-		return {
-			systemMessage: `${banner}\n${dashboard.operatorHold}`,
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason: `${t("hook.reason.operatorHold")}\n${dashboard.operatorHold}`,
-			},
-		};
+		// Operator mode: never show the native dialog. The user's message carries
+		// the `aidr approve` step for their own terminal; the agent cannot approve
+		// it (no tool can, and CLT-SELF-007 denies the agent running `aidr approve`).
+		return denyWithBanner(
+			withSecureCodeFindings(dashboard.operatorHold, verdict),
+			formatAgentBlockReason(verdict, true),
+		);
 	}
 
 	if (verdict.decision === "ask" && dashboard.dashboardOnly) {
 		// operator_approvals.dashboard_only: the native dialog would let the local
 		// user approve, so the call is blocked and only the dashboard can release it.
-		const notice = dashboard.notice ?? t("hook.dashboardOnlyNotice");
-		return {
-			systemMessage: `${banner}\n${notice}`,
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason: `${t("hook.reason.dashboardRequired")}\n${notice}`,
-			},
-		};
+		const message = formatBlockMessage(verdict, {
+			approval: { kind: "dashboard" },
+			artifacts,
+			dashboardNotice: dashboard.notice,
+			audience: "user",
+		});
+		return denyWithBanner(
+			withSecureCodeFindings(message, verdict),
+			formatAgentBlockReason(verdict, true),
+		);
 	}
 
 	if (verdict.decision === "deny") {
-		// For deny: short reason avoids Claude Code duplicating the banner.
-		// Full banner goes in systemMessage, shown separately in the UI.
-		return {
-			systemMessage: banner,
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason:
-					verdict.source === "agent_profile"
-						? t("hook.reason.profileBlocked")
-						: t("hook.reason.threatBlocked"),
-			},
-		};
+		return denyWithBanner(
+			withSecureCodeFindings(formatBlockReason(verdict, artifacts), verdict),
+			formatAgentBlockReason(verdict),
+		);
 	}
 
-	// For ask: full banner in permissionDecisionReason (shown once in dialog)
+	// Ask: the full message is shown once, in Claude Code's confirmation dialog.
+	const message = formatBlockReason(verdict, artifacts, dashboard.notice);
 	return {
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
 			permissionDecision: verdict.decision,
-			permissionDecisionReason: dashboard.notice ? `${banner}\n${dashboard.notice}` : banner,
+			permissionDecisionReason: withSecureCodeFindings(message, verdict),
 		},
 	};
 }
@@ -382,7 +396,7 @@ async function main(): Promise<void> {
 		if (responder.answered) return;
 	}
 
-	if (!respond(makeResponse(verdict, dashboard))) return;
+	if (!respond(makeResponse(verdict, artifacts, dashboard))) return;
 
 	// Native-host acceptance observation. Outside a gate run this is a no-op:
 	// the gate's environment contract is absent, so nothing is written. Inside
@@ -398,6 +412,13 @@ async function main(): Promise<void> {
 	});
 }
 
-main().catch(() => {
+main().catch((error: unknown) => {
+	// A failed release integrity check blocks every call until an administrator
+	// fixes the installation; say so, with the fix, instead of "could not inspect".
+	const integrity = integrityFailureMessage(error);
+	if (integrity) {
+		respond(denyResponse(integrity.message, integrity.reason));
+		return;
+	}
 	writeInspectionFailure();
 });

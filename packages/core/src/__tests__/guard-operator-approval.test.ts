@@ -170,9 +170,9 @@ describe("guardToolCall with the operator approval channel", () => {
 			result.responseActions,
 			result.pendingRecorded,
 		);
-		expect(message).toContain("could NOT be recorded for operator approval");
+		expect(message).toContain("could not be saved for approval");
 		expect(message).toContain("aidr doctor");
-		expect(message).not.toContain("approve it with `aidr approve");
+		expect(message).not.toContain("aidr approve");
 	});
 
 	it("keeps the block when approvals are disabled (no OS vault, no opt-in)", async () => {

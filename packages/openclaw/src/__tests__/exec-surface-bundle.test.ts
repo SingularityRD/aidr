@@ -75,7 +75,7 @@ describe("OpenClaw bundle: process/terminal/nodes are inspected as commands", {
 	async function expectBlocked(toolName: string, params: Record<string, unknown>) {
 		const result = await call(toolName, params);
 		expect(result?.block, `${toolName} ${JSON.stringify(params)} should be blocked`).toBe(true);
-		expect(result?.blockReason).toMatch(/Singularity AIDR (blocked|flagged) this action/);
+		expect(result?.blockReason).toMatch(/Singularity AIDR (blocked|stopped) this action/);
 		return result as BlockResult;
 	}
 

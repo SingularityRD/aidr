@@ -300,11 +300,11 @@ describe("formatAskMessage", () => {
 		]);
 		expect(msg).toContain("abc123");
 		expect(msg).toContain("command 'chmod 777 ./x'");
-		expect(msg).toContain("blocked it pending explicit user approval");
+		expect(msg).toContain("stopped this action until you approve it");
 		// The agent must not be handed a callable approval tool: an agent that can
 		// approve its own blocked action defeats the gate entirely.
 		expect(msg).not.toContain("aidr_approve");
-		expect(msg).toContain("cannot approve this action yourself");
+		expect(msg).toContain("you cannot approve this action");
 		expect(msg).not.toMatch(/call:\s*\n/);
 	});
 });

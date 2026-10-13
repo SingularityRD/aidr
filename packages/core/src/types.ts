@@ -48,6 +48,8 @@ export const ThreatSchema = z.object({
 	pattern: z.string(),
 	match_on: z.union([z.string(), z.array(z.string())]),
 	title: z.string(),
+	/** Turkish title shown instead of `title` when the display locale is Turkish. */
+	title_tr: z.string().optional(),
 	expires_at: z.string().nullable().optional(),
 	revoked: z.boolean().optional().default(false),
 	/** File-edit view rules only (see `agent-safety/edit-views.ts`). */
@@ -90,6 +92,8 @@ export interface Threat {
 	compiledPattern: RegExp;
 	matchOn: Set<string>;
 	title: string;
+	/** Turkish title (`title_tr`); display only, never part of matching or audit records. */
+	titleTr?: string;
 	expiresAt: Date | null;
 	revoked: boolean;
 	/**

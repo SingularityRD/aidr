@@ -88,7 +88,7 @@ describe("OpenClaw plugin with managed dashboard approvals", { timeout: 60_000 }
 		expect(blocked?.blockReason).toContain(
 			`Approval requested in the AIDR dashboard: ${requestId}`,
 		);
-		expect(blocked?.blockReason).toContain("no tool available to you can approve it");
+		expect(blocked?.blockReason).toContain("no tool available to you can");
 		expect(cp.requests.get(requestId)?.body.agent_runtime).toBe("openclaw");
 
 		// Undecided: still blocked.

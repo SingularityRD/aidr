@@ -60,7 +60,7 @@ describe("OpenClaw bundle: agent-safety guardrails", { timeout: 60_000 }, () => 
 		const bypass = await beforeCall("s-rh", "exec", { command: 'git commit --no-verify -m "wip"' });
 		expect(bypass?.block).toBe(true);
 		expect(bypass?.blockReason).toContain("--no-verify");
-		expect(bypass?.blockReason).toContain("actionId");
+		expect(bypass?.blockReason).toContain("Approval reference:");
 		expect(
 			await beforeCall("s-rh", "exec", { command: "git push origin feature/x" }),
 		).toBeUndefined();
@@ -82,7 +82,7 @@ describe("OpenClaw bundle: agent-safety guardrails", { timeout: 60_000 }, () => 
 		});
 		expect(result?.block).toBe(true);
 		expect(result?.blockReason).toContain("permission prompts disabled");
-		expect(result?.blockReason).not.toContain("actionId");
+		expect(result?.blockReason).not.toContain("Approval reference:");
 	});
 
 	it("holds irreversible actions but not their benign twins", async () => {

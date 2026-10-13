@@ -153,8 +153,8 @@ describe("OpenCode integration: Singularity AIDR plugin pipeline", { timeout: 30
 		const error = await runBefore("chmod 777 ./script.sh", "c3").catch((e: unknown) => e);
 		expect(error).toBeInstanceOf(Error);
 		const message = (error as Error).message;
-		expect(message).toMatch(/Singularity AIDR flagged this action/);
-		expect(message).toMatch(/actionId:\s*"[a-f0-9]{64}"/);
+		expect(message).toMatch(/Singularity AIDR stopped this action/);
+		expect(message).toMatch(/Approval reference: [a-f0-9]{64}/);
 		// No agent-callable approval path is advertised.
 		expect(message).not.toMatch(/aidr_approve/);
 	});
@@ -200,11 +200,11 @@ describe("OpenCode integration: Singularity AIDR plugin pipeline", { timeout: 30
 		const message = await runBefore("chmod 777 ./retry-me.sh", "c5").catch(
 			(e: unknown) => (e as Error).message,
 		);
-		expect(message).toMatch(/actionId:\s*"[a-f0-9]{64}"/);
+		expect(message).toMatch(/Approval reference: [a-f0-9]{64}/);
 
 		// Retrying with the actionId from the error does not help: it is still blocked.
 		await expect(runBefore("chmod 777 ./retry-me.sh", "c6")).rejects.toThrow(
-			/blocked it pending explicit user approval/,
+			/stopped this action until you approve it/,
 		);
 	});
 
@@ -224,7 +224,7 @@ describe("OpenCode integration: Singularity AIDR plugin pipeline", { timeout: 30
 		const message = await runBefore("chmod 777 ./perm.sh", "c7").catch(
 			(e: unknown) => (e as Error).message,
 		);
-		const actionId = /actionId:\s*"([a-f0-9]{64})"/.exec(message)?.[1];
+		const actionId = /Approval reference: ([a-f0-9]{64})/.exec(message)?.[1];
 		expect(actionId).toBeDefined();
 
 		const stillDenied = await allowlistAdd?.execute(

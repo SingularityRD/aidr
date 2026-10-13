@@ -61,7 +61,7 @@ function createInitFailureHooks(
 	client: unknown,
 ): PluginHooks {
 	const code = initFailureCode(error);
-	const message = formatInitFailureMessage(code);
+	const message = formatInitFailureMessage(code, error);
 	try {
 		(logger ?? getLogger()).error(
 			{ code, error: String(error) },
