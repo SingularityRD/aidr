@@ -17,6 +17,7 @@ import {
 	type EntityType,
 	type NativeNerUse,
 	type PrivacyScanEvent,
+	type PrivacyScanReason,
 	type ShadowAiUsageEvent,
 	type SiteId,
 	type TelemetryConfig,
@@ -55,7 +56,12 @@ const EVENT_KEYS = new Set([
 	"findings_count",
 	"policy_id",
 	"native_ner",
+	"reason",
+	"policy_errors",
 ]);
+const PRIVACY_REASONS: readonly PrivacyScanReason[] = ["paused"];
+/** Upper bound for `policy_errors` (more keys than the managed schema declares). */
+export const POLICY_ERRORS_MAX = 64;
 const NATIVE_NER_USES: readonly NativeNerUse[] = ["used", "unavailable"];
 
 /** Known entity types only, integers 1..100000, at most 32 keys. Everything else is dropped. */
@@ -102,6 +108,18 @@ const isFindingsCount = (raw: unknown): raw is number =>
 const isOptionalPolicyId = (raw: unknown): boolean =>
 	raw === undefined || (typeof raw === "string" && POLICY_ID_PATTERN.test(raw));
 
+const isPolicyErrorCount = (raw: unknown): boolean =>
+	Number.isSafeInteger(raw) && (raw as number) >= 1 && (raw as number) <= POLICY_ERRORS_MAX;
+
+/** Optional additive fields: `native_ner`, `reason` and `policy_errors`, when present. */
+function hasValidOptionalFields(e: Record<string, unknown>): boolean {
+	if (e.native_ner !== undefined && !NATIVE_NER_USES.includes(e.native_ner as NativeNerUse))
+		return false;
+	if (e.reason !== undefined && !PRIVACY_REASONS.includes(e.reason as PrivacyScanReason))
+		return false;
+	return e.policy_errors === undefined || isPolicyErrorCount(e.policy_errors);
+}
+
 /**
  * Re-validates an event against the contract (queued events come back from storage).
  * Returns a fresh object holding only contract fields, or null.
@@ -113,8 +131,8 @@ export function sanitizeEvent(raw: unknown): PrivacyScanEvent | null {
 	if (!hasValidHeader(e)) return null;
 	const findings = e.findings_count;
 	if (!isFindingsCount(findings) || !isOptionalPolicyId(e.policy_id)) return null;
-	if (e.native_ner !== undefined && !NATIVE_NER_USES.includes(e.native_ner as NativeNerUse))
-		return null;
+	if (!hasValidOptionalFields(e)) return null;
+	const errors = e.policy_errors;
 	const event: PrivacyScanEvent = {
 		event_id: e.event_id as string,
 		event_type: "privacy_scan",
@@ -126,6 +144,8 @@ export function sanitizeEvent(raw: unknown): PrivacyScanEvent | null {
 		findings_count: findings,
 		...(typeof e.policy_id === "string" ? { policy_id: e.policy_id } : {}),
 		...(e.native_ner !== undefined ? { native_ner: e.native_ner as NativeNerUse } : {}),
+		...(e.reason !== undefined ? { reason: e.reason as PrivacyScanReason } : {}),
+		...(errors !== undefined ? { policy_errors: errors as number } : {}),
 	};
 	return event;
 }
@@ -192,6 +212,10 @@ export interface RecordInput {
 	readonly policyId?: string;
 	/** Native NER outcome of the check (absent: NER was off). Status only, never content. */
 	readonly nativeNer?: NativeNerUse;
+	/** The user had paused protection when this was recorded. */
+	readonly paused?: boolean;
+	/** Count of invalid managed policy keys in force (GuardPolicy.policyErrors). */
+	readonly policyErrors?: number;
 }
 
 const SHADOW_ACTIONS: readonly ShadowAiUsageEvent["action"][] = ["visited", "blocked"];
@@ -281,6 +305,8 @@ export function buildEvent(input: RecordInput, now: number): PrivacyScanEvent | 
 			? { policy_id: input.policyId }
 			: {}),
 		...(input.nativeNer ? { native_ner: input.nativeNer } : {}),
+		...(input.paused ? { reason: "paused" } : {}),
+		...(input.policyErrors ? { policy_errors: input.policyErrors } : {}),
 	});
 }
 

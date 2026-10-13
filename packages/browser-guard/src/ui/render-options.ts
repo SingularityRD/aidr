@@ -26,7 +26,7 @@ import {
 	type TelemetryError,
 } from "./model.js";
 import { managedBadge, switchRow } from "./render-common.js";
-import { renderModeControl } from "./render-popup.js";
+import { policyErrorNotice, renderModeControl } from "./render-popup.js";
 
 export interface OptionsDraft {
 	readonly literalValue: string;
@@ -852,6 +852,7 @@ export function renderOptions(
 					t("managed_banner"),
 				])
 			: null,
+		policyErrorNotice(doc, policy, t, locale),
 		renderProtection(doc, policy, native, t),
 		renderTerms(doc, policy, draft, t, locale),
 		renderSites(doc, policy, t),

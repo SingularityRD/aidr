@@ -6,6 +6,7 @@ import {
 	EXACT_DATA_PLACEHOLDER_KEY,
 	evaluatePolicy,
 	GUARD_MODES,
+	MANAGED_OFF_BY_DEFAULT_KEYS,
 	MANAGED_POLICY_KEYS,
 	mergePolicy,
 	normalizeControlPlaneUrl,
@@ -21,6 +22,8 @@ const HEX = "a".repeat(64);
 /** Managed input with user overrides allowed: isolates per-key validation from the lock. */
 const open = (managed: Record<string, unknown>) => ({ ...managed, allowUserOverrides: true });
 const KEY = "c2VjcmV0LWtleS0xMjM0NTY3OA==";
+/** Keys every managed policy adds (pause and send-original off unless set). */
+const OFF = [...MANAGED_OFF_BY_DEFAULT_KEYS];
 
 describe("DEFAULT_POLICY", () => {
 	it("matches the documented defaults", () => {
@@ -66,8 +69,12 @@ describe("documentHandling", () => {
 		expect(managed.policy.documentHandling).toBe("block");
 		expect(managed.policy.managedKeys).toContain("documentHandling");
 		const invalid = evaluatePolicy({ documentHandling: "scan" }, undefined);
-		expect(invalid.policy.documentHandling).toBe("mask");
-		expect(invalid.warnings).toContain('managed: invalid value for "documentHandling" ignored');
+		// Fail safe: an invalid value takes the strictest one, never the "mask" default.
+		expect(invalid.policy.documentHandling).toBe("block");
+		expect(invalid.policy.policyErrors).toEqual(["documentHandling"]);
+		expect(invalid.warnings).toContain(
+			'managed: invalid value for "documentHandling"; fail-safe value applied',
+		);
 		const user = evaluatePolicy(undefined, { documentHandling: "allow" });
 		expect(user.policy.documentHandling).toBe("mask");
 		expect(user.warnings).toContain('user: unknown key "documentHandling" ignored');
@@ -98,7 +105,7 @@ describe("mergePolicy", () => {
 		expect(locked.managedKeys).toContain("restoreResponses");
 	});
 
-	it("ignores unknown and wrong-typed managed keys with warnings, never throwing", () => {
+	it("fails safe on wrong-typed managed keys and ignores unknown ones, never throwing", () => {
 		const { policy, warnings } = evaluatePolicy(
 			{
 				mode: "yolo",
@@ -109,16 +116,28 @@ describe("mergePolicy", () => {
 			},
 			undefined,
 		);
-		expect(policy.mode).toBe("auto");
+		expect(policy.mode).toBe("block");
 		expect(policy.maskPaste).toBe(true);
+		// No safe value to invent: the built-in limit stays.
 		expect(policy.maxFileBytes).toBe(DEFAULT_POLICY.maxFileBytes);
 		expect(policy.signalAction).toBe("block");
-		// signalAction is managed; the protection keys are locked at their defaults.
-		expect(policy.managedKeys).toEqual(["signalAction", ...PROTECTION_SETTING_KEYS]);
+		expect(policy.policyErrors).toEqual(["mode", "maskPaste", "maxFileBytes"]);
+		// The fail-safe keys are locked; the other protection keys are locked at their defaults.
+		expect(policy.managedKeys).toEqual([
+			"mode",
+			"maskPaste",
+			"signalAction",
+			// A managed mode (here the fail-safe one) locks disabledSites first.
+			"disabledSites",
+			"enabledEntities",
+			"literals",
+			"restoreResponses",
+			...OFF,
+		]);
 		expect(warnings).toEqual(
 			expect.arrayContaining([
-				'managed: invalid value for "mode" ignored',
-				'managed: invalid value for "maskPaste" ignored',
+				'managed: invalid value for "mode"; fail-safe value applied',
+				'managed: invalid value for "maskPaste"; fail-safe value applied',
 				'managed: invalid value for "maxFileBytes" ignored',
 				'managed: unknown key "somethingElse" ignored',
 			]),
@@ -129,9 +148,9 @@ describe("mergePolicy", () => {
 		for (const managed of [null, 42, "x", [1, 2], { __proto__: { mode: "block" } }]) {
 			expect(() => mergePolicy(managed, undefined)).not.toThrow();
 		}
-		expect(evaluatePolicy([1], undefined).warnings).toEqual([
-			"managed: policy is not an object; ignored",
-		]);
+		const notObject = evaluatePolicy([1], undefined);
+		expect(notObject.warnings).toEqual(["managed: policy is not an object; ignored"]);
+		expect(notObject.policy.policyErrors).toEqual(["*"]);
 	});
 
 	it("warnings never contain values", () => {
@@ -143,20 +162,24 @@ describe("mergePolicy", () => {
 		expect(warnings.length).toBe(2);
 	});
 
-	it("validates enabledEntities/neverRestore/site lists as a whole", () => {
+	it("keeps the valid entries of a site list and widens an invalid entity list to all types", () => {
 		const p = mergePolicy(
 			{
 				enabledEntities: ["EMAIL", "EMAIL", "IBAN"],
 				neverRestore: ["SECRET", "NOPE"],
 				blockedSites: ["chatgpt", "grok"],
-				disabledSites: ["myspace"],
+				disabledSites: ["myspace", "gemini"],
 			},
 			undefined,
 		);
 		expect(p.enabledEntities).toEqual(["EMAIL", "IBAN"]);
-		expect(p.neverRestore).toEqual(DEFAULT_POLICY.neverRestore);
+		// An unknown type in neverRestore: the strictest list (never restore anything).
+		expect(p.neverRestore).toEqual(ENTITY_TYPES);
+		expect(p.managedKeys).toContain("neverRestore");
 		expect(p.blockedSites).toEqual(["chatgpt", "grok"]);
-		expect(p.managedKeys).not.toContain("neverRestore");
+		// One unknown id no longer drops the valid ones.
+		expect(p.disabledSites).toEqual(["gemini"]);
+		expect(p.policyErrors).toEqual(["neverRestore", "disabledSites"]);
 	});
 
 	it("enforces literal limits", () => {
@@ -164,18 +187,30 @@ describe("mergePolicy", () => {
 			mergePolicy({ literals: [{ value: "Project Falcon", type: "INTERNAL" }] }, undefined)
 				.literals,
 		).toEqual([{ value: "Project Falcon", type: "INTERNAL" }]);
-		const tooShort = mergePolicy(open({ literals: [{ value: "a", type: "INTERNAL" }] }), undefined);
-		expect(tooShort.literals).toEqual([]);
-		expect(tooShort.managedKeys).not.toContain("literals");
+		// Out-of-bounds rules are dropped one by one; the valid ones stay (and stay locked).
+		const tooShort = mergePolicy(
+			open({
+				literals: [
+					{ value: "a", type: "INTERNAL" },
+					{ value: "Project Falcon", type: "INTERNAL" },
+				],
+			}),
+			undefined,
+		);
+		expect(tooShort.literals).toEqual([{ value: "Project Falcon", type: "INTERNAL" }]);
+		expect(tooShort.managedKeys).toContain("literals");
+		expect(tooShort.policyErrors).toEqual(["literals"]);
 		const tooLong = [{ value: "x".repeat(257), type: "INTERNAL" }];
-		expect(mergePolicy(open({ literals: tooLong }), undefined).managedKeys).toEqual([]);
+		expect(mergePolicy(open({ literals: tooLong }), undefined).literals).toEqual([]);
 		const tooMany = Array.from({ length: 1025 }, (_, i) => ({
 			value: `term-${i}`,
 			type: "INTERNAL",
 		}));
-		expect(mergePolicy(open({ literals: tooMany }), undefined).managedKeys).toEqual([]);
+		const capped = mergePolicy(open({ literals: tooMany }), undefined);
+		expect(capped.literals).toHaveLength(1024);
+		expect(capped.policyErrors).toEqual(["literals"]);
 		const extraKey = [{ value: "abc", type: "INTERNAL", note: "x" }];
-		expect(mergePolicy(open({ literals: extraKey }), undefined).managedKeys).toEqual([]);
+		expect(mergePolicy(open({ literals: extraKey }), undefined).literals).toEqual([]);
 		const max = Array.from({ length: 1024 }, (_, i) => ({ value: `term-${i}`, type: "INTERNAL" }));
 		expect(mergePolicy({ literals: max }, undefined).literals).toHaveLength(1024);
 	});
@@ -192,16 +227,17 @@ describe("mergePolicy", () => {
 			undefined,
 		);
 		expect(ok.exactData[0]?.fingerprints).toEqual([HEX]);
-		expect(ok.managedKeys).toEqual(["exactData"]);
-		// 100k total is allowed, 100k + 1 is not.
-		expect(
-			mergePolicy(open({ exactData: [ds("a", 50_000), ds("b", 50_000)] }), undefined).managedKeys,
-		).toEqual(["exactData"]);
-		expect(
-			mergePolicy(open({ exactData: [ds("a", 50_000), ds("b", 50_001)] }), undefined).managedKeys,
-		).toEqual([]);
+		expect(ok.managedKeys).toEqual(["exactData", ...OFF]);
+		expect(ok.policyErrors).toEqual([]);
+		// 100k total is allowed; a dataset that would exceed it is dropped, the others stay.
+		const full = mergePolicy(open({ exactData: [ds("a", 50_000), ds("b", 50_000)] }), undefined);
+		expect(full.exactData.map((d) => d.datasetId)).toEqual(["a", "b"]);
+		expect(full.policyErrors).toEqual([]);
+		const over = mergePolicy(open({ exactData: [ds("a", 50_000), ds("b", 50_001)] }), undefined);
+		expect(over.exactData.map((d) => d.datasetId)).toEqual(["a"]);
+		expect(over.policyErrors).toEqual(["exactData"]);
 		const seventeen = Array.from({ length: 17 }, (_, i) => ds(`d${i}`, 1));
-		expect(mergePolicy(open({ exactData: seventeen }), undefined).managedKeys).toEqual([]);
+		expect(mergePolicy(open({ exactData: seventeen }), undefined).exactData).toHaveLength(16);
 		for (const bad of [
 			{ ...ds("x", 1), fingerprints: ["zz"] },
 			{ ...ds("x", 1), keyB64: "not base64!" },
@@ -210,9 +246,11 @@ describe("mergePolicy", () => {
 		]) {
 			expect(mergePolicy({ exactData: [bad] }, undefined).exactData).toEqual([]);
 		}
-		expect(mergePolicy({ exactData: [ds("dup", 1), ds("dup", 1)] }, undefined).exactData).toEqual(
-			[],
-		);
+		expect(
+			mergePolicy({ exactData: [ds("dup", 1), ds("dup", 1)] }, undefined).exactData.map(
+				(d) => d.datasetId,
+			),
+		).toEqual(["dup"]);
 	});
 
 	it("refuses the example placeholder exact-data key by name, never as a usable key", () => {
@@ -306,7 +344,9 @@ describe("mergePolicy", () => {
 				undefined,
 			).telemetry,
 		).toBeNull();
-		expect(mergePolicy(open({ telemetry: null }), undefined).managedKeys).toEqual([]);
+		const nullTelemetry = mergePolicy(open({ telemetry: null }), undefined);
+		expect(nullTelemetry.managedKeys).toEqual(OFF);
+		expect(nullTelemetry.policyErrors).toEqual(["telemetry"]);
 		expect(normalizeControlPlaneUrl("https://cp.example.com/base//")).toBe(
 			"https://cp.example.com/base",
 		);
@@ -327,7 +367,7 @@ describe("mergePolicy", () => {
 			disabledSites: ["chatgpt"],
 		});
 		expect(policy.disabledSites).toEqual([]);
-		expect(policy.managedKeys).toEqual(["mode", "disabledSites"]);
+		expect(policy.managedKeys).toEqual(["mode", "disabledSites", ...OFF]);
 		expect(warnings).toContain('user: "disabledSites" ignored because "mode" is managed');
 		const both = mergePolicy(open({ mode: "confirm", disabledSites: ["grok"] }), {
 			disabledSites: ["chatgpt"],
@@ -417,10 +457,14 @@ describe("requireNativeNer (managed only)", () => {
 		}
 	});
 
-	it("rejects a non-boolean value (stays false) and is not a user setting", () => {
+	it("fails safe on a non-boolean value (required) and is not a user setting", () => {
 		const { policy, warnings } = evaluatePolicy({ requireNativeNer: "yes" }, undefined);
-		expect(policy.requireNativeNer).toBe(false);
-		expect(warnings).toContain('managed: invalid value for "requireNativeNer" ignored');
+		expect(policy.requireNativeNer).toBe(true);
+		expect(policy.useNativeHost).toBe(true);
+		expect(policy.policyErrors).toEqual(["requireNativeNer"]);
+		expect(warnings).toContain(
+			'managed: invalid value for "requireNativeNer"; fail-safe value applied',
+		);
 		expect(USER_SETTING_KEYS).not.toContain("requireNativeNer");
 		const user = evaluatePolicy(undefined, { requireNativeNer: true });
 		expect(user.policy.requireNativeNer).toBe(false);
@@ -467,7 +511,10 @@ describe("managed policy locks protection-reducing user settings (L2)", () => {
 		expect(policy.maskPaste).toBe(false);
 		expect(policy.restoreResponses).toBe(false);
 		expect(policy.disabledSites).toEqual(["chatgpt", "gemini"]);
-		expect(policy.managedKeys).toEqual(["policyId"]);
+		// Pause and send-original stay off: allowUserOverrides covers user settings only.
+		expect(policy.managedKeys).toEqual(["policyId", ...OFF]);
+		expect(policy.allowUserPause).toBe(false);
+		expect(policy.allowSendAnyway).toBe(false);
 		expect(policy).not.toHaveProperty("allowUserOverrides");
 	});
 
@@ -480,7 +527,7 @@ describe("managed policy locks protection-reducing user settings (L2)", () => {
 
 	it("fails closed: a managed policy whose keys are all invalid still locks", () => {
 		const policy = mergePolicy({ mode: "yolo", typo: 1 }, weakening);
-		expect(policy.mode).toBe("auto");
+		expect(policy.mode).toBe("block");
 		expect(policy.enabledEntities).toEqual(DEFAULT_POLICY.enabledEntities);
 		expect(mergePolicy([1], weakening).maskPaste).toBe(true);
 	});
@@ -558,5 +605,105 @@ describe("static/managed_schema.json", () => {
 		expect(pattern(literal.value?.pattern).test("a")).toBe(false);
 		expect(pattern(literal.value?.pattern).test("ab")).toBe(true);
 		expect(pattern(literal.value?.pattern).test("x".repeat(257))).toBe(false);
+	});
+});
+
+describe("invalid managed values fail safe (BG-4)", () => {
+	// The GA audit reproduction: typos and registry-typed values once produced the most
+	// permissive configuration (auto mode, pause and send-original on, nothing blocked).
+	const managed = {
+		mode: "Block",
+		allowUserPause: "false",
+		allowSendAnyway: 0,
+		requireNativeNer: "true",
+		blockedSites: ["deepseek", "chatgtp"],
+		shadowAi: { mode: "block-unsanctioned", sanctioned: ["chatgpt"], blocked: ["deepseek", "Foo"] },
+		fileHandling: "Block",
+	};
+
+	it("uses the strictest value per key and keeps the valid list entries", () => {
+		const { policy, warnings } = evaluatePolicy(managed, { mode: "monitor" });
+		expect(policy.mode).toBe("block");
+		expect(policy.allowUserPause).toBe(false);
+		expect(policy.allowSendAnyway).toBe(false);
+		expect(policy.requireNativeNer).toBe(true);
+		expect(policy.useNativeHost).toBe(true);
+		expect(policy.blockedSites).toEqual(["deepseek"]);
+		expect(policy.shadowAi).toEqual({
+			mode: "block-unsanctioned",
+			sanctioned: ["chatgpt"],
+			blocked: ["deepseek"],
+		});
+		expect(policy.fileHandling).toBe("block");
+		for (const key of Object.keys(managed)) expect(policy.managedKeys).toContain(key);
+		expect([...(policy.policyErrors ?? [])].sort()).toEqual(Object.keys(managed).sort());
+		expect(warnings.join("\n")).not.toMatch(/chatgtp|Foo|Block/);
+	});
+
+	it("an invalid shadowAi mode becomes block-unsanctioned; a non-object keeps nothing sanctioned", () => {
+		expect(
+			mergePolicy({ shadowAi: { mode: "audit", sanctioned: ["chatgpt", "Bad Id"] } }, undefined)
+				.shadowAi,
+		).toEqual({ mode: "block-unsanctioned", sanctioned: ["chatgpt"], blocked: [] });
+		expect(mergePolicy({ shadowAi: "monitor" }, undefined).shadowAi).toEqual({
+			mode: "block-unsanctioned",
+			sanctioned: [],
+			blocked: [],
+		});
+	});
+
+	it("valid custom sites survive an invalid neighbour", () => {
+		const good = { id: "gpt", label: "ACME GPT", hosts: ["gpt.acme.example"] };
+		const policy = mergePolicy(
+			{ customSites: [good, { id: "bad", label: "x", hosts: ["http://x.example"] }] },
+			undefined,
+		);
+		expect(policy.customSites.map((s) => s.id)).toEqual(["gpt"]);
+		expect(policy.policyErrors).toEqual(["customSites"]);
+	});
+
+	it("a valid managed policy reports no errors", () => {
+		const valid = evaluatePolicy({ mode: "block", blockedSites: ["grok"] }, undefined);
+		expect(valid.policy.policyErrors).toEqual([]);
+		expect(evaluatePolicy(undefined, undefined).policy.policyErrors).toEqual([]);
+	});
+
+	it("unreadable managed storage locks like a managed policy and reports a whole-policy error", () => {
+		const { policy, warnings } = evaluatePolicy(
+			undefined,
+			{ mode: "monitor", maskPaste: false },
+			{ managedUnavailable: true },
+		);
+		expect(policy.mode).toBe("auto");
+		expect(policy.maskPaste).toBe(true);
+		expect(policy.allowUserPause).toBe(false);
+		expect(policy.allowSendAnyway).toBe(false);
+		expect(policy.policyErrors).toEqual(["*"]);
+		expect(warnings).toContain("managed: policy storage unavailable; user settings suspended");
+	});
+});
+
+describe("pause and send-original under a managed policy (BG-6)", () => {
+	it("are off under any managed policy unless the administrator sets them", () => {
+		for (const managed of [{ policyId: "acme" }, open({ policyId: "acme" }), { typo: 1 }]) {
+			const policy = mergePolicy(managed, undefined);
+			expect(policy.allowUserPause).toBe(false);
+			expect(policy.allowSendAnyway).toBe(false);
+			for (const key of OFF) expect(policy.managedKeys).toContain(key);
+		}
+	});
+
+	it("an explicit administrator value wins", () => {
+		const policy = mergePolicy({ allowUserPause: true, allowSendAnyway: true }, undefined);
+		expect(policy.allowUserPause).toBe(true);
+		expect(policy.allowSendAnyway).toBe(true);
+	});
+
+	it("without a managed policy the consumer defaults stay", () => {
+		for (const managed of [undefined, null, {}]) {
+			const policy = mergePolicy(managed, undefined);
+			expect(policy.allowUserPause).toBe(true);
+			expect(policy.allowSendAnyway).toBe(true);
+		}
 	});
 });

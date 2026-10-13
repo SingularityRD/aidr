@@ -323,12 +323,12 @@
 		},
 		"allowUserPause": {
 			"title": "Allow user pause",
-			"description": "Allow users to pause protection for up to 60 minutes.",
+			"description": "Allow users to pause protection for up to 60 minutes. Under any managed policy the default is false; set true to allow. Sends during a pause are reported as paused in telemetry.",
 			"type": "boolean"
 		},
 		"allowSendAnyway": {
 			"title": "Allow send anyway",
-			"description": "Allow users to send a prompt unmasked after a warning.",
+			"description": "Allow users to send a prompt unmasked after a warning. Under any managed policy the default is false; set true to allow.",
 			"type": "boolean"
 		},
 		"maskPaste": {

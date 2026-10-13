@@ -41,6 +41,30 @@
 		"message": "Browser Guard; ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral ve Grok üzerinde çalışır.",
 		"description": "Unsupported detail."
 	},
+	"status_inactive": {
+		"message": "Korunmuyor — bu sekmeyi yenileyin",
+		"description": "Current tab is a protected AI site but Browser Guard is not running in it (open since before the extension started)."
+	},
+	"status_inactive_detail": {
+		"message": "Bu $SITE$ sekmesi Browser Guard başlamadan önce açılmıştı; burada gönderdikleriniz denetlenmiyor. Korumak için sekmeyi yenileyin.",
+		"description": "Inactive detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"policy_error": {
+		"message": "Kuruluşunuzun politikasında $COUNT$ geçersiz ayar var. En sıkı değerler uygulanıyor; yöneticinize başvurun.",
+		"description": "Popup and options notice when managed policy values were invalid and fail-safe values were applied.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "2"
+			}
+		}
+	},
 	"status_paused": {
 		"message": "$TIME$ saatine kadar duraklatıldı",
 		"description": "Protection paused by the user.",

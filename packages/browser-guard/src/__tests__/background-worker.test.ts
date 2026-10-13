@@ -148,6 +148,16 @@ describe("background: policy", () => {
 		const t = await setup({ managedError: new Error("boom"), user: { mode: "monitor" } });
 		expect(t.bg.policy().mode).toBe("auto");
 		expect(t.bg.warnings().join("\n")).toContain("user settings suspended");
+		// Unknown admin intent fails safe: no pause, no send-original, reported as an error.
+		expect(t.bg.policy()).toMatchObject({
+			allowUserPause: false,
+			allowSendAnyway: false,
+			policyErrors: ["*"],
+		});
+		expect(await t.send({ type: "PAUSE", minutes: 5 })).toEqual({
+			ok: false,
+			error: "PAUSE_DISABLED",
+		});
 	});
 
 	it("treats a missing managed manifest (Firefox) as no policy", async () => {
@@ -843,6 +853,10 @@ describe("background: blocked sites (declarativeNetRequest)", () => {
 
 	it("shows blocked.html in a tab whose navigation the installed rule refused", async () => {
 		const t = await setup({ managed: { blockedSites: ["gemini"] } });
+		// The open Gemini tab was already sent to blocked.html when the block was applied
+		// (background-open-tabs.test.ts); this test is about later navigations.
+		await vi.waitFor(() => expect(t.fake.tabUpdates).toHaveLength(1));
+		t.fake.tabUpdates.length = 0;
 		t.fake.events.onUpdated.dispatch(2, { status: "loading", url: GEMINI }, { id: 2, url: GEMINI });
 		await vi.waitFor(() =>
 			expect(t.fake.tabUpdates).toEqual([

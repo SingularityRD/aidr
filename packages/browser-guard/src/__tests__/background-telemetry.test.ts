@@ -176,6 +176,36 @@ describe("buildEvent / sanitizeEvent", () => {
 		);
 		expect(off).not.toHaveProperty("native_ner");
 	});
+
+	it("marks a paused send and counts invalid managed keys, nothing else", () => {
+		const event = buildEvent(
+			{
+				site: "chatgpt",
+				action: "allowed",
+				channel: "prompt",
+				counts: {},
+				paused: true,
+				policyErrors: 3,
+			},
+			0,
+		);
+		expect(event).toMatchObject({ reason: "paused", policy_errors: 3 });
+		expect(sanitizeEvent(event)).toEqual(event);
+		for (const bad of [
+			{ reason: "user" },
+			{ reason: true },
+			{ policy_errors: 0 },
+			{ policy_errors: 65 },
+			{ policy_errors: "2" },
+		])
+			expect(sanitizeEvent({ ...event, ...bad })).toBeNull();
+		const plain = buildEvent(
+			{ site: "chatgpt", action: "allowed", channel: "prompt", counts: {}, policyErrors: 0 },
+			0,
+		);
+		expect(plain).not.toHaveProperty("reason");
+		expect(plain).not.toHaveProperty("policy_errors");
+	});
 });
 
 describe("browserRuntimeVersion", () => {

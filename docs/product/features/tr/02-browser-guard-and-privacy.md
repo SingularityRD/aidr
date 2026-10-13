@@ -427,7 +427,8 @@ gönderilmez. Bulgu ve etkin sinyal içermeyen bir istem her modda kesintisiz g�
 Yönetilen anahtar `mode` (`auto` | `confirm` | `block` | `monitor`, varsayılan `auto`).
 `mode` yönetildiğinde seçici kilit simgesiyle ve **Kuruluşunuz tarafından yönetiliyor**
 yazısıyla gösterilir; kullanıcılar tek tek siteleri kapatamaz. `allowSendAnyway`
-(varsayılan `true`) **Orijinali gönder** düğmesini denetler.
+**Orijinali gönder** düğmesini denetler (yönetilen politika yokken varsayılan `true`;
+herhangi bir yönetilen politika altında yönetici açıkça ayarlamadıkça `false`).
 
 **Örnek** — `confirm` modunda kullanıcı `IBAN TR33 0006 1005 1978 6457 8413 26` yazıp Enter'a
 basar. Balon görünür ve siteye hiçbir şey gitmez. Kullanıcı **Maskeli gönder**'e tıklar ve
@@ -444,8 +445,9 @@ yapıldığını ve bu istekte yalnızca yer tutucular olduğunu doğrular.
 
 **Sınırlamalar**
 - `monitor` orijinal veriyi gönderir. Koruma için değil, ölçüm için kullanın.
-- `allowSendAnyway: true` (varsayılan) iken `confirm` modundaki kullanıcı orijinal
-  değerleri gönderebilir. Bunun mümkün olmaması gereken yerlerde `false` yapın.
+- `allowSendAnyway: true` iken (yalnızca yönetilmeyen kurulumlarda varsayılan; yönetilen
+  politikada açıkça ayarlanmalıdır) `confirm` modundaki kullanıcı orijinal değerleri
+  gönderebilir.
 - `auto` modunda, aynı zamanda `warn` düzeyinde bir risk sinyali tetikleyen istem sessizce
   maskelenmez; onay balonu gösterilir (özellik 10).
 
@@ -1011,7 +1013,9 @@ istatistikler ve panel kullanımı görmeye devam eder. Açılır pencere bu dur
 için kapalı** gösterir ("ChatGPT için maskelemeyi kapattınız: orada hiçbir şey maskelenmez,
 yalnızca hassas öğe sayıları kaydedilir.").
 
-**Nasıl kullanılır** — Yönetilen anahtarlar `allowUserPause` (varsayılan `true`) ve
+**Nasıl kullanılır** — Yönetilen anahtarlar `allowUserPause` (yönetilen politika yokken
+varsayılan `true`, herhangi bir yönetilen politika altında ayarlanmadıkça `false`; duraklatma
+sırasındaki gönderimler `reason: "paused"` ile raporlanır) ve
 `disabledSites` (site kimlikleri). Duraklatmaya izin verilmediğinde açılır pencere duraklatma
 düğmesini göstermez ve bir duraklatma isteği "Kuruluşunuz korumanın duraklatılmasına izin
 vermiyor." mesajıyla reddedilir. `mode` yönetildiğinde kullanıcılar tek tek siteleri
@@ -1260,8 +1264,8 @@ Tüm yönetilen anahtarlar (`static/managed_schema.json` ve `src/background/poli
 | `signalAction` | `off` \| `warn` \| `block` | `warn` | Sinyale verilecek tepki (özellik 10) |
 | `blockedSites` | site kimliği dizisi | yok | Sayfaları açılmayan siteler (özellik 13) |
 | `disabledSites` | site kimliği dizisi | yok | Yalnızca izlenen siteler: denetim hiçbir şeyi maskelemez ya da engellemez, gönderimler sayılır (özellik 12) |
-| `allowUserPause` | boolean | `true` | Kullanıcı en fazla 60 dakika duraklatabilir |
-| `allowSendAnyway` | boolean | `true` | Kullanıcı uyarıdan sonra maskesiz gönderebilir |
+| `allowUserPause` | boolean | `true`; yönetilen politikada ayarlanmadıkça `false` | Kullanıcı en fazla 60 dakika duraklatabilir |
+| `allowSendAnyway` | boolean | `true`; yönetilen politikada ayarlanmadıkça `false` | Kullanıcı uyarıdan sonra maskesiz gönderebilir |
 | `maskPaste` | boolean | `true` | Yapıştırılan metni maskele (özellik 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Yükleme davranışı (özellik 7) |
 | `documentHandling` | `mask` \| `block` \| `allow` | `mask` | `fileHandling` `scan` iken Office, OpenDocument, eski Office ve PDF yüklemeleri (özellik 7) |

@@ -10,6 +10,7 @@ import {
 	isLocked,
 	type ProtectedSiteId,
 	type ProtectionStatus,
+	policyErrors,
 	protectionStatus,
 	siteLabel,
 	topEntityTypes,
@@ -81,6 +82,13 @@ function statusView(status: ProtectionStatus, t: Translate, locale: string): Sta
 				icon: "pause",
 				title: t("status_paused", formatClock(locale, status.until)),
 				detail: t("status_paused_detail", statusSiteLabel(status.site, t)),
+			};
+		case "inactive":
+			return {
+				tone: "danger",
+				icon: "alert",
+				title: t("status_inactive"),
+				detail: t("status_inactive_detail", statusSiteLabel(status.site, t)),
 			};
 		case "monitoring":
 			return {
@@ -284,6 +292,21 @@ function renderActions(
 	]);
 }
 
+/** Invalid managed values fell back to fail-safe values: tell the user who can fix it. */
+export function policyErrorNotice(
+	doc: Document,
+	policy: GuardPolicy,
+	t: Translate,
+	locale: string,
+): HTMLElement | null {
+	const count = policyErrors(policy).length;
+	if (count === 0) return null;
+	return h(doc, "p", { className: "banner banner--danger", role: "alert", id: "policy-error" }, [
+		icon(doc, "alert", "icon icon--sm"),
+		t("policy_error", formatNumber(locale, count)),
+	]);
+}
+
 function nativeHostLine(doc: Document, stats: GuardStats, t: Translate): HTMLElement | null {
 	if (stats.nativeHost === "disabled") return null;
 	const connected = stats.nativeHost === "connected";
@@ -327,6 +350,7 @@ export function renderPopup(
 	const restore = restoreToggle(policy, status);
 	return h(doc, "div", { className: "popup", "aria-busy": state.busy ? "true" : undefined }, [
 		renderStatus(doc, statusView(status, t, locale)),
+		policyErrorNotice(doc, policy, t, locale),
 		h(doc, "section", { className: "card" }, [
 			renderModeControl(doc, policy, t, { idPrefix: "popup-mode" }),
 		]),

@@ -19,6 +19,7 @@
  */
 
 import { fromBase64 } from "../../../privacy/src/browser/transport.js";
+import { serviceForUrl } from "../sites/catalog.js";
 import type {
 	GuardError,
 	GuardPolicy,
@@ -42,6 +43,7 @@ import {
 } from "./dashboard-policy.js";
 import { applyBlockedSites, redirectBlockedTab, siteForUrl, updatedTabUrl } from "./dnr.js";
 import { createNativeBridge, NATIVE_MAX_IMAGE_BYTES } from "./native.js";
+import { ContentTabs, injectOpenTabs, injectOpenTabsOnce } from "./open-tabs.js";
 import {
 	DEFAULT_POLICY,
 	evaluatePolicy,
@@ -66,6 +68,7 @@ import {
 } from "./storage.js";
 import {
 	type NavigatorLike,
+	POLICY_ERRORS_MAX,
 	TELEMETRY_ALARM,
 	TELEMETRY_LIMITS,
 	TelemetryClient,
@@ -105,6 +108,8 @@ export interface BackgroundController {
 	reload(broadcast: boolean): Promise<GuardPolicy>;
 	policy(): GuardPolicy;
 	warnings(): readonly string[];
+	/** Tab ids the start-up injection reached (./open-tabs.ts); resolves after `ready`. */
+	readonly openTabsInjected: Promise<readonly number[]>;
 }
 
 type Sender =
@@ -141,6 +146,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	const shadowUsage = new ShadowAiUsageStore(storage, now);
 	const shadowMonitor = new ShadowAiMonitor({ chrome, usage: shadowUsage, now });
 	const customScripts = new CustomSiteScripts(chrome, log);
+	const contentTabs = new ContentTabs(storage);
 	const fetchImpl: typeof fetch = options.fetch ?? ((...args) => globalThis.fetch(...args));
 	const dashboard = new DashboardPolicyClient({ storage, fetch: fetchImpl, now, log });
 	const telemetry = new TelemetryClient({
@@ -261,12 +267,13 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	async function loadPolicy(broadcast: boolean): Promise<GuardPolicy> {
 		const managed = await storage.readManaged();
-		// If managed policy state is unknown, user settings must not weaken the defaults.
+		// If managed policy state is unknown, it is treated as a managed policy without valid
+		// keys: user settings must not weaken the defaults, pause and send-original are off.
 		const user = managed.status === "error" ? undefined : await storage.readUserSettings();
-		const evaluation = evaluatePolicy(managed.status === "ok" ? managed.value : undefined, user);
+		const evaluation = evaluatePolicy(managed.status === "ok" ? managed.value : undefined, user, {
+			managedUnavailable: managed.status === "error",
+		});
 		const warnings = [...evaluation.warnings];
-		if (managed.status === "error")
-			warnings.push("managed: policy storage unavailable; user settings suspended");
 		current = await applyDashboardDecisions(evaluation.policy, warnings);
 		currentWarnings = warnings;
 		for (const warning of currentWarnings) log(`policy: ${warning}`);
@@ -276,11 +283,50 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			log("dnr: failed to update blocked-site rules");
 		if (!(await applyShadowRules(chrome, current.shadowAi)))
 			log("dnr: failed to update Shadow AI rules");
+		enforceBlocksOnOpenTabs();
 		await customScripts.sync(current.customSites);
 		await telemetry.configure(current.telemetry);
 		if (!current.telemetry) await shadowUsage.clearPending();
 		if (broadcast) await broadcastPolicy();
 		return current;
+	}
+
+	/**
+	 * The block rules stop the next navigation only. A tab already open on a site or service
+	 * the policy now blocks is sent to blocked.html at once (queued with the tabs.onUpdated
+	 * events, so it is counted like a refused navigation). Tabs whose URL the browser does not
+	 * report (Shadow AI hosts without a grant) are cut off by the Shadow AI API rules instead.
+	 */
+	function enforceBlocksOnOpenTabs(): void {
+		const blockedIds = new Set(blockedServices(current.shadowAi).map((s) => s.id));
+		const blockedSites = current.blockedSites;
+		if (blockedIds.size === 0 && blockedSites.length === 0) return;
+		const blocked = (url: string) => {
+			const site = siteForUrl(url);
+			const service = serviceForUrl(url);
+			return (
+				(site !== null && blockedSites.includes(site)) || (!!service && blockedIds.has(service.id))
+			);
+		};
+		void chrome.tabs
+			.query({})
+			.then((tabs) => {
+				for (const tab of tabs) {
+					if (isTabId(tab.id) && typeof tab.url === "string" && blocked(tab.url))
+						queueTabUrl(tab.id, tab.url);
+				}
+			})
+			.catch(() => log("tabs: query failed; open tabs not checked against blocks"));
+	}
+
+	/** What ./open-tabs.ts needs to inject into open protected tabs without a live script. */
+	function injectDeps() {
+		return {
+			chrome,
+			contentTabs,
+			protectedUrl: (url: string | undefined) => contentSiteForUrl(url) !== null,
+			log,
+		};
 	}
 
 	/** Aggregated Shadow AI counts become telemetry events just before each flush. */
@@ -383,8 +429,23 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		}
 	}
 
+	/** Whether `tabId` runs a live content script for the page it currently shows. */
+	async function contentActive(tabId: number): Promise<boolean> {
+		let url: string | undefined;
+		try {
+			url = (await chrome.tabs.get?.(tabId))?.url;
+		} catch {
+			return false;
+		}
+		return contentTabs.isLive(tabId, url);
+	}
+
 	async function getStats(tabId: number | undefined): Promise<GuardStats> {
-		const [{ site, counters }, paused] = await Promise.all([stats.get(tabId), pausedUntil()]);
+		const [{ site, counters }, paused, active] = await Promise.all([
+			stats.get(tabId),
+			pausedUntil(),
+			tabId === undefined ? undefined : contentActive(tabId),
+		]);
 		return {
 			site,
 			protectedPrompts: counters.protectedPrompts,
@@ -393,6 +454,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			byType: counters.byType,
 			pausedUntil: current.allowUserPause ? paused : null,
 			nativeHost: current.useNativeHost && bridge ? bridge.status() : "disabled",
+			...(active === undefined ? {} : { contentActive: active }),
 		};
 	}
 
@@ -503,6 +565,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		if (!CHANNELS.includes(channel as PrivacyScanEvent["channel"])) return fail("BAD_MESSAGE");
 		if (native !== undefined && !NATIVE_NER_USES.includes(native as NativeNerUse))
 			return fail("BAD_MESSAGE");
+		const marks = await telemetryMarks();
 		// The site is derived from the sender, never taken from the message.
 		const tab = await stats.record(
 			who.tabId,
@@ -519,9 +582,20 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 				counts,
 				policyId: current.policyId,
 				...(native !== undefined ? { nativeNer: native as NativeNerUse } : {}),
+				...marks,
 			})
 			.catch(() => log("telemetry: failed to queue event"));
 		return { ok: true };
+	}
+
+	/** A send during a user pause, and invalid managed keys in force (counts only). */
+	async function telemetryMarks(): Promise<{ paused?: true; policyErrors?: number }> {
+		const paused = current.allowUserPause && (await pausedUntil()) !== null;
+		const policyErrors = Math.min(current.policyErrors?.length ?? 0, POLICY_ERRORS_MAX);
+		return {
+			...(paused ? { paused: true as const } : {}),
+			...(policyErrors > 0 ? { policyErrors } : {}),
+		};
 	}
 
 	/** Notice id -> highest acknowledged version, from storage.local (malformed entries dropped). */
@@ -574,6 +648,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	async function policyFor(who: Sender): Promise<GuardResponse> {
 		const content = who.kind === "content";
+		// A content script fetches its policy when it boots: the tab is protected from now on.
+		if (content && who.topFrame) await contentTabs.mark(who.tabId, who.origin);
 		return {
 			ok: true,
 			policy: effectivePolicy(content ? who.site : null, content, await pausedUntil()),
@@ -666,6 +742,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	});
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		void stats.removeTab(tabId);
+		void contentTabs.remove(tabId);
 		void vaults.removeTab(tabId);
 		shadowMonitor.removeTab(tabId);
 	});
@@ -680,17 +757,17 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			});
 		}
 		if (change?.origins?.length) {
+			// A new grant also protects the custom-site tabs that are already open.
 			void ready
 				.then(() => customScripts.sync(current.customSites))
+				.then(() => injectOpenTabs(injectDeps()))
 				.catch(() => log("custom sites: re-sync failed"));
 		}
 	};
 	chrome.permissions?.onAdded?.addListener(onPermissionsChanged);
 	chrome.permissions?.onRemoved?.addListener(onPermissionsChanged);
-	chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
-		const url = updatedTabUrl(changeInfo, tab);
-		if (!isTabId(tabId) || url === undefined) return;
-		// Handled one at a time, in arrival order, so a visit is never counted twice.
+	/** Handled one at a time, in arrival order, so a visit is never counted twice. */
+	function queueTabUrl(tabId: number, url: string): void {
 		const task = async () => {
 			await ready;
 			const site = await redirectBlockedTab(chrome, tabId, url);
@@ -701,6 +778,10 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			});
 		};
 		tabEvents = tabEvents.then(task).catch(() => log("dnr: could not show the blocked-site page"));
+	}
+	chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
+		const url = updatedTabUrl(changeInfo, tab);
+		if (isTabId(tabId) && url !== undefined) queueTabUrl(tabId, url);
 	});
 
 	const ready: Promise<void> = (async () => {
@@ -713,6 +794,14 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	// Not awaited by `ready`: the stored dashboard document is already applied, and a slow
 	// control plane must not delay message handling.
 	void ready.then(() => refreshDashboardPolicy());
+	// Install, update, enable and browser start-up all start a fresh worker with an empty
+	// storage.session: protect the AI tabs that were already open (./open-tabs.ts).
+	const openTabsInjected: Promise<readonly number[]> = ready
+		.then(() => injectOpenTabsOnce(storage, injectDeps()))
+		.catch(() => {
+			log("tabs: open-tab injection failed");
+			return [];
+		});
 
 	return {
 		ready,
@@ -723,6 +812,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		reload,
 		policy: () => current,
 		warnings: () => currentWarnings,
+		openTabsInjected,
 	};
 }
 

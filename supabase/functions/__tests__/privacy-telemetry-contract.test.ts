@@ -7,16 +7,19 @@ import { AI_SERVICES as BROWSER_GUARD_AI_SERVICES } from "../../../packages/brow
 import {
 	ENTITY_TYPES as BROWSER_GUARD_ENTITY_TYPES,
 	type NativeNerUse,
+	type PrivacyScanReason,
 } from "../../../packages/browser-guard/src/types.ts";
 import { ENTITY_TYPES as PRIVACY_ENTITY_TYPES_SOURCE } from "../../../packages/privacy/src/types.ts";
 import {
 	MAX_INGEST_EVENTS,
 	MAX_PRIVACY_ENTITY_KEYS,
+	MAX_PRIVACY_POLICY_ERRORS,
 	MAX_SHADOW_AI_COUNT,
 	normalizeIngestEvents,
 	PRIVACY_ACTION_DECISIONS,
 	PRIVACY_ENTITY_TYPES,
 	PRIVACY_NATIVE_NER_STATES,
+	PRIVACY_REASONS,
 	PRIVACY_SITES,
 	SHADOW_AI_ACTION_DECISIONS,
 	SHADOW_AI_SERVICE_CATEGORIES,
@@ -210,6 +213,27 @@ describe("privacy_scan ingest projection", () => {
 			expect(JSON.stringify(stored)).not.toContain("ayse.yilmaz");
 		}
 		expect(projectOne(scan())).not.toHaveProperty("native_ner");
+	});
+
+	it("keeps the paused reason and the policy error count, and drops anything else", () => {
+		expect(projectOne(scan({ action: "allowed", reason: "paused", policy_errors: 2 }))).toMatchObject(
+			{ action: "allowed", reason: "paused", policy_errors: 2 },
+		);
+		expect(projectOne(scan({ policy_errors: MAX_PRIVACY_POLICY_ERRORS }))).toMatchObject({
+			policy_errors: MAX_PRIVACY_POLICY_ERRORS,
+		});
+		for (const reason of ["PAUSED", "user", "", true, 1, null, ["paused"]]) {
+			expect(projectOne(scan({ reason }))).not.toHaveProperty("reason");
+		}
+		for (const policy_errors of [0, -1, 65, 1.5, "2", null, true]) {
+			expect(projectOne(scan({ policy_errors }))).not.toHaveProperty("policy_errors");
+		}
+		expect(projectOne(scan())).not.toHaveProperty("reason");
+		expect(projectOne(scan())).not.toHaveProperty("policy_errors");
+		// Type-level pin to Browser Guard's reason vocabulary.
+		const reasons: readonly PrivacyScanReason[] = PRIVACY_REASONS;
+		const every: Record<PrivacyScanReason, true> = { paused: true };
+		expect([...reasons].sort()).toEqual(Object.keys(every).sort());
 	});
 
 	it("pins the native_ner vocabulary to Browser Guard", () => {

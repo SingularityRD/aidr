@@ -2,10 +2,12 @@
  * Effective Browser Guard policy: administrator-managed policy (chrome.storage.managed)
  * merged over user settings (chrome.storage.local) merged over the built-in default.
  *
- * Validation is strict but never throws: an unknown key or a value of the wrong
- * shape is ignored as a whole (mirroring how Chrome drops a managed policy that
- * does not match static/managed_schema.json) and reported in a warning list.
- * Warnings name keys only, never values (an apiKey must not reach a log line).
+ * Validation is strict but never throws. An unknown key is ignored. A managed value of the
+ * wrong shape fails safe instead of falling back to the built-in default (several defaults
+ * are the permissive choice): a list keeps its valid entries, any other protection key takes
+ * its strictest value (see FAIL_SAFE), and the key is locked and listed in
+ * `policy.policyErrors` so the popup, the options page and telemetry can report it. Warnings
+ * and error codes name keys only, never values (an apiKey must not reach a log line).
  */
 import { AI_SERVICE_ID_PATTERN, AI_SERVICES } from "../sites/catalog.js";
 import { CUSTOM_SITE_LIMITS, SELECTOR_FORBIDDEN } from "../sites/custom.js";
@@ -98,6 +100,7 @@ export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
 	telemetry: null,
 	language: "auto",
 	managedKeys: [],
+	policyErrors: [],
 	policyId: "aidr-browser-guard-default",
 	acceptableUse: null,
 	dashboardPolicy: null,
@@ -517,7 +520,7 @@ const dashboardPolicy: Validator = (raw) => {
 	} satisfies DashboardPolicyTrust);
 };
 
-type ManagedKey = Exclude<keyof GuardPolicy, "version" | "managedKeys">;
+type ManagedKey = Exclude<keyof GuardPolicy, "version" | "managedKeys" | "policyErrors">;
 
 const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	mode: oneOf(GUARD_MODES),
@@ -546,6 +549,123 @@ const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	acceptableUse,
 	dashboardPolicy,
 };
+
+/** The valid entries of a list (at most `max`, duplicates dropped); [] for a non-list. */
+function validEntries<T>(raw: unknown, max: number, entry: (item: unknown) => T | null): T[] {
+	if (!Array.isArray(raw)) return [];
+	const out: T[] = [];
+	const seen = new Set<string>();
+	for (const item of raw) {
+		if (out.length >= max) break;
+		const value = entry(item);
+		if (value === null) continue;
+		const key = JSON.stringify(value);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(value);
+	}
+	return out;
+}
+
+const enumEntry =
+	<T extends string>(values: readonly T[]) =>
+	(item: unknown): T | null =>
+		typeof item === "string" && values.includes(item as T) ? (item as T) : null;
+
+const serviceIdEntry = (item: unknown): string | null =>
+	typeof item === "string" && AI_SERVICE_ID_PATTERN.test(item) ? item : null;
+
+/** Valid datasets of an invalid `exactData` list, within the per-policy limits. */
+function validDatasets(raw: unknown): ExactDataSet[] {
+	const out: ExactDataSet[] = [];
+	if (!Array.isArray(raw)) return out;
+	let total = 0;
+	for (const item of raw) {
+		if (out.length >= POLICY_LIMITS.maxExactDataSets) break;
+		const fields = datasetFields(item);
+		if (!fields || out.some((d) => d.datasetId === fields.datasetId)) continue;
+		if (total + fields.fingerprints.length > POLICY_LIMITS.maxFingerprintsTotal) continue;
+		if (!fields.fingerprints.every(isFingerprint)) continue;
+		total += fields.fingerprints.length;
+		const fingerprints = (fields.fingerprints as string[]).map((f) => f.toLowerCase());
+		out.push({ ...fields, fingerprints: [...new Set(fingerprints)] });
+	}
+	return out;
+}
+
+/** Valid sites of an invalid `customSites` list (duplicate ids and hosts dropped). */
+function validCustomSites(raw: unknown): CustomSiteConfig[] {
+	const out: CustomSiteConfig[] = [];
+	if (!Array.isArray(raw)) return out;
+	for (const item of raw) {
+		if (out.length >= CUSTOM_SITE_LIMITS.maxSites) break;
+		const site = customSite(item);
+		if (!site || out.some((s) => s.id === site.id || s.hosts.some((h) => site.hosts.includes(h))))
+			continue;
+		out.push(site);
+	}
+	return out;
+}
+
+const SERVICE_LIST_MAX = AI_SERVICES.length * 4;
+
+/**
+ * An invalid `shadowAi` keeps its valid service ids; a missing or unknown mode becomes
+ * `block-unsanctioned` (the strictest one: only sanctioned services stay reachable).
+ */
+function failSafeShadowAi(raw: unknown): ShadowAiPolicy {
+	const r = isPlainObject(raw) ? raw : {};
+	return {
+		mode: SHADOW_AI_MODES.includes(r.mode as ShadowAiMode)
+			? (r.mode as ShadowAiMode)
+			: "block-unsanctioned",
+		sanctioned: validEntries(r.sanctioned, SERVICE_LIST_MAX, serviceIdEntry),
+		blocked: validEntries(r.blocked, SERVICE_LIST_MAX, serviceIdEntry),
+	};
+}
+
+/**
+ * What an invalid managed value becomes (fail safe, never the permissive built-in default):
+ * lists keep their valid entries (a typo in one site id must not drop the whole block list),
+ * other protection keys take their strictest value. A REG_SZ "false" where a boolean is
+ * expected therefore turns pause and send-original off, and a mistyped mode blocks.
+ * Keys without an entry here have no safe value to invent (telemetry endpoint, language,
+ * policy id, notice, dashboard trust anchor, file size limit): they keep the built-in value.
+ * Every invalid key is still reported in `policyErrors`.
+ */
+const FAIL_SAFE: Readonly<Partial<Record<ManagedKey, (raw: unknown) => unknown>>> = {
+	mode: () => "block",
+	enabledEntities: () => [...ENTITY_TYPES],
+	neverRestore: () => [...ENTITY_TYPES],
+	literals: (raw) => validEntries(raw, POLICY_LIMITS.maxLiterals, literalRule),
+	exactData: validDatasets,
+	detectSignals: () => true,
+	signalAction: () => "block",
+	blockedSites: (raw) => validEntries(raw, SITE_ID_LIST.length, enumEntry(SITE_ID_LIST)),
+	disabledSites: (raw) => validEntries(raw, SITE_ID_LIST.length, enumEntry(SITE_ID_LIST)),
+	customSites: validCustomSites,
+	shadowAi: failSafeShadowAi,
+	allowUserPause: () => false,
+	allowSendAnyway: () => false,
+	maskPaste: () => true,
+	fileHandling: () => "block",
+	documentHandling: () => "block",
+	restoreResponses: () => false,
+	useNativeHost: () => true,
+	requireNativeNer: () => true,
+};
+
+/**
+ * Not user settings, but they let a user send data unmasked (pause, "send original"). Under
+ * any managed policy they are off unless the administrator sets them explicitly.
+ */
+export const MANAGED_OFF_BY_DEFAULT_KEYS = Object.freeze([
+	"allowUserPause",
+	"allowSendAnyway",
+] as const);
+
+/** `policyErrors` code for a managed policy that is not an object or could not be read. */
+export const POLICY_ERROR_WHOLE = "*";
 
 const USER_VALIDATORS: Readonly<Record<keyof UserSettings, Validator>> = {
 	mode: MANAGED_VALIDATORS.mode,
@@ -624,6 +744,15 @@ export interface PolicyEvaluation {
 	readonly warnings: readonly string[];
 }
 
+export interface EvaluateOptions {
+	/**
+	 * chrome.storage.managed could not be read. The administrator's intent is unknown, so it
+	 * is treated as a managed policy without valid keys: protection keys locked, pause and
+	 * send-original off, and a whole-policy error reported.
+	 */
+	readonly managedUnavailable?: boolean;
+}
+
 /**
  * Merges managed over user over default and reports everything that was ignored.
  * Never throws.
@@ -634,20 +763,29 @@ export interface PolicyEvaluation {
  * (`PROTECTION_SETTING_KEYS`) are locked too, at the managed or built-in value, unless the
  * managed policy sets `allowUserOverrides: true`. With overrides allowed, a managed `mode`
  * still locks `disabledSites` (a user must not be able to switch off an
- * administrator-mandated mode per site).
+ * administrator-mandated mode per site). Under any managed policy `allowUserPause` and
+ * `allowSendAnyway` are false unless the administrator sets them (MANAGED_OFF_BY_DEFAULT_KEYS).
  */
-export function evaluatePolicy(managed: unknown, user: unknown): PolicyEvaluation {
+export function evaluatePolicy(
+	managed: unknown,
+	user: unknown,
+	options: EvaluateOptions = {},
+): PolicyEvaluation {
 	const warnings: string[] = [];
 	const merged: Record<string, unknown> = { ...DEFAULT_POLICY };
 	const managedKeys: string[] = [];
+	const policyErrors: string[] = [];
 
-	const userResult = validateUserSettings(user);
+	const userResult = validateUserSettings(options.managedUnavailable ? undefined : user);
 	for (const key of userResult.unknownKeys) warnings.push(`user: unknown key "${key}" ignored`);
 	for (const key of userResult.invalidKeys)
 		warnings.push(`user: invalid value for "${key}" ignored`);
 	Object.assign(merged, userResult.settings);
 
-	const admin = mergeManaged(managed, merged, managedKeys, warnings);
+	const sink: ManagedSink = { managedKeys, policyErrors, warnings };
+	const admin = options.managedUnavailable
+		? managedUnavailable(sink)
+		: mergeManaged(managed, merged, sink);
 
 	if (managedKeys.includes("mode") && !managedKeys.includes("disabledSites")) {
 		if ((merged.disabledSites as readonly SiteId[]).length > 0)
@@ -659,10 +797,13 @@ export function evaluatePolicy(managed: unknown, user: unknown): PolicyEvaluatio
 	if (admin.present && !admin.allowUserOverrides)
 		lockProtectionKeys(merged, managedKeys, userResult.settings, warnings);
 
+	if (admin.present) switchOffUnlessManaged(merged, managedKeys);
+
 	if (merged.requireNativeNer === true) requireNativeHost(merged, managedKeys, warnings);
 
 	merged.version = 1;
 	merged.managedKeys = managedKeys;
+	merged.policyErrors = policyErrors;
 	return { policy: deepFreeze(merged as unknown as GuardPolicy), warnings };
 }
 
@@ -676,52 +817,102 @@ function exampleDataRefusal(value: unknown): string | null {
 	return null;
 }
 
+interface ManagedSink {
+	readonly managedKeys: string[];
+	readonly policyErrors: string[];
+	readonly warnings: string[];
+}
+
+interface ManagedPresence {
+	readonly present: boolean;
+	readonly allowUserOverrides: boolean;
+}
+
+/** Unreadable managed storage: unknown administrator intent, so it locks like a policy. */
+function managedUnavailable({ policyErrors, warnings }: ManagedSink): ManagedPresence {
+	warnings.push("managed: policy storage unavailable; user settings suspended");
+	policyErrors.push(POLICY_ERROR_WHOLE);
+	return { present: true, allowUserOverrides: false };
+}
+
+/** Pause and send-original are off under a managed policy unless the administrator set them. */
+function switchOffUnlessManaged(merged: Record<string, unknown>, managedKeys: string[]): void {
+	for (const key of MANAGED_OFF_BY_DEFAULT_KEYS) {
+		if (managedKeys.includes(key)) continue;
+		merged[key] = false;
+		managedKeys.push(key);
+	}
+}
+
 /**
  * Validates managed keys into `merged` / `managedKeys`. Reports whether a managed policy
  * is present (fail closed: a value that is not an object, or an object whose keys are all
- * invalid, is still administrator intent) and the `allowUserOverrides` switch.
+ * invalid, is still administrator intent) and the `allowUserOverrides` switch. An invalid
+ * value fails safe (FAIL_SAFE) and is recorded in `policyErrors`.
  */
 function mergeManaged(
 	managed: unknown,
 	merged: Record<string, unknown>,
-	managedKeys: string[],
-	warnings: string[],
-): { readonly present: boolean; readonly allowUserOverrides: boolean } {
+	sink: ManagedSink,
+): ManagedPresence {
 	if (managed === undefined || managed === null)
 		return { present: false, allowUserOverrides: false };
 	if (!isPlainObject(managed)) {
-		warnings.push("managed: policy is not an object; ignored");
+		sink.warnings.push("managed: policy is not an object; ignored");
+		sink.policyErrors.push(POLICY_ERROR_WHOLE);
 		return { present: true, allowUserOverrides: false };
 	}
 	let allowUserOverrides = false;
 	for (const [key, value] of Object.entries(managed)) {
-		if (key === ALLOW_USER_OVERRIDES_KEY) {
+		if (key !== ALLOW_USER_OVERRIDES_KEY) {
+			mergeManagedKey(key, value, merged, sink);
+		} else if (typeof value === "boolean") {
 			// Managed-only switch; never merged into the policy.
-			if (typeof value === "boolean") allowUserOverrides = value;
-			else warnings.push(`managed: invalid value for "${key}" ignored`);
-			continue;
+			allowUserOverrides = value;
+		} else {
+			// An invalid switch keeps the lock.
+			sink.warnings.push(`managed: invalid value for "${key}" ignored`);
+			sink.policyErrors.push(key);
 		}
-		const validator = Object.hasOwn(MANAGED_VALIDATORS, key)
-			? MANAGED_VALIDATORS[key as ManagedKey]
-			: undefined;
-		if (!validator) {
-			warnings.push(`managed: unknown key "${key}" ignored`);
-			continue;
-		}
-		const refusal = key === "exactData" ? exampleDataRefusal(value) : null;
-		if (refusal) {
-			warnings.push(refusal);
-			continue;
-		}
-		const result = validator(value);
-		if (!result.ok) {
-			warnings.push(`managed: invalid value for "${key}" ignored`);
-			continue;
-		}
-		merged[key] = result.value;
-		managedKeys.push(key);
 	}
 	return { present: Object.keys(managed).length > 0, allowUserOverrides };
+}
+
+/** One managed key: the validated value, else its fail-safe value (reported either way). */
+function mergeManagedKey(
+	key: string,
+	value: unknown,
+	merged: Record<string, unknown>,
+	{ managedKeys, policyErrors, warnings }: ManagedSink,
+): void {
+	const validator = Object.hasOwn(MANAGED_VALIDATORS, key)
+		? MANAGED_VALIDATORS[key as ManagedKey]
+		: undefined;
+	if (!validator) {
+		warnings.push(`managed: unknown key "${key}" ignored`);
+		return;
+	}
+	const refusal = key === "exactData" ? exampleDataRefusal(value) : null;
+	if (refusal) {
+		warnings.push(refusal);
+		policyErrors.push(key);
+		return;
+	}
+	const result = validator(value);
+	if (result.ok) {
+		merged[key] = result.value;
+		managedKeys.push(key);
+		return;
+	}
+	policyErrors.push(key);
+	const failSafe = FAIL_SAFE[key as ManagedKey];
+	if (!failSafe) {
+		warnings.push(`managed: invalid value for "${key}" ignored`);
+		return;
+	}
+	warnings.push(`managed: invalid value for "${key}"; fail-safe value applied`);
+	merged[key] = failSafe(value);
+	managedKeys.push(key);
 }
 
 /**
