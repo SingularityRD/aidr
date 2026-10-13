@@ -7,7 +7,7 @@ name = "aig-skill-scan"
 version = "0.2.1"
 description = "AI Native Agent Skill security auditing tool - an LLM-driven multi-stage code audit and vulnerability review pipeline"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [
   { name = "Tencent Zhuque Lab", email = "zhuque@tencent.com" },
@@ -33,7 +33,6 @@ classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -48,7 +47,7 @@ dependencies = [
   "loguru==0.7.3",
   "openai==2.8.1",
   "pydantic==2.12.4",
-  "python-dotenv==1.0.0",
+  "python-dotenv==1.2.2",
 ]
 
 [project.optional-dependencies]
@@ -94,7 +93,7 @@ packages = { find = { include = ["skill_scan*"] } }
 # ===== The sections below are dev-tool configuration; they do not affect packaging =====
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 extend-exclude = [
   "prompt",
