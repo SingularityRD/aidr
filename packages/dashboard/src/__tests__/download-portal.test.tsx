@@ -303,7 +303,7 @@ describe("download page", () => {
 
 	it("renders in Turkish", async () => {
 		renderPage({ visitorOs: { os: "macos", arch: "x64" } }, "tr");
-		expect(screen.getByRole("heading", { level: 1, name: "İndir" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { level: 1, name: "İndirmeler" })).toBeInTheDocument();
 		expect(await screen.findByText(/macOS yükleyicisi henüz sunulmuyor/)).toBeInTheDocument();
 		expect(
 			screen.getByRole("button", { name: "AIDR-Setup-1.4.0-x64.msi dosyasını indir" }),
@@ -333,7 +333,9 @@ describe("onboarding", () => {
 		expect(headings[0]).toBe("1) Download and run the installer");
 		const install = screen.getByRole("region", { name: "1) Download and run the installer" });
 		expect(await within(install).findAllByRole("button", { name: /^Download / })).toHaveLength(2);
-		const manual = screen.getByRole("heading", { name: "1) Choose runtime" }).closest("details");
+		const manual = screen
+			.getByRole("heading", { name: "1) Choose your AI tool" })
+			.closest("details");
 		expect(manual).not.toBeNull();
 		expect(manual).not.toHaveAttribute("open");
 		expect(

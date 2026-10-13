@@ -35,6 +35,7 @@ import {
 	LOCALE_STORAGE_KEY,
 	translate,
 } from "../i18n/I18nProvider";
+import { messageModules, pageMessages } from "../i18n/messages";
 import { tr } from "../i18n/tr";
 import { AppLayout } from "../ui/AppLayout";
 import { NotFoundPage } from "../ui/NotFoundPage";
@@ -82,6 +83,12 @@ describe("dashboard catalog parity", () => {
 			expect(turkish.trim(), key).not.toBe("");
 			expect(placeholders(turkish), key).toEqual(placeholders(english));
 		}
+	});
+
+	it("defines each page message key in exactly one module", () => {
+		const all = messageModules.flatMap((module) => Object.keys(module));
+		expect(all.length).toBe(new Set(all).size);
+		expect(Object.keys(pageMessages)).toHaveLength(all.length);
 	});
 
 	it("has no unused keys", () => {

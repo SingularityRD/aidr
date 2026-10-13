@@ -136,7 +136,6 @@ const base = {
 	"login.companyUnavailable": "Company sign-in is unavailable. Contact your administrator.",
 	"login.providerUnavailable": "This sign-in provider is unavailable. Contact your administrator.",
 
-	"downloads.title": "Download",
 	"downloads.intro":
 		"Install AIDR for {team} in three steps: download the installer, run it, and restart your AI tools.",
 	"downloads.yourTeam": "your team",

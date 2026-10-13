@@ -11,6 +11,8 @@
  * tenant's actual plan comes from the member-only get_tenant_plan RPC, and a
  * card checkout's amount comes from the payment provider's price at checkout.
  */
+
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import { supabase } from "../lib/supabase";
 
 export type PlanId = "free" | "team" | "business" | "enterprise";
@@ -136,22 +138,23 @@ export const DEPLOYMENT_LABELS: Record<PlanDeployment, string> = {
 };
 
 /** Shown wherever a price slot used to be. Prices are never published. */
-export const QUOTE_NOTICE =
-	"Prices are not published. Paid editions are quoted for your seats and deployment; a written quote or order governs.";
+export const QUOTE_NOTICE = englishT("plan.quoteNotice");
 
 export function planById(id: string): PlanDefinition | null {
 	return PLAN_CATALOG.find((plan) => plan.id === id) ?? null;
 }
 
-export function seatTerms(plan: PlanDefinition): string {
-	if (plan.id === "free") return `${plan.includedAgents} protected agent`;
-	return plan.minSeats > 1 ? `Minimum ${plan.minSeats} developers` : "Scoped per agreement";
+export function seatTerms(plan: PlanDefinition, t: Translate = englishT): string {
+	if (plan.id === "free") return t("plan.terms.freeAgents", { count: plan.includedAgents });
+	return plan.minSeats > 1
+		? t("plan.terms.minDevelopers", { count: plan.minSeats })
+		: t("plan.terms.agreement");
 }
 
-export function retentionTerms(plan: PlanDefinition): string {
+export function retentionTerms(plan: PlanDefinition, t: Translate = englishT): string {
 	return plan.retentionDays === null
-		? "Contractual retention"
-		: `${plan.retentionDays}-day event retention`;
+		? t("plan.terms.contractual")
+		: t("plan.terms.retention", { days: plan.retentionDays });
 }
 
 export interface TenantPlan {

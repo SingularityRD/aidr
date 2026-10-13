@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { type EvidenceAuditRow, EvidenceView } from "../../enterprise/evidence-view";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { type Translate, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { FrameworkTags } from "../framework-coverage";
@@ -60,18 +62,36 @@ export function isCanaryTrigger(e: Pick<EventRow, "payload">): boolean {
 	return e.payload?.source === "canary" || (typeof rule === "string" && CANARY_RULE_ID.test(rule));
 }
 
-function summarize(e: EventRow): string {
+const VERDICT_LABEL: Record<string, DashboardMessageKey> = {
+	allow: "verdict.allow",
+	deny: "verdict.deny",
+	ask: "verdict.ask",
+};
+
+function verdictLabel(verdict: string, t: Translate): string {
+	const key = VERDICT_LABEL[verdict];
+	return key ? t(key) : verdict;
+}
+
+function summarize(e: EventRow, t: Translate): string {
 	if (e.type === "plugin_scan") return pluginScanSummary(e.payload);
 	if (e.type === "runtime_verdict") {
-		const tool = typeof e.payload?.tool_name === "string" ? String(e.payload.tool_name) : "tool";
-		const verdict = typeof e.payload?.verdict === "string" ? String(e.payload.verdict) : "unknown";
+		const tool =
+			typeof e.payload?.tool_name === "string" ? String(e.payload.tool_name) : t("activity.tool");
+		const verdict =
+			typeof e.payload?.verdict === "string"
+				? verdictLabel(String(e.payload.verdict), t)
+				: t("common.unknown");
 		const severity = typeof e.payload?.severity === "string" ? String(e.payload.severity) : "";
 		return `${tool}: ${verdict}${severity ? ` (${severity})` : ""}`;
 	}
 	if (e.type === "incident") {
-		const tool = typeof e.payload?.tool_name === "string" ? String(e.payload.tool_name) : "tool";
+		const tool =
+			typeof e.payload?.tool_name === "string" ? String(e.payload.tool_name) : t("activity.tool");
 		const decision =
-			typeof e.payload?.decision === "string" ? String(e.payload.decision) : "unknown";
+			typeof e.payload?.decision === "string"
+				? verdictLabel(String(e.payload.decision), t)
+				: t("common.unknown");
 		const severity = typeof e.payload?.severity === "string" ? String(e.payload.severity) : "";
 		const reasons = Array.isArray(e.payload?.reasons) ? (e.payload.reasons as unknown[]) : [];
 		const reason0 = typeof reasons[0] === "string" ? String(reasons[0]) : "";
@@ -84,19 +104,21 @@ function summarize(e: EventRow): string {
 		const status = incident && typeof incident.status === "string" ? String(incident.status) : "";
 		const events = incident && Array.isArray(incident.events) ? incident.events : [];
 		const n = events.length;
-		return `correlated incident${severity ? ` (${severity})` : ""}${status ? ` [${status}]` : ""} — ${n} event(s)`;
+		return `${t("incidents.correlated")}${severity ? ` (${severity})` : ""}${status ? ` [${status}]` : ""} — ${t("incidents.eventCount", { count: n })}`;
 	}
-	return "Additional incident details are not shown.";
+	return t("incidents.noDetails");
 }
 
 export function IncidentsPage() {
 	const { currentTeam, isLoading } = useTeam();
-	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
-	if (!currentTeam) return <div role="alert">Select a team to view incidents.</div>;
+	const t = useT();
+	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
+	if (!currentTeam) return <div role="alert">{t("incidents.noTeam")}</div>;
 	return <TenantIncidentsPage key={currentTeam.id} tenantId={currentTeam.id} />;
 }
 
 function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
+	const t = useT();
 	const [agents, setAgents] = useState<Map<string, AgentRow>>(new Map());
 	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -142,12 +164,12 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 				const problems: string[] = [];
 
 				if (eventsRes.error || !Array.isArray(eventsRes.data)) {
-					problems.push(readErrorMessage(eventsRes.error, "Failed to load incidents"));
+					problems.push(readErrorMessage(eventsRes.error, t("incidents.loadFailed")));
 					setEvents(null);
 				} else setEvents(eventsRes.data as EventRow[]);
 
 				if (agentsRes.error || !Array.isArray(agentsRes.data)) {
-					problems.push(readErrorMessage(agentsRes.error, "Failed to load agents"));
+					problems.push(readErrorMessage(agentsRes.error, t("agents.loadFailed")));
 					setAgents(new Map());
 				} else {
 					const map = new Map<string, AgentRow>();
@@ -161,7 +183,7 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 				if (cancelled) return;
 				setEvents(null);
 				setAgents(new Map());
-				setError("Failed to load incidents");
+				setError(t("incidents.loadFailed"));
 			} finally {
 				inFlight = false;
 				if (!cancelled) setLoaded(true);
@@ -169,10 +191,10 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 		}
 
 		load();
-		const t = setInterval(load, 6000);
+		const timer = setInterval(load, 6000);
 		return () => {
 			cancelled = true;
-			clearInterval(t);
+			clearInterval(timer);
 		};
 	}, [tenantId]);
 
@@ -221,25 +243,26 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 			<div className="card">
 				<div className="row space-between" style={{ alignItems: "flex-start" }}>
 					<div>
-						<h1>Incidents</h1>
-						<p className="muted">
-							Potential incidents derived from received blocked and approval-required verdicts.
-							Counts cover the latest 500 events, not the complete local incident history.
-						</p>
+						<h1>{t("nav.incidents")}</h1>
+						<p className="muted">{t("incidents.intro")}</p>
 					</div>
 					<button
 						className="button button-secondary button-sm"
 						type="button"
 						onClick={() => location.reload()}
 					>
-						Refresh
+						{t("common.refresh")}
 					</button>
 				</div>
 				{events !== null ? (
 					<div className="row" style={{ marginTop: 14 }}>
-						<span className="badge badge-deny">{denyCount} blocked</span>
-						<span className="badge badge-ask">{askCount} approval required</span>
-						<span className="badge badge-info">{scanCount} scan findings</span>
+						<span className="badge badge-deny">
+							{t("incidents.count.blocked", { count: denyCount })}
+						</span>
+						<span className="badge badge-ask">{t("incidents.count.ask", { count: askCount })}</span>
+						<span className="badge badge-info">
+							{t("incidents.count.scans", { count: scanCount })}
+						</span>
 					</div>
 				) : null}
 				{error ? (
@@ -254,10 +277,10 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Time</th>
-								<th>Agent</th>
-								<th>Type</th>
-								<th>Summary</th>
+								<th>{t("activity.time")}</th>
+								<th>{t("activity.agent")}</th>
+								<th>{t("activity.type")}</th>
+								<th>{t("activity.summary")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -283,12 +306,12 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 											<span className="badge badge-neutral badge-plain mono">{e.type}</span>
 											{isCanaryTrigger(e) ? (
 												<div>
-													<span className="badge badge-deny">Canary triggered</span>
+													<span className="badge badge-deny">{t("incidents.canary")}</span>
 												</div>
 											) : null}
 										</td>
 										<td className="mono">
-											{summarize(e)}
+											{summarize(e, t)}
 											{e.type === "runtime_verdict" || e.type === "incident" ? (
 												<FrameworkTags ruleId={e.payload?.matched_threat_id} />
 											) : null}
@@ -301,9 +324,9 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 									<td colSpan={4} className="muted">
 										{events === null
 											? loaded
-												? "Incident data is unavailable right now."
-												: "Loading incidents…"
-											: "No incidents yet."}
+												? t("incidents.unavailable")
+												: t("incidents.loading")
+											: t("incidents.empty")}
 									</td>
 								</tr>
 							) : null}

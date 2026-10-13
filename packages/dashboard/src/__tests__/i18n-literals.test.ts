@@ -70,10 +70,7 @@ const WORD = /[A-Za-z]{2,}/;
  * hold. The list may only shrink: a new literal anywhere fails the test.
  */
 const PENDING: Record<string, number> = {
-	"billing/plan-card.tsx": 31,
-	"billing/provider-selector.tsx": 1,
 	"components/Turnstile.tsx": 3,
-	"components/usage-metering.tsx": 27,
 	"enterprise/admin-audit-section.tsx": 19,
 	"enterprise/admin-panel.tsx": 57,
 	"enterprise/agent-profile-editor.tsx": 38,
@@ -85,29 +82,24 @@ const PENDING: Record<string, number> = {
 	"enterprise/identity-bootstrap.tsx": 6,
 	"enterprise/team-audit-panel.tsx": 20,
 	"enterprise/team-provider.tsx": 9,
-	"onboarding/DownloadCenter.tsx": 33,
 	"ui/PublicLayout.tsx": 2,
 	"ui/framework-coverage.tsx": 13,
 	"ui/governance/common.tsx": 6,
 	"ui/pages/ApiKeysPage.tsx": 71,
 	"ui/pages/AuthCallbackPage.tsx": 15,
 	"ui/pages/AutoSecOpsPage.tsx": 31,
-	"ui/pages/BillingPage.tsx": 96,
 	"ui/pages/CompliancePage.tsx": 37,
 	"ui/pages/DashboardPage.tsx": 42,
 	"ui/pages/DetectionExceptionsPage.tsx": 34,
 	"ui/pages/DirectoryAuthorityPanel.tsx": 25,
 	"ui/pages/DiscoveryPage.tsx": 55,
-	"ui/pages/EventsPage.tsx": 19,
 	"ui/pages/GovernanceChangeControlPage.tsx": 61,
 	"ui/pages/GovernancePage.tsx": 128,
 	"ui/pages/GovernanceRegisterPage.tsx": 82,
 	"ui/pages/GovernanceRequestsPage.tsx": 89,
-	"ui/pages/IncidentsPage.tsx": 19,
 	"ui/pages/OidcBreakGlassPage.tsx": 12,
 	"ui/pages/OidcCallbackPage.tsx": 4,
 	"ui/pages/OidcSsoPage.tsx": 73,
-	"ui/pages/OnboardingPage.tsx": 75,
 	"ui/pages/OperatorPage.tsx": 100,
 	"ui/pages/PosturePage.tsx": 99,
 	"ui/pages/PrivacyGuardPage.tsx": 125,
@@ -183,7 +175,14 @@ function literalUiText(file: string): string[] {
 		return [lines[line], lines[line - 1]].some((text) => text?.includes("i18n-exempt"));
 	};
 	const found: string[] = [];
+	// A declaration or property whose leading comment says i18n-exempt is
+	// skipped whole (for example an English prompt written for an AI agent).
+	const exemptSubtree = (node: ts.Node): boolean =>
+		(ts.getLeadingCommentRanges(source.text, node.getFullStart()) ?? []).some((range) =>
+			source.text.slice(range.pos, range.end).includes("i18n-exempt"),
+		);
 	const visit = (node: ts.Node): void => {
+		if (exemptSubtree(node)) return;
 		if (
 			exempt(node) &&
 			(ts.isStringLiteral(node) || ts.isTemplateExpression(node) || ts.isJsxText(node))

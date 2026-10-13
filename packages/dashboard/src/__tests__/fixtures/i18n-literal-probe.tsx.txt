@@ -3,7 +3,11 @@
 declare const t: (key: string) => string;
 declare const count: number;
 
+// i18n-exempt: instructions for an AI agent stay in English.
+const agentPrompt = ["You are installing the product now.", "Stop if the version is unknown."];
+
 export function Probe() {
+	void agentPrompt;
 	const message = "Approval signing key rotated.";
 	if (count < 0) throw new Error("Count must not be negative here");
 	return (

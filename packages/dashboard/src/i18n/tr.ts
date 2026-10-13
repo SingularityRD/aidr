@@ -134,7 +134,6 @@ const base: Record<BaseMessageKey, string> = {
 	"login.providerUnavailable":
 		"Bu oturum açma sağlayıcısı kullanılamıyor. Yöneticinizle iletişime geçin.",
 
-	"downloads.title": "İndir",
 	"downloads.intro":
 		"AIDR'yi {team} için üç adımda kurun: yükleyiciyi indirin, çalıştırın ve yapay zekâ araçlarınızı yeniden başlatın.",
 	"downloads.yourTeam": "ekibiniz",

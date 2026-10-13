@@ -17,6 +17,8 @@
  *     `over_limit`; neither is filtered out or shown as a pass.
  */
 
+import type { DashboardMessageKey } from "../i18n/en";
+
 /** The only SKU whose quantity counts as protected-agent seats. */
 const RECONCILIATION_SEAT_SKU = "aidr.agent.seat";
 
@@ -28,13 +30,14 @@ export type ReconciliationStatus =
 	| "ambiguous"
 	| "currency_mismatch";
 
-export const RECONCILIATION_LABELS: Record<ReconciliationStatus, string> = {
-	matched: "Matched",
-	unmatched: "Unmatched",
-	over_limit: "Over limit",
-	partial: "Partial",
-	ambiguous: "Ambiguous",
-	currency_mismatch: "Currency mismatch",
+/** Catalog keys of the status labels (src/i18n/messages/billing.ts). */
+export const RECONCILIATION_LABELS: Record<ReconciliationStatus, DashboardMessageKey> = {
+	matched: "billing.rec.matched",
+	unmatched: "billing.rec.unmatched",
+	over_limit: "billing.rec.overLimit",
+	partial: "billing.rec.partial",
+	ambiguous: "billing.rec.ambiguous",
+	currency_mismatch: "billing.rec.currency",
 };
 
 /** A recorded finance approval, as returned by the `invoice-entitlement` route. */
@@ -101,7 +104,9 @@ function seatTotal(lines: ReconciliationSettlement["lines"]): number | null {
 }
 
 /** One row per settlement id: only a latest receipt that is settled counts. */
-function latestSettled(settlements: readonly ReconciliationSettlement[]): ReconciliationSettlement[] {
+function latestSettled(
+	settlements: readonly ReconciliationSettlement[],
+): ReconciliationSettlement[] {
 	const byId = new Map<string, ReconciliationSettlement>();
 	for (const row of settlements) {
 		const current = byId.get(row.settlementId);
@@ -179,7 +184,11 @@ function approvedRow(
 			sum + (Number.isSafeInteger(match.settledAmountMinor) ? match.settledAmountMinor : 0),
 		0,
 	);
-	if (settledSeats !== null && approval.agentsGranted !== null && settledSeats > approval.agentsGranted) {
+	if (
+		settledSeats !== null &&
+		approval.agentsGranted !== null &&
+		settledSeats > approval.agentsGranted
+	) {
 		return {
 			...base,
 			settledAmountMinor,
@@ -188,10 +197,7 @@ function approvedRow(
 			reason: "settled_seats_exceed_approved_agents",
 		};
 	}
-	if (
-		approval.amountMinor !== null &&
-		settledAmountMinor > approval.amountMinor
-	) {
+	if (approval.amountMinor !== null && settledAmountMinor > approval.amountMinor) {
 		return {
 			...base,
 			settledAmountMinor,
@@ -203,7 +209,9 @@ function approvedRow(
 	if (
 		(approval.agentsGranted !== null && settledSeats === null) ||
 		(approval.amountMinor !== null && settledAmountMinor < approval.amountMinor) ||
-		(approval.agentsGranted !== null && settledSeats !== null && settledSeats < approval.agentsGranted)
+		(approval.agentsGranted !== null &&
+			settledSeats !== null &&
+			settledSeats < approval.agentsGranted)
 	) {
 		return {
 			...base,

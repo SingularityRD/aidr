@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
-import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -193,6 +193,14 @@ async function structuralChecks() {
 		read("packages/dashboard/tests/browser-smoke.manifest.json"),
 		read("packages/dashboard/src/i18n/en.ts"),
 	]);
+	// User-facing wording lives in the EN/TR catalogs: en.ts plus the page
+	// message modules, so wording checks read the catalog text.
+	const messageDir = "packages/dashboard/src/i18n/messages";
+	const messageFiles = (await readdir(join(sourceRoot, messageDir))).filter((name) => name.endsWith(".ts"));
+	const catalog = [
+		enCatalog,
+		...(await Promise.all(messageFiles.map((name) => read(`${messageDir}/${name}`)))),
+	].join("\n");
 	const manifest = JSON.parse(browserManifest);
 	if (manifest.version !== 1 || !Array.isArray(manifest.scenarios) || manifest.scenarios.length < 5) {
 		fail("browser smoke manifest is missing required release scenarios");
@@ -274,7 +282,8 @@ async function structuralChecks() {
 	assertIncludes(commercial, "export function safeCommercialLink", "billing URL validation");
 	assertIncludes(commercial, 'VITE_AIDR_COMMERCIAL_MODE ?? "invoice"', "invoice-only commercial default");
 	assertIncludes(billing, "selfServiceCheckoutEnabled", "billing checkout gate");
-	assertIncludes(billing, "Enterprise / manual invoice", "enterprise invoice workflow");
+	assertIncludes(billing, 't("billing.enterprise.title")', "enterprise invoice workflow");
+	assertIncludes(catalog, '"Enterprise / manual invoice"', "enterprise invoice workflow label");
 	assertRegex(
 		scim,
 		/supabase\.functions\.invoke<unknown>\(\s*query\s*\?\s*`scim-admin\?\$\{query\}`\s*:\s*"scim-admin"/,

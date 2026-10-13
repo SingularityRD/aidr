@@ -91,7 +91,7 @@ describe("download center", () => {
 
 	it("shows a not-configured state with install guidance and no download links", async () => {
 		renderAt(<DownloadsPage />);
-		expect(screen.getByRole("heading", { level: 1, name: "Download" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { level: 1, name: "Downloads" })).toBeInTheDocument();
 		expect(
 			screen.getByText(/No release manifest is published for this deployment/),
 		).toBeInTheDocument();
@@ -257,6 +257,51 @@ describe("download center", () => {
 			).toBeInTheDocument(),
 		);
 		expect(screen.queryByText("Not detected yet")).not.toBeInTheDocument();
+	});
+
+	it("pins the agent prompt to the release version and offers Codex", async () => {
+		window.__AIDR_CONFIG__ = { releaseManifestUrl: "/release-manifest.json" };
+		const manifest = releaseManifest();
+		manifest.artifacts.push({
+			id: "openclaw",
+			version: "2.0.0",
+			url: "https://downloads.customer.example/aidr/2.0.0/singularityrd-aidr-openclaw-2.0.0.tgz",
+			sha256: "f".repeat(64),
+			size: 700,
+			platforms: ["any"],
+		});
+		vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(manifest), { status: 200 }));
+		renderAt(<OnboardingPage />);
+		const prompt = screen.getByRole("textbox", {
+			name: "Prompt to give your agent",
+		}) as HTMLTextAreaElement;
+
+		fireEvent.click(screen.getByRole("button", { name: "OpenClaw" }));
+		await waitFor(() =>
+			expect(prompt.value).toContain(
+				"openclaw plugins install npm:@singularityrd/aidr-openclaw@2.0.0",
+			),
+		);
+		expect(prompt.value).not.toMatch(/aidr-openclaw(\s|$)/);
+		expect(prompt.value).toContain("aidr setup --release-key <key.pem>");
+
+		// No Codex artifact in this release: the prompt stops and asks for the version.
+		fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+		expect(prompt.value).toContain(
+			"npm install --global @singularityrd/aidr-codex@<APPROVED_VERSION>",
+		);
+		expect(prompt.value).toContain("Stop and ask me for the approved exact version");
+		expect(prompt.value).toContain('command = "aidr-codex-hook"');
+		expect(
+			screen.getByText(/release version is not available on this dashboard/),
+		).toBeInTheDocument();
+
+		// The manual path explains the release key; the installer path provisions it.
+		expect(screen.getByTestId("onboarding-release-key")).toHaveTextContent(
+			"aidr setup --release-key <key.pem>",
+		);
+		const installer = screen.getByRole("region", { name: "1) Download and run the installer" });
+		expect(installer).not.toHaveTextContent(/release-key/);
 	});
 
 	it("adds a Download & connect step to onboarding for the selected runtime", async () => {
