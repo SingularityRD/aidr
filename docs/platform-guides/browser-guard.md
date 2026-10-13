@@ -22,9 +22,12 @@ restores the originals locally in the answer.
 | Firefox | Mozilla-signed XPI (addons.mozilla.org or self-hosted unlisted) | `policies.json` `ExtensionSettings` |
 
 Build the store packages with `pnpm package:browser-guard`. It writes
-`packages/browser-guard/dist/aidr-browser-guard-{chrome,firefox}-<version>.zip`
-and a `SHA256SUMS` file; the zips are reproducible, so you can rebuild from the
-tagged source and compare the hashes.
+`packages/browser-guard/dist/aidr-browser-guard-{chrome,firefox,source}-<version>.zip`
+and a `SHA256SUMS` file and runs the offline store validator; the zips are
+reproducible, so you can rebuild from the tagged source and compare the hashes.
+Step-by-step deployment from the store listings (Intune, Google Admin console, Jamf,
+Group Policy, Firefox `policies.json`, verification, rollback):
+[`docs/installation/browser-guard-enterprise.md`](../installation/browser-guard-enterprise.md).
 
 ### 2. Decide the policy
 

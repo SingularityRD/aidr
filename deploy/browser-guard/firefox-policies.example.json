@@ -7,7 +7,7 @@
       },
       "browser-guard@singularityrd.com": {
         "installation_mode": "force_installed",
-        "install_url": "https://downloads.example.com/aidr/aidr-browser-guard-firefox-latest.xpi"
+        "install_url": "https://<FIREFOX_XPI_HOST>/aidr-browser-guard-firefox-latest.xpi"
       }
     },
     "DisablePrivateBrowsing": true,

@@ -184,6 +184,8 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 		["release-images.yml::Upload release image evidence (pinned)", ["release-images/"]],
 		["error-to-insight.yml::Upload Insights Report", ["error-insights-report.md"]],
 		["release-browser-guard.yml::Upload Browser Guard release bundle (pinned)", ["release-output-browser-guard/"]],
+		// Store draft receipts: store, version, package sha256 and upload state; never a credential.
+		["release-browser-guard.yml::Upload store draft receipts (pinned)", ["store-receipts/"]],
 		["release-promote.yml::Persist anti-rollback state and verification receipt (pinned)", [
 			"${{ runner.temp }}/aidr-promotion-state/anti-rollback-state.json",
 			"${{ runner.temp }}/aidr-promotion-state/verification-receipt.json",

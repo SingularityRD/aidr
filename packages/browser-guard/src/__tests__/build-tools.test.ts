@@ -388,8 +388,17 @@ const SITE_IDS = [
 ];
 const EXACT_DATA_PLACEHOLDER_WARNING =
 	'managed: "exactData" still holds the example placeholder key; ignored. Build each dataset with fingerprint-dataset.mjs';
-const CHROME_ID = "REPLACE_WITH_CHROME_EXTENSION_ID";
-const EDGE_ID = "REPLACE_WITH_EDGE_EXTENSION_ID";
+/** Store-listing placeholders: force-install from the Chrome Web Store / Edge Add-ons by store id. */
+const CHROME_ID = "<CHROME_WEB_STORE_ID>";
+const EDGE_ID = "<EDGE_ADDONS_ID>";
+const GECKO_ID = "browser-guard@singularityrd.com";
+const DEPLOY_FILES = [
+	"chrome-managed-policy.example.json",
+	"firefox-policies.example.json",
+	"edge-intune.example.json",
+	"macos-jamf.example.mobileconfig",
+	"windows-registry.example.reg",
+];
 
 function readDeploy(name: string): string {
 	return readFileSync(join(DEPLOY, name), "utf8");
@@ -514,6 +523,45 @@ describe("deployment examples", () => {
 		assertValidPolicy(canonical);
 	});
 
+	it("installs from the stores by store id: clearly marked placeholders, store update URLs, the AMO id", () => {
+		for (const file of DEPLOY_FILES) {
+			const text = readDeploy(file);
+			// The pre-store placeholders are gone everywhere.
+			expect(text).not.toMatch(/REPLACE_WITH_(?:CHROME|EDGE)_EXTENSION_ID/);
+			// Every Chrome/Edge id use is the store placeholder (XML-escaped in the plist).
+			const decoded = text.replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+			if (
+				[
+					"edge-intune.example.json",
+					"macos-jamf.example.mobileconfig",
+					"windows-registry.example.reg",
+				].includes(file)
+			) {
+				expect(decoded).toContain(EDGE_ID);
+				expect(decoded).toContain("https://edge.microsoft.com/extensionwebstorebase/v1/crx");
+			}
+			if (
+				[
+					"chrome-managed-policy.example.json",
+					"macos-jamf.example.mobileconfig",
+					"windows-registry.example.reg",
+				].includes(file)
+			) {
+				expect(decoded).toContain(CHROME_ID);
+				expect(decoded).toContain("https://clients2.google.com/service/update2/crx");
+			}
+		}
+		const firefox = JSON.parse(readDeploy("firefox-policies.example.json")).policies;
+		expect(Object.keys(firefox["3rdparty"].Extensions)).toEqual([GECKO_ID]);
+		expect(firefox.ExtensionSettings[GECKO_ID].install_url).toContain("<FIREFOX_XPI_HOST>");
+		// A forcelist entry is "<id>;<update url>": the placeholder must not swallow the separator.
+		const chrome = JSON.parse(readDeploy("chrome-managed-policy.example.json"));
+		expect(chrome.ExtensionInstallForcelist[0].split(";")).toEqual([
+			CHROME_ID,
+			"https://clients2.google.com/service/update2/crx",
+		]);
+	});
+
 	it("the example exact-data set is a keyless placeholder (BG-8)", () => {
 		const [dataset] = canonical.exactData as unknown as ExactDataSet[];
 		expect(dataset.keyB64).toBeUndefined();
@@ -522,13 +570,7 @@ describe("deployment examples", () => {
 		expect(dataset.fingerprints).toEqual(["REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"]);
 		expect(() => createExactDataMatcher([dataset])).toThrow(ExactDataConfigError);
 		// No example file carries a key any more (managed policy is readable by every user).
-		for (const file of [
-			"chrome-managed-policy.example.json",
-			"firefox-policies.example.json",
-			"edge-intune.example.json",
-			"macos-jamf.example.mobileconfig",
-			"windows-registry.example.reg",
-		]) {
+		for (const file of DEPLOY_FILES) {
 			const text = readDeploy(file);
 			expect(text).toContain("REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET");
 			expect(text).not.toContain("keyB64");

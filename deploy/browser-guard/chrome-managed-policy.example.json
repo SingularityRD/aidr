@@ -1,13 +1,13 @@
 {
   "ExtensionSettings": {
-    "REPLACE_WITH_CHROME_EXTENSION_ID": {
+    "<CHROME_WEB_STORE_ID>": {
       "installation_mode": "force_installed",
       "update_url": "https://clients2.google.com/service/update2/crx",
       "toolbar_pin": "force_pinned"
     }
   },
   "ExtensionInstallForcelist": [
-    "REPLACE_WITH_CHROME_EXTENSION_ID;https://clients2.google.com/service/update2/crx"
+    "<CHROME_WEB_STORE_ID>;https://clients2.google.com/service/update2/crx"
   ],
   "IncognitoModeAvailability": 1,
   "BrowserGuestModeEnabled": false,
@@ -16,11 +16,11 @@
     "*"
   ],
   "ExtensionInstallAllowlist": [
-    "REPLACE_WITH_CHROME_EXTENSION_ID"
+    "<CHROME_WEB_STORE_ID>"
   ],
   "3rdparty": {
     "extensions": {
-      "REPLACE_WITH_CHROME_EXTENSION_ID": {
+      "<CHROME_WEB_STORE_ID>": {
         "policyId": "acme-browser-guard-2026-09",
         "mode": "auto",
         "enabledEntities": [

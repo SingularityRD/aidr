@@ -1,0 +1,35 @@
+Singularity AIDR Browser Guard checks what you send to AI chat tools for personal and confidential data, replaces it with placeholders before it leaves the browser, and restores the original values locally when the placeholders come back in the answer.
+
+WHERE IT WORKS
+ChatGPT, Google Gemini, Claude, Microsoft Copilot and Microsoft 365 Copilot Chat, Perplexity, DeepSeek, Mistral Le Chat and Grok. Your organisation can add company-internal AI portals. Its scripts do not run on any other website.
+
+WHAT IT DOES
+- Checks the prompt when you press Send or Enter, text you paste, and text files you upload.
+- Finds e-mail addresses, phone numbers, payment card numbers (Luhn-checked), IBANs (mod-97-checked), Turkish identity numbers (TC Kimlik No, checksum-validated), IP and MAC addresses, API keys, tokens and private keys, and labelled names, addresses, dates of birth, tax and passport numbers, and terms your organisation defines.
+- Replaces each finding with a placeholder such as [EMAIL_1_k3f9]. The AI service receives the placeholder; the original value never leaves your browser.
+- Shows the original values again in the answer, in your browser only. Secrets and private keys stay masked.
+- Word, Excel, PowerPoint and OpenDocument files: the text is masked inside the file before upload. PDFs and older .doc/.xls/.ppt files are checked and blocked when they contain sensitive data.
+- Four modes: mask automatically (default), ask before sending, block, or monitor only.
+- English and Turkish user interface.
+
+PRIVACY
+- Detection, masking and restoring run entirely in your browser.
+- The mapping between placeholders and original values is held in memory for the tab and deleted when the tab closes, after 4 hours without use, or when the browser exits.
+- By default the extension sends nothing anywhere.
+- If your organisation connects its own AIDR control plane, the extension sends counts only (for example "2 e-mail addresses masked on ChatGPT"), never prompt text, values, file names or page addresses.
+- Nothing is sent to the publisher.
+
+FOR ORGANISATIONS
+Administrators can force-install the extension and lock its settings with Chrome, Edge and Firefox enterprise policies (Microsoft Intune, Google Admin console, Jamf, Group Policy, policies.json): mode, data types, organisation terms, exact-match customer data sets, blocked AI sites, Shadow AI discovery and control, file handling and reporting.
+
+WHAT IT DOES NOT COVER
+- Other AI tools: desktop and mobile apps, API clients, AI features inside other websites, other browsers and browser profiles, private or guest windows.
+- Voice input and dictation, which the AI site sends as audio.
+- Text the AI site reads while you type, before you press Send (drafts, autosave).
+- Free-form names and addresses without a label such as "Name:" are recognised only with the optional AIDR Privacy native host, installed separately.
+- Images and screenshots are checked only with that native host and its text recognition. Without it they are reported as not inspected, never as clean.
+- A redesign of a supported site can stop the extension from recognising the Send button until it is updated.
+- Restored values appear only on the page. Text the site exports, copies or shares itself still contains the placeholders.
+- In monitor mode, on sites turned off by the user, while protection is paused, and after "Send original" or "Send anyway" (when allowed), text is sent unmasked. Administrators can turn these off by policy.
+
+Browser Guard reduces the chance that sensitive data reaches AI services. It does not replace your organisation's data-protection policy or training.

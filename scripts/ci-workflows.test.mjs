@@ -283,7 +283,7 @@ test("posture scanner supply-chain job audits, govulnchecks and Trivy-scans the 
 	assert.match(trivy, /--format cyclonedx/u);
 });
 
-test("Browser Guard release: protected signed tag, least privilege, attested zips, no store credentials", () => {
+test("Browser Guard release: protected signed tag, least privilege, attested and store-validated packages", () => {
 	const release = workflow("release-browser-guard.yml");
 	assert.deepEqual(release.on, { push: { tags: ["browser-guard-v*"] } });
 	assert.deepEqual(release.permissions, { contents: "read" });
@@ -299,16 +299,110 @@ test("Browser Guard release: protected signed tag, least privilege, attested zip
 	assert.ok(build.indexOf("pnpm test:e2e:browser-guard") < build.indexOf("pnpm package:browser-guard"));
 	assert.match(build, /not reproducible across two builds/u);
 	assert.match(build, /sha256sum --check --strict SHA256SUMS/u);
+	// The store packages: Chrome/Edge zip, Firefox zip and the AMO source zip, validated offline.
+	assert.match(build, /for target in chrome firefox source; do/u);
+	const buildNames = release.jobs.build.steps.map((step) => step.name);
+	const validate = stepNamed(release.jobs.build, "Offline store validation of the staged packages");
+	assert.match(validate.run, /node packages\/browser-guard\/scripts\/validate-store\.mjs --dist release-output-browser-guard/u);
+	assert.equal(validate.if, undefined, "store validation must not be conditional");
+	assert.equal(validate["continue-on-error"], undefined, "store validation must block");
+	assert.ok(buildNames.indexOf("Release build, zips and reproducibility check") < buildNames.indexOf(validate.name));
+	assert.ok(
+		buildNames.indexOf(validate.name) < buildNames.indexOf("Upload Browser Guard release bundle (pinned)"),
+		"only validated packages leave the build job",
+	);
+	const packageScripts = JSON.parse(readFileSync(path.join(root, "packages/browser-guard/package.json"), "utf8")).scripts;
+	assert.match(packageScripts["build:release"], /scripts\/source-archive\.mjs && node scripts\/validate-store\.mjs$/u);
 
 	const publish = release.jobs["attest-publish"].steps;
 	const names = publish.map((step) => step.name);
 	assert.ok(names.indexOf("Recheck bundle across the runner boundary") < names.indexOf("Attest the Browser Guard zips (pinned)"));
 	assert.ok(names.indexOf("Attest the Browser Guard zips (pinned)") < names.indexOf("Publish draft release (pinned)"));
 	assert.equal(stepNamed(release.jobs["attest-publish"], "Publish draft release (pinned)").with.draft, true);
+	assert.match(stepNamed(release.jobs["attest-publish"], "Recheck bundle across the runner boundary").run, /aidr-browser-guard-source-\$\{VERSION\}\.zip/u);
+});
 
-	const secrets = new Set([...raw("release-browser-guard.yml").matchAll(/secrets\.([A-Z0-9_]+)/gu)].map((match) => match[1]));
-	assert.deepEqual([...secrets].sort(), ["GITHUB_TOKEN", "RELEASE_TAG_PGP_FINGERPRINT", "RELEASE_TAG_PGP_PUBLIC_KEY"]);
-	assert.doesNotMatch(raw("release-browser-guard.yml"), /chrome-webstore|webstore|AMO_|addons\.mozilla|EDGE_/iu);
+const STORE_SECRETS = {
+	cws: ["CWS_CLIENT_ID", "CWS_CLIENT_SECRET", "CWS_REFRESH_TOKEN", "CWS_EXTENSION_ID", "CWS_PUBLISHER_ID"],
+	edge: ["EDGE_ADDONS_CLIENT_ID", "EDGE_ADDONS_API_KEY", "EDGE_ADDONS_PRODUCT_ID"],
+	amo: ["AMO_JWT_ISSUER", "AMO_JWT_SECRET"],
+};
+const STORE_STEPS = {
+	cws: "Chrome Web Store - upload package as a draft (never published)",
+	edge: "Edge Add-ons - upload package to the draft submission (never submitted)",
+	amo: "addons.mozilla.org - submit unlisted version for signing (never listed)",
+};
+const secretsIn = (value) => new Set([...JSON.stringify(value ?? {}).matchAll(/secrets\.([A-Z0-9_]+)/gu)].map((match) => match[1]));
+
+test("Browser Guard store drafts: secrets only in the store job, attested bytes only, skipped without secrets", () => {
+	const release = workflow("release-browser-guard.yml");
+	const job = release.jobs["store-drafts"];
+	assert.ok(job, "the store-drafts job is missing");
+	assert.deepEqual(job.needs, ["build", "attest-publish"], "stores receive only what the draft GitHub release already carries");
+	assert.equal(job.environment, "browser-guard-store");
+	assert.deepEqual(job.permissions, { contents: "read" });
+
+	// Store secrets appear in the store job only, and each upload step sees only its own.
+	const all = Object.values(STORE_SECRETS).flat();
+	for (const [jobId, other] of Object.entries(release.jobs)) {
+		if (jobId === "store-drafts") continue;
+		for (const name of secretsIn(other)) assert.ok(!all.includes(name), `${jobId} must not see store secret ${name}`);
+	}
+	assert.deepEqual([...secretsIn(job)].sort(), [...all].sort());
+	for (const [store, step] of Object.entries(STORE_STEPS)) {
+		assert.deepEqual([...secretsIn(stepNamed(job, step))].sort(), [...STORE_SECRETS[store]].sort(), `${step} sees exactly its own secrets`);
+	}
+	const workflowSecrets = new Set([...raw("release-browser-guard.yml").matchAll(/secrets\.([A-Z0-9_]+)/gu)].map((match) => match[1]));
+	assert.deepEqual([...workflowSecrets].sort(), ["GITHUB_TOKEN", "RELEASE_TAG_PGP_FINGERPRINT", "RELEASE_TAG_PGP_PUBLIC_KEY", ...all].sort());
+
+	// No repository code next to the credentials: no checkout, no package manager, no script files.
+	for (const step of job.steps) {
+		assert.doesNotMatch(String(step.uses ?? ""), /actions\/checkout@/u, "the store job must not check out the tag");
+		const run = step.run ?? "";
+		assert.doesNotMatch(run, /(?:^|[\s;&|(`])(?:pnpm|npm|npx|yarn)\s/mu, `${step.name} runs a package manager`);
+		assert.deepEqual(nodeScriptTargets(run), [], `${step.name} runs a checked-out node script`);
+	}
+	const names = job.steps.map((step) => step.name);
+	assert.equal(names[0], "Download Browser Guard release bundle (pinned)");
+	assert.match(stepNamed(job, "Recheck the attested bundle before any upload").run, /sha256sum --check --strict SHA256SUMS/u);
+	const recheck = names.indexOf("Recheck the attested bundle before any upload");
+	for (const step of Object.values(STORE_STEPS)) assert.ok(names.indexOf(step) > recheck, `${step} runs before the recheck`);
+
+	// Missing secrets skip that store (notice; the draft GitHub release keeps every package);
+	// a partly configured store fails the job loudly instead of silently not uploading.
+	const detect = stepNamed(job, "Detect configured store credentials");
+	assert.equal(detect.id, "stores");
+	assert.match(detect.run, /=skipped" >> "\$\{GITHUB_OUTPUT\}"/u);
+	assert.match(detect.run, /::notice title=\$\{store\}::No \$\{store\} credentials configured/u);
+	assert.match(detect.run, /::error title=\$\{store\}::Incomplete/u);
+	for (const [store, secrets] of Object.entries(STORE_SECRETS)) {
+		assert.ok(detect.run.includes(`detect ${store} ${secrets.join(" ")}`), `${store} detection must cover ${secrets.join(", ")}`);
+		assert.equal(stepNamed(job, STORE_STEPS[store]).if, `steps.stores.outputs.${store} == 'configured'`);
+	}
+	assert.equal(stepNamed(job, "Fail on incomplete store credentials").if, "steps.stores.outputs.incomplete == '1'");
+	assert.equal(stepNamed(job, "Upload store draft receipts (pinned)").if, "always()");
+	for (const step of job.steps) assert.equal(step["continue-on-error"], undefined, `${step.name} must not hide a failure`);
+});
+
+test("Browser Guard store drafts never publish: upload/draft endpoints only, AMO unlisted channel", () => {
+	const job = workflow("release-browser-guard.yml").jobs["store-drafts"];
+	const cws = stepNamed(job, STORE_STEPS.cws).run;
+	assert.match(cws, /\/upload\/v2\/\$\{item\}:upload/u);
+	assert.doesNotMatch(cws, /:publish|\/publish\b|publishTarget|deployPercentage/u, "the Chrome Web Store step must never publish");
+	const edge = stepNamed(job, STORE_STEPS.edge).run;
+	assert.match(edge, /\/submissions\/draft\/package"/u);
+	assert.equal([...edge.matchAll(/-X POST/gu)].length, 1, "Edge: exactly one POST, the draft package upload");
+	assert.doesNotMatch(edge.replace(/\/submissions\/draft\/package/gu, ""), /\/submissions["/]/u, "Edge: never POST /submissions (publish)");
+	const amo = stepNamed(job, STORE_STEPS.amo).run;
+	assert.match(amo, /-F "channel=unlisted"/u);
+	assert.doesNotMatch(amo, /channel=listed/u, "AMO: never the listed channel");
+	assert.match(amo, /-F "source=@\$\{source\}"/u, "AMO gets the reviewer source archive");
+	assert.match(amo, /\.channel' store-receipts\/addons-mozilla-org\.json\)" == "unlisted"/u, "AMO: the created version is verified to be unlisted");
+	// Credentials never reach the process list: header files and stdin only.
+	for (const run of [cws, edge, amo]) {
+		assert.doesNotMatch(run, /curl[^\n]*(?:-H|--header) "Authorization/u);
+		assert.doesNotMatch(run, /curl[^\n]*\$\{(?:CWS|EDGE_ADDONS|AMO)_[A-Z_]*(?:SECRET|TOKEN|KEY)\}/u);
+	}
 });
 
 // ─── production GO gate (audit item 14) ──────────────────────────────────
@@ -382,6 +476,9 @@ test("no other release workflow mutates production without a production GO gate"
 	for (const name of workflowFiles) {
 		for (const [jobId, job] of Object.entries(workflow(name).jobs)) {
 			if (name === "release-promote.yml" && ["promote", "rollback", "yank"].includes(jobId)) continue;
+			// Store drafts are not a publication: the job only reaches draft/unlisted store
+			// endpoints, which the "never publish" test pins.
+			if (name === "release-browser-guard.yml" && jobId === "store-drafts") continue;
 			const mutations = (job.steps ?? []).filter(isProductionMutation).map((step) => step.name);
 			assert.deepEqual(mutations, [], `${name}:${jobId} publishes to production without the candidate-bound GO gate`);
 		}
