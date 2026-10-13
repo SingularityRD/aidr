@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+import * as deviceAuth from "../_shared/device-auth.ts";
+import * as requestLimits from "../_shared/request-limits.ts";
 import * as trustedIngress from "../_shared/trusted-ingress.ts";
 
 const source = readFileSync(
@@ -30,6 +32,7 @@ function harness(overrides: Record<string, string> = {}, rpcUnavailable = false)
 	};
 	const counts = new Map<string, number>();
 	let minted = 0;
+	const inserted: Array<Record<string, unknown>> = [];
 	let clientCreations = 0;
 	let handler: Handler | undefined;
 	const database = {
@@ -41,7 +44,7 @@ function harness(overrides: Record<string, string> = {}, rpcUnavailable = false)
 		},
 		from: (table: string) => {
 			if (table === "device_sessions") return {
-				insert: async () => { minted++; return { error: null }; },
+				insert: async (row: Record<string, unknown>) => { minted++; inserted.push(row); return { error: null }; },
 			};
 			let key = "";
 			let window = 0;
@@ -71,6 +74,8 @@ function harness(overrides: Record<string, string> = {}, rpcUnavailable = false)
 				json(500, { error: "server_misconfigured", missing: error.missing }),
 		},
 		"../_shared/trusted-ingress.ts": trustedIngress,
+		"../_shared/device-auth.ts": deviceAuth,
+		"../_shared/request-limits.ts": requestLimits,
 		"../_shared/cors.ts": {
 			corsJson: (_request: Request, status: number, body: Record<string, unknown>) =>
 				new Response(JSON.stringify(body), { status }),
@@ -100,7 +105,7 @@ function harness(overrides: Record<string, string> = {}, rpcUnavailable = false)
 		btoa,
 	});
 	if (!handler) throw new Error("device-start did not register a handler");
-	return { handler, counts, get minted() { return minted; }, get clientCreations() { return clientCreations; } };
+	return { handler, counts, inserted, get minted() { return minted; }, get clientCreations() { return clientCreations; } };
 }
 
 function signedRequest(ip: string, headers: Record<string, string> = {}, secret = SECRET, timestamp = Math.floor(Date.now() / 1000)) {
@@ -117,6 +122,51 @@ function signedRequest(ip: string, headers: Record<string, string> = {}, secret 
 		},
 	});
 }
+
+describe("device-start requester context (CP-1)", () => {
+	it("records the attested IP, the device-reported context, the scope and a bounded expiry", async () => {
+		const runtime = harness();
+		const request = signedRequest("198.51.100.4");
+		const response = await runtime.handler(new Request(request.url, {
+			method: "POST",
+			headers: request.headers,
+			body: JSON.stringify({
+				iid: "iid-1", agent_runtime: "claude-code", agent_runtime_version: "2.1.0", os: "darwin", hostname: "build-mac",
+			}),
+		}));
+		expect(response.status).toBe(200);
+		const body = await response.json() as { expires_at: string };
+		expect(runtime.inserted[0]).toMatchObject({
+			requested_ip: "198.51.100.4",
+			requested_runtime: "claude-code",
+			requested_runtime_version: "2.1.0",
+			requested_os: "darwin",
+			requested_hostname: "build-mac",
+			requested_scope: "tenant",
+		});
+		const lifetime = Date.parse(body.expires_at) - Date.now();
+		expect(lifetime).toBeGreaterThan(9 * 60_000);
+		expect(lifetime).toBeLessThanOrEqual(10 * 60_000);
+	});
+
+	it("drops malformed device-reported fields and still mints for an empty body", async () => {
+		const runtime = harness();
+		const request = signedRequest("198.51.100.5");
+		await runtime.handler(new Request(request.url, {
+			method: "POST", headers: request.headers, body: JSON.stringify({ os: "x\u0000", hostname: "bad host" }),
+		}));
+		expect(runtime.inserted[0]).toMatchObject({ requested_os: null, requested_hostname: null, requested_ip: "198.51.100.5" });
+		expect((await runtime.handler(signedRequest("198.51.100.6"))).status).toBe(200);
+	});
+
+	it.each(["0", "16", "60", "ten"])("fails closed on AIDR_DEVICE_TTL_MINUTES=%s", async (ttl) => {
+		const runtime = harness({ AIDR_DEVICE_TTL_MINUTES: ttl });
+		const response = await runtime.handler(signedRequest("198.51.100.7"));
+		expect(response.status).toBe(500);
+		expect(await response.json()).toMatchObject({ error: "server_misconfigured", invalid: ["AIDR_DEVICE_TTL_MINUTES"] });
+		expect(runtime.minted).toBe(0);
+	});
+});
 
 describe("anonymous device-start ingress and rate limits", () => {
 	it("mints a browser-compatible device session from a signed ingress request", async () => {

@@ -510,7 +510,10 @@ describe("issuing an ingest:browser_guard key", () => {
 			p_key_hash: createHash("sha256").update(body.api_key).digest("hex"),
 			p_scope: "ingest:browser_guard",
 			p_install_limit: 500,
+			p_expires_at: body.expires_at,
 		});
+		// CP-8: a key issued without an explicit lifetime gets the default one.
+		expect(Date.parse(body.expires_at) - Date.now()).toBeGreaterThan(364 * 86_400_000);
 		expect(issuance.rpc.mock.calls.map(([name]) => name)).not.toContain("issue_api_key_with_audit");
 	});
 

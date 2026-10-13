@@ -954,6 +954,10 @@ export interface Database {
 				Args: { p_tenant_id: string };
 				Returns: unknown;
 			};
+			get_approval_settings: {
+				Args: { p_tenant_id: string };
+				Returns: unknown;
+			};
 			list_tenant_admin_audit_logs: {
 				Args: {
 					p_tenant_id: string;

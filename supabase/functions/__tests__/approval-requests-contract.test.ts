@@ -57,6 +57,8 @@ interface WorldOptions {
 	identityPolicy?: { require_mfa: boolean; required_saml_provider_id: string | null };
 	rateDenied?: boolean;
 	failTables?: string[];
+	/** Tenant requires a different approver (approval_distinct_approver_required). */
+	distinctApprover?: boolean;
 }
 
 /** An in-memory control plane that mirrors the migration's RPC contract. */
@@ -91,6 +93,7 @@ class World {
 		this.addApiKey("key-a-bound", { tenant_id: TENANT_A, user_id: MEMBER_A, agent_id: AGENT_A });
 		this.addApiKey("key-a-bound2", { tenant_id: TENANT_A, user_id: MEMBER_A, agent_id: AGENT_A2 });
 		this.addApiKey("key-b", { tenant_id: TENANT_B, user_id: OWNER_B });
+		this.addApiKey("key-owner-a", { tenant_id: TENANT_A, user_id: OWNER_A });
 		this.addApiKey("key-browser", {
 			tenant_id: TENANT_A, user_id: MEMBER_A, scope: "ingest:browser_guard", install_limit: 50,
 		});
@@ -259,6 +262,13 @@ class World {
 					request.status = "expired";
 					return { outcome: "expired", request_id: request.id, status: "expired" };
 				}
+				const self = request.requested_by === a.p_actor_user_id;
+				if (self && a.p_decision === "approve" && (this.options.distinctApprover ?? true)) {
+					this.record(String(a.p_tenant_id), String(a.p_actor_user_id), "approval.self_approval_refused", {
+						request_id: request.id,
+					});
+					return { outcome: "self_approval_forbidden", request_id: request.id, status: request.status };
+				}
 				const key = this.keys.find((k) =>
 					k.tenant_id === a.p_tenant_id && k.key_id === a.p_key_id && k.retired_at === null && k.revoked_at === null);
 				if (!key) fail("55000", "approval_signing_key_inactive");
@@ -276,9 +286,10 @@ class World {
 					status, decided_by: a.p_actor_user_id, decided_at: now, reason: a.p_reason, token: a.p_token,
 					key_id: a.p_key_id, token_nonce: a.p_token_nonce, token_expires_at: a.p_token_expires_at,
 				});
-				this.record(String(a.p_tenant_id), String(a.p_actor_user_id), `approval.${status}`, {
-					request_id: request.id, reason: a.p_reason, key_id: a.p_key_id,
-				});
+				this.record(String(a.p_tenant_id), String(a.p_actor_user_id),
+					self && status === "approved" ? "approval.self_approved" : `approval.${status}`, {
+						request_id: request.id, reason: a.p_reason, key_id: a.p_key_id, self_approval: self,
+					});
 				return { outcome: "decided", request_id: request.id, status, decided_at: now };
 			}
 			case "install_tenant_approval_signing_key": {
@@ -643,6 +654,81 @@ describe("approval-requests: dashboard decision", () => {
 		expect(response.status).toBe(429);
 		expect(limited.keys).toHaveLength(0);
 		expect(limited.rpcCalls).not.toContain("decide_approval_request");
+	});
+});
+
+describe("approval-requests: separation of duties (CP-9)", () => {
+	it("refuses an approval by the person whose key raised the request and audits the attempt", async () => {
+		const world = new World();
+		const handle = await handlerFor(world);
+		expect((await handle(fileRequest({}, "key-owner-a"))).status).toBe(201);
+		const requestId = String(world.requests[0]?.id);
+
+		const self = await handle(decisionRequest(requestId, OWNER_A));
+		expect(self.status).toBe(403);
+		expect(await self.json()).toEqual({ error: "approval_self_approval_forbidden" });
+		expect(world.requests[0]).toMatchObject({ status: "pending" });
+		expect(world.requests[0]?.token ?? null).toBeNull();
+		expect(world.audit.map((row) => row.action)).toContain("approval.self_approval_refused");
+		expect(await (await handle(pollRequest(requestId, "key-owner-a"))).json()).toEqual({ request_id: requestId, status: "pending" });
+
+		// A second owner/admin can approve it.
+		const other = await handle(decisionRequest(requestId, ADMIN_A));
+		expect(other.status).toBe(200);
+		expect(await other.json()).toMatchObject({ status: "approved" });
+		expect(world.audit.find((row) => row.action === "approval.approved")?.detail).toMatchObject({ self_approval: false });
+	});
+
+	it("still lets the requester deny their own request", async () => {
+		const world = new World();
+		const handle = await handlerFor(world);
+		await handle(fileRequest({}, "key-owner-a"));
+		const requestId = String(world.requests[0]?.id);
+		const denied = await handle(decisionRequest(requestId, OWNER_A, { decision: "deny" }));
+		expect(denied.status).toBe(200);
+		expect(await denied.json()).toMatchObject({ status: "denied" });
+	});
+
+	it("records a permitted self-approval distinctly when the tenant allows it", async () => {
+		const world = new World({ distinctApprover: false });
+		const handle = await handlerFor(world);
+		await handle(fileRequest({}, "key-owner-a"));
+		const requestId = String(world.requests[0]?.id);
+		const response = await handle(decisionRequest(requestId, OWNER_A));
+		expect(response.status).toBe(200);
+		expect(world.audit.map((row) => row.action)).toContain("approval.self_approved");
+		expect(world.audit.map((row) => row.action)).not.toContain("approval.approved");
+		expect(world.audit.find((row) => row.action === "approval.self_approved")?.detail).toMatchObject({ self_approval: true });
+	});
+
+	it("enforces requester != approver in the database RPC, configurable with a fail-closed plan default", () => {
+		const migration = read("supabase", "migrations", "20261013000520_approval_separation_of_duties.sql");
+		expect(migration).toMatch(/add column if not exists approval_require_distinct_approver boolean;/);
+		const required = migration.slice(migration.indexOf("create or replace function app.approval_distinct_approver_required"));
+		expect(required).toMatch(/if v_setting is not null then return v_setting; end if;/);
+		expect(required).toMatch(/exception when others then\s+return true;/);
+		expect(required).toMatch(/v_plan in \('business', 'enterprise'\)/);
+
+		const decide = migration.slice(migration.indexOf("create or replace function public.decide_approval_request("));
+		const check = decide.indexOf("v_self and p_decision = 'approve' and app.approval_distinct_approver_required(p_tenant_id)");
+		expect(decide).toContain("v_self := v_row.requested_by = p_actor_user_id;");
+		expect(check).toBeGreaterThan(0);
+		// Refused before any key, token or status is touched; the refusal is audited and returned, not raised.
+		expect(check).toBeLessThan(decide.indexOf("tenant_approval_signing_keys"));
+		expect(check).toBeLessThan(decide.indexOf("update public.approval_requests\n     set status = v_status"));
+		expect(decide).toContain("'approval.self_approval_refused'");
+		expect(decide).toContain("'outcome', 'self_approval_forbidden'");
+		expect(decide).toContain("case when v_self and v_status = 'approved' then 'approval.self_approved' else 'approval.' || v_status end");
+		for (const fn of [
+			"decide_approval_request(uuid, uuid, uuid, text, text, text, text, text, timestamptz)",
+			"update_approval_settings(uuid, uuid, boolean)",
+		]) {
+			expect(migration).toContain(`revoke all on function public.${fn}`);
+			expect(migration).toMatch(new RegExp(`grant execute on function public\\.${fn.replace(/[()]/g, "\\$&")}\\s+to service_role;`));
+		}
+		// Relaxing it under four-eyes change control needs a second person.
+		expect(migration).toContain("raise exception 'approval_separation_four_eyes_required'");
+		expect(migration).toContain("'approval.settings_updated'");
 	});
 });
 

@@ -18,8 +18,12 @@ enrollment path; see the [readiness profile](production-readiness/first-customer
 4. Open the URL and sign in using an authentication method enabled for that
    deployment. The method is deployment-specific; Google OAuth is not required
    or universally configured.
-5. Enter the code and approve the device, if the account is authorized for the
-   pilot.
+5. Type the code your device shows (a code carried in the link is never used
+   on its own), choose the team, and review who requested it: the client IP
+   attested by the trusted ingress, the host, OS and runtime the device
+   reported, the requested access (a tenant API key) and the request time.
+   Approve only if you started the request on your own device in the last few
+   minutes; then confirm and authorize.
 6. Restart the agent (or rerun the host's enable-protection command).
 
 After approval and successful enrollment, AIDR caches the resulting managed
@@ -86,6 +90,16 @@ the operator repair procedure above if no credential was saved locally.
 
 ## Security notes
 
-- Verification codes are short-lived and single-use.
+- Verification codes are short-lived (`AIDR_DEVICE_TTL_MINUTES`, default 10,
+  bounded 1..15; a malformed value fails closed) and single-use.
+- Remote phishing (RFC 8628 §5.4): `device-verify` binds a session only in a
+  second, confirmed request that names the session the browser looked up and
+  displayed (`{ action: "lookup" }`, then `{ action: "authorize",
+  device_session_id, confirmed: true }`); a one-shot `{ user_code }` request is
+  refused with `device_confirmation_required`. The `device.verify` audit row
+  records the requester IP, reported host/OS/runtime, requested scope and
+  request time. Set `AIDR_DEVICE_VERIFY_REQUIRE_AAL2=true` to require an MFA
+  (AAL2) session for enrollment. The ingress does not attest a country, so no
+  geolocation is shown.
 - Enrollment requires an approved account and accepted deployment (see [Pilot Program](pilot-program.md)).
 - API keys and enrollment tokens are stored hash-only server-side; plaintext is shown only at issuance.

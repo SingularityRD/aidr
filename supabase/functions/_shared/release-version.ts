@@ -58,7 +58,7 @@ export function isNewerRelease(current: string, latest: string): boolean {
 	return current.includes("-") && !latest.includes("-");
 }
 
-function fromBase64(value: string): Uint8Array | null {
+function fromBase64(value: string): Uint8Array<ArrayBuffer> | null {
 	const normalized = value.trim().replace(/-/g, "+").replace(/_/g, "/");
 	if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) return null;
 	try {
@@ -69,7 +69,7 @@ function fromBase64(value: string): Uint8Array | null {
 	}
 }
 
-function spkiFor(publicKey: Uint8Array): Uint8Array | null {
+function spkiFor(publicKey: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> | null {
 	if (publicKey.length === 32) {
 		const spki = new Uint8Array(ED25519_SPKI_PREFIX.length + 32);
 		spki.set(ED25519_SPKI_PREFIX);
@@ -84,7 +84,7 @@ function record(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-async function verifyEd25519(spki: Uint8Array, signature: Uint8Array, message: Uint8Array): Promise<boolean> {
+async function verifyEd25519(spki: Uint8Array<ArrayBuffer>, signature: Uint8Array<ArrayBuffer>, message: Uint8Array<ArrayBuffer>): Promise<boolean> {
 	try {
 		const key = await crypto.subtle.importKey("spki", spki, { name: "Ed25519" }, false, ["verify"]);
 		return await crypto.subtle.verify("Ed25519", key, signature, message);

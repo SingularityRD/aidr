@@ -43,6 +43,39 @@ const REGISTRY_STEP: InstallStep = {
 	text: "Your administrator configures read access to the private @singularityrd registry through a secret manager (NODE_AUTH_TOKEN). Never paste the token into a command.",
 };
 
+/**
+ * Codex hook registration, identical (comments aside) to the TOML in
+ * packages/codex/README.md and docs/platform-guides/codex.md. All three events
+ * are required: PreToolUse (tool calls), UserPromptSubmit (prompt protection)
+ * and PostToolUse (tool-output inspection). A drift test compares them.
+ */
+export const CODEX_HOOKS_TOML = [
+	"[[hooks.PreToolUse]]",
+	'matcher = "^(Bash|apply_patch)$"',
+	"",
+	"[[hooks.PreToolUse.hooks]]",
+	'type = "command"',
+	'command = "aidr-codex-hook"',
+	"timeout = 10",
+	"",
+	"# Prompt protection. No matcher: Codex ignores matchers for this event.",
+	"[[hooks.UserPromptSubmit]]",
+	"",
+	"[[hooks.UserPromptSubmit.hooks]]",
+	'type = "command"',
+	'command = "aidr-codex-hook"',
+	"timeout = 10",
+	"",
+	"# Tool-output inspection.",
+	"[[hooks.PostToolUse]]",
+	'matcher = "^(Bash|mcp__.+)$"',
+	"",
+	"[[hooks.PostToolUse.hooks]]",
+	'type = "command"',
+	'command = "aidr-codex-hook"',
+	"timeout = 10",
+].join("\n");
+
 export const RUNTIME_CATALOG: readonly RuntimeCatalogEntry[] = [
 	{
 		id: "claude-code",
@@ -140,7 +173,8 @@ export const RUNTIME_CATALOG: readonly RuntimeCatalogEntry[] = [
 	{
 		id: "codex",
 		label: "Codex CLI",
-		summary: "Native Codex PreToolUse hook. It denies on ask and on internal errors.",
+		summary:
+			"Native Codex hooks for tool calls, prompts and tool output. They deny on ask and on internal errors.",
 		guide: "packages/codex/README.md",
 		enrollment: "managed-config",
 		detection: { runtimes: ["codex"] },
@@ -154,11 +188,10 @@ export const RUNTIME_CATALOG: readonly RuntimeCatalogEntry[] = [
 				text: "Deploy the operator-generated runtime configuration (scripts/deployment-prepare.mjs) as ~/.singularity-aidr/config.json. Without it the hook refuses to start.",
 			},
 			{
-				text: "Register the hook in ~/.codex/config.toml:",
-				command:
-					'[[hooks.PreToolUse]]\nmatcher = "^(Bash|apply_patch)$"\n\n[[hooks.PreToolUse.hooks]]\ntype = "command"\ncommand = "aidr-codex-hook"\ntimeout = 10',
+				text: "Register the hooks (tool calls, prompt protection and tool-output inspection) in ~/.codex/config.toml:",
+				command: CODEX_HOOKS_TOML,
 			},
-			{ text: "In Codex, review and trust the registered hook with /hooks." },
+			{ text: "In Codex, review and trust the three registered hooks with /hooks." },
 		],
 	},
 	{

@@ -41,9 +41,21 @@ type ApiKeyRow = {
 	agent_id?: string | null;
 	scope: ApiKeyScope;
 	install_limit: number | null;
+	expires_at: string | null;
 };
 
-const API_KEY_COLUMNS = "id,user_id,tenant_id,revoked,agent_id,scope,install_limit";
+const API_KEY_COLUMNS = "id,user_id,tenant_id,revoked,agent_id,scope,install_limit,expires_at";
+
+/**
+ * True when the key row carries an expiry that has passed (CP-8). A row without
+ * the column (NULL or absent) never expires; a present but unparseable value is
+ * treated as expired so a corrupt expiry fails closed.
+ */
+export function apiKeyExpired(expiresAt: string | null, now: number): boolean {
+	if (expiresAt === null) return false;
+	const at = Date.parse(expiresAt);
+	return !Number.isFinite(at) || at <= now;
+}
 
 type MembershipRow = {
 	role: string;
@@ -92,7 +104,8 @@ function apiKeyRow(value: unknown): ApiKeyRow | null {
 		typeof row.revoked !== "boolean" ||
 		("agent_id" in row && row.agent_id !== null && typeof row.agent_id !== "string") ||
 		// The type is always selected; a row without a known one is not a credential.
-		!isApiKeyScope(row.scope)
+		!isApiKeyScope(row.scope) ||
+		(row.expires_at !== undefined && row.expires_at !== null && typeof row.expires_at !== "string")
 	) {
 		return null;
 	}
@@ -107,6 +120,7 @@ function apiKeyRow(value: unknown): ApiKeyRow | null {
 		revoked: row.revoked,
 		scope: row.scope,
 		install_limit: installLimit as number | null,
+		expires_at: typeof row.expires_at === "string" ? row.expires_at : null,
 	};
 	if (typeof row.id === "string") parsed.id = row.id;
 	if ("agent_id" in row) parsed.agent_id = row.agent_id as string | null;
@@ -207,7 +221,9 @@ export async function authenticateTenantApiKeyHash(
 		}
 	}
 
-	if (!key || key.revoked) {
+	// An expired key is an invalid credential for its active and retired secret
+	// alike; clients already treat `invalid_api_key` as "stop and re-enroll".
+	if (!key || key.revoked || apiKeyExpired(key.expires_at, now)) {
 		return { ok: false, status: 401, error: "invalid_api_key" };
 	}
 	// Refuse a narrower key before any tenant state is read on its behalf. An

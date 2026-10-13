@@ -70,10 +70,10 @@ const readRuntimeEnv: EnvReader = (name) => {
 	} catch {
 		// Node contract tests use process.env when Deno is unavailable.
 	}
-	return globalThis.process?.env?.[name];
+	return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
 };
 
-type DatabaseClient = ReturnType<typeof createClient>;
+type DatabaseClient = ReturnType<typeof createClient<any, "public">>;
 
 export interface ApprovalRequestsDeps {
 	env?: EnvReader;
@@ -542,6 +542,11 @@ async function handleDashboard(
 	}
 	if (data.outcome === "expired") {
 		return corsJson(req, 409, { error: "approval_request_expired", status: "expired" }, headers);
+	}
+	// Separation of duties: the tenant requires someone other than the
+	// requester to approve. Nothing was signed into the request (CP-9).
+	if (data.outcome === "self_approval_forbidden") {
+		return corsJson(req, 403, { error: "approval_self_approval_forbidden" }, headers);
 	}
 	if (data.outcome !== "decided" || (data.status !== "approved" && data.status !== "denied")) {
 		return corsJson(req, 503, { error: "approval_decision_failed" }, headers);

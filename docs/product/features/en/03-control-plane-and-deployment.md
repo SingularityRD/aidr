@@ -1015,7 +1015,11 @@ enrollment is tied to a named approver and tenant.
 
 **How it works.** It follows the RFC 8628 device flow through three functions:
 `device-start`, `device-verify` and `device-poll`. Codes live 10 minutes
-(`AIDR_DEVICE_TTL_MINUTES`) and are single-use. The poll interval is 3 seconds
+(`AIDR_DEVICE_TTL_MINUTES`, 1 to 15) and are single-use. `/verify` never binds a code
+taken from a link: the user types the code their device shows, reviews who requested it
+(attested IP, reported host, OS and runtime, requested access, request time) under a
+phishing warning, and confirms before the device is bound
+(`AIDR_DEVICE_VERIFY_REQUIRE_AAL2=true` also requires MFA). The poll interval is 3 seconds
 (`AIDR_DEVICE_POLL_INTERVAL_SECONDS`), and a `slow_down` answer raises it by 5 seconds.
 The unauthenticated `device-start` route must sit behind the trusted ingress signer
 (`deploy/ingress/device-start.mjs`), which signs the client IP with HMAC. Without the

@@ -1045,8 +1045,12 @@ nokta imzalı, tenant'a bağlı bir `managed.json` alır.
 adı belli bir onaylayıcıya ve tenant'a bağlanır.
 
 **Nasıl çalışır.** RFC 8628 cihaz akışını üç fonksiyonla izler: `device-start`,
-`device-verify` ve `device-poll`. Kodlar 10 dakika geçerlidir (`AIDR_DEVICE_TTL_MINUTES`)
-ve tek kullanımlıktır. Sorgulama aralığı 3 saniyedir (`AIDR_DEVICE_POLL_INTERVAL_SECONDS`);
+`device-verify` ve `device-poll`. Kodlar 10 dakika geçerlidir (`AIDR_DEVICE_TTL_MINUTES`,
+1 ile 15 arası) ve tek kullanımlıktır. `/verify` bağlantıdan gelen kodu hiçbir zaman
+doğrudan bağlamaz: kullanıcı cihazında görünen kodu yazar, kodu kimin istediğini
+(doğrulanmış IP, cihazın bildirdiği ana makine, işletim sistemi ve çalışma ortamı, istenen
+erişim, istek zamanı) oltalama uyarısıyla birlikte görür ve onaylar
+(`AIDR_DEVICE_VERIFY_REQUIRE_AAL2=true` ayrıca MFA ister). Sorgulama aralığı 3 saniyedir (`AIDR_DEVICE_POLL_INTERVAL_SECONDS`);
 `slow_down` yanıtı aralığı 5 saniye artırır. Kimlik doğrulamasız `device-start` rotası,
 istemci IP'sini HMAC ile imzalayan güvenilir giriş imzalayıcısının
 (`deploy/ingress/device-start.mjs`) arkasında olmalıdır. İmzalayıcı yoksa fonksiyon

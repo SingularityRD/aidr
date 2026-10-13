@@ -3,6 +3,7 @@
  * Combines plugin scanning, version check, and temp cleanup into a single call.
  */
 
+import { hostname } from "node:os";
 import { inspectInfrastructurePolicy } from "./aig-policy.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
@@ -131,6 +132,16 @@ export interface SessionStartResult {
 }
 
 /** Coverage gaps are visibility failures: verification could not be established. */
+/** Host name for the device-code request; the control plane drops a malformed one. */
+function deviceHostname(): string | undefined {
+	try {
+		const name = hostname().trim();
+		return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) ? name : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 const COVERAGE_SEVERITY: Record<McpDiscoveryAttestationStatus, "medium" | "high"> = {
 	approved: "medium",
 	quarantined: "medium",
@@ -351,6 +362,9 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 					iid,
 					agent_runtime: ctx.agentRuntime,
 					agent_runtime_version: ctx.agentRuntimeVersion,
+					// Lets the approver recognise this device on /verify (CP-1).
+					os: process.platform,
+					hostname: deviceHostname(),
 				});
 				const body = res.body ?? {};
 				const deviceCode =

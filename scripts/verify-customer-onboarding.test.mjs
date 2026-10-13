@@ -18,7 +18,7 @@ test("customer onboarding uses the bootstrap receipt tenant for owner and device
 	const tenantId = randomUUID();
 	const userId = randomUUID();
 	const seen = { pilot: null, verify: null };
-	const server = createServer((request, response) => {
+	const server = createServer(async (request, response) => {
 		const url = new URL(request.url, "http://127.0.0.1");
 		const pathname = url.pathname;
 		if (pathname === "/auth/v1/health") return json(response, 200, {});
@@ -36,7 +36,10 @@ test("customer onboarding uses the bootstrap receipt tenant for owner and device
 		if (pathname === "/rest/v1/entitlements") return json(response, 200, [{ included_agents: 5 }]);
 		if (pathname === "/functions/v1/device-verify") {
 			seen.verify = request.headers["x-aidr-tenant-id"];
-			return json(response, seen.verify === tenantId ? 200 : 403, {});
+			const body = await new Promise((done) => { let text = ""; request.on("data", (chunk) => { text += chunk; }); request.on("end", () => done(JSON.parse(text || "{}"))); });
+			const status = seen.verify === tenantId ? 200 : 403;
+			if (body.action === "lookup") return json(response, status, { ok: true, device: { device_session_id: "d0000000-0000-4000-8000-000000000001", user_code: body.user_code } });
+			return json(response, body.action === "authorize" && body.confirmed === true ? status : 400, {});
 		}
 		if (pathname === "/functions/v1/device-poll") return json(response, 200, { enrollment_token: "fixture-enrollment-token" });
 		if (pathname === "/functions/v1/enroll") return json(response, 200, { entitlement_signed: "fixture-signature", api_key: "fixture-api-key" });

@@ -6,11 +6,14 @@ import {
 	type ApprovalDecision,
 	type ApprovalQueue,
 	type ApprovalRequest,
+	type ApprovalSeparation,
 	type ApprovalStatus,
 	decideApproval,
 	formatCountdown,
+	loadApprovalSeparation,
 	loadApprovals,
 	rotateApprovalSigningKey,
+	updateApprovalSeparation,
 } from "../../lib/approvals";
 
 export const APPROVALS_REFRESH_MS = 15_000;
@@ -26,6 +29,12 @@ export function approvalErrorMessage(code: string): string {
 		case "approval_role_insufficient":
 		case "approval_forbidden":
 			return "Only owners and administrators can decide approvals.";
+		case "approval_self_approval_forbidden":
+			return "This request was raised by your own key or agent, so another owner or administrator must approve it. You can still deny it.";
+		case "approval_separation_four_eyes_required":
+			return "Four-eyes change control is on: turning off the separate-approver rule needs a second person.";
+		case "approval_settings_failed":
+			return "The approval setting was not saved. Nothing changed.";
 		case "approval_request_final":
 			return "This request was already decided.";
 		case "approval_request_expired":
@@ -313,6 +322,95 @@ function SigningKeySection({
 	);
 }
 
+const SEPARATION_OPTIONS = [
+	{ value: "plan", label: "Plan default (required on Business and Enterprise)", setting: null },
+	{ value: "required", label: "Always require a different approver", setting: true },
+	{
+		value: "allowed",
+		label: "Allow approving your own requests (recorded as self-approved)",
+		setting: false,
+	},
+] as const;
+
+function separationValue(configured: boolean | null): string {
+	return configured === null ? "plan" : configured ? "required" : "allowed";
+}
+
+/** Separation of duties: whether the requester may approve their own block. */
+function SeparationOfDutiesSection({
+	tenantId,
+	onNotice,
+}: {
+	tenantId: string;
+	onNotice: (notice: Notice) => void;
+}) {
+	const [state, setState] = useState<ApprovalSeparation | null>(null);
+	const [failed, setFailed] = useState(false);
+	const [busy, setBusy] = useState(false);
+
+	useEffect(() => {
+		let current = true;
+		void loadApprovalSeparation(tenantId).then((result) => {
+			if (!current) return;
+			setFailed(!result.ok);
+			setState(result.ok ? result.value : null);
+		});
+		return () => {
+			current = false;
+		};
+	}, [tenantId]);
+
+	async function change(value: string) {
+		const option = SEPARATION_OPTIONS.find((candidate) => candidate.value === value);
+		if (!option) return;
+		setBusy(true);
+		const result = await updateApprovalSeparation(tenantId, option.setting);
+		setBusy(false);
+		if (!result.ok) {
+			onNotice({ tone: "error", message: approvalErrorMessage(result.error), code: result.error });
+			return;
+		}
+		setState(result.value);
+		onNotice({ tone: "success", message: "Approval setting saved." });
+	}
+
+	return (
+		<div className="card">
+			<h2>Separation of duties</h2>
+			<p className="muted small">
+				Whether the person whose key or agent raised a request may approve it themselves. Denying
+				your own request is always allowed.
+			</p>
+			{failed ? (
+				<p className="muted small">The current setting could not be loaded.</p>
+			) : state ? (
+				<>
+					<label className="label">
+						Approver
+						<select
+							className="input"
+							value={separationValue(state.configured)}
+							disabled={busy}
+							onChange={(e) => void change(e.target.value)}
+						>
+							{SEPARATION_OPTIONS.map((option) => (
+								<option key={option.value} value={option.value}>
+									{option.label}
+								</option>
+							))}
+						</select>
+					</label>
+					<p className="muted small" data-testid="approval-separation-effective">
+						{state.effective
+							? "In effect: a different owner or administrator must approve."
+							: "In effect: requesters may approve their own requests."}
+					</p>
+				</>
+			) : null}
+		</div>
+	);
+}
+
 function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: string }) {
 	const error = notice.tone === "error";
 	return (
@@ -564,6 +662,7 @@ function TenantApprovalsPage() {
 			) : null}
 
 			{canDecide ? <SigningKeySection tenantId={tenantId} onNotice={setNotice} /> : null}
+			{canDecide ? <SeparationOfDutiesSection tenantId={tenantId} onNotice={setNotice} /> : null}
 		</div>
 	);
 }

@@ -3,10 +3,19 @@
 // Auth: none (device-code bootstrap)
 //
 // Creates a short-lived device session. The client polls /v1/device/poll until authorized.
+//
+// Remote-phishing hardening (CP-1): the session records the requester context
+// /verify shows before anyone can bind it — the trusted-ingress attested client
+// IP, what the device reported about itself (runtime, version, OS, hostname),
+// the requested access and the request time. The code lifetime is bounded to
+// 1..15 minutes (AIDR_DEVICE_TTL_MINUTES, default 10); a malformed value fails
+// closed with 500 server_misconfigured.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { DEVICE_REQUESTED_SCOPE, deviceTtlMinutes, parseDeviceStartContext } from "../_shared/device-auth.ts";
+import { readBoundedJson } from "../_shared/request-limits.ts";
 import { validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
@@ -23,7 +32,8 @@ const REQUIRED_ENV = [
 	"AIDR_DASHBOARD_VERIFY_URL",
 ] as const;
 
-const DEVICE_TTL_MINUTES = Number(Deno.env.get("AIDR_DEVICE_TTL_MINUTES") ?? "10");
+const DEVICE_TTL_MINUTES = deviceTtlMinutes(Deno.env.get("AIDR_DEVICE_TTL_MINUTES"));
+const MAX_BODY_BYTES = 4 * 1024;
 const DEVICE_POLL_INTERVAL_SECONDS = Number(Deno.env.get("AIDR_DEVICE_POLL_INTERVAL_SECONDS") ?? "3");
 const DEVICE_START_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_START_RL_PER_MIN") ?? "30");
 const DEVICE_START_GLOBAL_RL_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_START_GLOBAL_RL_PER_MIN") ?? "300");
@@ -83,8 +93,7 @@ function randomUserCode(): string {
 }
 
 function addMinutesIso(minutes: number): string {
-	const safe = Number.isFinite(minutes) ? Math.max(1, Math.min(60, Math.floor(minutes))) : 10;
-	return new Date(Date.now() + safe * 60 * 1000).toISOString();
+	return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
 async function rateLimitStart(
@@ -143,6 +152,7 @@ Deno.serve(async (req) => {
 	if (!Number.isSafeInteger(DEVICE_START_RL_PER_MIN) || DEVICE_START_RL_PER_MIN < 1 || DEVICE_START_RL_PER_MIN > 10000) invalid.push("AIDR_DEVICE_START_RL_PER_MIN");
 	if (!Number.isSafeInteger(DEVICE_START_GLOBAL_RL_PER_MIN) || DEVICE_START_GLOBAL_RL_PER_MIN < DEVICE_START_RL_PER_MIN || DEVICE_START_GLOBAL_RL_PER_MIN > 100000) invalid.push("AIDR_DEVICE_START_GLOBAL_RL_PER_MIN");
 	if (!verifyUrl) invalid.push("AIDR_DASHBOARD_VERIFY_URL");
+	if (DEVICE_TTL_MINUTES === null) invalid.push("AIDR_DEVICE_TTL_MINUTES");
 	if (invalid.length > 0) return corsJson(req, 500, { error: "server_misconfigured", invalid });
 
 	const ip = await verifiedIngressIp(req, AIDR_DEVICE_START_INGRESS_SECRET, INGRESS_CONTEXT);
@@ -155,7 +165,13 @@ Deno.serve(async (req) => {
 	const ok = await rateLimitStart(supabase, ip);
 	if (!ok) return corsJson(req, 429, { error: "rate_limited" });
 
-	const expiresAt = addMinutesIso(DEVICE_TTL_MINUTES);
+	// The device describes itself (shown on /verify as "reported by the device").
+	// An empty or unreadable body is allowed: older connectors send `{}`.
+	const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
+	if (!parsed.ok && parsed.status === 413) return corsJson(req, 413, { error: parsed.error });
+	const reported = parseDeviceStartContext(parsed.ok ? parsed.value : null);
+
+	const expiresAt = addMinutesIso(DEVICE_TTL_MINUTES as number);
 
 	let deviceCode = "";
 	let userCode = "";
@@ -169,6 +185,12 @@ Deno.serve(async (req) => {
 			device_code_hash: deviceHash,
 			user_code: userCode,
 			expires_at: expiresAt,
+			requested_ip: ip,
+			requested_runtime: reported.runtime,
+			requested_runtime_version: reported.runtime_version,
+			requested_os: reported.os,
+			requested_hostname: reported.hostname,
+			requested_scope: DEVICE_REQUESTED_SCOPE,
 		});
 		if (!error) {
 			inserted = true;
