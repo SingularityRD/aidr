@@ -37,6 +37,26 @@ export interface ConnectorToolSurface {
 	readonly passThroughReason?: string;
 	/** Clarifies how `dispatchSource` defines the vocabulary, when not obvious. */
 	readonly note?: string;
+	/**
+	 * The host's own built-in tool list, captured from the pinned host build.
+	 * The source-derived vocabulary only shows names the connector already
+	 * handles; a host tool the source never names is invisible to it. Every
+	 * inventory tool must therefore be dispatched by the connector, be a
+	 * canonical alias, or be listed in `genericInspection`.
+	 */
+	readonly hostInventory?: HostToolInventory;
+}
+
+export interface HostToolInventory {
+	/** `<npm package>@<version>` the list was captured from (the real-host E2E pin). */
+	readonly host: string;
+	/** Where in that build the list comes from, so it can be re-captured. */
+	readonly source: string;
+	readonly tools: readonly string[];
+	/** Host tools deliberately left to core's generic unknown-tool inspection. */
+	readonly genericInspection: readonly string[];
+	/** Why `genericInspection` tools need no dedicated mapping. */
+	readonly genericInspectionReason: string;
 }
 
 /**
@@ -65,7 +85,124 @@ export const CONNECTOR_TOOL_SURFACES: readonly ConnectorToolSurface[] = [
 	{
 		connector: "openclaw",
 		dispatchSource: "packages/openclaw/src/tool-handler.ts",
-		passThrough: [],
+		passThrough: ["ls", "nodes", "process", "terminal"],
+		passThroughReason:
+			"process (write/paste/send-keys/submit), terminal (input) and nodes (run/invoke) are command channels the connector rewrites onto `exec` before core sees them (packages/openclaw/src/process-input.ts): the delivered text is evaluated as a shell command and an unrecognised action is denied. ls is a read-only directory listing whose path the connector extracts as a file_path artifact.",
+		hostInventory: {
+			host: "openclaw@2026.9.6",
+			source:
+				"CORE_TOOL_FACTORY_DESCRIPTORS (dist/core-tool-factory-descriptors-*.mjs) of the npm package; extension-provided tools (code_execution, browser, ...) are not core tools and are not listed.",
+			tools: [
+				"agents_list",
+				"agents_wait",
+				"apply_patch",
+				"ask_user",
+				"automations",
+				"computer",
+				"conversations_list",
+				"conversations_send",
+				"conversations_turn",
+				"create_goal",
+				"dashboard",
+				"dismiss_task",
+				"edit",
+				"exec",
+				"gateway",
+				"get_goal",
+				"github_identity_status",
+				"github_publish",
+				"heartbeat_respond",
+				"image_generate",
+				"ls",
+				"message",
+				"mobile_ui",
+				"music_generate",
+				"nodes",
+				"openclaw",
+				"pdf",
+				"plugins",
+				"portal",
+				"process",
+				"progress_card",
+				"read",
+				"screen",
+				"secrets",
+				"session_status",
+				"sessions",
+				"sessions_history",
+				"sessions_list",
+				"sessions_search",
+				"sessions_send",
+				"sessions_spawn",
+				"sessions_yield",
+				"show_widget",
+				"skill_workshop",
+				"structured_output",
+				"subagents",
+				"suggest_task",
+				"terminal",
+				"theme",
+				"transcripts",
+				"tts",
+				"update_goal",
+				"video_generate",
+				"view_image",
+				"web_fetch",
+				"web_search",
+				"write",
+			],
+			genericInspection: [
+				"agents_list",
+				"agents_wait",
+				"ask_user",
+				"automations",
+				"computer",
+				"conversations_list",
+				"conversations_send",
+				"conversations_turn",
+				"create_goal",
+				"dashboard",
+				"dismiss_task",
+				"gateway",
+				"get_goal",
+				"github_identity_status",
+				"github_publish",
+				"heartbeat_respond",
+				"image_generate",
+				"message",
+				"mobile_ui",
+				"music_generate",
+				"openclaw",
+				"pdf",
+				"plugins",
+				"portal",
+				"progress_card",
+				"screen",
+				"secrets",
+				"session_status",
+				"sessions",
+				"sessions_history",
+				"sessions_list",
+				"sessions_search",
+				"sessions_send",
+				"sessions_spawn",
+				"sessions_yield",
+				"show_widget",
+				"skill_workshop",
+				"structured_output",
+				"subagents",
+				"suggest_task",
+				"theme",
+				"transcripts",
+				"tts",
+				"update_goal",
+				"video_generate",
+				"view_image",
+				"web_search",
+			],
+			genericInspectionReason:
+				"None of these runs a shell command, feeds a process's stdin or writes a workspace file by path: they manage agents, sessions, goals, media, messaging, UI and gateway config (gateway exposes only config.get, config.schema.lookup and update.run). Their string arguments are inspected as content/URLs/paths on core's unknown-tool path. computer and mobile_ui drive a GUI, not a shell; screen captures.",
+		},
 	},
 	{
 		connector: "opencode",
@@ -74,6 +211,7 @@ export const CONNECTOR_TOOL_SURFACES: readonly ConnectorToolSurface[] = [
 			"codesearch",
 			"glob",
 			"grep",
+			"list",
 			"ls",
 			"question",
 			"read_lines",
@@ -81,7 +219,38 @@ export const CONNECTOR_TOOL_SURFACES: readonly ConnectorToolSurface[] = [
 			"websearch",
 		],
 		passThroughReason:
-			"Non-edit OpenCode tools with no canonical core equivalent. The connector extracts their artifacts itself and core inspects them on the unknown-tool path; none of them writes a file.",
+			"Non-edit OpenCode tools with no canonical core equivalent. The connector extracts their artifacts itself (glob/grep/list/ls search roots and patterns as file_path artifacts) and core inspects them on the unknown-tool path; none of them writes a file. The file-writing patch/multiedit tools are canonical Edit aliases instead.",
+		hostInventory: {
+			host: "opencode-ai@1.18.32",
+			source:
+				"ToolRegistry builtin list in the opencode-linux-x64@1.18.32 binary (invalid, question, bash, read, glob, grep, edit, write, task, webfetch, todowrite, websearch, skill, apply_patch, experimental execute/lsp/plan_exit).",
+			tools: [
+				"apply_patch",
+				"bash",
+				"edit",
+				"execute",
+				"glob",
+				"grep",
+				"invalid",
+				"lsp",
+				"plan_exit",
+				"question",
+				"read",
+				"skill",
+				"task",
+				"todowrite",
+				"webfetch",
+				"websearch",
+				"write",
+			],
+			// `execute` (experimental code mode, off by default) needs no entry: core
+			// already aliases the name to Bash. Its script is not a shell command,
+			// so that alias finds no command to inspect: an open gap while code
+			// mode stays experimental.
+			genericInspection: ["invalid", "lsp", "plan_exit", "skill", "todowrite"],
+			genericInspectionReason:
+				"invalid reports a malformed call, lsp queries a language server for a file position, plan_exit ends plan mode, skill loads a named skill and todowrite edits the session todo list; none runs a shell command or writes a file.",
+		},
 	},
 	{
 		connector: "codex",
@@ -121,7 +290,12 @@ export function extractDeclaredToolNames(source: string): string[] {
 export interface ConnectorToolSurfaceViolation {
 	readonly connector: string;
 	readonly toolName: string;
-	readonly kind: "unmapped" | "undeclared-pass-through" | "stale-pass-through";
+	readonly kind:
+		| "unmapped"
+		| "undeclared-pass-through"
+		| "stale-pass-through"
+		| "unclassified-host-tool"
+		| "stale-generic-inspection";
 	readonly detail: string;
 }
 
@@ -156,6 +330,37 @@ function classifyToolName(
 	return undefined;
 }
 
+/** Check a pinned host tool inventory against what the connector handles. */
+function hostInventoryViolations(
+	surface: ConnectorToolSurface,
+	inventory: HostToolInventory,
+	dispatched: readonly string[],
+): ConnectorToolSurfaceViolation[] {
+	const violations: ConnectorToolSurfaceViolation[] = [];
+	const handled = (toolName: string) =>
+		dispatched.includes(toolName) || isCanonicalToolAlias(toolName);
+	const generic = new Set(inventory.genericInspection);
+	for (const toolName of inventory.tools) {
+		if (handled(toolName) || generic.has(toolName)) continue;
+		violations.push({
+			connector: surface.connector,
+			toolName,
+			kind: "unclassified-host-tool",
+			detail: `${inventory.host} exposes ${toolName}, which ${surface.dispatchSource} does not dispatch, core does not alias, and genericInspection does not list. Map it or declare it generic with a reason.`,
+		});
+	}
+	for (const toolName of inventory.genericInspection) {
+		if (inventory.tools.includes(toolName) && !handled(toolName)) continue;
+		violations.push({
+			connector: surface.connector,
+			toolName,
+			kind: "stale-generic-inspection",
+			detail: `${toolName} is listed for generic inspection but is ${handled(toolName) ? "now handled by the connector or core" : `not in the ${inventory.host} inventory`}.`,
+		});
+	}
+	return violations;
+}
+
 /**
  * Compare the derived connector vocabularies against the declaration.
  *
@@ -186,6 +391,10 @@ export function findConnectorToolSurfaceViolations(
 				kind: "stale-pass-through",
 				detail: `${toolName} is declared pass-through but ${surface.dispatchSource} no longer emits it.`,
 			});
+		}
+
+		if (surface.hostInventory) {
+			violations.push(...hostInventoryViolations(surface, surface.hostInventory, names));
 		}
 
 		if (surface.passThrough.length > 0 && !surface.passThroughReason) {

@@ -15,6 +15,12 @@ function asString(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
+/** Resolve a relative glob against its search root: `~/.ssh` + `id_*` is `~/.ssh/id_*`. */
+function joinSearchPath(root: string, pattern: string): string {
+	if (pattern.startsWith("/") || pattern.startsWith("~")) return pattern;
+	return `${root.replace(/\/+$/, "")}/${pattern.replace(/^\.\//, "")}`;
+}
+
 function asNumber(value: unknown): number | undefined {
 	return typeof value === "number" ? value : undefined;
 }
@@ -55,21 +61,46 @@ export function extractFromOpenCodeTool(
 			return [{ type: "file_path", value: filePath, context: "read" }];
 		}
 		case "glob": {
+			// The search root and the pattern resolved against it are both paths
+			// the call reads, so both go through the file-path rules.
 			const pattern = asString(args.pattern) ?? "";
-			if (!pattern) return null;
-			return [{ type: "file_path", value: pattern, context: "glob_pattern" }];
+			const root = asString(args.path) ?? "";
+			const artifacts: Artifact[] = [];
+			if (pattern) artifacts.push({ type: "file_path", value: pattern, context: "glob_pattern" });
+			if (root) {
+				artifacts.push({ type: "file_path", value: root, context: "glob_root" });
+				if (pattern) {
+					artifacts.push({
+						type: "file_path",
+						value: joinSearchPath(root, pattern),
+						context: "glob_pattern",
+					});
+				}
+			}
+			return artifacts.length > 0 ? artifacts : null;
 		}
 		case "grep": {
 			const pattern = asString(args.pattern) ?? "";
-			if (!pattern) return null;
-			const artifacts: Artifact[] = [{ type: "content", value: pattern, context: "grep_pattern" }];
+			const root = asString(args.path) ?? "";
 			const include = asString(args.include);
+			const artifacts: Artifact[] = [];
+			if (pattern) artifacts.push({ type: "content", value: pattern, context: "grep_pattern" });
+			if (root) artifacts.push({ type: "file_path", value: root, context: "grep_root" });
 			if (include) {
 				artifacts.push({ type: "file_path", value: include, context: "grep_include" });
+				if (root) {
+					artifacts.push({
+						type: "file_path",
+						value: joinSearchPath(root, include),
+						context: "grep_include",
+					});
+				}
 			}
-			return artifacts;
+			return artifacts.length > 0 ? artifacts : null;
 		}
-		case "ls": {
+		case "ls":
+		case "list": {
+			// `list` is OpenCode's directory-listing tool; `ls` is the older name.
 			const dir = asString(args.path) ?? asString(args.directoryPath) ?? "";
 			if (!dir) return null;
 			return [{ type: "file_path", value: dir, context: "list" }];
@@ -111,9 +142,29 @@ export function extractFromOpenCodeTool(
 			];
 		}
 		case "apply_patch":
-			// Keep the bounded generic view for content heuristics. The shared core
-			// normalizer also parses patchText into canonical Edit path/content fields.
-			return extractFromUnknownTool("opencode:apply_patch", args);
+		case "patch":
+			// `patch` is the same patchText tool under the name some OpenCode builds
+			// expose. Keep the bounded generic view for content heuristics; the
+			// shared core normalizer aliases both names to Edit and parses patchText
+			// into canonical Edit path/content fields.
+			return extractFromUnknownTool(`opencode:${toolName}`, args);
+		case "multiedit": {
+			const filePath = asString(args.filePath) ?? "";
+			const edits = Array.isArray(args.edits) ? args.edits : [];
+			if (!filePath) return extractFromUnknownTool("opencode:multiedit", args);
+			const artifacts: Artifact[] = [{ type: "file_path", value: filePath, context: "edit" }];
+			for (const edit of edits) {
+				const record = edit && typeof edit === "object" ? (edit as Record<string, unknown>) : {};
+				artifacts.push(
+					...extractFromEdit({
+						file_path: filePath,
+						old_string: asString(record.oldString) ?? "",
+						new_string: asString(record.newString) ?? "",
+					}),
+				);
+			}
+			return artifacts;
+		}
 		default:
 			return extractFromUnknownTool(`opencode:${toolName || "unknown"}`, args);
 	}

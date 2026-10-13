@@ -1656,7 +1656,8 @@
       "evidence": [
         "packages/core/src/evaluator.ts:668 and 984",
         "packages/opencode/src/tool-handler.ts:30",
-        "packages/core/src/tool-normalization.ts and evaluator normalization; package and connector focused 17/17 pass, integrated TypeScript pass; old uncovered allow assertion replaced"
+        "packages/core/src/tool-normalization.ts and evaluator normalization; package and connector focused 17/17 pass, integrated TypeScript pass; old uncovered allow assertion replaced",
+        "2026-10-13 GA audit (CON-2, CON-3): the 2026-09-12 closure covered only the tool names each connector's source already named. Follow-up: OpenCode patch/multiedit alias to Edit and list/glob/grep search roots are file paths (packages/opencode/src/__tests__/file-tool-coverage.test.ts); OpenClaw process/terminal/nodes input is evaluated as shell (packages/openclaw/src/__tests__/exec-surface-bundle.test.ts); connector-alias-contract now pins the openclaw@2026.9.6 and opencode-ai@1.18.32 built-in tool inventories so an unclassified host tool fails the contract test. Open: OpenCode experimental code-mode `execute` (aliased to Bash, no command to inspect)."
       ]
     },
     {
