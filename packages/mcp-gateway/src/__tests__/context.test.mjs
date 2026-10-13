@@ -9,6 +9,7 @@ import {
 } from "../../../core/dist/mcp-attestation.js";
 import { validateGatewayConfig } from "../config.mjs";
 import { createMcpGateway } from "../gateway.mjs";
+import { approveQuarantinedToolset } from "../operator-approval.mjs";
 import { runStdioBridge } from "../stdio.mjs";
 import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS, testStateDir } from "./helpers/approval-key.mjs";
 
@@ -190,7 +191,7 @@ async function fixture({ modern = false, peer, dependencies = {}, listen = true 
 		return { status: response.status, body: await response.json() };
 	}
 	await call("tools/call", { name: "search", arguments: {} });
-	await gateway.approve({
+	await approveQuarantinedToolset(gateway, {
 		tenantId: "tenant",
 		serverId: "server",
 		toolsetHash: mcpToolsetHash([tool]),

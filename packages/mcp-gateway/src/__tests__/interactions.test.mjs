@@ -11,6 +11,7 @@ import {
 import { fetchMcpEndpoint, readMcpSseMessages } from "../../../core/dist/mcp-transport.js";
 import { GATEWAY_CAPACITY } from "../config.mjs";
 import { createMcpGateway } from "../gateway.mjs";
+import { approveQuarantinedToolset } from "../operator-approval.mjs";
 import { runStdioBridge } from "../stdio.mjs";
 import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS, testStateDir } from "./helpers/approval-key.mjs";
 
@@ -207,7 +208,7 @@ async function fixture({
 		);
 		const bindingSha256 = (await gateway.storeFor(client.tenantId).read("server")).quarantine
 			.bindingSha256;
-		await gateway.approve({
+		await approveQuarantinedToolset(gateway, {
 			tenantId: client.tenantId,
 			serverId: "server",
 			toolsetHash: mcpToolsetHash([tool]),

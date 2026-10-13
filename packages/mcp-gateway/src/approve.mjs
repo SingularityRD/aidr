@@ -2,6 +2,7 @@
 import { createPrivateKey, createPublicKey, generateKeyPairSync } from "node:crypto";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { reportFailure, stage } from "./diagnostics.mjs";
+import { approveQuarantinedToolset } from "./operator-approval.mjs";
 import { openVerifiedGateway } from "./operator-startup.mjs";
 
 /**
@@ -167,7 +168,7 @@ async function approve(options) {
 		loadApprovalKey(options.keyFile, gateway.config.approvalKeys),
 	);
 	const result = await stage("approval_failed", async () => {
-		const approval = await gateway.approve({
+		const approval = await approveQuarantinedToolset(gateway, {
 			tenantId: options.tenantId,
 			serverId: options.serverId,
 			toolsetHash: options.toolsetHash,

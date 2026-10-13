@@ -208,14 +208,15 @@
 # name: `secret-tool lookup service singularity-aidr-cli id aidr-operator-approval-key`,
 # `security find-generic-password -s singularity-aidr-cli`, or a file named after
 # them, wherever it is.
-# The MCP gateway's operator approval is reachable as a library too: agent code
-# that imports `@singularityrd/aidr-mcp-gateway` or its `aidr-mcp-library.mjs`
-# bundle (`import(...)`, `require(...)`, `from ...`, `node --import`) can call
-# `approve()` without running `aidr-mcp-approve`, so the import is a hard block in
-# a command and in a file the agent writes. The gateway's attestation state
-# directory as documented (`/var/lib/aidr/mcp-attestation`) is protected the same
-# way. A specifier computed at run time is not visible to a rule; closing that
-# needs the approval API out of the importable library (MSC-2, gateway side).
+# Agent code that imports `@singularityrd/aidr-mcp-gateway` or its
+# `aidr-mcp-library.mjs` bundle (`import(...)`, `require(...)`, `from ...`,
+# `node --import`) is a hard block in a command and in a file the agent writes,
+# as defence in depth around the MCP gateway's operator approval. The gateway's
+# attestation state directory as documented (`/var/lib/aidr/mcp-attestation`) is
+# protected the same way. A specifier computed at run time is not visible to a
+# rule; the gateway closes that case itself (MSC-2): the importable library has
+# no approval writer (only `aidr-mcp-approve` signs approvals, with the
+# operator's key) and the gateway honours only operator-signed approvals.
 - id: "CLT-SELF-009"
   category: self_defense
   severity: critical

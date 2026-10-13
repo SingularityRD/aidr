@@ -6,6 +6,7 @@ import {
 	signMcpToolManifest,
 } from "@singularityrd/aidr-core";
 import { createMcpGateway } from "../../gateway.mjs";
+import { approveQuarantinedToolset } from "../../operator-approval.mjs";
 import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS, testStateDir } from "./approval-key.mjs";
 
 const running = [];
@@ -156,7 +157,8 @@ export function fixture(overrides = {}) {
 		maxBodyBytes: overrides.maxBodyBytes ?? 4096,
 		...(overrides.gatewayConfig ?? {}),
 	};
-	const gateway = createMcpGateway(input, dependencies);
+	// `createGateway` lets a test drive the built, installed library's factory.
+	const gateway = (overrides.createGateway ?? createMcpGateway)(input, dependencies);
 	return {
 		gateway,
 		input,
@@ -188,7 +190,7 @@ export function fixture(overrides = {}) {
 				bindingSha256 ??
 				(await gateway.storeFor(tenantId).read("server-a"))?.quarantine?.bindingSha256;
 			if (!reviewed) throw new Error("missing reviewed MCP binding");
-			return gateway.approve({
+			return approveQuarantinedToolset(gateway, {
 				tenantId,
 				serverId: "server-a",
 				toolsetHash: mcpToolsetHash(tools),
