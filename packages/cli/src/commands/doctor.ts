@@ -22,6 +22,12 @@ import {
 import { ct } from "../i18n/index.js";
 import { scanAgentEnvironment } from "../utils/agent-posture.js";
 import { type ConnectorStatus, detectConnectorStatuses } from "../utils/connector-status.js";
+import {
+	type CustomerPacketOptions,
+	customerReport,
+	describeCustomer,
+	discoverCustomerPacket,
+} from "../utils/customer-packet.js";
 import { localTime } from "../utils/local-time.js";
 import {
 	describeReleaseKey,
@@ -29,6 +35,7 @@ import {
 	releaseKeySeverity,
 	releaseKeyState,
 } from "../utils/release-key.js";
+import { standaloneBundleRoot } from "../utils/standalone.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 import { auditLogFiles, readAuditEntries, redactAuditEntry } from "./audit.js";
 
@@ -66,6 +73,8 @@ export interface DoctorDeps {
 	agentProfilesPath?: string;
 	/** Local (unsigned) DLP policy location; defaults to `AIDR_DLP_POLICY_PATH` or the home file. */
 	localDlpPolicyPath?: string;
+	/** Customer packet discovery: candidate files, key registry, clock. */
+	customerPacket?: CustomerPacketOptions;
 }
 
 function message(error: unknown): string {
@@ -130,6 +139,22 @@ function checkReleaseKey(config: Config): DoctorCheck {
 		summary: describeReleaseKey(state),
 		...(status === "fail" ? { notes: [ct("integrity.missingWhy", { fix: releaseKeyFix() })] } : {}),
 		detail: { ...state },
+	};
+}
+
+/**
+ * The customer packet and its license, when the installer placed one. Never a
+ * failure: an ended license stops new update packs, not detection.
+ */
+function checkCustomer(deps: DoctorDeps): DoctorCheck | null {
+	const discovery = discoverCustomerPacket(standaloneBundleRoot(), deps.customerPacket);
+	const described = describeCustomer(discovery);
+	if (!described) return null;
+	return {
+		id: "customer_license",
+		status: described.severity,
+		summary: described.line,
+		detail: customerReport(discovery),
 	};
 }
 
@@ -564,6 +589,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 	const { check: configCheck, config } = await checkConfiguration(deps);
 	checks.push(configCheck);
 	checks.push(checkReleaseKey(config));
+	const customer = checkCustomer(deps);
+	if (customer) checks.push(customer);
 	checks.push(await checkRules());
 	const connectors = deps.connectors
 		? deps.connectors()
