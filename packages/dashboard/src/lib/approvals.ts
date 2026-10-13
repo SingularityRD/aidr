@@ -277,6 +277,60 @@ export async function rotateApprovalSigningKey(
 	}
 }
 
+/**
+ * Separation of duties for approvals (CP-9). `configured` is the tenant's
+ * explicit choice (null = plan default: Business/Enterprise require a different
+ * approver); `effective` is what decide_approval_request enforces.
+ */
+export type ApprovalSeparation = { configured: boolean | null; effective: boolean };
+
+export async function loadApprovalSeparation(
+	tenantId: string,
+): Promise<ApprovalResult<ApprovalSeparation>> {
+	try {
+		const { data, error } = await supabase.rpc("get_approval_settings", { p_tenant_id: tenantId });
+		if (
+			error ||
+			!isRecord(data) ||
+			typeof data.effective !== "boolean" ||
+			(data.require_distinct_approver !== null &&
+				typeof data.require_distinct_approver !== "boolean")
+		)
+			return { ok: false, error: "approvals_unavailable" };
+		return {
+			ok: true,
+			value: {
+				configured: data.require_distinct_approver as boolean | null,
+				effective: data.effective,
+			},
+		};
+	} catch {
+		return { ok: false, error: "approvals_unavailable" };
+	}
+}
+
+export async function updateApprovalSeparation(
+	tenantId: string,
+	requireDistinctApprover: boolean | null,
+): Promise<ApprovalResult<ApprovalSeparation>> {
+	try {
+		const { data, error } = await supabase.functions.invoke("ai-governance", {
+			method: "POST",
+			body: {
+				action: "update_approval_settings",
+				tenant_id: tenantId,
+				require_distinct_approver: requireDistinctApprover,
+			},
+		});
+		if (error) return { ok: false, error: (await errorCode(error)) ?? "approval_settings_failed" };
+		if (!isRecord(data) || data.ok !== true || typeof data.effective !== "boolean")
+			return { ok: false, error: "approval_settings_failed" };
+		return { ok: true, value: { configured: requireDistinctApprover, effective: data.effective } };
+	} catch {
+		return { ok: false, error: "approval_settings_failed" };
+	}
+}
+
 /** "4:05" style countdown; "expired" once the deadline passes. */
 export function formatCountdown(expiresAt: string, nowMs: number): string {
 	const remaining = Date.parse(expiresAt) - nowMs;

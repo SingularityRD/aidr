@@ -139,17 +139,23 @@ function setup(
 		data?: unknown;
 		error?: { message: string } | null;
 		invoke?: Invoke;
+		governance?: Invoke;
+		separation?: { require_distinct_approver: boolean | null; effective: boolean };
 	} = {},
 ) {
 	const mocks = installDashboardMocks({
 		tableResults: {
 			approval_requests: queueResolver(options.data ?? rows(), options.error ?? null),
 		},
+		...(options.separation
+			? { rpcResults: { get_approval_settings: { data: options.separation, error: null } } }
+			: {}),
 	});
 	const original = mocks.invoke.getMockImplementation() as Invoke | undefined;
 	mocks.invoke.mockImplementation(
 		async (name: string, request?: { body?: Record<string, unknown> }) => {
 			if (name === "approval-requests" && options.invoke) return options.invoke(name, request);
+			if (name === "ai-governance" && options.governance) return options.governance(name, request);
 			return original?.(name, request);
 		},
 	);
@@ -314,6 +320,59 @@ describe("ApprovalsPage", () => {
 			}),
 		);
 		expect(await screen.findByRole("status")).toHaveTextContent(`New key apk_${"3".repeat(32)}`);
+	});
+});
+
+describe("approvals separation of duties (CP-9)", () => {
+	it("explains a refused self-approval instead of a generic failure", async () => {
+		setup({ invoke: async () => httpError(403, "approval_self_approval_forbidden") });
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		fireEvent.change(within(card).getByLabelText("Reason (recorded in the audit log)"), {
+			target: { value: "Mine" },
+		});
+		fireEvent.click(within(card).getByRole("button", { name: "Approve" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"another owner or administrator must approve it",
+		);
+	});
+
+	it("shows the effective rule and lets an owner change it through ai-governance", async () => {
+		const governance = vi.fn(async () => ({
+			data: { ok: true, require_distinct_approver: true, effective: true, changed: true },
+			error: null,
+		}));
+		setup({
+			role: "owner",
+			governance,
+			separation: { require_distinct_approver: null, effective: false },
+		});
+		const select = (await screen.findByLabelText("Approver")) as HTMLSelectElement;
+		expect(select.value).toBe("plan");
+		expect(screen.getByTestId("approval-separation-effective")).toHaveTextContent(
+			"requesters may approve their own requests",
+		);
+		fireEvent.change(select, { target: { value: "required" } });
+		await waitFor(() =>
+			expect(governance).toHaveBeenCalledWith("ai-governance", {
+				method: "POST",
+				body: {
+					action: "update_approval_settings",
+					tenant_id: TEAM_ID,
+					require_distinct_approver: true,
+				},
+			}),
+		);
+		await waitFor(() =>
+			expect(screen.getByTestId("approval-separation-effective")).toHaveTextContent(
+				"a different owner or administrator must approve",
+			),
+		);
+	});
+
+	it("hides the setting from members", async () => {
+		setup({ role: "member", separation: { require_distinct_approver: true, effective: true } });
+		await screen.findAllByTestId("approval-pending");
+		expect(screen.queryByLabelText("Approver")).not.toBeInTheDocument();
 	});
 });
 

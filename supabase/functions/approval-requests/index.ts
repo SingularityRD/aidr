@@ -543,6 +543,11 @@ async function handleDashboard(
 	if (data.outcome === "expired") {
 		return corsJson(req, 409, { error: "approval_request_expired", status: "expired" }, headers);
 	}
+	// Separation of duties: the tenant requires someone other than the
+	// requester to approve. Nothing was signed into the request (CP-9).
+	if (data.outcome === "self_approval_forbidden") {
+		return corsJson(req, 403, { error: "approval_self_approval_forbidden" }, headers);
+	}
 	if (data.outcome !== "decided" || (data.status !== "approved" && data.status !== "denied")) {
 		return corsJson(req, 503, { error: "approval_decision_failed" }, headers);
 	}

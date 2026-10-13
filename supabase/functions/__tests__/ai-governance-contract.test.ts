@@ -316,6 +316,26 @@ class World {
 				this.audit.push({ tenant: String(a.p_tenant_id), actor: String(a.p_actor_user_id), action: "browser_guard.settings_updated" });
 				return { require_native_ner: a.p_require_native_ner, changed: true };
 			}
+			case "update_approval_settings": {
+				// Mirrors 20261013000520_approval_separation_of_duties.sql (plan default here: required).
+				if (!ownerAdmin) fail("42501", "ai_governance_forbidden");
+				let settings = this.settings.find((s) => s.tenant_id === a.p_tenant_id);
+				if (!settings) {
+					settings = { tenant_id: a.p_tenant_id, policy_four_eyes: false, default_review_days: 180 };
+					this.settings.push(settings);
+				}
+				const effective = (value: unknown) => value ?? true;
+				const from = settings.approval_require_distinct_approver ?? null;
+				if (from === a.p_require_distinct_approver) {
+					return { require_distinct_approver: from, effective: effective(from), changed: false };
+				}
+				if (effective(from) && !effective(a.p_require_distinct_approver) && settings.policy_four_eyes) {
+					fail("42501", "approval_separation_four_eyes_required");
+				}
+				settings.approval_require_distinct_approver = a.p_require_distinct_approver;
+				this.audit.push({ tenant: String(a.p_tenant_id), actor: String(a.p_actor_user_id), action: "approval.settings_updated" });
+				return { require_distinct_approver: a.p_require_distinct_approver, effective: effective(a.p_require_distinct_approver), changed: true };
+			}
 			case "decide_policy_change_request": {
 				if (!ownerAdmin) fail("42501", "policy_forbidden");
 				const row = this.changes.find((r) => r.id === a.p_request_id && r.tenant_id === a.p_tenant_id) ?? fail("P0002", "policy_change_request_not_found");
@@ -427,7 +447,9 @@ describe("ai-governance: request gating", () => {
 		for (const [action, rule] of Object.entries(GOVERNANCE_ACTIONS)) {
 			if (!rule.roles.includes("member")) expect(rule.roles, action).toEqual(["owner", "admin"]);
 			if (action.startsWith("decide_") || action === "upsert_asset" || action === "update_settings" ||
-				action === "update_browser_guard_settings") expect(rule.aal2, action).toBe(true);
+				action === "update_browser_guard_settings" || action === "update_approval_settings") {
+				expect(rule.aal2, action).toBe(true);
+			}
 		}
 	});
 
@@ -555,6 +577,28 @@ describe("ai-governance: register, intake and four-eyes", () => {
 
 		for (const bad of [{ ...body("true") }, { ...body(null) }, { action: "update_browser_guard_settings", tenant_id: TENANT_A },
 			{ ...body(true), actor_user_id: OWNER_A }]) {
+			expect(await call(bad)).toEqual({ status: 400, body: { error: "invalid_request" } });
+		}
+	});
+
+	it("lets owners and admins configure separation of duties for approvals (CP-9)", async () => {
+		const { world, call } = setup();
+		const body = (require_distinct_approver: unknown) =>
+			({ action: "update_approval_settings", tenant_id: TENANT_A, require_distinct_approver });
+		expect(await call(body(false), `session-${MEMBER_A}`)).toEqual({ status: 403, body: { error: "governance_role_insufficient" } });
+		expect(await call(body(false), `aal1-${ADMIN_A}`)).toEqual({ status: 403, body: { error: "mfa_required" } });
+		expect(world.rpcCalls.some((c) => c.name === "update_approval_settings")).toBe(false);
+
+		expect((await call(body(true), `session-${ADMIN_A}`)).body).toMatchObject({ ok: true, require_distinct_approver: true, changed: true });
+		expect(world.rpcCalls.find((c) => c.name === "update_approval_settings")?.args).toEqual({
+			p_tenant_id: TENANT_A, p_actor_user_id: ADMIN_A, p_require_distinct_approver: true,
+		});
+		// null returns the tenant to its plan default.
+		expect((await call(body(null), `session-${OWNER_A}`)).body).toMatchObject({ ok: true, require_distinct_approver: null });
+		// Relaxing under four-eyes change control needs a second person.
+		await call({ action: "update_settings", tenant_id: TENANT_A, policy_four_eyes: true });
+		expect(await call(body(false))).toEqual({ status: 403, body: { error: "approval_separation_four_eyes_required" } });
+		for (const bad of [body("false"), body(1), { action: "update_approval_settings", tenant_id: TENANT_A }]) {
 			expect(await call(bad)).toEqual({ status: 400, body: { error: "invalid_request" } });
 		}
 	});

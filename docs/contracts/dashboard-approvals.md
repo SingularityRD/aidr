@@ -5,6 +5,7 @@ Purpose: in MANAGED mode, an `ask` verdict can be approved by a human admin in t
    body: { iid, agent_runtime, action_id (string, ^[A-Za-z0-9._:-]{8,128}$), artifact_digest ("sha256:<64hex>" over the canonical artifacts JSON the core already digests for operator approvals), tool (string <=64), threat_ids (string[] <=16), summary (redacted, <=512 chars, control chars escaped), expires_at (ISO, <= now+30min) }
    -> 201 { request_id (uuid), status: "pending" } ; idempotent on (tenant, iid, action_id). A replay must repeat the whole subject (artifact_digest, tool, summary, threat_ids, agent_runtime); any difference is 409 approval_request_conflict, so a request pre-filed with other text never becomes the one the approver reads. summary, tool and iid carrying Unicode format or separator characters (bidi overrides/isolates, zero-width characters, BOM, tag characters, U+2028/2029) are refused (400); the connector sends such characters as visible escapes.
 2. Approve/deny (dashboard, admin/owner, AAL2): POST {base}/functions/v1/approval-requests/{request_id}/decision body {decision: "approve"|"deny", reason}
+   Separation of duties: when the tenant requires a different approver (`approval_require_distinct_approver`; default on for Business and Enterprise, off for Free and Team, changed by an owner/admin at AAL2 through `ai-governance { action: "update_approval_settings", require_distinct_approver: true|false|null }`), the user who owns the API key that filed the request cannot approve it: 403 `approval_self_approval_forbidden`, nothing is signed, the request stays pending and `approval.self_approval_refused` is audited. The requester may always deny. A permitted self-approval is audited as `approval.self_approved` (`self_approval: true`).
    -> server signs an approval token with the tenant approval signing key (Ed25519, key stored server-side, public key delivered in the signed runtime policy / entitlement as `approval_public_keys: [{key_id, public_key_spki_b64}]`).
    token payload (canonical JSON): { v:1, tenant_id, iid, action_id, artifact_digest, tool, decision, approver_id, issued_at, expires_at (<= issued_at+15min), nonce }
    token format: base64url(payload) + "." + base64url(signature) , key_id in separate field.
@@ -45,7 +46,8 @@ Purpose: in MANAGED mode, an `ask` verdict can be approved by a human admin in t
   required (1–500 characters, no control characters). Key rotation:
   `POST /approval-requests { action: "rotate_key", tenant_id }` (owner/admin, AAL2).
 - Server audit actions (`admin_audit_logs`, plus `audit_logs` for team tenants):
-  `approval.requested`, `approval.approved`, `approval.denied`, `approval.expired`,
+  `approval.requested`, `approval.approved`, `approval.self_approved`,
+  `approval.self_approval_refused`, `approval.denied`, `approval.expired`,
   `approval.token_delivered` (first delivery of a token to the connector, the server-side
   view of consumption), `approval.signing_key_created`, `approval.signing_key_rotated`,
   `approval.offboarding_revoked`. The redacted summary is never copied into audit rows.

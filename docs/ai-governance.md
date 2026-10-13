@@ -138,6 +138,17 @@ it with its managed `requireNativeNer` key, `true` wins, and keeps it in force
 after the document expires. An unreadable settings row makes the endpoint answer
 503 rather than serve a document without the requirement.
 
+Separation of duties for agent approvals: owners and administrators choose
+whether the person whose key or agent raised an `ask` approval request may
+approve it themselves (Approvals → Separation of duties). The
+`update_approval_settings` action (AAL2, rate-limited) stores
+`tenant_ai_governance_settings.approval_require_distinct_approver` (`true`,
+`false`, or `null` for the plan default: required on Business and Enterprise,
+allowed on Free and Team; an unresolvable plan counts as required) and writes an
+`approval.settings_updated` audit row. Relaxing it while four-eyes is on is
+refused (`approval_separation_four_eyes_required`). `decide_approval_request`
+enforces the rule in the database; see `docs/contracts/dashboard-approvals.md`.
+
 At most 500 MCP servers can be banned or restricted per workspace.
 
 ## Intake: "may we use this AI tool?"
