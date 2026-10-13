@@ -176,10 +176,20 @@ Both comparisons use signed times only, never the endpoint clock, so a
 customer cannot extend updates by changing a clock. An endpoint without a
 license refuses packs that carry an audience and otherwise behaves as before.
 
+On an air-gapped host the same check runs when a pack is imported:
+`scripts/import-offline-pack.mjs` takes `--license <file>` (and
+`--license-public-keys <registry>` to override the registry built into the
+release). The local target falls back to the endpoint's installed
+`~/.singularity-aidr/license.json`, so leaving out `--license` does not skip
+the term check. The import summary prints the license id, customer id, license
+state and `updates_until`.
+
 **Local detection never stops or degrades because of license state, expiry or
-a clock.** Rules and packs that are already installed keep enforcing for ever;
-the only thing that can still remove an installed pack is revocation of its
-signing key. License state gates only accepting *new* packs and managed
+a clock.** Rules and packs that are already installed keep enforcing for ever:
+a pack past its own `expires_at` is reported as stale (logged, and listed in the
+merged intel detail) but stays active, and an encrypted pack keeps the key it
+was activated with after the managed entitlement ends. The only thing that can
+still remove an installed pack is revoking its pack id or signing key. License state gates only accepting *new* packs and managed
 control-plane features.
 
 ## What protects the product

@@ -571,7 +571,7 @@ integrity signature is what refuses a changed install.
 
 A customer installer is the same signed product plus one vendor-signed
 customer packet (`aidr-customer-packet-v1`; the vendor runbook is
-`docs/operations/customer-builds.md`). The builders take it as an extra input:
+[Per-customer builds](../operations/customer-builds.md)). The builders take it as an extra input:
 
 ```sh
 node deploy/installers/linux/build-linux-packages.mjs ... \
