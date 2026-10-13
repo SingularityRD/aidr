@@ -656,6 +656,68 @@ describe("background: NATIVE_SCAN and SET_RESTORE_VISIBLE", () => {
 	});
 });
 
+describe("background: exact-data keys from the native host (BG-8)", () => {
+	const HEX = "b".repeat(64);
+	const DATASET = {
+		datasetId: "crm",
+		keySource: "native-host",
+		minEntropyBits: 70,
+		fingerprints: [HEX],
+		type: "PERSON",
+	};
+	// Assembled at runtime: a 32-byte base64 key, never a literal in the repository.
+	const HOST_KEY = Buffer.alloc(32, 0x5a).toString("base64");
+
+	function keyBridge(answer: () => Promise<Record<string, string> | null>) {
+		const exactDataKeys = vi.fn(async (_ids: readonly string[]) => answer());
+		const bridge: NativeBridge = {
+			status: () => "connected",
+			scanText: async () => null,
+			exactDataKeys,
+		};
+		return { bridge, exactDataKeys };
+	}
+
+	it("gives the host-derived key to content scripts only, never to extension pages or storage", async () => {
+		const { bridge, exactDataKeys } = keyBridge(async () => ({ crm: HOST_KEY }));
+		const t = await setup({ managed: { exactData: [DATASET] }, bridge });
+		expect(t.bg.policy().useNativeHost).toBe(true);
+		await vi.waitFor(() => expect(exactDataKeys).toHaveBeenCalledWith(["crm"]));
+		const fromContent = (await t.send({ type: "GET_POLICY" }, t.content())).policy as GuardPolicy;
+		expect(fromContent.exactData).toEqual([{ ...DATASET, keyB64: HOST_KEY }]);
+		const fromPopup = (await t.send({ type: "GET_POLICY" })).policy as GuardPolicy;
+		expect(fromPopup.exactData).toEqual([DATASET]);
+		expect(JSON.stringify(t.bg.policy())).not.toContain(HOST_KEY);
+		for (const area of [t.fake.local, t.fake.session])
+			expect(JSON.stringify([...area.data.values()])).not.toContain(HOST_KEY);
+		// Open tabs receive the keyed policy once the host answered.
+		await vi.waitFor(() =>
+			expect(t.policyMessages().some((m) => JSON.stringify(m.message).includes(HOST_KEY))).toBe(
+				true,
+			),
+		);
+	});
+
+	it("leaves the dataset keyless (scans incomplete) while the host has no key, and asks again later", async () => {
+		let reply: Record<string, string> | null = null;
+		const { bridge, exactDataKeys } = keyBridge(async () => reply);
+		const t = await setup({ managed: { exactData: [DATASET] }, bridge });
+		await vi.waitFor(() => expect(exactDataKeys).toHaveBeenCalledTimes(1));
+		await vi.waitFor(() => expect(t.logs.some((l) => l.startsWith("exactData:"))).toBe(true));
+		const keyless = (await t.send({ type: "GET_POLICY" }, t.content())).policy as GuardPolicy;
+		expect(keyless.exactData[0]?.keyB64).toBeUndefined();
+		expect(exactDataKeys).toHaveBeenCalledTimes(1);
+		reply = { crm: HOST_KEY };
+		t.advance(30_000);
+		await t.send({ type: "GET_POLICY" }, t.content());
+		await vi.waitFor(() => expect(exactDataKeys).toHaveBeenCalledTimes(2));
+		await vi.waitFor(async () => {
+			const keyed = (await t.send({ type: "GET_POLICY" }, t.content())).policy as GuardPolicy;
+			expect(keyed.exactData[0]?.keyB64).toBe(HOST_KEY);
+		});
+	});
+});
+
 describe("background: per-tab vault persistence (VAULT_SAVE / VAULT_LOAD)", () => {
 	const EMAIL_ENTRY = { placeholder: "[EMAIL_1]", value: "ayse@example.com", type: "EMAIL" };
 	const PHONE_ENTRY = { placeholder: "[PHONE_1]", value: "+90 532 000 00 00", type: "PHONE" };

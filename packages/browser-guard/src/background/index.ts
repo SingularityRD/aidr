@@ -84,6 +84,8 @@ const CHANNELS: readonly PrivacyScanEvent["channel"][] = ["prompt", "paste", "fi
 const NATIVE_NER_USES: readonly NativeNerUse[] = ["used", "unavailable"];
 /** policy.requireNativeNer: only a host answer with NER coverage counts (see native.ts). */
 const REQUIRE_NER: NativeScanOptions = Object.freeze({ requireNer: true });
+/** After the native host could not supply exact-data keys, ask again no sooner than this. */
+const EXACT_DATA_KEY_RETRY_MS = 30_000;
 
 export interface BackgroundOptions {
 	readonly chrome: ChromeApi;
@@ -157,6 +159,13 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	let currentWarnings: readonly string[] = [];
 	let bridge: NativeBridge | null = null;
 	let bridgeEnabled: boolean | null = null;
+	/**
+	 * Exact-data keys the native host derived for the policy's datasets, by dataset id. Memory
+	 * only: never persisted and never sent to extension pages, only to content scripts (BG-8).
+	 */
+	let exactDataKeys: ReadonlyMap<string, string> = new Map();
+	let exactDataKeyRequest: Promise<void> | null = null;
+	let exactDataKeyRetryAt = 0;
 	let reloadChain: Promise<unknown> = Promise.resolve();
 	let tabEvents: Promise<unknown> = Promise.resolve();
 	const extensionBase = chrome.runtime.getURL("");
@@ -207,6 +216,47 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 			...current,
 			mode: monitor ? "monitor" : current.mode,
 			telemetry: forContent ? null : current.telemetry,
+			// Only the content script fingerprints prompts; a dataset whose key has not arrived
+			// stays keyless there, so its scans are incomplete (fail closed).
+			exactData: forContent ? exactDataWithKeys() : current.exactData,
+		});
+	}
+
+	function exactDataWithKeys(): GuardPolicy["exactData"] {
+		return current.exactData.map((set) => {
+			const keyB64 = exactDataKeys.get(set.datasetId);
+			return keyB64 ? Object.freeze({ ...set, keyB64 }) : set;
+		});
+	}
+
+	/**
+	 * Asks the native host for the keys of the policy's exact-data datasets that have none yet,
+	 * then pushes the keyed policy to open tabs. One request at a time; after a miss, no new
+	 * request for EXACT_DATA_KEY_RETRY_MS (content scripts ask again through GET_POLICY).
+	 */
+	function refreshExactDataKeys(): void {
+		const missing = current.exactData
+			.map((set) => set.datasetId)
+			.filter((id) => !exactDataKeys.has(id));
+		const target = bridge;
+		if (!missing.length || !target?.exactDataKeys || exactDataKeyRequest) return;
+		if (now() < exactDataKeyRetryAt) return;
+		exactDataKeyRequest = (async () => {
+			const keys = await target.exactDataKeys?.(missing).catch(() => null);
+			if (target !== bridge) return;
+			const got = Object.entries(keys ?? {}).filter(([id]) => missing.includes(id));
+			if (got.length) {
+				exactDataKeys = new Map([...exactDataKeys, ...got]);
+				await broadcastPolicy();
+			}
+			if (got.length < missing.length) {
+				exactDataKeyRetryAt = now() + EXACT_DATA_KEY_RETRY_MS;
+				log(
+					"exactData: the native host gave no key for some datasets; their scans stay incomplete",
+				);
+			}
+		})().finally(() => {
+			exactDataKeyRequest = null;
 		});
 	}
 
@@ -232,6 +282,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 	/** (Re)creates the native bridge: on a policy change, or after the permission changed. */
 	function resetBridge(): void {
 		bridgeEnabled = current.useNativeHost;
+		exactDataKeys = new Map();
+		exactDataKeyRetryAt = 0;
 		try {
 			bridge = bridgeFactory(current.useNativeHost);
 		} catch {
@@ -272,6 +324,10 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 		for (const warning of currentWarnings) log(`policy: ${warning}`);
 
 		if (bridgeEnabled !== current.useNativeHost) resetBridge();
+		// Keys of datasets that left the policy are forgotten.
+		const datasetIds = new Set(current.exactData.map((set) => set.datasetId));
+		exactDataKeys = new Map([...exactDataKeys].filter(([id]) => datasetIds.has(id)));
+		refreshExactDataKeys();
 		if (!(await applyBlockedSites(chrome, current.blockedSites)))
 			log("dnr: failed to update blocked-site rules");
 		if (!(await applyShadowRules(chrome, current.shadowAi)))
@@ -574,6 +630,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	async function policyFor(who: Sender): Promise<GuardResponse> {
 		const content = who.kind === "content";
+		if (content) refreshExactDataKeys();
 		return {
 			ok: true,
 			policy: effectivePolicy(content ? who.site : null, content, await pausedUntil()),

@@ -104,8 +104,10 @@ use AI chat products directly.
   exact-data-match datasets. Optional signals flag prompt-injection patterns and
   source-code pastes with coaching text.
 - **Exact data match.** An administrator distributes HMAC-SHA256 fingerprints of
-  sensitive records (for example a customer list) through managed policy. The extension
-  compares fingerprints and never receives the plaintext dataset.
+  sensitive records (for example customer name + account number) through managed policy.
+  The extension compares fingerprints and never receives the plaintext dataset. The
+  per-dataset keys come from the optional native host, not from browser policy, and
+  datasets of guessable values (below 64 bits of estimated entropy) are refused.
 - **Channels.** Typed prompts, pastes and file uploads. Text-based files (plain text,
   source, CSV/TSV, JSON/JSONL, `.env`) are masked and replaced before upload, with
   spreadsheet formula cells neutralised. Binary files such as PDF, DOCX, XLSX or images

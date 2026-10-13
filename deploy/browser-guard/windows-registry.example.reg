@@ -15,7 +15,7 @@ Windows Registry Editor Version 5.00
 "enabledEntities"="[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"
 "neverRestore"="[\"SECRET\",\"PRIVATE_KEY\"]"
 "literals"="[{\"value\":\"Project Nightingale\",\"type\":\"INTERNAL\"},{\"value\":\"ACME-CONFIDENTIAL\",\"type\":\"CLASSIFIED\"}]"
-"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keyB64\":\"REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET\",\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
+"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keySource\":\"native-host\",\"minEntropyBits\":64,\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
 "detectSignals"=dword:00000001
 "signalAction"="warn"
 "blockedSites"="[\"deepseek\"]"
@@ -44,7 +44,7 @@ Windows Registry Editor Version 5.00
 "enabledEntities"="[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"
 "neverRestore"="[\"SECRET\",\"PRIVATE_KEY\"]"
 "literals"="[{\"value\":\"Project Nightingale\",\"type\":\"INTERNAL\"},{\"value\":\"ACME-CONFIDENTIAL\",\"type\":\"CLASSIFIED\"}]"
-"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keyB64\":\"REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET\",\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
+"exactData"="[{\"datasetId\":\"crm-customers-example\",\"keySource\":\"native-host\",\"minEntropyBits\":64,\"fingerprints\":[\"REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET\"],\"type\":\"PERSON\"}]"
 "detectSignals"=dword:00000001
 "signalAction"="warn"
 "blockedSites"="[\"deepseek\"]"

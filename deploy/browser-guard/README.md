@@ -33,8 +33,8 @@ apart or use a key the extension does not accept.
      signed by Mozilla (listed on addons.mozilla.org, or signed as unlisted and
      self-hosted); replace the example `install_url`.
 2. **Replace the example values.** `policyId`, `literals`, the example
-   `exactData` set (its `keyB64` and `fingerprints` are `REPLACE_WITH_...`
-   placeholders: build the real dataset with `fingerprint-dataset.mjs`, see
+   `exactData` set (its `fingerprints` are a `REPLACE_WITH_...` placeholder and it
+   carries no key: build the real dataset with `fingerprint-dataset.mjs`, see
    [Exact data sets](#exact-data-sets). The extension refuses a policy that still
    carries the placeholder and reports it in its policy warnings), `telemetry.controlPlaneUrl` and `telemetry.apiKey`. Remove
    `telemetry` entirely if you do not want counts sent to your control plane.
@@ -64,7 +64,7 @@ apart or use a key the extension does not accept.
 | `enabledEntities` | array of entity types | e.g. `EMAIL`, `PHONE`, `TC_KIMLIK`, `IBAN`, `CREDIT_CARD`, `SECRET`, `PRIVATE_KEY` |
 | `neverRestore` | array of entity types | masked in prompts and kept masked in responses |
 | `literals` | array of `{ "value", "type" }` | organisation terms; up to 1024, each 2-256 characters |
-| `exactData` | array of `{ "datasetId", "keyB64", "fingerprints", "type" }` | up to 16 datasets, 100 000 fingerprints in total; build with `fingerprint-dataset.mjs` |
+| `exactData` | array of `{ "datasetId", "keySource": "native-host", "minEntropyBits", "fingerprints", "type" }` | up to 16 datasets, 100 000 fingerprints in total; build with `fingerprint-dataset.mjs`; no key in policy (the native host derives it); `minEntropyBits` at least 64 |
 | `detectSignals` | boolean | prompt-injection and source-code signals |
 | `signalAction` | string | `off`, `warn`, `block` |
 | `blockedSites` | array of site ids | the page is blocked from loading; `chatgpt`, `gemini`, `claude`, `copilot`, `perplexity`, `deepseek`, `mistral`, `grok` |
@@ -233,26 +233,33 @@ Copy `chrome-managed-policy.example.json` to
 ## Exact data sets
 
 ```bash
+node packages/browser-guard/scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
 node packages/browser-guard/scripts/fingerprint-dataset.mjs \
-  --in customers.csv --header --columns full_name \
+  --in customers.csv --header --columns full_name,account_no --composite \
   --dataset-id crm-customers --type PERSON \
-  --key-file crm.key.b64 --out crm-customers.json
+  --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
-Put the JSON object into the `exactData` array, replacing the example entry
-whose `keyB64` is `REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET`. While any
+Managed policy is readable by every user of the endpoint (`chrome://policy`, the
+registry, `policies.json`), so a dataset carries no key. Install `edm-secret.b64` with
+the AIDR Privacy native host (`"exactData": {"secretFile": ...}` in its config; see
+`packages/browser-guard/docs/native-host.md`); the host derives each dataset's key from
+it. Datasets need the native host: without it (or on Firefox) their scans are reported
+incomplete. The tool refuses datasets whose values could be enumerated (below 64 bits
+of estimated entropy, for example names or customer numbers on their own): combine
+columns with `--composite`. Older datasets that carry `keyB64` are refused with a
+warning; rebuild them.
+
+Put the JSON object into the `exactData` array, replacing the example entry whose
+fingerprints are `REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET`. While any
 dataset still carries a `REPLACE_WITH_` placeholder, the extension ignores the
 whole managed `exactData` value and warns
 (`managed: "exactData" still holds the example placeholder key`). Earlier
 versions of these examples shipped a real 32-byte example key; it was retired as
 compromised (see `docs/production-readiness/secret-history-triage-2026-10-11.md`).
-Never reuse a key from an example or from this repository's history. Keep `crm.key.b64` (or let the
-tool generate a key on first run and save `keyB64` from the output) so later
-regenerations keep the same fingerprints. The dataset contains the HMAC key, so
-anyone with the dataset can test guessed values against it: deliver it only
-through managed policy and restrict who can read the policy files. The
-normalisation and fingerprint algorithm are documented in
-`packages/browser-guard/README.md`.
+Keep `edm-secret.b64` outside the repository and restrict who can read it; the same
+secret and dataset id reproduce the same fingerprints. The normalisation and
+fingerprint algorithm are documented in `packages/browser-guard/README.md`.
 
 ## Verifying a rollout
 

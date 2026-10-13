@@ -204,6 +204,22 @@ describe("exact-data matching in the detection engine", () => {
 		expect(result.incomplete).toBe(true);
 	});
 
+	it("fails closed while a dataset's native-host key has not arrived (BG-8)", async () => {
+		const keyed = await dataset(["Ahmet Yılmaz"]);
+		const { keyB64: _key, ...unkeyed } = keyed;
+		const engine = createDetectionEngine(engineOptions([{ ...unkeyed, keySource: "native-host" }]));
+		const result = await engine.scan("Ahmet Yılmaz aradı");
+		expect(result.incomplete).toBe(true);
+		expect(result.findings).toEqual([]);
+		// Other datasets with their key still match; the scan stays incomplete.
+		const mixed = createDetectionEngine(
+			engineOptions([keyed, { ...unkeyed, datasetId: "other", keySource: "native-host" }]),
+		);
+		const both = await mixed.scan("Ahmet Yılmaz aradı");
+		expect(both.counts).toEqual({ PERSON: 1 });
+		expect(both.incomplete).toBe(true);
+	});
+
 	it("returns an empty complete scan for no datasets", async () => {
 		const result = await createExactDataMatcher([]).scan(
 			[normalize("Ahmet Yılmaz")],

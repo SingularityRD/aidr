@@ -126,7 +126,7 @@
 		},
 		"exactData": {
 			"title": "Exact data match datasets",
-			"description": "HMAC-SHA256 fingerprint datasets (at most 16 datasets and 100000 fingerprints in total).",
+			"description": "HMAC-SHA256 fingerprint datasets built by fingerprint-dataset.mjs (at most 16 datasets and 100000 fingerprints in total). No key is carried here: each dataset key is derived by the AIDR Privacy native host from the secret in its configuration.",
 			"type": "array",
 			"items": {
 				"type": "object",
@@ -135,9 +135,14 @@
 						"type": "string",
 						"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
 					},
-					"keyB64": {
+					"keySource": {
 						"type": "string",
-						"pattern": "^[A-Za-z0-9+/]{14,1000}[A-Za-z0-9+/]{0,22}={0,2}$"
+						"enum": ["native-host"]
+					},
+					"minEntropyBits": {
+						"type": "integer",
+						"minimum": 64,
+						"maximum": 4096
 					},
 					"fingerprints": {
 						"type": "array",
@@ -177,7 +182,8 @@
 				},
 				"required": [
 					"datasetId",
-					"keyB64",
+					"keySource",
+					"minEntropyBits",
 					"fingerprints",
 					"type"
 				]

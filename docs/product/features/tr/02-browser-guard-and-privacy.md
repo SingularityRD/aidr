@@ -804,75 +804,101 @@ burada listelenmez." yazar.
 
 ### 9. Tam veri eşleştirme (exact data match)
 
-**Ne yapar** — Kurumun kendi kayıtlarını (müşteri adları, hesap numaraları, personel sicil
-numaraları) değerleri tarayıcıya göndermeden işaretler. Tarayıcıya yalnızca anahtarlı
-parmak izleri gider.
+**Ne yapar** — Kurumun kendi kayıtlarını (müşteri kayıtları, adla birleştirilmiş hesap
+numaraları, personel sicil numaraları) değerleri tarayıcıya göndermeden işaretler.
+Tarayıcıya yalnızca anahtarlı parmak izleri gider; anahtar tarayıcı politikasında hiç yer
+almaz.
 
 **Neden önemli** — Kurallar IBAN'a benzeyen her şeyi bulur. Tam veri eşleştirme ise *sizin*
-müşterilerinizi bulur; hiçbir kuralın tanıyamayacağı adlar da buna dahildir. Liste ise
-yöneticinin elinden okunabilir biçimde hiç çıkmaz.
+müşterilerinizin kayıtlarını bulur. Liste ise yöneticinin elinden okunabilir biçimde hiç
+çıkmaz.
 
 **Nasıl çalışır**
-1. Yönetici, bir CSV'den `packages/browser-guard/scripts/fingerprint-dataset.mjs` ile veri
-   kümesi oluşturur. Her değer normalleştirilir (NFKC, küçük harf, sıfır genişlikli
-   işaretler kaldırılır, Türkçe `ı` ve `i̇` harfleri `i`'ye katlanır) ve harf/rakam
-   dizilerine ayrılır. Parmak izi, küçük harfli hex olarak
-   `HMAC-SHA256(anahtar, JSON.stringify(parçalar))` değeridir. Her değer 1–16 parça ve en az
-   3 karakter vermelidir.
-2. `{ datasetId, keyB64, fingerprints, type }` biçimindeki veri kümesi yönetilen politikayla
-   (`exactData`) dağıtılır.
-3. Sayfada istem aynı biçimde normalleştirilir. Ardışık en fazla 16 parçadan oluşan her
-   pencerenin parmak izi WebCrypto ile hesaplanır (tarama başına en fazla 65.536 HMAC) ve
-   veri kümesiyle karşılaştırılır. Eşleşme, veri kümesinin türüyle maskelenir ve ayrıca
-   `EXACT_DATA_MATCH` sinyalini üretir.
+1. Yönetici kurumun EDM sırrını bir kez oluşturur
+   (`fingerprint-dataset.mjs --new-secret edm-secret.b64`) ve bu dosyayı AIDR Privacy yerel
+   host yapılandırmasına kurar (`"exactData": {"secretFile": ...}`).
+2. Veri kümesi bir CSV'den aynı sırla oluşturulur. Her kümenin kendi anahtarı vardır:
+   `HMAC-SHA256(sır, "aidr-edm-v2" 0x00 datasetId)`. Her değer normalleştirilir (NFKC, küçük
+   harf, sıfır genişlikli işaretler kaldırılır, Türkçe `ı` ve `i̇` harfleri `i`'ye katlanır)
+   ve harf/rakam dizilerine ayrılır; parmak izi küçük harfli hex olarak
+   `HMAC-SHA256(kümeAnahtarı, JSON.stringify(parçalar))` değeridir. Her değer 1–16 parça ve
+   en az 3 karakter vermelidir.
+3. Araç her değerin entropisini tahmin eder ve 64 bitin altında değer varsa kümeyi reddeder
+   (`LOW_ENTROPY`): küme anahtarını ele geçiren biri bu değerleri çevrim dışı
+   sayabilir (7 haneli müşteri numarası yaklaşık 23 bit, TCKN yaklaşık 30, bir ad yaklaşık
+   20 bit). Sütunları `--composite` ile satır başına tek değerde birleştirin (örneğin ad +
+   hesap numarası) ya da tahmin edilebilir değerleri `--drop-low-entropy` ile dışarıda
+   bırakın.
+4. `{ datasetId, keySource: "native-host", minEntropyBits, fingerprints, type }` biçimindeki
+   küme yönetilen politikayla (`exactData`) dağıtılır ve anahtar içermez. Eklenti `keyB64`
+   taşıyan ya da 64 bitten az bildiren kümeyi reddeder ve `useNativeHost` ayarını açar.
+5. Arka plan çalışanı küme anahtarlarını yerel hosttan ister, yalnızca bellekte tutar ve
+   yalnızca içerik betiklerine verir. Sayfada istem aynı biçimde normalleştirilir, ardışık
+   en fazla 16 parçalık her pencerenin parmak izi WebCrypto ile hesaplanır (tarama başına en
+   fazla 65.536 HMAC) ve kümeyle karşılaştırılır. Eşleşme, kümenin türüyle maskelenir ve
+   `EXACT_DATA_MATCH` sinyalini üretir. Host bir kümenin anahtarını verene kadar o kümeyle
+   yapılan taramalar eksik (denetlenmemiş) sayılır, hiçbir zaman temiz sayılmaz.
 
 **Nasıl kullanılır**
 
 ```bash
+node packages/browser-guard/scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
 node packages/browser-guard/scripts/fingerprint-dataset.mjs \
-  --in customers.csv --header --columns full_name \
+  --in customers.csv --header --columns full_name,account_no --composite \
   --dataset-id crm-customers --type PERSON \
-  --key-file crm.key.b64 --out crm-customers.json
+  --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
 Seçenekler: `--in <dosya.csv|->`, `--dataset-id`, `--type <VARLIK_TÜRÜ>`, `--header`,
-`--columns a,b`, `--key-b64 <base64>` ya da `--key-file <dosya>`, `--out <dosya.json>`.
-Anahtar verilmezse yeni bir 32 baytlık anahtar üretilir. Yeniden oluşturulan kümelerin aynı
-parmak izlerini vermesi için bu anahtarı saklayın. Çıktı dosyası `0600` izinleriyle yazılır.
-Parmak izleri sıralanır; dosyadaki sıra kaynak satırların sırası hakkında bilgi vermez. JSON
-nesnesini yönetilen `exactData` dizisine ekleyin. Politika en fazla 16 veri kümesi ve
-toplamda 100.000 parmak izi kabul eder. Araç, küme başına 250.000'e kadar üretebilir, ancak
-sınırı aşan politika reddedilir.
+`--columns a,b`, `--composite`, `--secret-file <dosya>`, `--min-entropy-bits <n>` (64 ve
+üzeri), `--drop-low-entropy`, `--out <dosya.json>`. `--key-b64` / `--key-file` reddedilir.
+Sırrı saklayın: aynı sır ve küme kimliği aynı parmak izlerini üretir. Çıktı dosyası `0600`
+izinleriyle yazılır. Parmak izleri sıralanır; dosyadaki sıra kaynak satırların sırası
+hakkında bilgi vermez. JSON nesnesini yönetilen `exactData` dizisine ekleyin. Politika en
+fazla 16 veri kümesi ve toplamda 100.000 parmak izi kabul eder. Araç, küme başına 250.000'e
+kadar üretebilir, ancak sınırı aşan politika reddedilir.
 
-**Parmak izlerinin gizliliği** — Veri kümesinde yalnızca parmak izleri ve HMAC anahtarı
-bulunur. Kaynak değerler hiçbir zaman yazılmaz ya da loglanmaz. Parmak izleri şifreleme
-değil, anahtarlı özetlerdir. Anahtarı da içeren veri kümesine sahip olan biri, tahmin ettiği
-değerlerin listede olup olmadığını deneyebilir. Veri kümesini gizli kabul edin, yalnızca
-yönetilen politikayla dağıtın ve hiçbir kod deposuna koymayın. `deploy/browser-guard/`
-içindeki örnek veri kümesi anahtar ve parmak izleri yerine `REPLACE_WITH_...` yer tutucuları
+**Parmak izlerinin gizliliği** — Kaynak değerler hiçbir zaman yazılmaz ya da loglanmaz ve
+kümede anahtar yoktur. Neye karşı koruduğu ve neye karşı korumadığı:
+- Sır ve küme anahtarları tarayıcı politikasında değildir; kullanıcı onları artık
+  `chrome://policy`, politika kayıt defteri anahtarları ya da `policies.json` üzerinden
+  okuyamaz. Sızan bir küme anahtarı yalnızca kendi kümesini açığa çıkarır.
+- Yerel host oturum açmış kullanıcı olarak çalışır; bu yüzden sır dosyası o kullanıcı
+  tarafından okunabilir olmalıdır. Bu dosyayı okuyan ya da tarayıcıya hata ayıklayıcı
+  bağlayan bir kullanıcı anahtarları yine elde edip parmak izlerine karşı tahmin
+  deneyebilir. Listenin bu yolla geri çıkarılmasını 64 bitlik entropi tabanı önler. Bu bir
+  tahmindir (harfler sözlük sözcüğü sayılır, yapılı kimlikler gerçek entropileriyle
+  sınırlanır), garanti değildir; rastgele görünen ama ardışık bir sütun tahminden zayıftır.
+- Parmak izleri şifreleme değil, anahtarlı özetlerdir; kümeleri kod depolarına koymayın.
+
+`deploy/browser-guard/` içindeki örnek küme `REPLACE_WITH_...` yer tutucu parmak izleri
 içerir; gerçek `fingerprint-dataset.mjs` çıktısıyla değiştirilene kadar eklenti onu reddeder.
 
-**Örnek** — `crm-customers` kümesi (`PERSON` türü) "Ahmet Kaya" değerinin parmak izini
-içerir. `Ahmet Kaya siparişi için aradı` istemindeki ad, hiçbir kural tanımadığı hâlde
-bulunur. Varsayılan ayarlarla (`detectSignals: true`, `signalAction: "warn"`) kullanıcı,
-"Metin, korunan bir kurum veri kümesindeki kayıtlarla eşleşiyor. Göndermeden önce bu
-verileri çıkarın veya onaylı bir kanal kullanın." yönlendirmesini içeren onay balonunu
-görür.
+**Örnek** — `crm-customers` kümesi (`PERSON` türü, ad ve 16 haneli hesap numarasının
+birleşimi) "Ahmet Kaya 4000123412341234" değerinin parmak izini içerir.
+`Ahmet Kaya 4000123412341234 siparişi için aradı` istemi bulunur. Varsayılan ayarlarla
+(`detectSignals: true`, `signalAction: "warn"`) kullanıcı, "Metin, korunan bir kurum veri
+kümesindeki kayıtlarla eşleşiyor. Göndermeden önce bu verileri çıkarın veya onaylı bir kanal
+kullanın." yönlendirmesini içeren onay balonunu görür.
 
 **Kapsam**
 
 | | |
 |---|---|
 | Plan | Team, Business, Enterprise (katalog) |
-| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped (veri kümesi tarayıcı politikasıyla dağıtılır; araç Node.js üzerinde çevrim dışı çalışır) |
-| Platformlar | Chrome, Edge, Firefox (masaüstü); araç için Node.js 22.12+ |
+| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped (küme tarayıcı politikasıyla, sır yerel hostla birlikte dağıtılır; araç Node.js üzerinde çevrim dışı çalışır) |
+| Platformlar | Chrome, Edge (masaüstü, yerel hostla); araç için Node.js 22.12+. Firefox desteklenmez: yerel host Firefox'u desteklemediği için kümeler orada hiç denetlenmez |
 
 **Sınırlamalar**
+- Bu sürümün yerel hostu ve kurulu EDM sırrı gerekir. Yoksa küme içeren her istem taraması
+  eksik sayılır; koruma bunu denetlenmemiş olarak ele alır.
 - Eşleştirme, normalleştirmeden sonra parça dizisinin birebir aynı olmasına dayanır. Yazım
-  hataları, yer değiştirmiş adlar ve kısmi değerler eşleşmez.
+  hataları, yer değiştirmiş adlar ve kısmi değerler eşleşmez; birleşik bir değer yalnızca
+  parçaları birlikte ve sütun sırasıyla geçtiğinde eşleşir.
+- Tek başına adlar, kısa hesap numaraları, telefon numaraları ve kimlik numaraları tahmin
+  edilebilir olduğu için reddedilir. Yerleşik kurallar TCKN, IBAN, kart ve telefon
+  numaralarını biçimlerinden bulmaya devam eder.
 - Politika sınırları (toplamda 100.000 parmak izi) veri kümesinin boyutunu kısıtlar.
-- Tarayıcı politikası uç noktada okunabilir; anahtar ve parmak izleri yerel kullanıcılara
-  açıktır (yukarıya bakın).
 
 ### 10. Prompt injection ve risk sinyalleri için yönlendirme
 
@@ -1258,7 +1284,7 @@ Tüm yönetilen anahtarlar (`static/managed_schema.json` ve `src/background/poli
 | `enabledEntities` | varlık türü dizisi | `USERNAME`, `LOCATION` dışında hepsi | Yerleşik kuralların algılayıp maskelediği türler |
 | `neverRestore` | varlık türü dizisi | `SECRET`, `PRIVATE_KEY` | Maskelenir, yanıtlarda asla geri yüklenmez |
 | `literals` | `{ value, type }` dizisi; en fazla 1.024, her biri 2–256 karakter | yok | Kurum terimleri (özellik 8) |
-| `exactData` | `{ datasetId, keyB64, fingerprints, type }` dizisi; en fazla 16 küme, toplamda en fazla 100.000 parmak izi | yok | Tam veri eşleştirme (özellik 9) |
+| `exactData` | `{ datasetId, keySource: "native-host", minEntropyBits (≥ 64), fingerprints, type }` dizisi; en fazla 16 küme, toplamda en fazla 100.000 parmak izi; anahtar içermez (`keyB64` taşıyan küme reddedilir) | yok | Tam veri eşleştirme (özellik 9) |
 | `detectSignals` | boolean | `true` | Prompt injection ve kaynak kodu sinyallerini algıla |
 | `signalAction` | `off` \| `warn` \| `block` | `warn` | Sinyale verilecek tepki (özellik 10) |
 | `blockedSites` | site kimliği dizisi | yok | Sayfaları açılmayan siteler (özellik 13) |
@@ -1410,9 +1436,12 @@ modeli, metni makineden çıkarmadan bunu yapabilir.
 **Nasıl çalışır** — `useNativeHost` açıkken her istem ve yapıştırma taraması, yerleşik
 kurallarla paralel olarak arka plan çalışanından NER ister (`NATIVE_SCAN`). Çalışanın köprüsü
 privacy host'unun native messaging protokolünü tarayıcının stdio kanalı üzerinden konuşur.
-Soket ya da localhost HTTP uç noktası kullanılmaz. Her tarama yeni bir host süreci ve
-2 saniyelik bir bütçe kullanır (sayfa en fazla 2,5 saniye bekler). 200.000 karakterden uzun
-metin gönderilmez. Art arda üç hatadan sonra host 60 saniye boyunca kullanılamaz sayılır.
+Soket ya da localhost HTTP uç noktası kullanılmaz. Köprü tüm taramalar için tek bir host
+süreci tutar (NER modeli bir kez yüklenir) ve bu süreci ilk istemden önce başlatır; başlatma
+için 15 saniye tanır. Taramalar bu sürece sıraya alınır ve her biri 2 saniyelik bir bütçe
+kullanır (sayfa en fazla 2,5 saniye bekler); boşta kalan host 15 dakika sonra kapanır ve
+gerektiğinde yeniden başlatılır. Önceki sürümden bir host, eskisi gibi tarama başına bir
+süreçle kullanılır. 200.000 karakterden uzun metin gönderilmez. Art arda üç hatadan sonra host 60 saniye boyunca kullanılamaz sayılır.
 Host'un `PERSON`, `ADDRESS` ve `LOCATION` aralıkları (yalnızca `enabledEntities` içinde açık
 olan türler) `source: "native-ner"` ve sabit 0,9 skoruyla işaretlenip maskelemeden önce kural
 bulgularıyla birleştirilir. Host kullanılabilir bir yanıt vermezse istem yalnızca kurallarla
@@ -1463,8 +1492,12 @@ devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını b
   hassas metin içeren görsel engellenir, hiçbir zaman maskelenmez. Taranmış sayfalar dâhil
   PDF içindeki görseller Browser Guard tarafından çıkarılıp aynı yoldan gönderilir. OCR host'un isteğe bağlı Python/Tesseract yığınını gerektirir; protokol sahte
   OCR çalışanlarıyla test edilmiştir, gerçek OCR doğruluğu kendi görsellerinizde ölçülmelidir.
-- Ağır bir model ile büyük bir istem 2 saniyelik bütçeyi aşabilir. Bu durumda köprü geri çekilir
-  ve yalnızca kurallar çalışır.
+- Ağır bir model ile büyük bir istem, ısınmış bir hostta da 2 saniyelik bütçeyi aşabilir. Bu
+  durumda köprü geri çekilir ve yalnızca kurallar çalışır (`requireNativeNer` açıksa gönderim
+  engellenir). Bu sürüm için hedef Windows ya da macOS donanımında başlatma veya tarama
+  gecikmesi ölçülmemiştir ve Windows başlatıcısı doğrulanmamıştır: NER'i zorunlu kılmadan
+  önce kendi modelinizle p95 gecikmeyi ölçün. Firefox desteklenmez; orada
+  `requireNativeNer` gönderimi engeller.
 
 ### 17. Cihazdan hangi veriler çıkar
 

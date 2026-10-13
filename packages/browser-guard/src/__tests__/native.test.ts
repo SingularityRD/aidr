@@ -2,14 +2,17 @@ import { performance as hostClock } from "node:perf_hooks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentScanner } from "../../../privacy/src/browser/documents.js";
 import { PrivacyEngine } from "../../../privacy/src/engine.js";
+import { deriveEdmKey } from "../../../privacy/src/native/edm.js";
 import { NativeSession } from "../../../privacy/src/native/session.js";
 import type { EngineOptions, NerProvider } from "../../../privacy/src/types.js";
 import { VisualPrivacyEngine } from "../../../privacy/src/visual/engine.js";
 import type { ImageBackend, ImageScan } from "../../../privacy/src/visual/types.js";
 import {
 	createNativeBridge,
+	NATIVE_CONNECT_TIMEOUT_MS,
 	NATIVE_HOST_NAME,
 	NATIVE_MAX_FAILURES,
+	NATIVE_MAX_QUEUED,
 	NATIVE_RETRY_AFTER_MS,
 	NATIVE_TIMEOUT_MS,
 	type NativeChromeApi,
@@ -59,6 +62,10 @@ interface HostOptions {
 	hang?: readonly string[];
 	/** OCR lines the host's (fake) OCR backend reads from any image; absent: host without OCR. */
 	ocrLines?: readonly string[];
+	/** An older host: it refuses `hello {persistent}` like host.ts (failure frame, then exit). */
+	legacy?: boolean;
+	/** The host's EDM secret (exact-data keys); absent: no secret configured. */
+	edmSecret?: Buffer;
 }
 
 /** The host's real VisualPrivacyEngine over a fake OCR backend that reads `lines`. */
@@ -130,6 +137,12 @@ function fakeChrome(options: HostOptions & { granted?: boolean; installed?: bool
 					ner: dictionaryNer(options.nerFails),
 				}),
 			...(options.ocrLines ? { visual: fakeVisual(options.ocrLines) } : {}),
+			...(options.edmSecret
+				? {
+						exactDataKey: (id: string) =>
+							deriveEdmKey(options.edmSecret as Buffer, id).toString("base64"),
+					}
+				: {}),
 			policyId: "aidr-default-v1",
 			policyDigest: POLICY_DIGEST,
 		});
@@ -143,16 +156,6 @@ function fakeChrome(options: HostOptions & { granted?: boolean; installed?: bool
 		},
 		runtime: {
 			lastError: undefined,
-			sendNativeMessage: async (name, message) => {
-				if (name !== NATIVE_HOST_NAME || options.installed === false) {
-					throw new Error("Specified native messaging host not found.");
-				}
-				const request = JSON.parse(JSON.stringify(message)) as Msg;
-				chrome.sent.push(request);
-				const response = await makeSession().handle(request);
-				const out = options.tamper ? options.tamper(response, request) : response;
-				return JSON.parse(JSON.stringify(out));
-			},
 			connectNative: (name): NativePort => {
 				chrome.connects++;
 				const onMessage: Array<(m: unknown) => void> = [];
@@ -181,7 +184,11 @@ function fakeChrome(options: HostOptions & { granted?: boolean; installed?: bool
 						const request = JSON.parse(JSON.stringify(message)) as Msg;
 						chrome.sent.push(request);
 						if (options.hang?.includes(String(request.op))) return;
-						session.handle(request).then(
+						const refused =
+							options.legacy && request.op === "hello" && "persistent" in request
+								? Promise.reject(new Error("NATIVE_PROTOCOL_INVALID"))
+								: null;
+						(refused ?? session.handle(request)).then(
 							(response) => {
 								const out = options.tamper ? options.tamper(response, request) : response;
 								if (!alive || out === null) return;
@@ -281,28 +288,33 @@ describe("createNativeBridge: availability", () => {
 		expect(await bridge.scanText("Ayşe Yılmaz")).toBeNull();
 	});
 
-	it("lazily probes with a hello handshake and reports connected", async () => {
+	it("lazily starts the host with a persistent hello and reports connected", async () => {
 		const chrome = fakeChrome();
 		const bridge = createNativeBridge(true, { chrome });
 		expect(chrome.sent).toEqual([]);
 		expect(bridge.status()).toBe("unavailable");
-		await flush();
-		expect(bridge.status()).toBe("connected");
+		await until(() => bridge.status() === "connected");
 		expect(chrome.sent).toHaveLength(1);
-		expect(Object.keys(chrome.sent[0] ?? {}).sort()).toEqual(["id", "op", "v"]);
-		expect(chrome.sent[0]?.op).toBe("hello");
+		expect(chrome.sent[0]).toMatchObject({ v: 1, op: "hello", persistent: true });
+		expect(Object.keys(chrome.sent[0] ?? {}).sort()).toEqual(["id", "op", "persistent", "v"]);
+		// The probe is the warm-up: it keeps the host running for the scans that follow (BG-11).
+		expect(chrome.connects).toBe(1);
+		expect(chrome.disconnects).toBe(0);
+		expect(
+			await withFrozenClock(() => bridge.scanText("Toplantıya Jane Doe katılacak.")),
+		).toHaveLength(1);
+		expect(chrome.connects).toBe(1);
+		expect(chrome.sent.filter((m) => m.op === "hello")).toHaveLength(1);
 	});
 
-	it("probes through connectNative when sendNativeMessage is not available", async () => {
+	it("reports unavailable when the browser has no connectNative", async () => {
 		const chrome = fakeChrome();
-		const runtime = { ...chrome.runtime, sendNativeMessage: undefined };
+		const runtime = { ...chrome.runtime, connectNative: undefined };
 		const bridge = createNativeBridge(true, { chrome: { ...chrome, runtime } });
 		bridge.status();
-		// The probe closes its port once the hello round trip settled, successfully or not.
-		await until(() => chrome.disconnects > 0);
-		expect(bridge.status()).toBe("connected");
-		expect(chrome.connects).toBe(1);
-		expect(chrome.disconnects).toBeGreaterThanOrEqual(1);
+		await flush();
+		expect(bridge.status()).toBe("unavailable");
+		expect(await bridge.scanText("Jane Doe")).toBeNull();
 	});
 
 	it("stays unavailable when the host is not installed and retries only after the backoff", async () => {
@@ -317,10 +329,10 @@ describe("createNativeBridge: availability", () => {
 		await flush();
 		expect(chrome.sent.length + chrome.connects).toBe(probesBefore);
 		expect(await bridge.scanText("Ayşe Yılmaz")).toBeNull();
-		expect(chrome.connects).toBe(0);
+		expect(chrome.connects).toBe(1);
 		clock += NATIVE_RETRY_AFTER_MS;
 		expect(await bridge.scanText("Ayşe Yılmaz")).toBeNull();
-		expect(chrome.connects).toBe(1);
+		expect(chrome.connects).toBe(2);
 	});
 });
 
@@ -342,7 +354,8 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 		]);
 		for (const f of findings ?? []) expect(f.score).toBeGreaterThan(0);
 		expect(bridge.status()).toBe("connected");
-		expect(chrome.disconnects).toBeGreaterThanOrEqual(1);
+		// The host stays up for the next scan.
+		expect(chrome.disconnects).toBe(0);
 	});
 
 	it("sends only the scanned text, following hello/begin/write/commit/read", async () => {
@@ -358,7 +371,7 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 		expect(uploaded).toBe(text);
 		// Nothing but the text itself, its size and hash crosses to the host.
 		const allowed: Record<string, string[]> = {
-			hello: [],
+			hello: ["persistent"],
 			begin: ["kind", "policyDigest", "sha256", "size"],
 			write: ["data", "offset"],
 			commit: [],
@@ -419,7 +432,8 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 		for (let i = 0; i < NATIVE_MAX_FAILURES + 1; i++) {
 			expect(await withFrozenClock(() => bridge.scanText("Jane Doe"))).toBeNull();
 		}
-		expect(chrome.connects).toBe(NATIVE_MAX_FAILURES + 1);
+		// One host served every scan.
+		expect(chrome.connects).toBe(1);
 		expect(bridge.status()).toBe("connected");
 	});
 
@@ -466,7 +480,115 @@ describe("createNativeBridge: scanning over the privacy host protocol", () => {
 			expect(await bridge.scanText("Jane Doe")).toBeNull();
 		expect(bridge.status()).toBe("unavailable");
 		expect(await bridge.scanText("Jane Doe")).toBeNull();
+		// An engine failure ends the connection, so each retry starts a fresh host.
 		expect(chrome.connects).toBe(NATIVE_MAX_FAILURES);
+	});
+});
+
+describe("createNativeBridge: one persistent host (BG-11)", () => {
+	it("serves many scans from one host process and one hello", async () => {
+		const chrome = fakeChrome();
+		const bridge = createNativeBridge(true, { chrome });
+		for (const text of ["Jane Doe aradı", "Yarın.", "Mail ayse@example.com", "Kadıköy'de"]) {
+			expect(await withFrozenClock(() => bridge.scanText(text))).not.toBeNull();
+		}
+		expect(chrome.connects).toBe(1);
+		expect(chrome.disconnects).toBe(0);
+		expect(chrome.sent.filter((m) => m.op === "hello")).toHaveLength(1);
+		expect(chrome.sent.filter((m) => m.op === "begin")).toHaveLength(4);
+	});
+
+	it("queues concurrent scans on the one host instead of refusing the third", async () => {
+		const chrome = fakeChrome();
+		const bridge = createNativeBridge(true, { chrome });
+		const texts = ["Jane Doe", "Ayşe Yılmaz", "Kadıköy", "Moda Caddesi No 12", "x@example.com"];
+		const results = await withFrozenClock(() => Promise.all(texts.map((t) => bridge.scanText(t))));
+		for (const [i, findings] of results.entries()) expect(findings, texts[i]).toHaveLength(1);
+		expect(chrome.connects).toBe(1);
+	});
+
+	it("answers null at once when the queue is full", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		const chrome = fakeChrome({ hang: ["commit"] });
+		const bridge = createNativeBridge(true, { chrome });
+		const pending = Array.from({ length: NATIVE_MAX_QUEUED }, () => bridge.scanText("Jane Doe"));
+		expect(await bridge.scanText("Jane Doe")).toBeNull();
+		await vi.advanceTimersByTimeAsync(NATIVE_TIMEOUT_MS * (NATIVE_MAX_QUEUED + 1));
+		expect(await Promise.all(pending)).toEqual(Array(NATIVE_MAX_QUEUED).fill(null));
+	});
+
+	it("does not abandon a slow host start when a scan's own deadline passes", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		const chrome = fakeChrome({ hang: ["hello"] });
+		const bridge = createNativeBridge(true, { chrome });
+		const scan = bridge.scanText("Jane Doe");
+		await until(() => chrome.sent.some((m) => m.op === "hello"));
+		await vi.advanceTimersByTimeAsync(NATIVE_TIMEOUT_MS);
+		expect(await scan).toBeNull();
+		// The host is still starting (cold start budget), not killed by the scan's deadline.
+		expect(chrome.disconnects).toBe(0);
+		await vi.advanceTimersByTimeAsync(NATIVE_CONNECT_TIMEOUT_MS);
+		expect(chrome.disconnects).toBe(1);
+	});
+
+	it("falls back to one host per scan for an older host that refuses persistent", async () => {
+		const chrome = fakeChrome({ legacy: true, edmSecret: Buffer.alloc(32, 9) });
+		const bridge = createNativeBridge(true, { chrome });
+		const first = await withFrozenClock(() => bridge.scanText("Jane Doe aradı"));
+		expect(first?.map((f) => f.type)).toEqual(["PERSON"]);
+		const second = await withFrozenClock(() => bridge.scanText("Ayşe Yılmaz aradı"));
+		expect(second?.map((f) => f.type)).toEqual(["PERSON"]);
+		const hellos = chrome.sent.filter((m) => m.op === "hello");
+		expect(hellos.map((m) => "persistent" in m)).toEqual([true, false, false]);
+		expect(chrome.connects).toBe(3);
+		// The older host cannot derive exact-data keys; it is never sent an op it does not know.
+		expect(
+			await withFrozenClock(() => bridge.exactDataKeys?.(["crm"]) ?? Promise.resolve(null)),
+		).toBeNull();
+		expect(chrome.sent.some((m) => m.op === "edm-keys")).toBe(false);
+		expect(bridge.status()).toBe("connected");
+	});
+});
+
+describe("createNativeBridge: exact-data keys from the host (BG-8)", () => {
+	const SECRET = Buffer.from(Array.from({ length: 32 }, (_, i) => 200 - i));
+
+	it("returns the per-dataset keys the host derives from its secret", async () => {
+		const chrome = fakeChrome({ edmSecret: SECRET });
+		const bridge = createNativeBridge(true, { chrome });
+		const keys = await withFrozenClock(
+			() => bridge.exactDataKeys?.(["crm-customers", "codes"]) ?? Promise.resolve(null),
+		);
+		expect(keys).toEqual({
+			"crm-customers": deriveEdmKey(SECRET, "crm-customers").toString("base64"),
+			codes: deriveEdmKey(SECRET, "codes").toString("base64"),
+		});
+		expect(chrome.sent.find((m) => m.op === "edm-keys")).toMatchObject({
+			datasetIds: ["crm-customers", "codes"],
+		});
+		// The same host then scans.
+		expect(await withFrozenClock(() => bridge.scanText("Jane Doe"))).toHaveLength(1);
+		expect(chrome.connects).toBe(1);
+	});
+
+	it("gets no keys from a host without a secret, and refuses malformed key replies", async () => {
+		const none = createNativeBridge(true, { chrome: fakeChrome() });
+		expect(
+			await withFrozenClock(() => none.exactDataKeys?.(["crm"]) ?? Promise.resolve(null)),
+		).toEqual({});
+		for (const keys of [{ crm: "short" }, { other: Buffer.alloc(32).toString("base64") }, ["x"]]) {
+			const chrome = fakeChrome({
+				edmSecret: SECRET,
+				tamper: (r, q) => (q.op === "edm-keys" ? { ...r, keys } : r),
+			});
+			const bridge = createNativeBridge(true, { chrome });
+			expect(
+				await withFrozenClock(() => bridge.exactDataKeys?.(["crm"]) ?? Promise.resolve(null)),
+			).toBeNull();
+		}
+		const bridge = createNativeBridge(true, { chrome: fakeChrome({ edmSecret: SECRET }) });
+		expect(await bridge.exactDataKeys?.([])).toBeNull();
+		expect(await bridge.exactDataKeys?.(["bad id"])).toBeNull();
 	});
 });
 

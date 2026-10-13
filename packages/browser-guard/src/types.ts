@@ -107,11 +107,24 @@ export interface LiteralRule {
 	readonly type: EntityType;
 }
 
-/** Exact-data-match dataset shipped by an administrator: HMAC-SHA256 fingerprints only. */
+/**
+ * Exact-data-match dataset shipped by an administrator: HMAC-SHA256 fingerprints only, built by
+ * scripts/fingerprint-dataset.mjs. Managed policy carries no key: `keySource: "native-host"` means
+ * the per-dataset key is derived by the AIDR Privacy native host from a secret in its own
+ * configuration, and the background worker fills in `keyB64` at runtime (never persisted, never
+ * shown in the options page). A dataset in policy that carries `keyB64` is refused.
+ */
 export interface ExactDataSet {
 	readonly datasetId: string;
-	/** base64 HMAC key distributed with managed policy; never user-visible. */
-	readonly keyB64: string;
+	/** Where the dataset key comes from; the only accepted source is the native host. */
+	readonly keySource?: "native-host";
+	/**
+	 * Lowest estimated entropy (bits) of any fingerprinted value, recorded by the dataset tool.
+	 * The policy refuses a dataset below EXACT_DATA_MIN_ENTROPY_BITS.
+	 */
+	readonly minEntropyBits?: number;
+	/** Runtime only: base64 per-dataset key from the native host. Absent: the dataset cannot be checked (scans are incomplete). */
+	readonly keyB64?: string;
 	/** hex HMAC-SHA256 of normalised token sequences (see engine/detect.ts for the normalisation). */
 	readonly fingerprints: readonly string[];
 	readonly type: EntityType;
@@ -604,6 +617,11 @@ export interface NativeBridge {
 	 * `requireNer`, a "clean" verdict without `rules-and-ner` coverage becomes "incomplete".
 	 */
 	scanImage?(bytes: Uint8Array, options?: NativeScanOptions): Promise<ImageInspection | null>;
+	/**
+	 * Per-dataset exact-data keys (base64) the host derives from its EDM secret, by dataset id;
+	 * null when the host is unavailable, too old, or has no secret configured.
+	 */
+	exactDataKeys?(datasetIds: readonly string[]): Promise<Readonly<Record<string, string>> | null>;
 }
 
 /*

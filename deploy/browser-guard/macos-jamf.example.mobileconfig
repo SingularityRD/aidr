@@ -116,8 +116,10 @@
 				<dict>
 					<key>datasetId</key>
 					<string>crm-customers-example</string>
-					<key>keyB64</key>
-					<string>REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET</string>
+					<key>keySource</key>
+					<string>native-host</string>
+					<key>minEntropyBits</key>
+					<integer>64</integer>
 					<key>fingerprints</key>
 					<array>
 						<string>REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET</string>
@@ -288,8 +290,10 @@
 				<dict>
 					<key>datasetId</key>
 					<string>crm-customers-example</string>
-					<key>keyB64</key>
-					<string>REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET</string>
+					<key>keySource</key>
+					<string>native-host</string>
+					<key>minEntropyBits</key>
+					<integer>64</integer>
 					<key>fingerprints</key>
 					<array>
 						<string>REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET</string>

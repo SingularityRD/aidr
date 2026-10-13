@@ -54,7 +54,8 @@
         "exactData": [
           {
             "datasetId": "crm-customers-example",
-            "keyB64": "REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET",
+            "keySource": "native-host",
+            "minEntropyBits": 64,
             "fingerprints": [
               "REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"
             ],

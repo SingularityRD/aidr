@@ -330,7 +330,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `enabledEntities` | entity types | all except `USERNAME`, `LOCATION` |
 | `neverRestore` | entity types | `SECRET`, `PRIVATE_KEY` |
 | `literals` | `[{ value, type }]`, up to 1024, 2-256 chars each | none |
-| `exactData` | up to 16 `ExactDataSet`s | none |
+| `exactData` | up to 16 `ExactDataSet`s (`{ datasetId, keySource: "native-host", minEntropyBits >= 64, fingerprints, type }`, no key; see [Exact data match](#exact-data-match)); forces `useNativeHost` on | none |
 | `detectSignals` / `signalAction` | boolean / `off` \| `warn` \| `block` | `true` / `warn` |
 | `blockedSites` / `disabledSites` | site ids | none |
 | `customSites` | up to 20 `{ id, label, hosts, editorSelectors, sendButtonSelectors, responseSelectors }` (managed only) | none |
@@ -340,7 +340,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `fileHandling` / `maxFileBytes` | `scan` \| `block` \| `allow` / bytes (max 50 MiB) | `scan` / 5 MiB |
 | `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
-| `useNativeHost` | boolean | `false` (also a user setting unless managed) |
+| `useNativeHost` | boolean | `false` (also a user setting unless managed; forced on by `requireNativeNer` or `exactData`) |
 | `requireNativeNer` | boolean (managed only; the signed dashboard policy can also switch it on, `true` wins): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
@@ -450,30 +450,54 @@ alternative for fleets without a control plane.
 
 ### Exact data match
 
-`exactData` lets an organisation flag its own records (customer names, account
-numbers, project code names) without shipping the values. Build a dataset from
-a CSV:
+`exactData` lets an organisation flag its own records (customer records, account
+numbers combined with names, project code names) without shipping the values or
+the key. Create the organisation's EDM secret once, install it in the native host
+configuration (`"exactData": {"secretFile": "/etc/aidr/edm-secret.b64"}`, see
+[`docs/native-host.md`](docs/native-host.md#exact-data-keys-exactdata)), then build each
+dataset from a CSV with the same secret:
 
 ```bash
-node scripts/fingerprint-dataset.mjs --in customers.csv --header --columns full_name \
-  --dataset-id crm-customers --type PERSON --key-file crm.key.b64 --out crm-customers.json
+node scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
+node scripts/fingerprint-dataset.mjs --in customers.csv --header \
+  --columns full_name,account_no --composite \
+  --dataset-id crm-customers --type PERSON --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
-Algorithm (identical in the tool and in `src/engine/exact-data.ts`):
+Algorithm (identical in the tool, the native host and `src/engine/exact-data.ts`):
 
 1. `value.normalize("NFKC").toLowerCase()`
 2. remove U+200B-U+200F, U+2060, U+FEFF
 3. fold Turkish `ı` (U+0131) and `i̇` (`i` + U+0307, what `İ` lowercases to) to `i`
 4. tokens = every match of `/[\p{L}\p{N}]+/gu`; a value must give 1-16 tokens and at least 3 characters
-5. fingerprint = lowercase hex `HMAC-SHA256(key, UTF-8(JSON.stringify(tokens)))`
+5. datasetKey = `HMAC-SHA256(secret, UTF-8("aidr-edm-v2" 0x00 datasetId))`
+6. fingerprint = lowercase hex `HMAC-SHA256(datasetKey, UTF-8(JSON.stringify(tokens)))`
 
-In the page, the same normalisation is applied to the prompt and every window
-of up to 16 consecutive tokens is fingerprinted with WebCrypto and compared with
-the dataset. Only fingerprints and the HMAC key are in the dataset; the source
-values are never written or logged. Anyone holding the dataset can test guesses
-against it, so treat it as confidential and distribute it only through managed
-policy. Without `--key-file`/`--key-b64` a fresh 32-byte key is generated; keep it
-to regenerate the dataset with stable fingerprints.
+The dataset is `{ datasetId, keySource: "native-host", minEntropyBits, fingerprints,
+type }`: no key. Managed policy is readable by every user of the endpoint
+(`chrome://policy`, the policy registry keys, `policies.json`), so the extension
+refuses a dataset that carries `keyB64`. When the policy has datasets the worker
+forces `useNativeHost` on, asks the host for the dataset keys (`edm-keys`), keeps them
+in memory and hands them to the content scripts only. Until a dataset's key has
+arrived (no host, an older host, no secret configured, Firefox), every scan with that
+dataset is incomplete, which the guard treats as not checked (fail closed). In the
+page, the same normalisation is applied to the prompt and every window of up to 16
+consecutive tokens is fingerprinted with WebCrypto and compared with the dataset.
+
+Guessable values are refused. A keyed hash protects only values that cannot be
+enumerated by whoever holds the key, and the host runs as the signed-in user, so a
+user who reads its secret file (or attaches a debugger to the browser) can obtain the
+dataset keys. The tool therefore estimates each value's entropy (digits at log2 10 bits
+each; letter runs as dictionary words, 2 bits per letter up to 16 bits; structured
+identifiers capped: TCKN, card and phone numbers 30 bits, date of birth 16, IBAN 56)
+and refuses the dataset (`LOW_ENTROPY`) when any value is below 64 bits. The policy
+refuses a dataset whose `minEntropyBits` is below 64. Names, short account numbers,
+phone numbers and national ids alone fall below the floor: combine columns with
+`--composite` (one value per row, in column order; it then matches only when the parts
+appear together in that order), or leave weak values out with `--drop-low-entropy`.
+The estimate is conservative but not a proof: a column that looks random but is
+sequential is weaker than estimated. `--key-b64` / `--key-file` are refused. Keep the
+secret: the same secret and dataset id reproduce the same fingerprints.
 
 ## Privacy
 
@@ -521,7 +545,8 @@ to regenerate the dataset with stable fingerprints.
 - Free-form names and addresses without a label ("Name:", "Adres:") need the
   optional native host (NER), which ships without model weights or accuracy
   evidence. Without it, rule detection covers structured identifiers, labelled
-  fields, organisation literals and exact-data sets. Usernames, health/insurance
+  fields, organisation literals and exact-data sets (the latter need the native host
+  for their keys). Usernames, health/insurance
   numbers and places are found only after a label (`Kullanıcı adı:`, `SGK sicil
   no:`, `NHS number:`, `Konum:`, `City:`...); licence plates as validated Turkish
   plates (`34 ABC 123`) or after a plate label. NER is applied to prompts
