@@ -262,6 +262,17 @@ function writeWithBackup(
 	return changes;
 }
 
+/** {@link writeWithBackup} for a JSON document, rendered the way every host config is written. */
+function writeJsonWithBackup(
+	path: string,
+	value: Record<string, unknown>,
+	original: Buffer | null,
+	deps: ConnectorDeps,
+	purpose: string,
+): string[] {
+	return writeWithBackup(path, `${JSON.stringify(value, null, 2)}\n`, original, deps, purpose);
+}
+
 function result(
 	host: HostId,
 	label: string,
@@ -371,15 +382,11 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 		);
 	}
 	const desired = { ...document.value, hooks: codexDesiredHooks(existingHooks ?? {}) };
-	const rendered = `${JSON.stringify(desired, null, 2)}\n`;
 	const trust = [
 		"  Codex: review and trust the three AIDR hooks with /hooks. Codex drops an untrusted",
 		"         hook silently (fails open), so protection starts only after trust.",
 	];
-	if (
-		document.raw !== null &&
-		JSON.stringify(JSON.parse(document.raw.toString("utf8"))) === JSON.stringify(desired)
-	) {
+	if (document.raw !== null && JSON.stringify(document.value) === JSON.stringify(desired)) {
 		return result(
 			"codex",
 			label,
@@ -417,7 +424,7 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 		);
 	}
 	try {
-		const changes = writeWithBackup(path, rendered, document.raw, deps, "setup");
+		const changes = writeJsonWithBackup(path, desired, document.raw, deps, "setup");
 		const after = measure(deps, "codex");
 		return result(
 			"codex",
@@ -520,27 +527,11 @@ function installOpenCode(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 				...manifest.value,
 				dependencies: { ...dependencies, [AIDR_OPENCODE_PACKAGE]: deps.version },
 			};
-			changes.push(
-				...writeWithBackup(
-					manifestPath,
-					`${JSON.stringify(next, null, 2)}\n`,
-					manifest.raw,
-					deps,
-					"setup",
-				),
-			);
+			changes.push(...writeJsonWithBackup(manifestPath, next, manifest.raw, deps, "setup"));
 		}
 		if (needsPlugin) {
 			const next = { ...config.value, plugin: [...plugins, AIDR_OPENCODE_PACKAGE] };
-			changes.push(
-				...writeWithBackup(
-					configPath,
-					`${JSON.stringify(next, null, 2)}\n`,
-					config.raw,
-					deps,
-					"setup",
-				),
-			);
+			changes.push(...writeJsonWithBackup(configPath, next, config.raw, deps, "setup"));
 		}
 		const after = measure(deps, "opencode");
 		return result(
@@ -887,12 +878,7 @@ export function installConnectors(
 
 // ── Removal ───────────────────────────────────────────────────────────
 
-type HostRemovalAction =
-	| "removed"
-	| "nothing_to_remove"
-	| "would_remove"
-	| "manual"
-	| "failed";
+type HostRemovalAction = "removed" | "nothing_to_remove" | "would_remove" | "manual" | "failed";
 
 export interface HostRemovalResult {
 	host: HostId;
@@ -979,15 +965,7 @@ function removeCodex(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult {
 			found += stripped.removed;
 			if (stripped.removed > 0 && !dryRun) {
 				const next = { ...document.value, hooks: stripped.hooks };
-				changes.push(
-					...writeWithBackup(
-						jsonPath,
-						`${JSON.stringify(next, null, 2)}\n`,
-						document.raw,
-						deps,
-						"uninstall",
-					),
-				);
+				changes.push(...writeJsonWithBackup(jsonPath, next, document.raw, deps, "uninstall"));
 			}
 		}
 		if (existsSync(tomlPath)) {
@@ -1083,28 +1061,12 @@ function removeOpenCode(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult
 				...config.value,
 				plugin: plugins.filter((entry) => entry !== AIDR_OPENCODE_PACKAGE),
 			};
-			changes.push(
-				...writeWithBackup(
-					configPath,
-					`${JSON.stringify(next, null, 2)}\n`,
-					config.raw,
-					deps,
-					"uninstall",
-				),
-			);
+			changes.push(...writeJsonWithBackup(configPath, next, config.raw, deps, "uninstall"));
 		}
 		if (dependencies && AIDR_OPENCODE_PACKAGE in dependencies) {
 			const { [AIDR_OPENCODE_PACKAGE]: _removed, ...rest } = dependencies;
 			const next = { ...manifest.value, dependencies: rest };
-			changes.push(
-				...writeWithBackup(
-					manifestPath,
-					`${JSON.stringify(next, null, 2)}\n`,
-					manifest.raw,
-					deps,
-					"uninstall",
-				),
-			);
+			changes.push(...writeJsonWithBackup(manifestPath, next, manifest.raw, deps, "uninstall"));
 		}
 		for (const path of localFiles) {
 			unlinkSync(path);
