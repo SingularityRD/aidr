@@ -862,7 +862,7 @@ const REMOVAL_TEXT: Record<HostRemovalResult["action"], string> = {
 	failed: "FAILED",
 };
 
-export function printFullUninstallReport(report: FullUninstallReport): void {
+function printFullUninstallReport(report: FullUninstallReport): void {
 	console.log("Singularity AIDR — uninstall");
 	console.log(`Target home: ${report.home}`);
 	if (report.outcome === "refused") {

@@ -110,9 +110,9 @@ export interface ConnectorInstallOptions {
 	vscodeVsix?: string;
 }
 
-export const AIDR_OPENCODE_PACKAGE = "@singularityrd/aidr-opencode";
-export const AIDR_OPENCLAW_PLUGIN_ID = "aidr-openclaw";
-export const AIDR_CODEX_HOOK = "aidr-codex-hook";
+const AIDR_OPENCODE_PACKAGE = "@singularityrd/aidr-opencode";
+const AIDR_OPENCLAW_PLUGIN_ID = "aidr-openclaw";
+const AIDR_CODEX_HOOK = "aidr-codex-hook";
 const CODEX_HOOK_PATTERN = /\baidr-codex-hook\b/;
 const OPENCODE_LOCAL_MARKER = "Singularity AIDR OpenCode plugin";
 const EXTENSION_IDS: Record<"cursor" | "vscode", string> = {
@@ -123,7 +123,7 @@ const EDITOR_CLIS: Record<"cursor" | "vscode", string> = { cursor: "cursor", vsc
 const HOST_COMMAND_TIMEOUT_MS = 180_000;
 
 /** The Codex registrations AIDR owns, in the documented form (packages/codex/README.md). */
-export const CODEX_HOOK_EVENTS: ReadonlyArray<{ event: string; matcher?: string }> = [
+const CODEX_HOOK_EVENTS: ReadonlyArray<{ event: string; matcher?: string }> = [
 	{ event: "PreToolUse", matcher: "^(Bash|apply_patch)$" },
 	{ event: "UserPromptSubmit" },
 	{ event: "PostToolUse", matcher: "^(Bash|mcp__.+)$" },
@@ -173,7 +173,7 @@ const defaultRunner: HostCommandRunner = (command, args, options) => {
 };
 
 /** Absolute path of an executable on PATH, or null. Never consults the cwd. */
-export function findExecutable(name: string, env: NodeJS.ProcessEnv): string | null {
+function findExecutable(name: string, env: NodeJS.ProcessEnv): string | null {
 	const pathValue = env.PATH ?? env.Path ?? "";
 	const extensions =
 		process.platform === "win32"
@@ -293,7 +293,7 @@ function isAidrCodexHook(hook: unknown): boolean {
 }
 
 /** Remove every AIDR handler from a Codex hooks object, keeping everything else. */
-export function stripCodexHooks(hooks: Record<string, unknown>): {
+function stripCodexHooks(hooks: Record<string, unknown>): {
 	hooks: Record<string, unknown>;
 	removed: number;
 } {
@@ -831,7 +831,7 @@ function installClaude(
 // ── Install entry point ───────────────────────────────────────────────
 
 /** Hosts present in the home directory: the same measurement `aidr status` prints. */
-export function detectedHosts(deps: Pick<ConnectorDeps, "home" | "env">): HostId[] {
+function detectedHosts(deps: Pick<ConnectorDeps, "home" | "env">): HostId[] {
 	return HOST_IDS.filter((host) => measure(deps, host).state !== "not_detected");
 }
 
