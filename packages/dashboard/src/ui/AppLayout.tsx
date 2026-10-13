@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { TeamProvider, useTeam } from "../enterprise/team-provider";
+import { LanguageToggle, useT } from "../i18n/I18nProvider";
 import { supabaseEnvError } from "../lib/supabase";
 import { signOut } from "./session";
 import { ThemeToggle } from "./ThemeToggle";
@@ -20,11 +21,12 @@ import { usePendingApprovalCount } from "./use-pending-approvals";
  */
 function ManagedOutlet() {
 	const { currentTeam, isLoading, error } = useTeam();
-	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
+	const t = useT();
+	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
 	if (!currentTeam && error)
 		return (
 			<div role="alert">
-				<p>Your team membership could not be loaded.</p>
+				<p>{t("layout.teamLoadFailed")}</p>
 				<p>{error}</p>
 			</div>
 		);
@@ -35,27 +37,30 @@ function ManagedOutlet() {
 
 function TeamNavLinks() {
 	const { canEditPolicy, currentRole, roleResolved } = useTeam();
+	const t = useT();
 
 	return (
 		<>
-			<NavLink to="/team">Team</NavLink>
-			{currentRole === "owner" ? <NavLink to="/scim">Directory provisioning</NavLink> : null}
+			<NavLink to="/team">{t("nav.team")}</NavLink>
+			{currentRole === "owner" ? <NavLink to="/scim">{t("nav.scim")}</NavLink> : null}
 			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/retention">Legal holds & retention</NavLink>
+				<NavLink to="/retention">{t("nav.retention")}</NavLink>
 			) : null}
-			{currentRole === "owner" ? <NavLink to="/sso">Single sign-on</NavLink> : null}
-			{!roleResolved || canEditPolicy ? <NavLink to="/policies">Policies</NavLink> : null}
-			{canEditPolicy ? <NavLink to="/siem">SIEM export</NavLink> : null}
+			{currentRole === "owner" ? <NavLink to="/sso">{t("nav.sso")}</NavLink> : null}
+			{!roleResolved || canEditPolicy ? (
+				<NavLink to="/policies">{t("nav.policies")}</NavLink>
+			) : null}
+			{canEditPolicy ? <NavLink to="/siem">{t("nav.siem")}</NavLink> : null}
 			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/compliance">Compliance</NavLink>
+				<NavLink to="/compliance">{t("nav.compliance")}</NavLink>
 			) : null}
 			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/governance">Governance</NavLink>
+				<NavLink to="/governance">{t("nav.governance")}</NavLink>
 			) : null}
 			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/governance/detection-exceptions">Detection exceptions</NavLink>
+				<NavLink to="/governance/detection-exceptions">{t("nav.detectionExceptions")}</NavLink>
 			) : null}
-			<NavLink to="/governance/register">AI register</NavLink>
+			<NavLink to="/governance/register">{t("nav.aiRegister")}</NavLink>
 		</>
 	);
 }
@@ -68,15 +73,16 @@ function ApprovalsNavLink() {
 	const { currentTeam, currentRole, roleResolved } = useTeam();
 	const canDecide = roleResolved && (currentRole === "owner" || currentRole === "admin");
 	const count = usePendingApprovalCount(canDecide && currentTeam ? currentTeam.id : null);
+	const t = useT();
 	return (
 		<NavLink to="/approvals">
-			Approvals
+			{t("nav.approvals")}
 			{count ? (
 				<span
 					className="badge badge-warning badge-plain nav-count"
 					data-testid="approvals-pending-count"
 				>
-					<span className="sr-only">, pending: </span>
+					<span className="sr-only">{t("layout.pendingCount")}</span>
 					{count > 99 ? "99+" : count}
 				</span>
 			) : null}
@@ -87,13 +93,14 @@ function ApprovalsNavLink() {
 export function AppLayout() {
 	const navigate = useNavigate();
 	const [signingOut, setSigningOut] = useState(false);
-	if (signingOut) return <div role="status">Ending this browser session…</div>;
+	const t = useT();
+	if (signingOut) return <div role="status">{t("layout.signingOut")}</div>;
 
 	return (
 		<TeamProvider>
 			<div className="app">
 				<a className="skip-link" href="#page-content">
-					Skip to content
+					{t("layout.skip")}
 				</a>
 				<header className="console-topbar">
 					<Link to="/" className="brand-link">
@@ -101,30 +108,31 @@ export function AppLayout() {
 							AIDR
 						</span>
 						<span className="brand-sub" aria-hidden="true">
-							Control plane
+							{t("layout.controlPlane")}
 						</span>
 						<span className="sr-only">Singularity AIDR</span>
 					</Link>
 					<div className="header-actions">
+						<LanguageToggle />
 						<ThemeToggle />
 					</div>
 				</header>
 				<main className="main">
-					<nav className="navcard" aria-label="Dashboard">
-						<NavLink to="/onboarding">Connect</NavLink>
-						<NavLink to="/downloads">Downloads</NavLink>
-						<NavLink to="/dashboard">Dashboard</NavLink>
-						<NavLink to="/billing">Billing</NavLink>
-						<NavLink to="/api-keys">API Keys</NavLink>
-						<NavLink to="/agents">Agents</NavLink>
-						<NavLink to="/events">Events</NavLink>
-						<NavLink to="/discovery">Discovery</NavLink>
-						<NavLink to="/posture">Posture</NavLink>
-						<NavLink to="/incidents">Incidents</NavLink>
+					<nav className="navcard" aria-label={t("layout.navLabel")}>
+						<NavLink to="/onboarding">{t("nav.connect")}</NavLink>
+						<NavLink to="/downloads">{t("nav.downloads")}</NavLink>
+						<NavLink to="/dashboard">{t("nav.dashboard")}</NavLink>
+						<NavLink to="/billing">{t("nav.billing")}</NavLink>
+						<NavLink to="/api-keys">{t("nav.apiKeys")}</NavLink>
+						<NavLink to="/agents">{t("nav.agents")}</NavLink>
+						<NavLink to="/events">{t("nav.events")}</NavLink>
+						<NavLink to="/discovery">{t("nav.discovery")}</NavLink>
+						<NavLink to="/posture">{t("nav.posture")}</NavLink>
+						<NavLink to="/incidents">{t("nav.incidents")}</NavLink>
 						<ApprovalsNavLink />
-						<NavLink to="/privacy-guard">Browser Privacy</NavLink>
-						<NavLink to="/autosecops">AutoSecOps</NavLink>
-						<NavLink to="/settings">Settings</NavLink>
+						<NavLink to="/privacy-guard">{t("nav.browserPrivacy")}</NavLink>
+						<NavLink to="/autosecops">{t("nav.autosecops")}</NavLink>
+						<NavLink to="/settings">{t("nav.settings")}</NavLink>
 						<TeamNavLinks />
 						<span className="navcard-signout">
 							<button
@@ -143,13 +151,13 @@ export function AppLayout() {
 									}
 								}}
 							>
-								Sign out
+								{t("layout.signOut")}
 							</button>
 						</span>
 					</nav>
 					{supabaseEnvError ? (
 						<div className="notice notice-danger" style={{ marginBottom: 14 }}>
-							<b>Dashboard environment is incomplete.</b>
+							<b>{t("layout.envIncomplete")}</b>
 							<div className="muted small" style={{ marginTop: 6 }}>
 								{supabaseEnvError}
 							</div>
