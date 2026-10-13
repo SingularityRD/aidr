@@ -1071,7 +1071,7 @@ export interface RecordPendingAskInput {
 	toolInput: Record<string, unknown>;
 	artifacts: readonly Artifact[];
 	sessionId: string;
-	verdict: Pick<Verdict, "severity" | "category" | "reasons" | "matchedThreatId">;
+	verdict: Pick<Verdict, "severity" | "category" | "reasons" | "matchedThreatId" | "ruleSeverity">;
 	connector?: string;
 }
 
@@ -1107,7 +1107,10 @@ function pendingAskFields(input: RecordPendingAskInput, now: number): Omit<Pendi
 			preview: operatorText(a.value, 160),
 		})),
 		artifact_count: input.artifacts.length,
-		severity: operatorText(String(input.verdict.severity), 32),
+		// The matched rule's own severity is what the hook message shows the user
+		// ("high" for `cat .env`); the decision-level severity ("warning") is only
+		// the fallback, so `aidr pending` names the same severity as the block.
+		severity: operatorText(String(input.verdict.ruleSeverity ?? input.verdict.severity), 32),
 		category: operatorText(String(input.verdict.category), 100),
 		reasons: input.verdict.reasons.slice(0, 3).map((r) => operatorText(r, 300)),
 		threat_id: input.verdict.matchedThreatId
