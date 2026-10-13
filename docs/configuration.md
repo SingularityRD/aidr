@@ -1076,18 +1076,56 @@ The approval channel is protected by hard-deny rules (never `ask`, which would
 hand the agent an actionId to have approved):
 
 - `CLT-SELF-007` — an agent command that runs `aidr approve`, `aidr pending`,
-  `aidr allowlist add`, `aidr quarantine release|delete`, `aidr restore`,
-  `aidr audit rotate-key`, the MCP gateway's toolset approval `aidr-mcp-approve`,
-  or sets `AIDR_OPERATOR_NONINTERACTIVE`.
-  `aidr allowlist add`, `aidr exception add`, the MCP gateway's toolset approval
-  `aidr-mcp-approve`, or
-  sets `AIDR_OPERATOR_NONINTERACTIVE`.
+  `aidr allowlist add`, `aidr exception add`, `aidr quarantine release|delete`,
+  `aidr restore`, `aidr audit rotate-key`, `aidr uninstall`, `aidr config --set`,
+  `aidr setup --force`, the MCP gateway's toolset approval `aidr-mcp-approve`
+  (also by glob, e.g. `aidr-mcp-appr*.mjs`), or sets
+  `AIDR_OPERATOR_NONINTERACTIVE`. The host-native equivalents of
+  `aidr uninstall` are denied the same way: `claude plugin
+  disable|uninstall|marketplace remove` of the aidr plugin,
+  `code|cursor --uninstall-extension|--disable-extension(s)` of the SingularityRD
+  extension, `openclaw|opencode plugins disable|uninstall|remove` of aidr,
+  `openclaw config set|unset plugins.entries.aidr-openclaw.*`, a global
+  npm/pnpm/yarn/bun (un)install of any `@singularityrd/aidr-*` package, and
+  setting `AIDR_THREATS_DIR` / `AIDR_ALLOWLISTS_DIR` (`export`, `VAR=…`, `setx`,
+  `setenv`, `os.environ[…] =`).
 - `CLT-SELF-008` — any agent reference to the AIDR state directory
   `.singularity-aidr`, in a shell command, a file-tool path, a Write/Edit body or
   an MCP argument.
 - `CLT-SELF-009` — the vault entries and key/ledger file names
   (`singularity-aidr-cli`, `aidr-operator-approval-*`, `aidr-audit-chain-*`,
-  `operator-approval*.key|json`).
+  `operator-approval*.key|json`), agent code that imports the MCP gateway's
+  library (`@singularityrd/aidr-mcp-gateway`, `aidr-mcp-library.mjs`) and so
+  could call its `approve()`, and the documented gateway attestation directory
+  (`/var/lib/aidr/mcp-attestation`).
+
+Removing or switching off AIDR's hooks is covered by three more rules that look
+at what a call **changes** (the `modified_path` view in
+`packages/core/src/self-defense-paths.ts`: paths removed, moved, overwritten,
+truncated, linked over or re-permissioned by `rm`, `mv`, `cp`, `truncate`,
+`sed -i`, `tee`, `>`, `chmod`, interpreter fs calls such as `os.remove` /
+`fs.rmSync`, or Write/Edit/Delete; `cat` and Read produce nothing):
+
+- `CLT-SELF-001` (deny) — AIDR's own installation: the state directory, the
+  `aidr-codex-hook` binary, globally installed `@singularityrd/aidr-*`
+  packages, the OpenClaw extension, the Cursor/VS Code extension and the
+  Claude Code plugin checkout.
+- `CLT-SELF-003` (ask) — host hook and plugin configuration that also holds the
+  user's other settings: `~/.claude/settings*.json` and `~/.claude/plugins`,
+  `~/.codex/hooks.json` and `config.toml`, `~/.cursor/hooks.json`, VS Code /
+  Cursor / Windsurf user settings and extension directories,
+  `~/.openclaw/openclaw.json` and its extensions, `~/.config/opencode`.
+- `CLT-SELF-004` (deny) — configuration written by the agent that switches AIDR
+  off: `heuristics_enabled: false`, URL checks off, `AIDR_THREATS_DIR` /
+  `AIDR_ALLOWLISTS_DIR` in a settings `env` block, env file or shell start-up
+  file, Claude Code `disableAllHooks: true` or `"aidr@aidr": false`, OpenClaw
+  `aidr-openclaw` `enabled: false`, Codex `codex_hooks = false`.
+
+The path view expands `~`, `$HOME`, `%USERPROFILE%`, `%APPDATA%` and every
+`/home/<user>`, `/Users/<user>` or `C:\Users\<user>` to `~`, follows a `cd` in the
+same command and the host's working directory for relative names, and resolves
+globs (`~/.codex/hook*`, `~/.co?ex/*`) to the protected names they would expand
+to.
 
 They match the **shell-normalized** view of the text (`match_on:
 command_normalized`, `file_path_normalized`, `content_normalized`), in which

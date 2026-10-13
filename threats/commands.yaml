@@ -496,7 +496,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\b(node|nodejs|bun|deno)\\b\\s+(?:[^\\s]+\\s+){0,3}(-e|--eval|-p|--print|eval)\\b.{0,400}\\b(child_process|Deno\\.(run|Command)|Bun\\.spawn)\\b"
+  pattern: "\\b(node|nodejs|bun|deno)\\b\\s+(?:[^\\s]{1,200}\\s+){0,3}(-e|--eval|-p|--print|eval)\\b.{0,400}\\b(child_process|Deno\\.(run|Command)|Bun\\.spawn)\\b"
   match_on:
     - command
     - command_normalized
@@ -509,7 +509,7 @@
   severity: high
   confidence: 0.80
   action: require_approval
-  pattern: "\\b(perl|php)\\b\\s+(?:[^\\s]+\\s+){0,3}(-e|-E|-r)\\b.{0,300}\\b(system|exec|shell_exec|passthru|popen|proc_open)\\b"
+  pattern: "\\b(perl|php)\\b\\s+(?:[^\\s]{1,200}\\s+){0,3}(-e|-E|-r)\\b.{0,300}\\b(system|exec|shell_exec|passthru|popen|proc_open)\\b"
   match_on:
     - command
     - command_normalized

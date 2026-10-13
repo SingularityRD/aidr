@@ -259,6 +259,38 @@ function resolveStateDirGlobs(text: string): string {
 	});
 }
 
+/**
+ * Operator-only AIDR executables and modules that the self-defense rules name
+ * literally. A glob that the shell would expand to one of them
+ * (`aidr-mcp-appr*.mjs`, `*approve.mjs`, `/usr/local/bin/ai?r`) is rewritten to
+ * the name, as the state-directory globs are.
+ */
+const PROTECTED_EXECUTABLE_NAMES = [
+	// First, so a broad `aidr*` resolves to the CLI name rather than to the
+	// approval tool (`ls ~/bin/aidr*` is a listing, not an approval).
+	"aidr",
+	"aidr-mcp-approve.mjs",
+	"aidr-mcp-approve",
+	"aidr-mcp-library.mjs",
+	"aidr-codex-hook",
+] as const;
+
+/** A word (between separators) that contains a glob character. */
+const GLOB_WORD = /[^\s/\\;|&<>()=:,]{0,256}[*?[][^\s/\\;|&<>()=:,]{0,256}/g;
+
+/**
+ * Rewrite a glob word that names an operator-only AIDR executable or module to
+ * that name. At least two literal characters are required, so `*` or `a*`
+ * alone (which would match far more than AIDR) is left as written.
+ */
+function resolveProtectedNameGlobs(text: string): string {
+	if (!/[*?[]/.test(text)) return text;
+	return text.replace(GLOB_WORD, (word) => {
+		if (word.replace(/\[[^\]]*\]|[*?]/g, "").replace(/[^A-Za-z0-9]/g, "").length < 2) return word;
+		return PROTECTED_EXECUTABLE_NAMES.find((name) => globMatches(word, name)) ?? word;
+	});
+}
+
 // ── Recursive traversal from an ancestor of the state directory ─────────
 
 /**
@@ -410,11 +442,13 @@ const IFS_REFERENCE =
 	/(?:\$\{IFS(?:[:#%/^,@+=?-][^{}\n`$;|&]{0,40})?\}|\$IFS\b)(?:\$[0-9@*]|\$\{[0-9@*]\}){0,2}/g;
 
 function peel(unquoted: string): string {
-	let out = unquoted.replace(IFS_REFERENCE, " ").replace(
-		EXECUTABLE_LOOKUP,
-		(_whole, dollar: string | undefined, tick: string | undefined) => dollar ?? tick ?? "",
-	);
+	let out = unquoted
+		.replace(IFS_REFERENCE, " ")
+		.replace(
+			EXECUTABLE_LOOKUP,
+			(_whole, dollar: string | undefined, tick: string | undefined) => dollar ?? tick ?? "",
+		);
 	out = substituteVariables(out);
 	out = out.replace(/\(Get-Command[ \t]{1,20}([^\s()]{1,200})\)(?:\.\w{1,20})?/gi, "$1");
-	return resolveStateDirGlobs(out);
+	return resolveProtectedNameGlobs(resolveStateDirGlobs(out));
 }

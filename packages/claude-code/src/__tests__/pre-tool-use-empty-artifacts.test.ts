@@ -43,6 +43,7 @@ async function runHook(
 		hangEvaluation?: boolean;
 		env?: Record<string, string>;
 		verdictOverride?: Record<string, unknown>;
+		overrideNotice?: string;
 	} = {},
 ) {
 	const output: string[] = [];
@@ -112,7 +113,10 @@ async function runHook(
 		"@singularityrd/aidr-core": core,
 		pino,
 		"./approval-tracker.js": { addPendingApproval },
-		"./assets.js": { resolveAssetDir: (name: string) => `/test/${name}` },
+		"./assets.js": {
+			resolveAssetDir: (name: string) => `/test/${name}`,
+			assetOverrideNotice: () => options.overrideNotice ?? null,
+		},
 		"./detector-provisioning.js": {
 			loadProvisionedDetectorContext: options.provisionError
 				? async () => {
@@ -155,6 +159,29 @@ async function runHook(
 		addPendingApproval,
 	};
 }
+
+describe("PreToolUse rule directory override warning (CON-7)", () => {
+	const notice = "⚠️ Singularity AIDR ignored AIDR_THREATS_DIR=/tmp/rules";
+	const input = JSON.stringify({ tool_name: "OpaqueNativeTool", tool_input: { a: 1 } });
+
+	it("adds the warning to an allowed call", async () => {
+		const { response } = await runHook(input, "allow", { overrideNotice: notice });
+		expect(response.systemMessage).toBe(notice);
+	});
+
+	it("adds the warning under the block banner of a denied call", async () => {
+		const { response } = await runHook(input, "deny", { overrideNotice: notice });
+		expect(response).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+		expect(String(response.systemMessage)).toMatch(
+			/Inspected tool input[\s\S]*ignored AIDR_THREATS_DIR/,
+		);
+	});
+
+	it("adds nothing when no override is set", async () => {
+		const { response } = await runHook(input, "allow");
+		expect(response.systemMessage).toBeUndefined();
+	});
+});
 
 describe("PreToolUse empty-artifact inspection", () => {
 	it("passes provisioned detector context through to the evaluator", async () => {

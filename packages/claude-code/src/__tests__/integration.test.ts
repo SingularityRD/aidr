@@ -461,7 +461,7 @@ describe("PostToolUse hook integration", () => {
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
 		expect(response.decision).toBe("block");
-		expect(response.reason).toContain("original output may remain available to the host");
+		expect(response.reason).toContain("its output was not inspected; it is withheld where the host accepts a replacement");
 	});
 
 	it("reports unavailable coverage for malformed JSON stdin", async () => {
@@ -469,7 +469,7 @@ describe("PostToolUse hook integration", () => {
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
 		expect(response.decision).toBe("block");
-		expect(response.reason).toContain("original output may remain available to the host");
+		expect(response.reason).toContain("its output was not inspected; it is withheld where the host accepts a replacement");
 	});
 
 	it("returns {} when tool_use_id is missing from an otherwise valid result", async () => {

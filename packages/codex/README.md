@@ -290,8 +290,16 @@ path and independent efficacy evaluation are available.
 
 | Variable | Purpose |
 |---|---|
-| `AIDR_THREATS_DIR` | Override the threat-rule directory |
-| `AIDR_ALLOWLISTS_DIR` | Override the allowlist directory |
+| `AIDR_THREATS_DIR` | Override the threat-rule directory (development builds only) |
+| `AIDR_ALLOWLISTS_DIR` | Override the allowlist directory (development builds only) |
+
+A commercial (release) build ignores both overrides and loads only its bundled,
+manifest-checked resources. In every build a set override is reported: it is
+appended to every block reason, logged on each call and listed by
+`aidr-codex-hook --health` (`rule_dir_override_warning`). An override that a
+development build honours goes through the same artifact-manifest check as the
+bundled directory. An agent cannot set either variable: CLT-SELF-007 denies the
+command forms and CLT-SELF-004 the settings, env-file and start-up-file forms.
 
 Without an override the connector resolves rules next to its own installed
 location (`dist/resources/threats`), then falls back through the repository and user

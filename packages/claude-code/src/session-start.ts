@@ -21,7 +21,12 @@ import {
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { pruneStaleSessionFiles } from "./approval-tracker.js";
-import { resolveAssetDir, resolvePluginManifest, resolvePluginRoot } from "./assets.js";
+import {
+	assetOverrideNotice,
+	resolveAssetDir,
+	resolvePluginManifest,
+	resolvePluginRoot,
+} from "./assets.js";
 
 // Initialize Sentry
 initSentry({ name: "aidr-claude-code-session-start" });
@@ -70,7 +75,11 @@ async function main(): Promise<void> {
 		manifest.version,
 		"claude-code",
 	);
-	responder.answer({ stdout: `${JSON.stringify({ systemMessage: statusMsg })}\n` });
+	// A replaced or ignored rule directory (AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR)
+	// is reported at session start, not only on each verdict.
+	const overrideNotice = assetOverrideNotice();
+	const systemMessage = overrideNotice ? `${statusMsg}\n${overrideNotice}` : statusMsg;
+	responder.answer({ stdout: `${JSON.stringify({ systemMessage })}\n` });
 }
 
 main().catch(() => {

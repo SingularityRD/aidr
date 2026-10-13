@@ -64,6 +64,12 @@ const MAX_MATCH_INPUT = MAX_ARTIFACT_SIZE;
  */
 const NORMALIZED_SUFFIX = "_normalized";
 
+/**
+ * `match_on` value of the rules run against the canonical paths a call
+ * removes, moves, overwrites or re-permissions (`self-defense-paths.ts`).
+ */
+export const MODIFIED_PATH_VIEW = "modified_path";
+
 function countMatchingLines(
 	pattern: RegExp,
 	lines: readonly string[],
@@ -252,6 +258,31 @@ export class HeuristicsEngine {
 		for (const filePath of views.deletedTestFiles) {
 			for (const threat of this.threatMap.get(DELETED_TEST_FILE_VIEW) ?? []) {
 				this.runThreat(threat, filePath, matches);
+			}
+		}
+		return matches;
+	}
+
+	/** True when any loaded rule inspects the paths a call changes (`self-defense-paths.ts`). */
+	get hasModifiedPathRules(): boolean {
+		return (this.threatMap.get(MODIFIED_PATH_VIEW)?.length ?? 0) > 0;
+	}
+
+	/**
+	 * Match the canonical paths a call removes, moves, overwrites or
+	 * re-permissions (see `self-defense-paths.ts`) against the rules that declare
+	 * `match_on: modified_path`. Call after {@link match}: regex failures are
+	 * appended to the same skip list.
+	 */
+	matchModifiedPaths(paths: readonly string[]): HeuristicMatch[] {
+		const matches: HeuristicMatch[] = [];
+		const threats = this.threatMap.get(MODIFIED_PATH_VIEW) ?? [];
+		const matched = new Set<string>();
+		for (const path of paths) {
+			for (const threat of threats) {
+				if (!matched.has(threat.id) && this.runThreat(threat, path, matches)) {
+					matched.add(threat.id);
+				}
 			}
 		}
 		return matches;
