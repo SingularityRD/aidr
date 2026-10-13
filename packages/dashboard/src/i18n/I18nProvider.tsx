@@ -27,12 +27,17 @@ function format(template: string, params?: MessageParams): string {
 	);
 }
 
+/** The message in `locale`, falling back to English and then to the key. */
+function template(locale: DashboardLocale, key: DashboardMessageKey): string {
+	return DASHBOARD_CATALOGS[locale][key] ?? en[key] ?? key;
+}
+
 export function translate(
 	locale: DashboardLocale,
 	key: DashboardMessageKey,
 	params?: MessageParams,
 ): string {
-	return format(DASHBOARD_CATALOGS[locale][key] ?? en[key] ?? key, params);
+	return format(template(locale, key), params);
 }
 
 /** The saved choice, then the browser language; never throws. */
@@ -104,16 +109,17 @@ export function useRichT(): (
 	parts: Record<string, ReactNode>,
 ) => ReactNode {
 	const { locale } = useLocale();
-	return (key, parts) => {
-		const template = DASHBOARD_CATALOGS[locale][key] ?? en[key];
-		const pieces = template.split(/(\{\w+\})/g);
-		return pieces.map((piece, index) => {
-			const name = /^\{(\w+)\}$/.exec(piece)?.[1];
-			return (
-				<Fragment key={index}>{name !== undefined && name in parts ? parts[name] : piece}</Fragment>
-			);
-		});
-	};
+	return (key, parts) =>
+		template(locale, key)
+			.split(/(\{\w+\})/g)
+			.map((piece, index) => {
+				const name = /^\{(\w+)\}$/.exec(piece)?.[1];
+				return (
+					<Fragment key={index}>
+						{name !== undefined && name in parts ? parts[name] : piece}
+					</Fragment>
+				);
+			});
 }
 
 /** Header button that switches between English and Turkish. */

@@ -76,17 +76,17 @@ function printHostResults(results: HostInstallResult[]): void {
 	}
 }
 
-async function confirmForce(options: SetupOptions, deps: OperatorCommandDeps): Promise<boolean> {
-	// --force replaces the existing configuration and credential and resets
-	// the recorded hook state, so it is an operator-only action confirmed like
-	// `aidr allowlist add`. A plain `aidr setup` reuses the config unchanged.
+/** Run an operator confirmation; on refusal report it, set a failing exit code and return false. */
+async function confirmed(
+	prompt: string[],
+	word: string,
+	options: SetupOptions,
+	deps: OperatorCommandDeps,
+): Promise<boolean> {
 	try {
 		await confirmOperatorAction({
-			prompt: [
-				"Singularity AIDR — forced re-setup",
-				"The existing local configuration and CLI credential will be replaced.",
-			].join("\n"),
-			word: "replace",
+			prompt: prompt.join("\n"),
+			word,
 			yes: options.yes,
 			env: deps.env,
 			streams: deps.streams,
@@ -99,6 +99,21 @@ async function confirmForce(options: SetupOptions, deps: OperatorCommandDeps): P
 		process.exitCode = 1;
 		return false;
 	}
+}
+
+function confirmForce(options: SetupOptions, deps: OperatorCommandDeps): Promise<boolean> {
+	// --force replaces the existing configuration and credential and resets
+	// the recorded hook state, so it is an operator-only action confirmed like
+	// `aidr allowlist add`. A plain `aidr setup` reuses the config unchanged.
+	return confirmed(
+		[
+			"Singularity AIDR — forced re-setup",
+			"The existing local configuration and CLI credential will be replaced.",
+		],
+		"replace",
+		options,
+		deps,
+	);
 }
 
 /**
@@ -117,26 +132,16 @@ async function confirmArtifacts(
 		options.vscodeVsix && `  VS Code extension: ${options.vscodeVsix}`,
 	].filter((line): line is string => typeof line === "string");
 	if (artifacts.length === 0) return true;
-	try {
-		await confirmOperatorAction({
-			prompt: [
-				"Singularity AIDR — install connector artifacts",
-				...artifacts,
-				"Install only artifacts you verified against the signed release bundle.",
-			].join("\n"),
-			word: "install",
-			yes: options.yes,
-			env: deps.env,
-			streams: deps.streams,
-		});
-		return true;
-	} catch (error) {
-		console.error(
-			`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was changed.`,
-		);
-		process.exitCode = 1;
-		return false;
-	}
+	return confirmed(
+		[
+			"Singularity AIDR — install connector artifacts",
+			...artifacts,
+			"Install only artifacts you verified against the signed release bundle.",
+		],
+		"install",
+		options,
+		deps,
+	);
 }
 
 async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): Promise<void> {

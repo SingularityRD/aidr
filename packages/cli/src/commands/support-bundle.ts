@@ -201,25 +201,21 @@ function isSensitiveKey(key: string): boolean {
 
 const MAX_DEPTH = 16;
 
-function redactBundleNode(value: unknown, identity: Identity, depth: number): unknown {
+/** A detached, redacted copy: credential-named keys withheld, every string redacted. */
+function redactForBundle(value: unknown, identity: Identity, depth = 0): unknown {
 	if (typeof value === "string") return redactBundleString(value, identity);
 	if (depth > MAX_DEPTH) return "[Redacted: nested too deep]";
-	if (Array.isArray(value)) return value.map((item) => redactBundleNode(item, identity, depth + 1));
+	if (Array.isArray(value)) return value.map((item) => redactForBundle(item, identity, depth + 1));
 	if (value && typeof value === "object") {
 		const out: Record<string, unknown> = {};
 		for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
 			out[redactBundleString(key, identity)] = isSensitiveKey(key)
 				? "[Redacted]"
-				: redactBundleNode(item, identity, depth + 1);
+				: redactForBundle(item, identity, depth + 1);
 		}
 		return out;
 	}
 	return value;
-}
-
-/** A detached, redacted copy: credential-named keys withheld, every string redacted. */
-function redactForBundle(value: unknown, identity: Identity): unknown {
-	return redactBundleNode(value, identity, 0);
 }
 
 /**
@@ -302,7 +298,7 @@ async function collectConfig(configPath: string | undefined): Promise<Record<str
 			await handle.close();
 			present = true;
 		} catch {
-			present = false;
+			// No config file: reported as "defaults".
 		}
 		return {
 			path,
@@ -547,6 +543,15 @@ function buildSupportArchive(files: readonly BundleFile[], mtime: Date): Buffer 
 	return gzipSync(Buffer.concat(blocks), { level: 9 });
 }
 
+function describeFile(name: string, file: BundleFile): SupportBundleSummary["files"][number] {
+	return {
+		name,
+		description: file.description,
+		bytes: Buffer.byteLength(file.content),
+		sha256: sha256(file.content),
+	};
+}
+
 function defaultOutPath(now: Date): string {
 	const stamp = now.toISOString().replace(/[:.]/g, "-");
 	return resolve(process.cwd(), `aidr-support-bundle-${stamp}.tar.gz`);
@@ -577,12 +582,7 @@ export async function createSupportBundle(
 					"audit entries reduced to metadata fields; tool input, reasons and artifacts never copied",
 					"final residual-finding scan; a hit aborts the bundle",
 				],
-				files: inner.map((file) => ({
-					name: file.name,
-					description: file.description,
-					bytes: Buffer.byteLength(file.content),
-					sha256: sha256(file.content),
-				})),
+				files: inner.map((file) => describeFile(file.name, file)),
 			},
 			null,
 			2,
@@ -611,12 +611,7 @@ export async function createSupportBundle(
 		path,
 		bytes: archive.length,
 		sha256: sha256(archive),
-		files: files.map((file) => ({
-			name: `${ROOT_DIR}/${file.name}`,
-			description: file.description,
-			bytes: Buffer.byteLength(file.content),
-			sha256: sha256(file.content),
-		})),
+		files: files.map((file) => describeFile(`${ROOT_DIR}/${file.name}`, file)),
 		support_channel: SUPPORT_CHANNEL_NOTICE,
 	};
 }

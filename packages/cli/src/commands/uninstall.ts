@@ -660,7 +660,7 @@ export function collectAidrVaultItems(dataDir: string): VaultReference[] {
 	];
 	const jsonFiles: string[] = [];
 	for (const directory of [dataDir, join(dataDir, "audit-chain")]) {
-		let names: string[] = [];
+		let names: string[];
 		try {
 			names = readdirSync(directory);
 		} catch {
@@ -811,7 +811,7 @@ export async function uninstallEverything(
 		// Nothing to delete.
 	} else if (options.keepData) {
 		report.data.reason = "--keep-data";
-	} else if (stillRegistered.length > 0 && !options.dryRun) {
+	} else if (stillRegistered.length > 0) {
 		report.data.reason = `kept because ${stillRegistered.join(", ")} ${stillRegistered.length === 1 ? "is" : "are"} still registered and may run from it; remove ${stillRegistered.length === 1 ? "it" : "them"} and rerun`;
 	} else if (options.dryRun) {
 		report.data.action = "would_delete";

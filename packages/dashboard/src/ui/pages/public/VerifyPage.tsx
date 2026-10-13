@@ -267,6 +267,7 @@ export function VerifyPage() {
 	const typed = useMemo(() => canonicalUserCode(userCode), [userCode]);
 	const teamName = teams.find((team) => team.id === teamId)?.name ?? "";
 	const signInReturnTo = linkCode ? `/verify?code=${encodeURIComponent(linkCode)}` : "/verify";
+	const signInPath = `/login?returnTo=${encodeURIComponent(signInReturnTo)}`;
 
 	// The authorization window is owned by the device session, not by this page.
 	// When it closes the agent can no longer finish enrollment with this code, so
@@ -306,7 +307,7 @@ export function VerifyPage() {
 	async function signedInOrRedirect(): Promise<boolean> {
 		const sess = await getSession();
 		if (sess) return true;
-		navigate(`/login?returnTo=${encodeURIComponent(signInReturnTo)}`);
+		navigate(signInPath);
 		return false;
 	}
 
@@ -445,10 +446,7 @@ export function VerifyPage() {
 						</button>
 
 						{hasSession ? null : (
-							<Link
-								className="button button-secondary"
-								to={`/login?returnTo=${encodeURIComponent(signInReturnTo)}`}
-							>
+							<Link className="button button-secondary" to={signInPath}>
 								Sign in
 							</Link>
 						)}
