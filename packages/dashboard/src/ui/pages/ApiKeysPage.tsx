@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { englishT, type Translate, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { readTenantAdmission, type TenantAdmission } from "../tenant-admission";
@@ -19,12 +21,16 @@ type ApiKeyRow = {
  * Key lifetimes offered at issuance (/v1/api-keys `expires_in_days`; `null` is
  * an explicit non-expiring key). Matches the edge function's 1..730 day bound.
  */
-const KEY_LIFETIMES: ReadonlyArray<{ value: string; label: string; days: number | null }> = [
-	{ value: "30", label: "30 days", days: 30 },
-	{ value: "90", label: "90 days", days: 90 },
-	{ value: "365", label: "1 year (recommended)", days: 365 },
-	{ value: "730", label: "2 years", days: 730 },
-	{ value: "never", label: "Never expires (not recommended)", days: null },
+const KEY_LIFETIMES: ReadonlyArray<{
+	value: string;
+	label: DashboardMessageKey;
+	days: number | null;
+}> = [
+	{ value: "30", label: "keys.life.30", days: 30 },
+	{ value: "90", label: "keys.life.90", days: 90 },
+	{ value: "365", label: "keys.life.365", days: 365 },
+	{ value: "730", label: "keys.life.730", days: 730 },
+	{ value: "never", label: "keys.life.never", days: null },
 ];
 const DEFAULT_KEY_LIFETIME = "365";
 /** Same bounds as the api_keys_label_check constraint. */
@@ -40,10 +46,10 @@ function lifetimeDays(value: string): number | null {
 // Control characters are refused by the API; mirror the rule before submitting.
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
 
-export function labelProblem(label: string): string | null {
+export function labelProblem(label: string, t: Translate = englishT): string | null {
 	if ([...label].length > MAX_KEY_LABEL_LENGTH)
-		return `Use at most ${MAX_KEY_LABEL_LENGTH} characters.`;
-	if (CONTROL_CHARACTERS.test(label)) return "Remove line breaks and other control characters.";
+		return t("keys.label.tooLong", { max: MAX_KEY_LABEL_LENGTH });
+	if (CONTROL_CHARACTERS.test(label)) return t("keys.label.control");
 	return null;
 }
 
@@ -115,19 +121,18 @@ function createKeyBody(
 		: body;
 }
 
-const CREATED_KEY_NOTICE: Record<KeyType, string | null> = {
+const CREATED_KEY_NOTICE: Record<KeyType, DashboardMessageKey | null> = {
 	tenant: null,
-	[BROWSER_GUARD_KEY_SCOPE]:
-		"Copy this Browser Guard key now (shown once) and paste it into the managed policy's telemetry.apiKey.",
+	[BROWSER_GUARD_KEY_SCOPE]: "keys.bgNotice",
 };
 
-function keyTypeLabel(key: ApiKeyRow): string {
+function keyTypeLabel(key: ApiKeyRow, t: Translate): string {
 	if (key.scope === BROWSER_GUARD_KEY_SCOPE) {
 		return typeof key.install_limit === "number"
-			? `Browser Guard ingest · up to ${key.install_limit.toLocaleString()} installs`
-			: "Browser Guard ingest";
+			? t("keys.type.bgLimit", { count: key.install_limit.toLocaleString() })
+			: t("keys.type.bg");
 	}
-	return "Tenant";
+	return t("keys.type.tenant");
 }
 
 type EnrollmentTokenRow = {
@@ -149,7 +154,8 @@ function maskSecret(secret: string): string {
 
 export function ApiKeysPage() {
 	const { currentTeam, currentRole } = useTeam();
-	if (!currentTeam) return <div className="card">Select a team to manage its credentials.</div>;
+	const t = useT();
+	if (!currentTeam) return <div className="card">{t("keys.noTeam")}</div>;
 	return (
 		<TenantApiKeys
 			key={currentTeam.id}
@@ -172,6 +178,7 @@ function TenantApiKeys({
 	canWrite: boolean;
 	canIssueIngestKey: boolean;
 }) {
+	const t = useT();
 	const [admission, setAdmission] = useState<TenantAdmission | null>(null);
 	const [accessStatus, setAccessStatus] = useState<string>("loading");
 	const [keys, setKeys] = useState<ApiKeyRow[]>([]);
@@ -194,7 +201,7 @@ function TenantApiKeys({
 	const [busy, setBusy] = useState(false);
 
 	const trimmedLabel = useMemo(() => label.trim(), [label]);
-	const invalidLabel = labelProblem(trimmedLabel);
+	const invalidLabel = labelProblem(trimmedLabel, t);
 	const browserKey = keyType === BROWSER_GUARD_KEY_SCOPE;
 	const installLimit = useMemo(() => parseInstallLimit(installLimitInput), [installLimitInput]);
 	const createAllowed =
@@ -215,8 +222,7 @@ function TenantApiKeys({
 			} catch (cause) {
 				return {
 					data: null,
-					error:
-						cause instanceof Error ? cause : new Error("The dashboard service is unavailable."),
+					error: cause instanceof Error ? cause : new Error(t("keys.serviceUnavailable")),
 				};
 			}
 		};
@@ -229,7 +235,7 @@ function TenantApiKeys({
 		if (pilotRes.error || pilotRes.data?.ok !== true) {
 			setAdmission(null);
 			setAccessStatus("unknown");
-			setError(readErrorMessage(pilotRes.error, "Workspace access response is invalid."));
+			setError(readErrorMessage(pilotRes.error, t("keys.accessInvalid")));
 		} else {
 			const data = (pilotRes.data ?? {}) as Record<string, unknown>;
 			const updated = readTenantAdmission(data.admission);
@@ -251,14 +257,14 @@ function TenantApiKeys({
 		if (keysRes.error || keysRes.data?.ok !== true || !Array.isArray(keysRes.data?.keys)) {
 			setKeys([]);
 			setEnrollTokens([]);
-			setError(readErrorMessage(keysRes.error, "API key list response is invalid."));
+			setError(readErrorMessage(keysRes.error, t("keys.listInvalid")));
 			return;
 		}
 		setKeys(keysRes.data.keys as ApiKeyRow[]);
 
 		if (enrollRes.error || enrollRes.data?.ok !== true || !Array.isArray(enrollRes.data?.tokens)) {
 			setEnrollTokens([]);
-			setError(readErrorMessage(enrollRes.error, "Enrollment token list response is invalid."));
+			setError(readErrorMessage(enrollRes.error, t("keys.tokenListInvalid")));
 			return;
 		}
 		setEnrollTokens(enrollRes.data.tokens as EnrollmentTokenRow[]);
@@ -278,13 +284,13 @@ function TenantApiKeys({
 				body: { action: "renew", id: key.id, expires_in_days: rotationLifetimeDays(key) },
 			});
 			if (res.error || res.data?.ok !== true) {
-				throw new Error(readErrorMessage(res.error, "API key rotation was not confirmed."));
+				throw new Error(readErrorMessage(res.error, t("keys.rotateUnconfirmed")));
 			}
 			const data = (res.data ?? {}) as {
 				api_key?: string;
 				previous_secret_valid_until?: string | null;
 			};
-			if (!data.api_key) throw new Error("API key rotation was not confirmed.");
+			if (!data.api_key) throw new Error(t("keys.rotateUnconfirmed"));
 			setCreatedKey(data.api_key);
 			setShowCreatedKey(false);
 			setCopiedKey(false);
@@ -293,12 +299,12 @@ function TenantApiKeys({
 				: Number.NaN;
 			setCreatedKeyNotice(
 				Number.isFinite(overlapEnd)
-					? `Copy this new key now (shown once). The previous key remains valid until ${new Date(overlapEnd).toLocaleString()}.`
-					: "Copy this new key now (shown once). The previous key is no longer valid.",
+					? t("keys.rotatedOverlap", { time: new Date(overlapEnd).toLocaleString() })
+					: t("keys.rotatedNow"),
 			);
 			await load();
 		} catch (cause) {
-			setError(readErrorMessage(cause, "API key rotation is unavailable."));
+			setError(readErrorMessage(cause, t("keys.rotateUnavailable")));
 		} finally {
 			setBusy(false);
 		}
@@ -309,30 +315,29 @@ function TenantApiKeys({
 	return (
 		<div className="stack">
 			<div className="card">
-				<h1>API Keys</h1>
-				<p>Team: {teamName}</p>
-				<p className="muted">Advanced: keys and enrollment tokens for manual setups and support.</p>
+				<h1>{t("nav.apiKeys")}</h1>
+				<p>{t("keys.team", { name: teamName })}</p>
+				<p className="muted">{t("keys.intro")}</p>
 
 				{approved ? null : (
 					<div className="notice">
-						<div className="muted small">Workspace access</div>
+						<div className="muted small">{t("keys.access")}</div>
 						<div className="mono">{accessStatus}</div>
 						<div className="muted small" style={{ marginTop: 8 }}>
-							Activate workspace access before creating keys or enrolling devices. Use the
-							Onboarding flow to check availability.
+							{t("keys.activateFirst")}
 						</div>
 					</div>
 				)}
 
 				<label className="label">
-					Key type
+					{t("keys.keyType")}
 					<select
 						className="input"
 						value={keyType}
 						onChange={(e) => setKeyType(e.target.value as KeyType)}
 					>
-						<option value="tenant">Tenant key (CLI, IDE and agent connectors)</option>
-						<option value={BROWSER_GUARD_KEY_SCOPE}>Browser Guard ingest-only key</option>
+						<option value="tenant">{t("keys.option.tenant")}</option>
+						<option value={BROWSER_GUARD_KEY_SCOPE}>{t("keys.option.bg")}</option>
 					</select>
 				</label>
 				{browserKey ? (
@@ -345,12 +350,12 @@ function TenantApiKeys({
 				) : null}
 
 				<label className="label">
-					Label (optional)
+					{t("keys.labelOptional")}
 					<input
 						className="input"
 						value={label}
 						onChange={(e) => setLabel(e.target.value)}
-						placeholder="work-laptop, build-server, etc."
+						placeholder={t("keys.labelPlaceholder")}
 						maxLength={MAX_KEY_LABEL_LENGTH}
 						aria-invalid={invalidLabel !== null}
 					/>
@@ -362,19 +367,18 @@ function TenantApiKeys({
 				) : null}
 
 				<label className="label">
-					Expires after
+					{t("keys.expiresAfter")}
 					<select className="input" value={lifetime} onChange={(e) => setLifetime(e.target.value)}>
 						{KEY_LIFETIMES.map((option) => (
 							<option key={option.value} value={option.value}>
-								{option.label}
+								{t(option.label)}
 							</option>
 						))}
 					</select>
 				</label>
 				{lifetimeDays(lifetime) === null ? (
 					<div className="muted small" role="status">
-						A key that never expires stays valid until someone revokes it, even if it leaks. Prefer
-						an expiry and rotate the key before it ends.
+						{t("keys.neverWarning")}
 					</div>
 				) : null}
 
@@ -397,26 +401,27 @@ function TenantApiKeys({
 									body: createKeyBody(keyType, trimmedLabel, installLimit, lifetimeDays(lifetime)),
 								});
 								if (res.error || res.data?.ok !== true) {
-									setError(readErrorMessage(res.error, "API key creation was not confirmed."));
+									setError(readErrorMessage(res.error, t("keys.createUnconfirmed")));
 									return;
 								}
 								const data = (res.data ?? {}) as { api_key?: string };
 								if (!data.api_key) {
-									setError("Failed to create API key.");
+									setError(t("keys.createFailed"));
 									return;
 								}
 								setCreatedKey(data.api_key);
-								setCreatedKeyNotice(CREATED_KEY_NOTICE[keyType]);
+								const notice = CREATED_KEY_NOTICE[keyType];
+								setCreatedKeyNotice(notice ? t(notice) : null);
 								setLabel("");
 								await load();
 							} catch (cause) {
-								setError(readErrorMessage(cause, "API key creation is unavailable. Please retry."));
+								setError(readErrorMessage(cause, t("keys.createUnavailable")));
 							} finally {
 								setBusy(false);
 							}
 						}}
 					>
-						Generate key
+						{t("keys.generate")}
 					</button>
 					<button
 						className="button button-secondary"
@@ -426,15 +431,13 @@ function TenantApiKeys({
 							await load();
 						}}
 					>
-						Refresh
+						{t("common.refresh")}
 					</button>
 				</div>
 
 				{createdKey ? (
 					<div className="notice">
-						<div className="muted small">
-							{createdKeyNotice ?? "Copy this key now (shown once):"}
-						</div>
+						<div className="muted small">{createdKeyNotice ?? t("keys.copyOnce")}</div>
 						<div className="row" style={{ marginTop: 6 }}>
 							<input
 								className="input mono"
@@ -442,7 +445,7 @@ function TenantApiKeys({
 								readOnly
 								type={showCreatedKey ? "text" : "password"}
 								value={showCreatedKey ? createdKey : maskSecret(createdKey)}
-								aria-label="New API key"
+								aria-label={t("keys.newKey")}
 								autoComplete="off"
 							/>
 							<button
@@ -450,7 +453,7 @@ function TenantApiKeys({
 								type="button"
 								onClick={() => setShowCreatedKey((visible) => !visible)}
 							>
-								{showCreatedKey ? "Hide" : "Reveal"}
+								{showCreatedKey ? t("onb.token.hide") : t("onb.token.reveal")}
 							</button>
 							<button
 								className="button button-secondary"
@@ -460,11 +463,11 @@ function TenantApiKeys({
 										await navigator.clipboard.writeText(createdKey);
 										setCopiedKey(true);
 									} catch {
-										setError("Clipboard access was blocked. Reveal the key and copy it manually.");
+										setError(t("keys.copyBlocked"));
 									}
 								}}
 							>
-								{copiedKey ? "Copied" : "Copy"}
+								{copiedKey ? t("onb.token.copied") : t("onb.token.copy")}
 							</button>
 							<button
 								className="button button-secondary"
@@ -475,7 +478,7 @@ function TenantApiKeys({
 									setCopiedKey(false);
 								}}
 							>
-								Clear
+								{t("onb.token.clear")}
 							</button>
 						</div>
 					</div>
@@ -488,19 +491,16 @@ function TenantApiKeys({
 			</div>
 
 			<div className="card">
-				<h2>Enrollment Tokens</h2>
-				<p className="muted">
-					Enrollment tokens are one-time, short-lived credentials used to bootstrap an agent without
-					manually copying an API key. They are stored as SHA-256 hashes only.
-				</p>
+				<h2>{t("keys.tokens.title")}</h2>
+				<p className="muted">{t("keys.tokens.intro")}</p>
 
 				<label className="label">
-					Label (optional)
+					{t("keys.labelOptional")}
 					<input
 						className="input"
 						value={enrollLabel}
 						onChange={(e) => setEnrollLabel(e.target.value)}
-						placeholder="workstation-1, ci-runner, etc."
+						placeholder={t("keys.tokens.placeholder")}
 					/>
 				</label>
 
@@ -522,14 +522,12 @@ function TenantApiKeys({
 									body: { action: "create", label: trimmedEnrollLabel || null },
 								});
 								if (res.error || res.data?.ok !== true) {
-									setError(
-										readErrorMessage(res.error, "Enrollment token creation was not confirmed."),
-									);
+									setError(readErrorMessage(res.error, t("keys.tokens.createUnconfirmed")));
 									return;
 								}
 								const data = (res.data ?? {}) as { enrollment_token?: string };
 								if (!data.enrollment_token) {
-									setError("Failed to create enrollment token.");
+									setError(t("keys.tokens.createFailed"));
 									return;
 								}
 
@@ -537,24 +535,19 @@ function TenantApiKeys({
 								setEnrollLabel("");
 								await load();
 							} catch (cause) {
-								setError(
-									readErrorMessage(
-										cause,
-										"Enrollment token creation is unavailable. Please retry.",
-									),
-								);
+								setError(readErrorMessage(cause, t("keys.tokens.createUnavailable")));
 							} finally {
 								setBusy(false);
 							}
 						}}
 					>
-						Generate enrollment token
+						{t("keys.tokens.generate")}
 					</button>
 				</div>
 
 				{createdEnrollToken ? (
 					<div className="notice">
-						<div className="muted small">Copy this token now (shown once):</div>
+						<div className="muted small">{t("keys.tokens.copyOnce")}</div>
 						<div className="row" style={{ marginTop: 6 }}>
 							<input
 								className="input mono"
@@ -562,7 +555,7 @@ function TenantApiKeys({
 								readOnly
 								type={showCreatedEnrollToken ? "text" : "password"}
 								value={showCreatedEnrollToken ? createdEnrollToken : maskSecret(createdEnrollToken)}
-								aria-label="New enrollment token"
+								aria-label={t("keys.tokens.new")}
 								autoComplete="off"
 							/>
 							<button
@@ -570,7 +563,7 @@ function TenantApiKeys({
 								type="button"
 								onClick={() => setShowCreatedEnrollToken((visible) => !visible)}
 							>
-								{showCreatedEnrollToken ? "Hide" : "Reveal"}
+								{showCreatedEnrollToken ? t("onb.token.hide") : t("onb.token.reveal")}
 							</button>
 							<button
 								className="button button-secondary"
@@ -580,13 +573,11 @@ function TenantApiKeys({
 										await navigator.clipboard.writeText(createdEnrollToken);
 										setCopiedEnrollToken(true);
 									} catch {
-										setError(
-											"Clipboard access was blocked. Reveal the token and copy it manually.",
-										);
+										setError(t("onb.token.copyBlocked"));
 									}
 								}}
 							>
-								{copiedEnrollToken ? "Copied" : "Copy"}
+								{copiedEnrollToken ? t("onb.token.copied") : t("onb.token.copy")}
 							</button>
 							<button
 								className="button button-secondary"
@@ -597,7 +588,7 @@ function TenantApiKeys({
 									setCopiedEnrollToken(false);
 								}}
 							>
-								Clear
+								{t("onb.token.clear")}
 							</button>
 						</div>
 					</div>
@@ -605,32 +596,32 @@ function TenantApiKeys({
 			</div>
 
 			<div className="card">
-				<h2>Issued keys</h2>
+				<h2>{t("keys.issued")}</h2>
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Label</th>
-								<th>Type</th>
-								<th>Created</th>
-								<th>Expires</th>
-								<th>Status</th>
+								<th>{t("keys.col.label")}</th>
+								<th>{t("notify.table.type")}</th>
+								<th>{t("keys.col.created")}</th>
+								<th>{t("keys.col.expires")}</th>
+								<th>{t("common.status")}</th>
 								<th className="right">
-									<span className="sr-only">Actions</span>
+									<span className="sr-only">{t("notify.table.actions")}</span>
 								</th>
 							</tr>
 						</thead>
 						<tbody>
 							{keys.map((k) => (
 								<tr key={k.id}>
-									<td>{k.label ?? <span className="muted">(no label)</span>}</td>
-									<td className="small">{keyTypeLabel(k)}</td>
+									<td>{k.label ?? <span className="muted">{t("keys.noLabel")}</span>}</td>
+									<td className="small">{keyTypeLabel(k, t)}</td>
 									<td className="mono">{new Date(k.created_at).toLocaleString()}</td>
 									<td className="mono">
 										{k.expires_at ? (
 											new Date(k.expires_at).toLocaleString()
 										) : (
-											<span className="muted">never</span>
+											<span className="muted">{t("keys.never")}</span>
 										)}
 									</td>
 									<td>
@@ -649,7 +640,7 @@ function TenantApiKeys({
 											}
 											onClick={() => rotateKey(k)}
 										>
-											Rotate
+											{t("keys.rotate")}
 										</button>
 										<button
 											className="button button-secondary button-sm"
@@ -666,18 +657,18 @@ function TenantApiKeys({
 													});
 													if (res.error || res.data?.ok !== true) {
 														throw new Error(
-															readErrorMessage(res.error, "API key revocation was not confirmed."),
+															readErrorMessage(res.error, t("keys.revokeUnconfirmed")),
 														);
 													}
 													await load();
 												} catch (cause) {
-													setError(readErrorMessage(cause, "API key revocation is unavailable."));
+													setError(readErrorMessage(cause, t("keys.revokeUnavailable")));
 												} finally {
 													setBusy(false);
 												}
 											}}
 										>
-											Revoke
+											{t("keys.revoke")}
 										</button>
 									</td>
 								</tr>
@@ -685,7 +676,7 @@ function TenantApiKeys({
 							{keys.length === 0 ? (
 								<tr>
 									<td colSpan={6} className="muted">
-										No keys yet.
+										{t("keys.empty")}
 									</td>
 								</tr>
 							) : null}
@@ -695,33 +686,33 @@ function TenantApiKeys({
 			</div>
 
 			<div className="card">
-				<h2>Issued enrollment tokens</h2>
+				<h2>{t("keys.tokens.issued")}</h2>
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Label</th>
-								<th>Created</th>
-								<th>Expires</th>
-								<th>Status</th>
+								<th>{t("keys.col.label")}</th>
+								<th>{t("keys.col.created")}</th>
+								<th>{t("keys.col.expires")}</th>
+								<th>{t("common.status")}</th>
 								<th className="right">
-									<span className="sr-only">Actions</span>
+									<span className="sr-only">{t("notify.table.actions")}</span>
 								</th>
 							</tr>
 						</thead>
 						<tbody>
-							{enrollTokens.map((t) => (
-								<tr key={t.id}>
-									<td>{t.label ?? <span className="muted">(no label)</span>}</td>
-									<td className="mono">{new Date(t.created_at).toLocaleString()}</td>
-									<td className="mono">{new Date(t.expires_at).toLocaleString()}</td>
+							{enrollTokens.map((token) => (
+								<tr key={token.id}>
+									<td>{token.label ?? <span className="muted">{t("keys.noLabel")}</span>}</td>
+									<td className="mono">{new Date(token.created_at).toLocaleString()}</td>
+									<td className="mono">{new Date(token.expires_at).toLocaleString()}</td>
 									<td>
-										{t.consumed_at ? (
-											<span className="badge badge-neutral">consumed</span>
-										) : Date.now() > Date.parse(t.expires_at) ? (
-											<span className="badge badge-warning">expired</span>
+										{token.consumed_at ? (
+											<span className="badge badge-neutral">{t("keys.status.consumed")}</span>
+										) : Date.now() > Date.parse(token.expires_at) ? (
+											<span className="badge badge-warning">{t("keys.status.expired")}</span>
 										) : (
-											<span className="badge badge-success">active</span>
+											<span className="badge badge-success">{t("keys.status.active")}</span>
 										)}
 									</td>
 									<td className="right">
@@ -738,28 +729,23 @@ function TenantApiKeys({
 														{
 															method: "POST",
 															headers: { "X-AIDR-Tenant-ID": tenantId },
-															body: { action: "delete", id: t.id },
+															body: { action: "delete", id: token.id },
 														},
 													);
 													if (delErr || data?.ok !== true) {
 														throw new Error(
-															readErrorMessage(
-																delErr,
-																"Enrollment token deletion was not confirmed.",
-															),
+															readErrorMessage(delErr, t("keys.tokens.deleteUnconfirmed")),
 														);
 													}
 													await load();
 												} catch (cause) {
-													setError(
-														readErrorMessage(cause, "Enrollment token deletion is unavailable."),
-													);
+													setError(readErrorMessage(cause, t("keys.tokens.deleteUnavailable")));
 												} finally {
 													setBusy(false);
 												}
 											}}
 										>
-											Delete
+											{t("notify.row.delete")}
 										</button>
 									</td>
 								</tr>
@@ -767,7 +753,7 @@ function TenantApiKeys({
 							{enrollTokens.length === 0 ? (
 								<tr>
 									<td colSpan={5} className="muted">
-										No enrollment tokens yet.
+										{t("keys.tokens.empty")}
 									</td>
 								</tr>
 							) : null}
@@ -781,17 +767,21 @@ function TenantApiKeys({
 
 /** Status of an issued key, with an expiry warning before it stops working. */
 function KeyStatusBadge({ keyRow }: { keyRow: ApiKeyRow }) {
-	if (keyRow.revoked) return <span className="badge badge-error">revoked</span>;
+	const t = useT();
+	if (keyRow.revoked) return <span className="badge badge-error">{t("keys.status.revoked")}</span>;
 	const expiry = keyExpiryState(keyRow.expires_at);
-	if (expiry.kind === "expired") return <span className="badge badge-error">expired</span>;
+	if (expiry.kind === "expired")
+		return <span className="badge badge-error">{t("keys.status.expired")}</span>;
 	if (expiry.kind === "expiring") {
 		return (
-			<span className="badge badge-warning" title="Rotate this key before it expires.">
-				expires in {expiry.days} {expiry.days === 1 ? "day" : "days"}
+			<span className="badge badge-warning" title={t("keys.rotateHint")}>
+				{expiry.days === 1
+					? t("keys.expiresInDay")
+					: t("keys.expiresInDays", { days: expiry.days })}
 			</span>
 		);
 	}
-	return <span className="badge badge-success">active</span>;
+	return <span className="badge badge-success">{t("keys.status.active")}</span>;
 }
 
 /** Options shown for an ingest-only Browser Guard key. */
@@ -806,16 +796,12 @@ function IngestKeyOptions({
 	canIssue: boolean;
 	onChange: (value: string) => void;
 }) {
+	const t = useT();
 	return (
 		<div className="notice">
-			<div className="muted small">
-				For Browser Guard managed policy. Users of a managed browser can read this key, so it can
-				only report counts-only privacy scans from Browser Guard, for at most the number of browser
-				installations below. It cannot read policy, packs or reputation data. Only owners and admins
-				can create one.
-			</div>
+			<div className="muted small">{t("keys.bg.body")}</div>
 			<label className="label" style={{ marginTop: 8 }}>
-				Installation limit
+				{t("keys.bg.limit")}
 				<input
 					className="input"
 					inputMode="numeric"
@@ -827,12 +813,12 @@ function IngestKeyOptions({
 			</label>
 			{valid ? null : (
 				<div className="muted small" role="status">
-					Enter a whole number from 1 to {MAX_INSTALL_LIMIT.toLocaleString()}.
+					{t("keys.bg.limitInvalid", { max: MAX_INSTALL_LIMIT.toLocaleString() })}
 				</div>
 			)}
 			{canIssue ? null : (
 				<div className="muted small" role="status">
-					Ask a workspace owner or admin to create this key.
+					{t("keys.bg.askAdmin")}
 				</div>
 			)}
 		</div>

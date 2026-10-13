@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DashboardMessageKey } from "../i18n/en";
+import { type Translate, useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import {
@@ -9,18 +11,18 @@ import {
 	useTeam,
 } from "./team-provider";
 
-const ROLE_LABELS: Record<TeamRole, string> = {
-	owner: "Owner",
-	admin: "Administrator",
-	member: "Member",
-	viewer: "Viewer",
+const ROLE_LABELS: Record<TeamRole, DashboardMessageKey> = {
+	owner: "common.role.owner",
+	admin: "common.role.admin",
+	member: "common.role.member",
+	viewer: "common.role.viewer",
 };
 
-const ROLE_DESCRIPTIONS: Record<TeamRole, string> = {
-	owner: "Team owner: full access, including ownership of the team tenant",
-	admin: "Full access: manage team, members, policies, and billing",
-	member: "Standard access: edit policies, view audit logs",
-	viewer: "Read-only: view audit logs and team activity",
+const ROLE_DESCRIPTIONS: Record<TeamRole, DashboardMessageKey> = {
+	owner: "team.role.ownerDesc",
+	admin: "team.role.adminDesc",
+	member: "team.role.memberDesc",
+	viewer: "team.role.viewerDesc",
 };
 
 // Administrators cannot grant ownership. Owner changes require AAL2 and are
@@ -66,22 +68,25 @@ function invitationStatus(
 	action: "create" | "resend",
 	email: string,
 	result: InvitationDelivery,
+	t: Translate,
 ): string {
 	const lead =
-		action === "create" ? `Invitation created for ${email}.` : `Link replaced for ${email}.`;
+		action === "create"
+			? t("team.invite.created", { email })
+			: t("team.invite.replaced", { email });
 	if (result.delivery === "email") {
 		return action === "create"
-			? `${lead} An invitation email with a single-use link was sent to that address.`
-			: `${lead} A new invitation email was sent; the previous link no longer works.`;
+			? `${lead} ${t("team.invite.emailSent")}`
+			: `${lead} ${t("team.invite.emailResent")}`;
 	}
-	const share = action === "create" ? "Share the link below" : "Share the new link below";
+	const share = action === "create" ? t("team.invite.share") : t("team.invite.shareNew");
 	return result.emailFailed
-		? `${lead} The invitation email could not be delivered. ${share}.`
-		: `${lead} ${share}; no email was sent.`;
+		? `${lead} ${t("team.invite.emailFailed", { share })}`
+		: `${lead} ${t("team.invite.noEmail", { share })}`;
 }
 
-function memberLabel(member: TeamMember): string {
-	return member.email || `user ${member.user_id}`;
+function memberLabel(member: TeamMember, t: Translate): string {
+	return member.email || t("team.memberUser", { id: member.user_id });
 }
 
 export function AdminPanel() {
@@ -99,6 +104,7 @@ export function AdminPanel() {
 		updateMemberRole,
 		createTeam,
 	} = useTeam();
+	const t = useT();
 
 	const [inviteEmail, setInviteEmail] = useState("");
 	const [inviteRole, setInviteRole] = useState<TeamRole>("member");
@@ -154,7 +160,7 @@ export function AdminPanel() {
 				!Array.isArray(data.invitations) ||
 				!data.invitations.every(isPendingInvitation)
 			) {
-				throw new Error("Pending invitations could not be loaded.");
+				throw new Error(t("team.invites.loadFailed"));
 			}
 			if (requestId === invitationRequest.current) {
 				setInvitations(
@@ -166,9 +172,7 @@ export function AdminPanel() {
 		} catch {
 			if (requestId === invitationRequest.current) {
 				setInvitations([]);
-				setInvitationsError(
-					"Pending invitations could not be loaded. Try again before creating or replacing a link.",
-				);
+				setInvitationsError(t("team.invites.loadFailedRetry"));
 			}
 		} finally {
 			if (requestId === invitationRequest.current) setLoadingInvitations(false);
@@ -195,14 +199,14 @@ export function AdminPanel() {
 			if (result.delivery === "manual") setInviteLink(result.inviteUrl);
 			setStatus({
 				tone: "success",
-				message: invitationStatus("create", inviteEmail, result),
+				message: invitationStatus("create", inviteEmail, result, t),
 			});
 			setInviteEmail("");
 			void loadInvitations();
 		} catch (err) {
 			setStatus({
 				tone: "error",
-				message: readErrorMessage(err, "Failed to send invitation"),
+				message: readErrorMessage(err, t("team.invite.failed")),
 			});
 		} finally {
 			setBusy(false);
@@ -217,8 +221,8 @@ export function AdminPanel() {
 		if (
 			!window.confirm(
 				action === "resend"
-					? `Replace the link for ${invitation.email}? The previous link will stop working.`
-					: `Revoke the invitation for ${invitation.email}?`,
+					? t("team.invite.confirmReplace", { email: invitation.email })
+					: t("team.invite.confirmRevoke", { email: invitation.email }),
 			)
 		)
 			return;
@@ -230,20 +234,23 @@ export function AdminPanel() {
 				body: { team_id: teamId, action, invitation_id: invitation.id },
 			});
 			if (error || data?.ok !== true || data.invitation_id !== invitation.id)
-				throw new Error("Invitation change was not confirmed.");
+				throw new Error(t("team.invite.changeUnconfirmed"));
 			if (action === "resend") {
 				const result = readInvitationDelivery(data);
 				if (result.delivery === "manual") setInviteLink(result.inviteUrl);
 				setStatus({
 					tone: "success",
-					message: invitationStatus("resend", invitation.email, result),
+					message: invitationStatus("resend", invitation.email, result, t),
 				});
 			} else {
-				setStatus({ tone: "success", message: `Invitation revoked for ${invitation.email}.` });
+				setStatus({
+					tone: "success",
+					message: t("team.invite.revoked", { email: invitation.email }),
+				});
 			}
 			void loadInvitations();
 		} catch (err) {
-			setStatus({ tone: "error", message: readErrorMessage(err, "Failed to change invitation") });
+			setStatus({ tone: "error", message: readErrorMessage(err, t("team.invite.changeFailed")) });
 		} finally {
 			setBusy(false);
 		}
@@ -264,14 +271,14 @@ export function AdminPanel() {
 		setTeamCreateAttempt(attempt);
 		try {
 			await createTeam(attempt.name, attempt.requestId);
-			setStatus({ tone: "success", message: `Team "${attempt.name}" created successfully` });
+			setStatus({ tone: "success", message: t("team.created", { name: attempt.name }) });
 			setNewTeamName("");
 			setTeamCreateAttempt(null);
 			setShowCreateTeam(false);
 		} catch (err) {
 			setStatus({
 				tone: "error",
-				message: readErrorMessage(err, "Failed to create team"),
+				message: readErrorMessage(err, t("team.createFailed")),
 			});
 		} finally {
 			teamCreateBusy.current = false;
@@ -280,17 +287,20 @@ export function AdminPanel() {
 	}
 
 	async function handleRemoveMember(member: TeamMember) {
-		if (!window.confirm(`Remove ${memberLabel(member)} from the team?`)) return;
+		if (!window.confirm(t("team.confirmRemove", { member: memberLabel(member, t) }))) return;
 
 		setBusy(true);
 		setStatus(null);
 		try {
 			await removeMember(member.user_id);
-			setStatus({ tone: "success", message: `${memberLabel(member)} removed from team` });
+			setStatus({
+				tone: "success",
+				message: t("team.removed", { member: memberLabel(member, t) }),
+			});
 		} catch (err) {
 			setStatus({
 				tone: "error",
-				message: readErrorMessage(err, "Failed to remove member"),
+				message: readErrorMessage(err, t("team.removeFailed")),
 			});
 		} finally {
 			setBusy(false);
@@ -302,11 +312,14 @@ export function AdminPanel() {
 		setStatus(null);
 		try {
 			await updateMemberRole(userId, newRole);
-			setStatus({ tone: "success", message: `Role updated to ${ROLE_LABELS[newRole]}` });
+			setStatus({
+				tone: "success",
+				message: t("team.roleUpdated", { role: t(ROLE_LABELS[newRole]) }),
+			});
 		} catch (err) {
 			setStatus({
 				tone: "error",
-				message: readErrorMessage(err, "Failed to update role"),
+				message: readErrorMessage(err, t("team.roleFailed")),
 			});
 		} finally {
 			setBusy(false);
@@ -316,7 +329,7 @@ export function AdminPanel() {
 	if (isLoading) {
 		return (
 			<div className="card">
-				<p className="muted">Loading team...</p>
+				<p className="muted">{t("team.loading")}</p>
 			</div>
 		);
 	}
@@ -324,54 +337,53 @@ export function AdminPanel() {
 	if (!currentTeam) {
 		return (
 			<div className="card">
-				<h2>Team Management</h2>
+				<h2>{t("team.management")}</h2>
 				{error ? (
 					<>
 						<div className="notice notice-danger" role="alert" aria-live="assertive">
-							<b>Your team membership could not be loaded.</b>
+							<b>{t("team.membershipFailed")}</b>
 							<div className="muted small" style={{ marginTop: 6 }}>
 								{error}
 							</div>
 							<div className="muted small" style={{ marginTop: 6 }}>
-								This is not a confirmed &quot;no team&quot; state, so no team creation is offered
-								until the membership query succeeds.
+								{t("team.membershipFailedBody")}
 							</div>
 						</div>
 					</>
 				) : (
 					<>
-						<p className="muted">You are not part of any team yet.</p>
+						<p className="muted">{t("team.noTeam")}</p>
 
 						{showCreateTeam ? (
 							<form onSubmit={handleCreateTeam}>
 								<label className="label">
-									Team Name
+									{t("team.name")}
 									<input
 										className="input"
 										type="text"
 										readOnly={Boolean(teamCreateAttempt)}
 										value={newTeamName}
 										onChange={(e) => setNewTeamName(e.target.value)}
-										placeholder="e.g., Acme Security"
+										placeholder={t("team.namePlaceholder")}
 										required
 									/>
 								</label>
 								<div className="row">
 									<button className="button" type="submit" disabled={busy}>
-										{teamCreateAttempt ? "Retry Team Creation" : "Create Team"}
+										{teamCreateAttempt ? t("team.retryCreate") : t("team.create")}
 									</button>
 									<button
 										className="button button-secondary"
 										type="button"
 										onClick={cancelTeamCreate}
 									>
-										Cancel
+										{t("common.cancel")}
 									</button>
 								</div>
 							</form>
 						) : (
 							<button className="button" onClick={startTeamCreate}>
-								Create Your First Team
+								{t("team.createFirst")}
 							</button>
 						)}
 					</>
@@ -396,7 +408,7 @@ export function AdminPanel() {
 					<div>
 						<h2 style={{ margin: 0 }}>{currentTeam.name}</h2>
 						<p className="muted" style={{ margin: "6px 0 0" }}>
-							Plan: <span className="pill">{currentTeam.plan}</span>
+							{t("team.plan")} <span className="pill">{currentTeam.plan}</span>
 							{currentTeam.github_org && (
 								<span className="pill" style={{ marginLeft: "8px" }}>
 									GitHub: {currentTeam.github_org}
@@ -411,15 +423,14 @@ export function AdminPanel() {
 					</div>
 					{canManageTeam && (
 						<button className="button button-secondary" onClick={toggleTeamCreate}>
-							+ New Team
+							{t("team.newTeam")}
 						</button>
 					)}
 				</div>
 
 				{canManageTeam ? null : (
 					<div className="notice" style={{ marginTop: 14 }}>
-						You have read-only access to this team. Only an owner or an administrator can invite,
-						remove, or re-role members.
+						{t("team.readOnly")}
 					</div>
 				)}
 
@@ -429,23 +440,23 @@ export function AdminPanel() {
 						style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid var(--border)" }}
 					>
 						<label className="label">
-							New Team Name
+							{t("team.newName")}
 							<input
 								className="input"
 								type="text"
 								readOnly={Boolean(teamCreateAttempt)}
 								value={newTeamName}
 								onChange={(e) => setNewTeamName(e.target.value)}
-								placeholder="e.g., Security Team"
+								placeholder={t("team.newNamePlaceholder")}
 								required
 							/>
 						</label>
 						<div className="row">
 							<button className="button" type="submit" disabled={busy}>
-								{teamCreateAttempt ? "Retry Team Creation" : "Create Team"}
+								{teamCreateAttempt ? t("team.retryCreate") : t("team.create")}
 							</button>
 							<button className="button button-secondary" type="button" onClick={cancelTeamCreate}>
-								Cancel
+								{t("common.cancel")}
 							</button>
 						</div>
 					</form>
@@ -454,31 +465,27 @@ export function AdminPanel() {
 
 			{/* Members List */}
 			<div className="card">
-				<h3>{membersError ? "Team Members" : `Team Members (${members.length})`}</h3>
+				<h3>
+					{membersError ? t("team.members") : t("team.membersCount", { count: members.length })}
+				</h3>
 
 				{membersError ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
-						<b>Member list unavailable.</b>
+						<b>{t("team.membersUnavailable")}</b>
 						<div className="muted small" style={{ marginTop: 6 }}>
 							{membersError}
 						</div>
 						<div className="muted small" style={{ marginTop: 6 }}>
-							No member count is shown because the membership rows could not be read.
+							{t("team.membersUnavailableBody")}
 						</div>
 					</div>
 				) : null}
 
 				{!membersError && !memberEmailsAvailable ? (
 					<div className="notice notice-warning" style={{ marginBottom: 14 }}>
-						<b>
-							{canManageTeam
-								? "Member email addresses are unavailable in this deployment."
-								: "Member email addresses are restricted to team owners and administrators."}
-						</b>
+						<b>{canManageTeam ? t("team.emailsUnavailable") : t("team.emailsRestricted")}</b>
 						<div className="muted small" style={{ marginTop: 6 }}>
-							{canManageTeam
-								? "The secure member directory is not available. Members are identified by user id; role changes and removal still apply to the real rows."
-								: "Members are identified by user id on this read-only view."}
+							{canManageTeam ? t("team.emailsUnavailableBody") : t("team.emailsRestrictedBody")}
 						</div>
 					</div>
 				) : null}
@@ -494,18 +501,18 @@ export function AdminPanel() {
 					>
 						<div className="row" style={{ alignItems: "flex-end", gap: "12px" }}>
 							<label className="label" style={{ flex: 1, margin: 0 }}>
-								Email
+								{t("team.email")}
 								<input
 									className="input"
 									type="email"
 									value={inviteEmail}
 									onChange={(e) => setInviteEmail(e.target.value)}
-									placeholder="colleague@company.com"
+									placeholder={t("team.emailPlaceholder")}
 									required
 								/>
 							</label>
 							<label className="label" style={{ margin: 0 }}>
-								Role
+								{t("team.role")}
 								<select
 									className="input"
 									value={inviteRole}
@@ -514,23 +521,20 @@ export function AdminPanel() {
 								>
 									{ASSIGNABLE_ROLES.map((role) => (
 										<option key={role} value={role}>
-											{ROLE_LABELS[role]}
+											{t(ROLE_LABELS[role])}
 										</option>
 									))}
 								</select>
 							</label>
 							<button className="button" type="submit" disabled={busy}>
-								Invite
+								{t("team.invite")}
 							</button>
 						</div>
-						<p className="muted small">{ROLE_DESCRIPTIONS[inviteRole]}</p>
-						<p className="muted small">
-							When this deployment has invitation email configured, the invitee receives a
-							single-use link by email. Otherwise the link is shown here once for you to share.
-						</p>
+						<p className="muted small">{t(ROLE_DESCRIPTIONS[inviteRole])}</p>
+						<p className="muted small">{t("team.inviteNote")}</p>
 						{inviteLink && (
 							<label>
-								Invitation link
+								{t("team.inviteLink")}
 								<input
 									className="input"
 									readOnly
@@ -545,14 +549,14 @@ export function AdminPanel() {
 				{canManageTeam && (
 					<div style={{ marginBottom: 20 }}>
 						<div className="row space-between">
-							<h4>Pending invitations</h4>
+							<h4>{t("team.pending")}</h4>
 							<button
 								className="button button-secondary"
 								type="button"
 								disabled={busy || loadingInvitations}
 								onClick={() => void loadInvitations()}
 							>
-								Refresh invitations
+								{t("team.refreshInvites")}
 							</button>
 						</div>
 						{invitationsError ? (
@@ -560,25 +564,25 @@ export function AdminPanel() {
 								{invitationsError}
 							</div>
 						) : null}
-						{loadingInvitations ? <p className="muted">Loading invitations...</p> : null}
+						{loadingInvitations ? <p className="muted">{t("team.loadingInvites")}</p> : null}
 						{!loadingInvitations && !invitationsError && invitations.length === 0 ? (
-							<p className="muted">No pending invitations.</p>
+							<p className="muted">{t("team.noPending")}</p>
 						) : null}
 						{!loadingInvitations && !invitationsError && invitations.length > 0 ? (
 							<table className="table">
 								<thead>
 									<tr>
-										<th>Recipient</th>
-										<th>Role</th>
-										<th>Expires</th>
-										<th className="right">Actions</th>
+										<th>{t("team.recipient")}</th>
+										<th>{t("team.role")}</th>
+										<th>{t("team.expires")}</th>
+										<th className="right">{t("team.actions")}</th>
 									</tr>
 								</thead>
 								<tbody>
 									{invitations.map((invitation) => (
 										<tr key={invitation.id}>
 											<td>{invitation.email}</td>
-											<td>{ROLE_LABELS[invitation.role]}</td>
+											<td>{t(ROLE_LABELS[invitation.role])}</td>
 											<td>{new Date(invitation.expires_at).toLocaleString()}</td>
 											<td className="right">
 												<button
@@ -587,7 +591,7 @@ export function AdminPanel() {
 													disabled={busy}
 													onClick={() => void handleInvitationAction(invitation, "resend")}
 												>
-													Replace link
+													{t("team.replaceLink")}
 												</button>{" "}
 												<button
 													className="button button-secondary"
@@ -595,7 +599,7 @@ export function AdminPanel() {
 													disabled={busy}
 													onClick={() => void handleInvitationAction(invitation, "revoke")}
 												>
-													Revoke invitation
+													{t("team.revokeInvite")}
 												</button>
 											</td>
 										</tr>
@@ -610,9 +614,9 @@ export function AdminPanel() {
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Member</th>
-								<th>Role</th>
-								{canManageTeam && <th className="right">Actions</th>}
+								<th>{t("team.member")}</th>
+								<th>{t("team.role")}</th>
+								{canManageTeam && <th className="right">{t("team.actions")}</th>}
 							</tr>
 						</thead>
 						<tbody>
@@ -621,9 +625,9 @@ export function AdminPanel() {
 									<td>
 										<div className="row">
 											<div>
-												<div>{memberLabel(member)}</div>
+												<div>{memberLabel(member, t)}</div>
 												{member.invited_by && (
-													<div className="small muted">Invited by team member</div>
+													<div className="small muted">{t("team.invitedBy")}</div>
 												)}
 											</div>
 										</div>
@@ -642,13 +646,13 @@ export function AdminPanel() {
 												{(currentRole === "owner" ? CHANGEABLE_ROLES : ASSIGNABLE_ROLES).map(
 													(role) => (
 														<option key={role} value={role}>
-															{ROLE_LABELS[role]}
+															{t(ROLE_LABELS[role])}
 														</option>
 													),
 												)}
 											</select>
 										) : (
-											<span className="pill">{ROLE_LABELS[member.role]}</span>
+											<span className="pill">{t(ROLE_LABELS[member.role])}</span>
 										)}
 									</td>
 									{canManageTeam && (
@@ -660,7 +664,7 @@ export function AdminPanel() {
 													onClick={() => void handleRemoveMember(member)}
 													disabled={busy}
 												>
-													Remove
+													{t("team.remove")}
 												</button>
 											)}
 										</td>
@@ -674,7 +678,7 @@ export function AdminPanel() {
 
 			{error && (
 				<div className="notice notice-danger" role="alert">
-					<b>Error:</b> {error}
+					<b>{t("team.error")}</b> {error}
 				</div>
 			)}
 

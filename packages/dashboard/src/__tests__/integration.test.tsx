@@ -690,7 +690,7 @@ describe("Dashboard integration", () => {
 		await waitFor(() => expect(screen.getByText("overview-agent")).toBeInTheDocument());
 		expect(screen.getByText("Live agents")).toBeInTheDocument();
 		expect(screen.getByText("Recent events")).toBeInTheDocument();
-		expect(screen.getByText("bash: deny")).toBeInTheDocument();
+		expect(screen.getByText("bash: blocked")).toBeInTheDocument();
 		expect(screen.getByText("connected")).toBeInTheDocument();
 	});
 

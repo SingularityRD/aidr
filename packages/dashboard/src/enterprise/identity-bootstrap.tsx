@@ -1,6 +1,7 @@
 import type { Session } from "@supabase/supabase-js";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { useSessionSnapshot } from "../ui/use-session";
@@ -48,6 +49,7 @@ function parseBootstrap(data: unknown): MembershipIdentity[] {
 
 /** Only identifiers cross this boundary. Protected table providers mount AFTER assurance. */
 export function IdentityBootstrap({ children }: Props) {
+	const t = useT();
 	const [params] = useSearchParams();
 	const requestedTenant = params.get("tenant");
 	const { snapshot, generation, refresh, isCurrent } = useSessionSnapshot();
@@ -59,7 +61,7 @@ export function IdentityBootstrap({ children }: Props) {
 		},
 		[userId],
 	);
-	if (!snapshot) return <div role="status">Resolving the managed tenant…</div>;
+	if (!snapshot) return <div role="status">{t("layout.resolvingTenant")}</div>;
 	if (!snapshot.session)
 		return (
 			<EnterpriseAuth>
@@ -103,6 +105,7 @@ function BoundBootstrap({
 	onSelect: (tenantId: string) => void;
 	refreshMemberships: (tenantId: string) => Promise<void>;
 }) {
+	const t = useT();
 	const [state, setState] = useState<BootstrapState>({ kind: "checking" });
 	const [selection, setSelection] = useState<MembershipIdentity | null>(null);
 	useEffect(() => {
@@ -133,10 +136,7 @@ function BoundBootstrap({
 				if (!cancelled)
 					setState({
 						kind: "blocked",
-						message: readErrorMessage(
-							cause,
-							"Managed identity could not be verified. Access is withheld.",
-						),
+						message: readErrorMessage(cause, t("identity.blocked")),
 					});
 			}
 		})();
@@ -144,14 +144,9 @@ function BoundBootstrap({
 			cancelled = true;
 		};
 	}, [session, preferredTenant, requestedTenant, onSelect, isCurrent]);
-	if (state.kind === "checking") return <div role="status">Resolving the managed tenant…</div>;
+	if (state.kind === "checking") return <div role="status">{t("layout.resolvingTenant")}</div>;
 	if (state.kind === "blocked") return <div role="alert">{state.message}</div>;
-	if (!selection)
-		return (
-			<div role="alert">
-				No active managed membership is available. No protected screen was opened.
-			</div>
-		);
+	if (!selection) return <div role="alert">{t("identity.noMembership")}</div>;
 	const switchTeam = (teamId: string) => {
 		const next = state.memberships.find((item) => item.team_id === teamId);
 		if (next) {
@@ -163,9 +158,9 @@ function BoundBootstrap({
 		<>
 			{state.memberships.length > 1 && (
 				<label>
-					Managed tenant
+					{t("identity.tenant")}
 					<select
-						aria-label="Managed tenant"
+						aria-label={t("identity.tenant")}
 						value={selection.tenant_id}
 						onChange={(event) => {
 							const next = state.memberships.find((item) => item.tenant_id === event.target.value);

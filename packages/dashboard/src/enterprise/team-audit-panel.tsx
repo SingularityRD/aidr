@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { AdminAuditSection } from "./admin-audit-section";
 import { useTeam } from "./team-provider";
@@ -16,6 +17,7 @@ export function TeamAuditPanel() {
 		refreshAuditLogs,
 		exportAuditLogs,
 	} = useTeam();
+	const t = useT();
 	const [page, setPage] = useState(0);
 	const [exporting, setExporting] = useState(false);
 	const [exportError, setExportError] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export function TeamAuditPanel() {
 			setDownload({ teamId, format, url });
 		} catch (error) {
 			if (isCurrent()) {
-				setExportError(readErrorMessage(error, "Audit export is unavailable."));
+				setExportError(readErrorMessage(error, t("audit.exportUnavailable")));
 			}
 		} finally {
 			if (isCurrent()) setExporting(false);
@@ -71,19 +73,15 @@ export function TeamAuditPanel() {
 
 	return (
 		<section className="card" aria-labelledby="team-audit-heading">
-			<h2 id="team-audit-heading">Team audit</h2>
-			<p className="muted">
-				Recent audit entries for the selected team only. This view shows at most the latest 1,000
-				entries; use the paginated export API for larger history. Browser export is capped at
-				100,000 records or 64 MiB. No raw action input is shown here.
-			</p>
+			<h2 id="team-audit-heading">{t("audit.title")}</h2>
+			<p className="muted">{t("audit.intro")}</p>
 			{!currentTeam || !canViewAudit ? (
-				<p className="muted">Select an accessible team to view its audit records.</p>
+				<p className="muted">{t("audit.selectTeam")}</p>
 			) : (
 				<>
 					<div className="button-row">
 						<button type="button" onClick={() => void refreshAuditLogs()}>
-							Refresh audit
+							{t("audit.refresh")}
 						</button>
 						{canManageTeam && (
 							<>
@@ -92,21 +90,19 @@ export function TeamAuditPanel() {
 									disabled={exporting}
 									onClick={() => void prepareExport("csv")}
 								>
-									Prepare CSV export
+									{t("audit.prepareCsv")}
 								</button>
 								<button
 									type="button"
 									disabled={exporting}
 									onClick={() => void prepareExport("json")}
 								>
-									Prepare JSON export
+									{t("audit.prepareJson")}
 								</button>
 							</>
 						)}
 					</div>
-					{!canManageTeam && (
-						<p className="muted">Audit export is available to team owners and admins.</p>
-					)}
+					{!canManageTeam && <p className="muted">{t("audit.exportOwners")}</p>}
 					{exportError && (
 						<div className="notice notice-danger" role="alert">
 							{exportError}
@@ -114,31 +110,31 @@ export function TeamAuditPanel() {
 					)}
 					{readyDownload && (
 						<p role="status">
-							Audit export is ready to download.{" "}
+							{t("audit.ready")}{" "}
 							<a
 								href={readyDownload.url}
 								download={`aidr-audit-${readyDownload.teamId}.${readyDownload.format}`}
 							>
-								Save audit export
+								{t("audit.save")}
 							</a>
 						</p>
 					)}
 					{!auditLoaded ? (
-						<p className="muted">Loading audit records…</p>
+						<p className="muted">{t("audit.loading")}</p>
 					) : auditError ? (
 						<div className="notice notice-danger" role="alert">
-							Audit records are unavailable. {auditError}
+							{t("audit.unavailable")} {auditError}
 						</div>
 					) : scopedLogs.length === 0 ? (
-						<p className="muted">No audit records for this team.</p>
+						<p className="muted">{t("audit.empty")}</p>
 					) : (
 						<>
 							<table>
 								<thead>
 									<tr>
-										<th>Time</th>
-										<th>Actor</th>
-										<th>Action</th>
+										<th>{t("audit.time")}</th>
+										<th>{t("audit.actor")}</th>
+										<th>{t("audit.action")}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -147,9 +143,9 @@ export function TeamAuditPanel() {
 											<td>
 												{Number.isFinite(row.timestamp)
 													? new Date(row.timestamp).toLocaleString()
-													: "Time unavailable"}
+													: t("audit.timeUnavailable")}
 											</td>
-											<td>{row.user_email || row.user_id || "Not recorded"}</td>
+											<td>{row.user_email || row.user_id || t("audit.notRecorded")}</td>
 											<td>{row.action}</td>
 										</tr>
 									))}
@@ -161,17 +157,15 @@ export function TeamAuditPanel() {
 									disabled={currentPage === 0}
 									onClick={() => setPage(currentPage - 1)}
 								>
-									Previous audit page
+									{t("audit.prev")}
 								</button>
-								<span>
-									Page {currentPage + 1} of {pageCount}
-								</span>
+								<span>{t("audit.pageOf", { page: currentPage + 1, count: pageCount })}</span>
 								<button
 									type="button"
 									disabled={currentPage >= pageCount - 1}
 									onClick={() => setPage(currentPage + 1)}
 								>
-									Next audit page
+									{t("audit.next")}
 								</button>
 							</div>
 						</>
