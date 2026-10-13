@@ -497,7 +497,7 @@ session is released once.
 **What it does**
 The engine extracts artifacts (commands, URLs, file paths, content, packages) from each
 tool call and matches them against YAML threat rules. The rules are data, not code:
-**511 rules in 29 files** under [`threats/`](../../../../threats/), covering Linux,
+**514 rules in 30 files** under [`threats/`](../../../../threats/), covering Linux,
 macOS and Windows.
 
 **Why it matters**
@@ -514,8 +514,8 @@ reputation legs → decision engine (deny > ask > allow) → cache → audit log
 
 Each rule has `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` →
 `deny`, `require_approval` → `ask`, `log` → `allow`), a regex `pattern`, `match_on`,
-`title`, `expires_at` and `revoked`. Of the 511 rules, 221 block, 262 require approval
-and 28 log; 177 are critical, 307 high and 27 medium. The 27 `secure-code.yaml` rules are
+`title`, `expires_at` and `revoked`. Of the 514 rules, 224 block, 262 require approval
+and 28 log; 179 are critical, 308 high and 27 medium. The 27 `secure-code.yaml` rules are
 advisory: they only inspect code the agent writes, and `secure_code.action` (`warn` by
 default, or `ask`) decides what a match does.
 
@@ -533,6 +533,7 @@ Rule files:
 | `mining.yaml` | Crypto-mining / resource hijacking (ATT&CK T1496) | 17 |
 | `self-defense.yaml` | Attempts to disable or bypass AIDR | 9 |
 | `canary.yaml` | Agent use of AIDR canary-credential management | 1 |
+| `credential-reads.yaml` | Credential stores reached through evasive reads (browser profiles, gcloud tokens, GnuPG keys) | 3 |
 | `mitre.yaml` | MITRE ATT&CK technique mappings | 64 |
 | `llm-threats.yaml` | LLM-specific threats | 21 |
 | `skill-scan.yaml` | Skill/plugin package rules T01–T09 | 26 |
@@ -542,14 +543,14 @@ Rule files:
 | `agent-safety.yaml` | AI safety guardrails: reward hacking and sabotage, autonomy escalation, irreversible actions | 43 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS variants | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows variants | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Total** | 29 files | **511** |
+| **Total** | 30 files | **514** |
 
 Rules by category:
 
 | Category group | Categories (rule count) | Rules |
 | --- | --- | --- |
 | Tool abuse | `tool` | 196 |
-| Secrets and credentials | `secrets` | 52 |
+| Secrets and credentials | `secrets` | 55 |
 | MITRE ATT&CK mapped | `credential_access` (17), `defense_evasion` (15), `persistence` (11), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 67 |
 | Skill and plugin packages | 14 `skill_*` categories (instruction hijack, Unicode smuggling, memory poisoning, remote payload, embedded code, credential exfiltration, excessive permissions, privilege escalation, credential access, persistence, tool hijack, insecure dependency, hard-coded secret, insecure coding) | 26 |
 | LLM threats | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
@@ -561,7 +562,7 @@ Rules by category:
 | Secure code | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
 | Context poisoning | `context_poisoning` (14), `context_poisoning_hidden_unicode` (3), `mcp_tool_poisoning` (3), `memory_poisoning` (2), `context_poisoning_permission_widening` (1) | 23 |
 | AI safety | `reward_hacking` (17), `irreversible_action` (14), `autonomy_escalation` (7), `agent_sabotage` (5) | 43 |
-| **Total** | | **511** |
+| **Total** | | **514** |
 
 Customers can add their own rules under `~/.singularity-aidr/threats/*.yaml`; a custom
 rule with the same `id` overrides the built-in one.
@@ -2063,7 +2064,7 @@ The mapping is data (`threats/mappings/frameworks.yaml`), keyed by rule id; a te
 when a rule has no mapping or uses an identifier outside the official lists. Matched
 framework ids travel with each verdict into the local audit log, SIEM exports and
 `aidr audit export`; the dashboard shows them on events and incidents and the matrix on the
-Posture page. Current summary for the 511 rules: OWASP LLM 3 covered, 5 partial, 2 not
+Posture page. Current summary for the 514 rules: OWASP LLM 3 covered, 5 partial, 2 not
 applicable; OWASP Agentic 3 covered, 5 partial, **2 not covered** (ASI07 inter-agent
 communication, ASI08 cascading failures); MITRE ATLAS 35 techniques mapped (9 covered,
 26 partial).

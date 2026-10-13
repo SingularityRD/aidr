@@ -121,7 +121,7 @@ conversations, and having no answer stalls the deal.
 | F1 | "Do you have SOC 2?" | No. No certification, audit, or penetration test has been performed. |
 | F2 | "Who else uses this?" | Nobody yet. This is the first cohort. |
 | F3 | "What happens if you disappear?" | Local evaluation does not require a control-plane account, but optional reputation checks can use external services and updates/support would stop. Any continuity promise needs approved licence, package custody and an offline rehearsal. |
-| F4 | "How do I know it actually blocks things?" | 511 shipped rules and a verification suite that exercises allow/deny/ask behaviour. There is no independent efficacy measurement, and you should not imply one. |
+| F4 | "How do I know it actually blocks things?" | 514 shipped rules and a verification suite that exercises allow/deny/ask behaviour. There is no independent efficacy measurement, and you should not imply one. |
 | F5 | "Why is my installer unsigned?" | No approved publisher-signed customer installer is available yet. Do not send the engineering bundle as a supported release; see the code-signing guide. |
 | F6 | "Can I see your data processing terms?" | Draft templates exist, but no customer-specific DPA, subprocessor schedule or counsel/Privacy approval is held. |
 

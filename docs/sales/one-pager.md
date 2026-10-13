@@ -57,7 +57,7 @@ AI agent tool call                     Prompt / paste / file in an AI chat
         │                                           │
         ▼                                           ▼
   connector hook  ─▶ local engine          Browser Guard (in the browser)
-                    ├─ 511 YAML rules        ├─ TR/EN PII + secrets detection
+                    ├─ 514 YAML rules        ├─ TR/EN PII + secrets detection
                     ├─ command-chain and     ├─ custom terms + exact-data match
                     │  obfuscation analysis  └─ reversible placeholders
                     ├─ package/plugin checks          │
@@ -125,7 +125,7 @@ Singularity AIDR is not yet released for live pilots or production; the release 
 
 **Working in this repository today**
 
-- Local engine with 511 YAML threat rules in 29 files; `aidr setup` refuses to report
+- Local engine with 514 YAML threat rules in 30 files; `aidr setup` refuses to report
   success if zero rules load or the self-test does not match.
 - Connector code for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI,
   with cross-connector parity tests. Cursor and VS Code are a preview — no real-host acceptance evidence yet.

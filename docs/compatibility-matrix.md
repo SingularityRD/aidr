@@ -38,11 +38,11 @@ platform and architecture named in the table.
 | Connector | Target platforms | Target architectures | Contexts | Install | Uninstall |
 | --- | --- | --- | --- | --- | --- |
 | Claude Code | Windows, Linux, macOS | x64, arm64 | user, service | pnpm dlx @singularityrd/aidr-cli setup; claude plugin marketplace | pnpm dlx @singularityrd/aidr-cli uninstall |
-| Cursor | Windows, Linux, macOS | x64, arm64 | user | .vsix install via MDM or the extension gallery | extension uninstall |
-| VS Code | Windows, Linux, macOS | x64, arm64 | user | .vsix install via MDM or the extension gallery | extension uninstall |
-| OpenClaw | Windows, Linux, macOS | x64 | user, service | openclaw plugin install | openclaw plugin uninstall |
-| OpenCode | Windows, Linux, macOS | x64, arm64 | user, service | opencode plugin add | opencode plugin remove |
-| Codex CLI | Windows, Linux, macOS | x64, arm64 | user | install the approved @singularityrd/aidr-codex package; register its PreToolUse (matcher ^(Bash\|apply_patch\|mcp__.+)$), UserPromptSubmit and PostToolUse command handlers in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks | remove only the AIDR PreToolUse, UserPromptSubmit and PostToolUse handlers from ~/.codex/config.toml or ~/.codex/hooks.json; uninstall the @singularityrd/aidr-codex package |
+| Cursor | Windows, Linux, macOS | x64, arm64 | user | .vsix install via MDM or the extension gallery | pnpm dlx @singularityrd/aidr-cli uninstall --host cursor; extension uninstall |
+| VS Code | Windows, Linux, macOS | x64, arm64 | user | .vsix install via MDM or the extension gallery | pnpm dlx @singularityrd/aidr-cli uninstall --host vscode; extension uninstall |
+| OpenClaw | Windows, Linux, macOS | x64 | user, service | openclaw plugin install | pnpm dlx @singularityrd/aidr-cli uninstall --host openclaw; openclaw plugins uninstall aidr-openclaw |
+| OpenCode | Windows, Linux, macOS | x64, arm64 | user, service | opencode plugin add | pnpm dlx @singularityrd/aidr-cli uninstall --host opencode; opencode plugin remove |
+| Codex CLI | Windows, Linux, macOS | x64, arm64 | user | install the approved @singularityrd/aidr-codex package; register its PreToolUse (matcher ^(Bash\|apply_patch\|mcp__.+)$), UserPromptSubmit and PostToolUse command handlers in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks | pnpm dlx @singularityrd/aidr-cli uninstall --host codex; remove only the AIDR PreToolUse, UserPromptSubmit and PostToolUse handlers from ~/.codex/config.toml or ~/.codex/hooks.json; uninstall the @singularityrd/aidr-codex package |
 
 ## Interception points
 

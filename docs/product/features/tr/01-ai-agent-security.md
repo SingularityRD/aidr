@@ -511,7 +511,7 @@ serbest bırakılır.
 **Ne yapar**
 Motor her araç çağrısından artifact'ları (komutlar, URL'ler, dosya yolları, içerik,
 paketler) çıkarır ve bunları YAML tehdit kurallarıyla eşleştirir. Kurallar kod değil,
-veridir: [`threats/`](../../../../threats/) altında **29 dosyada 511 kural** bulunur ve
+veridir: [`threats/`](../../../../threats/) altında **30 dosyada 514 kural** bulunur ve
 Linux, macOS ile Windows'u kapsar.
 
 **Neden önemli**
@@ -530,8 +530,8 @@ denetim kaydı → karar
 
 Her kuralda `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` → `deny`,
 `require_approval` → `ask`, `log` → `allow`), regex `pattern`, `match_on`, `title`,
-`expires_at` ve `revoked` alanları bulunur. 511 kuralın 221'u engeller, 262'ı onay ister,
-28'i yalnızca kayıt tutar; 177'i critical, 307'i high, 27'si medium önem derecesindedir.
+`expires_at` ve `revoked` alanları bulunur. 514 kuralın 224'ü engeller, 262'si onay ister,
+28'i yalnızca kayıt tutar; 179'u critical, 308'i high, 27'si medium önem derecesindedir.
 `secure-code.yaml` içindeki 27 kural tavsiye niteliğindedir: yalnızca ajanın yazdığı kodu
 inceler ve eşleşmede ne olacağını `secure_code.action` (varsayılan `warn` ya da `ask`) belirler.
 
@@ -549,6 +549,7 @@ Kural dosyaları:
 | `mining.yaml` | Kripto madenciliği / kaynak gaspı (ATT&CK T1496) | 17 |
 | `self-defense.yaml` | AIDR'yi devre dışı bırakma veya atlatma girişimleri | 9 |
 | `canary.yaml` | Ajanın AIDR tuzak (canary) kimlik bilgisi yönetimini kullanması | 1 |
+| `credential-reads.yaml` | Dolaylı okumalarla erişilen kimlik bilgisi depoları (tarayıcı profilleri, gcloud token'ları, GnuPG anahtarları) | 3 |
 | `mitre.yaml` | MITRE ATT&CK teknik eşlemeleri | 64 |
 | `llm-threats.yaml` | LLM'e özgü tehditler | 21 |
 | `skill-scan.yaml` | Skill/plugin paketi kuralları T01–T09 | 26 |
@@ -558,14 +559,14 @@ Kural dosyaları:
 | `agent-safety.yaml` | Yapay zekâ güvenliği korkulukları: ödül istismarı ve sabotaj, özerklik yükseltme, geri alınamaz eylemler | 43 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS varyantları | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows varyantları | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Toplam** | 29 dosya | **511** |
+| **Toplam** | 30 dosya | **514** |
 
 Kategoriye göre kurallar:
 
 | Kategori grubu | Kategoriler (kural sayısı) | Kural |
 | --- | --- | --- |
 | Araç kötüye kullanımı | `tool` | 196 |
-| Gizli bilgiler ve kimlik bilgileri | `secrets` | 52 |
+| Gizli bilgiler ve kimlik bilgileri | `secrets` | 55 |
 | MITRE ATT&CK eşlemeli | `credential_access` (17), `defense_evasion` (15), `persistence` (11), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 67 |
 | Skill ve plugin paketleri | 14 `skill_*` kategorisi (talimat ele geçirme, Unicode kaçakçılığı, bellek zehirleme, uzak payload, gömülü kod, kimlik bilgisi sızdırma, aşırı yetki, yetki yükseltme, kimlik bilgisine erişim, kalıcılık, araç ele geçirme, güvensiz bağımlılık, koda gömülü gizli bilgi, güvensiz kodlama) | 26 |
 | LLM tehditleri | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
@@ -577,7 +578,7 @@ Kategoriye göre kurallar:
 | Güvenli kod | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
 | Bağlam zehirleme | `context_poisoning` (14), `context_poisoning_hidden_unicode` (3), `mcp_tool_poisoning` (3), `memory_poisoning` (2), `context_poisoning_permission_widening` (1) | 23 |
 | Yapay zekâ güvenliği | `reward_hacking` (17), `irreversible_action` (14), `autonomy_escalation` (7), `agent_sabotage` (5) | 43 |
-| **Toplam** | | **511** |
+| **Toplam** | | **514** |
 
 Müşteriler kendi kurallarını `~/.singularity-aidr/threats/*.yaml` altına ekleyebilir; aynı
 `id`'ye sahip özel bir kural yerleşik kuralın yerine geçer.
@@ -2126,7 +2127,7 @@ Eşleme veridir (`threats/mappings/frameworks.yaml`) ve kural kimliğine göre t
 olmayan ya da resmî listelerde bulunmayan bir kimlik kullanan kural bir testi başarısız
 kılar. Eşleşen çerçeve kimlikleri her kararla birlikte yerel denetim kaydına, SIEM
 aktarımlarına ve `aidr audit export` çıktısına taşınır; panel bunları olaylarda gösterir,
-matrisi ise Posture sayfasında sunar. 511 kural için güncel özet: OWASP LLM'de 3 kapsanan,
+matrisi ise Posture sayfasında sunar. 514 kural için güncel özet: OWASP LLM'de 3 kapsanan,
 5 kısmi, 2 uygulanamaz; OWASP Agentic'te 3 kapsanan, 5 kısmi, **2 kapsanmayan** (ASI07
 ajanlar arası iletişim, ASI08 zincirleme hatalar); MITRE ATLAS'ta 35 teknik eşlenmiş
 (9 kapsanan, 26 kısmi).
