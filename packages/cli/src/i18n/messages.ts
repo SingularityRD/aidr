@@ -35,6 +35,29 @@ export const CLI_EN = {
 	"status.attention":
 		"Installation requires attention. Check configuration and connector registration above.",
 	"status.disclaimer": "A package or hook registration does not prove that the host executes it.",
+	"status.verdictPrefix": "Verdict:",
+	"status.verdictProtected": "protected: {hosts}",
+	"status.verdictRestart": "restart if open before {since}: {hosts}",
+	"status.verdictManual": "needs a manual step: {steps}",
+	"status.verdictNone":
+		"no supported agent host is registered; install Claude Code, Cursor, VS Code, Codex, OpenCode or OpenClaw, then run 'aidr setup'",
+	"status.verdictVerify": "then run 'aidr verify'",
+	"verify.title":
+		"Singularity AIDR — host hook canary (the canary is passed as data and never executed)",
+	"verify.pass": "PASS",
+	"verify.fail": "FAIL",
+	"verify.skip": "SKIP",
+	"verify.notRegistered": "not registered",
+	"verify.summaryPass": "Every exercised AIDR hook denied the canary ({count}).",
+	"verify.summaryFail":
+		"{count} AIDR hook(s) did NOT deny the canary: tool calls of that host may run uninspected.",
+	"verify.summaryNone":
+		"No AIDR hook entry point could be exercised from here. Run 'aidr status' for the next step.",
+	"verify.inProcess":
+		"in-process plugin; it runs only inside the host. Restart it, then ask the agent to run a harmless command such as 'echo aidr-canary' to confirm it loads.",
+	"verify.pluginOnly":
+		"registered as a Claude Code plugin; its hooks run only inside Claude Code (check /plugin).",
+	"verify.noEntry": "registered, but no AIDR hook command was found to exercise in {file}.",
 
 	"approvals.artifactsTruncated":
 		"artifacts:  showing {shown} of {total} (truncated); the approval covers all {total}",
@@ -102,6 +125,29 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 		"Kurulum ilgi gerektiriyor. Yukarıdaki yapılandırmayı ve bağlayıcı kayıtlarını kontrol edin.",
 	"status.disclaimer":
 		"Bir paketin ya da hook kaydının bulunması, ana makinenin onu gerçekten çalıştırdığını kanıtlamaz.",
+	"status.verdictPrefix": "Sonuç:",
+	"status.verdictProtected": "korunuyor: {hosts}",
+	"status.verdictRestart": "{since} öncesinde açıksa yeniden başlatın: {hosts}",
+	"status.verdictManual": "elle adım gerekiyor: {steps}",
+	"status.verdictNone":
+		"kayıtlı desteklenen ajan ana makinesi yok; Claude Code, Cursor, VS Code, Codex, OpenCode ya da OpenClaw kurun, ardından 'aidr setup' çalıştırın",
+	"status.verdictVerify": "ardından 'aidr verify' çalıştırın",
+	"verify.title":
+		"Singularity AIDR — ana makine hook canary sınaması (canary yalnızca veri olarak verilir, asla çalıştırılmaz)",
+	"verify.pass": "BAŞARILI",
+	"verify.fail": "BAŞARISIZ",
+	"verify.skip": "ATLANDI",
+	"verify.notRegistered": "kayıtlı değil",
+	"verify.summaryPass": "Sınanan her AIDR hook'u canary'yi engelledi ({count}).",
+	"verify.summaryFail":
+		"{count} AIDR hook'u canary'yi ENGELLEMEDİ: bu ana makinenin araç çağrıları denetlenmeden çalışabilir.",
+	"verify.summaryNone":
+		"Buradan sınanabilecek bir AIDR hook giriş noktası bulunamadı. Sonraki adım için 'aidr status' çalıştırın.",
+	"verify.inProcess":
+		"süreç içi eklenti; yalnızca ana makinenin içinde çalışır. Ana makineyi yeniden başlatın, ardından yüklendiğini doğrulamak için ajandan 'echo aidr-canary' gibi zararsız bir komut çalıştırmasını isteyin.",
+	"verify.pluginOnly":
+		"Claude Code eklentisi olarak kayıtlı; hook'ları yalnızca Claude Code içinde çalışır (/plugin ile kontrol edin).",
+	"verify.noEntry": "kayıtlı, ancak {file} içinde sınanacak bir AIDR hook komutu bulunamadı.",
 
 	"approvals.artifactsTruncated":
 		"artifacts:  {total} öğeden {shown} tanesi gösteriliyor (kısaltıldı); onay {total} öğenin tümünü kapsar",

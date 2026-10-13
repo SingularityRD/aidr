@@ -12,6 +12,23 @@ below describe a gated installation flow for a future approved release; they
 are not a currently usable customer quickstart. Do not replace the release with
 a source build or an unapproved version.
 
+## Desktop installers (primary path, Windows and Linux)
+
+For a workstation, the primary installation path after approval is the
+desktop installer for its OS: download it from the AIDR dashboard's Download
+page, run it, restart your AI tools. It bundles the standalone `aidr` CLI and
+hook binaries, the rules and the release trust key (no Node.js), runs
+`aidr setup` for the logged-in user and ends with `aidr status` /
+`aidr verify` showing what is protected and what still needs a step. Windows
+(signed MSI, also for Intune / SCCM / GPO) and Linux (.deb, .rpm, tarball)
+installers are described in [Desktop installers](installation/desktop-installers.md).
+**macOS installers are not offered yet**; on macOS use the connector packages
+below. The installers are built and signed by the release-candidate workflow
+and fall under the same gated release decision as everything else on this page.
+
+The rest of this page describes the per-connector packages, for hosts the
+installers do not cover (Codex, Cursor, VS Code) and for macOS.
+
 ## Installation flow after approval
 
 Local detection works without a cloud account or enrollment. Release builds are
@@ -128,7 +145,14 @@ builds additionally need the operator-provided release verification key.
 
 ## Verify It Works
 
-Verify with the safe, non-executing deny canary in the host acceptance
+`aidr status` ends with a one-line verdict: protected hosts, hosts to restart
+because setup registered them while they were open, and hosts that need a
+manual step with the exact command. `aidr verify` then passes a harmless canary
+through each registered connector's real hook entry point as data (nothing is
+executed) and prints PASS / FAIL / SKIP per host; in-process plugins (OpenCode,
+OpenClaw) are SKIP and are confirmed inside the host.
+
+Then verify with the safe, non-executing deny canary in the host acceptance
 procedure in the [first-customer runbook](../deploy/FIRST_CUSTOMER.md). Do not
 run a live payload as an installation test. Record the host-side block and test
 the disabled, crashed, and timed-out hook cases too.

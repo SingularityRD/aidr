@@ -36,6 +36,8 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 	"Revoke the CLI setup credential (not a managed endpoint API key)":
 		"CLI kurulum kimlik bilgisini iptal et (yönetilen uç nokta API anahtarı değildir)",
 	"Emit a machine-readable revocation receipt": "Makinece okunabilir bir iptal makbuzu üret",
+	"Pass a harmless canary (data only, never executed) through each registered connector's hook and report PASS/FAIL per host":
+		"Zararsız bir canary'yi (yalnızca veri, asla çalıştırılmaz) kayıtlı her bağlayıcının hook'undan geçir ve ana makine başına BAŞARILI/BAŞARISIZ bildir",
 	"Show the local AIDR configuration and hook status":
 		"Yerel AIDR yapılandırmasını ve hook durumunu göster",
 	"Emit measured installation state without credentials":

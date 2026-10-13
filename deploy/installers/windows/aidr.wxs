@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Singularity AIDR desktop installer (WiX Toolset 5). Built by build-msi.ps1;
+  every $(var.*) value comes from msi-inputs.mjs, which verified the SEA bundle
+  and the release trust key first.
+
+  Layout (per-machine: Program Files; per-user, MSIINSTALLPERUSER=1:
+  %LOCALAPPDATA%\Programs):
+    Singularity AIDR\bundle\...                  the SEA directory, unchanged
+    Singularity AIDR\config\release-public.pem   release trust key
+  bundle\bin is appended to PATH (machine or user).
+
+  `aidr setup` runs for the interactive user only, never as LocalSystem:
+    * at install time as a deferred, impersonated (non-elevated) action when the
+      installing account is not SYSTEM (UserSID <> S-1-5-18);
+    * for every other user of a per-machine install, through Active Setup at that
+      user's next logon (this is also how an Intune/SCCM/GPO install in the
+      system context reaches the users).
+  AIDR_SKIP_SETUP=1 installs files only. On removal the installing user's
+  connectors are removed with `aidr uninstall --yes --keep-data`
+  (AIDR_OPERATOR_NONINTERACTIVE=1) before the bundle is deleted.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Singularity AIDR"
+           Manufacturer="Singularity R&amp;D"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="$(var.UpgradeCode)"
+           Scope="perUserOrMachine"
+           Compressed="yes"
+           Language="1033">
+    <SummaryInformation Description="Singularity AIDR - AI agent detection and response" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of Singularity AIDR is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://singularityrd.com" />
+    <Property Id="AIDR_SKIP_SETUP" Secure="yes" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Singularity AIDR">
+        <Directory Id="BUNDLEDIR" Name="bundle">
+          <Directory Id="BINDIR" Name="bin" />
+        </Directory>
+        <Directory Id="CONFIGDIR" Name="config" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="SeaBundle" Directory="BUNDLEDIR">
+      <Files Include="$(var.BundleDir)\**">
+        <Exclude Files="$(var.BundleDir)\bin\aidr.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <Component Id="AidrCli" Directory="BINDIR">
+      <File Id="AidrExe" Source="$(var.BundleDir)\bin\aidr.exe" KeyPath="yes" />
+    </Component>
+
+    <Component Id="TrustKey" Directory="CONFIGDIR">
+      <File Id="ReleasePublicKey" Source="$(var.TrustKey)" Name="release-public.pem" KeyPath="yes" />
+    </Component>
+
+    <Component Id="PathMachine" Directory="INSTALLFOLDER" Condition="ALLUSERS=1"
+               Guid="5E2A9C41-0B7D-4F6A-8C13-9D4E2B7A1F05">
+      <Environment Id="AidrPathMachine" Name="PATH" Value="[BINDIR]" Part="last" Action="set" System="yes" Permanent="no" />
+      <CreateFolder />
+    </Component>
+    <Component Id="PathUser" Directory="INSTALLFOLDER" Condition="NOT (ALLUSERS=1)"
+               Guid="A7C3E1D2-6F48-4B9E-9A20-3E5D8C1B7F64">
+      <Environment Id="AidrPathUser" Name="PATH" Value="[BINDIR]" Part="last" Action="set" System="no" Permanent="no" />
+      <CreateFolder />
+    </Component>
+
+    <!-- Active Setup: each user of a per-machine install runs `aidr setup` once at logon. -->
+    <Component Id="ActiveSetup" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND NOT AIDR_SKIP_SETUP"
+               Guid="C4F81B6A-2D93-4E07-B5A8-7E1C0D9F3A26">
+      <RegistryKey Root="HKLM" Key="Software\Microsoft\Active Setup\Installed Components\$(var.ActiveSetupId)">
+        <RegistryValue Type="string" Value="Singularity AIDR" KeyPath="yes" />
+        <RegistryValue Name="StubPath" Type="string" Value="&quot;[#AidrExe]&quot; setup" />
+        <RegistryValue Name="Version" Type="string" Value="$(var.ActiveSetupVersion)" />
+        <RegistryValue Name="IsInstalled" Type="integer" Value="1" />
+      </RegistryKey>
+    </Component>
+
+    <Feature Id="Main" Title="Singularity AIDR" Level="1">
+      <ComponentGroupRef Id="SeaBundle" />
+      <ComponentRef Id="AidrCli" />
+      <ComponentRef Id="TrustKey" />
+      <ComponentRef Id="PathMachine" />
+      <ComponentRef Id="PathUser" />
+      <ComponentRef Id="ActiveSetup" />
+    </Feature>
+
+    <!-- Interactive install: configure the installing user (not elevated, not SYSTEM). -->
+    <CustomAction Id="AidrSetupForUser"
+                  FileRef="AidrExe"
+                  ExeCommand="setup"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+    <!-- Removal: the installing user's connectors go first; local data is kept. -->
+    <CustomAction Id="AidrUninstallForUser"
+                  Directory="BINDIR"
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /d /s /c &quot;set AIDR_OPERATOR_NONINTERACTIVE=1&amp;&amp; &quot;[#AidrExe]&quot; uninstall --yes --keep-data&quot;"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="AidrUninstallForUser" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+      <Custom Action="AidrSetupForUser" Before="InstallFinalize"
+              Condition="NOT REMOVE AND NOT AIDR_SKIP_SETUP AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

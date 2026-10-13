@@ -1,9 +1,12 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import * as esbuild from "esbuild";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	binaryFileName,
+	bundleCli,
+	CLI_ENTRY_POINT,
 	checkSeaSupport,
 	ENTRY_POINTS,
 	MANIFEST_NAME,
@@ -133,6 +136,24 @@ describe("build-sea relocatable distribution (MSC-11)", () => {
 		rmSync(join(outDir, MANIFEST_NAME));
 		expect(verifyDistributionManifest(outDir)).toEqual([`${MANIFEST_NAME} is missing`]);
 	});
+
+	it("the bundled aidr CLI loads the rules shipped next to it and is listed as an entry point", async () => {
+		const outDir = stageDistribution();
+		const cliDist = resolve(__dirname, "../../../cli/dist");
+		const bundle = join(outDir, "cli.bundle.cjs");
+		await bundleCli({ cliDist, outfile: bundle, version: "0.0.0-test", esbuild });
+		copyFileSync(bundle, join(outDir, "bin", binaryFileName(CLI_ENTRY_POINT.binary)));
+		rmSync(bundle);
+		const manifest = writeDistributionManifest(outDir, { version: "0.0.0-test" });
+		expect(manifest.sea.entry_points).toContain(binaryFileName("aidr"));
+		expect(verifyDistributionManifest(outDir)).toEqual([]);
+		expect(relocatedSmoke(outDir, viaNode)).toEqual([]);
+		// Without its rules the relocated CLI must say so, not report a pass.
+		rmSync(join(outDir, "dist", "resources", "threats"), { recursive: true });
+		expect(relocatedSmoke(outDir, viaNode).join("\n")).toMatch(
+			/aidr CLI could not load the shipped rules/,
+		);
+	}, 120_000);
 
 	it("staging refuses a connector build without rules or with source maps", () => {
 		const fakeDist = mkdtempSync(join(tmpdir(), "aidr-sea-fake-dist-"));

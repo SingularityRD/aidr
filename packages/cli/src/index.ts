@@ -65,6 +65,7 @@ import simulateCommand from "./commands/simulate.js";
 import statusCommand from "./commands/status.js";
 import supportBundleCommand from "./commands/support-bundle.js";
 import uninstallCommand from "./commands/uninstall.js";
+import verifyCommand from "./commands/verify.js";
 import { initCliLocale, localizeHelp } from "./i18n/index.js";
 
 const program = new Command();
@@ -126,6 +127,14 @@ program
 	.description("Show the local AIDR configuration and hook status")
 	.option("--json", "Emit measured installation state without credentials")
 	.action(statusCommand);
+
+program
+	.command("verify")
+	.description(
+		"Pass a harmless canary (data only, never executed) through each registered connector's hook and report PASS/FAIL per host",
+	)
+	.option("--json", "Emit a machine-readable report")
+	.action((options) => verifyCommand(options));
 
 program
 	.command("scan")
@@ -624,4 +633,6 @@ canaryProgram
 initCliLocale();
 localizeHelp(program);
 
-await program.parseAsync(process.argv);
+// No top-level await: the standalone (SEA) build bundles this entry as CommonJS.
+// An unhandled rejection still exits non-zero with its stack, as before.
+void program.parseAsync(process.argv);

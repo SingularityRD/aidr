@@ -19,6 +19,15 @@ import {
 	type ConnectorStatus,
 	detectConnectorStatuses,
 } from "./connector-status.js";
+import { MANAGED_HOOK_MARKER } from "./install-hooks.js";
+import {
+	canaryCommand,
+	runHookCommand,
+	STANDALONE_CLAUDE_HOOKS,
+	STANDALONE_INSTALL_KIND,
+	standaloneBinary,
+	verifyStandaloneBundle,
+} from "./standalone.js";
 
 /**
  * Connector installation and removal for every supported agent host.
@@ -73,6 +82,12 @@ export interface ConnectorDeps {
 	version: string;
 	/** Clock for backup names (tests). */
 	now?: () => number;
+	/**
+	 * Root of the standalone (SEA) bundle `aidr` runs from (desktop installers).
+	 * With it, Claude Code gets the bundle's hook binaries registered directly;
+	 * without it Claude Code needs a verified plugin directory.
+	 */
+	standaloneRoot?: string;
 }
 
 type HostInstallAction =
@@ -730,6 +745,7 @@ function installClaude(
 	pluginDir: string | undefined,
 ): HostInstallResult {
 	const label = "Claude Code";
+	if (!pluginDir && deps.standaloneRoot) return installClaudeStandalone(deps, dryRun);
 	const before = measure(deps, "claude-code");
 	if (before.state === "installed") {
 		return result("claude-code", label, "already_installed", before.detail, before.state);
@@ -817,6 +833,204 @@ function installClaude(
 				changes,
 				CLAUDE_MANUAL,
 			);
+}
+
+// ── Claude Code from the standalone (SEA) bundle ─────────────────────
+
+/** Quote a hook binary path the way `scripts/endpoint-install.mjs` does. */
+function quoteHookPath(path: string): string {
+	if (/["`$%\r\n]/u.test(path)) {
+		throw new Error(`the bundle path ${path} contains characters a hook command cannot carry`);
+	}
+	return `"${path.replaceAll("\\", "/")}"`;
+}
+
+/** Settings with every AIDR-marked hook replaced by the standalone bundle's hooks. */
+function standaloneClaudeSettings(
+	settings: Record<string, unknown>,
+	root: string,
+): Record<string, unknown> {
+	if (settings.hooks !== undefined && !isPlainObject(settings.hooks)) {
+		throw new Error("~/.claude/settings.json has a 'hooks' value that is not an object");
+	}
+	const hooks: Record<string, unknown> = { ...((settings.hooks as Record<string, unknown>) ?? {}) };
+	for (const { event, binary, timeout } of STANDALONE_CLAUDE_HOOKS) {
+		const current = hooks[event] ?? [];
+		if (!Array.isArray(current)) {
+			throw new Error(`~/.claude/settings.json: ${event} is not an array`);
+		}
+		const kept = current.flatMap((entry: unknown) => {
+			if (!isPlainObject(entry) || !Array.isArray(entry.hooks)) return [entry];
+			const remaining = entry.hooks.filter(
+				(hook: unknown) => !isPlainObject(hook) || hook.statusMessage !== MANAGED_HOOK_MARKER,
+			);
+			if (remaining.length === entry.hooks.length) return [entry];
+			return remaining.length > 0 ? [{ ...entry, hooks: remaining }] : [];
+		});
+		kept.push({
+			...(event === "SessionStart" ? {} : { matcher: "*" }),
+			hooks: [
+				{
+					type: "command",
+					command: quoteHookPath(standaloneBinary(root, binary)),
+					timeout,
+					statusMessage: MANAGED_HOOK_MARKER,
+				},
+			],
+		});
+		hooks[event] = kept;
+	}
+	return { ...settings, hooks };
+}
+
+/**
+ * Claude Code from the standalone bundle: verify the bundle against its
+ * manifest, prove the bundle's PreToolUse binary denies the canary for this
+ * home, then register the bundle's hook binaries in ~/.claude/settings.json
+ * (only AIDR-marked entries change) and write the installation receipt that
+ * `aidr uninstall` verifies before removing them.
+ */
+function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
+	const label = "Claude Code";
+	const root = deps.standaloneRoot as string;
+	const before = measure(deps, "claude-code");
+	const settingsPath = join(deps.home, ".claude", "settings.json");
+	const receiptPath = join(deps.home, ".singularity-aidr", "installation.json");
+	let settings: ReturnType<typeof readJsonObject>;
+	try {
+		settings = readJsonObject(settingsPath);
+	} catch (error) {
+		return result("claude-code", label, "manual", `${(error as Error).message}.`, before.state);
+	}
+	if (settings.value.disableAllHooks === true) {
+		return result(
+			"claude-code",
+			label,
+			"manual",
+			"Claude Code has disableAllHooks set, so no hook would run.",
+			before.state,
+			[],
+			[
+				"  Claude Code: remove \"disableAllHooks\" from ~/.claude/settings.json, then rerun 'aidr setup'.",
+			],
+		);
+	}
+	const plugins = settings.value.enabledPlugins;
+	if (
+		isPlainObject(plugins) &&
+		Object.entries(plugins).some(
+			([name, enabled]) => /aidr|singularity/i.test(name) && enabled === true,
+		)
+	) {
+		return result(
+			"claude-code",
+			label,
+			"already_installed",
+			"the AIDR Claude Code plugin is enabled; the standalone hooks were not added (they would inspect every call twice).",
+			before.state,
+		);
+	}
+	const bundle = verifyStandaloneBundle(root);
+	if (!bundle.ok || !bundle.manifestSha256) {
+		return result(
+			"claude-code",
+			label,
+			"failed",
+			`the installed AIDR bundle at ${root} failed verification: ${bundle.problems.slice(0, 3).join("; ")}. Reinstall it.`,
+			before.state,
+		);
+	}
+	let desired: Record<string, unknown>;
+	try {
+		desired = standaloneClaudeSettings(settings.value, root);
+	} catch (error) {
+		return result("claude-code", label, "manual", `${(error as Error).message}.`, before.state);
+	}
+	let previousReceipt: Record<string, unknown> | null = null;
+	try {
+		previousReceipt = readJsonObject(receiptPath).value;
+	} catch {
+		previousReceipt = null;
+	}
+	if (
+		settings.raw !== null &&
+		JSON.stringify(settings.value) === JSON.stringify(desired) &&
+		previousReceipt?.install_kind === STANDALONE_INSTALL_KIND &&
+		previousReceipt.path === root &&
+		previousReceipt.artifact_sha256 === bundle.manifestSha256
+	) {
+		return result(
+			"claude-code",
+			label,
+			"already_installed",
+			`AIDR hooks from ${root} already registered.`,
+			before.state,
+		);
+	}
+	const update = before.state === "installed";
+	if (dryRun) {
+		return result(
+			"claude-code",
+			label,
+			update ? "would_update" : "would_install",
+			`would register the hook binaries of ${root} in ${settingsPath}.`,
+			before.state,
+		);
+	}
+	// The canary is data on the hook's stdin; nothing is executed.
+	const canary = runHookCommand(
+		quoteHookPath(standaloneBinary(root, "aidr-pre-tool-use")),
+		{
+			hook_event_name: "PreToolUse",
+			session_id: "aidr-setup-canary",
+			cwd: deps.home,
+			tool_name: "Bash",
+			tool_input: { command: canaryCommand() },
+		},
+		{ home: deps.home, cwd: deps.home, env: deps.env },
+	);
+	if (canary.decision !== "deny") {
+		return result(
+			"claude-code",
+			label,
+			"failed",
+			`the bundle's PreToolUse hook returned ${canary.decision} for the deny canary (${canary.detail}); registration unchanged.`,
+			before.state,
+		);
+	}
+	try {
+		const changes = writeJsonWithBackup(settingsPath, desired, settings.raw, deps, "setup");
+		const receipt = {
+			schema_version: 1,
+			installed_at: new Date((deps.now ?? Date.now)()).toISOString(),
+			connector: "claude-code",
+			install_kind: STANDALONE_INSTALL_KIND,
+			artifact_sha256: bundle.manifestSha256,
+			artifact_version: bundle.version,
+			package_integrity:
+				bundle.signature === "verified" ? "signature_verified" : "digests_verified_unsigned",
+			path: root,
+			settings_path: settingsPath,
+			local_canary: "deny",
+			host_execution: "unverified",
+		};
+		const rawReceipt = existsSync(receiptPath) ? readFileSync(receiptPath) : null;
+		changes.push(...writeJsonWithBackup(receiptPath, receipt, rawReceipt, deps, "setup"));
+		const after = measure(deps, "claude-code");
+		return result(
+			"claude-code",
+			label,
+			after.state === "installed" ? (update ? "updated" : "installed") : "failed",
+			after.state === "installed"
+				? `registered the AIDR hooks from ${root} (local deny canary passed).`
+				: `wrote ${settingsPath} but Claude Code detection does not see the hook (${after.detail}).`,
+			after.state,
+			changes,
+			["  Claude Code: restart it so it loads the AIDR hooks, then run 'aidr verify'."],
+		);
+	} catch (error) {
+		return result("claude-code", label, "failed", (error as Error).message, before.state);
+	}
 }
 
 // ── Install entry point ───────────────────────────────────────────────

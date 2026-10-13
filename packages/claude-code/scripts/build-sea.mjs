@@ -15,6 +15,7 @@
 //
 //   bin/aidr-sea/
 //     bin/aidr-<entry>[.exe]          one binary per hook / bin entry point
+//     bin/aidr[.exe]                   the `aidr` CLI (setup, status, verify, uninstall)
 //     dist/resources/{threats,allowlists}
 //     dist/response-worker.cjs, dist/vendor/**, dist/native/**
 //     aidr-artifact.manifest.json      sha256 of every file above
@@ -24,11 +25,18 @@
 // HOME; it must DENY from the shipped rules, or the build fails. That proves the
 // rules travel with the binaries instead of the hook asking on every call.
 // `--verify <dir>` re-checks the manifest and repeats the relocated smoke on an
-// existing distribution.
+// existing distribution. `--out <dir>` writes the distribution elsewhere, and
+// `--prebuilt` wraps the connector dist that is already on disk (for example
+// the exact release-candidate bytes) instead of rebundling it first.
+//
+// The desktop installers (deploy/installers/) package this directory as is.
 //
 // The binaries and the manifest are UNSIGNED: sign the manifest with
 // scripts/sign-artifact-manifest.mjs and the binaries with the platform code
-// signing tool before distribution. No release workflow builds or ships SEA.
+// signing tool before distribution; `--remanifest <dir>` rewrites the manifest
+// over code-signed binaries and repeats the relocated smoke. The release-rc
+// installer jobs build this directory per OS and ship it inside the signed
+// desktop installers (deploy/installers/).
 //
 // Requires an official Node.js build that carries the SEA sentinel fuse
 // (Homebrew and other shared-libnode builds do not).
@@ -72,6 +80,13 @@ export const ENTRY_POINTS = Object.freeze([
 	{ entry: "health", binary: "aidr-health", main: "health.cjs" },
 	{ entry: "mcp-server", binary: "aidr-mcp-server", main: "mcp-server.cjs" },
 ]);
+
+/**
+ * The `aidr` CLI. Its entry is the compiled `packages/cli/dist/index.js` (ESM),
+ * bundled to one CommonJS file at build time because a SEA main script must be
+ * CommonJS. Desktop installers run `aidr setup` / `aidr uninstall` from it.
+ */
+export const CLI_ENTRY_POINT = Object.freeze({ entry: "cli", binary: "aidr" });
 
 /**
  * Runtime files the bundles load from `<packageRoot>/dist` and therefore must
@@ -192,13 +207,15 @@ function defaultCreatedAt() {
  */
 export function writeDistributionManifest(outDir, { version, platform = process.platform, arch = process.arch, nodeVersion = process.version, createdAt = defaultCreatedAt() }) {
 	const files = distributionFiles(outDir).map((file) => ({ path: file, sha256: sha256File(join(outDir, file)) }));
+	const binaries = ENTRY_POINTS.map(({ binary }) => binary);
+	if (existsSync(join(outDir, "bin", binaryFileName(CLI_ENTRY_POINT.binary, platform)))) binaries.push(CLI_ENTRY_POINT.binary);
 	const manifest = {
 		schema_version: 1,
 		artifact_id: ARTIFACT_ID,
 		artifact_version: version,
 		created_at: createdAt,
 		files,
-		sea: { platform, arch, node_version: nodeVersion, entry_points: ENTRY_POINTS.map(({ binary }) => binaryFileName(binary, platform)), signed: false },
+		sea: { platform, arch, node_version: nodeVersion, entry_points: binaries.map((binary) => binaryFileName(binary, platform)), signed: false },
 	};
 	writeFileSync(join(outDir, MANIFEST_NAME), `${JSON.stringify(manifest, null, 2)}\n`);
 	return manifest;
@@ -274,10 +291,65 @@ export function relocatedSmoke(outDir, command, platform = process.platform) {
 		if (/No local threat rules could be loaded/u.test(blocked.reason)) problems.push("relocated pre-tool-use could not load the shipped rules");
 		const benign = decide("ls -la");
 		if (benign.decision !== "allow") problems.push(`relocated pre-tool-use returned ${benign.decision} for \`ls -la\`, not allow (${benign.reason})`);
+		const cli = join(relocated, "bin", binaryFileName(CLI_ENTRY_POINT.binary, platform));
+		if (existsSync(cli)) problems.push(...relocatedCliSmoke(cli, command, { cwd: scratch, env }));
 		return problems;
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });
 	}
+}
+
+/**
+ * The relocated `aidr` CLI must load the rules shipped next to it: `aidr status
+ * --json` reports a passing detection self-test with a non-zero rule count.
+ * (Its exit code is non-zero on a machine without a registered connector, so
+ * only the measured detection facts are checked.)
+ */
+function relocatedCliSmoke(cli, command, { cwd, env }) {
+	const [file, args] = command(cli);
+	const result = spawnSync(file, [...args, "status", "--json"], { cwd, env, encoding: "utf8", timeout: 60_000 });
+	let report;
+	try {
+		report = JSON.parse(result.stdout ?? "");
+	} catch {
+		return [`relocated aidr CLI did not print a status report (${`${result.stdout ?? ""}${result.stderr ?? ""}`.slice(0, 400)})`];
+	}
+	if (report?.detection?.ok !== true || !(report.detection.rules > 0)) {
+		return [`relocated aidr CLI could not load the shipped rules (${report?.detection?.detail ?? "no detection report"})`];
+	}
+	return [];
+}
+
+/**
+ * Bundle the compiled CLI (packages/cli/dist/index.js, ESM) into one CommonJS
+ * file a SEA can carry. `import.meta.url` resolves to the running file, which
+ * is the binary itself inside a SEA; the CLI locates `dist/resources` next to
+ * it (packages/cli/src/utils/test-protection.ts).
+ */
+export async function bundleCli({ cliDist, outfile, version, esbuild }) {
+	const entry = join(cliDist, "index.js");
+	if (!existsSync(entry)) throw new Error(`${entry} is missing; build the CLI first (pnpm --filter @singularityrd/aidr-cli build)`);
+	await esbuild.build({
+		entryPoints: [entry],
+		outfile,
+		bundle: true,
+		platform: "node",
+		target: "node22",
+		format: "cjs",
+		external: ["koffi"],
+		sourcemap: false,
+		legalComments: "none",
+		logLevel: "warning",
+		define: { "import.meta.url": "__aidrImportMetaUrl", __AIDR_VERSION__: JSON.stringify(version) },
+		banner: { js: 'var __aidrImportMetaUrl = require("node:url").pathToFileURL(__filename).href;' },
+	});
+	// A SEA main script is compiled as a CommonJS body: drop the entry's hashbang
+	// and the machine-specific pnpm store paths esbuild writes into comments.
+	const text = readFileSync(outfile, "utf8")
+		.replace(/^#![^\n]*\n/u, "")
+		.replace(/node_modules[\\/]\.pnpm[\\/]/gu, "vendor/");
+	writeFileSync(outfile, text);
+	return outfile;
 }
 
 function fail(message) {
@@ -312,8 +384,25 @@ async function main() {
 		verifyExisting(resolve(target));
 		return;
 	}
-	const outDir = join(repoRoot, "bin", "aidr-sea");
+	// After platform code signing (signtool) the binaries' bytes change: rewrite
+	// the manifest over the signed files, then repeat the relocated smoke.
+	const remanifestIndex = process.argv.indexOf("--remanifest");
+	if (remanifestIndex !== -1) {
+		const target = process.argv[remanifestIndex + 1];
+		if (!target) fail("--remanifest needs the distribution directory");
+		const existing = JSON.parse(readFileSync(join(resolve(target), MANIFEST_NAME), "utf8"));
+		if (existing?.artifact_id !== ARTIFACT_ID) fail(`${target} is not a ${ARTIFACT_ID} distribution`);
+		rmSync(join(resolve(target), "aidr-artifact.manifest.sig"), { force: true });
+		writeDistributionManifest(resolve(target), { version: existing.artifact_version, platform: existing.sea?.platform, arch: existing.sea?.arch, nodeVersion: existing.sea?.node_version });
+		verifyExisting(resolve(target));
+		return;
+	}
+	const outIndex = process.argv.indexOf("--out");
+	if (outIndex !== -1 && !process.argv[outIndex + 1]) fail("--out needs a directory");
+	const outDir = outIndex !== -1 ? resolve(process.argv[outIndex + 1]) : join(repoRoot, "bin", "aidr-sea");
+	const prebuilt = process.argv.includes("--prebuilt");
 	const distDir = join(pkgDir, "dist");
+	const cliDist = join(repoRoot, "packages", "cli", "dist");
 	const nodePath = process.execPath;
 
 	const support = checkSeaSupport({
@@ -334,19 +423,31 @@ async function main() {
 		fail("postject is not installed. Run `pnpm install` at the repo root.");
 	}
 
-	console.log("Building JS bundles (release mode, no source maps)...");
-	run(nodePath, ["esbuild.config.js", "--release"], { cwd: pkgDir });
+	if (prebuilt) {
+		console.log(`Using the connector bundles already in ${distDir} (--prebuilt).`);
+	} else {
+		console.log("Building JS bundles (release mode, no source maps)...");
+		run(nodePath, ["esbuild.config.js", "--release"], { cwd: pkgDir });
+	}
+	const version = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version;
+	const cliStage = mkdtempSync(join(tmpdir(), "aidr-sea-cli-"));
+	const esbuild = await import("esbuild");
+	const cliBundle = await bundleCli({ cliDist, outfile: join(cliStage, "aidr-cli.bundle.cjs"), version, esbuild });
 
 	rmSync(outDir, { recursive: true, force: true });
 	mkdirSync(join(outDir, "bin"), { recursive: true });
 	const staging = stageRuntimeFiles(distDir, outDir);
 	if (staging.length > 0) fail(`cannot stage the SEA runtime files:\n  ${staging.join("\n  ")}`);
 
-	for (const { entry, binary, main: mainFile } of ENTRY_POINTS) {
-		const main = join(distDir, mainFile);
+	const binaries = [
+		...ENTRY_POINTS.map(({ entry, binary, main }) => ({ entry, binary, main: join(distDir, main) })),
+		{ ...CLI_ENTRY_POINT, main: cliBundle },
+	];
+	for (const { entry, binary, main } of binaries) {
 		statSync(main); // throws a clear ENOENT if the bundle is missing
-		const blob = join(distDir, `sea-prep-${entry}.blob`);
-		const seaConfig = join(distDir, `sea-config-${entry}.json`);
+		// Blobs and configs go to scratch, never into the (possibly signed) dist.
+		const blob = join(cliStage, `sea-prep-${entry}.blob`);
+		const seaConfig = join(cliStage, `sea-config-${entry}.json`);
 		const output = join(outDir, "bin", binaryFileName(binary));
 
 		console.log(`Building SEA binary: ${output}`);
@@ -355,7 +456,7 @@ async function main() {
 			`${JSON.stringify({ main, output: blob, disableExperimentalSEAWarning: true, useCodeCache: false }, null, 2)}\n`,
 		);
 		try {
-			run(nodePath, ["--experimental-sea-config", seaConfig], { cwd: pkgDir });
+			run(nodePath, ["--experimental-sea-config", seaConfig], { cwd: cliStage });
 			copyFileSync(nodePath, output);
 			if (process.platform !== "win32") chmodSync(output, 0o755);
 			if (process.platform === "darwin") run("codesign", ["--remove-signature", output]);
@@ -369,8 +470,8 @@ async function main() {
 			rmSync(seaConfig, { force: true });
 		}
 	}
+	rmSync(cliStage, { recursive: true, force: true });
 
-	const version = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version;
 	writeDistributionManifest(outDir, { version });
 	verifyExisting(outDir);
 	console.log(`\nSEA build complete: ${outDir}`);
