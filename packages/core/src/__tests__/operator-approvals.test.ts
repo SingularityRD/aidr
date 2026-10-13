@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+	chmodSync,
 	copyFileSync,
 	existsSync,
 	mkdtempSync,
@@ -12,7 +13,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isSymlinkPermissionError } from "./test-utils.js";
 import {
 	artifactSetDigest,
 	clearOperatorApprovalKeyCache,
@@ -32,8 +32,9 @@ import {
 	recordOperatorApproval,
 	recordPendingAsk,
 } from "../operator-approvals.js";
-import type { SecretStore } from "../secret-store.js";
+import { createEncryptedFileStore, type SecretStore } from "../secret-store.js";
 import type { Artifact } from "../types.js";
+import { isSymlinkPermissionError } from "./test-utils.js";
 
 const COMMAND: Artifact = { type: "command", value: "chmod 777 ./deploy.sh" };
 
@@ -454,7 +455,8 @@ describe("default key provider (key custody, H1b)", () => {
 			env: {},
 			resolveVault: () => vault,
 		});
-		expect(provider.storage).toBe("os-vault");
+		// `auto` (the default) prefers the vault whenever one answers.
+		expect(provider.storage).toBe("auto");
 		expect(provider.load({ create: false })).toBeNull();
 		const created = provider.load({ create: true });
 		expect(created?.location).toBe("os-vault");
@@ -469,10 +471,12 @@ describe("default key provider (key custody, H1b)", () => {
 		expect(vault.entries.get("aidr-operator-approval-ledger")).toBe("ledger");
 	});
 
-	it("disables approvals instead of falling back to a key file when no vault answers", () => {
+	it("disables approvals under the strict os-vault storage when no vault answers", () => {
 		const provider = createDefaultOperatorKeyProvider({
 			directory: dir,
 			env: {},
+			keyStorage: "os-vault",
+			platform: "linux",
 			resolveVault: noVault,
 		});
 		expect(() => provider.load({ create: true })).toThrow(OperatorApprovalError);
@@ -480,20 +484,156 @@ describe("default key provider (key custody, H1b)", () => {
 			provider.load({ create: true });
 		} catch (error) {
 			expect((error as OperatorApprovalError).code).toBe("approvals_disabled");
-			expect((error as Error).message).toContain('key_storage = "file"');
+			expect((error as Error).message).toContain('key_storage = "encrypted-file"');
 		}
 		expect(() => provider.anchor?.()).toThrow(/Operator approvals are disabled/);
 		expect(existsSync(join(dir, "operator-approval.key"))).toBe(false);
+		expect(existsSync(join(dir, "sealed"))).toBe(false);
 	});
 
-	it("treats AIDR_SECRET_STORE=file-acl as no vault, not as a key-file opt-in", () => {
-		const provider = createDefaultOperatorKeyProvider({
+	it("treats AIDR_SECRET_STORE=file-acl as no vault, never as a plain key-file opt-in", () => {
+		const strict = createDefaultOperatorKeyProvider({
 			directory: dir,
-			env: { AIDR_SECRET_STORE: "file-acl" },
+			env: { AIDR_SECRET_STORE: "file-acl", AIDR_OPERATOR_APPROVAL_KEY_STORAGE: "os-vault" },
 			resolveVault: () => fakeVault("file-acl"),
 		});
-		expect(() => provider.load({ create: true })).toThrow(/not an OS credential vault/);
+		expect(() => strict.load({ create: true })).toThrow(/not an OS credential vault/);
 		expect(existsSync(join(dir, "operator-approval.key"))).toBe(false);
+	});
+
+	// Headless hosts: no OS vault (PRD-3, CON-11).
+	const MACHINE = "0123456789abcdef0123456789abcdef";
+	const sealedAt = (machineId: string | null) => (directory: string) =>
+		createEncryptedFileStore({ directory: join(directory, "sealed"), machineId });
+
+	it("defaults to auto and keeps the key and ledger in the encrypted file store, never in plaintext", () => {
+		const provider = createDefaultOperatorKeyProvider({
+			directory: dir,
+			env: {},
+			platform: "linux",
+			resolveVault: noVault,
+			encryptedStore: sealedAt(MACHINE),
+		});
+		expect(provider.storage).toBe("auto");
+		const created = provider.load({ create: true });
+		expect(created?.location).toBe("encrypted-file");
+		expect(created?.store).toBe("encrypted-file");
+		expect(existsSync(join(dir, "operator-approval.key"))).toBe(false);
+
+		const sealedFile = join(dir, "sealed", "aidr-operator-approval-key.sealed.json");
+		const raw = readFileSync(sealedFile, "utf8");
+		// The key never appears on disk in the clear.
+		expect(raw).not.toContain(created?.key.toString("hex") as string);
+		if (process.platform !== "win32") {
+			expect(statSync(sealedFile).mode & 0o777).toBe(0o600);
+			expect(statSync(join(dir, "sealed")).mode & 0o777).toBe(0o700);
+		}
+		expect(provider.load({ create: false })?.key.equals(created?.key as Buffer)).toBe(true);
+
+		const anchor = provider.anchor?.();
+		expect(anchor?.location).toBe("encrypted-file");
+		anchor?.write('{"version":1,"seq":3,"consumed":{}}');
+		expect(anchor?.read()).toContain('"seq":3');
+		expect(
+			readFileSync(join(dir, "sealed", "aidr-operator-approval-ledger.sealed.json"), "utf8"),
+		).not.toContain('"seq":3');
+	});
+
+	it("records, approves and spends an ask exactly once with no OS vault", async () => {
+		const provider = createDefaultOperatorKeyProvider({
+			directory: dir,
+			env: {},
+			platform: "linux",
+			resolveVault: noVault,
+			encryptedStore: sealedAt(MACHINE),
+		});
+		options = { path: join(dir, "approvals.json"), keyProvider: provider, now: () => clock };
+		const id = actionId("headless");
+		const pending = await recordAsk(id);
+		expect(pending.actionId).toBe(id);
+		expect(describeOperatorApprovalKey(options)).toMatchObject({
+			available: true,
+			present: true,
+			location: "encrypted-file",
+			anchor: "encrypted-file",
+		});
+		await recordOperatorApproval(id, { approver: "operator" }, options);
+		const input = { actionId: id, tool: "bash", artifacts: [COMMAND] };
+		expect((await consumeOperatorApproval(input, options)).approved).toBe(true);
+		expect((await consumeOperatorApproval(input, options)).reason).toBe("already_used");
+	});
+
+	it("cannot be opened on another machine or after the sealed file is edited", () => {
+		const store = createEncryptedFileStore({ directory: join(dir, "sealed"), machineId: MACHINE });
+		store.put("aidr-operator-approval-key", "a".repeat(64));
+		const elsewhere = createEncryptedFileStore({
+			directory: join(dir, "sealed"),
+			machineId: "fedcba9876543210fedcba9876543210",
+		});
+		expect(() => elsewhere.get("aidr-operator-approval-key")).toThrow(/authenticate/);
+
+		const file = join(dir, "sealed", "aidr-operator-approval-key.sealed.json");
+		const doc = JSON.parse(readFileSync(file, "utf8")) as { ciphertext: string };
+		const bytes = Buffer.from(doc.ciphertext, "base64");
+		bytes[0] = (bytes[0] ?? 0) ^ 1;
+		writeFileSync(file, JSON.stringify({ ...doc, ciphertext: bytes.toString("base64") }), {
+			mode: 0o600,
+		});
+		expect(() => store.get("aidr-operator-approval-key")).toThrow(/authenticate/);
+
+		// A sealed file moved to another id fails too (the id is authenticated data).
+		store.put("aidr-operator-approval-ledger", "ledger");
+		copyFileSync(join(dir, "sealed", "aidr-operator-approval-ledger.sealed.json"), file);
+		expect(() => store.get("aidr-operator-approval-key")).toThrow(/authenticate/);
+	});
+
+	it("reports when the host has no machine id to bind to", () => {
+		const unbound = createEncryptedFileStore({ directory: join(dir, "sealed"), machineId: null });
+		expect(unbound.machineBound).toBe(false);
+		unbound.put("x-secret", "value");
+		expect(unbound.get("x-secret")).toBe("value");
+	});
+
+	it("never leaves the vault on Windows or macOS, and never replaces a vault-created key", () => {
+		for (const platform of ["darwin", "win32"] as const) {
+			const provider = createDefaultOperatorKeyProvider({
+				directory: dir,
+				env: {},
+				platform,
+				resolveVault: noVault,
+				encryptedStore: sealedAt(MACHINE),
+			});
+			expect(() => provider.load({ create: true })).toThrow(/Operator approvals are disabled/);
+		}
+		// The key was created in a vault that is now locked or gone: fail closed.
+		writeFileSync(
+			join(dir, "operator-approval-key.json"),
+			'{"version":1,"store":"linux-secret-service"}\n',
+		);
+		const linux = createDefaultOperatorKeyProvider({
+			directory: dir,
+			env: {},
+			platform: "linux",
+			resolveVault: noVault,
+			encryptedStore: sealedAt(MACHINE),
+		});
+		expect(() => linux.load({ create: true })).toThrow(/created in the linux-secret-service vault/);
+		expect(() => linux.anchor?.()).toThrow(/Operator approvals are disabled/);
+		expect(existsSync(join(dir, "sealed"))).toBe(false);
+	});
+
+	it("refuses a symlinked or group-readable sealed file", (ctx) => {
+		if (process.platform === "win32") ctx.skip();
+		const store = createEncryptedFileStore({ directory: join(dir, "sealed"), machineId: MACHINE });
+		store.put("aidr-operator-approval-key", "b".repeat(64));
+		const file = join(dir, "sealed", "aidr-operator-approval-key.sealed.json");
+		chmodSync(file, 0o640);
+		expect(() => store.get("aidr-operator-approval-key")).toThrow(/other users/);
+		chmodSync(file, 0o600);
+		rmSync(file);
+		writeFileSync(join(dir, "elsewhere.json"), "{}", { mode: 0o600 });
+		symlinkSync(join(dir, "elsewhere.json"), file);
+		expect(() => store.get("aidr-operator-approval-key")).toThrow(/not a regular file/);
 	});
 
 	it("uses an owner-only key file and ledger only on explicit opt-in (env or config)", () => {
@@ -535,7 +675,7 @@ describe("default key provider (key custody, H1b)", () => {
 			join(dir, "config.json"),
 			JSON.stringify({ operator_approvals: { key_storage: "FILE?" } }),
 		);
-		expect(createDefaultOperatorKeyProvider({ directory: dir, env: {} }).storage).toBe("os-vault");
+		expect(createDefaultOperatorKeyProvider({ directory: dir, env: {} }).storage).toBe("auto");
 	});
 
 	it("never signs with a planted key file under the vault storage", () => {

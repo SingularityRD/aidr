@@ -736,11 +736,14 @@ In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw, OpenCode 
 
 ### `operator_approvals`
 
-`key_storage`: `"os-vault"` (default) or `"file"`. Where the operator approval
-key and the single-use ledger live. With `"os-vault"` and no OS credential vault,
-operator approvals are disabled and asks stay blocked; `"file"` is an explicit,
-reduced-protection opt-in that `aidr doctor` warns about. Overridden by
-`AIDR_OPERATOR_APPROVAL_KEY_STORAGE`. See [Key custody](#key-custody).
+`key_storage`: `"auto"` (default), `"os-vault"`, `"encrypted-file"` or `"file"`.
+Where the operator approval key and the single-use ledger live. `"auto"` uses the
+OS credential vault and, on a Linux host with none (headless servers, WSL,
+containers), the machine-bound encrypted file store, so asks can still be recorded
+and approved there. `"os-vault"` requires a vault: without one, operator approvals
+are disabled and asks stay blocked. `"file"` is the legacy plain-key-file opt-in
+that `aidr doctor` warns about. Overridden by `AIDR_OPERATOR_APPROVAL_KEY_STORAGE`.
+See [Key custody](#key-custody).
 
 `dashboard_only`: `false` (default) or `true`. **Managed mode only.** When `true`,
 an `ask` can be released only by a [dashboard approval](#managed-mode-dashboard-approvals):
@@ -1011,21 +1014,43 @@ Where that key lives is set by `operator_approvals.key_storage`:
 
 ```json
 {
-  "operator_approvals": { "key_storage": "os-vault" }
+  "operator_approvals": { "key_storage": "auto" }
 }
 ```
 
 | `key_storage` | Key and single-use ledger | Without it |
 |---------------|---------------------------|------------|
-| `"os-vault"` (default) | OS credential vault only — Windows DPAPI, macOS Keychain, or libsecret `secret-tool` — under the ids `aidr-operator-approval-key` and `aidr-operator-approval-ledger` | **Approvals are disabled.** Asks stay blocked (fail closed), the block message tells the user the ask could not be recorded, and `aidr pending`, `aidr approve` and `aidr doctor` say why. There is no silent fallback to a file. |
-| `"file"` (explicit opt-in) | Owner-only files `~/.singularity-aidr/operator-approval.key` and `operator-approval-ledger.json` | — |
+| `"auto"` (default) | The OS credential vault when one answers. On a Linux/POSIX host with **no** vault (headless servers, WSL without a keyring, containers, CI runners): the machine-bound encrypted file store described below. Never a plaintext file. | On Windows and macOS (which always have a vault) and on a host whose key was created in a vault that no longer answers: **approvals are disabled** (fail closed), as for `"os-vault"`. |
+| `"os-vault"` | OS credential vault only — Windows DPAPI, macOS Keychain, or libsecret `secret-tool` — under the ids `aidr-operator-approval-key` and `aidr-operator-approval-ledger` | **Approvals are disabled.** Asks stay blocked (fail closed), the block message tells the user the ask could not be recorded, and `aidr pending`, `aidr approve` and `aidr doctor` say why. |
+| `"encrypted-file"` | The machine-bound encrypted file store, even where a vault exists | — |
+| `"file"` (legacy explicit opt-in) | Plain owner-only files `~/.singularity-aidr/operator-approval.key` and `operator-approval-ledger.json` | — |
 
-`AIDR_OPERATOR_APPROVAL_KEY_STORAGE=os-vault|file` overrides the config.
-Anything other than an explicit `file` means the vault; `AIDR_SECRET_STORE=file-acl`
-does **not** opt approvals into the key file — it only means "no vault", which
-disables approvals. `aidr doctor` warns loudly whenever the file storage is in use:
-any process running as the same user — including a compromised agent with shell
-access — can read a key file and forge approvals.
+**The encrypted file store** (`~/.singularity-aidr/sealed/`, directory `0700`,
+files `0600`) keeps each secret in its own `<id>.sealed.json`, AES-256-GCM
+encrypted under a key derived with HKDF-SHA256 from the host's machine id
+(`/etc/machine-id`, else `/var/lib/dbus/machine-id`), a per-install random salt
+(`store.salt`), the user id and the secret id; the secret id is authenticated
+data. Nothing is written in plaintext: a backup, support bundle, synced folder or
+a copy on another machine does not yield the key, and an edited, truncated or
+swapped file fails authentication and is refused (the ask stays blocked). Its
+limit is the same as libsecret's on Linux: any process running as the same user
+on the same machine can read the machine id and the salt and so derive the key.
+On a host without a machine id (some minimal container images) the key is derived
+from the salt alone and `aidr doctor` reports the store as not machine-bound. An
+operator passphrase is deliberately not used: connectors record asks and spend
+approvals unattended, so a key that needs a human to unlock it would make every
+ask unrecordable again. The [self-defense rules](#self-defense-rules) deny agent
+access to `~/.singularity-aidr` (which contains `sealed/`) exactly as for the
+other key locations; the out-of-band channel is unchanged — only `aidr approve`,
+confirmed in an interactive terminal, writes an approval.
+
+`AIDR_OPERATOR_APPROVAL_KEY_STORAGE=auto|os-vault|encrypted-file|file` overrides
+the config. A malformed value means `auto`, which never selects the plain key
+file; `AIDR_SECRET_STORE=file-acl` does **not** opt approvals into the plain key
+file — it only means "no vault". `aidr doctor` warns loudly whenever the plain
+`file` storage is in use (any process running as the same user — including a
+compromised agent with shell access — can read a key file and forge approvals)
+and states when the encrypted file store is in use.
 
 Under the vault storage the provider never reads a key file, whatever
 `operator-approval-key.json` (an informational record of where the key lives)
@@ -1057,6 +1082,8 @@ record. Under the `file` storage the ledger is a file in the same directory, so 
 stops a rollback of `approvals.json` alone but not a rollback of both files; on
 Windows the DPAPI-sealed vault entry is itself a file under
 `~/.singularity-aidr/secrets`, so sealing prevents forging it but not restoring an
+older copy of it. The same holds for the encrypted file store (`sealed/`):
+authenticated encryption prevents forging or editing the ledger, not restoring an
 older copy of it.
 
 ### Self-defense rules
@@ -1117,8 +1144,8 @@ files the agent's file tools can read; agent tool calls normally have no TTY; th
 self-defense rules above deny the direct and obfuscated routes; and every release
 is written to the audit log as a user override.
 
-**Recommended deployment:** keep `key_storage` at `"os-vault"` and configure the
-vault item to prompt on every access (Keychain Access → the
+**Recommended deployment:** where an OS vault exists, keep `key_storage` at
+`"auto"` or `"os-vault"` and configure the vault item to prompt on every access (Keychain Access → the
 `singularity-aidr-cli` item → Access Control → "Ask for Keychain password"; each
 recorded ask and each approval then shows a prompt), or run the agent under a
 separate OS account from the operator, so its shell cannot open the operator's
@@ -1259,7 +1286,8 @@ bound to that user or agent; repository exceptions are matched on the endpoint.
 | `~/.singularity-aidr/approvals.json` | Operator approval store: pending asks and `aidr approve` approvals (HMAC-protected, `0600`), plus informational host-dialog asks (no MAC, never approvable) |
 | `~/.singularity-aidr/detection-exceptions.json` | Local [detection exceptions](#detection-exceptions) (HMAC-protected with the approval key, `0600`; expired records are dropped) |
 | `~/.singularity-aidr/operator-approval.key` | Approval HMAC key, only with the explicit `operator_approvals.key_storage: "file"` opt-in (`0600`) |
-| `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives in the OS vault |
+| `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives next to the approval key (OS vault or `sealed/`) |
+| `~/.singularity-aidr/sealed/` | Machine-bound encrypted file store (`0700`; `<id>.sealed.json` and `store.salt`, `0600`): the approval key and ledger on hosts without an OS vault, and the local CLI credential when one is needed there (see [Key custody](#key-custody)) |
 | `~/.singularity-aidr/operator-approval-key.json` | Informational record of where the approval key lives; never makes AIDR read a key file |
 | `~/.singularity-aidr/dashboard-approval-requests.json` | Managed mode: which dashboard approval request to poll for which pending ask (`0600`); grants nothing by itself |
 | `~/.singularity-aidr/session-flow/` | Per-session toxic-flow records (`<digest>.json`, HMAC-protected, `0600`, pruned after `toxic_flow.window_minutes`) and their per-install key `.flow-key` (`0600`) |

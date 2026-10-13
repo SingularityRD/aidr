@@ -324,7 +324,10 @@ describe("Codex enforcement fails CLOSED when it cannot evaluate", () => {
 			{ tool_name: " ", tool_input: {} },
 			{ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {} },
 		]) {
-			const outcome = await enforceCodexPreToolUse(input as unknown as Record<string, unknown>, options());
+			const outcome = await enforceCodexPreToolUse(
+				input as unknown as Record<string, unknown>,
+				options(),
+			);
 			expect(outcome.decision).toBe("deny");
 			expect(outcome.wire.hookSpecificOutput?.permissionDecision).toBe("deny");
 		}
@@ -446,12 +449,50 @@ describe("Codex operator approval channel", () => {
 		}
 	});
 
-	it("keeps the ask blocked and says approvals are disabled without a vault or opt-in", async () => {
+	it.skipIf(process.platform === "win32" || process.platform === "darwin")(
+		"records and releases an ask on a headless host with no OS vault (default storage)",
+		async () => {
+			const previousStore = process.env.AIDR_SECRET_STORE;
+			const previousStorage = process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
+			// No OS vault (file-acl is not a vault) and nothing selected: the default
+			// `auto` storage seals the key in the machine-bound encrypted file store.
+			process.env.AIDR_SECRET_STORE = "file-acl";
+			delete process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
+			clearOperatorApprovalKeyCache();
+			try {
+				const call = preToolUse("Bash", {
+					command: 'echo "DB_PASSWORD=synthetic-only" > .env.test',
+				});
+				const blocked = await enforceCodexPreToolUse(call, options());
+				expect(blocked.decision).toBe("ask");
+				const reason = blocked.wire.hookSpecificOutput?.permissionDecisionReason ?? "";
+				expect(reason).not.toContain("could NOT be recorded");
+				const [pending] = await listPendingAsks();
+				expect(reason).toContain(pending?.actionId as string);
+				expect(existsSync(join(home, ".singularity-aidr", "operator-approval.key"))).toBe(false);
+				expect(existsSync(join(home, ".singularity-aidr", "sealed"))).toBe(true);
+
+				await recordOperatorApproval(pending?.actionId as string, { approver: "test operator" });
+				clearOperatorApprovalKeyCache();
+				expect((await enforceCodexPreToolUse(call, options())).decision).toBe("allow");
+				expect((await enforceCodexPreToolUse(call, options())).decision).toBe("ask");
+			} finally {
+				if (previousStore === undefined) delete process.env.AIDR_SECRET_STORE;
+				else process.env.AIDR_SECRET_STORE = previousStore;
+				if (previousStorage !== undefined) {
+					process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE = previousStorage;
+				}
+				clearOperatorApprovalKeyCache();
+			}
+		},
+	);
+
+	it("keeps the ask blocked and says approvals are disabled when a vault is required but absent", async () => {
 		const previousStore = process.env.AIDR_SECRET_STORE;
 		const previousStorage = process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
-		// No OS vault (file-acl is not a vault) and no key-file opt-in.
+		// No OS vault (file-acl is not a vault) and the strict vault-only storage.
 		process.env.AIDR_SECRET_STORE = "file-acl";
-		delete process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
+		process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE = "os-vault";
 		clearOperatorApprovalKeyCache();
 		try {
 			const call = preToolUse("Bash", { command: 'echo "DB_PASSWORD=synthetic-only" > .env.test' });
@@ -465,9 +506,8 @@ describe("Codex operator approval channel", () => {
 		} finally {
 			if (previousStore === undefined) delete process.env.AIDR_SECRET_STORE;
 			else process.env.AIDR_SECRET_STORE = previousStore;
-			if (previousStorage !== undefined) {
-				process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE = previousStorage;
-			}
+			if (previousStorage === undefined) delete process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE;
+			else process.env.AIDR_OPERATOR_APPROVAL_KEY_STORAGE = previousStorage;
 			clearOperatorApprovalKeyCache();
 		}
 	});

@@ -235,6 +235,10 @@ survive from the blocked call to the retry. The connector therefore records ever
 `aidr pending` and `aidr approve <actionId>` (interactive confirmation); the next
 identical call — same tool, input and Codex session — is then released once,
 within 15 minutes by default. A permanent exception is `aidr allowlist add`.
+This works on headless Linux, WSL and containers too: with no OS credential vault
+the approval key is kept in the machine-bound encrypted file store by default
+(`operator_approvals.key_storage: "auto"`); only `"os-vault"` disables approvals
+there. `aidr doctor` reports where the key lives.
 Residual risk and the key handling are described in
 [docs/configuration.md](../../docs/configuration.md#operator-approvals).
 

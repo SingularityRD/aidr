@@ -950,13 +950,15 @@ export const NvdConfigSchema = z.object({
  * The operator approval channel (`aidr pending` / `aidr approve`).
  *
  * `key_storage` is where the approval HMAC key and the single-use ledger live:
- * `os-vault` (default) keeps them in the OS credential vault and DISABLES
- * approvals when there is none; `file` is an explicit opt-in to an owner-only key
- * file that every process of the same user can read. The
- * `AIDR_OPERATOR_APPROVAL_KEY_STORAGE` environment variable overrides it.
+ * `auto` (default) uses the OS credential vault and, on a Linux/POSIX host with
+ * none, the machine-bound encrypted file store; `os-vault` requires the vault
+ * and DISABLES approvals when there is none; `encrypted-file` selects the file
+ * store explicitly; `file` is the legacy explicit opt-in to a plain owner-only
+ * key file. The `AIDR_OPERATOR_APPROVAL_KEY_STORAGE` environment variable
+ * overrides it.
  */
 const OperatorApprovalsConfigSchema = z.object({
-	key_storage: z.enum(["os-vault", "file"]).default("os-vault"),
+	key_storage: z.enum(["auto", "os-vault", "encrypted-file", "file"]).default("auto"),
 	/**
 	 * Managed mode only: an `ask` can be released ONLY by a dashboard approval (an
 	 * authenticated admin in the AIDR dashboard). The local `aidr approve` channel

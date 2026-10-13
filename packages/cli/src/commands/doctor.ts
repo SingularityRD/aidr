@@ -345,6 +345,20 @@ const FILE_KEY_WARNING =
 	"this user, including a compromised agent with shell access, can read it and forge approvals, " +
 	"and the single-use ledger is a file too. Prefer the OS credential vault (remove the opt-in).";
 
+/** The headless fallback is not plaintext, but it is not an OS vault either. */
+const ENCRYPTED_FILE_NOTE =
+	"No OS credential vault answers on this host, so the approval key and single-use ledger are " +
+	"AES-256-GCM sealed in owner-only files under ~/.singularity-aidr/sealed with a machine-bound " +
+	"key. Like libsecret, this does not stop code running as the same user; run the agent under a " +
+	"separate account for that (docs/configuration.md#key-custody).";
+
+function describeKeyLocation(key: ReturnType<typeof describeOperatorApprovalKey>): string {
+	if (!key.present) return "not created yet";
+	if (key.location === "os-vault") return `in the OS vault (${key.store})`;
+	if (key.location === "encrypted-file") return "in the machine-bound encrypted file store";
+	return "in a plain key file";
+}
+
 async function checkApprovals(deps: DoctorDeps, config: Config): Promise<DoctorCheck> {
 	const store: OperatorApprovalStoreOptions = deps.operatorApprovals ?? {
 		keyStorage: config.operator_approvals?.key_storage,
@@ -353,16 +367,16 @@ async function checkApprovals(deps: DoctorDeps, config: Config): Promise<DoctorC
 		const pending = await listPendingAsks(store);
 		const key = describeOperatorApprovalKey(store);
 		const unverified = pending.filter((p) => !p.verified).length;
-		const where = key.present
-			? key.location === "os-vault"
-				? `in the OS vault (${key.store})`
-				: "in a plain key file"
-			: "not created yet";
+		const where = describeKeyLocation(key);
 		const notes: string[] = [];
+		const info: string[] = [];
 		if (!key.available) {
 			notes.push(`DISABLED: asks stay blocked and cannot be approved. ${key.reason ?? ""}`.trim());
 		}
 		if (key.location === "file" || key.storage === "file") notes.push(FILE_KEY_WARNING);
+		if (key.location === "encrypted-file" || key.anchor === "encrypted-file") {
+			info.push(ENCRYPTED_FILE_NOTE);
+		}
 		return {
 			id: "operator_approvals",
 			status: unverified > 0 || notes.length > 0 ? "warn" : "ok",
@@ -371,6 +385,7 @@ async function checkApprovals(deps: DoctorDeps, config: Config): Promise<DoctorC
 					(unverified > 0 ? `, ${unverified} failing integrity verification` : "") +
 					`; approval key ${where}.`,
 				...notes,
+				...info,
 			].join(" "),
 			detail: {
 				store: operatorApprovalStorePath(store),
