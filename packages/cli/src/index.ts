@@ -63,6 +63,7 @@ import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import simulateCommand from "./commands/simulate.js";
 import statusCommand from "./commands/status.js";
+import supportBundleCommand from "./commands/support-bundle.js";
 import uninstallCommand from "./commands/uninstall.js";
 
 const program = new Command();
@@ -325,6 +326,16 @@ program
 	)
 	.option("--json", "Emit a machine-readable report")
 	.action((options) => doctorCommand(options));
+
+program
+	.command("support-bundle")
+	.description(
+		"Write a redacted diagnostic archive (versions, doctor checks, hooks, config, recent verdict metadata, rule hashes) for a support case",
+	)
+	.option("--out <path>", "Archive path (.tar.gz); never overwrites an existing file")
+	.option("--audit-entries <n>", "Recent audit verdicts to summarise (0-1000)", "50")
+	.option("--json", "Print the bundle summary as JSON")
+	.action((options) => supportBundleCommand(options));
 
 program
 	.command("coverage")
