@@ -9,7 +9,7 @@ import { defineAdapter } from "./generic";
  * blocking and Shadow AI counting are scoped to its `/chat` path (see ./catalog.ts and
  * background/dnr.ts).
  */
-export const M365_COPILOT_HOSTS = Object.freeze([
+const M365_COPILOT_HOSTS = Object.freeze([
 	"m365.cloud.microsoft",
 	"copilot.cloud.microsoft",
 ]);

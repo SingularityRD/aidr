@@ -699,7 +699,7 @@ function readPreviousConfig(
  * Whether setup must hold a CLI credential. Only a managed configuration does;
  * the default local mode reads none, so it needs neither a credential nor a vault.
  */
-export function requiresCliCredential(config: Partial<Config> | undefined): boolean {
+function requiresCliCredential(config: Partial<Config> | undefined): boolean {
 	return (config as { mode?: unknown } | undefined)?.mode === "managed";
 }
 

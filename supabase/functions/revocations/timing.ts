@@ -11,11 +11,11 @@ import { ConfigurationError, type EnvReader } from "../_shared/config.ts";
 
 export const REVOCATION_TTL_ENV = "AIDR_REVOCATION_TTL_HOURS";
 export const REVOCATION_EPOCH_ENV = "AIDR_REVOCATION_EPOCH";
-export const DEFAULT_REVOCATION_TTL_HOURS = 24;
-export const MIN_REVOCATION_TTL_HOURS = 1;
+const DEFAULT_REVOCATION_TTL_HOURS = 24;
+const MIN_REVOCATION_TTL_HOURS = 1;
 /** One week: a signed list older than this must not omit a newer revocation. */
 export const MAX_REVOCATION_TTL_HOURS = 168;
-export const DEFAULT_REVOCATION_EPOCH = 1;
+const DEFAULT_REVOCATION_EPOCH = 1;
 /** Postgres integer range; runtimes compare the epoch as an integer. */
 export const MAX_REVOCATION_EPOCH = 2_147_483_647;
 

@@ -47,7 +47,7 @@ export interface ConnectorToolSurface {
 	readonly hostInventory?: HostToolInventory;
 }
 
-export interface HostToolInventory {
+interface HostToolInventory {
 	/** `<npm package>@<version>` the list was captured from (the real-host E2E pin). */
 	readonly host: string;
 	/** Where in that build the list comes from, so it can be re-captured. */

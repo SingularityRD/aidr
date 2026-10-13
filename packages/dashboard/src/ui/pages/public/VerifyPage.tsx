@@ -21,7 +21,7 @@ function usableExpiry(value: unknown): string | null {
 }
 
 /** Canonical user code: upper-case without separators (ABCD-2345 == abcd2345). */
-export function canonicalUserCode(value: string): string {
+function canonicalUserCode(value: string): string {
 	return value.replace(/[\s-]/g, "").toUpperCase();
 }
 
@@ -60,7 +60,7 @@ function text(value: unknown): string | null {
 }
 
 /** Strict parse of the `device-verify` lookup answer; null when unusable. */
-export function parseDeviceRequest(data: unknown): DeviceRequest | null {
+function parseDeviceRequest(data: unknown): DeviceRequest | null {
 	if (!data || typeof data !== "object") return null;
 	const body = data as Record<string, unknown>;
 	const device = body.device as Record<string, unknown> | undefined;

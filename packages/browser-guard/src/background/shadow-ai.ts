@@ -110,7 +110,7 @@ export function buildShadowRules(policy: ShadowAiPolicy): DnrRule[] {
  * (fetch/XHR, WebSocket) such a page makes, whatever host they go to, so an open
  * single-page app stops working at once even without a grant.
  */
-export function buildShadowApiRules(policy: ShadowAiPolicy): DnrRule[] {
+function buildShadowApiRules(policy: ShadowAiPolicy): DnrRule[] {
 	return blockedServices(policy).map((s) => ({
 		id: API_RULE_ID_BY_SERVICE.get(s.id) as number,
 		priority: 1,
@@ -350,7 +350,7 @@ export class ShadowAiMonitor {
 }
 
 /** Navigates `tabId` to blocked.html when this module's rule for `service` is installed. */
-export async function redirectBlockedService(
+async function redirectBlockedService(
 	chrome: Pick<ChromeApi, "declarativeNetRequest" | "runtime" | "tabs">,
 	tabId: number,
 	service: AiService,

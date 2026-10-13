@@ -17,7 +17,7 @@ import {
 } from "../utils/operator-confirm.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
 
-export interface SetupOptions {
+interface SetupOptions {
 	force?: boolean;
 	secretStore?: string;
 	yes?: boolean;
@@ -32,7 +32,7 @@ export interface SetupOptions {
 	vscodeVsix?: string;
 }
 
-export interface SetupDeps extends OperatorCommandDeps {
+interface SetupDeps extends OperatorCommandDeps {
 	/** Home whose hosts are detected and configured (tests). */
 	home?: string;
 	/** Host CLI runner (tests). */

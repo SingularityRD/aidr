@@ -15,7 +15,7 @@ import {
 import type { ManagedHookHealth } from "./managedHooks.js";
 
 /** The bundled runner of the running extension, or the `aidr.hookRunnerPath` override. */
-export async function resolveRunnerPath(context: vscode.ExtensionContext): Promise<string> {
+async function resolveRunnerPath(context: vscode.ExtensionContext): Promise<string> {
 	const configured =
 		vscode.workspace.getConfiguration().get<string>("aidr.hookRunnerPath")?.trim() ?? "";
 	if (configured) {

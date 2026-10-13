@@ -68,7 +68,7 @@ const NORMALIZED_SUFFIX = "_normalized";
  * `match_on` value of the rules run against the canonical paths a call
  * removes, moves, overwrites or re-permissions (`self-defense-paths.ts`).
  */
-export const MODIFIED_PATH_VIEW = "modified_path";
+const MODIFIED_PATH_VIEW = "modified_path";
 
 function countMatchingLines(
 	pattern: RegExp,

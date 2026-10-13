@@ -138,7 +138,7 @@ const LEDGER_ID = /^[a-f0-9]{32}$/;
 export type OperatorKeyStorage = "auto" | "os-vault" | "encrypted-file" | "file";
 
 /** Where a key or ledger actually lives. */
-export type OperatorKeyLocation = "os-vault" | "encrypted-file" | "file";
+type OperatorKeyLocation = "os-vault" | "encrypted-file" | "file";
 
 // ── Errors ─────────────────────────────────────────────────────────
 

@@ -375,7 +375,7 @@ function validateBinaryOutput(input, maxBodyBytes) {
 }
 
 /** Signed-manifest lifetime policy (`manifestPolicy`), in whole days. */
-export const MANIFEST_POLICY_DEFAULTS = Object.freeze({
+const MANIFEST_POLICY_DEFAULTS = Object.freeze({
 	maxLifetimeDays: 7,
 	expiryWarningDays: 2,
 	maxLifetimeDaysCeiling: 90,

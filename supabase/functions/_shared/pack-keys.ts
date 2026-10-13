@@ -20,8 +20,8 @@
 // publishing side (encryption, import scope checks); a Vitest contract keeps
 // the two byte-identical.
 
-export const TENANT_PACK_KEY_PREFIX = "aidr-tenant-pack-v2";
-export const SHARED_PACK_KEY_PATTERN = /^aidr-shared-pack-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const TENANT_PACK_KEY_PREFIX = "aidr-tenant-pack-v2";
+const SHARED_PACK_KEY_PATTERN = /^aidr-shared-pack-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const TENANT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
 

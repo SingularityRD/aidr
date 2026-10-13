@@ -48,9 +48,9 @@ import { type DoctorDeps, runDoctor } from "./doctor.js";
  * written) instead of shipping it.
  */
 
-export const SUPPORT_BUNDLE_SCHEMA_VERSION = 1;
-export const DEFAULT_AUDIT_ENTRIES = 50;
-export const MAX_AUDIT_ENTRIES = 1000;
+const SUPPORT_BUNDLE_SCHEMA_VERSION = 1;
+const DEFAULT_AUDIT_ENTRIES = 50;
+const MAX_AUDIT_ENTRIES = 1000;
 /** There is no published support route yet; never invent one. */
 export const SUPPORT_CHANNEL_NOTICE =
 	"Support channel: to be provided by the vendor. This bundle is not sent anywhere; share it only through the route your Singularity AIDR agreement names.";
@@ -75,7 +75,7 @@ export interface SupportBundleOptions {
 	json?: boolean;
 }
 
-export interface BundleFile {
+interface BundleFile {
 	name: string;
 	description: string;
 	content: string;
@@ -180,7 +180,7 @@ function maskPrivacy(value: string): string {
 	return out + value.slice(cursor);
 }
 
-export function redactBundleString(value: string, identity: Identity): string {
+function redactBundleString(value: string, identity: Identity): string {
 	return maskPrivacy(scrubIdentity(redactTelemetryString(value, 4000), identity));
 }
 
@@ -218,7 +218,7 @@ function redactBundleNode(value: unknown, identity: Identity, depth: number): un
 }
 
 /** A detached, redacted copy: credential-named keys withheld, every string redacted. */
-export function redactForBundle(value: unknown, identity: Identity): unknown {
+function redactForBundle(value: unknown, identity: Identity): unknown {
 	return redactBundleNode(value, identity, 0);
 }
 
@@ -452,7 +452,7 @@ function parseAuditLimit(value: SupportBundleOptions["auditEntries"]): number {
 }
 
 /** Collect and redact every bundle file. Pure apart from reads. */
-export async function collectSupportBundle(
+async function collectSupportBundle(
 	options: { auditEntries?: SupportBundleOptions["auditEntries"] } = {},
 	deps: SupportBundleDeps = {},
 ): Promise<BundleFile[]> {
@@ -534,7 +534,7 @@ function tarHeader(name: string, size: number, mtime: number): Buffer {
 	return header;
 }
 
-export function buildSupportArchive(files: readonly BundleFile[], mtime: Date): Buffer {
+function buildSupportArchive(files: readonly BundleFile[], mtime: Date): Buffer {
 	const seconds = Math.floor(mtime.getTime() / 1000);
 	const blocks: Buffer[] = [];
 	for (const file of files) {

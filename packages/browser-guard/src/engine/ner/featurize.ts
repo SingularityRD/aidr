@@ -11,9 +11,9 @@
 /** Letters (incl. letter-like numerics), decimal-digit runs, or any other single non-space. */
 const TOKEN = /[\p{L}\p{Nl}\p{No}]+|\p{Nd}+|\S/gu;
 
-export const MAX_CHARS = 20;
-export const GAZ_KEYS = ["tr_first", "tr_last", "en_first", "en_last"] as const;
-export const N_BASE = 8;
+const MAX_CHARS = 20;
+const GAZ_KEYS = ["tr_first", "tr_last", "en_first", "en_last"] as const;
+const N_BASE = 8;
 
 export interface ModelVocab {
 	readonly words: readonly string[];

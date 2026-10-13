@@ -921,7 +921,7 @@ function printFullUninstallReport(report: FullUninstallReport): void {
 	}
 }
 
-export interface UninstallCommandOptions {
+interface UninstallCommandOptions {
 	home?: string;
 	json?: boolean;
 	yes?: boolean;
@@ -934,7 +934,7 @@ export interface UninstallCommandOptions {
 	hooksOnly?: boolean;
 }
 
-export interface UninstallCommandDeps extends OperatorCommandDeps {
+interface UninstallCommandDeps extends OperatorCommandDeps {
 	run?: HostCommandRunner;
 	resolveVault?: (selection?: string) => SecretStore;
 }

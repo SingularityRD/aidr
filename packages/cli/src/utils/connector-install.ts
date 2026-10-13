@@ -75,7 +75,7 @@ export interface ConnectorDeps {
 	now?: () => number;
 }
 
-export type HostInstallAction =
+type HostInstallAction =
 	| "already_installed"
 	| "installed"
 	| "updated"
@@ -887,7 +887,7 @@ export function installConnectors(
 
 // ── Removal ───────────────────────────────────────────────────────────
 
-export type HostRemovalAction =
+type HostRemovalAction =
 	| "removed"
 	| "nothing_to_remove"
 	| "would_remove"

@@ -5,7 +5,7 @@
 export type ApiKeyType = "tenant" | "ingest:browser_guard";
 
 // Same bounds as the api_keys_label_check constraint.
-export const MAX_LABEL_LENGTH = 100;
+const MAX_LABEL_LENGTH = 100;
 // Upper bound for a requested or default key lifetime.
 export const MAX_KEY_TTL_DAYS = 730;
 export const DEFAULT_KEY_TTL_DAYS = 365;

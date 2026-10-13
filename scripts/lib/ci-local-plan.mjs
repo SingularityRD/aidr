@@ -1087,7 +1087,7 @@ export const RELEASE_WORKFLOW_PATH = ".github/workflows/release-rc.yml";
  * rots silently between releases (OPS-2).
  * @type {ReadonlyArray<{script: string, reason: string}>}
  */
-export const RELEASE_ONLY_SCRIPTS = Object.freeze([]);
+const RELEASE_ONLY_SCRIPTS = Object.freeze([]);
 
 /** `pnpm <script>` tokens of a shell text, with `quality:*` chains expanded into their leaves. */
 function expandedScriptTokens(text, rootScripts) {

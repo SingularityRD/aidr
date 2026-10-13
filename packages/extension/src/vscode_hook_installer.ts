@@ -14,7 +14,7 @@ import {
 	type ManagedHookScope,
 } from "./managedHooks.js";
 
-export const MANAGED_MARKER = "--managed-by aidr-vscode";
+const MANAGED_MARKER = "--managed-by aidr-vscode";
 /** Copy of the settings file as it was before AIDR last changed it. */
 export const SETTINGS_BACKUP_SUFFIX = ".aidr-backup";
 
@@ -65,6 +65,7 @@ export async function removeManagedHooksFromFile(configPath: string): Promise<vo
 	await forgetConfigPath("vscode", configPath);
 }
 
+/** @public Called through the installer interface (shared_extension.ts). */
 export async function getHookHealth(
 	options: ManagedHookInstallOptions,
 ): Promise<ManagedHookHealth> {
@@ -76,6 +77,7 @@ export async function getHookHealth(
  * Re-point every installed managed hook at this extension version (run on
  * activation). Scopes without managed entries are left untouched, so this
  * never enables protection on its own.
+ * @public Called through the installer interface (shared_extension.ts).
  */
 export async function repairManagedHooks(
 	context: vscode.ExtensionContext,

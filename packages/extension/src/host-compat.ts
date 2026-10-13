@@ -17,7 +17,7 @@ export const VERIFIED_HOST_VERSIONS: Readonly<Record<ExtensionHookHost, readonly
 	vscode: ["1.137.0"],
 };
 
-export type HostVersionStatus = "verified" | "older" | "newer" | "unknown";
+type HostVersionStatus = "verified" | "older" | "newer" | "unknown";
 
 export interface HostVersionAssessment {
 	host: ExtensionHookHost;

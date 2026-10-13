@@ -71,7 +71,7 @@
 				"supabase/tests/**/*.{js,mjs,ts}",
 				"*.{js,cjs,mjs,ts}"
 			],
-			"ignore": ["deploy/upstream/**", "vendor/**"],
+			"ignore": ["deploy/upstream/**", "vendor/**", "deploy/helm/aidr/files/**"],
 			"ignoreDependencies": ["npm", "playwright-core"],
 			"ignoreBinaries": ["bash", "docker", "gh", "gitleaks", "go", "icacls.exe", "psql", "where.exe", "wrangler"]
 		},

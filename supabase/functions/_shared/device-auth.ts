@@ -69,9 +69,9 @@ export function evaluateDeviceVerifyState(input: DeviceVerifyStateInput): Device
 
 /** The only access a device enrollment can request today: a tenant API key. */
 export const DEVICE_REQUESTED_SCOPE = "tenant";
-export const DEFAULT_DEVICE_TTL_MINUTES = 10;
+const DEFAULT_DEVICE_TTL_MINUTES = 10;
 /** Upper bound for the code lifetime: a phished link stops working quickly. */
-export const MAX_DEVICE_TTL_MINUTES = 15;
+const MAX_DEVICE_TTL_MINUTES = 15;
 
 export type DeviceRequesterContext = {
 	runtime: string | null;

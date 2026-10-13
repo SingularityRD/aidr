@@ -2615,7 +2615,7 @@ async function runEvaluationPipeline(
 }
 
 /** Category of an allow decided by local detection while a reputation leg is not enabled. */
-export const REPUTATION_NOT_CHECKED_CATEGORY = "reputation_not_checked";
+const REPUTATION_NOT_CHECKED_CATEGORY = "reputation_not_checked";
 
 /**
  * Annotate a clean local allow with the URLs and packages no reputation

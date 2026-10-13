@@ -7,7 +7,7 @@ import { join } from "node:path";
 // half (`approvalKeys`); approvals are signed with the private half, exactly as
 // aidr-mcp-approve does with the operator's passphrase-protected key file.
 const pair = generateKeyPairSync("ed25519");
-export const TEST_APPROVAL_KEY_ID = "operator-approval";
+const TEST_APPROVAL_KEY_ID = "operator-approval";
 export const TEST_APPROVAL_KEY = { keyId: TEST_APPROVAL_KEY_ID, privateKey: pair.privateKey };
 export const TEST_APPROVAL_KEYS = {
 	[TEST_APPROVAL_KEY_ID]: pair.publicKey.export({ type: "spki", format: "pem" }).toString(),

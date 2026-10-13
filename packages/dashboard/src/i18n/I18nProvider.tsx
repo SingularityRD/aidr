@@ -84,7 +84,7 @@ export function I18nProvider({
 	return <I18nContext.Provider value={{ locale, setLocale }}>{children}</I18nContext.Provider>;
 }
 
-export function useLocale(): I18nContextValue {
+function useLocale(): I18nContextValue {
 	return useContext(I18nContext) ?? { locale: "en", setLocale: () => {} };
 }
 

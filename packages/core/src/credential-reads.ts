@@ -125,7 +125,7 @@ const GLOB_CHARS = /[*?[{]/;
  * Canonical `/`-separated form: home directory spellings become `~`, `.`
  * segments vanish and `..` is folded where a parent is known.
  */
-export function canonicalPath(raw: string): string {
+function canonicalPath(raw: string): string {
 	let path = raw.trim().replace(/\\/g, "/");
 	path = path
 		.replace(/^\$\{HOME\}(?=\/|$)/, "~")

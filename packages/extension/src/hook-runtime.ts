@@ -27,7 +27,7 @@ import {
 } from "./hook-launcher.js";
 import { type ExtensionHookHost, unansweredBlock } from "./hook-responses.js";
 
-export const SHIM_MARKER = "Singularity AIDR managed hook shim";
+const SHIM_MARKER = "Singularity AIDR managed hook shim";
 const UNSAFE_SHIM_PATH_PATTERN = /["`$;&|<>\r\n\0%!]/;
 
 export const SHIM_FALLBACK_REASON =
@@ -37,7 +37,7 @@ export function hookRuntimeDir(host: ExtensionHookHost): string {
 	return path.join(os.homedir(), ".singularity-aidr", "extension-hooks", host);
 }
 
-export function launcherPathFor(host: ExtensionHookHost): string {
+function launcherPathFor(host: ExtensionHookHost): string {
 	return path.join(hookRuntimeDir(host), LAUNCHER_FILE_NAME);
 }
 
@@ -100,7 +100,7 @@ export async function forgetConfigPath(host: ExtensionHookHost, configPath: stri
 	});
 }
 
-export function assertSafePathForShim(pathValue: string, label: string): void {
+function assertSafePathForShim(pathValue: string, label: string): void {
 	if (!pathValue) {
 		throw new Error(`${label} path is empty.`);
 	}
@@ -109,7 +109,7 @@ export function assertSafePathForShim(pathValue: string, label: string): void {
 	}
 }
 
-export function shimPathsFor(hooksDir: string): { posix: string; windows: string } {
+function shimPathsFor(hooksDir: string): { posix: string; windows: string } {
 	return { posix: path.join(hooksDir, "aidr-hook"), windows: path.join(hooksDir, "aidr-hook.cmd") };
 }
 
@@ -117,7 +117,7 @@ function fallbackJson(host: ExtensionHookHost): string {
 	return JSON.stringify(unansweredBlock(host, SHIM_FALLBACK_REASON));
 }
 
-export function posixShimSource(
+function posixShimSource(
 	host: ExtensionHookHost,
 	nodePath: string,
 	launcherPath: string,
@@ -140,7 +140,7 @@ export function posixShimSource(
 	].join("\n");
 }
 
-export function windowsShimSource(
+function windowsShimSource(
 	host: ExtensionHookHost,
 	nodePath: string,
 	launcherPath: string,
@@ -209,7 +209,7 @@ export function buildShimCommand(
 }
 
 /** The shim path a managed hook command runs. */
-export function shimPathFromCommand(command: string): string | undefined {
+function shimPathFromCommand(command: string): string | undefined {
 	const match = /^(?:&\s+)?"((?:[^"\\]|\\.)*)"/.exec(command.trim());
 	return match?.[1]?.replace(/\\"/g, '"');
 }

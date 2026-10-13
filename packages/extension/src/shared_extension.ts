@@ -260,7 +260,7 @@ function warnIfUnreachable(health: ManagedHookHealth): void {
 	);
 }
 
-export function describeHealthStatus(health: ManagedHookHealth): string {
+function describeHealthStatus(health: ManagedHookHealth): string {
 	if (health.installedEvents.length === 0) return "not installed";
 	return health.healthy
 		? "protected (every managed hook reaches a hook runner)"
