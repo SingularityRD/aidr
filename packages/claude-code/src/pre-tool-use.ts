@@ -27,7 +27,7 @@ import {
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { addPendingApproval } from "./approval-tracker.js";
-import { resolveAssetDir } from "./assets.js";
+import { assetOverrideNotice, resolveAssetDir } from "./assets.js";
 import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
 import { formatBlockReason } from "./format.js";
 import {
@@ -198,8 +198,24 @@ const responder = createHookResponder({
 	}),
 });
 
+/**
+ * Warning shown on every verdict while AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR is
+ * set: a replaced (or, in a commercial build, ignored) rule directory is never
+ * silent. Computed once per hook process.
+ */
+const overrideNotice = assetOverrideNotice();
+
+function withOverrideNotice(response: Record<string, unknown>): Record<string, unknown> {
+	if (!overrideNotice) return response;
+	const existing = typeof response.systemMessage === "string" ? response.systemMessage : "";
+	return {
+		...response,
+		systemMessage: existing ? `${existing}\n${overrideNotice}` : overrideNotice,
+	};
+}
+
 function respond(response: Record<string, unknown>): boolean {
-	return responder.answer({ stdout: `${JSON.stringify(response)}\n` });
+	return responder.answer({ stdout: `${JSON.stringify(withOverrideNotice(response))}\n` });
 }
 
 /** Fixed deny response: never echo malformed input or exception details. */

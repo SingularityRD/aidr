@@ -40,7 +40,7 @@ import {
 	resolveHookDeadlineMs,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
-import { resolveAssetDir } from "./assets.js";
+import { assetOverrideNotice, resolveAssetDir } from "./assets.js";
 import { getCodexConnectorCoverageEvidence } from "./coverage.js";
 import { type CodexWireResult, DENY_HEADLINE, enforceCodexPreToolUse } from "./enforcement.js";
 import {
@@ -86,7 +86,29 @@ function write(wire: CodexWireResult): void {
 	// unsupported output and fails open. Empty stdout is its documented no-op
 	// allow shape, so only deny decisions are written.
 	if (!wire.hookSpecificOutput) return;
-	emit(`${JSON.stringify(wire)}\n`);
+	emit(`${JSON.stringify(withOverrideNotice(wire))}\n`);
+}
+
+/**
+ * A replaced (development build) or ignored (commercial build)
+ * AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR is never silent: it is logged on every
+ * call, listed by `--health`, and appended to every block reason. An allow
+ * stays empty stdout (the only allow shape Codex 0.141.0 accepts).
+ */
+const overrideNotice = assetOverrideNotice();
+if (overrideNotice) logger.warn(overrideNotice);
+
+function withOverrideNotice(wire: CodexWireResult): CodexWireResult {
+	const output = wire.hookSpecificOutput;
+	if (!overrideNotice || !output || typeof output.permissionDecisionReason !== "string")
+		return wire;
+	return {
+		...wire,
+		hookSpecificOutput: {
+			...output,
+			permissionDecisionReason: `${output.permissionDecisionReason}\n${overrideNotice}`,
+		},
+	};
 }
 
 /**
@@ -174,7 +196,11 @@ async function main(): Promise<void> {
 	await verifyArtifactIntegrityAndLog({ artifactDir: __dirname, artifactId: "codex/dist", logger });
 
 	if (process.argv.includes("--health") || process.argv.includes("--coverage")) {
-		process.stdout.write(`${JSON.stringify(getCodexConnectorCoverageEvidence(), null, 2)}\n`);
+		const evidence = getCodexConnectorCoverageEvidence();
+		const report = overrideNotice
+			? { ...evidence, rule_dir_override_warning: overrideNotice }
+			: evidence;
+		process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 		return;
 	}
 

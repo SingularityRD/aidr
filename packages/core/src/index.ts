@@ -1505,6 +1505,16 @@ export {
 	RollbackRefusedError,
 	SnapshotIncompleteError,
 } from "./rollback.js";
+// AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR overrides (ignored in commercial builds, always reported)
+export {
+	RULE_DIR_ENV,
+	type RuleDirKind,
+	type RuleDirOverride,
+	type RuleDirOverrideOptions,
+	ruleDirOverride,
+	ruleDirOverrideNotice,
+	ruleDirOverrides,
+} from "./rule-dir-override.js";
 export type { RuleSyncConfig } from "./rule-sync.js";
 // Real-Time Rule Sync
 export { RealTimeRuleSync } from "./rule-sync.js";
