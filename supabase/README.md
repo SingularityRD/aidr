@@ -106,8 +106,10 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
     schema-1 lists are rejected with no compatibility window, so upgrade the control plane before (or
     together with) runtimes: an older runtime cannot verify a schema-2 list and keeps running without
     revocations until it is upgraded.
-- `AIDR_REVOCATION_EPOCH` (default `1`)
-- `AIDR_REVOCATION_TTL_HOURS` (default `24`)
+- `AIDR_REVOCATION_EPOCH` (default `1`; integer `1`..`2147483647`)
+- `AIDR_REVOCATION_TTL_HOURS` (default `24`; integer `1`..`168`). A malformed or
+  out-of-range epoch/TTL makes `GET /v1/revocations` answer `500
+  server_misconfigured` naming the variable instead of signing a list.
 - `AIDR_ENTITLEMENT_TTL_HOURS` (default `168`)
 - `AIDR_ENTITLEMENT_GRACE_HOURS` (default `72`)
 - `AIDR_RUNTIME_CAPABILITIES_BY_TENANT` (default `{}`): deployment/operator-only

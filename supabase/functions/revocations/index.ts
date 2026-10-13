@@ -16,7 +16,7 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken as getAccessToken } from "../_shared/auth.ts";
-import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
+import { configFailure, loadConfig, logConfigFailure, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { canonicalJson } from "../_shared/policy-signature.ts";
@@ -34,6 +34,7 @@ import {
 	rpcStatus,
 } from "./commands.ts";
 import { deviceAttestationError } from "./attestation.ts";
+import { revocationTiming } from "./timing.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it instead of
@@ -44,8 +45,11 @@ const REVOCATION_SIGNING_KEY_ID = (Deno.env.get("AIDR_REVOCATION_SIGNING_KEY_ID"
 const REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64 = (
 	Deno.env.get("AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64") ?? ""
 ).trim();
-const REVOCATION_EPOCH = Number(Deno.env.get("AIDR_REVOCATION_EPOCH") ?? "1");
-const REVOCATION_TTL_HOURS = Number(Deno.env.get("AIDR_REVOCATION_TTL_HOURS") ?? "24");
+// Validated once at startup and enforced on every feed request: a malformed or
+// out-of-range TTL/epoch refuses to sign rather than minting an already-expired,
+// years-long or rolled-back list (CP-7).
+const REVOCATION_TIMING = revocationTiming(runtimeEnv);
+if (!REVOCATION_TIMING.ok) logConfigFailure("revocations", REVOCATION_TIMING.error);
 
 function json(status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) {
 	return new Response(JSON.stringify(body), {
@@ -102,8 +106,7 @@ async function signEd25519Detached(payloadJson: string, signingKey?: CryptoKey):
 }
 
 function addHoursIso(hours: number): string {
-	const safe = Number.isFinite(hours) ? Math.max(0, hours) : 0;
-	return new Date(Date.now() + safe * 60 * 60 * 1000).toISOString();
+	return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
 }
 
 type ReadTable<Row extends Record<string, unknown>> = { Row: Row; Insert: never; Update: never; Relationships: [] };
@@ -434,6 +437,8 @@ Deno.serve(async (req) => {
 		AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64: REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64,
 	});
 	if (signingProblem) return configFailure("revocations", signingProblem, json);
+	if (!REVOCATION_TIMING.ok) return configFailure("revocations", REVOCATION_TIMING.error, json);
+	const timing = REVOCATION_TIMING;
 
 	const apiKey = getBearerToken(req);
 	if (!apiKey) {
@@ -484,8 +489,8 @@ Deno.serve(async (req) => {
 		tenant_id: tenantId.toLowerCase(),
 		agent_id: agentId,
 		issued_at: new Date().toISOString(),
-		expires_at: addHoursIso(REVOCATION_TTL_HOURS),
-		revocation_epoch: Number.isFinite(REVOCATION_EPOCH) ? Math.max(1, Math.floor(REVOCATION_EPOCH)) : 1,
+		expires_at: addHoursIso(timing.ttlHours),
+		revocation_epoch: timing.epoch,
 		revocations: {
 			artifact_ids: artifacts,
 			pack_ids: packs,
