@@ -768,6 +768,10 @@ function joinedBlockViews(value, output = []) {
 
 const BASE64_TOKEN = /[A-Za-z0-9+/_-]{24,}={0,2}/g;
 const HEX_TOKEN = /(?:[0-9A-Fa-f]{2}){12,}/g;
+const ENCODED_TOKENS = [
+	[BASE64_TOKEN, "base64"],
+	[HEX_TOKEN, "hex"],
+];
 const MIN_DECODED_TEXT = 12;
 const DECODE_ROUNDS = 2;
 
@@ -794,13 +798,11 @@ function decodedViews(text) {
 	let input = text;
 	for (let round = 0; round < DECODE_ROUNDS && input; round += 1) {
 		const decoded = [];
-		for (const [token] of input.matchAll(BASE64_TOKEN)) {
-			const value = decodedText(Buffer.from(token, "base64"));
-			if (value) decoded.push(value);
-		}
-		for (const [token] of input.matchAll(HEX_TOKEN)) {
-			const value = decodedText(Buffer.from(token, "hex"));
-			if (value) decoded.push(value);
+		for (const [pattern, encoding] of ENCODED_TOKENS) {
+			for (const [token] of input.matchAll(pattern)) {
+				const value = decodedText(Buffer.from(token, encoding));
+				if (value) decoded.push(value);
+			}
 		}
 		input = decoded.join("\n");
 		if (input) views.push(input);
@@ -1856,9 +1858,14 @@ export function createMcpGateway(input, dependencies = {}) {
 		};
 	}
 
+	/** The configured manifest's `expires_at` in ms, NaN when absent or unparseable. */
+	function manifestExpiresAt(server) {
+		return Date.parse(server.signedManifest?.manifest?.expires_at);
+	}
+
 	/** A redacted manifest lifecycle event (`rejected`, `expiring`, `reloaded`). */
 	function manifestEvent(server, status, reasonCode) {
-		const expiresAt = Date.parse(server.signedManifest?.manifest?.expires_at);
+		const expiresAt = manifestExpiresAt(server);
 		return {
 			event: "aidr.mcp_gateway.manifest",
 			type: "mcp_gateway_manifest",
@@ -1873,7 +1880,7 @@ export function createMcpGateway(input, dependencies = {}) {
 
 	/** Report a manifest inside the operator's expiry warning window. */
 	async function warnIfExpiring(server, { force = false } = {}) {
-		const expiresAt = Date.parse(server.signedManifest?.manifest?.expires_at);
+		const expiresAt = manifestExpiresAt(server);
 		const current = now().getTime();
 		if (
 			!Number.isFinite(expiresAt) ||

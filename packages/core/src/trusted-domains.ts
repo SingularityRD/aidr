@@ -75,22 +75,22 @@ export async function loadTrustedDomains(
 			}
 
 			const paths = record.paths;
-			if (paths !== undefined) {
-				if (
-					!Array.isArray(paths) ||
-					paths.length === 0 ||
-					!paths.every((p) => typeof p === "string" && p.startsWith("/"))
-				) {
-					// A malformed path scope must not widen into a whole-domain trust.
-					logger.warn(
-						`Skipping '${domain}' in ${filename}: 'paths' must be a non-empty list of absolute paths`,
-					);
-					continue;
-				}
-				domains.push({ domain: domain.toLowerCase(), reason, paths: [...paths] });
+			if (paths === undefined) {
+				domains.push({ domain: domain.toLowerCase(), reason });
 				continue;
 			}
-			domains.push({ domain: domain.toLowerCase(), reason });
+			if (
+				!Array.isArray(paths) ||
+				paths.length === 0 ||
+				!paths.every((p) => typeof p === "string" && p.startsWith("/"))
+			) {
+				// A malformed path scope must not widen into a whole-domain trust.
+				logger.warn(
+					`Skipping '${domain}' in ${filename}: 'paths' must be a non-empty list of absolute paths`,
+				);
+				continue;
+			}
+			domains.push({ domain: domain.toLowerCase(), reason, paths: [...paths] });
 		}
 	}
 

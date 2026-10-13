@@ -189,6 +189,14 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 		}
 	};
 
+	const reportError = (requestId: string, method: string, error: unknown): Promise<void> =>
+		report({
+			kind: "error",
+			requestId,
+			method,
+			error: error instanceof Error ? error : new Error(String(error)),
+		});
+
 	const blockedBody = (requestId: string, reason: string, result: CheckResult) =>
 		options.exposeDecisionDetails
 			? { error: BLOCKED_RESPONSE_ERROR, requestId, reason, details: result }
@@ -329,12 +337,7 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 					await client.assertCallerOperationAllowed();
 					next();
 				} catch (error) {
-					await report({
-						kind: "error",
-						requestId,
-						method: req.method,
-						error: error instanceof Error ? error : new Error(String(error)),
-					});
+					await reportError(requestId, req.method, error);
 					next(new AIDRSecurityCheckUnavailableError(requestId));
 				}
 			};
@@ -392,12 +395,7 @@ export function createMiddleware(client: AIDRClient, options: MiddlewareEnforcem
 					await client.assertCallerOperationAllowed();
 					return null; // Continue to handler
 				} catch (error) {
-					await report({
-						kind: "error",
-						requestId,
-						method: request.method,
-						error: error instanceof Error ? error : new Error(String(error)),
-					});
+					await reportError(requestId, request.method, error);
 					return json(503, { error: CHECK_UNAVAILABLE_ERROR, requestId });
 				}
 			};

@@ -150,6 +150,11 @@ function listFiles(root) {
 
 const sha256File = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 
+/** Files of the distribution the manifest covers (all but the manifest and its signature). */
+function distributionFiles(outDir) {
+	return listFiles(outDir).filter((file) => file !== MANIFEST_NAME && file !== "aidr-artifact.manifest.sig");
+}
+
 /**
  * Copy the runtime files the bundles need into `<outDir>/dist`.
  * @returns {string[]} problems (a required file is missing or a source map would ship)
@@ -186,9 +191,7 @@ function defaultCreatedAt() {
  * keys make that check signature-verified.
  */
 export function writeDistributionManifest(outDir, { version, platform = process.platform, arch = process.arch, nodeVersion = process.version, createdAt = defaultCreatedAt() }) {
-	const files = listFiles(outDir)
-		.filter((file) => file !== MANIFEST_NAME && file !== "aidr-artifact.manifest.sig")
-		.map((file) => ({ path: file, sha256: sha256File(join(outDir, file)) }));
+	const files = distributionFiles(outDir).map((file) => ({ path: file, sha256: sha256File(join(outDir, file)) }));
 	const manifest = {
 		schema_version: 1,
 		artifact_id: ARTIFACT_ID,
@@ -218,7 +221,7 @@ export function verifyDistributionManifest(outDir) {
 	if (manifest?.artifact_id !== ARTIFACT_ID || !Array.isArray(manifest.files)) return [`${MANIFEST_NAME} is not a ${ARTIFACT_ID} manifest`];
 	const problems = [];
 	const listed = new Map(manifest.files.map((entry) => [entry.path, entry.sha256]));
-	const onDisk = listFiles(outDir).filter((file) => file !== MANIFEST_NAME && file !== "aidr-artifact.manifest.sig");
+	const onDisk = distributionFiles(outDir);
 	for (const file of onDisk) {
 		if (!listed.has(file)) problems.push(`${file} is not in the manifest`);
 		else if (sha256File(join(outDir, file)) !== listed.get(file)) problems.push(`${file} does not match its manifest digest`);
@@ -253,11 +256,12 @@ export function relocatedSmoke(outDir, command, platform = process.platform) {
 			const [file, args] = command(join(relocated, "bin", binaryFileName("aidr-pre-tool-use", platform)));
 			const result = spawnSync(file, args, { cwd: scratch, env, input: payload, encoding: "utf8", timeout: 60_000 });
 			const output = `${result.stdout ?? ""}`.trim();
-			let decision = output === "" || output === "{}" ? "allow" : "unparsed";
+			const empty = output === "" || output === "{}";
+			let decision = empty ? "allow" : "unparsed";
 			let reason = "";
 			try {
 				const parsed = JSON.parse(output || "{}");
-				decision = parsed?.hookSpecificOutput?.permissionDecision ?? (output === "{}" || output === "" ? "allow" : "unknown");
+				decision = parsed?.hookSpecificOutput?.permissionDecision ?? (empty ? "allow" : "unknown");
 				reason = parsed?.hookSpecificOutput?.permissionDecisionReason ?? "";
 			} catch {
 				reason = `${output}${result.stderr ?? ""}`.slice(0, 400);

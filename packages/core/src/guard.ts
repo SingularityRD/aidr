@@ -1230,7 +1230,7 @@ export function formatDashboardApprovalNotice(
 ): string | null {
 	if (!outcome) return null;
 	const id = outcome.requestId;
-	const reason = () => outcome.reason ?? t("common.unknown");
+	const reason = outcome.reason ?? t("common.unknown");
 	switch (outcome.status) {
 		case "released":
 			return null;
@@ -1242,13 +1242,13 @@ export function formatDashboardApprovalNotice(
 		case "expired":
 			return t("dashboard.expired", { requestId: id });
 		case "rejected":
-			return t("dashboard.rejected", { requestId: id, reason: reason() });
+			return t("dashboard.rejected", { requestId: id, reason });
 		case "request_failed":
-			return t("dashboard.requestFailed", { reason: reason() });
+			return t("dashboard.requestFailed", { reason });
 		case "unavailable":
 			// Only worth saying when the dashboard is the sole channel; otherwise the
 			// local operator channel below still applies.
-			return outcome.dashboardOnly ? t("dashboard.unavailable", { reason: reason() }) : null;
+			return outcome.dashboardOnly ? t("dashboard.unavailable", { reason }) : null;
 	}
 }
 

@@ -511,6 +511,16 @@ function keyringEntry(keyring: McpApprovalKeyring | undefined, keyId: string): s
 	return typeof value === "string" ? value : undefined;
 }
 
+/** A finite, non-empty approval window no longer than MAX_MCP_APPROVAL_LIFETIME_MS. */
+function isValidApprovalWindow(approvedAt: number, expiresAt: number): boolean {
+	return (
+		Number.isFinite(approvedAt) &&
+		Number.isFinite(expiresAt) &&
+		expiresAt > approvedAt &&
+		expiresAt - approvedAt <= MAX_MCP_APPROVAL_LIFETIME_MS
+	);
+}
+
 /**
  * Deterministic payload an operator approval key signs. It covers every field
  * of the entry except the signature, plus the server id the entry is stored
@@ -557,14 +567,7 @@ export function signMcpToolsetApproval(params: {
 	for (const value of [params.toolsetHash, params.signerKeySha256, params.bindingSha256]) {
 		if (!SHA256_PATTERN.test(value)) throw new Error("invalid MCP approval hash");
 	}
-	const approvedAt = params.approvedAt.getTime();
-	const expiresAt = params.expiresAt.getTime();
-	if (
-		!Number.isFinite(approvedAt) ||
-		!Number.isFinite(expiresAt) ||
-		expiresAt <= approvedAt ||
-		expiresAt - approvedAt > MAX_MCP_APPROVAL_LIFETIME_MS
-	) {
+	if (!isValidApprovalWindow(params.approvedAt.getTime(), params.expiresAt.getTime())) {
 		throw new Error("invalid MCP approval lifetime");
 	}
 	const privateKey =
@@ -625,14 +628,7 @@ export function verifyMcpToolsetApproval(
 	}
 	const approvedAt = Date.parse(entry.approvedAt);
 	const expiresAt = Date.parse(entry.expiresAt);
-	if (
-		!Number.isFinite(approvedAt) ||
-		!Number.isFinite(expiresAt) ||
-		expiresAt <= approvedAt ||
-		expiresAt - approvedAt > MAX_MCP_APPROVAL_LIFETIME_MS
-	) {
-		return "invalid_approval_window";
-	}
+	if (!isValidApprovalWindow(approvedAt, expiresAt)) return "invalid_approval_window";
 	const now = (params.now ?? new Date()).getTime();
 	const clockSkew = params.clockSkewMs ?? DEFAULT_CLOCK_SKEW_MS;
 	if (approvedAt > now + clockSkew) return "approval_not_yet_valid";

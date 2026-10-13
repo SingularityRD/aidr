@@ -106,6 +106,7 @@ async function main(): Promise<void> {
 	}
 	const hookInput = parsed as Record<string, unknown>;
 	const toolName = typeof hookInput.tool_name === "string" ? hookInput.tool_name : undefined;
+	const recordedToolName = toolName ?? "unknown";
 	current.toolName = toolName;
 	current.toolResponse = hookInput.tool_response;
 	if (!("tool_response" in hookInput)) {
@@ -152,11 +153,16 @@ async function main(): Promise<void> {
 	// The verdict for the output is now settled: a later deadline answers with
 	// it rather than with a blanket "unavailable".
 	current.inspected = inspection ?? {};
+	const toolInput = hookInput.tool_input;
+	const toolInputRecord =
+		toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
+			? (toolInput as Record<string, unknown>)
+			: undefined;
 	// The output scanner already blocks canary content; this adds the audit entry
 	// and, in managed mode, the incident. Never changes the response.
 	await recordToolOutputCanaries({
 		sessionId,
-		toolName: toolName ?? "unknown",
+		toolName: recordedToolName,
 		toolOutput: hookInput.tool_response,
 		agentRuntime: "claude-code",
 		logger,
@@ -165,15 +171,11 @@ async function main(): Promise<void> {
 		// The output is already in Claude's context: record what it carried
 		// (secrets, injection payloads) so the session's next calls are judged
 		// with it. Never changes this hook's response and never throws.
-		const toolInput = hookInput.tool_input;
 		await recordToolOutputFlow(
 			{
 				sessionId,
-				toolName: toolName ?? "unknown",
-				toolInput:
-					toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
-						? (toolInput as Record<string, unknown>)
-						: undefined,
+				toolName: recordedToolName,
+				toolInput: toolInputRecord,
 				findings: scan.findings,
 			},
 			{ agentRuntime: "claude-code", logger },
@@ -183,15 +185,11 @@ async function main(): Promise<void> {
 		// Runaway guard: the same call failing again and again with no file change
 		// in between is a stuck loop; its next retry is paused for review.
 		// Never changes this hook's response and never throws.
-		const toolInput = hookInput.tool_input;
 		await recordToolOutcome(
 			{
 				sessionId,
-				toolName: toolName ?? "unknown",
-				toolInput:
-					toolInput && typeof toolInput === "object" && !Array.isArray(toolInput)
-						? (toolInput as Record<string, unknown>)
-						: {},
+				toolName: recordedToolName,
+				toolInput: toolInputRecord ?? {},
 				failed: true,
 			},
 			{ agentRuntime: "claude-code", logger },
@@ -200,16 +198,10 @@ async function main(): Promise<void> {
 	// File quarantine (opt-in, `response.quarantine.enabled`): a file this call
 	// wrote or downloaded that the content scan classifies as malicious is moved
 	// into the quarantine vault, and Claude is told it is gone. Never throws.
-	const toolInputForQuarantine = hookInput.tool_input;
 	const fileQuarantine = await quarantineAgentWrittenFiles({
 		sessionId,
-		toolName: toolName ?? "unknown",
-		toolInput:
-			toolInputForQuarantine &&
-			typeof toolInputForQuarantine === "object" &&
-			!Array.isArray(toolInputForQuarantine)
-				? (toolInputForQuarantine as Record<string, unknown>)
-				: {},
+		toolName: recordedToolName,
+		toolInput: toolInputRecord ?? {},
 		workingDirectory: typeof hookInput.cwd === "string" ? hookInput.cwd : undefined,
 		agentRuntime: "claude-code",
 		threatsDir: resolveAssetDir("threats"),
