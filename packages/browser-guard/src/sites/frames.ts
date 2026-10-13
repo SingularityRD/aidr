@@ -26,7 +26,7 @@ export const M365_COPILOT_HOSTS: readonly string[] = Object.freeze([
 ]);
 
 /** Exact HTTPS hosts whose content scripts run in every frame (top frame and subframes). */
-export const FRAME_GUARD_HOSTS: readonly string[] = M365_COPILOT_HOSTS;
+export const FRAME_GUARD_HOSTS: readonly string[] = Object.freeze([...M365_COPILOT_HOSTS]);
 
 /** True when `url` is an https URL (no port, no credentials) on a {@link FRAME_GUARD_HOSTS} host. */
 export function isFrameGuardUrl(url: unknown): boolean {
