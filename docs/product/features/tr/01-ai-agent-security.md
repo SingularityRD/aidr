@@ -772,8 +772,12 @@ kötü amaçlı olduğu bilinen bir paket arşivi, bir regex için zararsız gö
 Dışarıya veri akışı açmadan önce [privacy.md](../../../privacy.md) belgesini okuyun.
 
 **Örnek**
-Varsayılan ayarlarla `WebFetch https://docs.example.com/guide`, URL doğrulanamadığı için
-`url_reputation_unavailable` kategorisiyle `ask` döndürür.
+Varsayılan ayarlarla `WebFetch https://docs.example.com/guide` yerel kurallarla karara
+bağlanır: `reputation_not_checked` kategorisiyle `allow` döndürür; bu kategori URL'yi hiçbir
+itibar servisinin kontrol etmediğini kaydeder (temiz sonuç değildir).
+`url_check.unchecked_action: "ask"` ayarıyla `url_reputation_unavailable` kategorisiyle
+`ask` döndürür. Açık olup yanıt veremeyen bir itibar ayağı da
+`url_reputation_unavailable` ile `ask` döndürür.
 
 **Kapsam**
 
@@ -1897,7 +1901,9 @@ kurumların merkezi politikaya, filo görünürlüğüne ve kanıta ihtiyacı va
 - Kaydı yapılmamış bir yönetilen kurulum yerel olarak uygulamaya devam eder ("Local
   protection ACTIVE (managed features unavailable …)"). Kaydı yapılmış uç noktalar, kontrol
   düzlemine erişilemediğinde `grace_period_hours` süresince (varsayılan 72 saat) imzalı
-  önbellekteki durumla uygulamaya devam eder.
+  önbellekteki durumla yönetilen özellikleri kullanmaya devam eder. Bu süreden sonra ya da
+  yetkilendirme (entitlement) sona erdiğinde veya iptal edildiğinde yönetilen özellikler
+  kapanır, yerel tespit uygulamaya devam eder ve her kararda bir bildirim yer alır.
 - Ticari sürümler `managed` modu zorunlu kılar ve imzalı artifact'larını doğrular; artifact
   doğrulama açık anahtarı olmadan başlamaz.
 

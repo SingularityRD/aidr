@@ -395,8 +395,10 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 				command: 'python3 -c \'exec(__import__("base64").b64decode("cHJpbnQoImhlbGxvIik=").decode())\'',
 			},
 			{
-				name: "package supply-chain change",
-				command: "npm install synthetic-aidr-package@latest",
+				// With package_check off (the default) a registry install is decided by
+				// local signals; a name one edit from a popular package is held.
+				name: "package supply-chain change (typosquat)",
+				command: "npm install expres@latest",
 			},
 			{
 				name: "PowerShell execution-policy bypass",

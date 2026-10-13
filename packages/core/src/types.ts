@@ -714,6 +714,13 @@ export const UrlCheckConfigSchema = z.object({
 	timeout_seconds: legTimeoutSchema(DEFAULT_LEG_TIMEOUT_SECONDS),
 	/** Explicit opt-in; unavailable checks are surfaced for human review. */
 	enabled: z.boolean().default(false),
+	/**
+	 * What a call gets when this leg is NOT enabled and local detection found
+	 * nothing: `allow` (default) records the URLs as "not checked by a
+	 * reputation service" in the verdict and audit log; `ask` holds every such
+	 * call for review. An enabled leg that cannot run always asks.
+	 */
+	unchecked_action: z.enum(["allow", "ask"]).default("allow"),
 });
 
 const EncryptionConfigSchema = z.object({
@@ -795,6 +802,15 @@ const VersionCheckConfigSchema = z.object({
 export const PackageCheckConfigSchema = z.object({
 	/** Explicit opt-in to sending package names to public registries. */
 	enabled: z.boolean().default(false),
+	/**
+	 * What a registry install gets when this leg is NOT enabled and local
+	 * signals (threat rules, the offline typosquat check) found nothing:
+	 * `allow` (default) records the packages as "not checked by a reputation
+	 * service"; `ask` holds every such install for review. Installs from a
+	 * direct URL, Git or local source, and an enabled leg that cannot run,
+	 * always ask.
+	 */
+	unchecked_action: z.enum(["allow", "ask"]).default("allow"),
 	timeout_seconds: legTimeoutSchema(DEFAULT_LEG_TIMEOUT_SECONDS),
 	/**
 	 * Slopsquatting window: a package first published fewer than this many days
@@ -1079,10 +1095,13 @@ type OptionalUrlCheckDefaults<
 	T extends {
 		allow_insecure_loopback: boolean;
 		include_query_parameters: boolean;
+		unchecked_action: "allow" | "ask";
 	},
-> = Omit<T, "allow_insecure_loopback" | "include_query_parameters"> & {
+> = Omit<T, "allow_insecure_loopback" | "include_query_parameters" | "unchecked_action"> & {
 	allow_insecure_loopback?: boolean;
 	include_query_parameters?: boolean;
+	/** Absent means the schema default, `allow`. */
+	unchecked_action?: "allow" | "ask";
 };
 
 export type ControlPlaneConfig = OptionalInsecureLoopback<z.infer<typeof ControlPlaneConfigSchema>>;
@@ -1094,7 +1113,13 @@ type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
 export type ResponseAuditConfig = ResponseConfig["audit"];
 export type UrlCheckConfig = OptionalUrlCheckDefaults<z.infer<typeof UrlCheckConfigSchema>>;
 export type FileCheckConfig = OptionalInsecureLoopback<z.infer<typeof FileCheckConfigSchema>>;
-export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
+export type PackageCheckConfig = Omit<
+	z.infer<typeof PackageCheckConfigSchema>,
+	"unchecked_action"
+> & {
+	/** Absent means the schema default, `allow`. */
+	unchecked_action?: "allow" | "ask";
+};
 export type PoisoningProtectionConfig = z.infer<typeof PoisoningProtectionConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 export type PromptProtectionMode = z.infer<typeof PromptProtectionModeSchema>;

@@ -119,6 +119,7 @@ import {
 	isPackageManifestPath,
 	type ParsedPackage,
 } from "./package-extractor.js";
+import { findTyposquat } from "./package-typosquat.js";
 import {
 	COMMON_PII_PLACEHOLDER_LABEL,
 	COMMON_PII_TYPES,
@@ -2307,10 +2308,18 @@ async function runEvaluationPipeline(
 	const urlsToCheck = cache ? uncachedUrls : urls;
 	// One budget for every remote leg of this call (see LEG_TOTAL_BUDGET_SECONDS).
 	const legDeadline = performance.now() + LEG_TOTAL_BUDGET_SECONDS * 1000;
+	// URLs that were left to local detection because the URL leg is not enabled
+	// and the operator kept `url_check.unchecked_action: allow` (the default).
+	let urlsNotChecked: string[] = [];
 	if (urlsToCheck.length > 0 && providerInspectionAllowed) {
 		if (!config.url_check.enabled) {
-			urlLegUnavailable = true;
-			urlLegUnavailableReason = "disabled to avoid sending URLs to an external reputation provider";
+			if (config.url_check.unchecked_action === "ask") {
+				urlLegUnavailable = true;
+				urlLegUnavailableReason =
+					"disabled to avoid sending URLs to an external reputation provider";
+			} else {
+				urlsNotChecked = [...new Set(urlsToCheck)];
+			}
 		} else {
 			try {
 				const client = new UrlCheckClient(
@@ -2353,7 +2362,7 @@ async function runEvaluationPipeline(
 		}
 	}
 
-	const packageCheckResults = await checkPackages(
+	const { results: packageCheckResults, notChecked: packagesNotChecked } = await checkPackages(
 		request,
 		manifestEdits,
 		config,
@@ -2573,6 +2582,15 @@ async function runEvaluationPipeline(
 			`URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`,
 		);
 	}
+	// A reputation leg that is simply not enabled is coverage information, not a
+	// block: the call was decided by local detection, and the verdict and audit
+	// log say that the URLs/packages were not checked by a reputation service.
+	verdict = reputationNotCheckedVerdict(
+		verdict,
+		urlsNotChecked,
+		packagesNotChecked,
+		config.heuristics_enabled,
+	);
 	// Secure-code guardrails: a notice by default (`warn`), a review with
 	// `secure_code.action: "ask"`. Never a deny on their own.
 	verdict = applySecureCodeWarnings(verdict, codeGuard.warnings, config.secure_code);
@@ -2585,6 +2603,56 @@ async function runEvaluationPipeline(
 	await cacheUrlResults(urlCheckResults, context.reputationFeed ? null : cache);
 	await recordPipelineVerdict(request, context, config, logger, startTime, verdict);
 	return verdict;
+}
+
+/** Category of an allow decided by local detection while a reputation leg is not enabled. */
+export const REPUTATION_NOT_CHECKED_CATEGORY = "reputation_not_checked";
+
+/**
+ * Annotate a clean local allow with the URLs and packages no reputation
+ * service looked at. The decision is unchanged; the category makes the audit
+ * log record the call (an unannotated allow is not logged by default) and keeps
+ * it distinguishable from a reputation-checked allow. Any other verdict, and
+ * an allow another layer already labelled, keeps its own category and only
+ * gains the note.
+ */
+function reputationNotCheckedVerdict(
+	verdict: Verdict,
+	urls: readonly string[],
+	packages: readonly string[],
+	heuristicsEnabled: boolean,
+): Verdict {
+	if (urls.length === 0 && packages.length === 0) return verdict;
+	const parts: string[] = [];
+	if (urls.length > 0) {
+		parts.push(`${urls.length} URL${urls.length === 1 ? "" : "s"} (url_check is not enabled)`);
+	}
+	if (packages.length > 0) {
+		parts.push(
+			`${packages.length} package${packages.length === 1 ? "" : "s"} (package_check is not enabled)`,
+		);
+	}
+	const localSignals = [
+		heuristicsEnabled ? "local threat rules" : null,
+		packages.length > 0 ? "the offline typosquat check" : null,
+	].filter((signal): signal is string => signal !== null);
+	const local =
+		localSignals.length > 0
+			? `Decided by ${localSignals.join(" and ")}, which found nothing`
+			: "Local threat rules are disabled by configuration";
+	const note = `Not checked by a reputation service: ${parts.join(" and ")}. ${local}; this is not a clean reputation result.`;
+	if (verdict.decision !== "allow" || verdict.category !== "none" || verdict.transformedInput) {
+		return verdict.decision === "allow"
+			? { ...verdict, reasons: [...verdict.reasons, note] }
+			: verdict;
+	}
+	return {
+		...verdict,
+		category: REPUTATION_NOT_CHECKED_CATEGORY,
+		source: "local_only",
+		artifacts: [...urls, ...packages],
+		reasons: [...verdict.reasons, note],
+	};
 }
 
 /**
@@ -2915,6 +2983,93 @@ async function checkPackages(
 	reputationFeed: ReputationFeedLoadOptions | undefined,
 	allowProviderInspection: boolean,
 	legDeadline: number = Number.POSITIVE_INFINITY,
+): Promise<PackageCheckOutcome> {
+	const results = await checkPackageResults(
+		request,
+		manifestEdits,
+		config,
+		cache,
+		logger,
+		apiKey,
+		managedState,
+		revocations,
+		reputationFeed,
+		allowProviderInspection,
+		legDeadline,
+	);
+	if (config.package_check.enabled || config.package_check.unchecked_action === "ask") {
+		return { results, notChecked: [] };
+	}
+	// The leg is not enabled and the operator kept the default: a package the
+	// registry would serve is decided by local signals only (threat rules ran on
+	// the command already; the offline typosquat check runs here). A hit asks;
+	// anything else is recorded as "not checked", never as clean. An install from
+	// a direct URL, Git or local source, or a manifest edit that could not be
+	// reconstructed, bypasses the registry and still asks.
+	const kept: PackageCheckResult[] = [];
+	const notChecked: string[] = [];
+	for (const result of results) {
+		if (result.verdict !== "unknown" || !isRoutineUncheckedPackage(result)) {
+			kept.push(result);
+			continue;
+		}
+		const hit =
+			result.registry === "npm" || result.registry === "pypi"
+				? findTyposquat(result.packageName, result.registry)
+				: null;
+		if (hit) {
+			kept.push({
+				...result,
+				details: `Package '${hit.packageName}' is one edit away from the widely used ${hit.registry} package '${hit.resembles}' and may be a typosquat. Package reputation is not configured, so this was decided from local data only; confirm the name before installing.`,
+			});
+		} else {
+			notChecked.push(result.packageName);
+		}
+	}
+	return { results: kept, notChecked };
+}
+
+interface PackageCheckOutcome {
+	results: PackageCheckResult[];
+	/** Packages left to local signals because the package leg is not enabled. */
+	notChecked: string[];
+}
+
+const PACKAGE_LEG_DISABLED_REASON =
+	"is disabled to avoid sharing package names with external providers";
+
+/** Reason marker of a package result produced only because the leg is disabled or cannot see the input. */
+const ROUTINE_UNCHECKED_REASONS = [
+	PACKAGE_LEG_DISABLED_REASON,
+	"installs dependencies from a manifest whose contents were not supplied for inspection",
+	"whose package names were not available for inspection",
+	"whose dependency operation is not supported by the package checker",
+	"is an unsupported dependency manifest whose dependency changes were not inspected",
+];
+
+/**
+ * True for an `unknown` package result that only says "the leg did not look":
+ * a registry package with the leg disabled, a lockfile/manifest install, or a
+ * package manager this checker does not support. Results that describe a
+ * source outside the registry (direct URL, Git, local path, `npm exec`) or an
+ * unreadable manifest edit are not routine and keep asking.
+ */
+function isRoutineUncheckedPackage(result: PackageCheckResult): boolean {
+	return ROUTINE_UNCHECKED_REASONS.some((reason) => result.details.includes(reason));
+}
+
+async function checkPackageResults(
+	request: ToolEvaluationRequest,
+	manifestEdits: readonly ManifestEditInput[],
+	config: Config,
+	cache: VerdictCache | null,
+	logger: Logger,
+	apiKey: string,
+	managedState: ManagedState,
+	revocations: RevocationList | null,
+	reputationFeed: ReputationFeedLoadOptions | undefined,
+	allowProviderInspection: boolean,
+	legDeadline: number,
 ): Promise<PackageCheckResult[]> {
 	const results: PackageCheckResult[] = [];
 
@@ -2973,11 +3128,7 @@ async function checkPackages(
 		return [
 			...results,
 			...checkablePackages.map((pkg) =>
-				packageCheckUnavailableResult(
-					pkg.name,
-					pkg.registry,
-					"is disabled to avoid sharing package names with external providers",
-				),
+				packageCheckUnavailableResult(pkg.name, pkg.registry, PACKAGE_LEG_DISABLED_REASON),
 			),
 		];
 	}

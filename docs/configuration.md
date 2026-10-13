@@ -320,10 +320,19 @@ aidr restore <snapshot-id> [--overwrite-changed]   # a target changed since the 
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `false` | Explicit opt-in to send URLs without credentials, query, or fragment to the reputation provider. Withheld/disabled lookups require review; they are not reported clean. |
+| `enabled` | `false` | Explicit opt-in to send URLs without credentials, query, or fragment to the reputation provider. An enabled lookup that fails, times out or is withheld requires review; it is never reported clean. |
+| `unchecked_action` | `"allow"` | What a call with URLs gets while `enabled` is `false` and local rules found nothing. `allow`: the call proceeds and the verdict and audit log record it as `reputation_not_checked` ("Not checked by a reputation service ... this is not a clean reputation result"). `ask`: every such call is held for review (the behaviour before this option existed). |
 | `endpoint` | (built-in) | Optional override for the URL reputation endpoint (use this for self-hosted deployments) |
 | `include_query_parameters` | `false` | Explicit opt-in to send URL query parameters. URLs containing queries are otherwise withheld and require review. User info and fragments are never sent. |
 | `timeout_seconds` | `5` | Request timeout |
+
+With the default (`enabled: false`, `unchecked_action: allow`), a URL is judged
+by the local threat rules only (for example pipe-to-shell, raw-IP or paste-site
+downloads, exfiltration patterns and session toxic-flow chains). A URL those
+rules do not flag is allowed and recorded as not checked; it is never labelled
+clean. No first-party reputation endpoint is deployed today, so enabling the leg
+without your own `endpoint` makes every URL call ask (the leg is enabled but
+cannot run).
 
 Example (Supabase Edge Function):
 
@@ -357,7 +366,8 @@ Example (Supabase Edge Function):
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `false` | Explicit opt-in to send package names to npm/PyPI. Disabled package operations are marked unverified and require review. |
+| `enabled` | `false` | Explicit opt-in to send package names to npm/PyPI. |
+| `unchecked_action` | `"allow"` | What a registry install (or lockfile/manifest install, or an unsupported manager such as `uv`/`poetry`) gets while `enabled` is `false` and local signals found nothing. `allow`: the install proceeds and is recorded as `reputation_not_checked`, never as clean. `ask`: every such install is held for review. |
 | `timeout_seconds` | `5` | Request timeout |
 | `new_package_days` | `30` | Slopsquatting window. A package first published fewer days ago than this, with low adoption, is held for review with a slopsquatting reason. Packages younger than 7 days are always held. `0` turns the low-adoption signal off. |
 | `low_adoption_weekly_downloads` | `1000` | npm packages below this many downloads last week count as low adoption inside the window. |
@@ -366,9 +376,19 @@ Example (Supabase Edge Function):
 
 A package that does not exist on the registry, or a requested version that was
 never published (a hallucinated name or version), is denied. With `enabled:
-false`, or when the registry cannot be reached, none of these signals runs and
-the package operation is reported as unverified, never as clean. See
+true` and the registry unreachable, none of these signals runs and the package
+operation is held for review as unverified, never as clean. See
 [Data and context poisoning protection](poisoning-protection.md#slopsquatting).
+
+With `enabled: false` (the default) no package name leaves the device and the
+registry signals above do not run. The install is decided by local signals: the
+threat rules (for example known miner and malware package names) and an offline
+typosquat check that holds for review a name one edit away from a widely used
+npm or PyPI package (`lodahs`, `reqeusts`, `reactdom`). Names shorter than five
+characters are not judged by that check. An install from a direct URL, Git or a
+local path bypasses the registry and is always held for review. Anything else is
+allowed under `unchecked_action: allow` and recorded as not checked by a
+reputation service.
 
 ### `poisoning_protection`
 

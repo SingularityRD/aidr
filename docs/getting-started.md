@@ -114,6 +114,20 @@ procedure in the [first-customer runbook](../deploy/FIRST_CUSTOMER.md). Do not
 run a live payload as an installation test. Record the host-side block and test
 the disabled, crashed, and timed-out hook cases too.
 
+### What a fresh install does with URLs and packages
+
+URL, file and package reputation lookups are off by default, and no first-party
+reputation endpoint is deployed. Routine work such as `git clone
+https://github.com/...`, `npm install react`, `pip install requests` or a
+documentation fetch is decided by the local threat rules and an offline
+typosquat check; when they find nothing the call proceeds and the audit log
+records it as `reputation_not_checked` (not checked, never "clean"). A rule hit,
+a likely typosquat (`npm install lodahs`) or an install straight from a URL, Git
+or local path still asks or denies. To hold every unchecked URL or package for
+review instead, set `url_check.unchecked_action` / `package_check.unchecked_action`
+to `"ask"` (see [Configuration](configuration.md#url_check)). On Codex, Cursor,
+OpenClaw and OpenCode an `ask` blocks the call until an operator approves it.
+
 ## Uninstall
 
 How AIDR is removed depends on how it was installed:
