@@ -308,6 +308,14 @@ export interface GuardPolicy {
 	readonly language: "auto" | "en" | "tr";
 	/** Keys locked by managed policy (UI renders them read-only). */
 	readonly managedKeys: readonly string[];
+	/**
+	 * Managed keys whose value was invalid ("*": the whole managed policy was malformed or
+	 * could not be read). Each fell back to a fail-safe value, never the permissive default
+	 * (src/background/policy.ts FAIL_SAFE); the popup and options page show a policy error and
+	 * telemetry reports the count. Key names only, never values. Optional so policies built
+	 * before the field existed stay valid; the worker always sets it.
+	 */
+	readonly policyErrors?: readonly string[];
 	readonly policyId: string;
 	/**
 	 * Administrator-published AI acceptable-use notice (managed policy key `acceptableUse`),
@@ -383,7 +391,17 @@ export interface PrivacyScanEvent {
 	 * by policy but no NER answer: never a clean check). Absent: native NER was off.
 	 */
 	readonly native_ner?: NativeNerUse;
+	/** "paused": the send happened while the user had paused protection (monitor mode). */
+	readonly reason?: PrivacyScanReason;
+	/**
+	 * Number of managed policy keys whose value was invalid and fell back to a fail-safe value
+	 * (1..64; "*" counts as one). Absent: the managed policy was valid (or there is none).
+	 */
+	readonly policy_errors?: number;
 }
+
+/** Why a privacy_scan event was not enforced as the policy mode says (optional). */
+export type PrivacyScanReason = "paused";
 
 /** Native NER outcome a RECORD / privacy_scan event may carry (absent: NER was off). */
 export type NativeNerUse = "used" | "unavailable";
@@ -569,6 +587,13 @@ export interface GuardStats {
 	readonly byType: Readonly<Partial<Record<EntityType, number>>>;
 	readonly pausedUntil: number | null;
 	readonly nativeHost: NativeHostStatus;
+	/**
+	 * For a tab (GET_STATS with a tab id): whether a Browser Guard content script fetched its
+	 * policy in this tab's current page origin since the extension (re)started. False for a tab
+	 * that was open before install/update/enable and has not been injected or reloaded: the
+	 * popup then shows "Not protected - reload" instead of "Protected". Absent for global stats.
+	 */
+	readonly contentActive?: boolean;
 }
 
 export type NativeHostStatus = "connected" | "unavailable" | "disabled";

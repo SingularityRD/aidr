@@ -227,6 +227,7 @@ describe("popup: custom sites", () => {
 			byType: {},
 			pausedUntil: null,
 			nativeHost: "disabled" as const,
+			contentActive: true,
 		};
 		expect(protectionStatus(POLICY, stats, site, NOW)).toEqual({
 			kind: "protected",

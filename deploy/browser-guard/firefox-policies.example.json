@@ -1,11 +1,17 @@
 {
   "policies": {
     "ExtensionSettings": {
+      "*": {
+        "installation_mode": "blocked",
+        "blocked_install_message": "Extensions are managed by your organization."
+      },
       "browser-guard@singularityrd.com": {
         "installation_mode": "force_installed",
         "install_url": "https://downloads.example.com/aidr/aidr-browser-guard-firefox-latest.xpi"
       }
     },
+    "DisablePrivateBrowsing": true,
+    "DisableDeveloperTools": true,
     "3rdparty": {
       "Extensions": {
         "browser-guard@singularityrd.com": {

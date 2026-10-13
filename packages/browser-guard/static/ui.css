@@ -395,6 +395,14 @@ a:hover {
 	color: var(--text);
 }
 
+.banner--danger {
+	background: var(--danger-soft);
+}
+
+.banner--danger .icon {
+	color: var(--danger);
+}
+
 .locked-note {
 	margin-bottom: 12px;
 }

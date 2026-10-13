@@ -297,7 +297,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 
 | Key | Value | Why |
 |---|---|---|
-| `permissions` | `storage`, `alarms`, `declarativeNetRequest`, `scripting` | settings and the in-memory vault; telemetry batching; blocking sites an admin lists in `blockedSites` or blocks with `shadowAi` (block rules only; `declarativeNetRequest` applies them without host permissions, so an administrator's block never depends on the user's host-access grant; install warning "Block content on any page"); registering the content script for administrator-configured `customSites` (no install warning, and no access by itself: injection still needs host access to the page) |
+| `permissions` | `storage`, `alarms`, `declarativeNetRequest`, `scripting` | settings and the in-memory vault; telemetry batching; blocking sites an admin lists in `blockedSites` or blocks with `shadowAi` (block rules only; `declarativeNetRequest` applies them without host permissions, so an administrator's block never depends on the user's host-access grant; install warning "Block content on any page"); registering the content script for administrator-configured `customSites`, and injecting it into AI tabs that were already open when the extension started (no install warning, and no access by itself: injection still needs host access to the page) |
 | `host_permissions` | the ten HTTPS hosts above | content script injection on supported sites only |
 | `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install. The options page requests exact `https://<host>/*` origins, from a click, only for what the managed policy configures: the hosts of `customSites`, and the Shadow AI catalog origins when `shadowAi` is on (or the origins of explicitly blocked services). No `tabs`, `webNavigation`, `history` or `<all_urls>` permission is requested: the extension sees a tab's URL only on origins it was granted |
@@ -335,7 +335,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `blockedSites` / `disabledSites` | site ids | none |
 | `customSites` | up to 20 `{ id, label, hosts, editorSelectors, sendButtonSelectors, responseSelectors }` (managed only) | none |
 | `shadowAi` | `{ mode: off \| monitor \| block-unsanctioned, sanctioned: [ids], blocked: [ids] }` (managed only) | `off` |
-| `allowUserPause` / `allowSendAnyway` | boolean | `true` / `true` |
+| `allowUserPause` / `allowSendAnyway` | boolean (managed only) | `true` / `true` without a managed policy; `false` / `false` under any managed policy unless it sets them |
 | `maskPaste` | boolean | `true` |
 | `fileHandling` / `maxFileBytes` | `scan` \| `block` \| `allow` / bytes (max 50 MiB) | `scan` / 5 MiB |
 | `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
@@ -349,7 +349,14 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `allowUserOverrides` | boolean (managed only) | `false`: a managed policy locks the protection settings above |
 
 The authoritative schema is [`static/managed_schema.json`](static/managed_schema.json);
-managed values are validated strictly in `src/background/policy.ts` before use.
+managed values are validated strictly in `src/background/policy.ts` before use. An
+invalid managed value fails safe instead of falling back to the default: a list keeps
+its valid entries, any other protection key takes its strictest value (`FAIL_SAFE`:
+`mode` `block`, pause and send-original off, `requireNativeNer` on, ...), the key is
+locked and listed in `policy.policyErrors`, the popup and options page show a policy
+error, and `privacy_scan` telemetry carries `policy_errors` (the count). A managed
+storage read failure is treated the same way (whole-policy error `*`). Details in
+[`deploy/browser-guard/README.md`](../../deploy/browser-guard/README.md#managed-keys).
 Chrome compiles the schema's `pattern`s with RE2 when the extension loads and
 refuses to load the whole extension if one does not compile (repetition counts,
 nested ones multiplied, are capped at 1000; no lookaround or backreferences), so
@@ -364,7 +371,7 @@ AI host) and up to 20 CSS selectors each for the prompt editor, the send button
 and the assistant responses (no `{ } ; <`, 256 characters max; selectors the page's
 parser rejects are dropped in the page). Generic fallbacks (`textarea`,
 `[contenteditable]`, `button[type=submit]`, ...) are always appended. An invalid
-entry rejects the whole key (a policy warning, the rest of the policy applies).
+entry is dropped (a policy warning and a policy error); the valid sites stay.
 
 A managed policy cannot grant host access, and browsers only show the permission
 prompt from a user gesture, so each user clicks **Allow access** once on the options
@@ -372,7 +379,8 @@ page (**AI services** section). The worker then registers the same `content.js` 
 exactly the granted hosts (`chrome.scripting.registerContentScripts`, id
 `aidr-custom-sites`, top frame, `document_start`), re-syncs on every policy change
 and grant/revocation, and accepts messages from those hosts as site `custom`.
-Tabs that were already open need a reload. Until access is granted the options page
+Tabs that were already open are injected as soon as access is granted
+(`chrome.scripting.executeScript`). Until access is granted the options page
 shows the site as **Needs access** and nothing runs there.
 
 ### Shadow AI discovery and control
@@ -388,7 +396,11 @@ meeting, writing, search, agent), identified by stable catalog ids.
 | `block-unsanctioned` | counted, and every catalogued service not in `sanctioned` is blocked |
 
 A service in both `sanctioned` and `blocked` is blocked. Blocking uses one
-declarativeNetRequest rule per service (`main_frame` + `sub_frame`, ids 7401+). The
+declarativeNetRequest rule per service (`main_frame` + `sub_frame`, ids 7401+) and a
+second one (ids 7701+) that refuses the fetch/XHR and WebSocket requests made by pages
+of the service (`initiatorDomains`), so a tab that was already open when the block
+arrived stops working at once. When a block is applied the worker also sends every
+open tab it can see on a blocked site or service to `blocked.html`. The
 block needs no host access (`declarativeNetRequest` applies block rules everywhere), so
 it holds whether or not the user granted anything; with access to the service's origin
 the worker also shows `blocked.html?service=<id>` in the tab, without it the user sees
@@ -496,6 +508,11 @@ to regenerate the dataset with stable fingerprints.
 - Only the listed sites are protected out of the box; internal portals need a
   `customSites` entry and each user's host-access grant. Other AI tools, desktop
   apps and API clients are not covered by this extension.
+- Tabs open before the extension started (install, update, re-enable): the worker
+  injects the content scripts into every open, loaded tab of a protected site once per
+  extension start, and the popup shows **Not protected — reload this tab** for a
+  protected site whose tab has no live content script (a discarded tab, an injection
+  the browser refused).
 - Shadow AI counting, and the `blocked.html` explanation page, act only on origins
   the user granted; the block itself applies without a grant (the user then sees the
   browser's own "blocked by an extension" page). Tab state is kept in memory, so a

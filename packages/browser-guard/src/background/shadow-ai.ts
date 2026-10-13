@@ -3,7 +3,9 @@
  *
  * Enforcement: one declarativeNetRequest dynamic rule per blocked service refuses its
  * top-level navigations and framed embeds; the worker then shows blocked.html in the tab
- * (`?service=<id>`), exactly like the built-in blocked-site flow in ./dnr.ts.
+ * (`?service=<id>`), exactly like the built-in blocked-site flow in ./dnr.ts. A second rule
+ * refuses the fetch/XHR and WebSocket traffic of pages already open on the service, and when
+ * a block is applied the worker redirects every open tab it can see on that service.
  *
  * The block itself needs no host access (`declarativeNetRequest` block rules apply
  * everywhere), so it never depends on a grant the policed user could decline or revoke;
@@ -32,11 +34,22 @@ import type { ShadowAiDailyUsage, ShadowAiPolicy } from "../types.js";
 import type { ChromeApi, DnrRule, GuardStorage } from "./storage.js";
 import { STORAGE_KEYS } from "./storage.js";
 
-/** Dynamic rule ids owned by this module: one per catalog service (7401..). */
+/**
+ * Dynamic rule ids owned by this module: per catalog service one navigation rule (7401..)
+ * and one rule for the API traffic of pages already open on the service (7701..).
+ */
 const SHADOW_RULE_ID_BASE = 7400;
+const SHADOW_API_RULE_ID_BASE = 7700;
 const ruleIdFor = (index: number) => SHADOW_RULE_ID_BASE + index + 1;
+const apiRuleIdFor = (index: number) => SHADOW_API_RULE_ID_BASE + index + 1;
 export const SHADOW_DNR_RULE_IDS: readonly number[] = Object.freeze(
 	AI_SERVICES.map((_, i) => ruleIdFor(i)),
+);
+export const SHADOW_API_DNR_RULE_IDS: readonly number[] = Object.freeze(
+	AI_SERVICES.map((_, i) => apiRuleIdFor(i)),
+);
+const API_RULE_ID_BY_SERVICE: ReadonlyMap<string, number> = new Map(
+	AI_SERVICES.map((s, i) => [s.id, apiRuleIdFor(i)]),
 );
 const RULE_ID_BY_SERVICE: ReadonlyMap<string, number> = new Map(
 	AI_SERVICES.map((s, i) => [s.id, ruleIdFor(i)]),
@@ -79,6 +92,22 @@ export function buildShadowRules(policy: ShadowAiPolicy): DnrRule[] {
 	}));
 }
 
+/**
+ * A tab that was already open on a service when it became blocked keeps its page: the
+ * navigation rule only stops the next navigation, and the worker can redirect the tab only
+ * where it sees its URL (granted host access). These rules refuse the API calls
+ * (fetch/XHR, WebSocket) such a page makes, whatever host they go to, so an open
+ * single-page app stops working at once even without a grant.
+ */
+export function buildShadowApiRules(policy: ShadowAiPolicy): DnrRule[] {
+	return blockedServices(policy).map((s) => ({
+		id: API_RULE_ID_BY_SERVICE.get(s.id) as number,
+		priority: 1,
+		action: { type: "block" },
+		condition: { initiatorDomains: [...s.hosts], resourceTypes: ["xmlhttprequest", "websocket"] },
+	}));
+}
+
 /** Replaces this module's dynamic rules with the ones for `policy`. */
 export async function applyShadowRules(
 	chrome: Pick<ChromeApi, "declarativeNetRequest">,
@@ -86,8 +115,8 @@ export async function applyShadowRules(
 ): Promise<boolean> {
 	try {
 		await chrome.declarativeNetRequest.updateDynamicRules({
-			removeRuleIds: [...SHADOW_DNR_RULE_IDS],
-			addRules: buildShadowRules(policy),
+			removeRuleIds: [...SHADOW_DNR_RULE_IDS, ...SHADOW_API_DNR_RULE_IDS],
+			addRules: [...buildShadowRules(policy), ...buildShadowApiRules(policy)],
 		});
 		return true;
 	} catch {
@@ -304,14 +333,22 @@ export class ShadowAiMonitor {
 	}
 
 	/** Shows blocked.html when this module's rule for `service` is installed. */
-	private async redirectIfBlocked(tabId: number, service: AiService): Promise<boolean> {
-		const { chrome } = this.deps;
-		if (!chrome.declarativeNetRequest.getDynamicRules || !chrome.tabs.update) return false;
-		const rules = await chrome.declarativeNetRequest.getDynamicRules();
-		if (!shadowRuleInstalled(rules, service)) return false;
-		await chrome.tabs.update(tabId, {
-			url: chrome.runtime.getURL(`${BLOCKED_PAGE_PATH}?service=${service.id}`),
-		});
-		return true;
+	private redirectIfBlocked(tabId: number, service: AiService): Promise<boolean> {
+		return redirectBlockedService(this.deps.chrome, tabId, service);
 	}
+}
+
+/** Navigates `tabId` to blocked.html when this module's rule for `service` is installed. */
+export async function redirectBlockedService(
+	chrome: Pick<ChromeApi, "declarativeNetRequest" | "runtime" | "tabs">,
+	tabId: number,
+	service: AiService,
+): Promise<boolean> {
+	if (!chrome.declarativeNetRequest.getDynamicRules || !chrome.tabs.update) return false;
+	const rules = await chrome.declarativeNetRequest.getDynamicRules();
+	if (!shadowRuleInstalled(rules, service)) return false;
+	await chrome.tabs.update(tabId, {
+		url: chrome.runtime.getURL(`${BLOCKED_PAGE_PATH}?service=${service.id}`),
+	});
+	return true;
 }

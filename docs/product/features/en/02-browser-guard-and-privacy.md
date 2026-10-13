@@ -430,8 +430,9 @@ findings and no active signals is sent without any interruption in every mode.
 **How to use** — Popup → *Protection mode* segmented control, or Options → **Protection**.
 Managed key `mode` (`auto` | `confirm` | `block` | `monitor`, default `auto`). When `mode`
 is managed, the control shows a lock and **Managed by your organization**, and users can
-no longer turn individual sites off. `allowSendAnyway` (default `true`) controls the
-**Send original** button.
+no longer turn individual sites off. `allowSendAnyway` controls the **Send original**
+button (default `true` without a managed policy, `false` under any managed policy unless
+the administrator sets it).
 
 **Example** — In `confirm` mode a user types `IBAN TR33 0006 1005 1978 6457 8413 26` and
 presses Enter. The bubble appears and nothing reaches the site. The user clicks **Send
@@ -448,8 +449,8 @@ checks that exactly one request is made and that it contains only placeholders.
 
 **Limitations**
 - `monitor` sends the original data. Use it for measurement, not protection.
-- With `allowSendAnyway: true` (the default), a user in `confirm` mode can send the original
-  values. Set it to `false` where that must not be possible.
+- With `allowSendAnyway: true` (the default only on unmanaged installs; a managed policy
+  must set it explicitly), a user in `confirm` mode can send the original values.
 - In `auto` mode, a prompt that also triggers a risk signal at `warn` level shows the
   confirmation bubble instead of masking silently (feature 10).
 
@@ -986,7 +987,9 @@ dashboard keep seeing usage. The popup then shows **Turned off for this site** (
 turned off masking on ChatGPT: nothing is masked there, only counts of sensitive items are
 recorded.").
 
-**How to use** — Managed keys `allowUserPause` (default `true`) and `disabledSites` (site ids).
+**How to use** — Managed keys `allowUserPause` (default `true` without a managed policy,
+`false` under any managed policy unless set; sends during a pause are reported with
+`reason: "paused"`) and `disabledSites` (site ids).
 When pausing is disallowed, the popup hides the pause button, and a pause request is
 refused ("Your organization does not allow pausing protection."). When `mode` is managed, users can no longer disable individual sites (the list
 is locked, empty unless the administrator sets `disabledSites`).
@@ -1220,8 +1223,8 @@ All managed keys (from `static/managed_schema.json` and `src/background/policy.t
 | `signalAction` | `off` \| `warn` \| `block` | `warn` | What a signal does (feature 10) |
 | `blockedSites` | array of site ids | none | Sites whose pages are blocked from loading (feature 13) |
 | `disabledSites` | array of site ids | none | Sites that are only monitored: nothing is masked or blocked by the guard, sends are counted (feature 12) |
-| `allowUserPause` | boolean | `true` | Users may pause for up to 60 minutes |
-| `allowSendAnyway` | boolean | `true` | Users may send unmasked after a warning |
+| `allowUserPause` | boolean | `true`; `false` under any managed policy unless set | Users may pause for up to 60 minutes |
+| `allowSendAnyway` | boolean | `true`; `false` under any managed policy unless set | Users may send unmasked after a warning |
 | `maskPaste` | boolean | `true` | Mask pasted text (feature 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Upload handling (feature 7) |
 | `documentHandling` | `mask` \| `block` \| `allow` | `mask` | Office, OpenDocument, legacy Office and PDF uploads when `fileHandling` is `scan` (feature 7) |

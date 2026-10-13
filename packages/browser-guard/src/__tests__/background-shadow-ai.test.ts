@@ -115,11 +115,21 @@ describe("policy: customSites", () => {
 		],
 		["not an array", INTERNAL],
 	];
+	/** Valid entries an invalid list keeps (fail safe: one bad site must not drop the others). */
+	const kept: Record<string, number> = {
+		"duplicate id": 1,
+		"duplicate host": 1,
+		"more than 20 sites": 20,
+	};
 	for (const [name, value] of bad) {
-		it(`rejects the whole key for ${name}`, () => {
+		it(`drops the invalid entries for ${name} and reports the key`, () => {
 			const { policy, warnings } = managedPolicy({ customSites: value });
-			expect(policy.customSites).toEqual([]);
-			expect(warnings).toContain('managed: invalid value for "customSites" ignored');
+			expect(policy.customSites).toHaveLength(kept[name] ?? 0);
+			expect(policy.policyErrors).toEqual(["customSites"]);
+			expect(policy.managedKeys).toContain("customSites");
+			expect(warnings).toContain(
+				'managed: invalid value for "customSites"; fail-safe value applied',
+			);
 		});
 	}
 
@@ -208,18 +218,22 @@ describe("policy: shadowAi", () => {
 		expect(policy.managedKeys).toContain("shadowAi");
 	});
 
-	for (const value of [
-		{ mode: "audit" },
-		{ sanctioned: [] },
-		{ mode: "monitor", sanctioned: ["Bad Id"] },
-		{ mode: "monitor", blocked: "poe" },
-		{ mode: "monitor", extra: true },
-		"monitor",
-	]) {
-		it(`rejects ${JSON.stringify(value)}`, () => {
+	// Fail safe: an unknown mode is the strictest one, valid ids are kept, bad ones dropped.
+	const strict = { mode: "block-unsanctioned", sanctioned: [], blocked: [] };
+	const monitor = { mode: "monitor", sanctioned: [], blocked: [] };
+	for (const [value, expected] of [
+		[{ mode: "audit" }, strict],
+		[{ sanctioned: [] }, strict],
+		[{ mode: "monitor", sanctioned: ["Bad Id"] }, monitor],
+		[{ mode: "monitor", blocked: "poe" }, monitor],
+		[{ mode: "monitor", extra: true }, monitor],
+		["monitor", strict],
+	] as const) {
+		it(`fails safe on ${JSON.stringify(value)}`, () => {
 			const { policy, warnings } = managedPolicy({ shadowAi: value });
-			expect(policy.shadowAi).toEqual(DEFAULT_POLICY.shadowAi);
-			expect(warnings).toContain('managed: invalid value for "shadowAi" ignored');
+			expect(policy.shadowAi).toEqual(expected);
+			expect(policy.policyErrors).toEqual(["shadowAi"]);
+			expect(warnings).toContain('managed: invalid value for "shadowAi"; fail-safe value applied');
 		});
 	}
 });

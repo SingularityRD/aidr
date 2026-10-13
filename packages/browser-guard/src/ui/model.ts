@@ -136,13 +136,17 @@ export type ProtectionStatus =
 	| { readonly kind: "blocked"; readonly site: ProtectedSiteId }
 	| { readonly kind: "disabled-policy"; readonly site: ProtectedSiteId }
 	| { readonly kind: "disabled-user"; readonly site: ProtectedSiteId }
+	| { readonly kind: "inactive"; readonly site: ProtectedSiteId }
 	| { readonly kind: "paused"; readonly site: ProtectedSiteId; readonly until: number }
 	| { readonly kind: "monitoring"; readonly site: ProtectedSiteId }
 	| { readonly kind: "protected"; readonly site: ProtectedSiteId };
 
 /**
  * Protection status for the current tab. Order matters: an organisation block
- * wins over everything, then per-site disablement, then a user pause.
+ * wins over everything, then per-site disablement, then a tab without a live content
+ * script (open since before the extension started: "Not protected - reload"), then a user
+ * pause. Only a tab the worker confirmed (`stats.contentActive === true`) is "protected"
+ * or "monitoring".
  */
 export function protectionStatus(
 	policy: GuardPolicy,
@@ -159,11 +163,19 @@ export function protectionStatus(
 			? { kind: "disabled-policy", site }
 			: { kind: "disabled-user", site };
 	}
+	if (stats.contentActive !== true) return { kind: "inactive", site };
 	if (stats.pausedUntil !== null && stats.pausedUntil > now) {
 		return { kind: "paused", site, until: stats.pausedUntil };
 	}
 	if (policy.mode === "monitor") return { kind: "monitoring", site };
 	return { kind: "protected", site };
+}
+
+/** Managed policy keys whose value was invalid (fail-safe values in force); "*" = whole policy. */
+export function policyErrors(policy: GuardPolicy): readonly string[] {
+	return Array.isArray(policy.policyErrors)
+		? policy.policyErrors.filter((key): key is string => typeof key === "string")
+		: [];
 }
 
 export interface EntityCount {

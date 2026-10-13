@@ -14,9 +14,11 @@ extension's UI.
 | [`firefox-policies.example.json`](firefox-policies.example.json) | Firefox `policies.json` (Windows, macOS, Linux) |
 | [`macos-jamf.example.mobileconfig`](macos-jamf.example.mobileconfig) | Chrome and Edge on macOS through Jamf Pro (or any MDM) |
 
-All five files carry the **same** managed values; the automated test
-`packages/browser-guard/src/__tests__/build-tools.test.ts` fails if they drift
-apart or use a key the extension does not accept.
+All five files carry the **same** managed values and the same browser
+hardening policies (see [Hardening the browser](#hardening-the-browser)); the
+automated test `packages/browser-guard/src/__tests__/build-tools.test.ts` fails
+if they drift apart, drop a hardening policy, or use a key the extension does not
+accept.
 
 ## Before you start
 
@@ -71,8 +73,8 @@ apart or use a key the extension does not accept.
 | `disabledSites` | array of site ids | the guard only monitors on these sites (`custom` = every configured internal site) |
 | `customSites` | array of `{ "id", "label", "hosts", "editorSelectors", "sendButtonSelectors", "responseSelectors" }` | company-internal AI portals to protect; up to 20 sites, 1-10 exact HTTPS hosts each (no port, path, wildcard, IP or built-in AI host), up to 20 CSS selectors per list. Each user allows access to the hosts once on the options page (**AI services** > **Allow access**); only then is the content script registered there |
 | `shadowAi` | `{ "mode", "sanctioned", "blocked" }` | Shadow AI discovery and control: `mode` `off` (default), `monitor` (count visits per catalogued AI service and day) or `block-unsanctioned` (also block every catalogued service not in `sanctioned`); ids in `blocked` are blocked in every mode. Ids are the catalog ids in `src/sites/catalog.ts`. Blocking applies without any user grant. Counting visits, and showing the Browser Guard blocked page instead of the browser's own, need each user's one-time **Allow access** on the options page; until then the page reports access as missing |
-| `allowUserPause` | boolean | users may pause protection for up to 60 minutes |
-| `allowSendAnyway` | boolean | users may send unmasked after a warning |
+| `allowUserPause` | boolean | users may pause protection for up to 60 minutes. **`false` under any managed policy unless you set it to `true`** (the built-in `true` applies only to unmanaged installs). Sends during a pause are reported with `reason: "paused"` |
+| `allowSendAnyway` | boolean | users may send the original (unmasked) text after a warning. **`false` under any managed policy unless you set it to `true`** |
 | `maskPaste` | boolean | mask sensitive data as it is pasted |
 | `fileHandling` | string | `scan`, `block`, `allow` |
 | `documentHandling` | string | `mask` (default), `block`, `allow`: Office/PDF uploads when `fileHandling` is `scan`; optional, not set in the examples below |
@@ -98,6 +100,33 @@ read-only). A managed policy that fails validation still locks them. Set
 `allowUserOverrides: true` to let users keep changing the protection keys you
 do not set (a managed `mode` then still locks `disabledSites`). `language` and a
 user's own `telemetry` target are never locked unless you set them.
+`allowUserPause` and `allowSendAnyway` are not user settings: under any managed
+policy (and when the browser cannot read the managed policy at all) both are
+`false` unless you set them, whatever `allowUserOverrides` says.
+
+**Invalid values fail safe.** A managed value of the wrong type or with an unknown
+entry (a typo in a site id, `"false"` as a `REG_SZ` where a `REG_DWORD` is
+expected, `"Block"` instead of `"block"`) never falls back to the permissive
+built-in default:
+
+- a list keeps its valid entries and drops only the bad ones (`blockedSites`,
+  `disabledSites`, `literals`, `exactData`, `customSites`, the `shadowAi` id lists);
+  `enabledEntities` and `neverRestore` become every entity type;
+- any other protection key takes its strictest value: `mode` `block`,
+  `allowUserPause`/`allowSendAnyway` `false`, `requireNativeNer` `true`,
+  `maskPaste`/`detectSignals` `true`, `restoreResponses` `false`, `fileHandling`
+  and `documentHandling` `block`, `signalAction` `block`, `useNativeHost` `true`,
+  an unknown `shadowAi.mode` `block-unsanctioned`;
+- `telemetry`, `language`, `policyId`, `maxFileBytes`, `acceptableUse` and
+  `dashboardPolicy` have no safe value to invent and keep the built-in one.
+
+Each such key is locked and reported: the popup and the options page show "Your
+organization's policy has N invalid setting(s)", and every `privacy_scan` event
+carries `policy_errors: N`. Chrome and Edge also validate against the schema
+themselves and drop a value that does not match before the extension sees it
+(shown as an error at `chrome://policy` / `edge://policy`); the extension then
+treats the key as unset, which under a managed policy is still the locked
+built-in value (and `false` for pause and send-original).
 
 ## Requiring native NER
 
@@ -135,6 +164,26 @@ dashboard can switch the requirement on, but never off where this managed key is
 `true`. While four-eyes change control is on, switching it off in the dashboard is
 refused until four-eyes is turned off (which a second owner or administrator must
 approve).
+
+## Hardening the browser
+
+Browser Guard protects the browser profiles it runs in. Every example also sets
+the browser policies that close the obvious ways around it. They affect the whole
+browser, not only AI sites, so review each one before you roll it out:
+
+| Policy | Value | Why | Trade-off |
+|---|---|---|---|
+| Chrome `IncognitoModeAvailability` | `1` (disabled) | the extension is `incognito: "not_allowed"`: a private window has no protection | users lose private windows |
+| Edge `InPrivateModeAvailability` | `1` (disabled) | same for InPrivate | users lose InPrivate |
+| Firefox `DisablePrivateBrowsing` | `true` | same for private windows | users lose private windows |
+| Chrome/Edge `BrowserGuestModeEnabled` | `false` | a Guest profile runs without force-installed extensions | no Guest browsing |
+| Chrome/Edge `DeveloperToolsAvailability` | `2` (blocked everywhere) | the page console can call the AI site's API directly, past the guard; DevTools on the extension can also change its local state | developers lose DevTools; for developer groups use `1` (blocked only on policy-installed extensions) and accept the console path |
+| Firefox `DisableDeveloperTools` | `true` | same | same |
+| Chrome/Edge `ExtensionInstallBlocklist` `["*"]` + `ExtensionInstallAllowlist` | the Browser Guard id | another extension can read the page or call the AI API with the user's session | add every extension your organization approves to the allowlist (force-installed ones are always allowed) |
+| Firefox `ExtensionSettings["*"]` | `installation_mode: "blocked"` | same | list approved add-ons in `ExtensionSettings` as `allowed` or `force_installed` |
+
+Two gaps are outside any browser policy: other browsers on the machine (block or
+manage them with your endpoint tooling) and other operating-system user profiles.
 
 ## Chrome and Edge on Windows (Group Policy)
 
@@ -199,7 +248,10 @@ Linux: `/etc/firefox/policies/` or the install directory's `distribution/`).
 On Windows you can use the Firefox ADMX templates instead; on macOS, the
 `org.mozilla.firefox` preference domain with `EnterprisePoliciesEnabled`.
 
-- `ExtensionSettings` force-installs the add-on from `install_url`.
+- `ExtensionSettings` force-installs the add-on from `install_url` and blocks
+  every other add-on (`"*": { "installation_mode": "blocked" }`).
+- `DisablePrivateBrowsing` and `DisableDeveloperTools` close private windows and
+  the page console (see [Hardening the browser](#hardening-the-browser)).
 - `3rdparty.Extensions["browser-guard@singularityrd.com"]` holds the managed
   values as plain JSON.
 
@@ -213,9 +265,9 @@ Upload `macos-jamf.example.mobileconfig` as a configuration profile
 
 | Preference domain | Content |
 |---|---|
-| `com.google.Chrome` | `ExtensionInstallForcelist`, `ExtensionSettings` |
+| `com.google.Chrome` | `ExtensionInstallForcelist`, `ExtensionSettings`, and the hardening keys `IncognitoModeAvailability`, `BrowserGuestModeEnabled`, `DeveloperToolsAvailability`, `ExtensionInstallBlocklist`, `ExtensionInstallAllowlist` |
 | `com.google.Chrome.extensions.<id>` | the managed values |
-| `com.microsoft.Edge` | `ExtensionInstallForcelist` |
+| `com.microsoft.Edge` | `ExtensionInstallForcelist`, and the hardening keys `InPrivateModeAvailability`, `BrowserGuestModeEnabled`, `DeveloperToolsAvailability`, `ExtensionInstallBlocklist`, `ExtensionInstallAllowlist` |
 | `com.microsoft.Edge.extensions.<id>` | the managed values |
 
 Arrays and dictionaries are native plist types here (no JSON strings). Scope
@@ -259,14 +311,17 @@ normalisation and fingerprint algorithm are documented in
 1. `chrome://policy` / `edge://policy` / `about:policies` shows the extension
    policy with status OK.
 2. The extension popup shows the mode with a lock icon and "Managed by your
-   organization".
+   organization", and no "invalid setting(s)" policy error. AI tabs that were
+   open when the extension was installed are protected without a reload (the
+   extension injects into them); a tab it could not reach shows **Not
+   protected — reload this tab**.
 3. On a supported AI site, type a test value such as an example email address
    (`jane.doe@example.com`) and send it: in `auto` mode the site receives
    `[EMAIL_1]`.
 4. With telemetry configured, `privacy_scan` counts appear in the control plane
    within about a minute.
 5. With `customSites` or `shadowAi` set, the options page has an **AI services**
-   section. After **Allow access**, a custom site shows **Protected** (reload tabs
-   that were already open) and Shadow AI shows "Access granted"; opening an
+   section. After **Allow access**, a custom site shows **Protected** (tabs that
+   were already open are injected at once) and Shadow AI shows "Access granted"; opening an
    unsanctioned catalogued service (in `block-unsanctioned` mode) shows the blocked
    page, and `shadow_ai_usage` counts reach the dashboard's **Shadow AI** panel.

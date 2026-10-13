@@ -49,6 +49,7 @@ const BASE_STATS: GuardStats = {
 	byType: { EMAIL: 5, IBAN: 3, SECRET: 1 },
 	pausedUntil: null,
 	nativeHost: "disabled",
+	contentActive: true,
 };
 
 type Reply = unknown | ((message: GuardMessage) => unknown);
@@ -265,6 +266,26 @@ describe("popup", () => {
 		expect(text(".stats__empty")).toBe("No sensitive data found yet.");
 	});
 
+	it("says 'Not protected — reload' for an AI tab without a live content script (BG-7)", async () => {
+		const env = fakeEnv({ stats: { site: null, byType: {}, contentActive: false } });
+		await openPopup(env);
+		expect(text(".status__title")).toBe("Not protected — reload this tab");
+		expect(text(".status__detail")).toContain("ChatGPT");
+		expect(document.querySelector(".status")?.classList.contains("status--danger")).toBe(true);
+		expect(document.getElementById("pause")).toBeNull();
+		expect(input("#restore-visible").disabled).toBe(true);
+	});
+
+	it("shows a policy error when managed values were invalid (BG-4)", async () => {
+		const env = fakeEnv({ policy: { policyErrors: ["mode", "blockedSites"] } });
+		await openPopup(env);
+		expect(text("#policy-error")).toContain("2 invalid setting");
+		const clean = fakeEnv();
+		document.body.innerHTML = "";
+		await openPopup(clean);
+		expect(document.getElementById("policy-error")).toBeNull();
+	});
+
 	it("shows 'Paused until hh:mm' and resumes with PAUSE 0", async () => {
 		const until = NOW + 10 * 60_000;
 		const env = fakeEnv({ stats: { pausedUntil: until } });
@@ -390,6 +411,11 @@ describe("popup", () => {
 });
 
 describe("options page", () => {
+	it("shows a policy error when managed values were invalid (BG-4)", async () => {
+		await openOptions(fakeEnv({ policy: { policyErrors: ["*"], managedKeys: ["mode"] } }));
+		expect(text("#policy-error")).toContain("1 invalid setting");
+	});
+
 	it("renders every section and groups all entity toggles", async () => {
 		const env = fakeEnv();
 		await openOptions(env);

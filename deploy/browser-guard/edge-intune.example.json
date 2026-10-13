@@ -18,6 +18,35 @@
           "toolbar_state": "force_shown"
         }
       }
+    },
+    {
+      "setting": "Microsoft Edge > Configure InPrivate mode availability",
+      "policy": "InPrivateModeAvailability",
+      "value": 1
+    },
+    {
+      "setting": "Microsoft Edge > Enable guest mode",
+      "policy": "BrowserGuestModeEnabled",
+      "value": false
+    },
+    {
+      "setting": "Microsoft Edge > Control where developer tools can be used",
+      "policy": "DeveloperToolsAvailability",
+      "value": 2
+    },
+    {
+      "setting": "Microsoft Edge > Extensions > Control which extensions cannot be installed",
+      "policy": "ExtensionInstallBlocklist",
+      "value": [
+        "*"
+      ]
+    },
+    {
+      "setting": "Microsoft Edge > Extensions > Allow specific extensions to be installed",
+      "policy": "ExtensionInstallAllowlist",
+      "value": [
+        "REPLACE_WITH_EDGE_EXTENSION_ID"
+      ]
     }
   ],
   "customOmaUri": [
