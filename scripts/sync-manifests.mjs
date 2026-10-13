@@ -97,7 +97,7 @@ export const SYNCS = Object.freeze([
   {
     source: "packages/dashboard/package.json",
     target: "deploy/helm/aidr/Chart.yaml",
-    sync: (text, version) => syncChartText(text, version),
+    sync: syncChartText,
   },
 ]);
 

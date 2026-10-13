@@ -498,9 +498,10 @@ export function enforceRollbackState(state, manifest, manifestDigest) {
  * @returns {{key: string, release_sequence: number, manifest_sha256: string, release_version: string, release_tag: string}}
  */
 export function verifySignedRollbackEvidence(rawManifest, signatureEnvelope, policy) {
+	const raw = Buffer.from(rawManifest);
 	let manifest;
 	try {
-		manifest = JSON.parse(Buffer.from(rawManifest).toString("utf8"));
+		manifest = JSON.parse(raw.toString("utf8"));
 	} catch {
 		throw new Error("release manifest is not valid JSON");
 	}
@@ -520,11 +521,11 @@ export function verifySignedRollbackEvidence(rawManifest, signatureEnvelope, pol
 	const signer = policy.trustedSigners.get(keyId);
 	if (!signer) throw new Error("release signer is not in the trusted allowlist");
 	if (signer.fingerprint !== fingerprint) throw new Error("release signer fingerprint does not match policy");
-	verifyManifestSignature(Buffer.from(rawManifest), signatureEnvelope, { keyId, signer });
+	verifyManifestSignature(raw, signatureEnvelope, { keyId, signer });
 	return {
 		key: `${productId}/${channel}`,
 		release_sequence: releaseSequence,
-		manifest_sha256: sha256(Buffer.from(rawManifest)),
+		manifest_sha256: sha256(raw),
 		release_version: manifest.release_version,
 		release_tag: manifest.release_tag,
 	};

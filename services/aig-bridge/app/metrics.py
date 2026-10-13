@@ -183,9 +183,10 @@ def _configured_token() -> Optional[str]:
 def _authorized(request: Request, token: str) -> bool:
     header = request.headers.get("authorization", "")
     scheme, _, supplied = header.partition(" ")
-    if scheme.lower() != "bearer" or not supplied.strip():
+    supplied = supplied.strip()
+    if scheme.lower() != "bearer" or not supplied:
         return False
-    return hmac.compare_digest(supplied.strip().encode(), token.encode())
+    return hmac.compare_digest(supplied.encode(), token.encode())
 
 
 async def metrics_endpoint(request: Request) -> Response:

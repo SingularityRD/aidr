@@ -118,27 +118,17 @@ export function staleRuleClaims(text, facts) {
 	for (const m of flat.matchAll(/rules?\s+(?:in|across)\s+(\d+)\s+(?:rule\s+)?files|in\s+(\d+)\s+rule\s+files|(\d+)\s+dosyada\s+\d+\s+kural|\(\s*(\d+)\s+dosya\s*\)/gi)) {
 		expect(m.index, "rule file count", m[1] ?? m[2] ?? m[3] ?? m[4], facts.fileCount);
 	}
-	// Action split, EN and TR.
-	for (const m of flat.matchAll(/Of\s+the\s+\d+\s+rules,\s+(\d+)\s+block,\s+(\d+)\s+require\s+approval(?:,|\s+and)\s+(\d+)\s+(?:only\s+)?log/gi)) {
-		expect(m.index, "block rules", m[1], facts.byAction.block ?? 0);
-		expect(m.index, "require_approval rules", m[2], facts.byAction.require_approval ?? 0);
-		expect(m.index, "log rules", m[3], facts.byAction.log ?? 0);
-	}
-	for (const m of flat.matchAll(/\d+\s+kuralın\s+(\d+)'\S+\s+engeller,\s+(\d+)'\S+\s+onay\s+ister,?\s+(\d+)'\S+\s+yalnızca\s+kayıt\s+tutar/gi)) {
-		expect(m.index, "block rules", m[1], facts.byAction.block ?? 0);
-		expect(m.index, "require_approval rules", m[2], facts.byAction.require_approval ?? 0);
-		expect(m.index, "log rules", m[3], facts.byAction.log ?? 0);
-	}
-	// Severity split, EN and TR.
-	for (const m of flat.matchAll(/(\d+)\s+are\s+critical,\s+(\d+)\s+high\s+and\s+(\d+)\s+medium/gi)) {
-		expect(m.index, "critical rules", m[1], facts.bySeverity.critical ?? 0);
-		expect(m.index, "high rules", m[2], facts.bySeverity.high ?? 0);
-		expect(m.index, "medium rules", m[3], facts.bySeverity.medium ?? 0);
-	}
-	for (const m of flat.matchAll(/(\d+)'\S+\s+critical,\s+(\d+)'\S+\s+high,\s+(\d+)'\S+\s+medium/gi)) {
-		expect(m.index, "critical rules", m[1], facts.bySeverity.critical ?? 0);
-		expect(m.index, "high rules", m[2], facts.bySeverity.high ?? 0);
-		expect(m.index, "medium rules", m[3], facts.bySeverity.medium ?? 0);
+	// Action and severity splits, EN and TR.
+	const splits = [
+		[/Of\s+the\s+\d+\s+rules,\s+(\d+)\s+block,\s+(\d+)\s+require\s+approval(?:,|\s+and)\s+(\d+)\s+(?:only\s+)?log/gi, facts.byAction, ["block", "require_approval", "log"]],
+		[/\d+\s+kuralın\s+(\d+)'\S+\s+engeller,\s+(\d+)'\S+\s+onay\s+ister,?\s+(\d+)'\S+\s+yalnızca\s+kayıt\s+tutar/gi, facts.byAction, ["block", "require_approval", "log"]],
+		[/(\d+)\s+are\s+critical,\s+(\d+)\s+high\s+and\s+(\d+)\s+medium/gi, facts.bySeverity, ["critical", "high", "medium"]],
+		[/(\d+)'\S+\s+critical,\s+(\d+)'\S+\s+high,\s+(\d+)'\S+\s+medium/gi, facts.bySeverity, ["critical", "high", "medium"]],
+	];
+	for (const [pattern, counts, keys] of splits) {
+		for (const m of flat.matchAll(pattern)) {
+			keys.forEach((key, i) => expect(m.index, `${key} rules`, m[i + 1], counts[key] ?? 0));
+		}
 	}
 	return problems;
 }
@@ -200,7 +190,8 @@ export function staleRuleTables(text, facts) {
 				if (expected === undefined) problems.push({ line, kind: `rule file ${name} does not exist`, claimed: addends[i], expected: 0 });
 				else if (addends[i] !== expected) problems.push({ line, kind: `rules in ${name}`, claimed: addends[i], expected });
 			});
-			if (addends.reduce((a, b) => a + b, 0) !== total) problems.push({ line, kind: "row sum", claimed: total, expected: addends.reduce((a, b) => a + b, 0) });
+			const sum = addends.reduce((a, b) => a + b, 0);
+			if (sum !== total) problems.push({ line, kind: "row sum", claimed: total, expected: sum });
 			return;
 		}
 		const items = [...row.slice(1, -1).join(" ").matchAll(/`([a-z_]+\*?)`(?:\s*\((\d+)\))?/g)];
