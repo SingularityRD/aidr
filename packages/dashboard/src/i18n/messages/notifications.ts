@@ -10,8 +10,8 @@ export const notificationsMessages = {
 	"notify.event.approvalRequested": ["Approval requested", "Onay istendi"],
 	"notify.event.privacySpike": ["Privacy block spike", "Gizlilik engeli artışı"],
 	"notify.event.test": ["Test", "Test"],
-	"notify.event.agentOffline": ["Agent offline", "Ajan çevrim dışı"],
-	"notify.event.agentRecovered": ["Agent back online", "Ajan yeniden çevrim içi"],
+	"notify.event.agentOffline": ["Agent offline", "Yapay zekâ aracı çevrim dışı"],
+	"notify.event.agentRecovered": ["Agent back online", "Yapay zekâ aracı yeniden çevrim içi"],
 	"notify.event.reviewOverdue": ["AI reviews overdue", "Gecikmiş yapay zekâ incelemeleri"],
 	"notify.event.intakeRequested": ["AI intake request", "Yapay zekâ kullanım talebi"],
 	"notify.event.changePending": [
@@ -115,7 +115,7 @@ export const notificationsMessages = {
 	],
 	"notify.summary.offline": [
 		"Agents offline ≥ {minutes} min",
-		"Çevrim dışı ajanlar ≥ {minutes} dk",
+		"Çevrim dışı yapay zekâ araçları ≥ {minutes} dk",
 	],
 	"notify.summary.overdue": ["Overdue AI reviews", "Gecikmiş yapay zekâ incelemeleri"],
 	"notify.summary.intake": ["AI intake requests", "Yapay zekâ kullanım talepleri"],
@@ -147,10 +147,13 @@ export const notificationsMessages = {
 	"notify.filters.blockedWithin": ["blocked within", "engelleme, süre:"],
 	"notify.filters.window": ["Spike window in minutes", "Artış penceresi (dakika)"],
 	"notify.filters.minutes": ["minutes", "dakika"],
-	"notify.filters.offline": ["Enrolled agent not seen for", "Kayıtlı ajan şu süredir görülmedi:"],
+	"notify.filters.offline": [
+		"Enrolled agent not seen for",
+		"Kayıtlı yapay zekâ aracı şu süredir görülmedi:",
+	],
 	"notify.filters.offlineMinutes": [
 		"Agent offline threshold in minutes",
-		"Ajan çevrim dışı eşiği (dakika)",
+		"Yapay zekâ aracı çevrim dışı eşiği (dakika)",
 	],
 	"notify.filters.offlineNote": [
 		"minutes (one alert per outage, plus a notice when it reports again)",

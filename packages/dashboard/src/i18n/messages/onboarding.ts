@@ -3,7 +3,10 @@ import type { MessagePairs } from "./define";
 /** Onboarding page (workspace creation, trial, manual setup and device authorization). */
 export const onboardingMessages = {
 	"onb.checkingTeam": ["Checking team access…", "Ekip erişimi denetleniyor…"],
-	"onb.selectTeam": ["Select a team to enroll an agent.", "Ajan kaydetmek için bir ekip seçin."],
+	"onb.selectTeam": [
+		"Select a team to enroll an agent.",
+		"Yapay zekâ aracı kaydetmek için bir ekip seçin.",
+	],
 	"onb.create.storageFailed": [
 		"Saved workspace request could not be checked.",
 		"Kaydedilmiş çalışma alanı isteği denetlenemedi.",
@@ -11,7 +14,7 @@ export const onboardingMessages = {
 	"onb.create.title": ["Create your team workspace", "Ekip çalışma alanınızı oluşturun"],
 	"onb.create.body": [
 		"Create an owned team before starting your one-agent trial.",
-		"Tek ajanlık denemenizi başlatmadan önce sahibi olduğunuz bir ekip oluşturun.",
+		"Tek yapay zekâ aracı için denemenizi başlatmadan önce sahibi olduğunuz bir ekip oluşturun.",
 	],
 	"onb.create.unconfirmed": [
 		"Workspace creation was not confirmed. Retry this saved request; it will return the same workspace rather than create another.",
@@ -55,7 +58,7 @@ export const onboardingMessages = {
 	"onb.team": ["Team: {name}", "Ekip: {name}"],
 	"onb.cannotEnroll": [
 		"Your role cannot enroll agents for this team.",
-		"Rolünüz bu ekip için ajan kaydedemez.",
+		"Rolünüz bu ekip için yapay zekâ aracı kaydedemez.",
 	],
 	"onb.intro": [
 		"Install AIDR with the installer below. The manual steps further down are only for computers where the installer cannot run.",
@@ -74,7 +77,10 @@ export const onboardingMessages = {
 	"onb.legal.terms": ["Terms ({version})", "Koşullar ({version})"],
 	"onb.legal.privacy": ["Privacy Notice ({version})", "Gizlilik Bildirimi ({version})"],
 	"onb.trial.starting": ["Starting trial…", "Deneme başlatılıyor…"],
-	"onb.trial.start": ["Start 14-day trial · 1 agent", "14 günlük denemeyi başlat · 1 ajan"],
+	"onb.trial.start": [
+		"Start 14-day trial · 1 agent",
+		"14 günlük denemeyi başlat · 1 yapay zekâ aracı",
+	],
 	"onb.trial.needsLegal": [
 		"Trial activation is unavailable until Terms and Privacy are published.",
 		"Koşullar ve Gizlilik belgeleri yayımlanana kadar deneme başlatılamaz.",
@@ -89,16 +95,16 @@ export const onboardingMessages = {
 	],
 	"onb.retryStatus": ["Retry status", "Durumu yeniden denetle"],
 	"onb.pilot": ["View / request pilot", "Pilotu görüntüle / iste"],
-	"onb.trial.active": ["Trial active · {count} agent", "Deneme etkin · {count} ajan"],
+	"onb.trial.active": ["Trial active · {count} agent", "Deneme etkin · {count} yapay zekâ aracı"],
 	"onb.trial.ends": [" · ends {time}", " · bitiş {time}"],
 
 	"onb.manual.runtime": ["1) Choose your AI tool", "1) Yapay zekâ aracınızı seçin"],
-	"onb.manual.prompt": ["Prompt to give your agent", "Ajanınıza verilecek istem"],
+	"onb.manual.prompt": ["Prompt to give your agent", "Yapay zekâ aracınıza verilecek mesaj"],
 	"onb.manual.promptCopied": ["Prompt copied", "İstem kopyalandı"],
 	"onb.manual.copyPrompt": ["Copy prompt", "İstemi kopyala"],
 	"onb.manual.copyBlocked": [
 		"Clipboard access was blocked. Select the prompt above and copy it manually.",
-		"Panoya erişim engellendi. Yukarıdaki istemi seçip elle kopyalayın.",
+		"Panoya erişim engellendi. Yukarıdaki mesajı seçip elle kopyalayın.",
 	],
 	"onb.manual.promptNote": [
 		"The prompt is in English on purpose: the AI tool follows it word for word. It installs the exact release version, asks you for the release verification key, and never asks you to paste API keys.",
@@ -106,7 +112,7 @@ export const onboardingMessages = {
 	],
 	"onb.manual.noVersion": [
 		"The release version is not available on this dashboard yet, so the prompt tells the AI tool to stop and ask you for the approved version.",
-		"Sürüm numarası bu panelde henüz yok; bu yüzden istem, yapay zekâ aracına durup sizden onaylı sürümü istemesini söyler.",
+		"Sürüm numarası bu panelde henüz yok; bu yüzden mesaj, yapay zekâ aracına durup sizden onaylı sürümü istemesini söyler.",
 	],
 	"onb.manual.releaseKey": [
 		"Manual setup needs the release verification key. Ask your administrator for the key file and run {command} once on this computer; until then AIDR blocks every tool call. The installer above does this for you.",
@@ -149,7 +155,7 @@ export const onboardingMessages = {
 	"onb.code.authorized": ["Authorized.", "Yetkilendirildi."],
 	"onb.code.authorizedBody": [
 		"Use the enrollment token below in your local runtime setup, then check the Agents page to confirm protection.",
-		"Aşağıdaki kayıt belirtecini yerel kurulumunuzda kullanın, ardından korumayı doğrulamak için Ajanlar sayfasına bakın.",
+		"Aşağıdaki kayıt belirtecini yerel kurulumunuzda kullanın, ardından korumayı doğrulamak için Yapay zekâ araçları sayfasına bakın.",
 	],
 	"onb.token.fallback": [
 		"Fallback enrollment token (advanced; copy once, then clear it from this screen):",
@@ -170,7 +176,7 @@ export const onboardingMessages = {
 		"The enrollment token was cleared from this screen. Generate a new code if setup still needs one.",
 		"Kayıt belirteci bu ekrandan temizlendi. Kurulum hâlâ gerektiriyorsa yeni bir kod oluşturun.",
 	],
-	"onb.viewAgents": ["View agents", "Ajanları görüntüle"],
+	"onb.viewAgents": ["View agents", "Yapay zekâ araçlarını görüntüle"],
 	"onb.viewIncidents": ["View incidents", "Vakaları görüntüle"],
 	"onb.code.expiredRetry": [
 		"Authorization expired. Generate a new code and try again.",

@@ -16,7 +16,7 @@ export const policyRuntimeMessages = {
 	],
 	"runtime.published": [
 		"Version {version} published. Agents fetch it on their next policy refresh. Required-policy endpoints retain cached controls within their offline grace, then block until policy is available. Check loading receipts below.",
-		"{version}. sürüm yayımlandı. Ajanlar bunu bir sonraki politika yenilemesinde alır. Politika zorunlu uç noktalar, çevrim dışı tolerans süresi boyunca önbellekteki denetimleri korur; sonra politika alınana kadar engeller. Aşağıdaki yükleme bildirimlerini kontrol edin.",
+		"{version}. sürüm yayımlandı. Yapay zekâ araçları bunu bir sonraki politika yenilemesinde alır. Politika zorunlu uç noktalar, çevrim dışı tolerans süresi boyunca önbellekteki denetimleri korur; sonra politika alınana kadar engeller. Aşağıdaki yükleme bildirimlerini kontrol edin.",
 	],
 	"runtime.publishFailed": ["Publication failed.", "Yayımlama başarısız oldu."],
 	"runtime.saveDraftFirst": [
@@ -55,7 +55,7 @@ export const policyRuntimeMessages = {
 	],
 	"runtime.docPublished": [
 		"Saved YAML compiled and published as version {version}. Check agent loading receipts below.",
-		"Kaydedilen YAML derlendi ve {version}. sürüm olarak yayımlandı. Aşağıdaki ajan yükleme bildirimlerini kontrol edin.",
+		"Kaydedilen YAML derlendi ve {version}. sürüm olarak yayımlandı. Aşağıdaki yapay zekâ aracı yükleme bildirimlerini kontrol edin.",
 	],
 	"runtime.docPublishFailed": [
 		"Saved YAML could not be published.",
@@ -64,7 +64,7 @@ export const policyRuntimeMessages = {
 	"runtime.title": ["Runtime policy", "Çalışma zamanı politikası"],
 	"runtime.intro": [
 		"Publish controls for agents enrolled in this team. Detection rules still apply when an action defaults to allow. Use ask to require a person's approval, or deny to block.",
-		"Bu ekibe kayıtlı ajanlar için denetimleri yayımlayın. Bir işlemin varsayılanı allow olsa bile tespit kuralları uygulanmaya devam eder. Bir kişinin onayını istemek için ask, engellemek için deny kullanın.",
+		"Bu ekibe kayıtlı yapay zekâ araçları için denetimleri yayımlayın. Bir işlemin varsayılanı allow olsa bile tespit kuralları uygulanmaya devam eder. Bir kişinin onayını istemek için ask, engellemek için deny kullanın.",
 	],
 	"runtime.versionUnavailable": ["Published version unavailable", "Yayımlanmış sürüm alınamadı"],
 	"runtime.noneYet": ["No policy published", "Yayımlanmış politika yok"],

@@ -24,14 +24,14 @@ export const billingMessages = {
 	"billing.subscription": ["Subscription", "Abonelik"],
 	"billing.provider": ["Provider", "Sağlayıcı"],
 	"billing.termUnverified": ["Term expired or unverified", "Süre doldu ya da doğrulanamadı"],
-	"billing.recordedExtra": ["Recorded extra agents", "Kayıtlı ek ajanlar"],
+	"billing.recordedExtra": ["Recorded extra agents", "Kayıtlı ek yapay zekâ araçları"],
 	"billing.quantityNote": [
 		"The subscription quantity is a recorded provider value, not the current effective seat allowance. See Seats below for the effective limit.",
 		"Abonelik miktarı sağlayıcının kayıtlı değeridir; geçerli lisans hakkı değildir. Geçerli sınır için aşağıdaki Lisanslar bölümüne bakın.",
 	],
 	"billing.termExpired": [
 		"The provider term has expired or cannot be verified. Recorded extra agents are not included in the effective allowance shown under Seats.",
-		"Sağlayıcı süresi doldu ya da doğrulanamıyor. Kayıtlı ek ajanlar Lisanslar bölümündeki geçerli hakka dahil edilmez.",
+		"Sağlayıcı süresi doldu ya da doğrulanamıyor. Kayıtlı ek yapay zekâ araçları Lisanslar bölümündeki geçerli hakka dahil edilmez.",
 	],
 	"billing.periodEnd": ["Period end:", "Dönem sonu:"],
 	"billing.cancelScheduled": [
@@ -43,7 +43,7 @@ export const billingMessages = {
 		"Bu çalışma alanı için abonelik kaydı yok.",
 	],
 	"billing.upgrade": ["Upgrade seats", "Lisansları artır"],
-	"billing.extraAgents": ["Extra agents", "Ek ajanlar"],
+	"billing.extraAgents": ["Extra agents", "Ek yapay zekâ araçları"],
 	"billing.preparingCheckout": ["Preparing checkout…", "Ödeme sayfası hazırlanıyor…"],
 	"billing.reviewMonthly": ["Review monthly subscription", "Aylık aboneliği incele"],
 	"billing.checkoutDisabled": [
@@ -63,13 +63,13 @@ export const billingMessages = {
 	"billing.orders.title": ["Enterprise order requests", "Kurumsal sipariş istekleri"],
 	"billing.orders.body": [
 		"A request enters Finance review. It does not confirm payment, issue an invoice, or change protected-agent entitlement.",
-		"İstek Finans incelemesine girer. Ödemeyi doğrulamaz, fatura kesmez ve korunan ajan hakkını değiştirmez.",
+		"İstek Finans incelemesine girer. Ödemeyi doğrulamaz, fatura kesmez ve korunan yapay zekâ aracı hakkını değiştirmez.",
 	],
 	"billing.orders.ownerOnly": [
 		"Only a tenant owner or admin can view and submit enterprise order requests.",
 		"Kurumsal sipariş isteklerini yalnızca çalışma alanı sahibi ya da yöneticisi görebilir ve gönderebilir.",
 	],
-	"billing.orders.agents": ["{count} protected agents", "{count} korunan ajan"],
+	"billing.orders.agents": ["{count} protected agents", "{count} korunan yapay zekâ aracı"],
 	"billing.orders.paid": ["approved · paid", "onaylandı · ödendi"],
 	"billing.orders.pending": ["pending finance", "finans onayı bekliyor"],
 	"billing.orders.quote": [" · Quote {reference}", " · Teklif {reference}"],
@@ -82,7 +82,10 @@ export const billingMessages = {
 		"No enterprise order requests recorded for this tenant.",
 		"Bu çalışma alanı için kayıtlı kurumsal sipariş isteği yok.",
 	],
-	"billing.orders.requestedAgents": ["Requested protected agents", "İstenen korunan ajan sayısı"],
+	"billing.orders.requestedAgents": [
+		"Requested protected agents",
+		"İstenen korunan yapay zekâ aracı sayısı",
+	],
 	"billing.orders.quoteRef": ["Quote reference (optional)", "Teklif referansı (isteğe bağlı)"],
 	"billing.orders.alreadyPending": ["Request pending Finance review", "İstek Finans incelemesinde"],
 	"billing.orders.submitting": ["Submitting…", "Gönderiliyor…"],
@@ -97,7 +100,7 @@ export const billingMessages = {
 	"billing.quoted": ["Quoted in approved order", "Onaylı siparişte teklif edilir"],
 	"billing.overLimit": [
 		"Over limit: new agents may be rejected by the ingest function until an approved order is reconciled.",
-		"Sınır aşıldı: onaylı bir siparişin mutabakatı yapılana kadar yeni ajanlar reddedilebilir.",
+		"Sınır aşıldı: onaylı bir siparişin mutabakatı yapılana kadar yeni yapay zekâ araçları reddedilebilir.",
 	],
 	"billing.support": ["Support", "Destek"],
 	"billing.supportBody": [
@@ -141,7 +144,7 @@ export const billingMessages = {
 	"billing.rec.col.order": ["Approved order", "Onaylı sipariş"],
 	"billing.rec.col.quote": ["Quote", "Teklif"],
 	"billing.rec.col.approver": ["Approved by", "Onaylayan"],
-	"billing.rec.col.agents": ["Approved agents", "Onaylı ajan sayısı"],
+	"billing.rec.col.agents": ["Approved agents", "Onaylı yapay zekâ aracı sayısı"],
 	"billing.rec.col.amount": ["Approved amount", "Onaylı tutar"],
 	"billing.rec.col.tax": ["Tax", "Vergi"],
 	"billing.rec.col.ids": ["Settled settlement ids", "Ödenmiş ödeme kimlikleri"],

@@ -3,7 +3,7 @@ import type { MessagePairs } from "./define";
 /** Security posture page (infrastructure, MCP, skills, agent environment, AI-BOM). */
 export const postureMessages = {
 	"posture.skill.T01": ["Skill instruction hijacking", "Beceri talimatının ele geçirilmesi"],
-	"posture.skill.T02": ["Agent memory poisoning", "Ajan belleğinin zehirlenmesi"],
+	"posture.skill.T02": ["Agent memory poisoning", "Yapay zekâ aracı belleğinin zehirlenmesi"],
 	"posture.skill.T03": [
 		"Remote payload retrieval and execution",
 		"Uzaktan yük indirme ve çalıştırma",
@@ -31,7 +31,10 @@ export const postureMessages = {
 	"posture.mcp.03": ["Tool poisoning", "Araç zehirlenmesi"],
 	"posture.mcp.04": ["Software supply chain", "Yazılım tedarik zinciri"],
 	"posture.mcp.05": ["Command injection & execution", "Komut enjeksiyonu ve çalıştırma"],
-	"posture.mcp.06": ["Prompt injection via context", "Bağlam üzerinden istem enjeksiyonu"],
+	"posture.mcp.06": [
+		"Prompt injection via context",
+		"Bağlam üzerinden mesaja zararlı talimat sokma",
+	],
 	"posture.mcp.07": ["Insufficient auth", "Yetersiz kimlik doğrulama"],
 	"posture.mcp.08": ["Lack of audit & telemetry", "Denetim ve telemetri eksikliği"],
 	"posture.mcp.09": ["Shadow MCP server", "Gölge MCP sunucusu"],
@@ -45,13 +48,16 @@ export const postureMessages = {
 		"Every shell command pre-approved",
 		"Tüm kabuk komutları önceden onaylı",
 	],
-	"posture.check.hooksDisabled": ["Agent hooks disabled", "Ajan kancaları kapalı"],
+	"posture.check.hooksDisabled": ["Agent hooks disabled", "Yapay zekâ aracı kancaları kapalı"],
 	"posture.check.hookMissing": ["AIDR hook not registered", "AIDR kancası kayıtlı değil"],
-	"posture.check.noConnector": ["Agent without an AIDR connector", "AIDR bağlayıcısı olmayan ajan"],
+	"posture.check.noConnector": [
+		"Agent without an AIDR connector",
+		"AIDR bağlayıcısı olmayan yapay zekâ aracı",
+	],
 	"posture.check.approvalNever": ["Approvals turned off", "Onaylar kapalı"],
 	"posture.check.sandbox": ["Sandbox disabled", "Korumalı alan kapalı"],
 	"posture.check.allowAll": ["Shell or edit pre-approved", "Kabuk ya da düzenleme önceden onaylı"],
-	"posture.check.root": ["Agent runs as root", "Ajan root olarak çalışıyor"],
+	"posture.check.root": ["Agent runs as root", "Yapay zekâ aracı root olarak çalışıyor"],
 	"posture.check.docker": ["Docker socket writable", "Docker soketi yazılabilir"],
 	"posture.check.cloudCreds": [
 		"Cloud credentials in environment",
@@ -86,7 +92,7 @@ export const postureMessages = {
 	"posture.bom.export": ["Export AI-BOM", "AI-BOM dışa aktar"],
 	"posture.bom.note": [
 		"CycloneDX 1.6 JSON of the agents, MCP servers, AI components and vulnerabilities reported for this team.",
-		"Bu ekip için bildirilen ajanların, MCP sunucularının, yapay zekâ bileşenlerinin ve güvenlik açıklarının CycloneDX 1.6 JSON dosyası.",
+		"Bu ekip için bildirilen yapay zekâ araçlarının, MCP sunucularının, yapay zekâ bileşenlerinin ve güvenlik açıklarının CycloneDX 1.6 JSON dosyası.",
 	],
 	"posture.bom.ready": ["AI-BOM ready: {summary}.", "AI-BOM hazır: {summary}."],
 	"posture.bom.save": ["Save {file}", "{file} dosyasını kaydet"],
@@ -114,11 +120,14 @@ export const postureMessages = {
 		"No skill or plugin findings uploaded. Run {command}.",
 		"Beceri ya da eklenti bulgusu yüklenmedi. {command} komutunu çalıştırın.",
 	],
-	"posture.agentEnv": ["Agent environment", "Ajan ortamı"],
-	"posture.agentEnvTitle": ["Agent environment and autonomy", "Ajan ortamı ve özerkliği"],
+	"posture.agentEnv": ["Agent environment", "Yapay zekâ aracı ortamı"],
+	"posture.agentEnvTitle": [
+		"Agent environment and autonomy",
+		"Yapay zekâ aracı ortamı ve özerkliği",
+	],
 	"posture.agentEnvBody": [
 		"Static checks of agent host settings and of the environment agents inherit. Only the host, check, severity and a count are uploaded; configuration values and variable names stay on the machine. Run {command} on the machine for the remediation steps.",
-		"Ajanların çalıştığı aracın ayarlarının ve ajanların devraldığı ortamın statik denetimleri. Yalnızca araç, denetim, önem derecesi ve bir sayı yüklenir; yapılandırma değerleri ve değişken adları bilgisayarda kalır. Düzeltme adımları için bilgisayarda {command} komutunu çalıştırın.",
+		"Yapay zekâ araçlarının çalıştığı uygulamanın ayarlarının ve bu araçların devraldığı ortamın statik denetimleri. Yalnızca araç, denetim, önem derecesi ve bir sayı yüklenir; yapılandırma değerleri ve değişken adları bilgisayarda kalır. Düzeltme adımları için bilgisayarda {command} komutunu çalıştırın.",
 	],
 	"posture.col.host": ["Host", "Araç"],
 	"posture.col.check": ["Check", "Denetim"],
@@ -127,7 +136,7 @@ export const postureMessages = {
 	"posture.notReported": ["(not reported)", "(bildirilmedi)"],
 	"posture.noAgentFindings": [
 		"No agent environment findings uploaded. Run {command}; an empty table means nothing was reported, not that agents are configured safely.",
-		"Ajan ortamı bulgusu yüklenmedi. {command} komutunu çalıştırın; boş tablo, ajanların güvenli yapılandırıldığı değil, hiçbir şeyin bildirilmediği anlamına gelir.",
+		"Yapay zekâ aracı ortamı bulgusu yüklenmedi. {command} komutunu çalıştırın; boş tablo, yapay zekâ araçlarının güvenli yapılandırıldığı değil, hiçbir şeyin bildirilmediği anlamına gelir.",
 	],
 	"posture.trend": ["Posture trend", "Güvenlik durumu eğilimi"],
 	"posture.trendTitle": ["Trend (last {days} days)", "Eğilim (son {days} gün)"],
@@ -149,7 +158,7 @@ export const postureMessages = {
 	],
 	"posture.intro": [
 		"Infrastructure exposure, MCP server inventory, skill/plugin package and agent environment findings reported by {scan} and {discover} over the last {days} days. Only identifiers, severities and digests are stored; target hosts, file paths and matched text never leave the scanning machine.",
-		"Son {days} günde {scan} ve {discover} komutlarının bildirdiği altyapı açıklığı, MCP sunucu envanteri, beceri/eklenti paketi ve ajan ortamı bulguları. Yalnızca kimlikler, önem dereceleri ve özetler saklanır; hedef adresler, dosya yolları ve eşleşen metin taramayı yapan bilgisayardan asla çıkmaz.",
+		"Son {days} günde {scan} ve {discover} komutlarının bildirdiği altyapı açıklığı, MCP sunucu envanteri, beceri/eklenti paketi ve yapay zekâ aracı ortamı bulguları. Yalnızca kimlikler, önem dereceleri ve özetler saklanır; hedef adresler, dosya yolları ve eşleşen metin taramayı yapan bilgisayardan asla çıkmaz.",
 	],
 	"posture.unavailable": [
 		"{error}. Posture data is unavailable; this is not a clean result.",
@@ -161,7 +170,7 @@ export const postureMessages = {
 	"posture.highCves": ["High CVEs", "Yüksek CVE'ler"],
 	"posture.mcpServers": ["MCP servers", "MCP sunucuları"],
 	"posture.skillFindings": ["Skill findings", "Beceri bulguları"],
-	"posture.agentRisk": ["Agent settings at risk", "Riskli ajan ayarları"],
+	"posture.agentRisk": ["Agent settings at risk", "Riskli yapay zekâ aracı ayarları"],
 	"posture.infra": ["Infrastructure exposure", "Altyapı açıklığı"],
 	"posture.components": [
 		"{count} identified component(s) without a matched CVE",

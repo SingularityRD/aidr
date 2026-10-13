@@ -72,7 +72,7 @@ export const privacyGuardMessages = {
 	"pg.cat.meeting": ["Meeting assistant", "Toplantı asistanı"],
 	"pg.cat.writing": ["Writing", "Yazma"],
 	"pg.cat.search": ["Search & research", "Arama ve araştırma"],
-	"pg.cat.agent": ["Autonomous agent", "Otonom ajan"],
+	"pg.cat.agent": ["Autonomous agent", "Otonom yapay zekâ aracı"],
 	"pg.cat.other": ["Other", "Diğer"],
 
 	"pg.summaryUnavailable": ["Privacy summary is unavailable.", "Gizlilik özeti alınamıyor."],
@@ -279,7 +279,7 @@ export const privacyGuardMessages = {
 	"pg.enroll.title": ["Enroll browsers", "Tarayıcıları kaydedin"],
 	"pg.enroll.intro": [
 		"Each enrolled browser profile is a protected agent seat. Detection and masking run locally in the browser whether or not it is enrolled; enrollment only adds reporting to this page.",
-		"Her kayıtlı tarayıcı profili bir korunan ajan lisansıdır. Tespit ve maskeleme, kayıtlı olsun olmasın tarayıcıda yerel olarak çalışır; kayıt yalnızca bu sayfaya raporlama ekler.",
+		"Her kayıtlı tarayıcı profili bir korunan yapay zekâ aracı lisansıdır. Tespit ve maskeleme, kayıtlı olsun olmasın tarayıcıda yerel olarak çalışır; kayıt yalnızca bu sayfaya raporlama ekler.",
 	],
 	"pg.enroll.step1Title": ["Install the extension.", "Uzantıyı kurun."],
 	"pg.enroll.step1": [

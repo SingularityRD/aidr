@@ -28,7 +28,7 @@ const base: Record<BaseMessageKey, string> = {
 	"nav.dashboard": "Genel durum",
 	"nav.billing": "Faturalandırma",
 	"nav.apiKeys": "API anahtarları",
-	"nav.agents": "Ajanlar",
+	"nav.agents": "Yapay zekâ araçları",
 	"nav.events": "Etkinlik akışı",
 	"nav.discovery": "Keşif",
 	"nav.posture": "Güvenlik durumu",
@@ -54,7 +54,7 @@ const base: Record<BaseMessageKey, string> = {
 	"public.dashboard": "Panel",
 	"public.signIn": "Oturum aç",
 	"public.noCredentials": "Panel, Supabase kimlik bilgileri olmadan çalışıyor.",
-	"public.footer": "Singularity AIDR. Yerel öncelikli yapay zekâ ajanı tespit ve müdahale.",
+	"public.footer": "Singularity AIDR. Yerel öncelikli yapay zekâ aracı tespit ve müdahale.",
 	"public.footerLabel": "Destek ve yasal bilgiler",
 	"public.support": "Destek",
 	"public.status": "Durum",
@@ -84,8 +84,8 @@ const base: Record<BaseMessageKey, string> = {
 	"plan.upgrade": "Planları görüntüle ve yükselt",
 
 	"login.welcome": "AIDR'ye hoş geldiniz",
-	"login.subtitleRegister": "Yapay zekâ ajanlarınızı korumak için bir hesap oluşturun",
-	"login.subtitleSignIn": "Yapay zekâ ajanlarınızı korumak için oturum açın",
+	"login.subtitleRegister": "Yapay zekâ araçlarınızı korumak için bir hesap oluşturun",
+	"login.subtitleSignIn": "Yapay zekâ araçlarınızı korumak için oturum açın",
 	"login.revocationUnconfirmed":
 		"Bu tarayıcıda oturum kapatıldı ancak diğer oturumların iptali doğrulanamadı. Bu oturumların sonlandırılması gerekiyorsa yöneticinizle iletişime geçin.",
 	"login.localSignOutFailed":
@@ -140,7 +140,7 @@ const base: Record<BaseMessageKey, string> = {
 	"downloads.checkingTeam": "Ekip erişimi denetleniyor…",
 	"downloads.noTeam": "Yükleyicileri indirmek için bir çalışma alanı seçin veya oluşturun.",
 	"downloads.backToOnboarding": "Kuruluma dön",
-	"downloads.viewAgents": "Ajanları görüntüle",
+	"downloads.viewAgents": "Yapay zekâ araçlarını görüntüle",
 	"downloads.retry": "Yeniden dene",
 	"downloads.os.windows": "Windows",
 	"downloads.os.linux": "Linux",
@@ -193,7 +193,7 @@ const base: Record<BaseMessageKey, string> = {
 	"downloads.managed.advanced": "Elle kayıt (gelişmiş)",
 	"downloads.bg.title": "Browser Guard uzantısı",
 	"downloads.bg.body":
-		"Windows, macOS ve Linux üzerinde Chrome, Edge ve Firefox'ta istemler yapay zekâ sohbet sitelerine ulaşmadan önce kişisel verileri ve gizli bilgileri maskeler.",
+		"Windows, macOS ve Linux üzerinde Chrome, Edge ve Firefox'ta mesajlar yapay zekâ sohbet sitelerine ulaşmadan önce kişisel verileri ve gizli bilgileri maskeler.",
 	"downloads.bg.chrome": "Chrome'a ekle",
 	"downloads.bg.edge": "Edge'e ekle",
 	"downloads.bg.firefox": "Firefox'a ekle",

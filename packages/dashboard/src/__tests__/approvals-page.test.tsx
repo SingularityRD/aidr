@@ -213,7 +213,7 @@ describe("ApprovalsPage", () => {
 	it("renders the approval card in Turkish", async () => {
 		setup({ data: [row({ threat_ids: ["CLT-CMD-001"] })], locale: "tr" });
 		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
-		expect(within(card).getByText("Ajanın yapmak istediği")).toBeInTheDocument();
+		expect(within(card).getByText("Yapay zekâ aracının yapmak istediği")).toBeInTheDocument();
 		expect(within(card).getByText("Neden bekletildi")).toBeInTheDocument();
 		expect(within(card).getByRole("button", { name: "Onayla" })).toBeInTheDocument();
 		expect(within(card).getByRole("button", { name: "Reddet" })).toBeInTheDocument();

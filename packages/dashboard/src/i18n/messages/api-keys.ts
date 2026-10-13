@@ -71,7 +71,7 @@ export const apiKeysMessages = {
 	"keys.keyType": ["Key type", "Anahtar türü"],
 	"keys.option.tenant": [
 		"Tenant key (CLI, IDE and agent connectors)",
-		"Çalışma alanı anahtarı (CLI, IDE ve ajan bağlayıcıları)",
+		"Çalışma alanı anahtarı (CLI, IDE ve yapay zekâ aracı bağlayıcıları)",
 	],
 	"keys.option.bg": [
 		"Browser Guard ingest-only key",
@@ -106,7 +106,7 @@ export const apiKeysMessages = {
 	"keys.tokens.title": ["Enrollment Tokens", "Kayıt belirteçleri"],
 	"keys.tokens.intro": [
 		"Enrollment tokens are one-time, short-lived credentials used to bootstrap an agent without manually copying an API key. They are stored as SHA-256 hashes only.",
-		"Kayıt belirteçleri, API anahtarını elle kopyalamadan bir ajanı başlatmak için kullanılan tek kullanımlık, kısa ömürlü kimlik bilgileridir. Yalnızca SHA-256 özeti olarak saklanır.",
+		"Kayıt belirteçleri, API anahtarını elle kopyalamadan bir yapay zekâ aracını başlatmak için kullanılan tek kullanımlık, kısa ömürlü kimlik bilgileridir. Yalnızca SHA-256 özeti olarak saklanır.",
 	],
 	"keys.tokens.placeholder": ["workstation-1, ci-runner, etc.", "istasyon-1, ci-calistirici vb."],
 	"keys.tokens.createUnconfirmed": [

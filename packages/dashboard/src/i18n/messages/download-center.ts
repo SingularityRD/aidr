@@ -97,7 +97,7 @@ export const downloadCenterMessages = {
 	],
 	"rc.claude.marketplace": [
 		"From the Claude Code prompt, add the extracted directory as a local marketplace and install the plugin:",
-		"Claude Code isteminde açtığınız klasörü yerel pazar yeri olarak ekleyin ve eklentiyi kurun:",
+		"Claude Code komut satırında, açtığınız klasörü yerel pazar yeri olarak ekleyin ve eklentiyi kurun:",
 	],
 	"rc.claude.restart": [
 		"Restart Claude Code. AIDR loads automatically on every session.",
@@ -105,7 +105,7 @@ export const downloadCenterMessages = {
 	],
 	"rc.cursor.summary": [
 		"Cursor extension that installs and monitors AIDR's managed agent hooks.",
-		"AIDR'nin yönetilen ajan kancalarını kuran ve izleyen Cursor uzantısı.",
+		"AIDR'nin yönetilen yapay zekâ aracı kancalarını kuran ve izleyen Cursor uzantısı.",
 	],
 	"rc.vsix": [
 		"Install the verified VSIX (or use Extensions > Install from VSIX):",
@@ -121,7 +121,7 @@ export const downloadCenterMessages = {
 	],
 	"rc.vscode.summary": [
 		"VS Code extension for local agent hooks.",
-		"Yerel ajan kancaları için VS Code uzantısı.",
+		"Yerel yapay zekâ aracı kancaları için VS Code uzantısı.",
 	],
 	"rc.vscode.setting": [
 		"Enable chat.useClaudeHooks in VS Code User Settings. The extension checks this prerequisite but does not change it.",
@@ -161,7 +161,7 @@ export const downloadCenterMessages = {
 	],
 	"rc.codex.summary": [
 		"Native Codex hooks for tool calls, prompts and tool output. They deny on ask and on internal errors.",
-		"Araç çağrıları, istemler ve araç çıktıları için yerleşik Codex kancaları. Onay gereken durumlarda ve iç hatalarda işlemi engeller.",
+		"Araç çağrıları, mesajlar ve araç çıktıları için yerleşik Codex kancaları. Onay gereken durumlarda ve iç hatalarda işlemi engeller.",
 	],
 	"rc.exact": ["Install the exact release version:", "Tam sürüm numarasını kurun:"],
 	"rc.codex.config": [
@@ -170,7 +170,7 @@ export const downloadCenterMessages = {
 	],
 	"rc.codex.hooks": [
 		"Register the hooks (tool calls, prompt protection and tool-output inspection) in ~/.codex/config.toml:",
-		"Kancaları (araç çağrıları, istem koruması ve araç çıktısı denetimi) ~/.codex/config.toml dosyasına kaydedin:",
+		"Kancaları (araç çağrıları, mesaj koruması ve araç çıktısı denetimi) ~/.codex/config.toml dosyasına kaydedin:",
 	],
 	"rc.codex.trust": [
 		"In Codex, review and trust the three registered hooks with /hooks.",

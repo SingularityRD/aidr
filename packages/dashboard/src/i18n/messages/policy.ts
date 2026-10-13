@@ -5,7 +5,7 @@ export const policyMessages = {
 	"policy.pill": ["Policy as code", "Kod olarak politika"],
 	"policy.intro": [
 		"Write and validate strict team policy documents, run a dry-run compilation, then publish the compiled controls to enrolled agents.",
-		"Katı ekip politikası belgeleri yazıp doğrulayın, deneme derlemesi çalıştırın, ardından derlenen denetimleri kayıtlı ajanlara yayımlayın.",
+		"Katı ekip politikası belgeleri yazıp doğrulayın, deneme derlemesi çalıştırın, ardından derlenen denetimleri kayıtlı yapay zekâ araçlarına yayımlayın.",
 	],
 	"policy.compiledNotice": [
 		"Saved YAML is compiled before it can become runtime policy.",
@@ -13,7 +13,7 @@ export const policyMessages = {
 	],
 	"policy.compiledBody": [
 		"Unsupported fields fail compilation. Use the dry-run or compile-and-publish action below; connected agents fetch the published controls on their next refresh. Publication alone does not confirm every agent has adopted the version.",
-		"Desteklenmeyen alanlar derlemeyi başarısız kılar. Aşağıdaki deneme ya da derle ve yayımla işlemini kullanın; bağlı ajanlar yayımlanan denetimleri bir sonraki yenilemede alır. Yayımlamak, her ajanın bu sürümü benimsediğini tek başına doğrulamaz.",
+		"Desteklenmeyen alanlar derlemeyi başarısız kılar. Aşağıdaki deneme ya da derle ve yayımla işlemini kullanın; bağlı yapay zekâ araçları yayımlanan denetimleri bir sonraki yenilemede alır. Yayımlamak, her yapay zekâ aracının bu sürümü benimsediğini tek başına doğrulamaz.",
 	],
 	"team.pill": ["Administration", "Yönetim"],
 	"team.intro": [

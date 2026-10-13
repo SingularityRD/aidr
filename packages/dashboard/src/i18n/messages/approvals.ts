@@ -16,7 +16,7 @@ export const approvalsMessages = {
 	],
 	"approvals.error.selfApproval": [
 		"This request was raised by your own key or agent, so another owner or administrator must approve it. You can still deny it.",
-		"Bu istek sizin anahtarınız veya ajanınız tarafından oluşturuldu; bu yüzden başka bir sahip ya da yönetici onaylamalıdır. Reddetme hakkınız yine de var.",
+		"Bu istek sizin anahtarınız veya yapay zekâ aracınız tarafından oluşturuldu; bu yüzden başka bir sahip ya da yönetici onaylamalıdır. Reddetme hakkınız yine de var.",
 	],
 	"approvals.error.fourEyes": [
 		"Four-eyes change control is on: turning off the separate-approver rule needs a second person.",
@@ -32,7 +32,7 @@ export const approvalsMessages = {
 	],
 	"approvals.error.expired": [
 		"This request expired before it was decided. The agent's action stays blocked.",
-		"Bu isteğin süresi karar verilmeden doldu. Ajanın işlemi engelli kalır.",
+		"Bu isteğin süresi karar verilmeden doldu. Yapay zekâ aracının işlemi engelli kalır.",
 	],
 	"approvals.error.notFound": [
 		"This request is no longer available in this workspace.",
@@ -76,7 +76,7 @@ export const approvalsMessages = {
 	"approvals.card.fallbackTitle": ["Action held for review", "İnceleme için bekletilen işlem"],
 	"approvals.card.moreRules": ["+{count} more", "+{count} kural daha"],
 	"approvals.card.expiresIn": ["Expires in {time}", "{time} içinde süresi doluyor"],
-	"approvals.card.what": ["What the agent tried", "Ajanın yapmak istediği"],
+	"approvals.card.what": ["What the agent tried", "Yapay zekâ aracının yapmak istediği"],
 	"approvals.card.noSummary": ["No summary provided.", "Özet gönderilmedi."],
 	"approvals.card.summaryNote": [
 		"Summary redacted by the connector before it left the computer.",
@@ -96,7 +96,7 @@ export const approvalsMessages = {
 		"Approve lets exactly this action run once more on {agent}, only within 15 minutes. Deny keeps it blocked. Your decision and reason are recorded in the audit log.",
 		"Onaylarsanız bu işlem {agent} üzerinde yalnızca bir kez daha ve yalnızca 15 dakika içinde çalışabilir. Reddederseniz engelli kalır. Kararınız ve gerekçeniz denetim kaydına yazılır.",
 	],
-	"approvals.card.agent": ["Agent", "Ajan"],
+	"approvals.card.agent": ["Agent", "Yapay zekâ aracı"],
 	"approvals.card.requested": ["Requested", "İstenme zamanı"],
 	"approvals.card.reason": [
 		"Reason (recorded in the audit log)",
@@ -112,7 +112,7 @@ export const approvalsMessages = {
 	"approvals.history.requested": ["Requested", "İstenme zamanı"],
 	"approvals.history.action": ["Action", "İşlem"],
 	"approvals.history.tool": ["Tool", "Araç"],
-	"approvals.history.agent": ["Agent", "Ajan"],
+	"approvals.history.agent": ["Agent", "Yapay zekâ aracı"],
 	"approvals.history.rules": ["Rules", "Kurallar"],
 	"approvals.history.outcome": ["Outcome", "Sonuç"],
 	"approvals.history.decided": ["Decided", "Karar zamanı"],
@@ -147,7 +147,7 @@ export const approvalsMessages = {
 	"approvals.separation.title": ["Separation of duties", "Görevler ayrılığı"],
 	"approvals.separation.body": [
 		"Whether the person whose key or agent raised a request may approve it themselves. Denying your own request is always allowed.",
-		"İsteği anahtarı ya da ajanı oluşturan kişinin bu isteği kendisinin onaylayıp onaylayamayacağı. Kendi isteğinizi reddetmek her zaman serbesttir.",
+		"İsteği anahtarı ya da yapay zekâ aracını oluşturan kişinin bu isteği kendisinin onaylayıp onaylayamayacağı. Kendi isteğinizi reddetmek her zaman serbesttir.",
 	],
 	"approvals.separation.loadFailed": [
 		"The current setting could not be loaded.",
