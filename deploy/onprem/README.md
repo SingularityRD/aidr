@@ -160,9 +160,23 @@ the start commands and what the gateway does and does not do.
 
 ## Upgrade
 
-Never rerun preparation over `/srv/aidr`. Prepare the target release in a new
-directory, take and verify an encrypted backup, run the preflight and apply
-steps in [the upgrade runbook](../UPGRADE.md), then rerun the doctor.
+Prepare the new release in a new directory (never over `/srv/aidr`), then run one
+command from the new release's kit:
+
+```sh
+pnpm onprem:upgrade --to /srv/aidr-target --dry-run   # the plan; changes nothing
+pnpm onprem:upgrade --to /srv/aidr-target
+```
+
+It checks that the release fits, takes and verifies an encrypted backup, runs the
+preflight, applies the database changes in one transaction, starts the new version,
+runs the doctor and the post-upgrade checks, and stops at the first failure with the
+exact next step. It reads the compatibility contract from
+`/secure/aidr-upgrade/upgrade-compatibility.json` and the backup key from
+`/secure/aidr-recovery.key` unless you pass `--contract` and `--key-file`. Step by
+step, what to do when it stops, and the Turkish version:
+[docs/operations/onprem-upgrade.md](../../docs/operations/onprem-upgrade.md). The
+contracts behind each step are in [the upgrade runbook](../UPGRADE.md).
 
 The upgrade tool does not carry the posture scanner's staged build contexts.
 When the current installation runs the scanner and the target was prepared
@@ -184,6 +198,13 @@ Posture scanner state (`<project>_aig-db`, `<project>_aig-bridge-state`,
 separately while the scanner is stopped if scan history must survive a host loss.
 
 ## Air-gapped hosts
+
+For one signed transfer that carries the images, the latest signed intel packs,
+the desktop installers with their signed catalog and the Browser Guard update
+files, use `scripts/onprem-offline-bundle.mjs` (`build` on the connected staging
+host, `verify` and `import` on the disconnected one); see
+[the air-gap section of the upgrade guide](../../docs/operations/onprem-upgrade.md#disconnected-air-gapped-hosts-one-bundle).
+The images alone can still be bundled directly as below.
 
 On a connected staging host with the same release, prepare the installation,
 build the local images, then bundle every image the stack needs:

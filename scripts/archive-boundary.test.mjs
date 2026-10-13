@@ -178,6 +178,26 @@ test("smoke receipts in the installation root neither block nor enter a recovery
 	assert.throws(() => inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }), /smoke-evidence\.json is not a regular file/);
 });
 
+test("doctor and maintenance receipts and the upgrade state neither block nor enter a recovery", () => {
+	const source = runtimeFixture();
+	const before = inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }).runtime_tree_sha256;
+	writeFileSync(join(source, "doctor-evidence.json"), "{\"passed\":true}\n");
+	writeFileSync(join(source, "maintenance-evidence.json"), "{}\n");
+	mkdirSync(join(source, ".aidr-upgrade", "previous"), { recursive: true });
+	writeFileSync(join(source, ".aidr-upgrade", "upgrade-receipt.json"), "{}\n");
+	assert.equal(inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }).runtime_tree_sha256, before);
+	const output = join(mkdtempSync(join(tmpdir(), "aidr-recovery-output-")), "runtime");
+	workspaces.push(dirname(output));
+	copyReviewedRuntime(source, output, { sourceCommit: "a".repeat(40) });
+	for (const name of ["doctor-evidence.json", "maintenance-evidence.json", ".aidr-upgrade"]) assert.equal(existsSync(join(output, name)), false, name);
+	rmSync(join(source, ".aidr-upgrade"), { recursive: true });
+	writeFileSync(join(source, ".aidr-upgrade"), "not a directory\n");
+	assert.throws(() => inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }), /\.aidr-upgrade is not a real directory/);
+	rmSync(join(source, ".aidr-upgrade"));
+	writeFileSync(join(source, "doctor-evidence-old.json"), "{}\n");
+	assert.throws(() => inspectReviewedRuntime(source, { sourceCommit: "a".repeat(40) }), /unexpected root entries: doctor-evidence-old\.json/);
+});
+
 test("reviewed runtime fails closed on commit drift, extra roots and hardlinks", () => {
 	const source = runtimeFixture();
 	assert.throws(() => copyReviewedRuntime(source, join(source, "nested"), { sourceCommit: "a".repeat(40) }), /separate directories/);

@@ -77,6 +77,13 @@ for (const file of [
   "deployment-maintenance.mjs",
   "deployment-offboarding.mjs",
   "deployment-upgrade.mjs",
+  "onprem-upgrade.mjs",
+	"lib/onprem-language.mjs",
+	// Copied, not bundled: it imports the kit's bundled import-offline-pack.mjs
+	// (core verifier inlined) and two modules whose CLI guards must stay separate.
+  "onprem-offline-bundle.mjs",
+  "publish-installers.mjs",
+	"lib/tar-path.mjs",
   "endpoint-install.mjs",
   "deployment-doctor.mjs",
   "deployment-tls-renew.mjs",

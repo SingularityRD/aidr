@@ -596,6 +596,7 @@ jobs:
           set -euo pipefail
           pnpm verify:bootstrap
           pnpm verify:upgrade
+          pnpm verify:onprem-upgrade
           pnpm verify:backup-offsite
           pnpm verify:onprem-config-reference
 

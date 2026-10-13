@@ -251,6 +251,20 @@ const existingEntitlement = Buffer.from(JSON.stringify({ tenant_id: "existing-te
 const existingSignature = sign(null, existingEntitlement, signingKeys.privateKey);
 const currentAgentKey = JSON.parse(readFileSync(join(valid.current, "agent-config.json"), "utf8")).licensing.public_keys_pem[0];
 assert.equal(verify(null, existingEntitlement, currentAgentKey, existingSignature), true);
+const compatibilityCheck = spawnSync(
+	process.execPath,
+	[join(toolDir, "deployment-upgrade.mjs"), "check", "--current", valid.current, "--target", valid.target, "--contract", valid.contractPath],
+	{ encoding: "utf8", timeout: 60_000, env: baseEnv },
+);
+assert.equal(compatibilityCheck.status, 0, compatibilityCheck.stderr);
+const compatibility = JSON.parse(compatibilityCheck.stdout);
+assert.equal(compatibility.compatible, true);
+assert.equal(compatibility.current.manifest_sha256, valid.contract.current_manifest_sha256);
+assert.deepEqual(compatibility.new_migrations, ["20260913000000_upgrade.sql"]);
+assert.equal(compatibility.upgrade_state, null);
+assert.equal(existsSync(join(valid.current, ".aidr-upgrade")), false);
+assert.equal(existsSync(dockerLog), false);
+checks.push("check validates manifests, append-only history and the contract without a backup, lock, state or Docker call");
 run(valid, "preflight");
 const ready = JSON.parse(readFileSync(join(valid.current, ".aidr-upgrade/state.json"), "utf8"));
 assert.equal(ready.status, "ready");
@@ -276,6 +290,13 @@ const rotatedSigningKey = createScenario("rotated-signing-key", (scenario) => {
 	scenario.contract.target_support_files.find((entry) => entry.path === "agent-config.json").sha256 = fileSha(join(scenario.target, "agent-config.json"));
 	write(scenario.contractPath, `${JSON.stringify(scenario.contract, null, 2)}\n`);
 });
+const keyCheck = spawnSync(
+	process.execPath,
+	[join(toolDir, "deployment-upgrade.mjs"), "check", "--current", rotatedSigningKey.current, "--target", rotatedSigningKey.target, "--contract", rotatedSigningKey.contractPath],
+	{ encoding: "utf8", timeout: 60_000, env: baseEnv },
+);
+assert.notEqual(keyCheck.status, 0);
+assert.match(keyCheck.stderr, /signing keys do not match/);
 const keyFailure = run(rotatedSigningKey, "preflight", false);
 assert.match(keyFailure.stderr, /signing keys do not match/);
 assert.equal(existsSync(join(rotatedSigningKey.current, ".aidr-upgrade/state.json")), false);

@@ -189,12 +189,17 @@ your cluster.
 
 ## Upgrade and rollback
 
+Start from [`values.example.yaml`](../../deploy/helm/aidr/values.example.yaml) (the
+common customer settings, commented) and follow
+[Upgrade in 3 commands](../../deploy/helm/aidr/README.md#upgrade-in-3-commands):
+
 ```bash
 node deploy/helm/build-images.mjs --output .aidr-images-<version> --registry <registry> --build --push
-helm upgrade aidr deploy/helm/aidr -n aidr -f my-values.yaml
+helm upgrade aidr deploy/helm/aidr -n aidr -f my-values.yaml --wait --timeout 30m
+kubectl -n aidr wait --for=condition=Available deployment -l app.kubernetes.io/instance=aidr --timeout=10m
 ```
 
-Back up first. The `pre-upgrade` migration applies the new schema atomically before
+Back up first (with `backup.enabled` the chart's pre-upgrade hook does it). The `pre-upgrade` migration applies the new schema atomically before
 new pods roll out; if it fails nothing is applied and the old release keeps serving.
 `helm rollback` restores the previous manifests but not the schema: migrations are
 forward-only, so a rollback across a migration needs a database restore.
