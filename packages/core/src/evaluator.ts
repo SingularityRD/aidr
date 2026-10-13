@@ -132,6 +132,7 @@ import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import { signedDetectionExceptionsOf, syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { inspectResponseBarrier } from "./response-barrier.js";
+import { modifiedPaths } from "./self-defense-paths.js";
 import { loadThreatsFromDirsWithReport, type ThreatLoadError } from "./threat-loader.js";
 import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
 import { applyToxicFlow } from "./toxic-flow.js";
@@ -2251,6 +2252,14 @@ async function runEvaluationPipeline(
 			const views = await buildEditViews(request, logger, reportedWorkingDirectory(context));
 			editViewsIncomplete = views.truncated;
 			heuristicMatches.push(...loaded.engine.matchEditViews(views));
+		}
+		// Self-defense: the paths this call removes, moves or overwrites (AIDR's
+		// own install and the host hook configuration that loads it).
+		if (loaded.engine.hasModifiedPathRules) {
+			const paths = modifiedPaths(request.toolName, request.toolInput, {
+				cwd: reportedWorkingDirectory(context),
+			});
+			heuristicMatches.push(...loaded.engine.matchModifiedPaths(paths));
 		}
 		failedRules = [...loaded.engine.unavailableThreats];
 		// Model-loading rules decide like any heuristic; secure-code findings

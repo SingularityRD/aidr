@@ -2,26 +2,39 @@
 # Author: SingularityRD
 # License: DRL-1.1 (see threats/LICENSE)
 # These flag when the AI agent may be manipulated into disabling its own guardrails.
-# CLT-SELF-001..006 use require_approval (not block) to allow legitimate plugin dev
-# and config changes. CLT-SELF-007..009 guard the operator approval channel itself
-# and are hard blocks: an ask there would let the agent ask the operator to
-# approve the agent's own access to the approval machinery.
+# CLT-SELF-002, -003, -005 and -006 use require_approval (not block) to allow
+# legitimate plugin development and config changes. CLT-SELF-001 (removing AIDR's
+# own installation) and CLT-SELF-004 (switching AIDR or its hooks off by config)
+# are hard blocks, like their CLI equivalents in CLT-SELF-007. CLT-SELF-007..009
+# guard the operator approval channel itself and are hard blocks: an ask there
+# would let the agent ask the operator to approve the agent's own access to the
+# approval machinery.
 
-# Delete .singularity-aidr directory
-# Perf (linear-time rewrite): `\s.*` between the verb and the target was
-# rescanned from every occurrence of `rm|del|rd|...` â€” O(n^2) on commands that
-# repeat those verbs (~59ms per 20KB, unbounded beyond that). The gap is now
-# bounded to 300 characters, several times any realistic argument list
-# (`rm -rf $HOME/.singularity-aidr` needs 15).
+# Remove, move or overwrite Singularity AIDR's own installation.
+# Two forms: the original command form (`rm -rf ~/.singularity-aidr`), and the
+# `modified_path` view (packages/core/src/self-defense-paths.ts): the canonical
+# paths a call removes, moves, overwrites, truncates, links over or
+# re-permissions, from a shell command (literal and shell-normalized, globs
+# resolved, `cd` followed, interpreter fs calls such as `os.remove`/`fs.rmSync`)
+# or a file tool (Write, Edit, Delete, apply_patch). The protected paths are the
+# state directory, the `aidr-codex-hook` binary, globally installed
+# `@singularityrd/aidr-*` packages, the OpenClaw extension, the Cursor/VS Code
+# extension and the Claude Code plugin checkout. Reads produce no path.
+# A hard block: removing AIDR is what `aidr uninstall` does, and CLT-SELF-007
+# denies that to the agent too.
+# Perf (linear-time rewrite): the command form's gap is bounded to 300
+# characters; the path form only runs on bounded canonical paths.
 - id: "CLT-SELF-001"
   category: self_defense
   severity: critical
-  confidence: 0.90
-  action: require_approval
-  pattern: "(rm|del|rmdir|rd|Remove-Item|unlink)\\s.{0,300}\\.singularity-aidr(\\s|[\\\\/]|$)"
+  confidence: 0.95
+  action: block
+  pattern: "(rm|del|rmdir|rd|Remove-Item|unlink)\\s.{0,300}\\.singularity-aidr(\\s|[\\\\/]|$)|^(?=~|/|[A-Za-z]:/)(?:\\S{0,600}/)?(?:\\.singularity-aidr|aidr-codex-hook(?:\\.cmd|\\.ps1)?|(?:lib|npm|global(?:/\\d{1,4})?)/node_modules/@singularityrd/aidr-[\\w.-]{1,64}|\\.openclaw/extensions/aidr[\\w.-]{0,64}|\\.(?:vscode|vscode-insiders|vscode-oss|cursor|windsurf)(?:-server)?/extensions/singularityrd\\.[\\w.-]{1,128}|\\.claude/plugins/(?:marketplaces|cache)/aidr)(?:/\\S{0,600})?$"
   case_insensitive: true
-  match_on: command
-  title: "Attempt to delete Singularity AIDR configuration directory"
+  match_on:
+    - command
+    - modified_path
+  title: "Attempt to remove or overwrite the Singularity AIDR installation"
   expires_at: null
   revoked: false
 
@@ -37,33 +50,51 @@
   expires_at: null
   revoked: false
 
-# Delete Claude Code hook or plugin config
-# Perf (linear-time rewrite): two unbounded `.*` spans, each rescanned from
-# every occurrence of `rm|del|Remove-Item|unlink` â€” O(n^2) (~57ms per 20KB).
-# Both gaps are now bounded to 300 characters, several times any realistic
-# path/argument list (`rm ~/.claude/plugins/marketplaces/<repo>/hooks.json`
-# needs 16 and 0).
+# Remove, move or overwrite the host configuration that loads AIDR's hooks:
+# Claude Code (`~/.claude/settings*.json`, `~/.claude/plugins`), Codex
+# (`~/.codex/hooks.json`, `~/.codex/config.toml`), Cursor (`~/.cursor/hooks.json`,
+# its hooks directory and extensions), VS Code/Cursor/Windsurf user settings and
+# extension directories, OpenClaw (`~/.openclaw/openclaw.json`, its extensions)
+# and OpenCode (`~/.config/opencode`). Matched on the original command form and on
+# the `modified_path` view (see CLT-SELF-001), so `mv`, `cp` onto, `truncate`,
+# `sed -i`, `tee`, `>`, `chmod`, globs (`~/.codex/hook*`), `cd` then a relative
+# name, interpreter fs calls and Write/Edit/Delete all count; `cat` does not.
+# require_approval, not block: these files hold the user's other settings too,
+# and editing them is legitimate work the user can approve out of band. The
+# AIDR-specific toggles inside them (`disableAllHooks`, `"aidr@aidr": false`) are
+# hard blocks in CLT-SELF-004.
+# Perf (linear-time rewrite): every gap is bounded (300 characters in the
+# command form, 600 in the path form).
 - id: "CLT-SELF-003"
   category: self_defense
   severity: high
   confidence: 0.85
   action: require_approval
-  pattern: "(rm|del|Remove-Item|unlink)\\s.{0,300}\\.claude[\\\\/].{0,300}(hooks\\.json|installed_plugins)"
+  pattern: "(rm|del|Remove-Item|unlink)\\s.{0,300}\\.claude[\\\\/].{0,300}(hooks\\.json|installed_plugins)|^(?=~|/|[A-Za-z]:/)(?:[^\\n]{0,600}/)?\\.claude/(?:[^\\n]{0,600}/)?(?:hooks\\.json|installed_plugins\\.json)$|^~/(?:\\.claude(?:/(?:settings(?:\\.local)?\\.json|hooks(?:/[^\\n]{1,600})?|plugins(?:/(?:known_marketplaces\\.json|config\\.json|marketplaces|cache))?))?|\\.claude\\.json|\\.codex(?:/(?:hooks\\.json|config\\.toml|hooks(?:/[^\\n]{1,600})?))?|\\.cursor(?:/(?:hooks\\.json|hooks(?:/[^\\n]{1,600})?|extensions))?|\\.(?:vscode|vscode-insiders|vscode-oss|windsurf)(?:/extensions)?|\\.openclaw(?:/(?:openclaw\\.json|extensions))?|\\.config(?:/opencode(?:/[^\\n]{1,600})?)?|(?:\\.config|Library/Application Support|AppData/Roaming)/(?:Code(?: - Insiders)?|Cursor|VSCodium|Windsurf)(?:/User(?:/settings\\.json)?)?)$"
   case_insensitive: true
-  match_on: command
-  title: "Attempt to delete Claude Code hook or plugin configuration"
+  match_on:
+    - command
+    - modified_path
+  title: "Attempt to remove or rewrite an agent host's hook or plugin configuration"
   expires_at: null
   revoked: false
 
-# Disable Singularity AIDR security features via config
+# Disable Singularity AIDR via configuration written by the agent: its own
+# detection switches, a replacement rule or allowlist directory
+# (`AIDR_THREATS_DIR`/`AIDR_ALLOWLISTS_DIR` in a settings `env` block, a shell
+# start-up file or an env file), or the host switch that turns its hooks off
+# (Claude Code `disableAllHooks` / `"aidr@aidr": false` in `enabledPlugins`,
+# OpenClaw `plugins.entries.aidr-openclaw.enabled: false`, Codex
+# `codex_hooks = false`). A hard block: the CLI equivalent
+# (`aidr config --set`) is denied to the agent by CLT-SELF-007.
 - id: "CLT-SELF-004"
   category: self_defense
-  severity: high
-  confidence: 0.85
-  action: require_approval
-  pattern: "\"heuristics_enabled\"\\s*:\\s*false|\"url_check\"\\s*:\\s*\\{[^}]{0,300}\"enabled\"\\s*:\\s*false"
+  severity: critical
+  confidence: 0.95
+  action: block
+  pattern: "\"heuristics_enabled\"\\s*:\\s*false|\"url_check\"\\s*:\\s*\\{[^}]{0,300}\"enabled\"\\s*:\\s*false|\"AIDR_(?:THREATS|ALLOWLISTS)_DIR\"\\s{0,10}:|(?:^|\\n|[{,])[ \\t]{0,20}(?:(?:export|set|declare[ \\t]{1,4}-x)[ \\t]{1,10})?AIDR_(?:THREATS|ALLOWLISTS)_DIR[ \\t]{0,10}=|(?:^|\\n)[ \\t]{0,20}setenv[ \\t]{1,10}AIDR_(?:THREATS|ALLOWLISTS)_DIR\\b|\"disableAllHooks\"\\s{0,10}:\\s{0,10}true|\"aidr@[\\w.-]{1,64}\"\\s{0,10}:\\s{0,10}false|\"aidr-openclaw\"\\s{0,10}:\\s{0,10}\\{[^}]{0,300}\"enabled\"\\s{0,10}:\\s{0,10}false|(?:^|\\n)[ \\t]{0,20}codex_hooks[ \\t]{0,10}=[ \\t]{0,10}false"
   match_on: content
-  title: "Attempt to disable Singularity AIDR security features via config"
+  title: "Attempt to disable Singularity AIDR or its hooks via configuration"
   expires_at: null
   revoked: false
 
@@ -121,12 +152,26 @@
 # runner form and its approve.mjs script) is matched too: it accepts a
 # quarantined (changed, "rug-pulled") MCP toolset, so an agent running it would
 # approve the very tool descriptions the gateway refused.
+# Disabling or removing AIDR through the host instead of `aidr uninstall` is
+# the same weakening and is matched the same way: `claude plugin
+# disable|uninstall|marketplace remove` of the aidr plugin (or `--all`),
+# `code|cursor|windsurf --uninstall-extension|--disable-extension(s)` of the
+# SingularityRD extension, `openclaw|opencode plugins disable|uninstall|remove`
+# of aidr, `openclaw config set|unset plugins.entries.aidr-openclaw.*` or
+# `plugins.enabled`, a global npm/pnpm/yarn/bun (un)install of any
+# `@singularityrd/aidr-*` package and the removal of a connector package. So is
+# pointing AIDR at another rule or allowlist directory through the environment
+# (`AIDR_THREATS_DIR=...`, `export`, `setx`, `setenv`, `os.environ[...] =`, a
+# JSON `env` entry written by `echo`); reading the variable
+# (`echo $AIDR_THREATS_DIR`) is not matched. Globs in an executable path
+# (`aidr-mcp-appr*.mjs`, `/usr/local/bin/ai?r`) are resolved by the normalized
+# view.
 - id: "CLT-SELF-007"
   category: self_defense
   severity: critical
   confidence: 0.99
   action: block
-  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|(?:allowlist|exceptions?)[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add|uninstall|config[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--set|-[A-Za-z]{0,6}s[A-Za-z]{0,6})|setup[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--force|-[A-Za-z]{0,6}f[A-Za-z]{0,6})|quarantine[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}(?:release|delete)|restore|audit[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}rotate-key)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b"
+  pattern: "\\baidr(?:-cli|-setup)?(?:@[\\w.^~-]{1,40})?(?:/[\\w.@-]{1,100}){0,8}(?:\\.exe|\\.cmd|\\.ps1|\\.js|\\.mjs|\\.cjs)?[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}){0,6}(?:approve|approvals|pending|(?:allowlist|exceptions?)[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}add|uninstall|config[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--set|-[A-Za-z]{0,6}s[A-Za-z]{0,6})|setup[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}(?:=\\S{0,200})?[\\s,\\[\\]]{1,20}(?:[^\\s,\\[\\]-][^\\s,\\[\\]]{0,200}[\\s,\\[\\]]{1,20})?){0,4}(?:--force|-[A-Za-z]{0,6}f[A-Za-z]{0,6})|quarantine[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}(?:release|delete)|restore|audit[\\s,\\[\\]]{1,20}(?:-{1,2}[\\w-]{1,40}[\\s,\\[\\]]{1,20}){0,4}rotate-key)\\b|AIDR_OPERATOR_NONINTERACTIVE|\\baidr-mcp-approve\\b|aidr-mcp-gateway[\\\\/](?:[\\w.-]{1,100}[\\\\/]){0,4}(?:aidr-mcp-)?approve\\.[cm]?js\\b|mcp-gateway[\\\\/](?:src|dist)[\\\\/](?:aidr-mcp-)?approve\\.[cm]?js\\b|\\bclaude\\b[^\\n;&|]{0,60}\\bplugins?\\b[^\\n;&|]{0,80}\\b(?:disable|uninstall|remove|rm)\\b[^\\n;&|]{0,200}?(?:\\baidr\\b|--all\\b)|\\b(?:code|code-insiders|code-oss|codium|cursor|windsurf)(?:\\.cmd|\\.exe)?\\b[^\\n;&|]{0,200}?--(?:uninstall|disable)-extension(?:s\\b|[\\s=]{1,10}[^\\s;&|]{0,80}?(?:singularityrd|aidr))|\\bopen(?:claw|code)\\b[^\\n;&|]{0,60}\\bplugins?\\b[^\\n;&|]{0,80}\\b(?:disable|uninstall|remove|rm|delete)\\b[^\\n;&|]{0,200}?\\baidr|\\bopenclaw\\b[^\\n;&|]{0,60}\\bconfig\\b[^\\n;&|]{0,40}\\b(?:set|unset|delete|rm|remove)\\b[^\\n;&|]{0,40}?\\bplugins\\.(?:entries\\.aidr|enabled\\b)|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,200}?(?:\\s(?:-g|--global|--location[= ]global)\\b|\\bglobal\\b)[^\\n;&|]{0,200}?@singularityrd/aidr-|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,200}?@singularityrd/aidr-[^\\n;&|]{0,200}?\\s(?:-g|--global)\\b|\\b(?:npm|pnpm|yarn|bun|cnpm)\\b[^\\n;&|]{0,120}?\\b(?:uninstall|remove|rm|un|r|unlink|erase)\\b[^\\n;&|]{0,200}?@singularityrd/aidr-(?:codex|cli|claude-code|openclaw|opencode|mcp-gateway)\\b|\\bAIDR_(?:THREATS|ALLOWLISTS)_DIR\\s{0,10}\\]?\\s{0,10}(?:=|:\\s)|\\b(?:export|setenv|setx|SetEnvironmentVariable)\\b[\\s(,]{1,10}(?:-\\w{1,10}\\s{1,10})?AIDR_(?:THREATS|ALLOWLISTS)_DIR\\b"
   case_insensitive: true
   match_on: command_normalized
   title: "Attempt to self-approve a Singularity AIDR block, forge an operator approval or weaken its protection"
@@ -163,17 +208,25 @@
 # name: `secret-tool lookup service singularity-aidr-cli id aidr-operator-approval-key`,
 # `security find-generic-password -s singularity-aidr-cli`, or a file named after
 # them, wherever it is.
+# The MCP gateway's operator approval is reachable as a library too: agent code
+# that imports `@singularityrd/aidr-mcp-gateway` or its `aidr-mcp-library.mjs`
+# bundle (`import(...)`, `require(...)`, `from ...`, `node --import`) can call
+# `approve()` without running `aidr-mcp-approve`, so the import is a hard block in
+# a command and in a file the agent writes. The gateway's attestation state
+# directory as documented (`/var/lib/aidr/mcp-attestation`) is protected the same
+# way. A specifier computed at run time is not visible to a rule; closing that
+# needs the approval API out of the importable library (MSC-2, gateway side).
 - id: "CLT-SELF-009"
   category: self_defense
   severity: critical
   confidence: 0.99
   action: block
-  pattern: "singularity-aidr-cli\\b|aidr-operator-approval|aidr-audit-chain|operator-approval(?:-key|-ledger)?\\.(?:key|json)"
+  pattern: "singularity-aidr-cli\\b|aidr-operator-approval|aidr-audit-chain|operator-approval(?:-key|-ledger)?\\.(?:key|json)|(?:\\bimport\\b|\\brequire\\b|\\bfrom\\b|--import\\b|--require\\b|\\s-r\\b)[\\s(=]{0,10}[^\\s()]{0,300}?(?:@singularityrd/aidr-mcp-gateway\\b|\\baidr-mcp-library\\b)|\\baidr[\\\\/]{1,2}mcp-attestation\\b"
   case_insensitive: true
   match_on:
     - command_normalized
     - file_path_normalized
     - content_normalized
-  title: "Agent access to the Singularity AIDR approval key or vault entries"
+  title: "Agent access to the Singularity AIDR approval key, vault entries or MCP approval API"
   expires_at: null
   revoked: false

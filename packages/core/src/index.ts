@@ -1511,6 +1511,7 @@ export { RealTimeRuleSync } from "./rule-sync.js";
 // Scan handler
 export { createScanHandler, runPluginScan, type ScanHandlerOptions } from "./scan-handler.js";
 export * from "./secret-store.js";
+export { type ModifiedPathOptions, modifiedPaths } from "./self-defense-paths.js";
 // Sentry
 export { initSentry } from "./sentry.js";
 // Session start orchestrator
