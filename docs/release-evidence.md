@@ -34,7 +34,12 @@ bundle's `release-metadata.json` and `release-inventory.json`; do not pass it to
 candidate: ten npm archives, Claude plugin, both Cursor and VS Code VSIX files,
 dashboard archive, SBOM/checksum and mandatory locally constructed provenance.
 It records exact artifact hashes and source commit; it does not sign or approve
-production. `.github/scripts/build-release-bundle.mjs` remains the signed-input
+production. Before packing it refuses any package whose
+`dist/aidr-artifact.manifest.json` does not record `HEAD` as `provenance.git_sha`
+and the committed tree as `provenance.source_digest`, whose files no longer match
+that manifest, or whose `dist/` contains source maps: `dist/` is gitignored, so a
+build left over from another checkout would otherwise be bound to the wrong
+commit. Run `pnpm build:release` on the commit you assemble. `.github/scripts/build-release-bundle.mjs` remains the signed-input
 CI path, followed by `.github/scripts/package-vsix.mjs` to finalize its inventory.
 
 The signed Claude Code endpoint additionally requires a package-root manifest at

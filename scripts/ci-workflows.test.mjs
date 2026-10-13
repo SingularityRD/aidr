@@ -14,6 +14,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { RC_TAG_PATTERN, RC_TAG_SHELL_PATTERN } from "./lib/rc-tag.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workflowDir = path.join(root, ".github", "workflows");
@@ -399,6 +400,7 @@ test("release-promote: the GO gate precedes everything except checkout, verifica
 		"Download the signed RC bundle (pinned)",
 		"Verify GitHub build attestations for every release file",
 		"Prepare trusted release-signer policy",
+		"Rebuild anti-rollback floor from signed GitHub releases",
 		"Verify RC identity, manifest, SBOM and signatures",
 		STAGE_STEP,
 	];
@@ -462,5 +464,47 @@ test("release-rc: tag code runs only after the signed-tag identity check and nev
 				assert.equal(step.with?.ref, "${{ needs.build-rc.outputs.sha }}", `${jobId}: ${step.name} must check out the verified commit`);
 			}
 		}
+	}
+});
+
+// ─── RC numbering and durable anti-rollback state (OPS-8, OPS-11) ────────
+
+test("every RC tag check in the release workflows uses the shared rc.N grammar", () => {
+	const checks = [];
+	for (const name of ["release-rc.yml", "release-promote.yml"]) {
+		for (const match of raw(name).matchAll(/\[\[ "\$\{(?:tag|RELEASE_TAG)\}" =~ (\S+) /gu)) checks.push({ name, pattern: match[1] });
+	}
+	assert.ok(checks.length >= 4, `expected the RC build, promote, dry-run and rollback checks, saw ${checks.length}`);
+	for (const { name, pattern } of checks) assert.equal(pattern, RC_TAG_SHELL_PATTERN, `${name} must use RC_TAG_SHELL_PATTERN`);
+	// The shell (POSIX ERE) and JS spellings accept and reject the same tags.
+	const shell = new RegExp(RC_TAG_SHELL_PATTERN, "u");
+	for (const tag of ["v1.0.0-rc.0", "v1.0.0-rc.3", "v2.10.0-rc.42", "v1.0.0-rc.01", "v1.0.0-rc.", "v1.0.0", "v1.0.0-rc.10000"]) {
+		assert.equal(shell.test(tag), RC_TAG_PATTERN.test(tag), tag);
+	}
+	assert.doesNotMatch(raw("release-rc.yml"), /Only vX\.Y\.Z-rc\.0 is supported/u);
+	assert.doesNotMatch(raw("release-promote.yml"), /-rc\.0"/u, "rollback must accept the promoted rc.N tag");
+});
+
+test("release-promote: the anti-rollback floor survives a lost artifact and a missing state fails closed", () => {
+	const promote = workflow("release-promote.yml").jobs.promote;
+	const names = promote.steps.map((step) => step.name);
+	const rebuild = promote.steps[names.indexOf("Rebuild anti-rollback floor from signed GitHub releases")];
+	assert.ok(rebuild, "the promote job must rebuild the floor from signed releases");
+	for (const flag of ["node .trusted-release-verifier/scripts/restore-promotion-state.mjs", '--policy "${AIDR_RELEASE_SIGNER_POLICY_PATH}"', '--state "${RUNNER_TEMP}/aidr-promotion-state/anti-rollback-state.json"', '--expected-tag "${RELEASE_TAG}"']) {
+		assert.ok(rebuild.run.includes(flag), `floor rebuild must pass ${flag}`);
+	}
+	assert.ok(names.indexOf("Restore protected anti-rollback state (pinned)") < names.indexOf(rebuild.name), "the artifact state is merged, not overwritten");
+	assert.ok(names.indexOf("Prepare trusted release-signer policy") < names.indexOf(rebuild.name));
+	const verify = promote.steps.find((step) => step.id === "verify");
+	assert.ok(names.indexOf(rebuild.name) < promote.steps.indexOf(verify));
+	assert.match(verify.run, /--record \\\n\s+\$\{GENESIS:\+--genesis\}/u, "genesis is only ever passed from the explicit input");
+	assert.equal(verify.env.GENESIS, "${{ inputs.genesis }}");
+	const validate = promote.steps[names.indexOf("Validate promotion inputs")];
+	assert.match(validate.run, /\[\[ -z "\$\{GENESIS\}" \|\| "\$\{GENESIS\}" == "FIRST_PROMOTION" \]\]/u);
+	assert.match(raw("release-promote.yml"), /genesis:\n\s+description: "Type FIRST_PROMOTION only/u);
+	// Dry-run and rollback verify without --record and must never pass --genesis.
+	for (const jobId of ["dry-run", "rollback"]) {
+		const text = workflow("release-promote.yml").jobs[jobId].steps.map((step) => step.run ?? "").join("\n");
+		assert.doesNotMatch(text, /--genesis|--record\b/u, `${jobId} must not record or claim genesis`);
 	}
 });

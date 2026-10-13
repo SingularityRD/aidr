@@ -48,11 +48,21 @@ versioning. Versioning and publishing are separate protected operations.
    deliberately never publishes packages.
 3. After review, the release operator creates the protected, signed annotated
    `vX.Y.Z-rc.0` tag. `.github/workflows/release-rc.yml` validates the tag and
-   builds and verifies the exact candidate.
+   builds and verifies the exact candidate. If acceptance fails, fix forward and
+   tag `vX.Y.Z-rc.1`, `rc.2`, ... of the same version (no leading zeros) and
+   give it a higher `AIDR_RELEASE_SEQUENCE`: building an RC publishes nothing,
+   so a failed RC does not burn the version. RC artifacts carry the stable
+   package version, so only one RC per version can ever be promoted; promotion
+   refuses a version already promoted from another RC tag.
 4. Only after required candidate acceptance, dispatch
    `.github/workflows/release-promote.yml` from the protected default branch
    with the exact tag and successful RC run ID. Use its `promote` action; the
-   workflow is the publication authority.
+   workflow is the publication authority. The anti-rollback floor is the
+   protected promotion artifact merged with the floor rebuilt from the signed
+   `aidr-release.manifest.json` of every published GitHub release, so an expired
+   or deleted artifact cannot reset it. If neither exists the promotion fails
+   closed; only the very first promotion of the product may set the `genesis`
+   input to `FIRST_PROMOTION`, and genesis is refused whenever a state exists.
 5. Verify package availability through the private GitHub Packages registry
    (`https://npm.pkg.github.com`) using approved credentials. Public npm queries
    are not a valid check for this private scope.

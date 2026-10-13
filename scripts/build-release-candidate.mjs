@@ -33,6 +33,8 @@ import {
 	assertClaudePluginResourcesCanonical,
 	claudePluginRequiredFiles,
 } from "./lib/claude-plugin-package.mjs";
+import { distProvenanceProblems } from "./lib/dist-provenance.mjs";
+import { resolveGitTreeSha256 } from "./lib/release-evidence-digests.mjs";
 import { tarDirectory } from "./lib/tar-path.mjs";
 import { inspectReleaseArchive } from "./lib/release-archive-inspection.mjs";
 import { cleanupDirectory } from "./release-candidate-cleanup.mjs";
@@ -174,11 +176,23 @@ if (dirtyEntries.length > 0 && !options.allowDirty) {
 	fail(`worktree has uncommitted source changes, so the bundle would not be provenance-bound:\n  ${dirtyEntries.join("\n  ")}\nCommit them, or pass --allow-dirty to record an explicitly local rehearsal.`);
 }
 
-// Refuse to pack packages whose dist trees have not been built in release mode:
-// a normal-mode build leaves sourcemaps and test folders that must not ship.
-for (const target of PACKAGE_TARGETS) {
-	const distDir = path.join(ROOT, target.dir, "dist");
-	if (!existsSync(distDir)) fail(`${target.dir}/dist is missing; run \`pnpm build:release\` first`);
+// Refuse to pack packages whose dist trees were not built in release mode from
+// this exact commit. dist/ is gitignored, so after a checkout an older build
+// sits behind a clean worktree; binding it to HEAD would mislabel the bytes in
+// the metadata and provenance below. Each dist manifest must record HEAD and
+// the committed tree, list exactly the files on disk, and the tree must carry
+// no source maps (a normal-mode build).
+let sourceDigest;
+try {
+	sourceDigest = resolveGitTreeSha256(ROOT);
+} catch (error) {
+	fail(error instanceof Error ? error.message : String(error));
+}
+const distProblems = PACKAGE_TARGETS.flatMap((target) =>
+	distProvenanceProblems({ distDir: path.join(ROOT, target.dir, "dist"), label: `${target.dir}/dist`, commitSha, sourceDigest }),
+);
+if (distProblems.length > 0) {
+	fail(`dist trees are not bound to HEAD ${commitSha}:\n  ${distProblems.join("\n  ")}`);
 }
 
 const packRoot = path.join(tmpdir(), `aidr-candidate-pack-${process.pid}`);

@@ -56,6 +56,12 @@ await requireText("packages/dashboard/src/ui/pages/public/LandingPage.tsx", [
 ]);
 await requireText("scripts/dashboard-route-smoke.mjs", [[/legacyRoutes = \["\/demo"\]/, "legacy route smoke coverage"]]);
 await requireText("packages/dashboard/tests/browser-smoke.manifest.json", [[/legacy-demo-redirect/, "browser redirect scenario"]]);
+// The enforcement verifiers need the release artifact manifest that only
+// `pnpm build:release` writes; a pre-flight that starts from `pnpm build` can never pass.
+await requireText("docs/sales/demo-script.md", [
+	[/^pnpm build:release\b[^\n]*\nnode scripts\/verify-enforcement\.mjs\b/mu, "a release build immediately before verify-enforcement"],
+	[/^pnpm build(?!:release)\b[^\n]*\nnode scripts\/verify-enforcement\.mjs\b/mu, "a development build before verify-enforcement (it needs the release manifest)", true],
+]);
 
 if (!staticOnly) {
 	if (!(await exists("packages/dashboard/dist/index.html"))) {

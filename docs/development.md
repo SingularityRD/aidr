@@ -35,7 +35,7 @@ Requires Node.js >= 22.12.0 and pnpm >= 9.
 | `pnpm test:e2e:cursor` | Cursor extension E2E tests only |
 | `pnpm test:e2e:vscode` | VS Code extension E2E tests only |
 | `pnpm test:e2e:real-host` | Real Claude Code / Codex / OpenCode / OpenClaw binaries against a scripted mock model (no API keys) |
-| `pnpm build:sea` | Build standalone SEA binaries |
+| `pnpm build:sea` | Build the relocatable, unsigned SEA hook directory (`bin/aidr-sea/`) |
 | `pnpm lint` | Lint with Biome |
 | `pnpm lint:fix` | Lint + auto-fix |
 | `pnpm check` | Type check all packages |
@@ -288,6 +288,7 @@ pnpm ci:local:quick                # fast subset: lint, tsc, static/contract/rea
 pnpm ci:local --list               # groups, steps, commands, timeouts, prerequisites
 pnpm ci:local --only helm,privacy  # groups or step ids (repeatable); --skip works the same way
 pnpm ci:local --fetch-tools        # provision missing pinned tools into .ci-local/tools first
+pnpm ci:local:release --keep-going # release sign-off: every step must PASS (= --release)
 ```
 
 | Option | Effect |
@@ -299,6 +300,7 @@ pnpm ci:local --fetch-tools        # provision missing pinned tools into .ci-loc
 | `--fetch-tools` | Download or build missing pinned tools into `.ci-local/tools`, verified exactly as `ci.yml` verifies them: gitleaks, promtool and actionlint from the URL and sha256 pinned in `ci.yml`; Helm through the `ci.yml` install step (GPG signature + checksum), falling back to `go install helm.sh/helm/v3/cmd/helm@<pinned>` (module checksum database) when get.helm.sh is unreachable; Node 24 from nodejs.org checked against `SHASUMS256.txt`. Nothing is committed. |
 | `--allow-dirty` | Report the clean-checkout step as SKIPPED instead of failing it when the tree has uncommitted changes. |
 | `--strict` | Exit non-zero when any selected step is SKIPPED (full-parity machines). |
+| `--release` | Release sign-off profile. Selects every non-opt-in step plus the release-only full-history secret scan (`pnpm verify:secrets`), implies `--strict`, refuses `--only`, `--skip`, `--quick` and `--allow-dirty`, and exits non-zero unless every selected step PASSED (a SKIPPED, NOT RUN or advisory failure fails it). Only `claim-evidence-refresh`, which needs a candidate assembled after this gate, is left out, with that reason in the summary. |
 | `--json [file]` | Also write the machine-readable report to `file`; it is always written to `.ci-local/report.json`. |
 
 **Groups**, in execution order: `guards` (real-HOME record/verify and a working-tree
@@ -315,8 +317,9 @@ container suites), `audit`, `build`, `test` (`pnpm test`), `coverage`, `core-mat
 (pin check, build, unit, real-browser E2E, release zips), `onprem` (deployment/air-gap/
 customer-kit/license/offline-pack/onprem-* suites, bootstrap/upgrade/backup/config
 reference, promtool, compose models, image builds), `helm`, `aig-bridge` (pip-audit +
-pytest in `.ci-local/venv/aig-bridge`), `release` (release build, fleet lifecycles,
-packed-artifact install, dashboard route smoke, evidence boundary) and the opt-in
+pytest in `.ci-local/venv/aig-bridge`), `release` (release build, built-artifact
+enforcement `verify:enforcement` + `verify:codex`, release signing/provenance contracts,
+fleet lifecycles, packed-artifact install, dashboard route smoke, evidence boundary) and the opt-in
 `real-host-e2e`.
 
 **How it stays equal to `ci.yml`.** The plan (`scripts/lib/ci-local-plan.mjs`) is an
@@ -332,13 +335,17 @@ individual components so a failure names the gate. `scripts/ci-local.test.mjs` (
 `ci:local` itself, step `ci-local-drift`) fails when `ci.yml` gains a job or `run:`
 step with no local step, when a reference goes stale, when an explicitly covered CI
 step starts calling a root script or repo file the local command does not, or when
-`quality:gate`/`quality:static` gain a component. When you add a CI step, add or
-extend a step in the catalog (or list it in `CI_ONLY_STEPS` with a reason).
+`quality:gate`/`quality:static` gain a component. It also fails when
+`.github/workflows/release-rc.yml` runs a root script (`pnpm <script>`, with
+`quality:*` chains expanded) that no local step runs, so a release-only contract cannot
+rot between releases. When you add a CI step, add or extend a step in the catalog (or
+list it in `CI_ONLY_STEPS` with a reason; release-only scripts go in
+`RELEASE_ONLY_SCRIPTS` with a reason).
 
 **Prerequisites and SKIPPED.** A step whose prerequisite is missing is reported as
 `SKIPPED` with the exact prerequisite and the fix, in the table and in a separate
 SKIPPED section - never as PASS and never silently. Only required failures make the
-exit code non-zero (`--strict` also fails on skips).
+exit code non-zero (`--strict` also fails on skips; `--release` fails on anything but PASS).
 
 **Step dependencies (NOT RUN).** `package-install` and `route-smoke` consume what
 `build-release` writes (the release `dist/` trees and the dashboard build). In `ci.yml`
@@ -396,10 +403,10 @@ This project uses [Changesets](https://github.com/changesets/changesets) with **
 1. Make your changes
 2. Run `pnpm changeset` — select affected packages and bump type (patch/minor/major)
 3. Commit the generated `.changeset/*.md` file alongside your code changes
-4. When ready to release: `pnpm run version` — applies all pending changesets, bumps `package.json` versions, generates per-package changelogs, and syncs non-standard manifests (`plugin.json`, `marketplace.json`, `openclaw.plugin.json`)
+4. When ready to release: `pnpm run version` — applies all pending changesets, bumps `package.json` versions, generates per-package changelogs, and syncs non-standard manifests (`plugin.json`, `marketplace.json`, `openclaw.plugin.json`, the Helm `Chart.yaml`)
 5. Commit the version bumps and changelog updates
 
-**Non-standard manifest sync:** Changesets only knows about `package.json` files. The `pnpm run version` script automatically runs `scripts/sync-manifests.mjs` after `changeset version` to propagate versions to `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `packages/openclaw/openclaw.plugin.json`.
+**Non-standard manifest sync:** Changesets only knows about `package.json` files. The `pnpm run version` script automatically runs `scripts/sync-manifests.mjs` after `changeset version` to propagate versions to `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `packages/openclaw/openclaw.plugin.json` and `deploy/helm/aidr/Chart.yaml`. The chart `appVersion` follows the dashboard package version (it is the default tag of every first-party image the chart deploys), and the chart `version` moves with it: a product patch bumps the chart patch, a product minor or major bumps the chart minor; chart majors are reserved for breaking values changes and are made by hand. `pnpm verify:manifests` (part of `quality:static`) fails when any of these manifests disagrees with its package.
 
 **Pre-commit hook:** A `changeset-check` pre-commit hook warns when staged files affect shipped artifacts (source code, threat definitions, allowlists, hooks, skills, plugin manifests) without a corresponding changeset. Bypass with `git commit --no-verify`.
 
@@ -413,36 +420,52 @@ The workflow reads only the tag-signing secrets (`RELEASE_TAG_PGP_PUBLIC_KEY`,
 submission (Chrome Web Store, Edge Add-ons, AMO) stays a manual step with no store
 credentials in CI.
 
-## Standalone Binaries (SEA)
+## SEA Binaries (relocatable directory)
 
 `pnpm build:sea` runs `packages/claude-code/scripts/build-sea.mjs`, which builds
 Node.js [single executable applications](https://nodejs.org/api/single-executable-applications.html)
-for the Claude Code hooks on Linux, macOS and Windows:
+for every Claude Code hook and bin entry point on Linux, macOS and Windows. A SEA
+blob holds one script, but the hooks read their threat rules, allowlists, the
+response worker and the native koffi addon from disk, relative to the binary. The
+output is therefore a directory that must be shipped and installed as a whole; a
+single binary copied on its own loads no rules and asks on every call:
 
-| Output (`bin/`, gitignored) | Entry bundle |
+| Path under `bin/aidr-sea/` (gitignored) | Content |
 |---|---|
-| `aidr-pre-tool-use` (`.exe` on Windows) | `packages/claude-code/dist/pre-tool-use.cjs` |
-| `aidr-session-start` (`.exe` on Windows) | `packages/claude-code/dist/session-start.cjs` |
+| `bin/aidr-pre-tool-use`, `aidr-post-tool-use`, `aidr-session-start`, `aidr-user-prompt-submit` (`.exe` on Windows) | `packages/claude-code/dist/<entry>.bundle.cjs` |
+| `bin/aidr-health`, `bin/aidr-mcp-server` | `packages/claude-code/dist/health.cjs`, `mcp-server.cjs` |
+| `dist/resources/threats`, `dist/resources/allowlists` | the shipped rules and allowlists |
+| `dist/response-worker.cjs`, `dist/vendor/`, `dist/native/` | runtime files the bundles load |
+| `aidr-artifact.manifest.json` | sha256 of every file above (connector manifest schema) |
 
 The script uses the documented flow, which works on every supported Node
 (>= 22.12; it does not depend on `node --build-sea`):
 
-1. bundle the entry points with `esbuild.config.js`;
+1. bundle the entry points with `esbuild.config.js --release` (no source maps);
 2. write `dist/sea-config-<entry>.json` and run `node --experimental-sea-config` to produce the blob (code cache disabled);
 3. copy `process.execPath` to the output binary;
 4. inject the blob with the locally pinned `postject` devDependency (no `npx`/network), using the
    `NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2` sentinel. On macOS the signature is removed
    first, the blob goes into the `NODE_SEA` Mach-O segment, and the binary is re-signed ad hoc.
 
-It fails fast when the running Node is older than 20, is a shared-libnode build, or lacks the
-SEA sentinel fuse (Homebrew builds) — use the official binary from nodejs.org, nvm/fnm/volta,
-or `actions/setup-node` in CI. Windows binaries are unsigned (postject prints
-`warning: The signature seems corrupted!`, which is expected); sign them with `signtool`
-before distribution. Smoke test:
+It then writes the manifest, copies the directory to a temporary location and runs the relocated
+`aidr-pre-tool-use` with an isolated HOME: a pipe-to-shell command must be denied from the
+shipped rules and `ls -la` allowed, or the build fails. Because the manifest uses the connector
+schema, the relocated hooks also check every rule and allowlist file they read against it. To
+re-check a copied distribution:
 
 ```bash
-echo '{"tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"t","hook_event_name":"PreToolUse","cwd":"."}' | ./bin/aidr-pre-tool-use
+node packages/claude-code/scripts/build-sea.mjs --verify /opt/aidr-sea
 ```
+
+It fails fast when the running Node is older than 20, is a shared-libnode build, or lacks the
+SEA sentinel fuse (Homebrew builds) — use the official binary from nodejs.org, nvm/fnm/volta,
+or `actions/setup-node` in CI. The output is **unsigned**: sign `aidr-artifact.manifest.json`
+with `scripts/sign-artifact-manifest.mjs` (and configure the public key in
+`integrity.public_keys_pem` so the rule check is signature-verified) and the binaries with
+`codesign`/`signtool` before distribution (postject prints
+`warning: The signature seems corrupted!` on Windows, which is expected). No release workflow
+builds or ships the SEA directory; the supported distribution is the signed npm/plugin package.
 
 ## Building the Extension
 

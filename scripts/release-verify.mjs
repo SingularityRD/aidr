@@ -15,9 +15,13 @@
  * digest have passed. The rollback state advances only after that command
  * exits successfully.
  *
+ * --require-state refuses a missing state file instead of treating it as a
+ * first install; production promotion uses it so a lost state cannot reset
+ * the rollback floor.
+ *
  * Usage:
  *   node scripts/release-verify.mjs --bundle <dir> --policy <json> --state <json>
- *     [--record] [--receipt <json>] [--] [installer [arguments...]]
+ *     [--record] [--require-state] [--receipt <json>] [--] [installer [arguments...]]
  */
 
 import { verifyAndInstallRelease } from "./release-signing-lib.mjs";
@@ -35,6 +39,7 @@ try {
 			state: options["--state"],
 			receipt: options["--receipt"],
 			record: options["--record"] === true,
+			requireState: options["--require-state"] === true,
 		},
 		installCommand,
 	);
@@ -49,7 +54,7 @@ function parseArguments(argv) {
 	const installCommand = delimiter >= 0 ? argv.slice(delimiter + 1) : [];
 	if (delimiter >= 0 && installCommand.length === 0) throw new Error("installer command is missing after --");
 	const options = {};
-	const flags = new Set(["--record"]);
+	const flags = new Set(["--record", "--require-state"]);
 	const valued = new Set(["--bundle", "--policy", "--state", "--receipt"]);
 	for (let index = 0; index < optionArguments.length; index += 1) {
 		const flag = optionArguments[index];
@@ -69,7 +74,7 @@ function parseArguments(argv) {
 
 function usage() {
 	console.error(
-		"Usage: node scripts/release-verify.mjs --bundle <dir> --policy <json> --state <json> [--record] [--receipt <json>] [-- installer ...]",
+		"Usage: node scripts/release-verify.mjs --bundle <dir> --policy <json> --state <json> [--record] [--require-state] [--receipt <json>] [-- installer ...]",
 	);
 }
 

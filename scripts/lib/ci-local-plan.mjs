@@ -246,6 +246,18 @@ export const STEPS = Object.freeze([
 		quick: true,
 		timeoutMs: 5 * MIN,
 	}),
+	// release-rc.yml scans the full history before it builds a candidate; the
+	// release profile runs the same scan so a local release sign-off cannot pass
+	// on the current-tree scan alone.
+	step({
+		id: "secret-scan-history",
+		group: "hygiene",
+		name: "Full-history secret scan (gitleaks, release profile)",
+		run: "pnpm verify:secrets",
+		requires: ["gitleaks"],
+		releaseOnly: true,
+		timeoutMs: 10 * MIN,
+	}),
 
 	// ── lint ────────────────────────────────────────────────────────────────
 	step({ id: "lint", group: "lint", name: "Biome lint (0 errors)", run: "pnpm lint", quick: true, timeoutMs: 5 * MIN }),
@@ -272,10 +284,11 @@ export const STEPS = Object.freeze([
 		quick: true,
 		timeoutMs: 3 * MIN,
 	}),
+	step({ id: "manifest-versions", group: "static", name: "Version-bearing manifests (plugin, OpenClaw, Helm chart) match their packages", run: "pnpm verify:manifests", quick: true, timeoutMs: 3 * MIN }),
 	step({ id: "package-install-gate", group: "static", name: "Package install gate tests", run: "pnpm test:package-install-gate", quick: true, timeoutMs: 5 * MIN }),
 	step({ id: "benchmarks", group: "static", name: "Benchmark harness tests", run: "pnpm benchmark:test", quick: true, timeoutMs: 5 * MIN }),
 	step({ id: "mandatory-skips", group: "static", name: "Undeclared test skip gate", run: "node scripts/check-mandatory-skips.mjs", quick: true, timeoutMs: 3 * MIN }),
-	step({ id: "demo-preflight", group: "static", name: "Demo preflight (static)", run: "node scripts/demo-preflight.mjs --static", quick: true, timeoutMs: 3 * MIN }),
+	step({ id: "demo-preflight", group: "static", name: "Demo preflight (static)", run: "node scripts/demo-preflight.mjs --static && node --test scripts/demo-preflight.test.mjs", quick: true, timeoutMs: 3 * MIN }),
 	step({ id: "monthly-sli", group: "static", name: "Monthly SLI report tests and verification", run: "pnpm test:monthly-sli && pnpm verify:monthly-sli", quick: true, timeoutMs: 3 * MIN }),
 	step({ id: "load-contract", group: "static", name: "Load-test harness tests and verification", run: "node --test scripts/load-test.test.mjs && pnpm verify:load", quick: true, timeoutMs: 5 * MIN }),
 
@@ -311,6 +324,9 @@ export const STEPS = Object.freeze([
 		run: "node --test scripts/refresh-claim-evidence.test.mjs",
 		requires: ["release-candidate"],
 		requiresFile: CANDIDATE_DIGEST_SOURCE,
+		// The candidate is assembled from the dist/ trees this run builds, after it
+		// passes; the release profile cannot require it to exist already.
+		notInRelease: "consumes a release candidate, which is assembled after the release gate passes",
 		timeoutMs: 3 * MIN,
 	}),
 
@@ -355,6 +371,15 @@ export const STEPS = Object.freeze([
 	// ── supabase ────────────────────────────────────────────────────────────
 	step({ id: "supabase-static", group: "supabase", name: "Supabase migration contract", ci: ["quality-gate", "Supabase migration contract"], quick: true, timeoutMs: 5 * MIN }),
 	step({ id: "supabase-edge-contracts", group: "supabase", name: "Supabase Edge contracts", run: "node scripts/check-supabase-edge-contracts.mjs", quick: true, timeoutMs: 3 * MIN }),
+	step({ id: "endpoint-auth", group: "supabase", name: "Every Edge route presents an authentication guard", run: "pnpm verify:endpoint-auth", quick: true, timeoutMs: 3 * MIN }),
+	step({
+		id: "security-definer-postgres",
+		group: "supabase",
+		name: "SECURITY DEFINER search_path pinning on the full migration chain (own offline container)",
+		run: "pnpm verify:security-definer",
+		requires: ["docker-daemon"],
+		timeoutMs: 20 * MIN,
+	}),
 	step({
 		id: "supabase-edge-typecheck",
 		group: "supabase",
@@ -390,6 +415,7 @@ export const STEPS = Object.freeze([
 
 	// ── test ────────────────────────────────────────────────────────────────
 	step({ id: "vitest", group: "test", name: "Full Vitest suite (pnpm test)", run: "pnpm test", timeoutMs: 60 * MIN }),
+	step({ id: "dlp-delivery", group: "test", name: "DLP detector provisioning against the built core", run: "pnpm verify:dlp-delivery", after: ["build"], timeoutMs: 5 * MIN }),
 
 	// ── coverage ────────────────────────────────────────────────────────────
 	step({ id: "coverage", group: "coverage", name: "Workspace coverage run", run: "pnpm test:coverage", timeoutMs: 60 * MIN }),
@@ -590,6 +616,26 @@ export const STEPS = Object.freeze([
 
 	// ── release ─────────────────────────────────────────────────────────────
 	step({ id: "build-release", group: "release", name: "Release build", run: "pnpm build:release", timeoutMs: 30 * MIN }),
+	// The shipped bundles, not the sources: a fresh install must block destructive
+	// commands in both build flavours. verify:enforcement rebuilds the development
+	// flavour into a temporary copy and finishes with `pnpm build:release`, so the
+	// release consumers below still see release-mode dist/ trees.
+	step({
+		id: "enforcement",
+		group: "release",
+		name: "Built-artifact enforcement (Claude Code and Codex bundles)",
+		ci: ["quality-gate", "Built-artifact enforcement on the release bundles"],
+		after: ["build-release"],
+		timeoutMs: 40 * MIN,
+	}),
+	step({
+		id: "release-contracts",
+		group: "release",
+		name: "Release signing, key isolation, promotion and provenance contracts",
+		ci: ["quality-gate", "Release signing and provenance contracts"],
+		quick: true,
+		timeoutMs: 5 * MIN,
+	}),
 	// Split so a host without PowerShell still runs the Unix leg (GitHub's Ubuntu runners ship pwsh).
 	step({
 		id: "fleet-windows",
@@ -708,6 +754,10 @@ Runs every gate .github/workflows/ci.yml runs, locally, and prints a summary.
                          Helm, Node 24) into .ci-local/tools, verified as ci.yml verifies them
   --allow-dirty          Skip the clean-checkout step when the tree has uncommitted changes
   --strict               Exit non-zero when any selected step is SKIPPED
+  --release              Release sign-off profile: every non-opt-in step plus the
+                         release-only ones (full-history secret scan); implies
+                         --strict, refuses --only/--skip/--quick/--allow-dirty, and
+                         exits non-zero unless every selected step PASSED
   --json [file]          Also write the machine-readable report to <file>
                          (it is always written to ${REPORT_PATH})
   -h, --help             Show this help`;
@@ -717,8 +767,8 @@ Runs every gate .github/workflows/ci.yml runs, locally, and prints a summary.
  * @returns {{help: boolean, list: boolean, only: string[], skip: string[], quick: boolean, keepGoing: boolean, fetchTools: boolean, allowDirty: boolean, strict: boolean, json: string | null}}
  */
 export function parseArgs(argv) {
-	const options = { help: false, list: false, only: [], skip: [], quick: false, keepGoing: false, fetchTools: false, allowDirty: false, strict: false, json: null };
-	const flags = { "--list": "list", "--quick": "quick", "--keep-going": "keepGoing", "--fetch-tools": "fetchTools", "--allow-dirty": "allowDirty", "--strict": "strict" };
+	const options = { help: false, list: false, only: [], skip: [], quick: false, keepGoing: false, fetchTools: false, allowDirty: false, strict: false, release: false, json: null };
+	const flags = { "--list": "list", "--quick": "quick", "--keep-going": "keepGoing", "--fetch-tools": "fetchTools", "--allow-dirty": "allowDirty", "--strict": "strict", "--release": "release" };
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		if (arg === "--") continue;
@@ -742,6 +792,13 @@ export function parseArgs(argv) {
 		} else if (arg.startsWith("--json=")) options.json = arg.slice("--json=".length) || REPORT_PATH;
 		else throw new Error(`unknown option: ${arg}`);
 	}
+	if (options.release) {
+		// A release sign-off is all-or-nothing: narrowing the plan, or letting the
+		// clean-checkout gate skip, would let a partial run report success.
+		const narrowing = [options.only.length > 0 && "--only", options.skip.length > 0 && "--skip", options.quick && "--quick", options.allowDirty && "--allow-dirty"].filter(Boolean);
+		if (narrowing.length > 0) throw new Error(`--release cannot be combined with ${narrowing.join(", ")}: the release profile runs every required step`);
+		options.strict = true;
+	}
 	return options;
 }
 
@@ -756,7 +813,7 @@ export function parseArgs(argv) {
  * unless a step is named in `--only`; guard steps are added whenever any other
  * step is selected, unless `guards` (or the guard id) is skipped.
  */
-export function selectSteps(steps, { only = [], skip = [], quick = false } = {}) {
+export function selectSteps(steps, { only = [], skip = [], quick = false, release = false } = {}) {
 	const known = new Set(steps.flatMap((entry) => [entry.id, entry.group]));
 	const unknown = [...only, ...skip].filter((name) => !known.has(name));
 	if (unknown.length > 0) throw new Error(`unknown group or step id: ${unknown.join(", ")} (see --list)`);
@@ -766,6 +823,8 @@ export function selectSteps(steps, { only = [], skip = [], quick = false } = {})
 		if (named(entry, skip)) return "--skip";
 		if (only.length > 0 && !named(entry, only)) return "not in --only";
 		if (entry.optIn && !named(entry, only)) return `opt-in, as in CI (select with --only ${entry.group})`;
+		if (release && entry.notInRelease) return `not part of --release: ${entry.notInRelease}`;
+		if (entry.releaseOnly && !release && !named(entry, only)) return "release profile only (select with --release or --only)";
 		if (quick && !entry.quick && !named(entry, only)) return "not part of --quick";
 		return null;
 	};
@@ -997,6 +1056,70 @@ export function computeDrift(workflow, steps, { rootScripts, ciOnly = CI_ONLY_ST
 	return problems;
 }
 
+// ─── release-rc.yml drift ─────────────────────────────────────────────────
+
+export const RELEASE_WORKFLOW_PATH = ".github/workflows/release-rc.yml";
+
+/**
+ * Root scripts release-rc.yml runs that `pnpm ci:local --release` deliberately
+ * does not. An entry needs a reason. Keep this empty unless a script truly
+ * cannot run on a workstation: a release-only contract that no local gate runs
+ * rots silently between releases (OPS-2).
+ * @type {ReadonlyArray<{script: string, reason: string}>}
+ */
+export const RELEASE_ONLY_SCRIPTS = Object.freeze([]);
+
+/** `pnpm <script>` tokens of a shell text, with `quality:*` chains expanded into their leaves. */
+function expandedScriptTokens(text, rootScripts) {
+	const tokens = new Set();
+	const visit = (body, seen) => {
+		for (const token of ciRunTokens(body)) {
+			if (!token.startsWith("pnpm ")) continue;
+			const name = token.slice("pnpm ".length);
+			if (CHAIN_SCRIPT.test(name) && typeof rootScripts[name] === "string" && !seen.has(name)) {
+				visit(expandScriptChain(name, rootScripts).join("\n"), new Set([...seen, name]));
+			} else tokens.add(token);
+		}
+	};
+	visit(text, new Set());
+	return tokens;
+}
+
+/**
+ * Root scripts the release-candidate workflow runs that no ci:local step runs
+ * (literal ci.yml steps are resolved, `quality:*` chains are expanded on both
+ * sides). Empty = every release-rc gate is exercised locally.
+ * @param {Record<string, any>} releaseWorkflow parsed release-rc.yml
+ * @param {Record<string, any>} ciWorkflow parsed ci.yml
+ * @param {ReadonlyArray<Record<string, any>>} steps local plan
+ * @param {{rootScripts: Record<string, string>, releaseOnly?: ReadonlyArray<{script: string, reason: string}>}} context
+ * @returns {string[]}
+ */
+export function computeReleaseDrift(releaseWorkflow, ciWorkflow, steps, { rootScripts, releaseOnly = RELEASE_ONLY_SCRIPTS }) {
+	const problems = [];
+	const localText = steps
+		.map((entry) => {
+			if (entry.run) return entry.run;
+			if (entry.ci) return findCiStep(ciWorkflow, ...entry.ci)?.run ?? "";
+			return "";
+		})
+		.join("\n");
+	const local = expandedScriptTokens(localText, rootScripts);
+	const exempt = new Map(releaseOnly.map(({ script, reason }) => [`pnpm ${script}`, reason]));
+	for (const [token, reason] of exempt) if (!reason) problems.push(`RELEASE_ONLY_SCRIPTS entry "${token}" needs a reason`);
+	for (const [jobId, job] of Object.entries(releaseWorkflow?.jobs ?? {})) {
+		for (const releaseStep of job.steps ?? []) {
+			if (typeof releaseStep.run !== "string") continue;
+			for (const token of expandedScriptTokens(releaseStep.run, rootScripts)) {
+				if (!(token.slice("pnpm ".length) in rootScripts)) continue;
+				if (local.has(token) || exempt.has(token)) continue;
+				problems.push(`${RELEASE_WORKFLOW_PATH} "${jobId} / ${releaseStep.name}" runs "${token}" but no ci:local step does (add it to scripts/lib/ci-local-plan.mjs, or to RELEASE_ONLY_SCRIPTS with a reason)`);
+			}
+		}
+	}
+	return problems;
+}
+
 // ─── pinned tools ─────────────────────────────────────────────────────────
 
 /** ci.yml steps whose pinned download (URL + sha256 + archive member) `--fetch-tools` reuses. */
@@ -1070,7 +1193,7 @@ export function blockingDependency(entry, results) {
  * @param {Array<{status: string, required: boolean}>} results
  * @param {{strict?: boolean, interrupted?: boolean}} options
  */
-export function summarize(results, { strict = false, interrupted = false } = {}) {
+export function summarize(results, { strict = false, release = false, interrupted = false } = {}) {
 	const counts = { PASS: 0, FAIL: 0, SKIPPED: 0, "NOT RUN": 0 };
 	for (const result of results) counts[result.status] = (counts[result.status] ?? 0) + 1;
 	const failedRequired = results.filter((result) => result.status === STATUS.FAIL && result.required);
@@ -1079,6 +1202,8 @@ export function summarize(results, { strict = false, interrupted = false } = {})
 	let exitCode = 0;
 	if (failedRequired.length > 0) exitCode = 1;
 	else if (strict && skipped.length > 0) exitCode = 1;
+	// The release profile accepts nothing short of every selected step passing.
+	else if (release && results.some((result) => result.status !== STATUS.PASS)) exitCode = 1;
 	if (interrupted) exitCode = 130;
 	return { counts, failedRequired, failedAdvisory, skipped, exitCode };
 }
@@ -1094,8 +1219,8 @@ export function formatDuration(ms) {
 const pad = (text, width) => (text.length >= width ? text : text + " ".repeat(width - text.length));
 
 /** Plain-text summary table followed by the SKIPPED and FAILED sections. */
-export function formatSummary(results, { notSelected = [], strict = false, interrupted = false } = {}) {
-	const { counts, failedRequired, failedAdvisory, skipped, exitCode } = summarize(results, { strict, interrupted });
+export function formatSummary(results, { notSelected = [], strict = false, release = false, interrupted = false } = {}) {
+	const { counts, failedRequired, failedAdvisory, skipped, exitCode } = summarize(results, { strict, release, interrupted });
 	const rows = results.map((result) => {
 		const status = result.status === STATUS.FAIL && !result.required ? "FAIL (advisory)" : result.status;
 		const detail = result.status === STATUS.SKIPPED ? result.reason ?? "" : result.note ?? "";
@@ -1141,19 +1266,21 @@ export function formatSummary(results, { notSelected = [], strict = false, inter
 		for (const [reason, ids] of reasons) out.push(reason === "not in --only" ? `  - ${reason}: ${ids.length} step(s)` : `  - ${reason}: ${ids.join(", ")}`);
 	}
 	out.push("");
-	out.push(exitCode === 0 ? "RESULT: PASS (exit 0)" : `RESULT: FAIL (exit ${exitCode})${strict && failedRequired.length === 0 && skipped.length > 0 ? " - --strict and steps were skipped" : ""}`);
+	const why = failedRequired.length > 0 ? "" : strict && skipped.length > 0 ? ` - ${release ? "--release" : "--strict"} and steps were skipped` : release ? " - --release and not every step passed" : "";
+	out.push(exitCode === 0 ? "RESULT: PASS (exit 0)" : `RESULT: FAIL (exit ${exitCode})${why}`);
 	return out.join("\n");
 }
 
 /** Machine-readable report written to .ci-local/report.json. */
-export function buildReport(results, { startedAt, finishedAt, options, environment, notSelected = [], strict = false, interrupted = false }) {
-	const { counts, exitCode } = summarize(results, { strict, interrupted });
+export function buildReport(results, { startedAt, finishedAt, options, environment, notSelected = [], strict = false, release = false, interrupted = false }) {
+	const { counts, exitCode } = summarize(results, { strict, release, interrupted });
 	return {
 		schema: REPORT_SCHEMA,
 		startedAt,
 		finishedAt,
 		durationMs: Date.parse(finishedAt) - Date.parse(startedAt),
 		exitCode,
+		profile: release ? "release" : "default",
 		interrupted,
 		counts,
 		options,

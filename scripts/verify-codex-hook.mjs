@@ -161,7 +161,9 @@ for (const [label, tool, input] of SHOULD_ALLOW) {
 for (const [label, raw] of [
 	["unparseable stdin", "{not json"],
 	["empty stdin", ""],
-	["wrong event", JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Bash" })],
+	// PostToolUse and UserPromptSubmit are registered (output and prompt
+	// protection), so the unsupported event is one the connector never handles.
+	["unsupported event", JSON.stringify({ hook_event_name: "Notification", tool_name: "Bash" })],
 ]) {
 	const res = spawnSync(process.execPath, [BUNDLE], {
 		input: raw,

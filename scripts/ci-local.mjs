@@ -614,7 +614,7 @@ function printList(workflow, rootScripts, options) {
 	for (const [group, description] of GROUPS) {
 		console.log(`\n${bold(group)} - ${description}`);
 		for (const entry of STEPS.filter((candidate) => candidate.group === group)) {
-			const flags = [chosen.has(entry.id) ? "selected" : "not selected", entry.quick ? "quick" : null, entry.optIn ? "opt-in" : null, entry.required ? null : "advisory", entry.phase ? `runs ${entry.phase === "pre" ? "first" : "last"}` : null].filter(Boolean);
+			const flags = [chosen.has(entry.id) ? "selected" : "not selected", entry.quick ? "quick" : null, entry.optIn ? "opt-in" : null, entry.releaseOnly ? "release profile only" : null, entry.notInRelease ? "not in --release" : null, entry.required ? null : "advisory", entry.phase ? `runs ${entry.phase === "pre" ? "first" : "last"}` : null].filter(Boolean);
 			console.log(`  ${entry.id}  ${entry.name}  [${flags.join(", ")}]  timeout ${formatDuration(entry.timeoutMs)}`);
 			const requires = [...(entry.requires ?? []), ...(entry.nodeLeg === "prefer-24" ? ["node24 (preferred; falls back to current Node with a warning)"] : [])];
 			if (requires.length > 0) console.log(`      requires: ${requires.map((name) => (REQUIREMENTS[name] ? `${name} (${REQUIREMENTS[name].label})` : name)).join("; ")}`);
@@ -704,13 +704,14 @@ async function main() {
 
 	const finishedAt = new Date().toISOString();
 	console.log(`\n${bold("ci:local summary")} (${formatDuration(Date.parse(finishedAt) - Date.parse(startedAt))})\n`);
-	console.log(formatSummary(results, { notSelected, strict: options.strict, interrupted }));
+	console.log(formatSummary(results, { notSelected, strict: options.strict, release: options.release, interrupted }));
 	const report = buildReport(results, {
 		startedAt,
 		finishedAt,
 		options,
 		notSelected,
 		strict: options.strict,
+		release: options.release,
 		interrupted,
 		environment: { node: process.version, platform: process.platform, arch: process.arch, head, dirty, facts: { available: facts.available, detail: facts.detail } },
 	});
@@ -721,7 +722,7 @@ async function main() {
 		writeFileSync(path.resolve(root, options.json), json);
 	}
 	console.log(`\nReport: ${REPORT_PATH}${options.json && path.resolve(root, options.json) !== path.join(root, REPORT_PATH) ? ` and ${options.json}` : ""}`);
-	return summarize(results, { strict: options.strict, interrupted }).exitCode;
+	return summarize(results, { strict: options.strict, release: options.release, interrupted }).exitCode;
 }
 
 main().then(

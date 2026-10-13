@@ -48,6 +48,7 @@ function candidateFixture(t) {
 		"scripts/build-release-candidate.mjs", "scripts/release-candidate-cleanup.mjs",
 		"scripts/lib/claude-plugin-package.mjs", "scripts/lib/tar-path.mjs",
 		"scripts/lib/release-archive-inspection.mjs", "scripts/lib/package-artifact-rules.mjs",
+		"scripts/lib/dist-provenance.mjs", "scripts/lib/release-evidence-digests.mjs",
 		"scripts/generate-provenance.mjs",
 		"packages/claude-code/scripts/ensure-dist.mjs",
 	]) {
@@ -65,13 +66,35 @@ function candidateFixture(t) {
 		const directory = join(root, "packages", name);
 		mkdirSync(join(directory, "dist"), { recursive: true });
 		writeFileSync(join(directory, "dist", "index.cjs"), "module.exports = {};\n");
-		writeFileSync(join(directory, "dist", "aidr-artifact.manifest.json"), JSON.stringify({ artifact_id: `${name}/dist` }));
 		writeFileSync(join(directory, "package.json"), JSON.stringify({ name: `@singularityrd/aidr-${name}`, version: "1.2.3", files: ["dist"] }));
 	}
-	for (const args of [["init", "--quiet"], ["add", "."], ["-c", "user.name=AIDR Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "fixture"]]) {
-		execFileSync("git", args, { cwd: root, stdio: "pipe" });
-	}
+	commitFixture(root, "fixture");
+	writeReleaseManifests(root);
 	return { root, script: join(root, "scripts", "build-release-candidate.mjs") };
+}
+
+const FIXTURE_PACKAGES = ["core", "claude-code", "opencode", "openclaw", "codex", "cli", "sdk", "mcp-gateway", "dashboard", "extension"];
+
+function commitFixture(root, message) {
+	const commands = [["add", "."], ["-c", "user.name=AIDR Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "--allow-empty", "-m", message]];
+	if (!existsSync(join(root, ".git"))) commands.unshift(["init", "--quiet"]);
+	for (const args of commands) execFileSync("git", args, { cwd: root, stdio: "pipe" });
+}
+
+/** What `pnpm build:release` records: commit, committed tree and every file's digest. */
+function writeReleaseManifests(root) {
+	const gitSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	const tree = execFileSync("git", ["ls-tree", "-r", "-z", "--full-tree", "HEAD"], { cwd: root });
+	const sourceDigest = `sha256:${createHash("sha256").update(tree).digest("hex")}`;
+	for (const name of FIXTURE_PACKAGES) {
+		const dist = join(root, "packages", name, "dist");
+		const files = readdirSync(dist)
+			.filter((file) => !file.startsWith("aidr-artifact.manifest."))
+			.sort()
+			.map((file) => ({ path: file, sha256: createHash("sha256").update(readFileSync(join(dist, file))).digest("hex") }));
+		writeFileSync(join(dist, "aidr-artifact.manifest.json"), JSON.stringify({ artifact_id: `${name}/dist`, files, provenance: { schema_version: 1, git_sha: gitSha, source_digest: sourceDigest } }));
+	}
+	return gitSha;
 }
 
 describe("release candidate cleanup", () => {
@@ -142,6 +165,12 @@ describe("release candidate assembler", () => {
 		mkdirSync(join(root, "dist/resources"), { recursive: true });
 		for (const file of VSIX_PACKAGE_FILES.filter((name) => name.startsWith("dist/") && !name.endsWith(".sig") && !name.includes("*"))) writeFileSync(join(root, file), "fixture\n");
 		writeFileSync(join(root, "dist/resources/rules.txt"), "synthetic rule fixture\n");
+		// One file under every other `dir/**` entry (dist/vendor/** and the like).
+		for (const pattern of VSIX_PACKAGE_FILES.filter((name) => name.endsWith("/**") && name !== "dist/resources/**")) {
+			const dir = join(root, pattern.slice(0, -3));
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "fixture.txt"), "fixture\n");
+		}
 		writeFileSync(join(root, "README.md"), "# Synthetic packaging fixture\n");
 		writeFileSync(join(root, "LICENSE"), "MIT\n");
 		copyFileSync(join(ROOT, "packages/extension/aidr-icon.png"), join(root, "aidr-icon.png"));
@@ -183,7 +212,7 @@ describe("release candidate assembler", () => {
 		const output = ".release-evidence/candidate";
 		const result = run(["--output", output], { script: fixture.script, cwd: fixture.root });
 		assert.equal(result.status, 1);
-		assert.match(result.output, /required release provenance failed:.*artifact manifest is missing/s);
+		assert.match(result.output, /packages\/mcp-gateway\/dist\/aidr-artifact\.manifest\.json is missing/);
 		assert.equal(existsSync(join(fixture.root, output)), false);
 	});
 	it("documents its arguments", () => {
@@ -218,8 +247,37 @@ describe("release candidate assembler", () => {
 		const output = ".release-evidence/candidate";
 		const result = run(["--output", output], { script: fixture.script, cwd: fixture.root });
 		assert.equal(result.status, 1);
-		assert.match(result.output, /packed consumer artifact contains forbidden files/);
+		assert.match(result.output, /packages\/core\/dist contains source maps \(index\.cjs\.map\); it is not a release-mode build/);
 		assert.equal(existsSync(join(fixture.root, output)), false, "failed assembly must leave no incomplete candidate");
+	});
+
+	it("refuses dist trees built from another commit even when the worktree is clean (OPS-6)", (t) => {
+		const fixture = candidateFixture(t);
+		const builtFrom = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+		// Check out (here: commit) a newer source while the gitignored dist/ trees stay.
+		writeFileSync(join(fixture.root, "packages/core/package.json"), JSON.stringify({ name: "@singularityrd/aidr-core", version: "1.2.3", files: ["dist"], description: "changed" }));
+		commitFixture(fixture.root, "newer source");
+		const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
+		assert.equal(execFileSync("git", ["status", "--porcelain"], { cwd: fixture.root, encoding: "utf8" }), "", "the stale build hides behind a clean worktree");
+		const output = ".release-evidence/candidate";
+		const result = run(["--output", output], { script: fixture.script, cwd: fixture.root });
+		assert.equal(result.status, 1);
+		assert.match(result.output, new RegExp(`dist trees are not bound to HEAD ${head}`));
+		assert.match(result.output, new RegExp(`packages/core/dist was built from commit ${builtFrom}, not HEAD ${head}`));
+		assert.match(result.output, /records source tree sha256:[0-9a-f]{64}, not the committed tree/);
+		assert.equal(existsSync(join(fixture.root, output)), false);
+	});
+
+	it("refuses a dist tree changed after its release build and one without recorded provenance", (t) => {
+		const fixture = candidateFixture(t);
+		writeFileSync(join(fixture.root, "packages/cli/dist/index.cjs"), "module.exports = { tampered: true };\n");
+		writeFileSync(join(fixture.root, "packages/sdk/dist/extra.cjs"), "module.exports = {};\n");
+		writeFileSync(join(fixture.root, "packages/codex/dist/aidr-artifact.manifest.json"), JSON.stringify({ artifact_id: "codex/dist" }));
+		const result = run(["--output", ".release-evidence/candidate"], { script: fixture.script, cwd: fixture.root });
+		assert.equal(result.status, 1);
+		assert.match(result.output, /packages\/cli\/dist no longer matches its build manifest: index\.cjs \(content changed\)/);
+		assert.match(result.output, /packages\/sdk\/dist no longer matches its build manifest: extra\.cjs \(not in the manifest\)/);
+		assert.match(result.output, /packages\/codex\/dist was built from commit <unrecorded>/);
 	});
 
 	it("removes incomplete output when pnpm pack fails", (t) => {
