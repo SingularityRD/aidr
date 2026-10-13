@@ -284,6 +284,7 @@ export const STEPS = Object.freeze([
 		quick: true,
 		timeoutMs: 3 * MIN,
 	}),
+	step({ id: "manifest-versions", group: "static", name: "Version-bearing manifests (plugin, OpenClaw, Helm chart) match their packages", run: "pnpm verify:manifests", quick: true, timeoutMs: 3 * MIN }),
 	step({ id: "package-install-gate", group: "static", name: "Package install gate tests", run: "pnpm test:package-install-gate", quick: true, timeoutMs: 5 * MIN }),
 	step({ id: "benchmarks", group: "static", name: "Benchmark harness tests", run: "pnpm benchmark:test", quick: true, timeoutMs: 5 * MIN }),
 	step({ id: "mandatory-skips", group: "static", name: "Undeclared test skip gate", run: "node scripts/check-mandatory-skips.mjs", quick: true, timeoutMs: 3 * MIN }),

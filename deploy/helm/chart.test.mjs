@@ -17,6 +17,8 @@ const root = resolve(here, "../..");
 const chartDir = join(here, "aidr");
 const { parse, parseAllDocuments } = createRequire(join(root, "packages/core/package.json"))("yaml");
 const readYaml = (path) => parse(readFileSync(path, "utf8"));
+// Source of truth for the chart appVersion and every first-party default image tag.
+const APP_VERSION = JSON.parse(readFileSync(join(root, "packages/dashboard/package.json"), "utf8")).version;
 const CI_VALUES = ["default", "prod", "posture-scanner", "privacy-gateway"];
 const KUBE_VERSION = "1.30.0";
 
@@ -69,9 +71,10 @@ test("chart metadata pins apiVersion v2 and appVersion to the product version", 
 	const chart = readYaml(join(chartDir, "Chart.yaml"));
 	assert.equal(chart.apiVersion, "v2");
 	assert.equal(chart.name, "aidr");
-	assert.equal(chart.appVersion, "0.6.0");
-	const dashboardPackage = JSON.parse(readFileSync(join(root, "packages/dashboard/package.json"), "utf8"));
-	assert.equal(chart.appVersion, dashboardPackage.version);
+	// appVersion is the default tag of every first-party image; scripts/sync-manifests.mjs
+	// keeps it equal to the dashboard package version on every Changesets bump.
+	assert.equal(chart.appVersion, APP_VERSION);
+	assert.match(String(chart.version), /^\d+\.\d+\.\d+$/u);
 });
 
 test("default values are secure and generate no credentials", () => {
@@ -480,7 +483,7 @@ test("rendered images give the complete air-gap pull list", { skip: helmSkip }, 
 	for (const name of CI_VALUES) {
 		for (const { spec } of podSpecs(renderDocs(name))) for (const container of spec.containers) images.add(container.image);
 	}
-	for (const expected of ["supabase/gotrue:v2.197.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.80.2", "envoyproxy/envoy:v1.39.2", "supabase/postgres:17.11.0.004", "aidr/dashboard:0.6.0", "aidr/edge-functions:0.6.0", "aidr/migrations:0.6.0"]) {
+	for (const expected of ["supabase/gotrue:v2.197.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.80.2", "envoyproxy/envoy:v1.39.2", "supabase/postgres:17.11.0.004", `aidr/dashboard:${APP_VERSION}`, `aidr/edge-functions:${APP_VERSION}`, `aidr/migrations:${APP_VERSION}`]) {
 		assert.ok([...images].some((image) => image === `registry.example.internal/${expected}`), expected);
 	}
 });
@@ -571,7 +574,7 @@ test("rendered privacy-gateway values add a hardened gateway with an egress allo
 	assert.equal(deployment.spec.replicas, 1);
 	assert.equal(spec.securityContext.runAsUser, 10001);
 	assert.equal(spec.containers[0].securityContext.readOnlyRootFilesystem, true);
-	assert.equal(spec.containers[0].image, "registry.example.internal/aidr/privacy-gateway:0.6.0");
+	assert.equal(spec.containers[0].image, `registry.example.internal/aidr/privacy-gateway:${APP_VERSION}`);
 	assert.ok(!spec.containers[0].env.some((entry) => entry.valueFrom));
 	const config = JSON.parse(docs.find((doc) => doc.kind === "ConfigMap" && doc.metadata.name === "aidr-privacy-gateway").data["service.json"]);
 	assert.equal(config.secretStore, "mounted-files");

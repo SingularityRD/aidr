@@ -403,10 +403,10 @@ This project uses [Changesets](https://github.com/changesets/changesets) with **
 1. Make your changes
 2. Run `pnpm changeset` — select affected packages and bump type (patch/minor/major)
 3. Commit the generated `.changeset/*.md` file alongside your code changes
-4. When ready to release: `pnpm run version` — applies all pending changesets, bumps `package.json` versions, generates per-package changelogs, and syncs non-standard manifests (`plugin.json`, `marketplace.json`, `openclaw.plugin.json`)
+4. When ready to release: `pnpm run version` — applies all pending changesets, bumps `package.json` versions, generates per-package changelogs, and syncs non-standard manifests (`plugin.json`, `marketplace.json`, `openclaw.plugin.json`, the Helm `Chart.yaml`)
 5. Commit the version bumps and changelog updates
 
-**Non-standard manifest sync:** Changesets only knows about `package.json` files. The `pnpm run version` script automatically runs `scripts/sync-manifests.mjs` after `changeset version` to propagate versions to `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `packages/openclaw/openclaw.plugin.json`.
+**Non-standard manifest sync:** Changesets only knows about `package.json` files. The `pnpm run version` script automatically runs `scripts/sync-manifests.mjs` after `changeset version` to propagate versions to `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `packages/openclaw/openclaw.plugin.json` and `deploy/helm/aidr/Chart.yaml`. The chart `appVersion` follows the dashboard package version (it is the default tag of every first-party image the chart deploys), and the chart `version` moves with it: a product patch bumps the chart patch, a product minor or major bumps the chart minor; chart majors are reserved for breaking values changes and are made by hand. `pnpm verify:manifests` (part of `quality:static`) fails when any of these manifests disagrees with its package.
 
 **Pre-commit hook:** A `changeset-check` pre-commit hook warns when staged files affect shipped artifacts (source code, threat definitions, allowlists, hooks, skills, plugin manifests) without a corresponding changeset. Bypass with `git commit --no-verify`.
 
