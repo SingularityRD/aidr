@@ -299,8 +299,10 @@ async function structuralChecks() {
 	assertIncludes(publicLayout, 'aria-label={t("public.footerLabel")}', "support/legal navigation");
 	assertIncludes(enCatalog, '"public.footerLabel": "Support and legal"', "support/legal navigation label");
 	assertRegex(`${publicLayout}\n${publicInfo}`, /target="_blank"[\s\S]{0,80}rel="noreferrer"/, "external link opener policy");
-	assertIncludes(publicInfo, "No live status feed is configured", "status feed fail-closed notice");
-	assertIncludes(publicInfo, "Terms URL is not configured", "terms URL fail-closed notice");
+	assertIncludes(publicInfo, 't("pi.noStatus")', "status feed fail-closed notice");
+	assertIncludes(catalog, "No live status feed is configured", "status feed fail-closed wording");
+	assertIncludes(publicInfo, 't("pi.noTerms")', "terms URL fail-closed notice");
+	assertIncludes(catalog, "Terms URL is not configured", "terms URL fail-closed wording");
 	assertIncludes(routeError, 't("error.retry")', "route error retry action");
 	assertIncludes(enCatalog, '"error.retry": "Retry"', "route error retry label");
 

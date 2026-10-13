@@ -25,15 +25,19 @@ import { governanceChangeMessages } from "./governance-change";
 import { governanceErrorsMessages } from "./governance-errors";
 import { governanceRequestsMessages } from "./governance-requests";
 import { governanceScorecardMessages } from "./governance-scorecard";
+import { landingMessages } from "./landing";
 import { notificationsMessages } from "./notifications";
 import { oidcSsoMessages } from "./oidc-sso";
 import { onboardingMessages } from "./onboarding";
 import { operatorMessages } from "./operator";
+import { pilotMessages } from "./pilot";
 import { policyMessages } from "./policy";
 import { policyRolloutMessages } from "./policy-rollout";
 import { policyRuntimeMessages } from "./policy-runtime";
 import { postureMessages } from "./posture";
+import { pricingMessages } from "./pricing";
 import { privacyGuardMessages } from "./privacy-guard";
+import { publicInfoMessages } from "./public-info";
 import { retentionMessages } from "./retention";
 import { samlMessages } from "./saml";
 import { scimMessages } from "./scim";
@@ -41,6 +45,7 @@ import { settingsMessages } from "./settings";
 import { siemMessages } from "./siem";
 import { teamMessages } from "./team";
 import { usageMessages } from "./usage";
+import { verifyMessages } from "./verify";
 
 /** Every page message module; en.ts and tr.ts take their halves from here. */
 export const pageMessages = {
@@ -71,15 +76,19 @@ export const pageMessages = {
 	...governanceErrorsMessages,
 	...governanceRequestsMessages,
 	...governanceScorecardMessages,
+	...landingMessages,
 	...notificationsMessages,
 	...oidcSsoMessages,
 	...onboardingMessages,
 	...operatorMessages,
+	...pilotMessages,
 	...policyMessages,
 	...policyRolloutMessages,
 	...policyRuntimeMessages,
 	...postureMessages,
+	...pricingMessages,
 	...privacyGuardMessages,
+	...publicInfoMessages,
 	...retentionMessages,
 	...samlMessages,
 	...scimMessages,
@@ -87,6 +96,7 @@ export const pageMessages = {
 	...siemMessages,
 	...teamMessages,
 	...usageMessages,
+	...verifyMessages,
 };
 
 /** The same modules as a list, so a test can prove no key is defined twice. */
@@ -118,15 +128,19 @@ export const messageModules = [
 	governanceErrorsMessages,
 	governanceRequestsMessages,
 	governanceScorecardMessages,
+	landingMessages,
 	notificationsMessages,
 	oidcSsoMessages,
 	onboardingMessages,
 	operatorMessages,
+	pilotMessages,
 	policyMessages,
 	policyRolloutMessages,
 	policyRuntimeMessages,
 	postureMessages,
+	pricingMessages,
 	privacyGuardMessages,
+	publicInfoMessages,
 	retentionMessages,
 	samlMessages,
 	scimMessages,
@@ -134,4 +148,5 @@ export const messageModules = [
 	siemMessages,
 	teamMessages,
 	usageMessages,
+	verifyMessages,
 ];

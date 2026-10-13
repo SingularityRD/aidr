@@ -75,18 +75,6 @@ const CODE_TAGS = new Set(["code", "pre", "kbd", "samp"]);
 const SENTENCE = /[A-Z][a-z]+(?:[ ,]+[a-z][a-z'’-]*){2,}/;
 const WORD = /[A-Za-z]{2,}/;
 
-/**
- * Files not yet moved to the catalogs, with the number of literals they still
- * hold. The list may only shrink: a new literal anywhere fails the test.
- */
-const PENDING: Record<string, number> = {
-	"ui/pages/public/LandingPage.tsx": 47,
-	"ui/pages/public/PilotPage.tsx": 28,
-	"ui/pages/public/PricingPage.tsx": 29,
-	"ui/pages/public/PublicInfoPage.tsx": 21,
-	"ui/pages/public/VerifyPage.tsx": 33,
-};
-
 function tsxFiles(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {
 		const path = join(dir, entry);
@@ -204,17 +192,9 @@ describe("console pages use the translation catalogs", () => {
 		const offenders: Record<string, string[]> = {};
 		for (const file of files) {
 			const literals = literalUiText(join(SRC, file));
-			const pending = PENDING[file] ?? 0;
-			if (literals.length > pending) offenders[file] = literals;
+			if (literals.length > 0) offenders[file] = literals;
 		}
 		expect(offenders).toEqual({});
-	});
-
-	it("keeps the pending list honest (shrink it when a page is translated)", () => {
-		const stale = Object.entries(PENDING).filter(
-			([file, count]) => !files.includes(file) || literalUiText(join(SRC, file)).length < count,
-		);
-		expect(stale).toEqual([]);
 	});
 
 	it("catches the heuristic's targets", () => {

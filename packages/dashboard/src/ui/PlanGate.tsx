@@ -64,7 +64,7 @@ export function PlanGate({
 	if (state.kind === "unavailable") {
 		return (
 			<section className="card" role="alert">
-				<h1>{PLAN_FEATURE_LABELS[feature]}</h1>
+				<h1>{t(PLAN_FEATURE_LABELS[feature])}</h1>
 				<p>{t("plan.unavailable")}</p>
 			</section>
 		);
@@ -73,10 +73,10 @@ export function PlanGate({
 	const current = planById(state.entitlements.planId)?.displayName ?? state.entitlements.planId;
 	return (
 		<section className="card" aria-labelledby="plan-gate-heading" data-plan-gate={feature}>
-			<h1 id="plan-gate-heading">{PLAN_FEATURE_LABELS[feature]}</h1>
+			<h1 id="plan-gate-heading">{t(PLAN_FEATURE_LABELS[feature])}</h1>
 			<p>
 				{richT("plan.includedFrom", {
-					feature: PLAN_FEATURE_LABELS[feature],
+					feature: t(PLAN_FEATURE_LABELS[feature]),
 					plan: <strong>{requiredPlanName(feature)}</strong>,
 					current: <strong>{current}</strong>,
 					why: state.entitlements.source === "admission_inactive" ? t("plan.inactive") : "",
