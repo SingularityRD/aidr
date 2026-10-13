@@ -17,7 +17,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ControlPlaneConfigSchema } from "@singularityrd/aidr-core";
+import { ControlPlaneConfigSchema, type VerifiedCustomerPacket } from "@singularityrd/aidr-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createEnrollment,
@@ -628,8 +628,7 @@ describe("the customer packet's company address", () => {
 		customerId: "bilgem",
 		packetId: "PKT-BILGEM-1",
 		controlPlaneUrl: "https://aidr.bilgem.example.tr",
-		license: {} as never,
-	};
+	} as unknown as VerifiedCustomerPacket;
 
 	it("pre-fills the address (no code) when the installer left no file", async () => {
 		const ops = createLocalOps({ home, env: env(), enrollment: { customerPacket: () => packet } });

@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { verifyCustomerPacket } from "@singularityrd/aidr-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	customerFilePath,
@@ -21,9 +22,9 @@ import {
 	describeCustomer,
 	discoverCustomerPacket,
 	licenseFilePath,
+	licenseStatus,
 	recordCustomerPacket,
 } from "../utils/customer-packet.js";
-import { licenseState, verifyCustomerPacket } from "../utils/customer-packet-core-shim.js";
 import {
 	licensePayload,
 	registryOf,
@@ -60,12 +61,12 @@ describe("verifyCustomerPacket", () => {
 			controlPlaneUrl: "https://aidr.bilgem.example.tr",
 			sensitivity: "paranoid",
 		});
-		expect(verified.license).toEqual(packet.payload.license);
+		expect(verified.license.document).toEqual(packet.payload.license);
 	});
 
 	it("still verifies a packet whose license has ended (detection must install)", () => {
 		const verified = verifyAt(signedPacket(key, NOW, -120));
-		expect(licenseState(verified.license, new Date(NOW)).state).toBe("expired");
+		expect(licenseStatus(verified.license, new Date(NOW)).state).toBe("expired");
 	});
 
 	it("fails closed without trusted keys, with an unknown or revoked key", () => {
@@ -75,7 +76,7 @@ describe("verifyCustomerPacket", () => {
 		);
 		expect(() => verifyAt(packet, NOW, registryOf())).toThrow(/no license public keys/);
 		expect(() => verifyAt(packet, NOW, registryOf(signingKey("other-key")))).toThrow(
-			/untrusted key/,
+			/not in the trusted license public-key registry/,
 		);
 		const revoked = { ...key, registryEntry: { ...key.registryEntry, status: "revoked" } };
 		expect(() => verifyAt(packet, NOW, registryOf(revoked))).toThrow(/revoked/);
@@ -91,8 +92,10 @@ describe("verifyCustomerPacket", () => {
 				retired_at: "2025-01-01T00:00:00Z",
 			},
 		};
-		expect(() => verifyAt(packet, NOW, registryOf(retired))).toThrow(/after retirement/);
-		expect(() => verifyAt(packet, NOW, { format: "other", keys: [] })).toThrow(/malformed/);
+		expect(() => verifyAt(packet, NOW, registryOf(retired))).toThrow(/was retired/);
+		expect(() => verifyAt(packet, NOW, { format: "other", keys: [] })).toThrow(
+			/registry must declare/,
+		);
 	});
 
 	it("refuses any change to a signed field", () => {
@@ -126,12 +129,12 @@ describe("verifyCustomerPacket", () => {
 			{ ...signedPacket(key, NOW).payload, enrollment_code: "x" },
 			key,
 		);
-		expect(() => verifyAt(extra)).toThrow(/unknown or missing fields/);
+		expect(() => verifyAt(extra)).toThrow(/unknown field\(s\): enrollment_code/);
 		expect(() => verifyAt(signedPacket(key, NOW, 365, { customer_id: "havelsan" }))).toThrow(
-			/different customer/,
+			/packet is for havelsan but its license is for bilgem/,
 		);
 		expect(() => verifyAt(signedPacket(key, NOW, 365, {}, { customer_id: undefined }))).toThrow(
-			/different customer/,
+			/does not name a customer_id/,
 		);
 	});
 
@@ -142,7 +145,7 @@ describe("verifyCustomerPacket", () => {
 		);
 		expect(() =>
 			verifyAt(signedPacket(key, NOW, 365, { control_plane_url: "https://u:p@aidr.example.tr" })),
-		).toThrow(/https/);
+		).toThrow(/credentials/);
 		expect(() => verifyAt(signedPacket(key, NOW, 365, { display_name: " padded" }))).toThrow(
 			/display_name/,
 		);
@@ -156,13 +159,13 @@ describe("licenseState", () => {
 	it("moves from active through grace to expired; updates run until expiry + grace", () => {
 		const license = verifyAt(signedPacket(key, NOW, 10)).license;
 		const until = Date.parse(license.payload.expires_at) + 30 * DAY_MS;
-		expect(licenseState(license, new Date(NOW))).toEqual({
+		expect(licenseStatus(license, new Date(NOW))).toEqual({
 			state: "active",
 			updatesUntil: new Date(until),
 		});
-		expect(licenseState(license, new Date(NOW + 20 * DAY_MS)).state).toBe("grace");
-		expect(licenseState(license, new Date(until)).state).toBe("expired");
-		expect(licenseState(license, new Date(Date.parse(license.payload.not_before) - 1)).state).toBe(
+		expect(licenseStatus(license, new Date(NOW + 20 * DAY_MS)).state).toBe("grace");
+		expect(licenseStatus(license, new Date(until)).state).toBe("expired");
+		expect(licenseStatus(license, new Date(Date.parse(license.payload.not_before) - 1)).state).toBe(
 			"not_yet_valid",
 		);
 	});
@@ -230,7 +233,7 @@ describe("license record", () => {
 	it("writes the verified license and the customer identity owner-only", () => {
 		const packet = verifyAt(signedPacket(key, NOW));
 		recordCustomerPacket(dir, packet);
-		expect(JSON.parse(readFileSync(licenseFilePath(dir), "utf8"))).toEqual(packet.license);
+		expect(JSON.parse(readFileSync(licenseFilePath(dir), "utf8"))).toEqual(packet.license.document);
 		expect(JSON.parse(readFileSync(customerFilePath(dir), "utf8"))).toEqual({
 			customer_id: "bilgem",
 			packet_id: "PKT-BILGEM-1",

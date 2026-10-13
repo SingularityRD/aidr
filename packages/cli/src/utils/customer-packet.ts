@@ -18,15 +18,16 @@
  */
 import { lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { preparePrivateLocalDirectory } from "@singularityrd/aidr-core";
-import { ct } from "../i18n/index.js";
 import {
-	type LicenseDocument,
-	type LicenseLifecycle,
+	type LicenseState as LicenseLifecycle,
 	licenseState,
+	licenseTermEndMs,
+	preparePrivateLocalDirectory,
 	type VerifiedCustomerPacket,
+	type VerifiedLicense,
 	verifyCustomerPacket,
-} from "./customer-packet-core-shim.js";
+} from "@singularityrd/aidr-core";
+import { ct } from "../i18n/index.js";
 
 export type { LicenseLifecycle, VerifiedCustomerPacket };
 
@@ -96,8 +97,8 @@ function readPacketFile(path: string): unknown | null {
 }
 
 /** Lifecycle of a verified license at `now`. */
-function licenseStatus(license: LicenseDocument, now = new Date()): LicenseStatus {
-	return licenseState(license, now);
+export function licenseStatus(license: VerifiedLicense, now = new Date()): LicenseStatus {
+	return { state: licenseState(license, now), updatesUntil: new Date(licenseTermEndMs(license)) };
 }
 
 /** Find, read and verify the customer packet. Never throws. */
@@ -165,7 +166,7 @@ export function recordCustomerPacket(home: string, packet: VerifiedCustomerPacke
 	const directory = join(home, ".singularity-aidr");
 	mkdirSync(directory, { recursive: true, mode: 0o700 });
 	preparePrivateLocalDirectory(directory);
-	writePrivateJson(licenseFilePath(home), packet.license);
+	writePrivateJson(licenseFilePath(home), packet.license.document);
 	writePrivateJson(customerFilePath(home), {
 		customer_id: packet.customerId,
 		packet_id: packet.packetId,

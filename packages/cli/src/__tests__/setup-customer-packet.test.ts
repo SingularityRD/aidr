@@ -137,7 +137,7 @@ describe("aidr setup with a customer packet", () => {
 	it("refuses a packet signed by a key that is not trusted", async () => {
 		placePacket(signedPacket(signingKey("other-key"), NOW));
 		const output = await setup({ yes: true });
-		expect(output).toContain("was refused (customer packet was signed by an untrusted key)");
+		expect(output).toContain("was refused (customer packet was signed by key");
 		expect(existsSync(licenseFilePath(testHome))).toBe(false);
 	}, 60_000);
 
