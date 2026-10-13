@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import { useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { DownloadCenter } from "../../onboarding/DownloadCenter";
+import { InstallerDownloads } from "../../onboarding/InstallerDownloads";
 import {
 	clearPendingTeamCreate,
 	type PendingTeamCreate,
@@ -296,6 +298,7 @@ function TeamOnboarding({
 	const [promptCopyStatus, setPromptCopyStatus] = useState<"idle" | "copied" | "error">("idle");
 	const [showEnrollmentToken, setShowEnrollmentToken] = useState(false);
 	const [copiedEnrollmentToken, setCopiedEnrollmentToken] = useState(false);
+	const t = useT();
 
 	const prompt = useMemo(() => promptForRuntime(runtime), [runtime]);
 	const requestedInterval = device?.interval_seconds;
@@ -623,321 +626,340 @@ function TeamOnboarding({
 				) : null}
 			</div>
 
-			<div className="cols">
-				<div className="card">
-					<h2>1) Choose runtime</h2>
-					<div className="row" style={{ flexWrap: "wrap" }}>
-						{(
-							[
-								["claude-code", "Claude Code"],
-								["cursor", "Cursor"],
-								["vscode", "VS Code"],
-								["openclaw", "OpenClaw"],
-								["opencode", "OpenCode"],
-							] as Array<[Runtime, string]>
-						).map(([id, label]) => (
-							<button
-								key={id}
-								className={`button ${runtime === id ? "" : "button-secondary"}`}
-								type="button"
-								onClick={() => {
-									setRuntime(id);
-									setPromptCopyStatus("idle");
-								}}
-								aria-pressed={runtime === id}
-							>
-								{label}
-							</button>
-						))}
-					</div>
+			<section className="card" aria-labelledby="onboarding-install-title">
+				<h2 id="onboarding-install-title">{t("onboarding.install.title")}</h2>
+				<p className="muted">
+					{t("onboarding.install.body")}{" "}
+					<Link to="/downloads">{t("onboarding.install.allDownloads")}</Link>
+				</p>
+				<InstallerDownloads teamId={teamId} />
+			</section>
 
-					<div className="notice" style={{ marginTop: 12 }}>
-						<label className="muted small" htmlFor="onboarding-agent-prompt">
-							Prompt to give your agent
-						</label>
-						<textarea
-							id="onboarding-agent-prompt"
-							className="input mono"
-							style={{ minHeight: 220, resize: "vertical" }}
-							readOnly
-							value={prompt}
-						/>
-						<button
-							className="button button-secondary button-sm"
-							type="button"
-							onClick={async () => {
-								try {
-									await navigator.clipboard.writeText(prompt);
-									setPromptCopyStatus("copied");
-								} catch {
-									setPromptCopyStatus("error");
-								}
-							}}
-						>
-							{promptCopyStatus === "copied" ? "Prompt copied" : "Copy prompt"}
-						</button>
-						{promptCopyStatus === "error" ? (
-							<div role="alert">
-								Clipboard access was blocked. Select the prompt above and copy it manually.
+			<details className="card">
+				<summary>
+					<b>{t("onboarding.advanced.summary")}</b>
+				</summary>
+				<p className="muted small">{t("onboarding.advanced.body")}</p>
+				<div className="cols">
+					<div className="card">
+						<h2>1) Choose runtime</h2>
+						<div className="row" style={{ flexWrap: "wrap" }}>
+							{(
+								[
+									["claude-code", "Claude Code"],
+									["cursor", "Cursor"],
+									["vscode", "VS Code"],
+									["openclaw", "OpenClaw"],
+									["opencode", "OpenCode"],
+								] as Array<[Runtime, string]>
+							).map(([id, label]) => (
+								<button
+									key={id}
+									className={`button ${runtime === id ? "" : "button-secondary"}`}
+									type="button"
+									onClick={() => {
+										setRuntime(id);
+										setPromptCopyStatus("idle");
+									}}
+									aria-pressed={runtime === id}
+								>
+									{label}
+								</button>
+							))}
+						</div>
+
+						<div className="notice" style={{ marginTop: 12 }}>
+							<label className="muted small" htmlFor="onboarding-agent-prompt">
+								Prompt to give your agent
+							</label>
+							<textarea
+								id="onboarding-agent-prompt"
+								className="input mono"
+								style={{ minHeight: 220, resize: "vertical" }}
+								readOnly
+								value={prompt}
+							/>
+							<button
+								className="button button-secondary button-sm"
+								type="button"
+								onClick={async () => {
+									try {
+										await navigator.clipboard.writeText(prompt);
+										setPromptCopyStatus("copied");
+									} catch {
+										setPromptCopyStatus("error");
+									}
+								}}
+							>
+								{promptCopyStatus === "copied" ? "Prompt copied" : "Copy prompt"}
+							</button>
+							{promptCopyStatus === "error" ? (
+								<div role="alert">
+									Clipboard access was blocked. Select the prompt above and copy it manually.
+								</div>
+							) : null}
+							<div className="muted small" style={{ marginTop: 10 }}>
+								This prompt focuses the agent on install + authorization without asking you to
+								manually copy API keys.
 							</div>
-						) : null}
-						<div className="muted small" style={{ marginTop: 10 }}>
-							This prompt focuses the agent on install + authorization without asking you to
-							manually copy API keys.
 						</div>
 					</div>
-				</div>
 
-				<div className="card">
-					<h2>2) Download &amp; connect</h2>
-					<p className="muted">
-						Download the verified installer for this runtime, check its digest, install it and
-						connect it to this team. <Link to="/downloads">All downloads</Link>
-					</p>
-					<DownloadCenter teamId={teamId} only={[runtime]} headingLevel={3} />
-				</div>
+					<div className="card">
+						<h2>2) Download &amp; connect</h2>
+						<p className="muted">
+							Download the verified installer for this runtime, check its digest, install it and
+							connect it to this team. <Link to="/downloads">All downloads</Link>
+						</p>
+						<DownloadCenter teamId={teamId} only={[runtime]} headingLevel={3} />
+					</div>
 
-				<div className="card">
-					<h2>3) Authorize</h2>
-					<p className="muted">
-						Use the verify page for a code shown by your agent. Generate a code here only if you
-						need a manual enrollment token.
-					</p>
+					<div className="card">
+						<h2>3) Authorize</h2>
+						<p className="muted">
+							Use the verify page for a code shown by your agent. Generate a code here only if you
+							need a manual enrollment token.
+						</p>
 
-					<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
-						<button
-							className="button"
-							type="button"
-							disabled={busy || !canAuthorize}
-							onClick={async () => {
-								setBusy(true);
-								setError(null);
-								setDevice(null);
-								setPoll(null);
-								setShowEnrollmentToken(false);
-								setCopiedEnrollmentToken(false);
-								try {
-									const res = await supabase.functions.invoke("device-start", { method: "POST" });
-									if (res.error || res.data?.ok !== true) {
-										setError(
-											readErrorMessage(
-												res.error,
-												"The authorization service did not confirm a code.",
-											),
-										);
-										return;
-									}
-									const data = (res.data ?? {}) as Record<string, unknown>;
-									const userCode = String(data.user_code ?? "");
-									const result: DeviceStartResult = {
-										verification_url: safeVerificationUrl(
-											String(data.verification_url ?? "/verify"),
-											userCode,
-											teamId,
-										),
-										user_code: userCode,
-										device_code: String(data.device_code ?? ""),
-										expires_at: String(data.expires_at ?? ""),
-										interval_seconds:
-											typeof data.interval_seconds === "number" ? data.interval_seconds : undefined,
-									};
-									if (
-										!result.device_code ||
-										!result.user_code ||
-										!Number.isFinite(Date.parse(result.expires_at)) ||
-										Date.parse(result.expires_at) <= Date.now()
-									) {
-										setError(
-											"The authorization service returned an incomplete code. Please retry.",
-										);
-										return;
-									}
-									setDevice(result);
-								} catch (cause) {
-									setError(readErrorMessage(cause, "Could not start authorization. Please retry."));
-								} finally {
-									setBusy(false);
-								}
-							}}
-						>
-							{busy ? "Generating code…" : "Generate code"}
-						</button>
-						<Link
-							className="button button-secondary"
-							to={`/verify?team=${encodeURIComponent(teamId)}`}
-						>
-							Open verify page
-						</Link>
-						{device ? (
+						<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
 							<button
-								className="button button-secondary"
+								className="button"
 								type="button"
-								onClick={() => {
+								disabled={busy || !canAuthorize}
+								onClick={async () => {
+									setBusy(true);
+									setError(null);
 									setDevice(null);
 									setPoll(null);
 									setShowEnrollmentToken(false);
 									setCopiedEnrollmentToken(false);
-									setError(null);
+									try {
+										const res = await supabase.functions.invoke("device-start", { method: "POST" });
+										if (res.error || res.data?.ok !== true) {
+											setError(
+												readErrorMessage(
+													res.error,
+													"The authorization service did not confirm a code.",
+												),
+											);
+											return;
+										}
+										const data = (res.data ?? {}) as Record<string, unknown>;
+										const userCode = String(data.user_code ?? "");
+										const result: DeviceStartResult = {
+											verification_url: safeVerificationUrl(
+												String(data.verification_url ?? "/verify"),
+												userCode,
+												teamId,
+											),
+											user_code: userCode,
+											device_code: String(data.device_code ?? ""),
+											expires_at: String(data.expires_at ?? ""),
+											interval_seconds:
+												typeof data.interval_seconds === "number"
+													? data.interval_seconds
+													: undefined,
+										};
+										if (
+											!result.device_code ||
+											!result.user_code ||
+											!Number.isFinite(Date.parse(result.expires_at)) ||
+											Date.parse(result.expires_at) <= Date.now()
+										) {
+											setError(
+												"The authorization service returned an incomplete code. Please retry.",
+											);
+											return;
+										}
+										setDevice(result);
+									} catch (cause) {
+										setError(
+											readErrorMessage(cause, "Could not start authorization. Please retry."),
+										);
+									} finally {
+										setBusy(false);
+									}
 								}}
 							>
-								Cancel authorization
+								{busy ? "Generating code…" : "Generate code"}
 							</button>
+							<Link
+								className="button button-secondary"
+								to={`/verify?team=${encodeURIComponent(teamId)}`}
+							>
+								Open verify page
+							</Link>
+							{device ? (
+								<button
+									className="button button-secondary"
+									type="button"
+									onClick={() => {
+										setDevice(null);
+										setPoll(null);
+										setShowEnrollmentToken(false);
+										setCopiedEnrollmentToken(false);
+										setError(null);
+									}}
+								>
+									Cancel authorization
+								</button>
+							) : null}
+						</div>
+
+						{device ? (
+							<div className="notice">
+								<div className="muted small">Your code</div>
+								<div
+									className="mono"
+									style={{
+										fontSize: 26,
+										fontWeight: 650,
+										letterSpacing: "0.14em",
+										color: "var(--accent)",
+										margin: "4px 0 2px",
+									}}
+								>
+									{device.user_code}
+								</div>
+								<div className="muted small" style={{ marginTop: 8 }}>
+									Verification URL
+								</div>
+								<div className="mono" style={{ overflowWrap: "anywhere" }}>
+									{device.verification_url}
+								</div>
+								<div className="muted small" style={{ marginTop: 8 }}>
+									Expires:{" "}
+									<span className="mono">
+										{device.expires_at ? new Date(device.expires_at).toLocaleString() : "soon"}
+									</span>
+								</div>
+
+								<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
+									<a
+										className="button"
+										href={device.verification_url}
+										target="_blank"
+										rel="noreferrer"
+									>
+										Authorize in browser
+									</a>
+									<Link
+										className="button button-secondary"
+										to={`/verify?code=${encodeURIComponent(device.user_code)}&team=${encodeURIComponent(teamId)}`}
+									>
+										I already opened it
+									</Link>
+								</div>
+
+								{poll?.status === "authorization_pending" ? (
+									<div className="muted small" role="status" style={{ marginTop: 12 }}>
+										Waiting for authorization…
+									</div>
+								) : null}
+
+								{poll?.status === "authorized" ? (
+									<div className="notice" style={{ marginTop: 12 }}>
+										<div>
+											<b>Authorized.</b> Use the enrollment token below in your local runtime setup,
+											then check the Agents page to confirm protection.
+										</div>
+										{poll.enrollment_token ? (
+											<div className="muted small" style={{ marginTop: 8 }}>
+												Fallback enrollment token (advanced; copy once, then clear it from this
+												screen):
+												{poll.enrollment_token_expires_at ? (
+													<div style={{ marginTop: 4 }}>
+														Expires at {new Date(poll.enrollment_token_expires_at).toLocaleString()}
+													</div>
+												) : null}
+												<div className="row" style={{ marginTop: 6 }}>
+													<input
+														className="input mono"
+														style={{ flex: "1 1 260px" }}
+														readOnly
+														type={showEnrollmentToken ? "text" : "password"}
+														value={
+															showEnrollmentToken
+																? poll.enrollment_token
+																: maskSecret(poll.enrollment_token)
+														}
+														aria-label="Enrollment token"
+														autoComplete="off"
+													/>
+													<button
+														className="button button-secondary"
+														type="button"
+														onClick={() => setShowEnrollmentToken((visible) => !visible)}
+													>
+														{showEnrollmentToken ? "Hide" : "Reveal"}
+													</button>
+													<button
+														className="button button-secondary"
+														type="button"
+														onClick={async () => {
+															try {
+																await navigator.clipboard.writeText(poll.enrollment_token ?? "");
+																setCopiedEnrollmentToken(true);
+															} catch {
+																setError(
+																	"Clipboard access was blocked. Reveal the token and copy it manually.",
+																);
+															}
+														}}
+													>
+														{copiedEnrollmentToken ? "Copied" : "Copy"}
+													</button>
+													<button
+														className="button button-secondary"
+														type="button"
+														onClick={() => {
+															setPoll((current) =>
+																current?.status === "authorized"
+																	? { ...current, enrollment_token: null }
+																	: current,
+															);
+															setShowEnrollmentToken(false);
+															setCopiedEnrollmentToken(false);
+														}}
+													>
+														Clear
+													</button>
+												</div>
+											</div>
+										) : null}
+										{poll.enrollment_token ? null : (
+											<div className="muted small" style={{ marginTop: 8 }}>
+												The enrollment token was cleared from this screen. Generate a new code if
+												setup still needs one.
+											</div>
+										)}
+										<div className="row" style={{ marginTop: 12 }}>
+											<Link className="button button-secondary" to="/agents">
+												View agents
+											</Link>
+											<Link className="button button-secondary" to="/incidents">
+												View incidents
+											</Link>
+										</div>
+									</div>
+								) : null}
+
+								{poll?.status === "expired" ? (
+									<div className="notice notice-danger" role="alert" style={{ marginTop: 12 }}>
+										Authorization expired. Generate a new code and try again.
+									</div>
+								) : null}
+							</div>
+						) : null}
+
+						{error ? (
+							<div className="notice notice-danger" role="alert">
+								{error}
+							</div>
 						) : null}
 					</div>
-
-					{device ? (
-						<div className="notice">
-							<div className="muted small">Your code</div>
-							<div
-								className="mono"
-								style={{
-									fontSize: 26,
-									fontWeight: 650,
-									letterSpacing: "0.14em",
-									color: "var(--accent)",
-									margin: "4px 0 2px",
-								}}
-							>
-								{device.user_code}
-							</div>
-							<div className="muted small" style={{ marginTop: 8 }}>
-								Verification URL
-							</div>
-							<div className="mono" style={{ overflowWrap: "anywhere" }}>
-								{device.verification_url}
-							</div>
-							<div className="muted small" style={{ marginTop: 8 }}>
-								Expires:{" "}
-								<span className="mono">
-									{device.expires_at ? new Date(device.expires_at).toLocaleString() : "soon"}
-								</span>
-							</div>
-
-							<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
-								<a
-									className="button"
-									href={device.verification_url}
-									target="_blank"
-									rel="noreferrer"
-								>
-									Authorize in browser
-								</a>
-								<Link
-									className="button button-secondary"
-									to={`/verify?code=${encodeURIComponent(device.user_code)}&team=${encodeURIComponent(teamId)}`}
-								>
-									I already opened it
-								</Link>
-							</div>
-
-							{poll?.status === "authorization_pending" ? (
-								<div className="muted small" role="status" style={{ marginTop: 12 }}>
-									Waiting for authorization…
-								</div>
-							) : null}
-
-							{poll?.status === "authorized" ? (
-								<div className="notice" style={{ marginTop: 12 }}>
-									<div>
-										<b>Authorized.</b> Use the enrollment token below in your local runtime setup,
-										then check the Agents page to confirm protection.
-									</div>
-									{poll.enrollment_token ? (
-										<div className="muted small" style={{ marginTop: 8 }}>
-											Fallback enrollment token (advanced; copy once, then clear it from this
-											screen):
-											{poll.enrollment_token_expires_at ? (
-												<div style={{ marginTop: 4 }}>
-													Expires at {new Date(poll.enrollment_token_expires_at).toLocaleString()}
-												</div>
-											) : null}
-											<div className="row" style={{ marginTop: 6 }}>
-												<input
-													className="input mono"
-													style={{ flex: "1 1 260px" }}
-													readOnly
-													type={showEnrollmentToken ? "text" : "password"}
-													value={
-														showEnrollmentToken
-															? poll.enrollment_token
-															: maskSecret(poll.enrollment_token)
-													}
-													aria-label="Enrollment token"
-													autoComplete="off"
-												/>
-												<button
-													className="button button-secondary"
-													type="button"
-													onClick={() => setShowEnrollmentToken((visible) => !visible)}
-												>
-													{showEnrollmentToken ? "Hide" : "Reveal"}
-												</button>
-												<button
-													className="button button-secondary"
-													type="button"
-													onClick={async () => {
-														try {
-															await navigator.clipboard.writeText(poll.enrollment_token ?? "");
-															setCopiedEnrollmentToken(true);
-														} catch {
-															setError(
-																"Clipboard access was blocked. Reveal the token and copy it manually.",
-															);
-														}
-													}}
-												>
-													{copiedEnrollmentToken ? "Copied" : "Copy"}
-												</button>
-												<button
-													className="button button-secondary"
-													type="button"
-													onClick={() => {
-														setPoll((current) =>
-															current?.status === "authorized"
-																? { ...current, enrollment_token: null }
-																: current,
-														);
-														setShowEnrollmentToken(false);
-														setCopiedEnrollmentToken(false);
-													}}
-												>
-													Clear
-												</button>
-											</div>
-										</div>
-									) : null}
-									{poll.enrollment_token ? null : (
-										<div className="muted small" style={{ marginTop: 8 }}>
-											The enrollment token was cleared from this screen. Generate a new code if
-											setup still needs one.
-										</div>
-									)}
-									<div className="row" style={{ marginTop: 12 }}>
-										<Link className="button button-secondary" to="/agents">
-											View agents
-										</Link>
-										<Link className="button button-secondary" to="/incidents">
-											View incidents
-										</Link>
-									</div>
-								</div>
-							) : null}
-
-							{poll?.status === "expired" ? (
-								<div className="notice notice-danger" role="alert" style={{ marginTop: 12 }}>
-									Authorization expired. Generate a new code and try again.
-								</div>
-							) : null}
-						</div>
-					) : null}
-
-					{error ? (
-						<div className="notice notice-danger" role="alert">
-							{error}
-						</div>
-					) : null}
 				</div>
-			</div>
+			</details>
 		</div>
 	);
 }

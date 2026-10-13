@@ -34,6 +34,7 @@ This folder contains a reference **Supabase** schema + edge function for running
    - Legacy billing functions (do not deploy or advertise for direct GA): `supabase/functions/billing-checkout`, `supabase/functions/paddle-webhook`, `supabase/functions/stripe-webhook`
    - Optional reputation: `supabase/functions/url-check`, `supabase/functions/file-check`
    - Optional premium intel delivery: `supabase/functions/packs-manifest`, `supabase/functions/packs-download`
+   - Dashboard installer downloads: `supabase/functions/installer-download` — see `docs/installation/download-portal.md`
    - Optional revocations feed: `supabase/functions/revocations`
 4. Set `control_plane.endpoint` to `https://YOUR_PROJECT.supabase.co/functions` and set `auth.api_key` in the agent config.
 
@@ -140,7 +141,11 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
 - `AIDR_PACK_URL_TTL_SECONDS` (default `600`; clamped to `60..3600`)
 - `AIDR_PACK_DOWNLOAD_GRANT_SECRET` (required by `packs-manifest` and `packs-download`; use an independently generated random secret of at least 32 bytes and set the same value on both functions)
 - `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` (required by `approval-requests`; 32 random bytes, standard base64. Derives the per-tenant key that seals each tenant's Ed25519 dashboard-approval signing key; without it the function answers `server_misconfigured` and asks stay blocked. Changing it makes existing sealed keys unusable until owners rotate them from the Approvals page)
-- `AIDR_PUBLIC_API_ORIGIN` (the customer/agent-reachable API origin for pack grant links; required when `SUPABASE_URL` is an internal HTTP service name; HTTPS except for explicit loopback development)
+- `AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_B64` (required by `installer-download`; base64 Ed25519 public key of the installer-catalog signing key used by `scripts/publish-installers.mjs`. Missing or invalid answers `server_misconfigured`; a catalog that does not verify is never served)
+- `AIDR_INSTALLERS_BUCKET` (default `aidr-installers`) and `AIDR_INSTALLER_URL_TTL_SECONDS` (default `300`; clamped to `30..900`) for `installer-download`
+- `AIDR_PUBLIC_API_ORIGIN` (the customer/agent-reachable API origin for pack grant links and installer download URLs; required when `SUPABASE_URL` is an internal HTTP service name; HTTPS except for explicit loopback development)
+
+The canonical migrations also create a private `aidr-installers` bucket, written only by `scripts/publish-installers.mjs` (signed catalog, signed `latest.json`, immutable versioned installers); `installer-download` lists the verified catalog to active members of a tenant with an active admission and returns a short-lived signed URL per file after writing an `installer.download` audit row.
 
 The canonical migrations create a private `aidr-packs` Storage bucket; publish pack bytes through a service-role-only process. Pack manifests return at most 50 pack versions per request. Each `download_url` is a short-lived scoped AIDR URL, not a Storage URL; the Edge Function rechecks key, membership, entitlement and pack expiry on each GET/HEAD, then streams the object with range support. Treat the URL as a temporary bearer capability and redact its `grant` query parameter from any application/proxy logs. It contains neither the API key nor a Storage signed URL.
 SCIM collection pages contain at most 200 resources, and a group request or response contains at most 1,000 member references.

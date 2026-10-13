@@ -124,6 +124,92 @@ export const en = {
 	"login.registerUnavailable": "Account registration is unavailable. Please try again later.",
 	"login.companyUnavailable": "Company sign-in is unavailable. Contact your administrator.",
 	"login.providerUnavailable": "This sign-in provider is unavailable. Contact your administrator.",
+
+	"downloads.title": "Download",
+	"downloads.intro":
+		"Install AIDR for {team} in three steps: download the installer, run it, and restart your AI tools.",
+	"downloads.yourTeam": "your team",
+	"downloads.checkingTeam": "Checking team access…",
+	"downloads.noTeam": "Select or create a workspace to download installers.",
+	"downloads.backToOnboarding": "Back to onboarding",
+	"downloads.viewAgents": "View agents",
+	"downloads.retry": "Try again",
+	"downloads.os.windows": "Windows",
+	"downloads.os.linux": "Linux",
+	"downloads.installer.title": "Download the AIDR installer",
+	"downloads.installer.intro":
+		"One installer protects every supported AI tool on this computer: Claude Code, Cursor, VS Code, Codex, OpenCode and OpenClaw.",
+	"downloads.installer.loading": "Loading the installer catalog…",
+	"downloads.installer.version": "Version {version} · published {date}",
+	"downloads.installer.releaseNotes": "Release notes",
+	"downloads.installer.recommended": "Recommended for this computer",
+	"downloads.installer.other": "Other platforms",
+	"downloads.installer.download": "Download {file}",
+	"downloads.installer.preparing": "Preparing download…",
+	"downloads.installer.started":
+		"Your download has started. If it did not, {link} (valid until {time}).",
+	"downloads.installer.directLink": "use this direct link",
+	"downloads.installer.meta": "{size} · requires {minOs}",
+	"downloads.installer.sha256": "SHA-256",
+	"downloads.installer.verify": "Check the downloaded file before you run it:",
+	"downloads.installer.copy": "Copy",
+	"downloads.installer.copied": "Copied",
+	"downloads.installer.copyChecksum": "Copy the checksum command for {file}",
+	"downloads.installer.copyBlocked":
+		"Clipboard access was blocked. Select the command and copy it.",
+	"downloads.installer.verifyNote":
+		"The command prints True on Windows or OK on Linux. Do not run the installer if it does not.",
+	"downloads.installer.macos":
+		"A macOS installer is not available yet. Browser Guard, below, works in Chrome, Edge and Firefox on macOS.",
+	"downloads.installer.noMatch":
+		"No installer is published for the operating system of this browser. Choose one of the platforms below if it applies.",
+	"downloads.installer.step1":
+		"Download the installer for your operating system and check its SHA-256.",
+	"downloads.installer.step2":
+		"Run it: double-click it on Windows, or run the script with sh on Linux.",
+	"downloads.installer.step3":
+		"Restart your AI tools. Running aidr status shows that protection is on.",
+	"downloads.error.entitlement":
+		"Downloads need an active licence or trial for this workspace. Ask your administrator, or start a trial on the onboarding page.",
+	"downloads.error.unpublished":
+		"No installer has been published for this deployment yet. Ask your release operator.",
+	"downloads.error.integrity":
+		"The installer catalog failed its signature check, so no downloads are offered. Contact support.",
+	"downloads.error.forbidden": "Your account cannot download installers for this workspace.",
+	"downloads.error.rateLimited": "Too many requests. Wait a minute and try again.",
+	"downloads.error.generic": "Installers are unavailable right now. Try again shortly.",
+	"downloads.error.download": "The download link could not be created. Try again.",
+	"downloads.managed.title": "Connect this computer to your workspace (managed mode)",
+	"downloads.managed.body":
+		"After installing, the first start of a protected AI tool shows a short code. Approve it for this workspace on the verify page. The control plane address of this workspace is:",
+	"downloads.managed.verify": "Verify a device code",
+	"downloads.managed.advanced": "Manual enrollment (advanced)",
+	"downloads.bg.title": "Browser Guard extension",
+	"downloads.bg.body":
+		"Masks personal data and secrets before prompts reach AI chat sites in Chrome, Edge and Firefox, on Windows, macOS and Linux.",
+	"downloads.bg.chrome": "Add to Chrome",
+	"downloads.bg.edge": "Add to Edge",
+	"downloads.bg.firefox": "Add to Firefox",
+	"downloads.bg.none":
+		"Store links are not configured for this deployment. Ask your administrator.",
+	"downloads.bg.ids": "Extension IDs for IT policy",
+	"downloads.bg.chromeId": "Chrome",
+	"downloads.bg.edgeId": "Edge",
+	"downloads.bg.firefoxId": "Firefox",
+	"downloads.it.title": "IT / MDM deployment",
+	"downloads.it.body":
+		"Deploy the same installers silently with Intune or Group Policy, and force-install Browser Guard by extension ID through browser policy.",
+	"downloads.it.guide": "Open the administrator guide",
+	"downloads.it.guideMissing":
+		"The administrator guide ships with your release bundle (docs/installation/download-portal.md).",
+	"downloads.advanced.title": "Individual connector packages (advanced)",
+	"onboarding.install.title": "1) Download and run the installer",
+	"onboarding.install.body":
+		"The installer protects every supported AI tool on this computer. This is the recommended setup.",
+	"onboarding.install.allDownloads": "Open the Download page",
+	"onboarding.advanced.summary": "Advanced: manual setup and device authorization",
+	"onboarding.advanced.body":
+		"Use these steps only when you cannot run the installer, or to enroll a single connector by hand.",
 } as const;
 
 export type DashboardMessageKey = keyof typeof en;

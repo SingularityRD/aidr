@@ -238,6 +238,22 @@ async function structuralChecks() {
 	assertIncludes(onboarding, "Date.parse(result.expires_at) <= Date.now()", "authorization expiry validation");
 	assertIncludes(onboarding, 'type={showEnrollmentToken ? "text" : "password"}', "enrollment token masking");
 	assertIncludes(onboarding, "navigator.clipboard.writeText", "enrollment token copy action");
+	assertIncludes(onboarding, "<InstallerDownloads teamId={teamId} />", "onboarding starts with the installer download");
+
+	// The Download page lists installers only from the entitlement-checked,
+	// signature-verified installer-download function, and store links only
+	// from configuration (an unset link is hidden, never guessed).
+	const [downloadsPage, installerClient, browserGuardDownloads] = await Promise.all([
+		read("packages/dashboard/src/ui/pages/DownloadsPage.tsx"),
+		read("packages/dashboard/src/lib/installers.ts"),
+		read("packages/dashboard/src/onboarding/BrowserGuardDownloads.tsx"),
+	]);
+	assertIncludes(downloadsPage, "<InstallerDownloads", "download page installer catalog");
+	assertIncludes(installerClient, 'supabase.functions.invoke("installer-download"', "installer download bridge");
+	assertIncludes(browserGuardDownloads, "safeHttpsUrl(env.VITE_BROWSER_GUARD_CHROME_URL)", "configured Browser Guard store link");
+	if (/https:\/\/(?:chromewebstore\.google\.com|microsoftedge\.microsoft\.com|addons\.mozilla\.org)/.test(browserGuardDownloads)) {
+		fail("Browser Guard store links must come from configuration, not source");
+	}
 
 	// API keys and enrollment tokens are one-time secrets.  The DOM starts in a
 	// password/masked state and clipboard failures remain actionable.
