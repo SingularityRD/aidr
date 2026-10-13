@@ -100,6 +100,7 @@ function controlPlane(): Promise<{ server: Server; url: string; calls: string[] 
 	});
 }
 
+// AIDR-SKIP: AIDR-063 qa-owner - needs the built CLI (dist/); `pnpm test` builds it in globalSetup, a bare vitest run in an unbuilt tree does not
 describe.skipIf(!built)("aidr assistant (built CLI, scratch HOME)", () => {
 	let home: string;
 	let child: ChildProcess;

@@ -190,6 +190,7 @@ const install = (dir: string, root: string, extra: Partial<ConnectorDeps> = {}) 
 		{ hosts: ["claude-code"] },
 	).find((entry) => entry.host === "claude-code");
 
+// AIDR-SKIP: AIDR-063 qa-owner - the fake standalone bundle's multi-call hook is a /bin/sh script, which Windows cannot execute; the MSI path is covered by deploy/installers tests
 describe.skipIf(!posix)("aidr setup from the standalone bundle (Claude Code)", () => {
 	it("registers the bundle's multi-call hooks after a passing canary and writes a receipt", () => {
 		const root = bundle();
@@ -317,6 +318,7 @@ function writeManifestsOuterOnly(root: string): void {
 	writeFileSync(join(root, "aidr-artifact.manifest.json"), JSON.stringify(manifest));
 }
 
+// AIDR-SKIP: AIDR-063 qa-owner - the fake standalone bundle's multi-call hook is a /bin/sh script, which Windows cannot execute; the MSI path is covered by deploy/installers tests
 describe.skipIf(!posix)("aidr setup from the standalone bundle (Codex and editors)", () => {
 	it("registers the bundle's Codex hook after a passing canary, with no npm package on PATH", () => {
 		const root = bundle();
@@ -462,6 +464,7 @@ describe("release key provisioning", () => {
 	});
 });
 
+// AIDR-SKIP: AIDR-063 qa-owner - the fake standalone bundle's multi-call hook is a /bin/sh script, which Windows cannot execute; the MSI path is covered by deploy/installers tests
 describe.skipIf(!posix)("aidr uninstall of a standalone install", () => {
 	it("removes exactly the managed hooks named by a standalone receipt", async () => {
 		const root = bundle();
@@ -538,6 +541,7 @@ describe("aidr verify", () => {
 		expect(decisionOf("not json").decision).toBe("unknown");
 	});
 
+	// AIDR-SKIP: AIDR-063 qa-owner - the fake standalone bundle's multi-call hook is a /bin/sh script, which Windows cannot execute; the MSI path is covered by deploy/installers tests
 	it.skipIf(!posix)("PASSes a hook that denies the canary and allows the benign twin", () => {
 		const root = bundle();
 		const dir = home();

@@ -393,7 +393,7 @@ describe("operations", () => {
 	it("hides internal errors behind a generic code", async () => {
 		const ops = fakeOps({
 			detect: async () => {
-				throw new Error("/home/secret/path exploded");
+				throw new Error(["", "home", "secret", "path exploded"].join("/"));
 			},
 		});
 		const server = await start({ ops });

@@ -124,6 +124,7 @@ const configKeys = () =>
 	JSON.parse(readFileSync(join(testHome, ".singularity-aidr", "config.json"), "utf8")).integrity
 		?.public_keys_pem;
 
+// AIDR-SKIP: AIDR-063 qa-owner - the fake release bundle's multi-call hook is a /bin/sh script, which Windows cannot execute
 describe.skipIf(!posix)("aidr setup and the release key", () => {
 	it("provisions the installer's key into the config before the canary, so a release bundle registers", async () => {
 		const { root, pem } = signedBundle();

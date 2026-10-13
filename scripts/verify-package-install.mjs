@@ -1646,7 +1646,9 @@ function codexIntegrityDenyProblem(result, label) {
 		const payload = JSON.parse(result.stdout);
 		const decision = payload?.hookSpecificOutput?.permissionDecision;
 		const reason = payload?.hookSpecificOutput?.permissionDecisionReason;
-		if (decision !== "deny" || !/Artifact integrity verification failed for codex\/dist: /.test(String(reason ?? ""))) {
+		// The plain, localized integrity message (core i18n `integrity.*.message`); it
+		// never names internal artifact ids, so match the stable English sentence.
+		if (decision !== "deny" || !/Singularity AIDR blocked this action because it cannot verify its own installation \(/.test(String(reason ?? ""))) {
 			return `${label} did not emit an explicit integrity denial`;
 		}
 		if (!String(result.stderr ?? "").trim()) return `${label} did not preserve the secondary stderr block signal`;

@@ -8,8 +8,6 @@
  * predates a contract feature (customer_id in the license verifier, or the packet
  * verifier itself), only the comparable part runs and the rest is skipped.
  */
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { verifyCustomerPacket } from "../license/packet.js";
@@ -31,9 +29,7 @@ const licenseScript = new URL("license-verify.mjs", scripts);
 const packetScript = new URL("customer-packet-verify.mjs", scripts);
 type Mjs = Record<string, (...args: unknown[]) => unknown>;
 const licenseMjs = (await import(licenseScript.href)) as Mjs;
-const packetMjs: Mjs | null = existsSync(fileURLToPath(packetScript))
-	? ((await import(packetScript.href)) as Mjs)
-	: null;
+const packetMjs = (await import(packetScript.href)) as Mjs;
 
 const active = devKey("aidr-license-dev-1");
 const retired = devKey("aidr-license-dev-0");
@@ -79,7 +75,7 @@ function tsLicense(document: unknown, reg: unknown, now: number): Outcome {
 function mjsPacket(document: unknown, reg: unknown, now: number): Outcome {
 	return outcome(() => {
 		const publicKeys = licenseMjs.parsePublicKeyRegistry(reg);
-		const result = packetMjs?.verifyCustomerPacket(document, { publicKeys, now }) as {
+		const result = packetMjs.verifyCustomerPacket(document, { publicKeys, now }) as {
 			license_state: string;
 		};
 		return { state: result.license_state };
@@ -92,10 +88,6 @@ function tsPacket(document: unknown, reg: unknown, now: number): Outcome {
 		return { state: result.licenseState };
 	});
 }
-
-/** Does the .mjs license verifier in this tree know the optional customer_id term? */
-const mjsKnowsCustomerId =
-	mjsLicense(signLicense(licensePayload(), active), trusted, inTerm).ok === true;
 
 function licenseCases(withCustomerId: boolean) {
 	const base = (overrides: Record<string, unknown> = {}) => {
@@ -170,12 +162,9 @@ describe("license verifier parity (src/license vs scripts/license-verify.mjs)", 
 		expect(tsLicense(document, reg, now)).toEqual(mjsLicense(document, reg, now));
 	});
 
-	it.skipIf(!mjsKnowsCustomerId).each(licenseCases(true))(
-		"with customer_id: %s",
-		(_name, document, reg, now) => {
-			expect(tsLicense(document, reg, now)).toEqual(mjsLicense(document, reg, now));
-		},
-	);
+	it.each(licenseCases(true))("with customer_id: %s", (_name, document, reg, now) => {
+		expect(tsLicense(document, reg, now)).toEqual(mjsLicense(document, reg, now));
+	});
 
 	it("TS outcomes match the contract for customer_id licenses", () => {
 		const cases = licenseCases(true);
@@ -303,12 +292,9 @@ function packetCases() {
 }
 
 describe("customer packet verifier parity (src/license vs scripts/customer-packet-verify.mjs)", () => {
-	it.skipIf(packetMjs === null || !mjsKnowsCustomerId).each(packetCases())(
-		"%s",
-		(_name, document, now) => {
-			expect(tsPacket(document, trusted, now)).toEqual(mjsPacket(document, trusted, now));
-		},
-	);
+	it.each(packetCases())("%s", (_name, document, now) => {
+		expect(tsPacket(document, trusted, now)).toEqual(mjsPacket(document, trusted, now));
+	});
 
 	it("TS outcomes match the contract", () => {
 		const byName = Object.fromEntries(

@@ -472,6 +472,7 @@ describe("the installer's pending enrollment file", () => {
 		expect(state.dashboard).toBe("https://aidr.corp.example");
 	});
 
+	// AIDR-SKIP: AIDR-063 qa-owner - group/world-readable mode bits and file symlinks are POSIX semantics; Windows ACLs are covered by the private-file helper tests
 	it.skipIf(!POSIX)(
 		"ignores a file other users can read, a link, bad JSON or an insecure address",
 		() => {
