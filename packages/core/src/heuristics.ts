@@ -47,7 +47,7 @@ import {
 } from "./ai-supply-chain.js";
 import { boundArtifact, extractUrls, MAX_ARTIFACT_SIZE } from "./extractors.js";
 import { normalizeShellText } from "./shell-normalize.js";
-import { extractDomain, isTrustedDomain } from "./trusted-domains.js";
+import { isTrustedUrl } from "./trusted-domains.js";
 import type { Artifact, HeuristicMatch, Threat, TrustedDomain } from "./types.js";
 
 /**
@@ -149,9 +149,7 @@ export class HeuristicsEngine {
 		if (urls.length === 0) return false;
 
 		for (const url of urls) {
-			const domain = extractDomain(url);
-			if (!domain) return false;
-			if (!isTrustedDomain(domain, this.trustedDomains)) return false;
+			if (!isTrustedUrl(url, this.trustedDomains)) return false;
 		}
 		return true;
 	}

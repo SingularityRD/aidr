@@ -10,7 +10,9 @@
   confidence: 0.95
   action: block
   pattern: "curl\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Remote code execution via curl pipe to shell"
   expires_at: null
   revoked: false
@@ -21,7 +23,9 @@
   confidence: 0.95
   action: block
   pattern: "wget\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Remote code execution via wget pipe to shell"
   expires_at: null
   revoked: false
@@ -33,7 +37,9 @@
   confidence: 0.90
   action: block
   pattern: "/dev/tcp/"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Reverse shell via /dev/tcp"
   expires_at: null
   revoked: false
@@ -43,9 +49,11 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bnc\\b.{0,300}\\s-e\\s"
-  match_on: command
-  title: "Reverse shell via netcat -e"
+  pattern: "\\b(nc|ncat|netcat)\\b.{0,300}\\s(-e|-c|--exec|--sh-exec|--lua-exec)[\\s=]"
+  match_on:
+    - command
+    - command_normalized
+  title: "Reverse shell via netcat command execution (-e, -c, --exec, --sh-exec)"
   expires_at: null
   revoked: false
 
@@ -55,7 +63,9 @@
   confidence: 0.85
   action: block
   pattern: "bash\\s+-i\\s+>\\s*&\\s*/dev/"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Interactive reverse shell via bash"
   expires_at: null
   revoked: false
@@ -67,7 +77,9 @@
   confidence: 0.95
   action: block
   pattern: "\\brm\\s+(-[a-zA-Z]{0,300}f[a-zA-Z]{0,300}\\s+)?(-[a-zA-Z]{0,300}r[a-zA-Z]{0,300}\\s+)?/(\\s|$|[;&|*'\"])|\\brm\\s+(-[a-zA-Z]{0,300}r[a-zA-Z]{0,300}\\s+)?(-[a-zA-Z]{0,300}f[a-zA-Z]{0,300}\\s+)?/(\\s|$|[;&|*'\"])|\\brm\\s+-[a-zA-Z]{0,300}rf[a-zA-Z]{0,300}\\s+/(\\s|$|[;&|*'\"])"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Recursive forced deletion from root"
   expires_at: null
   revoked: false
@@ -78,7 +90,9 @@
   confidence: 0.95
   action: block
   pattern: "\\bmkfs\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Filesystem format command"
   expires_at: null
   revoked: false
@@ -100,7 +114,9 @@
   confidence: 0.90
   action: block
   pattern: "\\bshred\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Secure file destruction via shred"
   expires_at: null
   revoked: false
@@ -116,7 +132,9 @@
   confidence: 0.90
   action: block
   pattern: "(curl|wget)\\s[^&]{0,300}&&\\s*chmod\\s+\\+x"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Download and execute chain"
   expires_at: null
   revoked: false
@@ -167,7 +185,9 @@
   confidence: 0.95
   action: block
   pattern: "\\bsudo\\s+(curl|wget)\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Privileged pipe-to-shell (sudo curl/wget piped to shell)"
   expires_at: null
   revoked: false
@@ -191,7 +211,9 @@
   confidence: 0.90
   action: block
   pattern: "\\bbash\\s+<\\(\\s*(curl|wget)\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Process substitution executing remote content"
   expires_at: null
   revoked: false
@@ -273,7 +295,9 @@
   confidence: 0.90
   action: block
   pattern: "python[23]?\\s+-c.{0,300}socket.{0,300}connect.{0,300}(\\/bin\\/zsh|\\/bin\\/sh|\\/bin\\/bash)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Python reverse shell via socket"
   expires_at: null
   revoked: false
@@ -285,7 +309,9 @@
   confidence: 0.90
   action: block
   pattern: "ruby\\s+-e.{0,300}TCPSocket.{0,300}exec.{0,300}(\\/bin\\/zsh|\\/bin\\/sh)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Ruby reverse shell via TCPSocket"
   expires_at: null
   revoked: false
@@ -297,7 +323,9 @@
   confidence: 0.90
   action: block
   pattern: "\\bzsh\\s+-c\\b.{0,300}\\b(exec|socket|/dev/tcp)\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Zsh reverse shell pattern"
   expires_at: null
   revoked: false
@@ -309,7 +337,9 @@
   confidence: 0.95
   action: block
   pattern: "\\brm\\s+(-[a-zA-Z]+\\s+)*-[a-zA-Z]{0,300}[rR][a-zA-Z]{0,300}(\\s+-[a-zA-Z]+)*\\s+/(home|Users|etc|usr|var|boot|bin|sbin|lib|lib64|opt|root|System|Applications|Library|Volumes|private|mnt)\\b/?(\\s|$|[;&|])"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Recursive deletion of critical system directory"
   expires_at: null
   revoked: false
@@ -325,7 +355,9 @@
   confidence: 0.95
   action: block
   pattern: "\\brm(?=(?:\\s+--?[a-zA-Z][\\w-]{0,40}){0,19}\\s+(?:-[a-zA-Z]{0,40}[rR]|--recursive\\b))(?:\\s+--?[a-zA-Z][\\w-]{0,40}){1,20}\\s+['\"]?(?:~|\\$HOME|\\$\\{HOME\\})['\"]?/?\\*?['\"]?(?:\\s|$|[;&|])"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Recursive deletion of the user's home directory"
   expires_at: null
   revoked: false
@@ -382,7 +414,9 @@
   action: block
   pattern: "(?:\\bsocat\\b.{0,200}\\bTCP(?:4|6)?:[^\\s]{1,120}.{0,120}\\bEXEC:/bin/(?:ba)?sh\\b|\\bncat\\b.{0,200}(?:\\s-e\\s|\\s--exec(?:=|\\s))\\s*/bin/(?:ba)?sh\\b|\\bopenssl\\s+s_client\\b.{0,200}\\|\\s*(?:/bin/)?(?:ba)?sh\\b)"
   case_insensitive: true
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Outbound socket attached to an interactive shell"
   expires_at: null
   revoked: false
@@ -394,7 +428,9 @@
   confidence: 0.90
   action: block
   pattern: "ruby\\b.{0,300}TCPSocket.{0,300}(exec|system|spawn|IO\\.popen|%x|`)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Ruby reverse shell via TCPSocket and command execution"
   expires_at: null
   revoked: false
@@ -405,7 +441,9 @@
   confidence: 0.90
   action: block
   pattern: "perl\\b.{0,300}(Socket|IO::Socket).{0,300}(exec|system)\\s*\\(?[\"']?/bin/(sh|bash|zsh)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Perl reverse shell via socket and exec"
   expires_at: null
   revoked: false
@@ -416,7 +454,9 @@
   confidence: 0.90
   action: block
   pattern: "\\bmkfifo\\b[^\\n]{0,300}\\|\\s*(?:/[^\\s|]{1,80}/)?(?:sh|bash|zsh|ksh|dash)\\b[^\\n]{0,200}\\|\\s*(?:nc|ncat|netcat)\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Named-pipe (FIFO) back-pipe reverse shell via netcat"
   expires_at: null
   revoked: false
@@ -431,7 +471,9 @@
   confidence: 0.90
   action: block
   pattern: "\\b(curl|wget|fetch)\\b[^|]{0,300}\\|\\s*(?:(?:sudo|timeout|xargs|env|command|nohup|stdbuf|nice|setsid|doas)\\b[^|]{0,60}\\s+){1,3}(?:/[^\\s|]{1,80}/)?(bash|sh|zsh|ksh|dash)\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Remote code execution via download piped to a wrapped shell"
   expires_at: null
   revoked: false
@@ -447,3 +489,45 @@
   title: "Host firewall or packet filter disabled"
   expires_at: null
   revoked: false
+
+# Inline JavaScript/Perl/PHP that starts processes (counterparts of CLT-CMD-015 for Python)
+- id: "CLT-CMD-037"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "\\b(node|nodejs|bun|deno)\\b\\s+(?:[^\\s]+\\s+){0,3}(-e|--eval|-p|--print|eval)\\b.{0,400}\\b(child_process|Deno\\.(run|Command)|Bun\\.spawn)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "JavaScript one-liner that spawns processes"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-CMD-038"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "\\b(perl|php)\\b\\s+(?:[^\\s]+\\s+){0,3}(-e|-E|-r)\\b.{0,300}\\b(system|exec|shell_exec|passthru|popen|proc_open)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "Perl/PHP one-liner that runs shell commands"
+  expires_at: null
+  revoked: false
+
+# JavaScript socket reverse shell (counterpart of CLT-CMD-023 for Python)
+- id: "CLT-CMD-039"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(node|nodejs|bun|deno)\\b.{0,400}\\b(net|tls|node:net|node:tls)\\b.{0,400}\\b(connect|createConnection)\\b.{0,400}\\b(child_process|spawn|exec)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "JavaScript reverse shell via socket"
+  expires_at: null
+  revoked: false
+

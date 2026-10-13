@@ -1,7 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { extractDomain, isTrustedDomain, loadTrustedDomains } from "../trusted-domains.js";
+import {
+	extractDomain,
+	isTrustedDomain,
+	isTrustedUrl,
+	loadTrustedDomains,
+} from "../trusted-domains.js";
 import type { TrustedDomain } from "../types.js";
 import { makeTmpDir } from "./test-utils.js";
 
@@ -97,5 +102,41 @@ describe("isTrustedDomain", () => {
 
 	it("returns false for unknown domain", () => {
 		expect(isTrustedDomain("evil.com", trusted)).toBe(false);
+	});
+});
+
+describe("path-scoped trusted domains (GA audit DET-5)", () => {
+	const scoped: TrustedDomain[] = [
+		{ domain: "bun.sh", reason: "installer" },
+		{ domain: "deno.land", reason: "installer", paths: ["/install.sh", "/x/install/install.sh"] },
+	];
+
+	it("trusts only the listed installer paths on the exact host", () => {
+		expect(isTrustedUrl("https://deno.land/install.sh", scoped)).toBe(true);
+		expect(isTrustedUrl("https://deno.land/x/install/install.sh", scoped)).toBe(true);
+		expect(isTrustedUrl("https://deno.land/x/someones-module/mod.sh", scoped)).toBe(false);
+		expect(isTrustedUrl("https://cdn.deno.land/install.sh", scoped)).toBe(false);
+		expect(isTrustedUrl("https://deno.land/install.sh?x=1", scoped)).toBe(false);
+		expect(isTrustedUrl("https://user@deno.land/install.sh", scoped)).toBe(false);
+	});
+
+	it("keeps suffix matching for whole-domain entries and never trusts a scoped domain as a whole", () => {
+		expect(isTrustedUrl("https://cdn.bun.sh/install", scoped)).toBe(true);
+		expect(isTrustedDomain("deno.land", scoped)).toBe(false);
+	});
+
+	it("skips an entry whose paths are malformed instead of trusting the whole domain", async () => {
+		const dir = await makeTmpDir();
+		await writeFile(
+			join(dir, "trusted.yaml"),
+			"- domain: example.org\n  reason: test\n  paths: install.sh\n",
+		);
+		expect(await loadTrustedDomains(dir)).toEqual([]);
+	});
+
+	it("ships deno.land path-scoped", async () => {
+		const shipped = await loadTrustedDomains(join(__dirname, "..", "..", "..", "..", "allowlists"));
+		const deno = shipped.find((d) => d.domain === "deno.land");
+		expect(deno?.paths?.length).toBeGreaterThan(0);
 	});
 });

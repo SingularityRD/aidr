@@ -1664,6 +1664,7 @@ export {
 export {
 	extractDomain,
 	isTrustedDomain,
+	isTrustedUrl,
 	loadTrustedDomains,
 } from "./trusted-domains.js";
 export type {

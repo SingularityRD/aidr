@@ -1141,6 +1141,11 @@ export interface Allowlist {
 export interface TrustedDomain {
 	domain: string;
 	reason: string;
+	/**
+	 * When set, only these URL paths on exactly `domain` (no subdomains) are trusted. Used for
+	 * hosts that also serve user-published content, e.g. deno.land/x/<anyone's module>.
+	 */
+	paths?: string[];
 }
 
 // ── Plugin scanner ──────────────────────────────────────────────────

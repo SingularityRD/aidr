@@ -138,3 +138,18 @@
   title: "Remote code execution via download piped to shell (obfuscated/normalized)"
   expires_at: null
   revoked: false
+
+# base64 decoded inside a command substitution and executed: bash -c "$(... | base64 -d)"
+- id: "CLT-OBFUS-012"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(\\b(bash|sh|zsh|ksh|dash)\\s+(-[a-z]*c[a-z]*)\\s+|\\beval\\s+)[\"']?(\\$\\(|`).{0,300}\\bbase(64|32)\\s+(-d|--decode|-D)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "Encoded payload decoded and executed through command substitution"
+  expires_at: null
+  revoked: false
+
