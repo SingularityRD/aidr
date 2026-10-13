@@ -148,6 +148,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -260,6 +261,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,
@@ -404,6 +406,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -516,6 +519,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,
@@ -663,6 +667,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -778,6 +783,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,
@@ -922,6 +928,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -1034,6 +1041,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,
@@ -1178,6 +1186,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -1290,6 +1299,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 3,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,

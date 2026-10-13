@@ -22,7 +22,7 @@ import {
 
 const PRE_TOOL_USE = resolve(__dirname, "..", "..", "dist", "pre-tool-use.cjs");
 
-// url_check disabled: a benign URL is not verified clean, so it is an `ask`.
+// url_check disabled with unchecked_action "ask": a benign URL is not verified clean, so it is an `ask`.
 const CALL = {
 	tool_name: "WebFetch",
 	tool_input: { url: "https://example.com" },
@@ -68,7 +68,7 @@ async function setupHome(extra: Record<string, unknown> = {}): Promise<void> {
 	const endpoint = await cp.listen();
 	await writeManagedHome(home, fixture, {
 		...managedConfig(fixture, endpoint),
-		url_check: { enabled: false },
+		url_check: { enabled: false, unchecked_action: "ask" },
 		...extra,
 	});
 }

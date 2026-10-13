@@ -38,6 +38,21 @@ beforeEach(() => {
 	mocks.log.mockReset().mockResolvedValue(undefined);
 });
 
+/** The real response builders: a dependency-free module, evaluated once. */
+const hookResponses = (() => {
+	const code = transformSync(
+		readFileSync(path.resolve(__dirname, "../hook-responses.ts"), "utf8"),
+		{
+			format: "cjs",
+			loader: "ts",
+			target: "es2022",
+		},
+	).code;
+	const loaded = { exports: {} as Record<string, unknown> };
+	runInNewContext(code, { module: loaded, exports: loaded.exports });
+	return loaded.exports;
+})();
+
 const hookCode = transformSync(readFileSync(path.resolve(__dirname, "../aidr-hook.ts"), "utf8"), {
 	format: "cjs",
 	loader: "ts",
@@ -64,6 +79,7 @@ async function runHook(
 			scanProvisionedOutput: mocks.warm,
 		},
 		"./output-inspection.js": outputInspection,
+		"./hook-responses.js": hookResponses,
 	};
 	runInNewContext(hookCode, {
 		module,

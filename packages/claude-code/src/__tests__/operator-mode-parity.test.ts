@@ -93,7 +93,7 @@ function writeConfig(mode?: "host_dialog" | "operator"): void {
 	writeFileSync(
 		join(dir, "config.json"),
 		JSON.stringify({
-			url_check: { enabled: false },
+			url_check: { enabled: false, unchecked_action: "ask" },
 			policy: { enabled: true, mcp: { enabled: true, require_approval_servers: ["github"] } },
 			operator_approvals: { key_storage: "file", ...(mode ? { mode } : {}) },
 		}),

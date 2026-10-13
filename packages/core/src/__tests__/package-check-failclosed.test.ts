@@ -48,15 +48,20 @@ async function writeConfig(
 	packageCheckEnabled: boolean,
 	mode = "local",
 	amsiCheckEnabled = false,
+	uncheckedAction: "allow" | "ask" = "allow",
 ): Promise<void> {
 	await writeFile(
 		configPath,
 		JSON.stringify({
 			mode,
 			heuristics_enabled: false,
-			package_check: { enabled: packageCheckEnabled, timeout_seconds: 0.1 },
+			package_check: {
+				enabled: packageCheckEnabled,
+				timeout_seconds: 0.1,
+				unchecked_action: uncheckedAction,
+			},
 			file_check: { enabled: false },
-			url_check: { enabled: false },
+			url_check: { enabled: false, unchecked_action: uncheckedAction },
 			amsi_check: { enabled: amsiCheckEnabled },
 			cache: { enabled: false },
 			logging: { enabled: false },
@@ -121,23 +126,26 @@ describe("package check availability is fail-closed", () => {
 		"poetry add requests",
 		"pipenv install requests",
 		"go get example.com/module",
-	])("requires review without registry calls for unsupported manager command %s", async (command) => {
-		const fetch = vi.spyOn(globalThis, "fetch");
+	])(
+		"requires review without registry calls for unsupported manager command %s",
+		async (command) => {
+			const fetch = vi.spyOn(globalThis, "fetch");
 
-		const verdict = await evaluateToolCall(request(command), {
-			configPath,
-			threatsDir: root,
-			allowlistsDir: root,
-		});
+			const verdict = await evaluateToolCall(request(command), {
+				configPath,
+				threatsDir: root,
+				allowlistsDir: root,
+			});
 
-		expect(fetch).not.toHaveBeenCalled();
-		expect(verdict).toMatchObject({
-			decision: "ask",
-			category: "supply_chain",
-			source: "package_check",
-		});
-		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
-	});
+			expect(fetch).not.toHaveBeenCalled();
+			expect(verdict).toMatchObject({
+				decision: "ask",
+				category: "supply_chain",
+				source: "package_check",
+			});
+			expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
+		},
+	);
 
 	it("requires review when an unsupported ecosystem manifest is written", async () => {
 		const fetch = vi.spyOn(globalThis, "fetch");
@@ -220,7 +228,7 @@ describe("package check availability is fail-closed", () => {
 				packages: {
 					"npm:unchecked-package": {
 						verdict: "deny",
-					severity: "critical",
+						severity: "critical",
 						reasons: null,
 						source: "package_check",
 						checkedAt: new Date().toISOString(),
@@ -253,7 +261,11 @@ describe("package check availability is fail-closed", () => {
 			allowlistsDir: root,
 		});
 
-		expect(verdict).toMatchObject({ decision: "ask", category: "supply_chain", source: "package_check" });
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "supply_chain",
+			source: "package_check",
+		});
 		expect(verdict.reasons.join(" ")).toContain("unavailable");
 	});
 
@@ -290,7 +302,11 @@ describe("package check availability is fail-closed", () => {
 			allowlistsDir: root,
 		});
 
-		expect(verdict).toMatchObject({ decision: "ask", category: "supply_chain", source: "package_check" });
+		expect(verdict).toMatchObject({
+			decision: "ask",
+			category: "supply_chain",
+			source: "package_check",
+		});
 		expect(verdict.artifacts).toContain("unchecked-package");
 		expect(verdict.reasons.join(" ")).toContain("NOT verified clean");
 	});
@@ -323,7 +339,11 @@ describe("package check availability is fail-closed", () => {
 			allowlistsDir: root,
 		});
 
-		expect(verdict).toMatchObject({ decision: "deny", category: "supply_chain", source: "package_check" });
+		expect(verdict).toMatchObject({
+			decision: "deny",
+			category: "supply_chain",
+			source: "package_check",
+		});
 		expect(verdict.artifacts).toContain("unchecked-package");
 		expect(verdict.reasons.join(" ")).toContain("malicious duplicate");
 	});
@@ -430,8 +450,32 @@ describe("package check availability is fail-closed", () => {
 		expect(verdict.decision).toBe("allow");
 	});
 
-	it("does not send package names when disabled and requires review instead of a clean result", async () => {
+	it("does not send package names when disabled and records them as not checked, never clean", async () => {
 		await writeConfig(false);
+		const checker = vi.spyOn(PackageChecker.prototype, "checkPackages");
+		const fetch = vi.spyOn(globalThis, "fetch");
+
+		const verdict = await evaluateToolCall(request("npm install unchecked-package"), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(checker).not.toHaveBeenCalled();
+		expect(fetch).not.toHaveBeenCalled();
+		// The default `unchecked_action: allow` (GA audit PRD-2/CON-8): a disabled
+		// leg is coverage information, not a block, and it is never labelled clean.
+		expect(verdict).toMatchObject({
+			decision: "allow",
+			category: "reputation_not_checked",
+			source: "local_only",
+		});
+		expect(verdict.reasons.join(" ")).toContain("Not checked by a reputation service");
+		expect(verdict.reasons.join(" ")).toContain("not a clean reputation result");
+	});
+
+	it("does not send package names when disabled and requires review with unchecked_action ask", async () => {
+		await writeConfig(false, "local", false, "ask");
 		const checker = vi.spyOn(PackageChecker.prototype, "checkPackages");
 		const fetch = vi.spyOn(globalThis, "fetch");
 
@@ -479,9 +523,31 @@ describe("package check availability is fail-closed", () => {
 		expect(verdict.reasons.join(" ")).toContain("simulated URL reputation endpoint outage");
 	});
 
-	it("reports disabled URL reputation as unavailable without sending the URL", async () => {
-		// The shared config leaves `url_check` disabled to avoid external URL
-		// sharing. Local rules still run; an unverified URL is not silently clean.
+	it("records a URL as not checked when URL reputation is disabled, without sending it", async () => {
+		await writeConfig(false);
+		const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+		const verdict = await evaluateToolCall(urlRequest(), {
+			configPath,
+			threatsDir: root,
+			allowlistsDir: root,
+		});
+
+		expect(fetchSpy).not.toHaveBeenCalled();
+		expect(verdict).toMatchObject({
+			decision: "allow",
+			category: "reputation_not_checked",
+			source: "local_only",
+			artifacts: ["https://unlisted.example/payload.sh"],
+		});
+		expect(verdict.reasons.join(" ")).toContain("url_check is not enabled");
+		expect(verdict.reasons.join(" ")).toContain("not a clean reputation result");
+	});
+
+	it("reports disabled URL reputation as unavailable with unchecked_action ask, without sending the URL", async () => {
+		// `url_check.unchecked_action: ask` restores the strict behaviour: local
+		// rules still run, and an unverified URL is held for review.
+		await writeConfig(false, "local", false, "ask");
 		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response(
 				JSON.stringify({

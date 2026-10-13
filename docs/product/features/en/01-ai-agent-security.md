@@ -758,8 +758,11 @@ a known-malicious package tarball looks harmless to a regex.
 Read [privacy.md](../../../privacy.md) before enabling any outbound data flow.
 
 **Example**
-With defaults, `WebFetch https://docs.example.com/guide` returns `ask` with category
-`url_reputation_unavailable`, because the URL could not be verified.
+With defaults, `WebFetch https://docs.example.com/guide` is decided by the local rules: it
+returns `allow` with category `reputation_not_checked`, which records that no reputation
+service looked at the URL (not a clean result). With `url_check.unchecked_action: "ask"`
+it returns `ask` with category `url_reputation_unavailable`. An enabled leg that cannot
+answer also returns `ask` with `url_reputation_unavailable`.
 
 **Availability**
 
@@ -1850,9 +1853,10 @@ organisations need central policy, fleet visibility and evidence.
   plane with `/v1/device-start`, `/v1/device-poll`, `/v1/enroll`, `/v1/ingest` and
   `/v1/revocations`. Remote data is minimised (`redact_mode: "hash"` by default).
 - An un-enrolled managed installation keeps enforcing locally ("Local protection ACTIVE
-  (managed features unavailable …)"). Enrolled endpoints keep enforcing with signed cached
-  state for a `grace_period_hours` window (72 h default) when the control plane is
-  unreachable.
+  (managed features unavailable …)"). Enrolled endpoints keep managed features on signed
+  cached state for a `grace_period_hours` window (72 h default) when the control plane is
+  unreachable. After that window, or when the entitlement expires or is revoked, managed
+  features switch off and local detection keeps enforcing, with a notice on each verdict.
 - Commercial builds force `managed` and verify their signed artifacts; they refuse to start
   without the artifact-verification public key.
 

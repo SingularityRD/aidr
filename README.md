@@ -14,8 +14,8 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 - **Local heuristics** — 514 YAML threat rules in 30 files ([`threats/`](threats/)) for
   dangerous commands, credential access, persistence, obfuscation, supply-chain and
   LLM-specific patterns on Linux, macOS and Windows
-- **Package supply-chain checks** — registry existence, file reputation and age analysis
-  for npm/PyPI packages
+- **Package supply-chain checks** — an offline typosquat check for npm/PyPI names, plus
+  registry existence, file reputation and age analysis when `package_check` is enabled
 - **Plugin scanning** — scans other installed plugins for threats at session start
 - **Reputation checks** — first-party URL/domain and package hash lookups (optional; they
   need a configured endpoint and are never reported as "clean" when unavailable)
@@ -151,7 +151,12 @@ replace signed-candidate or live-host acceptance.
   generic input scanning; the [MCP Gateway](packages/mcp-gateway/README.md) covers only
   clients routed through it.
 - Remote URL and file reputation checks require configured services and feeds.
-  Unavailable checks are not reported as "clean".
+  Unavailable checks are not reported as "clean". With the reputation legs off (the
+  default), URL fetches and package installs are decided by the local rules and the
+  offline typosquat check and recorded as "not checked"; `unchecked_action: "ask"`
+  holds them for review instead ([Configuration](docs/configuration.md#url_check)).
+- An expired or invalid license/entitlement switches managed features off; local
+  detection keeps enforcing in every build ([Licensing](docs/operations/licensing.md)).
 - The [Codex connector](docs/platform-guides/codex.md) covers `Bash` and `apply_patch`
   calls; Codex can fail open when a hook process is unavailable. This is not endpoint
   isolation.

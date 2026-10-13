@@ -92,6 +92,10 @@ const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
 	"dlp_redacted",
 	"prompt_protection",
 	"prompt_protection_warning",
+	// Decided by local detection while a reputation leg is not enabled: the
+	// record says which URLs/packages were NOT checked, so it is never a clean
+	// reputation result.
+	"reputation_not_checked",
 	// An allow whose runaway guard could not run is not a clean check.
 	"runaway_guard_unavailable",
 	"secure_code_warning",
