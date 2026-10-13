@@ -1,0 +1,1 @@
+Kişisel ve gizli verileri yapay zekâ sohbet araçlarına ulaşmadan maskeler, yanıtlarda yerel olarak geri getirir.

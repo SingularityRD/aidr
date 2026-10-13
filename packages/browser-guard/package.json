@@ -7,7 +7,9 @@
 	"type": "module",
 	"scripts": {
 		"build": "node scripts/build.mjs",
-		"build:release": "node scripts/build.mjs --release --zip",
+		"build:release": "node scripts/build.mjs --release --zip && node scripts/source-archive.mjs && node scripts/validate-store.mjs",
+		"store:validate": "node scripts/validate-store.mjs",
+		"store:assets": "node scripts/build.mjs && node scripts/store-assets.mjs",
 		"check": "tsc -p tsconfig.json --noEmit",
 		"icons": "node scripts/icons.mjs",
 		"icons:check": "node scripts/icons.mjs --check",

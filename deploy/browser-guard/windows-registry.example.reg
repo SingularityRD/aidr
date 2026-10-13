@@ -1,7 +1,8 @@
 Windows Registry Editor Version 5.00
 
 ; Singularity AIDR Browser Guard: example machine policy for Google Chrome and Microsoft Edge.
-; Replace the REPLACE_WITH_* placeholders, then import with: reg import windows-registry.example.reg
+; Replace <CHROME_WEB_STORE_ID>, <EDGE_ADDONS_ID> (the store listing IDs) and the REPLACE_WITH_* values,
+; then import with: reg import windows-registry.example.reg
 ; Scalars are REG_SZ / REG_DWORD; lists and objects are REG_SZ JSON strings (Chrome and Edge accept
 ; JSON-encoded values for array and object keys of an extension managed-storage schema).
 
@@ -16,12 +17,12 @@ Windows Registry Editor Version 5.00
 "1"="*"
 
 [HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ExtensionInstallAllowlist]
-"1"="REPLACE_WITH_CHROME_EXTENSION_ID"
+"1"="<CHROME_WEB_STORE_ID>"
 
 [HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist]
-"1"="REPLACE_WITH_CHROME_EXTENSION_ID;https://clients2.google.com/service/update2/crx"
+"1"="<CHROME_WEB_STORE_ID>;https://clients2.google.com/service/update2/crx"
 
-[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\REPLACE_WITH_CHROME_EXTENSION_ID\policy]
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\<CHROME_WEB_STORE_ID>\policy]
 "policyId"="acme-browser-guard-2026-09"
 "mode"="auto"
 "enabledEntities"="[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"
@@ -57,12 +58,12 @@ Windows Registry Editor Version 5.00
 "1"="*"
 
 [HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallAllowlist]
-"1"="REPLACE_WITH_EDGE_EXTENSION_ID"
+"1"="<EDGE_ADDONS_ID>"
 
 [HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist]
-"1"="REPLACE_WITH_EDGE_EXTENSION_ID;https://edge.microsoft.com/extensionwebstorebase/v1/crx"
+"1"="<EDGE_ADDONS_ID>;https://edge.microsoft.com/extensionwebstorebase/v1/crx"
 
-[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\REPLACE_WITH_EDGE_EXTENSION_ID\policy]
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\<EDGE_ADDONS_ID>\policy]
 "policyId"="acme-browser-guard-2026-09"
 "mode"="auto"
 "enabledEntities"="[\"PERSON\",\"EMAIL\",\"PHONE\",\"TC_KIMLIK\",\"IBAN\",\"CREDIT_CARD\",\"ADDRESS\",\"US_SSN\",\"DATE_OF_BIRTH\",\"PASSPORT\",\"NATIONAL_ID\",\"TAX_ID\",\"BANK_ACCOUNT\",\"IP_ADDRESS\",\"MAC_ADDRESS\",\"SECRET\",\"PRIVATE_KEY\",\"INTERNAL\",\"CLASSIFIED\",\"HEALTH_ID\",\"LICENSE_PLATE\"]"

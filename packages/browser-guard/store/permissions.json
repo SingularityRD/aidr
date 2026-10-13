@@ -1,0 +1,57 @@
+{
+	"$comment": "Store permission justifications (Chrome Web Store 'Privacy practices' tab, Edge Add-ons 'Properties', AMO reviewer notes). scripts/validate-store.mjs fails when the built manifest requests a permission or host that is not justified here, or when an entry here is no longer requested.",
+	"permissions": {
+		"storage": {
+			"en": "Stores the user's settings and the extension's own counters in chrome.storage.local, reads the administrator's managed policy from chrome.storage.managed, and keeps the per-tab placeholder mapping in chrome.storage.session (memory only, deleted when the tab closes or the browser exits) so that a reloaded AI chat tab can still restore its own answers.",
+			"tr": "Kullanıcı ayarlarını ve uzantının kendi sayaçlarını chrome.storage.local içinde saklar, yöneticinin yönetilen politikasını chrome.storage.managed üzerinden okur ve sekme başına yer tutucu eşlemesini chrome.storage.session içinde (yalnızca bellekte; sekme kapanınca veya tarayıcı kapanınca silinir) tutar; böylece yeniden yüklenen bir yapay zekâ sohbet sekmesi kendi yanıtlarını geri getirmeye devam eder."
+		},
+		"alarms": {
+			"en": "Schedules the periodic jobs of the background worker: sending batched, counts-only telemetry to the organisation's own control plane when one is configured, refreshing the signed dashboard policy, and ending a user's temporary pause of protection on time.",
+			"tr": "Arka plan çalışanının periyodik işlerini zamanlar: bir kontrol düzlemi tanımlıysa yalnızca sayılardan oluşan telemetriyi toplu olarak kurumun kendi kontrol düzlemine gönderme, imzalı pano politikasını yenileme ve kullanıcının korumayı geçici olarak duraklatmasını zamanında sonlandırma."
+		},
+		"declarativeNetRequest": {
+			"en": "Installs block rules only, for the AI services an administrator lists in the managed blockedSites policy or blocks with Shadow AI control. No redirect or header-modifying rule is ever installed. The extension deliberately does not use declarativeNetRequestWithHostAccess, because under it an administrator's block would depend on the policed user's own host-access grant.",
+			"tr": "Yalnızca engelleme kuralları kurar: yöneticinin yönetilen blockedSites politikasında listelediği veya Gölge Yapay Zekâ (Shadow AI) denetimiyle engellediği yapay zekâ hizmetleri için. Hiçbir zaman yönlendirme veya üst bilgi değiştiren kural kurulmaz. Uzantı bilerek declarativeNetRequestWithHostAccess kullanmaz; o izinle yöneticinin engeli, denetlenen kullanıcının kendi site erişim iznine bağlı kalırdı."
+		},
+		"scripting": {
+			"en": "Registers the content script on company-internal AI portals that the administrator configured (managed customSites), only on hosts the user granted on the options page, and injects it into supported AI chat tabs that were already open when the extension started, so they are protected without a reload. It gives no access by itself: injection still needs host access to the page.",
+			"tr": "İçerik betiğini, yöneticinin tanımladığı şirket içi yapay zekâ portallarına (yönetilen customSites) yalnızca kullanıcının seçenekler sayfasında izin verdiği alan adlarında kaydeder ve uzantı başladığında zaten açık olan desteklenen yapay zekâ sohbet sekmelerine enjekte eder; böylece bu sekmeler yeniden yüklenmeden korunur. Tek başına erişim vermez: enjeksiyon için yine de sayfaya site erişimi gerekir."
+		}
+	},
+	"optional_permissions": {
+		"nativeMessaging": {
+			"en": "Optional, never requested at install. Requested from a click on the options page when the user or administrator turns on the AIDR Privacy native host, a separately installed program on the same computer that adds name/address recognition (NER) and image text recognition (OCR). Text is exchanged with that local program only; nothing is sent over the network.",
+			"tr": "İsteğe bağlıdır, kurulumda hiçbir zaman istenmez. Kullanıcı veya yönetici AIDR Privacy yerel ana bilgisayarını (aynı bilgisayara ayrıca kurulan, ad/adres tanıma (NER) ve görüntüdeki metni tanıma (OCR) ekleyen program) açtığında seçenekler sayfasındaki bir tıklamayla istenir. Metin yalnızca bu yerel programla paylaşılır; ağ üzerinden hiçbir şey gönderilmez."
+		}
+	},
+	"host_permissions": {
+		"justification": {
+			"en": "The content script runs only on these AI chat products, where it checks prompts, pastes and uploaded files for personal and confidential data before they are sent, replaces findings with placeholders, and restores the originals locally in the answers. It does not run on any other website.",
+			"tr": "İçerik betiği yalnızca bu yapay zekâ sohbet ürünlerinde çalışır: istemleri, yapıştırılan metinleri ve yüklenen dosyaları gönderilmeden önce kişisel ve gizli veriler için denetler, bulguları yer tutucularla değiştirir ve özgün değerleri yanıtlarda yerel olarak geri getirir. Başka hiçbir web sitesinde çalışmaz."
+		},
+		"hosts": {
+			"https://chatgpt.com/*": "ChatGPT",
+			"https://chat.openai.com/*": "ChatGPT (legacy host)",
+			"https://gemini.google.com/*": "Google Gemini",
+			"https://claude.ai/*": "Claude",
+			"https://copilot.microsoft.com/*": "Microsoft Copilot",
+			"https://m365.cloud.microsoft/*": "Microsoft 365 Copilot Chat",
+			"https://copilot.cloud.microsoft/*": "Microsoft 365 Copilot Chat (also the Copilot pane embedded in Office web apps)",
+			"https://www.perplexity.ai/*": "Perplexity",
+			"https://perplexity.ai/*": "Perplexity",
+			"https://chat.deepseek.com/*": "DeepSeek",
+			"https://chat.mistral.ai/*": "Mistral Le Chat",
+			"https://grok.com/*": "Grok"
+		}
+	},
+	"optional_host_permissions": {
+		"https://*/*": {
+			"en": "Optional, never requested at install and never granted as a whole. The options page requests exact https://<host>/* origins, from a user click, only for what the administrator's managed policy configures: the hosts of company-internal AI portals (customSites) and, when Shadow AI control is on, the catalogued AI service origins whose visits are counted. The extension requests neither tabs, webNavigation, history nor <all_urls>.",
+			"tr": "İsteğe bağlıdır; kurulumda hiçbir zaman istenmez ve hiçbir zaman toptan verilmez. Seçenekler sayfası, kullanıcı tıkladığında yalnızca yöneticinin yönetilen politikasında tanımlı olanlar için tam https://<alan-adı>/* kaynakları ister: şirket içi yapay zekâ portallarının (customSites) alan adları ve Gölge Yapay Zekâ denetimi açıksa ziyaretleri sayılan katalogdaki yapay zekâ hizmetleri. Uzantı tabs, webNavigation, history veya <all_urls> izni istemez."
+		}
+	},
+	"remote_code": {
+		"en": "No remote code. Every script is bundled in the package; the build fails on eval, new Function, string timers, importScripts, dynamic import() or a reference to an unexpected remote origin, and the extension-page CSP is script-src 'self'. The only network requests the extension makes are counts-only telemetry and the signed policy fetch, both to the organisation's control plane and only when configured.",
+		"tr": "Uzak kod yoktur. Tüm betikler pakete dahildir; derleme eval, new Function, metin olarak zamanlayıcı, importScripts, dinamik import() veya beklenmeyen bir uzak kaynağa başvuru içeren kodu reddeder ve uzantı sayfalarının CSP'si script-src 'self' şeklindedir. Uzantının yaptığı ağ istekleri yalnızca sayılardan oluşan telemetri ve imzalı politika alımıdır; ikisi de yalnızca yapılandırıldığında ve kurumun kendi kontrol düzlemine yapılır."
+	}
+}

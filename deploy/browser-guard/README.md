@@ -22,18 +22,32 @@ accept.
 
 ## Before you start
 
-1. **Get the extension IDs.** Replace every `REPLACE_WITH_CHROME_EXTENSION_ID`
-   and `REPLACE_WITH_EDGE_EXTENSION_ID` placeholder:
-   - Chrome Web Store / Edge Add-ons: the ID shown on the listing (32 letters
-     `a`-`p`). The store update URLs are already in the examples.
-   - Self-hosted Chromium build: pack `dist/chrome` with your own key
-     (`chrome --pack-extension=dist/chrome --pack-extension-key=browser-guard.pem`),
-     host the `.crx` with an `update.xml`, and use that URL instead of the store
-     URL. The ID is derived from the key. Chrome and Edge only install off-store
-     extensions when they are force-installed by policy on managed machines.
-   - Firefox always uses `browser-guard@singularityrd.com`. The XPI must be
-     signed by Mozilla (listed on addons.mozilla.org, or signed as unlisted and
-     self-hosted); replace the example `install_url`.
+1. **Put in the store IDs.** The examples install Browser Guard from the stores by
+   store ID. Replace every placeholder (search for the angle brackets; in the
+   `.mobileconfig` they are written `&lt;...&gt;`):
+   - `<CHROME_WEB_STORE_ID>`: the 32-letter (`a`-`p`) ID of the Chrome Web Store
+     listing, the last part of its URL. Update URL
+     `https://clients2.google.com/service/update2/crx` (already in the examples).
+   - `<EDGE_ADDONS_ID>`: the ID of the Microsoft Edge Add-ons listing (it differs
+     from the Chrome Web Store ID). Update URL
+     `https://edge.microsoft.com/extensionwebstorebase/v1/crx`. Edge can also
+     force-install the Chrome Web Store item (`<CHROME_WEB_STORE_ID>` with the Google
+     update URL); then put that ID in the Edge `3rdparty` policy key as well, because
+     managed configuration is looked up by the installed extension's ID.
+   - Firefox: the add-on ID is always `browser-guard@singularityrd.com` (the
+     addons.mozilla.org ID). Replace `<FIREFOX_XPI_HOST>` in `install_url` with
+     the HTTPS location of the Mozilla-signed XPI (unlisted, self-distributed), or
+     use `https://addons.mozilla.org/firefox/downloads/latest/<AMO_SLUG>/latest.xpi`
+     if the add-on is listed on addons.mozilla.org.
+   - Self-hosted Chromium build instead of the stores: pack `dist/chrome` with your
+     own key (`chrome --pack-extension=dist/chrome --pack-extension-key=browser-guard.pem`),
+     host the `.crx` with an `update.xml`, and use that ID and URL. Chrome and Edge
+     only install off-store extensions when they are force-installed by policy on
+     managed machines.
+
+   Step-by-step guides for Intune, the Google Admin console, Jamf, Group Policy and
+   Firefox, with verification and rollback, are in
+   [`docs/installation/browser-guard-enterprise.md`](../../docs/installation/browser-guard-enterprise.md).
 2. **Replace the example values.** `policyId`, `literals`, the example
    `exactData` set (its `fingerprints` are a `REPLACE_WITH_...` placeholder and it
    carries no key: build the real dataset with `fingerprint-dataset.mjs`, see

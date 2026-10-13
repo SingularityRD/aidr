@@ -230,11 +230,13 @@ Requires Node.js 22.12+ and pnpm (repository root: `pnpm install`).
 
 ```bash
 pnpm build:browser-guard            # development build (inline source maps)
-pnpm package:browser-guard          # release build + store zips + SHA256SUMS
+pnpm package:browser-guard          # release build + store zips + AMO source zip + SHA256SUMS + store validation
 
 # or inside packages/browser-guard
 pnpm build                          # node scripts/build.mjs
-pnpm build:release                  # node scripts/build.mjs --release --zip
+pnpm build:release                  # build.mjs --release --zip, source-archive.mjs, validate-store.mjs
+pnpm store:validate                 # offline store checks of dist/ zips and store/ (scripts/validate-store.mjs)
+pnpm store:assets                   # regenerate store/images/ from the E2E fixtures (scripts/store-assets.mjs)
 pnpm check                          # tsc --noEmit
 pnpm test:e2e                       # build, then real-browser E2E (see e2e/README.md)
 ```
@@ -246,8 +248,19 @@ dist/chrome/                               unpacked Chrome/Edge extension
 dist/firefox/                              unpacked Firefox extension
 dist/aidr-browser-guard-chrome-<ver>.zip   upload to the Chrome Web Store / Edge Add-ons
 dist/aidr-browser-guard-firefox-<ver>.zip  upload to addons.mozilla.org
+dist/aidr-browser-guard-source-<ver>.zip   source code for the AMO review (scripts/source-archive.mjs)
 dist/SHA256SUMS                            sha256sum -c compatible
 ```
+
+The listing kit (descriptions EN/TR, single-purpose statement, permission
+justifications, data-usage answers, privacy policy pages, screenshots and promo
+tiles) and the owner's publishing steps are in [`store/`](store/README.md).
+`scripts/validate-store.mjs` checks the uploaded zips themselves and the kit against
+the store rules that can be checked offline (manifest fields and limits, version,
+icons, no `key`, justified minimum permissions, CSP, no remote code, no source maps)
+and fails the release build on a violation. The source zip is built from esbuild's
+own list of bundle inputs; unpacking it and following its `AMO-REVIEWER-NOTES.md`
+reproduces the Firefox package byte for byte.
 
 `scripts/build.mjs` bundles four entry points with esbuild into classic IIFE
 scripts (`background.js`, `content.js`, `popup.js`, `options.js`) targeting
@@ -298,7 +311,7 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 | Key | Value | Why |
 |---|---|---|
 | `permissions` | `storage`, `alarms`, `declarativeNetRequest`, `scripting` | settings and the in-memory vault; telemetry batching; blocking sites an admin lists in `blockedSites` or blocks with `shadowAi` (block rules only; `declarativeNetRequest` applies them without host permissions, so an administrator's block never depends on the user's host-access grant; install warning "Block content on any page"); registering the content script for administrator-configured `customSites`, and injecting it into AI tabs that were already open when the extension started (no install warning, and no access by itself: injection still needs host access to the page) |
-| `host_permissions` | the ten HTTPS hosts above | content script injection on supported sites only |
+| `host_permissions` | the twelve HTTPS hosts above | content script injection on supported sites only |
 | `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install. The options page requests exact `https://<host>/*` origins, from a click, only for what the managed policy configures: the hosts of `customSites`, and the Shadow AI catalog origins when `shadowAi` is on (or the origins of explicitly blocked services). No `tabs`, `webNavigation`, `history` or `<all_urls>` permission is requested: the extension sees a tab's URL only on origins it was granted |
 | `content_scripts` | `content.js` and `content-main.js` (`world: "MAIN"`), both `run_at: document_start`: `all_frames: false` for every site host except the two Microsoft 365 Copilot hosts (`m365.cloud.microsoft`, `copilot.cloud.microsoft`), which get the same two scripts with `all_frames: true` (disjoint `matches`, so no frame gets a script twice) | intercept before the page's own handlers; top frame only, except that on the Microsoft 365 Copilot hosts the scripts also run when that host is loaded as a subframe, which is how the Office web apps embed the Copilot pane (see [Limitations](#limitations)). No host permission is added for this: the frame hosts are already site hosts, and the Office pages that embed them get no script. `content-main.js` runs in the page's JavaScript world with no extension APIs and no data: it only hooks `<input type=file>` (`click`, `showPicker`, the `files` getter) so detached and shadow-DOM file inputs are handed to `content.js` for checking (see [Limitations](#limitations)). Custom sites get both scripts |
@@ -652,6 +665,8 @@ secret: the same secret and dataset id reproduce the same fingerprints.
 AIDR_TEST_NO_BUILD=1 pnpm exec vitest run packages/browser-guard/src/__tests__
 ```
 
+`store.test.ts` runs the store validator on a release build and the committed
+listing kit, and checks that each store violation it covers is rejected.
 `build.test.ts` builds a stub package in a temporary directory and checks both
 manifests, the CSP, permissions, locale copying, zips and `SHA256SUMS`,
 reproducibility, and every fail-closed path. `build-tools.test.ts` covers the

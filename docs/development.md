@@ -414,11 +414,16 @@ This project uses [Changesets](https://github.com/changesets/changesets) with **
 Pushing a protected, PGP-signed annotated tag `browser-guard-vX.Y.Z` (matching
 `packages/browser-guard/package.json`) runs `.github/workflows/release-browser-guard.yml`:
 unit tests, the real-browser E2E, two release builds that must produce identical
-zips, `SHA256SUMS`, a build-provenance attestation and a **draft** GitHub release.
-The workflow reads only the tag-signing secrets (`RELEASE_TAG_PGP_PUBLIC_KEY`,
-`RELEASE_TAG_PGP_FINGERPRINT`) from the `browser-guard-release` environment; store
-submission (Chrome Web Store, Edge Add-ons, AMO) stays a manual step with no store
-credentials in CI.
+store packages (Chrome/Edge zip, Firefox zip, AMO source zip), the offline store
+validator (`packages/browser-guard/scripts/validate-store.mjs`), `SHA256SUMS`, a
+build-provenance attestation and a **draft** GitHub release. The build reads only the
+tag-signing secrets (`RELEASE_TAG_PGP_PUBLIC_KEY`, `RELEASE_TAG_PGP_FINGERPRINT`) from
+the `browser-guard-release` environment. A separate `store-drafts` job (environment
+`browser-guard-store`, no checkout) then uploads the attested packages as drafts:
+Chrome Web Store upload, Edge Add-ons draft package, addons.mozilla.org unlisted
+version. It never publishes; a store whose secrets are missing is skipped with a
+notice. Secrets and the owner's publishing steps:
+[`packages/browser-guard/store/README.md`](../packages/browser-guard/store/README.md).
 
 ## SEA Binaries (relocatable directory)
 

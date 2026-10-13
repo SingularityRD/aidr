@@ -5,14 +5,14 @@
       "setting": "Microsoft Edge > Extensions > Control which extensions are installed silently",
       "policy": "ExtensionInstallForcelist",
       "value": [
-        "REPLACE_WITH_EDGE_EXTENSION_ID;https://edge.microsoft.com/extensionwebstorebase/v1/crx"
+        "<EDGE_ADDONS_ID>;https://edge.microsoft.com/extensionwebstorebase/v1/crx"
       ]
     },
     {
       "setting": "Microsoft Edge > Extensions > Configure extension management settings",
       "policy": "ExtensionSettings",
       "value": {
-        "REPLACE_WITH_EDGE_EXTENSION_ID": {
+        "<EDGE_ADDONS_ID>": {
           "installation_mode": "force_installed",
           "update_url": "https://edge.microsoft.com/extensionwebstorebase/v1/crx",
           "toolbar_state": "force_shown"
@@ -45,7 +45,7 @@
       "setting": "Microsoft Edge > Extensions > Allow specific extensions to be installed",
       "policy": "ExtensionInstallAllowlist",
       "value": [
-        "REPLACE_WITH_EDGE_EXTENSION_ID"
+        "<EDGE_ADDONS_ID>"
       ]
     }
   ],
@@ -54,12 +54,12 @@
       "name": "AIDR Browser Guard force-install",
       "omaUri": "./Device/Vendor/MSFT/Policy/Config/microsoft_edge~Policy~microsoft_edge~Extensions/ExtensionInstallForcelist",
       "dataType": "String",
-      "value": "<enabled/><data id=\"ExtensionInstallForcelistDesc\" value=\"1&#xF000;REPLACE_WITH_EDGE_EXTENSION_ID;https://edge.microsoft.com/extensionwebstorebase/v1/crx\"/>",
+      "value": "<enabled/><data id=\"ExtensionInstallForcelistDesc\" value=\"1&#xF000;<EDGE_ADDONS_ID>;https://edge.microsoft.com/extensionwebstorebase/v1/crx\"/>",
       "requires": "Microsoft Edge ADMX ingested (msedge.admx)"
     }
   ],
   "managedConfiguration": {
-    "registryKey": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\3rdparty\\extensions\\REPLACE_WITH_EDGE_EXTENSION_ID\\policy",
+    "registryKey": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\3rdparty\\extensions\\<EDGE_ADDONS_ID>\\policy",
     "values": {
       "policyId": {
         "type": "REG_SZ",

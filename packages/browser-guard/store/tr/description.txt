@@ -1,0 +1,35 @@
+Singularity AIDR Browser Guard, yapay zekâ sohbet araçlarına gönderdiklerinizi kişisel ve gizli veriler için denetler, bu verileri tarayıcıdan çıkmadan önce yer tutucularla değiştirir ve yer tutucular yanıtta geri geldiğinde özgün değerleri yerel olarak geri getirir.
+
+NEREDE ÇALIŞIR
+ChatGPT, Google Gemini, Claude, Microsoft Copilot ve Microsoft 365 Copilot Chat, Perplexity, DeepSeek, Mistral Le Chat ve Grok. Kurumunuz şirket içi yapay zekâ portallarını ekleyebilir. Betikleri başka hiçbir web sitesinde çalışmaz.
+
+NE YAPAR
+- Gönder düğmesine veya Enter'a bastığınızda istemi, yapıştırdığınız metni ve yüklediğiniz metin dosyalarını denetler.
+- E-posta adreslerini, telefon numaralarını, ödeme kartı numaralarını (Luhn denetimli), IBAN'ları (mod-97 denetimli), T.C. Kimlik Numaralarını (sağlama haneli doğrulama), IP ve MAC adreslerini, API anahtarlarını, belirteçleri ve özel anahtarları; etiketli ad, adres, doğum tarihi, vergi ve pasaport numaralarını ve kurumunuzun tanımladığı terimleri bulur.
+- Her bulguyu [EMAIL_1_k3f9] gibi bir yer tutucuyla değiştirir. Yapay zekâ hizmetine yer tutucu gider; özgün değer tarayıcınızdan çıkmaz.
+- Özgün değerleri yanıtta yalnızca sizin tarayıcınızda yeniden gösterir. Gizli anahtarlar ve özel anahtarlar maskeli kalır.
+- Word, Excel, PowerPoint ve OpenDocument dosyaları: metin, yüklemeden önce dosyanın içinde maskelenir. PDF'ler ve eski .doc/.xls/.ppt dosyaları denetlenir ve hassas veri içeriyorsa engellenir.
+- Dört mod: otomatik maskele (varsayılan), göndermeden önce sor, engelle veya yalnızca izle.
+- Türkçe ve İngilizce kullanıcı arayüzü.
+
+GİZLİLİK
+- Tespit, maskeleme ve geri getirme tamamen tarayıcınızda çalışır.
+- Yer tutucular ile özgün değerler arasındaki eşleme sekme için bellekte tutulur; sekme kapanınca, 4 saat kullanılmayınca veya tarayıcı kapanınca silinir.
+- Varsayılan olarak uzantı hiçbir yere hiçbir şey göndermez.
+- Kurumunuz kendi AIDR kontrol düzlemini bağlarsa uzantı yalnızca sayıları gönderir (ör. "ChatGPT'de 2 e-posta adresi maskelendi"); istem metnini, değerleri, dosya adlarını veya sayfa adreslerini asla göndermez.
+- Yayıncıya hiçbir şey gönderilmez.
+
+KURUMLAR İÇİN
+Yöneticiler uzantıyı Chrome, Edge ve Firefox kurumsal politikalarıyla (Microsoft Intune, Google Yönetici Konsolu, Jamf, Grup İlkesi, policies.json) zorunlu olarak kurabilir ve ayarlarını kilitleyebilir: mod, veri türleri, kurum terimleri, tam eşleşmeli müşteri veri kümeleri, engellenen yapay zekâ siteleri, Gölge Yapay Zekâ keşfi ve denetimi, dosya işleme ve raporlama.
+
+KAPSAMADIKLARI
+- Diğer yapay zekâ araçları: masaüstü ve mobil uygulamalar, API istemcileri, başka web sitelerinin içindeki yapay zekâ özellikleri, diğer tarayıcılar ve tarayıcı profilleri, gizli veya misafir pencereleri.
+- Yapay zekâ sitesinin ses olarak gönderdiği sesli giriş ve dikte.
+- Gönder'e basmadan önce, siz yazarken sitenin okuduğu metin (taslaklar, otomatik kayıt).
+- "Ad:" gibi bir etiket olmadan yazılan ad ve adresler yalnızca ayrıca kurulan isteğe bağlı AIDR Privacy yerel ana bilgisayarıyla tanınır.
+- Görüntüler ve ekran görüntüleri yalnızca bu yerel ana bilgisayar ve metin tanıma (OCR) ile denetlenir. Onsuz "denetlenmedi" olarak bildirilir, asla temiz sayılmaz.
+- Desteklenen bir sitenin yeniden tasarlanması, uzantı güncellenene kadar Gönder düğmesinin tanınmamasına yol açabilir.
+- Geri getirilen değerler yalnızca sayfada görünür. Sitenin kendisinin dışa aktardığı, kopyaladığı veya paylaştığı metin yer tutucuları içerir.
+- İzleme modunda, kullanıcının kapattığı sitelerde, koruma duraklatılmışken ve (izin veriliyorsa) "Orijinali gönder" ya da "Yine de gönder" sonrasında metin maskelenmeden gönderilir. Yöneticiler bunları politikayla kapatabilir.
+
+Browser Guard hassas verilerin yapay zekâ hizmetlerine ulaşma olasılığını azaltır. Kurumunuzun veri koruma politikasının veya eğitimlerinin yerini almaz.
