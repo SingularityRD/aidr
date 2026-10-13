@@ -1279,7 +1279,7 @@ jobs:
 
   final-sign-publish:
     name: Canonically sign, attest and publish RC
-    needs: [build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native, installers-linux, installers-windows]
+    needs: [build-rc, assemble-e2e, acceptance-e2e, acceptance-windows-native, installers-linux, installers-windows, installers-sea-sign]
     runs-on: ubuntu-22.04
     environment: release-candidate
     permissions:
@@ -1440,6 +1440,25 @@ jobs:
             exit 1
           fi
 
+      # The release-key-signed SEA bundles the installers were built from. A
+      # per-customer installer (customer-installer.yml) is rebuilt from these
+      # release assets, so they are published and attested with the installers.
+      - name: Download signed SEA bundles (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-sea-signed-${{ needs.build-rc.outputs.tag }}
+          path: ${{ runner.temp }}/installers/sea
+
+      - name: Recheck signed SEA bundles across runner boundary
+        shell: bash
+        env:
+          EXPECTED_LINUX_SHA256: ${{ needs.installers-sea-sign.outputs.linux_sha256 }}
+          EXPECTED_WINDOWS_SHA256: ${{ needs.installers-sea-sign.outputs.windows_sha256 }}
+        run: |
+          set -euo pipefail
+          echo "${EXPECTED_LINUX_SHA256}  ${RUNNER_TEMP}/installers/sea/aidr-sea-linux-signed.tgz" | sha256sum --check --strict
+          echo "${EXPECTED_WINDOWS_SHA256}  ${RUNNER_TEMP}/installers/sea/aidr-sea-windows-signed.tgz" | sha256sum --check --strict
+
       - name: Attest the desktop installers (pinned)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -1448,6 +1467,7 @@ jobs:
             ${{ runner.temp }}/installers/linux/*.rpm
             ${{ runner.temp }}/installers/linux/*.tar.gz
             ${{ runner.temp }}/installers/windows/*.msi
+            ${{ runner.temp }}/installers/sea/*.tgz
 
       - name: Publish draft prerelease evidence (pinned)
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -1461,6 +1481,7 @@ jobs:
             release-output/*
             ${{ runner.temp }}/installers/linux/*
             ${{ runner.temp }}/installers/windows/*
+            ${{ runner.temp }}/installers/sea/*.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

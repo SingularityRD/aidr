@@ -30,12 +30,22 @@ import {
 	writeDistributionManifest,
 	writeRuntimeManifest,
 } from "../../packages/claude-code/scripts/build-sea.mjs";
-import { checkSeaBundle, checkTrustKey, checkVersion, InstallerInputError } from "./lib/common.mjs";
+import {
+	CUSTOMER_PACKET_MAX_BYTES,
+	checkCustomerPacket,
+	checkSeaBundle,
+	checkTrustKey,
+	checkVersion,
+	customerArtifactName,
+	InstallerInputError,
+	LINUX_CUSTOMER_PACKET,
+} from "./lib/common.mjs";
 import {
 	ASSISTANT_DESKTOP,
 	buildLinuxPackages,
 	DEB_POSTINST,
 	DEB_PRERM,
+	debConffiles,
 	packageVersion,
 	rpmSpec,
 } from "./linux/build-linux-packages.mjs";
@@ -416,7 +426,7 @@ describe("Windows MSI install wizard", () => {
 	});
 
 	test("the WiX sources are XML that WiX's reader accepts (no double hyphen inside a comment)", () => {
-		for (const path of ["aidr.wxs", "ui/AidrUI.wxs", "ui/aidr.en-US.wxl", "ui/aidr.tr-TR.wxl"]) {
+		for (const path of ["aidr.wxs", "bundle.wxs", "ui/AidrUI.wxs", "ui/aidr.en-US.wxl", "ui/aidr.tr-TR.wxl"]) {
 			const xml = windowsFile(path);
 			assert.match(xml, /^<\?xml version="1\.0" encoding="utf-8"\?>/, path);
 			for (const m of xml.matchAll(/<!--([\s\S]*?)-->/g)) assert.ok(!m[1].includes("--"), `${path}: "--" in a comment`);
@@ -607,5 +617,206 @@ describe("Linux packages", () => {
 		assert.equal(remove.status, 0, remove.stderr);
 		assert.ok(!existsSync(join(target, "bundle")));
 		assert.ok(!existsSync(link));
+	});
+});
+
+// ─── per-customer installers (docs/operations/customer-builds.md) ─────────
+
+/**
+ * A customer packet in the contract's shape. The builders check shape and
+ * customer id only (the signature is scripts/customer-packet-verify.mjs's job),
+ * so the signature here is a placeholder.
+ */
+function customerPacket({ customerId = "bilgem", payload = {}, document = {} } = {}) {
+	const dir = tempDir("packet");
+	const path = join(dir, "customer-packet.json");
+	const license = { format: "aidr-license-v1", key_id: "vendor-2026", payload: { customer_id: customerId, expires_at: "2027-01-01T00:00:00Z" }, sig: "AA==" };
+	const body = {
+		format: "aidr-customer-packet-v1",
+		key_id: "vendor-2026",
+		payload: { customer_id: customerId, packet_id: `${customerId}-2026-001`, issued_at: "2026-10-01T00:00:00Z", license, display_name: "TÜBİTAK BİLGEM", ...payload },
+		sig: "c2lnbmF0dXJl",
+		...document,
+	};
+	writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`);
+	return path;
+}
+
+describe("customer packet inputs", () => {
+	test("a packet in the contract's shape is accepted for its own customer only", () => {
+		const path = customerPacket();
+		const packet = checkCustomerPacket(path);
+		assert.equal(packet.customerId, "bilgem");
+		assert.equal(packet.packetId, "bilgem-2026-001");
+		assert.equal(packet.sha256, createHash("sha256").update(readFileSync(path)).digest("hex"));
+		assert.ok(packet.bytes.equals(readFileSync(path)), "embedded byte for byte");
+		assert.equal(checkCustomerPacket(path, { expectedCustomerId: "bilgem" }).customerId, "bilgem");
+		assert.throws(() => checkCustomerPacket(path, { expectedCustomerId: "havelsan" }), /is for bilgem, not havelsan/);
+		assert.throws(() => checkCustomerPacket(path, { expectedCustomerId: "BILGEM" }), /invalid customer id/);
+	});
+
+	test("anything else is refused before it is embedded", () => {
+		const refused = [
+			[customerPacket({ document: { format: "aidr-license-v1" } }), /not an aidr-customer-packet-v1 document/],
+			[customerPacket({ document: { sig: "" } }), /no key_id or signature/],
+			[customerPacket({ customerId: "Bilgem" }), /invalid customer id/],
+			[customerPacket({ customerId: "x" }), /invalid customer id/],
+			[customerPacket({ payload: { packet_id: "../x" } }), /invalid packet_id/],
+			[customerPacket({ payload: { enrollment_code: "never-in-a-packet" } }), /unknown keys: enrollment_code/],
+			[customerPacket({ payload: { license: { format: "aidr-license-v1", payload: { customer_id: "havelsan" } } } }), /license for bilgem/],
+			[customerPacket({ payload: { license: null } }), /license for bilgem/],
+		];
+		for (const [path, reason] of refused) assert.throws(() => checkCustomerPacket(path), reason);
+		const dir = tempDir("packet-bad");
+		writeFileSync(join(dir, "empty.json"), "");
+		assert.throws(() => checkCustomerPacket(join(dir, "empty.json")), /1 to 65536 bytes/);
+		writeFileSync(join(dir, "big.json"), " ".repeat(CUSTOMER_PACKET_MAX_BYTES + 1));
+		assert.throws(() => checkCustomerPacket(join(dir, "big.json")), /not 65537/);
+		writeFileSync(join(dir, "text.json"), "not json");
+		assert.throws(() => checkCustomerPacket(join(dir, "text.json")), /not UTF-8 JSON/);
+		writeFileSync(join(dir, "latin1.json"), Buffer.from([0x7b, 0xff, 0x7d]));
+		assert.throws(() => checkCustomerPacket(join(dir, "latin1.json")), /not UTF-8 JSON/);
+	});
+
+	test("per-customer files are named SingularityAIDR-<CUSTOMER>-<version>-<arch>.<ext>", () => {
+		assert.equal(customerArtifactName({ customerId: "bilgem", version: "1.0.0", arch: "x64", ext: "msi" }), "SingularityAIDR-BILGEM-1.0.0-x64.msi");
+		assert.equal(customerArtifactName({ customerId: "havelsan-ank", version: "1.0.0", arch: "arm64", ext: "tar.gz" }), "SingularityAIDR-HAVELSAN-ANK-1.0.0-arm64.tar.gz");
+		assert.equal(customerArtifactName({ customerId: "bilgem", version: "1.0.0", arch: "x64", ext: "exe", suffix: "-UNSIGNED" }), "SingularityAIDR-BILGEM-1.0.0-x64-UNSIGNED.exe");
+		assert.throws(() => customerArtifactName({ customerId: "bilgem", version: "1.0.0", arch: "amd64", ext: "deb" }), /unsupported architecture/);
+		assert.throws(() => customerArtifactName({ customerId: "../x", version: "1.0.0", arch: "x64", ext: "deb" }), /invalid customer id/);
+	});
+});
+
+describe("per-customer Windows installer", () => {
+	const wxs = readFileSync(new URL("./windows/aidr.wxs", import.meta.url), "utf8");
+	const bundle = readFileSync(new URL("./windows/bundle.wxs", import.meta.url), "utf8");
+	const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8");
+
+	test("msi-inputs names the product and files after the customer and keeps the upgrade identity", () => {
+		const base = { seaDir: fakeSeaBundle({ platform: "win32" }), trustKey: releaseKey.path, trustKeyFingerprint: releaseKey.fingerprint, version: "0.6.0" };
+		const generic = msiInputs({ ...base, signing: "signed" });
+		assert.equal(generic.productName, "Singularity AIDR");
+		assert.equal(generic.hasCustomerPacket, "0");
+		assert.equal(generic.customerId, null);
+		assert.equal(generic.bundleOutputName, "singularity-aidr-0.6.0-windows-x64.exe");
+		const packet = customerPacket();
+		const customer = msiInputs({ ...base, signing: "signed", customerPacket: packet, customerId: "bilgem" });
+		assert.equal(customer.productName, "Singularity AIDR (BILGEM)");
+		assert.equal(customer.outputName, "SingularityAIDR-BILGEM-0.6.0-x64.msi");
+		assert.equal(customer.bundleOutputName, "SingularityAIDR-BILGEM-0.6.0-x64.exe");
+		assert.equal(customer.hasCustomerPacket, "1");
+		assert.equal(customer.customerId, "bilgem");
+		assert.equal(customer.customerPacketSha256, createHash("sha256").update(readFileSync(packet)).digest("hex"));
+		// Generic and customer MSIs upgrade each other; the EXE has its own stable identity.
+		assert.equal(customer.upgradeCode, generic.upgradeCode);
+		assert.equal(customer.bundleUpgradeCode, generic.bundleUpgradeCode);
+		assert.notEqual(customer.bundleUpgradeCode, customer.upgradeCode);
+		const unsigned = msiInputs({ ...base, signing: "unsigned", customerPacket: packet });
+		assert.equal(unsigned.outputName, "SingularityAIDR-BILGEM-0.6.0-x64-UNSIGNED.msi");
+		assert.equal(unsigned.bundleOutputName, "SingularityAIDR-BILGEM-0.6.0-x64-UNSIGNED.exe");
+		assert.throws(() => msiInputs({ ...base, signing: "signed", customerPacket: packet, customerId: "havelsan" }), /is for bilgem, not havelsan/);
+		assert.throws(() => msiInputs({ ...base, signing: "signed", customerId: "bilgem" }), /--customer-id needs --customer-packet/);
+		assert.throws(() => msiInputs({ ...base, signing: "signed", customerPacket: customerPacket({ document: { format: "x" } }) }), /aidr-customer-packet-v1/);
+	});
+
+	test("the packet goes to CONFIGDIR and, per-machine and permanently, to ProgramData", () => {
+		assert.match(wxs, /<Package Name="\$\(var\.ProductName\)"/);
+		const block = /<\?if \$\(var\.HasCustomerPacket\) = 1 \?>([\s\S]*?)<\?endif\?>/.exec(wxs)[1];
+		const config = attrs(/<Component Id="CustomerPacket"[^>]*>/.exec(block)[0]);
+		assert.equal(config.Directory, "CONFIGDIR");
+		assert.equal(config.Permanent, undefined, "the install-prefix copy goes with the product");
+		const machine = attrs(/<Component Id="CustomerPacketMachine"[^>]*>/.exec(block)[0]);
+		assert.equal(machine.Directory, "AIDRMACHINEDATA");
+		assert.equal(machine.Permanent, "yes", "survives removal and a generic `aidr update` upgrade");
+		assert.equal(machine.Condition, "ALLUSERS=1", "ProgramData is written by a per-machine (elevated) install only");
+		assert.match(machine.Guid, /^[0-9A-F-]{36}$/, "a permanent component needs a stable GUID");
+		assert.match(block, /<StandardDirectory Id="CommonAppDataFolder">\s*<Directory Id="AIDRMACHINEDATA" Name="Singularity AIDR" \/>/);
+		for (const file of block.matchAll(/<File\b[^>]*>/g)) {
+			const { Source, Name } = attrs(file[0]);
+			assert.equal(Source, "$(var.CustomerPacket)");
+			assert.equal(Name, "customer-packet.json");
+		}
+		assert.match(wxs, /<\?if \$\(var\.HasCustomerPacket\) = 1 \?>\s*<ComponentRef Id="CustomerPacket" \/>\s*<ComponentRef Id="CustomerPacketMachine" \/>\s*<\?endif\?>/);
+		// build-msi passes the variables, embedding the private stage copy msi-inputs checked.
+		assert.match(ps1, /'-d', "HasCustomerPacket=\$\(\$inputs\.hasCustomerPacket\)"/);
+		assert.match(ps1, /'-d', "CustomerPacket=\$packet"/);
+		assert.match(ps1, /'-d', "ProductName=\$\(\$inputs\.productName\)"/);
+		assert.match(ps1, /Copy-Item -LiteralPath \(Resolve-Path \$CustomerPacket\)\.Path -Destination \$packet[\s\S]*--customer-packet', \$packet/);
+	});
+
+	test("the setup EXE wraps exactly the signed MSI and is Authenticode-signed engine first", () => {
+		assert.match(bundle, /<bal:WixInternalUIBootstrapperApplication \/>/, "the MSI's own EN/TR wizard");
+		assert.deepEqual([...bundle.matchAll(/<MsiPackage\b[^>]*>/g)].map((m) => attrs(m[0]).SourceFile), ["$(var.MsiPath)"]);
+		const root = attrs(/<Bundle\b[^>]*>/.exec(bundle)[0]);
+		assert.equal(root.UpgradeCode, "$(var.BundleUpgradeCode)");
+		assert.equal(root.Name, "$(var.ProductName)");
+		// Built after the MSI is signed, from that file.
+		const bundleStart = ps1.indexOf("if ($Bundle) {\n    # The EXE embeds the MSI");
+		assert.ok(bundleStart > ps1.indexOf("'verify', '/pa', $msi"), "the EXE embeds the signed MSI");
+		const steps = ps1.slice(bundleStart);
+		const order = ["'burn', 'detach'", "Invoke-AuthenticodeSign $signtool @($engine)", "'burn', 'reattach'", "Invoke-AuthenticodeSign $signtool @($stagedExe)", "Move-Item -LiteralPath $stagedExe"];
+		const positions = order.map((needle) => steps.indexOf(needle));
+		assert.ok(positions.every((at) => at > 0), positions.join(","));
+		assert.deepEqual([...positions].sort((a, b) => a - b), positions, "detach, sign engine, reattach, sign EXE");
+		assert.match(ps1, /function Invoke-AuthenticodeSign[\s\S]*?'verify', '\/pa'/);
+		assert.match(ps1, /\$WixBalExtension = 'WixToolset\.Bal\.wixext'/);
+		assert.match(ps1, /if \(\$Bundle\) \{ Install-WixExtension \$WixBalExtension \}/);
+	});
+});
+
+describe("per-customer Linux packages", () => {
+	test("the packet is a dpkg conffile and RPM %config(noreplace); generic RPMs keep it as %ghost", () => {
+		assert.equal(LINUX_CUSTOMER_PACKET, "/etc/singularity-aidr/customer-packet.json");
+		assert.equal(debConffiles({}), "/etc/singularity-aidr/customer-packet.json\n");
+		assert.equal(debConffiles(undefined), null);
+		const customer = rpmSpec({ version: "0.6.0", arch: "x86_64", stagedRoot: "/stage", customerPacket: true });
+		assert.match(customer, /^%dir \/etc\/singularity-aidr$/m);
+		assert.match(customer, /^%config\(noreplace\) %attr\(0644,root,root\) \/etc\/singularity-aidr\/customer-packet\.json$/m);
+		const generic = rpmSpec({ version: "0.6.0", arch: "x86_64", stagedRoot: "/stage" });
+		assert.match(generic, /^%ghost %config\(noreplace\) %attr\(0644,root,root\) \/etc\/singularity-aidr\/customer-packet\.json$/m);
+	});
+
+	test("the customer .deb carries the packet in /etc as a conffile, under the customer file name", { skip: !have("dpkg-deb") && "dpkg-deb not installed" }, () => {
+		const packet = customerPacket();
+		const out = tempDir("customer-deb");
+		const base = { seaDir: fakeSeaBundle(), trustKey: releaseKey.path, trustKeyFingerprint: releaseKey.fingerprint, version: "0.6.0", formats: "deb" };
+		const { files, customerPacket: checked } = buildLinuxPackages({ ...base, out, customerPacket: packet, customerId: "bilgem" });
+		assert.equal(checked.customerId, "bilgem");
+		assert.deepEqual(files.map((file) => file.split("/").pop()), ["SingularityAIDR-BILGEM-0.6.0-x64.deb"]);
+		// The same package, so generic and customer packages upgrade each other.
+		assert.equal(spawnSync("dpkg-deb", ["-f", files[0], "Package"], { encoding: "utf8" }).stdout, "singularity-aidr\n");
+		const root = tempDir("customer-deb-x");
+		assert.equal(spawnSync("dpkg-deb", ["-x", files[0], root]).status, 0);
+		assert.deepEqual(readFileSync(join(root, LINUX_CUSTOMER_PACKET.slice(1))), readFileSync(packet));
+		assert.equal(statSync(join(root, LINUX_CUSTOMER_PACKET.slice(1))).mode & 0o777, 0o644);
+		const control = tempDir("customer-deb-control");
+		assert.equal(spawnSync("dpkg-deb", ["-e", files[0], control]).status, 0);
+		assert.equal(readFileSync(join(control, "conffiles"), "utf8"), "/etc/singularity-aidr/customer-packet.json\n");
+		// A generic .deb has no packet and no conffile entry.
+		const generic = buildLinuxPackages({ ...base, out: tempDir("generic-deb") });
+		const genericControl = tempDir("generic-deb-control");
+		assert.equal(spawnSync("dpkg-deb", ["-e", generic.files[0], genericControl]).status, 0);
+		assert.equal(existsSync(join(genericControl, "conffiles")), false);
+		assert.throws(() => buildLinuxPackages({ ...base, out: tempDir("wrong-customer"), customerPacket: packet, customerId: "havelsan" }), /is for bilgem, not havelsan/);
+		assert.throws(() => buildLinuxPackages({ ...base, out: tempDir("id-only"), customerId: "bilgem" }), /--customer-id needs --customer-packet/);
+	});
+
+	test("the customer tarball installs the packet to <prefix>/config", () => {
+		const packet = customerPacket({ customerId: "havelsan" });
+		const out = tempDir("customer-tar");
+		const { files } = buildLinuxPackages({ seaDir: fakeSeaBundle(), trustKey: releaseKey.path, trustKeyFingerprint: releaseKey.fingerprint, version: "0.6.0", out, formats: "tar", customerPacket: packet });
+		assert.deepEqual(files.map((file) => file.split("/").pop()), ["SingularityAIDR-HAVELSAN-0.6.0-x64.tar.gz"]);
+		assert.match(readFileSync(join(out, "SHA256SUMS"), "utf8"), /  SingularityAIDR-HAVELSAN-0\.6\.0-x64\.tar\.gz\n$/);
+		const unpack = tempDir("customer-tar-x");
+		assert.equal(spawnSync("tar", ["-xzf", files[0], "-C", unpack]).status, 0);
+		const top = join(unpack, "SingularityAIDR-HAVELSAN-0.6.0-x64");
+		assert.deepEqual(readFileSync(join(top, "config", "customer-packet.json")), readFileSync(packet));
+		const target = join(tempDir("customer-tar-prefix"), "aidr");
+		const env = { ...process.env, AIDR_PREFIX: target, AIDR_BIN_LINK: join(tempDir("customer-tar-bin"), "aidr"), AIDR_INSTALL_SKIP_SETUP: "1" };
+		delete env.SUDO_USER;
+		const install = spawnSync("sh", [join(top, "install.sh")], { encoding: "utf8", env });
+		assert.equal(install.status, 0, install.stderr);
+		// First in `aidr setup`'s discovery order: <install prefix>/config/customer-packet.json.
+		assert.deepEqual(readFileSync(join(target, "config", "customer-packet.json")), readFileSync(packet));
 	});
 });

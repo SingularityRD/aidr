@@ -1,6 +1,7 @@
 import * as esbuild from "esbuild";
 import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { buildHookBootstraps, hookBundleName } from "../../scripts/hook-bootstrap.mjs";
+import { releaseMinifyOptions } from "../../scripts/lib/release-minify.mjs";
 
 const pkg = JSON.parse(readFileSync("../core/package.json", "utf-8"));
 const isRelease =
@@ -55,6 +56,8 @@ const shared = {
 	sourcesContent: false,
 	sourceRoot: "",
 	legalComments: isRelease ? "none" : "eof",
+	// Release: minified with function/class names kept (error.name checks, stack frames).
+	...releaseMinifyOptions(isRelease),
 	// This output is CJS, where __dirname is always available. Keep the
 	// source's ESM fallback for the separately emitted package entrypoint.
 	define: { __AIDR_VERSION__: JSON.stringify(pkg.version), "import.meta.url": "undefined" },

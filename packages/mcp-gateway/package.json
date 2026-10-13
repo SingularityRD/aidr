@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:release": "node scripts/build.mjs",
+    "build:release": "node scripts/build.mjs --release",
     "test": "node --test src/__tests__/*.test.mjs"
   },
   "devDependencies": {

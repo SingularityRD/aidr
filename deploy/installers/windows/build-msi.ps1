@@ -26,8 +26,22 @@
   language matches. One MSI is published; `TRANSFORMS=:1055` forces Turkish.
   The company connection page's custom actions (ca\) are built with dotnet.
 
+  Per-customer build (-CustomerPacket <customer-packet.json> [-CustomerId <id>]):
+  the vendor-signed customer packet (docs/operations/customer-builds.md) is
+  installed as config\customer-packet.json and, per-machine, as the permanent
+  %ProgramData%\Singularity AIDR\customer-packet.json; the product is named
+  "Singularity AIDR (CUSTOMER)" and the file SingularityAIDR-CUSTOMER-<version>-<arch>.msi.
+  msi-inputs.mjs checks the packet's shape and customer id; its signature is
+  checked by scripts/customer-packet-verify.mjs before this script runs
+  (customer-installer.yml) and again by `aidr setup` on every endpoint.
+
+  -Bundle also builds a setup EXE (bundle.wxs, WiX Burn) around the signed MSI.
+  A signed build signs the detached Burn engine, reattaches it, signs the EXE
+  and verifies both with signtool /pa.
+
   Requires WiX Toolset 5 (`dotnet tool install --global wix --version 5.0.2`;
-  this script adds the pinned WixToolset.UI.wixext extension), the .NET SDK
+  this script adds the pinned WixToolset.UI.wixext extension, and
+  WixToolset.Bal.wixext for -Bundle), the .NET SDK
   (custom actions, net472) and, for signing, signtool.exe from the Windows SDK.
 
 .EXAMPLE
@@ -45,6 +59,11 @@ param(
   [string]$TimestampServer = 'http://timestamp.digicert.com',
   # Optional Ed25519 public key `aidr update` verifies the installer catalog with.
   [string]$CatalogKey = '',
+  # Optional vendor-signed customer packet (per-customer installer) and the customer it must be for.
+  [string]$CustomerPacket = '',
+  [string]$CustomerId = '',
+  # Also build the setup EXE (WiX Burn bootstrapper) around the MSI.
+  [switch]$Bundle,
   [switch]$Unsigned
 )
 Set-StrictMode -Version Latest
@@ -59,6 +78,9 @@ if ($SignThumbprint -and $Unsigned) { throw '-SignThumbprint and -Unsigned are m
 # The WiX UI extension, pinned to the WiX version the release workflow installs.
 $WixUiExtension = 'WixToolset.UI.wixext'
 $WixUiExtensionVersion = '5.0.2'
+# The Burn bootstrapper extension (-Bundle), same pin.
+$WixBalExtension = 'WixToolset.Bal.wixext'
+if ($CustomerId -and -not $CustomerPacket) { throw '-CustomerId needs -CustomerPacket.' }
 
 function Invoke-Checked([string]$File, [string[]]$Arguments) {
   & $File @Arguments
@@ -75,12 +97,17 @@ function Find-SignTool {
   return $found.FullName
 }
 
-function Install-WixUiExtension {
+function Install-WixExtension([string]$Name) {
   $listed = (& wix extension list -g 2>&1 | Out-String)
-  $pattern = "$([regex]::Escape($WixUiExtension))\s+$([regex]::Escape($WixUiExtensionVersion))"
+  $pattern = "$([regex]::Escape($Name))\s+$([regex]::Escape($WixUiExtensionVersion))"
   if ($listed -notmatch $pattern) {
-    Invoke-Checked 'wix' @('extension', 'add', '-g', "$WixUiExtension/$WixUiExtensionVersion")
+    Invoke-Checked 'wix' @('extension', 'add', '-g', "$Name/$WixUiExtensionVersion")
   }
+}
+
+function Invoke-AuthenticodeSign([string]$SignTool, [string[]]$Files) {
+  Invoke-Checked $SignTool (@('sign', '/sha1', $SignThumbprint, '/fd', 'sha256', '/tr', $TimestampServer, '/td', 'sha256', '/d', 'Singularity AIDR') + $Files)
+  Invoke-Checked $SignTool (@('verify', '/pa') + $Files)
 }
 
 # --- Windows Installer automation (the WiLangId / WiSubStg / WiGenXfm steps) ---
@@ -216,8 +243,17 @@ try {
 
   $catalogArgs = @()
   if ($CatalogKey) { $catalogArgs = @('--catalog-key', $CatalogKey) }
+  # The packet is checked and embedded from the same private stage copy.
+  $packetArgs = @()
+  $packet = ''
+  if ($CustomerPacket) {
+    $packet = Join-Path $stage 'customer-packet.json'
+    Copy-Item -LiteralPath (Resolve-Path $CustomerPacket).Path -Destination $packet
+    $packetArgs = @('--customer-packet', $packet)
+    if ($CustomerId) { $packetArgs += @('--customer-id', $CustomerId) }
+  }
   $inputsJson = & node (Join-Path $here 'msi-inputs.mjs') --sea-dir $bundle --trust-key $TrustKey `
-    --trust-key-fingerprint $TrustKeyFingerprint --version $Version --signing $signing @catalogArgs
+    --trust-key-fingerprint $TrustKeyFingerprint --version $Version --signing $signing @catalogArgs @packetArgs
   if ($LASTEXITCODE -ne 0) { throw 'MSI inputs were rejected (see above).' }
   $inputs = $inputsJson | ConvertFrom-Json
 
@@ -240,7 +276,8 @@ try {
   $actionsDll = Join-Path $actions 'AidrInstallerActions.CA.dll'
   if (-not (Test-Path -LiteralPath $actionsDll)) { throw "$actionsDll was not built." }
 
-  Install-WixUiExtension
+  Install-WixExtension $WixUiExtension
+  if ($Bundle) { Install-WixExtension $WixBalExtension }
 
   New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
   $msi = Join-Path (Resolve-Path $OutDir) $inputs.outputName
@@ -248,6 +285,7 @@ try {
   # One cabinet cache for every culture build: the payload (and its cabinet) is identical.
   $cabinets = Join-Path $stage 'cabinets'
   $common = @('-arch', $inputs.arch, '-ext', $WixUiExtension, '-cc', $cabinets,
+    '-d', "ProductName=$($inputs.productName)",
     '-d', "ProductVersion=$($inputs.productVersion)",
     '-d', "ProductCode=$($inputs.productCode)",
     '-d', "UpgradeCode=$($inputs.upgradeCode)",
@@ -257,6 +295,8 @@ try {
     '-d', "TrustKey=$((Resolve-Path $TrustKey).Path)",
     '-d', "HasCatalogKey=$($inputs.hasCatalogKey)",
     '-d', "CatalogKey=$(if ($CatalogKey) { (Resolve-Path $CatalogKey).Path } else { '' })",
+    '-d', "HasCustomerPacket=$($inputs.hasCustomerPacket)",
+    '-d', "CustomerPacket=$packet",
     '-d', "InstallerActionsDll=$actionsDll")
   $built = @{}
   foreach ($culture in $inputs.cultures) {
@@ -284,9 +324,37 @@ try {
   } else {
     Write-Warning "UNSIGNED MSI (local build only, never publish): $msi"
   }
-  $hash = (Get-FileHash -Algorithm SHA256 $msi).Hash.ToLowerInvariant()
-  Write-Output "built $msi"
-  Write-Output "sha256 $hash"
+  $outputs = @($msi)
+
+  if ($Bundle) {
+    # The EXE embeds the MSI exactly as signed above.
+    $exe = Join-Path (Resolve-Path $OutDir) $inputs.bundleOutputName
+    if (Test-Path $exe) { throw "$exe already exists" }
+    $stagedExe = Join-Path $stage 'bundle.exe'
+    Invoke-Checked 'wix' @('build', (Join-Path $here 'bundle.wxs'), '-arch', $inputs.arch, '-ext', $WixBalExtension,
+      '-d', "ProductName=$($inputs.productName)",
+      '-d', "ProductVersion=$($inputs.productVersion)",
+      '-d', "BundleUpgradeCode=$($inputs.bundleUpgradeCode)",
+      '-d', "MsiPath=$msi", '-o', $stagedExe)
+    if ($signing -eq 'signed') {
+      # Burn: sign the engine first (detach, sign, reattach), then the whole EXE.
+      $engine = Join-Path $stage 'burn-engine.exe'
+      Invoke-Checked 'wix' @('burn', 'detach', $stagedExe, '-engine', $engine)
+      Invoke-AuthenticodeSign $signtool @($engine)
+      Invoke-Checked 'wix' @('burn', 'reattach', $stagedExe, '-engine', $engine, '-o', $stagedExe)
+      Invoke-AuthenticodeSign $signtool @($stagedExe)
+    } else {
+      Write-Warning "UNSIGNED EXE (local build only, never publish): $exe"
+    }
+    Move-Item -LiteralPath $stagedExe -Destination $exe
+    $outputs += $exe
+  }
+
+  foreach ($file in $outputs) {
+    $hash = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
+    Write-Output "built $file"
+    Write-Output "sha256 $hash"
+  }
 } finally {
   Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
 }

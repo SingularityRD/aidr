@@ -141,3 +141,86 @@ export function checkSeaBundle(seaDir, { platform, trustKeyPem }) {
 export function sha256Of(path) {
 	return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
+
+// ── Per-customer installers ──────────────────────────────────────────────
+//
+// A customer installer is the same signed product plus one vendor-signed
+// customer packet (`aidr-customer-packet-v1`, docs/operations/customer-builds.md).
+// `aidr setup` discovers it at <prefix>/config/customer-packet.json, then at the
+// machine copy (%ProgramData%\Singularity AIDR\customer-packet.json on Windows,
+// /etc/singularity-aidr/customer-packet.json on Linux), and verifies its
+// signature against the license public-key registry before using it. The
+// builders check its shape and customer id only: the signature check is
+// scripts/customer-packet-verify.mjs, which the customer-installer workflow runs
+// before any builder, and `aidr setup` repeats it on every endpoint.
+
+const CUSTOMER_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,31}$/u;
+const PACKET_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+const CUSTOMER_PACKET_FORMAT = "aidr-customer-packet-v1";
+export const CUSTOMER_PACKET_MAX_BYTES = 64 * 1024;
+export const CUSTOMER_PACKET_FILE = "customer-packet.json";
+/** The Linux machine copy: a dpkg conffile / RPM %config(noreplace). */
+export const LINUX_CUSTOMER_PACKET = "/etc/singularity-aidr/customer-packet.json";
+const PACKET_PAYLOAD_KEYS = new Set(["customer_id", "packet_id", "issued_at", "license", "control_plane_url", "sensitivity", "display_name"]);
+
+function checkCustomerId(customerId) {
+	if (typeof customerId !== "string" || !CUSTOMER_ID_PATTERN.test(customerId)) {
+		throw new InstallerInputError(`invalid customer id ${JSON.stringify(customerId)} (lower-case letters, digits and '-', 2 to 32 characters)`);
+	}
+	return customerId;
+}
+
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
+/**
+ * Read a customer packet for embedding: at most 64 KiB of UTF-8 JSON in the
+ * packet format, only contract payload keys, a well-formed customer id and
+ * packet id, and an embedded license for the same customer. With
+ * `expectedCustomerId` the packet must be for exactly that customer.
+ * @returns {{ bytes: Buffer, customerId: string, packetId: string, sha256: string }}
+ */
+export function checkCustomerPacket(path, { expectedCustomerId } = {}) {
+	const bytes = readFileSync(path);
+	if (bytes.length === 0 || bytes.length > CUSTOMER_PACKET_MAX_BYTES) {
+		throw new InstallerInputError(`the customer packet must be 1 to ${CUSTOMER_PACKET_MAX_BYTES} bytes, not ${bytes.length}`);
+	}
+	let document;
+	try {
+		document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+	} catch {
+		throw new InstallerInputError("the customer packet is not UTF-8 JSON");
+	}
+	if (!isObject(document) || document.format !== CUSTOMER_PACKET_FORMAT) {
+		throw new InstallerInputError(`the customer packet is not an ${CUSTOMER_PACKET_FORMAT} document`);
+	}
+	if (typeof document.key_id !== "string" || document.key_id === "" || typeof document.sig !== "string" || document.sig === "") {
+		throw new InstallerInputError("the customer packet has no key_id or signature");
+	}
+	const { payload } = document;
+	if (!isObject(payload)) throw new InstallerInputError("the customer packet has no payload");
+	const unknown = Object.keys(payload).filter((key) => !PACKET_PAYLOAD_KEYS.has(key));
+	if (unknown.length > 0) throw new InstallerInputError(`the customer packet payload has unknown keys: ${unknown.join(", ")}`);
+	const customerId = checkCustomerId(payload.customer_id);
+	if (typeof payload.packet_id !== "string" || !PACKET_ID_PATTERN.test(payload.packet_id)) {
+		throw new InstallerInputError("the customer packet has an invalid packet_id");
+	}
+	if (!isObject(payload.license) || payload.license.format !== "aidr-license-v1" || payload.license.payload?.customer_id !== customerId) {
+		throw new InstallerInputError(`the customer packet does not embed an aidr-license-v1 license for ${customerId}`);
+	}
+	if (expectedCustomerId !== undefined && customerId !== checkCustomerId(expectedCustomerId)) {
+		throw new InstallerInputError(`the customer packet is for ${customerId}, not ${expectedCustomerId}`);
+	}
+	return { bytes, customerId, packetId: payload.packet_id, sha256: createHash("sha256").update(bytes).digest("hex") };
+}
+
+/** The customer id as product and file names carry it (BILGEM, HAVELSAN-ANKARA). */
+export const customerLabel = (customerId) => checkCustomerId(customerId).toUpperCase();
+
+/**
+ * `SingularityAIDR-<CUSTOMER>-<version>-<arch>.<ext>`: the name every per-customer
+ * installer ships under (`suffix`, e.g. -UNSIGNED, goes before the extension).
+ */
+export function customerArtifactName({ customerId, version, arch, ext, suffix = "" }) {
+	if (arch !== "x64" && arch !== "arm64") throw new InstallerInputError(`unsupported architecture ${arch}`);
+	return `SingularityAIDR-${customerLabel(customerId)}-${checkVersion(version)}-${arch}${suffix}.${ext}`;
+}

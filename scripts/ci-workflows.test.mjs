@@ -740,3 +740,95 @@ test("release-promote: installers reach the download portal only verified and si
 		"AIDR_INSTALLER_MANIFEST_SIGNING_KEY_PEM",
 	]);
 });
+
+// ─── per-customer installers (docs/operations/customer-builds.md) ─────────
+
+test("customer-installer: a verified packet and the promoted release's attested, signed bundles only", () => {
+	const wf = workflow("customer-installer.yml");
+	const text = raw("customer-installer.yml");
+	// Manual only, with exactly the documented inputs.
+	assert.deepEqual(Object.keys(wf.on), ["workflow_dispatch"]);
+	assert.deepEqual(Object.keys(wf.on.workflow_dispatch.inputs).sort(), ["build_exe", "customer_id", "packet_run_id", "packet_source", "release_tag"]);
+	assert.deepEqual(wf.on.workflow_dispatch.inputs.packet_source.options, ["secret", "artifact"]);
+	assert.deepEqual(wf.permissions, { contents: "read" });
+	assert.doesNotMatch(text, /environment:\s*production\b/u, "customer builds never hold production credentials");
+	assert.deepEqual(Object.keys(wf.jobs).sort(), ["linux-build", "linux-sign", "prepare", "windows"]);
+	// Inputs reach scripts only through env, never interpolated into a script.
+	for (const [jobId, job] of Object.entries(wf.jobs)) {
+		for (const step of job.steps ?? []) assert.doesNotMatch(step.run ?? "", /\$\{\{\s*inputs\./u, `${jobId}:${step.name} interpolates an input`);
+	}
+
+	// Nothing is built or installed from source; the tooling is the protected default branch.
+	for (const [jobId, job] of Object.entries(wf.jobs)) {
+		assert.doesNotMatch(runText(job), /(?:^|[\s;&|(])(?:pnpm|npm|npx|yarn)\s/mu, `${jobId} must not install or build`);
+		for (const step of job.steps ?? []) {
+			if (/^actions\/checkout@/u.test(step.uses ?? "")) {
+				assert.equal(step.with.ref, "${{ github.workflow_sha }}", `${jobId}: ${step.name}`);
+				assert.equal(step.with["persist-credentials"], false, `${jobId}: ${step.name}`);
+			}
+		}
+	}
+
+	const prepare = wf.jobs.prepare;
+	const validate = stepNamed(prepare, "Validate customer build inputs").run;
+	assert.match(validate, /refs\/heads\/\$\{DEFAULT_BRANCH\}/u, "runs from the protected default branch only");
+	assert.ok(validate.includes(`[[ "\${RELEASE_TAG}" =~ ${RC_TAG_SHELL_PATTERN} ]]`), "the shared rc.N tag grammar");
+	assert.ok(validate.includes('[[ "${CUSTOMER_ID}" =~ ^[a-z0-9][a-z0-9-]{1,31}$ ]]'), "the contract's customer id grammar");
+	assert.match(validate, /stem=SingularityAIDR-\$\{label\}-\$\{version\}-x64/u);
+
+	const bundles = stepNamed(prepare, "Verify the promoted release and its signed SEA bundles").run;
+	assert.match(bundles, /isDraft,isPrerelease[\s\S]*"false false"/u, "only a promoted (final, non-draft) release");
+	assert.match(bundles, /gh attestation verify "\$\{archive\}"[\s\S]*--signer-workflow "\$\{GITHUB_REPOSITORY\}\/\.github\/workflows\/release-rc\.yml"[\s\S]*--source-ref "refs\/tags\/\$\{RELEASE_TAG\}"[\s\S]*--source-digest "\$\{tag_sha\}"/u);
+	assert.match(bundles, /build-sea\.mjs --verify "\$\{dir\}" --public-key/u, "Ed25519 release-key signatures and the release flavour");
+	assert.match(bundles, /grep -q "sha256:\$\{fingerprint#sha256:\}"/u, "the release key matches its pinned fingerprint");
+
+	// The packet is verified, for this customer, before anything is embedded.
+	const packet = stepNamed(prepare, "Verify the customer packet before it is embedded");
+	assert.match(packet.run, /node scripts\/customer-packet-verify\.mjs \\\n\s+--packet-file "\$\{packet\}" \\\n\s+--public-keys deploy\/onprem\/license-public-keys\.json \\\n\s+--expect-customer-id "\$\{CUSTOMER_ID\}"/u);
+	assert.match(packet.run, /set -euo pipefail/u, "a refused packet (non-zero exit) stops the build");
+	assert.match(packet.run, /document_sha256 !== sha256/u, "the verified bytes are the embedded bytes");
+	assert.equal(packet.env.PACKET_B64, "${{ inputs.packet_source == 'secret' && secrets[steps.inputs.outputs.secret_name] || '' }}");
+	const names = prepare.steps.map((step) => step.name);
+	assert.ok(names.indexOf(packet.name) < names.indexOf("Hand the verified packet to the build jobs (pinned)"));
+	// prepare reads public keys and the packet only, never a private key.
+	assert.deepEqual([...secretsIn(Object.assign({}, ...prepare.steps.map((step) => step.env ?? {})))].sort(), ["AIDR_SIGNING_PUBLIC_KEY_FINGERPRINT", "AIDR_SIGNING_PUBLIC_KEY_PEM"]);
+
+	// Every build job starts from prepare and rechecks the hashes it bound.
+	for (const jobId of ["linux-build", "linux-sign", "windows"]) assert.ok([wf.jobs[jobId].needs].flat().includes("prepare"), `${jobId} needs prepare`);
+	const linux = stepNamed(wf.jobs["linux-build"], "Build the customer's Linux packages from the verified bundle").run;
+	assert.match(linux, /EXPECTED_PACKET_SHA256[^\n]*sha256sum --check --strict/u);
+	assert.match(linux, /EXPECTED_SEA_SHA256[^\n]*sha256sum --check --strict/u);
+	assert.match(linux, /build-linux-packages\.mjs[\s\S]*--customer-packet "\$\{packet\}" \\\n\s+--customer-id "\$\{CUSTOMER_ID\}"/u);
+	assert.deepEqual(secretsIn(Object.assign({}, ...wf.jobs["linux-build"].steps.map((step) => step.env ?? {}))).has("AIDR_LINUX_PACKAGE_GPG_PRIVATE_KEY"), false, "the build job holds no signing key");
+	assert.match(runText(wf.jobs["linux-build"]), /node --test deploy\/installers\/installers\.test\.mjs/u);
+	const gpg = stepNamed(wf.jobs["linux-sign"], "Sign Linux packages with ephemeral GPG custody").run;
+	assert.match(gpg, /no unsigned package is delivered/u);
+	assert.match(gpg, /rpmkeys --dbpath "\$\{rpmdb\}" --checksig/u);
+	assert.match(gpg, /gpg --batch --verify "\$\{file\}\.asc" "\$\{file\}"/u);
+
+	const windows = stepNamed(wf.jobs.windows, "Build and Authenticode-sign with ephemeral runner certificate custody").run;
+	assert.equal(wf.jobs.windows["runs-on"], "windows-2022");
+	assert.equal(wf.jobs.windows.environment, "release-candidate");
+	assert.ok(windows.indexOf("Verified customer packet hash mismatch") < windows.indexOf("Import-PfxCertificate"));
+	assert.ok(windows.indexOf("Signed SEA archive hash mismatch") < windows.indexOf("Import-PfxCertificate"));
+	assert.match(windows, /build-msi\.ps1 [^\n]*-SignThumbprint \$thumbprint[^\n]*-CustomerPacket \$packet -CustomerId \$env:CUSTOMER_ID @bundleArgs/u);
+	assert.doesNotMatch(windows, /-Unsigned\b/u, "no unsigned installer is delivered");
+	assert.match(windows, /finally \{[\s\S]*Remove-Item -LiteralPath \$certificatePath -DeleteKey -Force/u);
+	assert.match(text, /wix extension add -g \$extension/u);
+	assert.match(text, /"WixToolset\.Bal\.wixext\/5\.0\.2"/u);
+
+	// Delivered artifacts: SingularityAIDR-<CUSTOMER>-<version>-<arch>.<ext>, attested.
+	const uploads = Object.values(wf.jobs).flatMap((job) => job.steps.filter((step) => /^actions\/upload-artifact@/u.test(step.uses ?? "")).map((step) => step.with.name));
+	for (const ext of ["deb", "rpm", "tar.gz", "msi", "exe"]) assert.ok(uploads.includes(`\${{ needs.prepare.outputs.stem }}.${ext}`), `.${ext} is delivered under the customer name`);
+	for (const jobId of ["linux-sign", "windows"]) {
+		assert.ok(wf.jobs[jobId].steps.some((step) => /^actions\/attest-build-provenance@/u.test(step.uses ?? "")), `${jobId} attests what it delivers`);
+	}
+	// The release publishes and attests the signed SEA bundles this workflow consumes.
+	const publish = workflow("release-rc.yml").jobs["final-sign-publish"];
+	assert.match(stepNamed(publish, "Attest the desktop installers (pinned)").with["subject-path"], /installers\/sea\/\*\.tgz/u);
+	assert.match(stepNamed(publish, "Publish draft prerelease evidence (pinned)").with.files, /installers\/sea\/\*\.tgz/u);
+	assert.match(stepNamed(publish, "Recheck signed SEA bundles across runner boundary").run, /aidr-sea-windows-signed\.tgz" \| sha256sum --check --strict/u);
+	// The builders the workflow calls accept the per-customer flags.
+	assert.match(readFileSync(path.join(root, "deploy/installers/linux/build-linux-packages.mjs"), "utf8"), /"customer-packet",\n\s+"customer-id",/u);
+	assert.match(readFileSync(path.join(root, "deploy/installers/windows/build-msi.ps1"), "utf8"), /\[string\]\$CustomerPacket = ''[\s\S]*\[switch\]\$Bundle/u);
+});

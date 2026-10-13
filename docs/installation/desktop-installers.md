@@ -561,3 +561,55 @@ manifests between the bundle builds and packaging), `AIDR_WINDOWS_CODE_SIGNING_P
 `_FINGERPRINT` (rpm and detached `.asc` signatures). The optional
 `AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM` (variable or secret) adds the
 `aidr update` catalog key.
+
+The release bundles are minified (esbuild `minify` with `keepNames`, so error
+and function names stay readable) and ship without source maps. That makes
+them smaller and harder to skim, not secret: the code can still be read. The
+integrity signature is what refuses a changed install.
+
+### Per-customer installers
+
+A customer installer is the same signed product plus one vendor-signed
+customer packet (`aidr-customer-packet-v1`; the vendor runbook is
+`docs/operations/customer-builds.md`). The builders take it as an extra input:
+
+```sh
+node deploy/installers/linux/build-linux-packages.mjs ... \
+  --customer-packet customer-packet.json --customer-id bilgem
+pwsh deploy/installers/windows/build-msi.ps1 ... `
+  -CustomerPacket customer-packet.json -CustomerId bilgem [-Bundle]
+```
+
+| Installer | Where the packet goes |
+|-----------|-----------------------|
+| `.msi` / `.exe` | `config\customer-packet.json`, and for a per-machine install also `%ProgramData%\Singularity AIDR\customer-packet.json`, which removal and a generic `aidr update` upgrade leave in place |
+| `.deb` | `/etc/singularity-aidr/customer-packet.json`, a dpkg conffile |
+| `.rpm` | `/etc/singularity-aidr/customer-packet.json`, `%config(noreplace)`; a generic RPM owns the path as `%ghost`, so upgrading to it keeps the packet |
+| `.tar.gz` | `config/customer-packet.json`, installed to `<prefix>/config` |
+
+Files are named `SingularityAIDR-<CUSTOMER>-<version>-<arch>.<ext>` (for
+example `SingularityAIDR-BILGEM-1.0.0-x64.msi`) and the Windows product is
+"Singularity AIDR (BILGEM)". The package name and the MSI UpgradeCode stay the
+generic ones, so customer and generic installers upgrade each other. `-Bundle`
+also builds a setup EXE (WiX Burn, `windows/bundle.wxs`) that wraps the signed
+MSI and shows its wizard; its Burn engine is detached, signed and reattached
+before the EXE is signed. The builders check the packet's shape and customer
+id; its signature is checked by `scripts/customer-packet-verify.mjs` before a
+build and by `aidr setup` on every endpoint, which refuses a tampered or
+wrong-key packet and still installs local detection.
+
+The `Customer Installer Build` workflow (`.github/workflows/customer-installer.yml`,
+run by hand from the default branch with a promoted release tag and the
+customer id) does all of this without building from source: it downloads the
+release-key-signed SEA bundles the promoted release published, checks their
+build attestation and Ed25519 signatures, verifies the packet (from the
+`AIDR_CUSTOMER_PACKET_<ID>` environment secret, base64, or an uploaded
+`customer-packet-<id>` artifact), and builds, signs (Authenticode, GPG) and
+attests the customer's MSI, EXE, deb, rpm and tarball in the
+`release-candidate` environment.
+
+A real Windows machine must still confirm, for a customer build: the MSI and
+EXE install per-machine with the packet in both places; removing the MSI, or
+upgrading it with a generic MSI, keeps the ProgramData copy; the EXE shows the
+MSI's English and Turkish wizard; and `signtool verify /pa` passes for the EXE
+and its engine.

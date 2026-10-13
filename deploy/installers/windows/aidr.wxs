@@ -30,10 +30,19 @@
   optional company connection, ENROLLMENT_URL and ENROLLMENT_CODE (Hidden: never
   logged), is handed to `aidr setup` through a file only the installing user
   can open (ca/EnrollmentActions.cs); setup applies it and deletes the file.
+
+  Per-customer build (build-msi.ps1 -CustomerPacket, HasCustomerPacket=1): the
+  vendor-signed customer packet is installed as config\customer-packet.json and,
+  for a per-machine install, as a permanent machine copy
+  %ProgramData%\Singularity AIDR\customer-packet.json that removing this MSI
+  (and so a generic `aidr update` upgrade) leaves in place. `aidr setup` verifies
+  the packet's signature before using it. The product is named
+  "Singularity AIDR (CUSTOMER)"; the UpgradeCode is the generic one, so generic
+  and customer MSIs upgrade each other.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <!-- ProductCode is new for every build (as before) but shared by both culture builds, so the Turkish one is a language transform of the English one. -->
-  <Package Name="Singularity AIDR"
+  <Package Name="$(var.ProductName)"
            Manufacturer="Singularity R&amp;D"
            Version="$(var.ProductVersion)"
            ProductCode="$(var.ProductCode)"
@@ -106,6 +115,21 @@
     </Component>
     <?endif?>
 
+    <?if $(var.HasCustomerPacket) = 1 ?>
+    <!-- Vendor-signed customer packet: first in the discovery order (install prefix). -->
+    <Component Id="CustomerPacket" Directory="CONFIGDIR" Guid="7C4E2B9A-1D63-4F58-A0B7-3E9D5C1F8A24">
+      <File Id="CustomerPacketFile" Source="$(var.CustomerPacket)" Name="customer-packet.json" KeyPath="yes" />
+    </Component>
+    <!-- The machine copy survives removal and a generic upgrade; per-machine only (ProgramData needs elevation). -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="AIDRMACHINEDATA" Name="Singularity AIDR" />
+    </StandardDirectory>
+    <Component Id="CustomerPacketMachine" Directory="AIDRMACHINEDATA" Condition="ALLUSERS=1" Permanent="yes"
+               Guid="B2F6A8D1-4C3E-4A97-8E52-6D1B0F9C7E35">
+      <File Id="CustomerPacketMachineFile" Source="$(var.CustomerPacket)" Name="customer-packet.json" KeyPath="yes" />
+    </Component>
+    <?endif?>
+
     <Component Id="PathMachine" Directory="INSTALLFOLDER" Condition="ALLUSERS=1"
                Guid="5E2A9C41-0B7D-4F6A-8C13-9D4E2B7A1F05">
       <Environment Id="AidrPathMachine" Name="PATH" Value="[BINDIR]" Part="last" Action="set" System="yes" Permanent="no" />
@@ -141,6 +165,10 @@
       <ComponentGroupRef Id="AidrDocs" />
       <?if $(var.HasCatalogKey) = 1 ?>
       <ComponentRef Id="CatalogKey" />
+      <?endif?>
+      <?if $(var.HasCustomerPacket) = 1 ?>
+      <ComponentRef Id="CustomerPacket" />
+      <ComponentRef Id="CustomerPacketMachine" />
       <?endif?>
       <ComponentRef Id="PathMachine" />
       <ComponentRef Id="PathUser" />
