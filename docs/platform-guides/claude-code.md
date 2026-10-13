@@ -73,6 +73,9 @@ Singularity AIDR includes a security awareness skill at `skills/security-awarene
 Claude Code may ignore timed-out hooks and continue the tool call. A
 PreToolUse timeout can therefore leave the action unblocked; PostToolUse runs
 after execution, so a timeout does not prove its output replacement was applied.
+The PostToolUse hook therefore answers before the host timeout (internal deadline
+`AIDR_POST_TOOL_USE_DEADLINE_MS`, default 4 s) with a quarantine replacement of the
+output it could not finish inspecting, not with a clean result.
 Verify timeout handling on each host version used for acceptance.
 
 ## Real-host acceptance

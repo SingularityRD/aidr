@@ -9,13 +9,15 @@ describe("post-tool output inspection", () => {
 	it("does not add warnings to benign output", () => {
 		expect(inspectToolResponse({ result: "Build succeeded, 20 tests passed" })).toBeNull();
 	});
-	it("uses Claude's supported PostToolUse block response while admitting the original may remain visible", () => {
+	it("uses Claude's supported PostToolUse block response and never reports uninspected output as clean", () => {
 		const response = postToolInspectionUnavailable("Could not parse PostToolUse input.");
 		expect(response).toMatchObject({
 			decision: "block",
 			hookSpecificOutput: { hookEventName: "PostToolUse" },
 		});
-		expect(JSON.stringify(response)).toContain("original output may remain available to the host");
+		// The replacement itself is attached by quarantineInspectedToolOutput,
+		// which says so plainly when no replacement is possible.
+		expect(JSON.stringify(response)).toContain("was not inspected");
 		expect(JSON.stringify(response)).toContain("tool already completed");
 		expect(response).not.toHaveProperty("decision", "deny");
 	});

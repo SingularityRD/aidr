@@ -1,7 +1,19 @@
 import { readSync } from "node:fs";
 import { readBoundedStdinAsync } from "@singularityrd/aidr-core";
 
-export const MAX_POST_TOOL_INPUT_BYTES = 1024 * 1024;
+/**
+ * Default PostToolUse input ceiling. Input up to it is parsed, so even a result
+ * too large to scan in full is replaced with its own (shape-preserving)
+ * quarantine notice; only input beyond it falls back to a by-tool-name
+ * replacement. `AIDR_POST_TOOL_USE_MAX_INPUT_BYTES` overrides it within
+ * [MIN, MAX].
+ */
+export const MAX_POST_TOOL_INPUT_BYTES = 16 * 1024 * 1024;
+const MIN_POST_TOOL_INPUT_BYTES = 1024 * 1024;
+const MAX_CONFIGURABLE_POST_TOOL_INPUT_BYTES = 64 * 1024 * 1024;
+const POST_TOOL_INPUT_LIMIT_ENV = "AIDR_POST_TOOL_USE_MAX_INPUT_BYTES";
+/** Leading bytes kept while reading, so the tool name survives an incomplete read. */
+const INPUT_PREFIX_BYTES = 64 * 1024;
 const READ_CHUNK_BYTES = 64 * 1024;
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
 
@@ -67,10 +79,103 @@ export async function readStdinJson<T = unknown>(
 	}
 }
 
+export function resolvePostToolInputLimit(env: Record<string, string | undefined> = {}): number {
+	return resolveBoundedInteger(
+		env[POST_TOOL_INPUT_LIMIT_ENV],
+		MAX_POST_TOOL_INPUT_BYTES,
+		MIN_POST_TOOL_INPUT_BYTES,
+		MAX_CONFIGURABLE_POST_TOOL_INPUT_BYTES,
+	);
+}
+
+export type PostToolInput =
+	| { status: "parsed"; value: unknown }
+	| { status: "oversized" }
+	| { status: "invalid" };
+
+/** The first bytes received so far, kept while the input is still being read. */
+export interface PostToolInputProgress {
+	prefix: string;
+}
+
 /**
- * PreToolUse input ceiling. Larger than the PostToolUse one because a Write of
- * a big file carries the whole file in `tool_input`; anything beyond it cannot
- * be inspected in full and is denied rather than parsed without bound.
+ * Claude Code serialises `tool_name` before `tool_input`/`tool_response`, so
+ * the first unescaped `"tool_name"` key in the prefix is the top-level one. A
+ * JSON string value cannot contain an unescaped quote, so a value cannot forge
+ * it; a wrong guess only yields a replacement shape the host rejects.
+ */
+export function toolNameFromInputPrefix(prefix: string): string | undefined {
+	const match = /"tool_name"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(prefix);
+	if (!match) return undefined;
+	try {
+		const value: unknown = JSON.parse(match[1] ?? "");
+		return typeof value === "string" ? value : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * The PostToolUse stdin reader: bounded like {@link readStdinJson}, and it
+ * keeps the first bytes in `progress` so input that is oversized or never
+ * finishes still names its tool, letting the hook withhold the output instead
+ * of only annotating it.
+ */
+export function readPostToolStdin(
+	maxBytes = MAX_POST_TOOL_INPUT_BYTES,
+	stream: NodeJS.ReadableStream = process.stdin,
+	progress: PostToolInputProgress = { prefix: "" },
+): Promise<PostToolInput> {
+	return new Promise((resolve, reject) => {
+		const chunks: Buffer[] = [];
+		let total = 0;
+		let settled = false;
+		const settle = () => {
+			settled = true;
+			stream.removeListener("data", onData);
+		};
+		const onData = (chunk: Buffer | string) => {
+			if (settled) return;
+			const bytes = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
+			if (total < INPUT_PREFIX_BYTES) {
+				progress.prefix = Buffer.concat([...chunks, bytes])
+					.subarray(0, INPUT_PREFIX_BYTES)
+					.toString("utf8");
+			}
+			chunks.push(bytes);
+			total += bytes.length;
+			if (total <= maxBytes) return;
+			settle();
+			stream.pause();
+			resolve({ status: "oversized" });
+		};
+		stream.on("data", onData);
+		stream.once("end", () => {
+			if (settled) return;
+			settle();
+			try {
+				const text = STRICT_UTF8.decode(Buffer.concat(chunks, total));
+				try {
+					resolve({ status: "parsed", value: JSON.parse(text) });
+				} catch {
+					resolve({ status: "invalid" });
+				}
+			} catch (error) {
+				reject(error);
+			}
+		});
+		stream.once("error", (error) => {
+			if (settled) return;
+			settle();
+			reject(error);
+		});
+	});
+}
+
+/**
+ * PreToolUse input ceiling. A Write of a big file carries the whole file in
+ * `tool_input`; anything beyond it cannot be inspected in full and is denied
+ * rather than parsed without bound.
  */
 export const MAX_PRE_TOOL_INPUT_BYTES = 8 * 1024 * 1024;
 
@@ -93,7 +198,7 @@ const PRE_TOOL_USE_DEADLINE_ENV = "AIDR_PRE_TOOL_USE_DEADLINE_MS";
  * past the host timeout (which would fail open).
  */
 export function resolvePreToolUseDeadlineMs(env: Record<string, string | undefined> = {}): number {
-	return resolveDeadlineMs(
+	return resolveBoundedInteger(
 		env[PRE_TOOL_USE_DEADLINE_ENV],
 		DEFAULT_PRE_TOOL_USE_DEADLINE_MS,
 		MIN_PRE_TOOL_USE_DEADLINE_MS,
@@ -121,7 +226,7 @@ const USER_PROMPT_SUBMIT_DEADLINE_ENV = "AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS";
 export function resolveUserPromptSubmitDeadlineMs(
 	env: Record<string, string | undefined> = {},
 ): number {
-	return resolveDeadlineMs(
+	return resolveBoundedInteger(
 		env[USER_PROMPT_SUBMIT_DEADLINE_ENV],
 		DEFAULT_USER_PROMPT_SUBMIT_DEADLINE_MS,
 		MIN_USER_PROMPT_SUBMIT_DEADLINE_MS,
@@ -129,7 +234,7 @@ export function resolveUserPromptSubmitDeadlineMs(
 	);
 }
 
-function resolveDeadlineMs(
+function resolveBoundedInteger(
 	rawValue: string | undefined,
 	fallback: number,
 	min: number,

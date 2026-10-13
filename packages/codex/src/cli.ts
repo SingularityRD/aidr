@@ -5,7 +5,7 @@
  * Wired into Codex via `~/.codex/config.toml`:
  *
  *   [[hooks.PreToolUse]]
- *   matcher = "^(Bash|apply_patch)$"
+ *   matcher = "^(Bash|apply_patch|mcp__.+)$"   # coverage.ts CODEX_SHIPPED_MATCHERS
  *   [[hooks.PreToolUse.hooks]]
  *   type = "command"
  *   command = 'aidr-codex-hook'
