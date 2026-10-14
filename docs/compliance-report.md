@@ -5,12 +5,17 @@ security or data-protection (DPO) team can hand to an internal or external audit
 collects, from the records Singularity AIDR already holds, the evidence that is usually
 asked for during KVKK and GDPR accountability work: what is protected, what the product
 did with personal data and secrets, which policies were in force, who can administer the
-workspace, what incidents occurred, and how retention and deletion are applied.
+workspace, what incidents occurred, and how retention and deletion are applied. It
+also carries the product's **control mappings** to ISO/IEC 27001:2022 Annex A, the BDDK
+information systems and electronic banking regulation, the Presidency's Information and
+Communication Security Guide and the other frameworks in `governance/frameworks/`.
 
 > **What it is not.** The report is designed to *support* KVKK and GDPR accountability.
 > It is not a certification, an audit opinion or legal advice. It does not state that
 > your organization, your deployment or Singularity AIDR is compliant with any law or
 > standard. Conclusions about compliance remain with your DPO, counsel and auditors.
+> The control mappings are the vendor's mapping of product capabilities; they are not a
+> certification, a regulatory approval or an audit result.
 
 - Edge Function: `supabase/functions/compliance-report/index.ts`
 - Shared schema and integrity code: `supabase/functions/_shared/compliance-report.ts`
@@ -78,7 +83,7 @@ generated_at      database time of the evidence snapshot
 generated_by      { user_id, role }
 period            { from, to, days }   (from inclusive, to exclusive)
 statement         the "what this is / is not" text above
-sections          nine sections, below
+sections          ten sections, below
 limitations       fixed list of what the report cannot show
 integrity         { canonicalization, hash_algorithm, hashed_scope, sha256, signature }
 ```
@@ -95,6 +100,7 @@ integrity         { canonicalization, hash_algorithm, hashed_scope, sha256, sign
 | `incidents` | Security incidents in the period by severity and status; plugin scans with findings. | Incident awareness and handling volume. | Whether an incident was a personal-data breach, or whether notification duties (72 hours under GDPR, KVKK Board notification) were met. |
 | `ai_security_posture` | Reported CVE findings by severity (distinct CVEs, confirmed applicability, maximum CVSS), MCP server findings by attestation state, transport and risk category, skill/plugin findings by risk type. | Vulnerability management of the AI tool chain. | That the scans were complete or recent across your whole estate. Only uploaded scans are counted. |
 | `data_flows` | The product's privacy data-flow matrix (purpose, destination, region, subprocessor, lawful basis, retention, deletion, transfer mechanism) with its SHA-256, the list of named subprocessors and the number of open unknowns. | Input for your records of processing activities and transfer assessment. | Your actual deployment's flows. Values marked `unknown` must be completed per deployment; the matrix is embedded at build time from `docs/production-readiness/privacy-data-flow-matrix.json`. |
+| `control_mappings` | `kind: "vendor_mapping"`, a fixed statement, the mapping source and its SHA-256, and per framework (NIST AI RMF, ISO/IEC 42001, EU AI Act, KVKK/GDPR, ISO/IEC 27001:2022 Annex A, BDDK `bddk-bsebh`, Presidency guide `cbddo-big`) every mapped control with its coverage (`full`, `partial`, `customer-responsibility`), the product capabilities that support it, its evidence sources (report sections, tables, functions) and a note on the limit of that support. BDDK and guide rows use topic codes (`BSEBY-*`, `BIG-*`) that you map to the article or measure numbers of the text you apply. The section is the same for every workspace: it describes the product, not this workspace's deployment (see **Governance** for what this workspace has deployed). | Building a Statement of Applicability or a regulatory gap analysis for AI tool use; showing an auditor which product measure and which evidence answers which control. | That any control is met. The mapping is the vendor's; applicability, implementation and the conformity assessment are yours and your auditor's. |
 | `retention_deletion` | Retention days per data class, whether backups are covered, the oldest retained telemetry event and whether it is within the telemetry window (1-day grace), legal-hold state and counts (no reasons), offboarding runs with phase receipts and deleted row counts, audit exports created, stored and pending clean-up. | Storage limitation and deletion evidence. | Deletion from backups (governed separately), or per-run retention job receipts (retention jobs are deployment-level; the report shows their effect). |
 
 ### Data minimisation in the report itself
@@ -209,4 +215,8 @@ them reports are hash-only.
 - CSV and printable editions are conveniences derived in the browser; only the JSON is
   hashed and signed.
 - The printable Turkish edition translates labels, the statement and the fixed
-  limitations; data-flow descriptions come from the engineering matrix in English.
+  limitations; data-flow descriptions come from the engineering matrix in English, and
+  control-mapping notes come from `governance/frameworks/` in English (BDDK and guide
+  topic titles are in Turkish with an English gloss).
+- Control mappings are the vendor's mapping by control or requirement topic; they are
+  not a certification, a regulatory approval or an audit result.

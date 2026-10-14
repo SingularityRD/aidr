@@ -91,6 +91,7 @@ const protectedRoutes = [
 	"/privacy-guard",
 	"/approvals",
 	"/compliance",
+	"/reports",
 	"/governance",
 	"/governance/register",
 	"/governance/requests",

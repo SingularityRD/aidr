@@ -52,6 +52,14 @@
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/governance-digest-contract.test.ts"]
     },
+    "incidents": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/incidents-contract.test.ts"]
+    },
+    "reports": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/reports-contract.test.ts"]
+    },
     "device-poll": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/device-poll-retry.test.ts", "supabase/functions/__tests__/security-flow.test.ts"]

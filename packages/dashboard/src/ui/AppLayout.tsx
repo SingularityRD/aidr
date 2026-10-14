@@ -114,6 +114,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
 			{ to: "/governance", label: "nav.governance", show: isOwnerOrAdmin },
 			{ to: "/governance/register", label: "nav.aiRegister" },
 			{ to: "/compliance", label: "nav.compliance", show: isOwnerOrAdmin },
+			{ to: "/reports", label: "nav.reports", show: isOwnerOrAdmin },
 		],
 	},
 	{

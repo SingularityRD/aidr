@@ -50,6 +50,7 @@ const base = {
 	"nav.siem": "SIEM export",
 	"nav.compliance": "Compliance report",
 	"nav.governance": "AI governance",
+	"nav.reports": "Executive reports",
 	"nav.detectionExceptions": "Detection exceptions",
 	"nav.aiRegister": "AI asset register",
 

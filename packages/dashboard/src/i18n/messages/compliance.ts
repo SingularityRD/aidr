@@ -14,8 +14,8 @@ export const complianceMessages = {
 	],
 	"cmp.eyebrow": ["Security and data protection", "Güvenlik ve veri koruma"],
 	"cmp.lead": [
-		"A signed, tenant-scoped evidence bundle for security and DPO teams, designed to support KVKK and GDPR accountability work: protection coverage, data-protection activity (counts only), policies in force, access and identity, incidents, AI security posture, data flows and retention evidence. It is not a certification and does not state that your organization is compliant.",
-		"Güvenlik ve veri koruma ekipleri için KVKK ve GDPR hesap verebilirlik çalışmalarını desteklemek üzere hazırlanan, imzalı ve çalışma alanına özel bir kanıt paketi: koruma kapsamı, veri koruma etkinliği (yalnızca sayılar), yürürlükteki politikalar, erişim ve kimlik, güvenlik vakaları, yapay zekâ güvenlik durumu, veri akışları ve saklama kanıtları. Bir sertifika değildir ve kuruluşunuzun uyumlu olduğunu söylemez.",
+		"A signed, tenant-scoped evidence bundle for security and DPO teams, designed to support KVKK and GDPR accountability work: protection coverage, data-protection activity (counts only), policies in force, access and identity, incidents, AI security posture, data flows and retention evidence, plus a vendor control mapping to ISO/IEC 27001:2022 Annex A, the BDDK information systems regulation and the Presidency's Information and Communication Security Guide. It is not a certification and does not state that your organization is compliant.",
+		"Güvenlik ve veri koruma ekipleri için KVKK ve GDPR hesap verebilirlik çalışmalarını desteklemek üzere hazırlanan, imzalı ve çalışma alanına özel bir kanıt paketi: koruma kapsamı, veri koruma etkinliği (yalnızca sayılar), yürürlükteki politikalar, erişim ve kimlik, güvenlik vakaları, yapay zekâ güvenlik durumu, veri akışları ve saklama kanıtları; ayrıca ISO/IEC 27001:2022 Ek-A, BDDK Bilgi Sistemleri Yönetmeliği ve Cumhurbaşkanlığı Bilgi ve İletişim Güvenliği Rehberi için üretici kontrol eşlemesi. Bir sertifika değildir ve kuruluşunuzun uyumlu olduğunu söylemez.",
 	],
 	"cmp.period": ["Period", "Dönem"],
 	"cmp.custom": ["Custom range", "Özel aralık"],
@@ -40,6 +40,10 @@ export const complianceMessages = {
 	"cmp.downloadCsv": ["Download CSV bundle (.zip)", "CSV paketini indir (.zip)"],
 	"cmp.printLanguage": ["Printable report language", "Yazdırılabilir rapor dili"],
 	"cmp.limitations": ["What this report does not prove", "Bu raporun kanıtlamadıkları"],
+	"cmp.h.mappedControls": [
+		"{covered} of {total} mapped controls with a product measure",
+		"Eşlenen {total} kontrolün {covered} tanesinde ürün tedbiri var",
+	],
 	"cmp.summary": ["Report summary", "Rapor özeti"],
 	"cmp.periodLine": [
 		"{from} – {to} · {days} days · generated {time}",

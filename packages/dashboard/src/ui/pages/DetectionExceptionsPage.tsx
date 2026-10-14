@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
 import type { DashboardMessageKey } from "../../i18n/en";
 import { useRichT, useT } from "../../i18n/I18nProvider";
@@ -8,6 +8,7 @@ import {
 	createDetectionException,
 	DETECTION_EXCEPTION_MAX_DAYS,
 	type DetectionExceptionRow,
+	draftFromQuery,
 	draftProblem,
 	type ExceptionDraft,
 	exceptionErrorMessage,
@@ -73,14 +74,11 @@ function TenantDetectionExceptions({ tenantId }: { tenantId: string }) {
 		stepUp?: boolean;
 	} | null>(null);
 	const [busy, setBusy] = useState(false);
-	const [draft, setDraft] = useState<ExceptionDraft>(() => ({
-		ruleId: "",
-		subjectKind: "user",
-		subject: "",
-		endDate: isoDay(Date.now() + 7 * 86_400_000),
-		reason: "",
-		artifactSha256: "",
-	}));
+	const location = useLocation();
+	const [prefilled] = useState(() => new URLSearchParams(location.search).has("rule"));
+	const [draft, setDraft] = useState<ExceptionDraft>(() =>
+		draftFromQuery(location.search, Date.now()),
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -169,6 +167,11 @@ function TenantDetectionExceptions({ tenantId }: { tenantId: string }) {
 
 			<form onSubmit={submit} aria-label={t("dex.addLabel")}>
 				<h2>{t("dex.addTitle")}</h2>
+				{prefilled ? (
+					<div className="notice" role="status">
+						{t("dex.prefilled")}
+					</div>
+				) : null}
 				<label>
 					{t("dex.ruleId")}
 					<input

@@ -2,8 +2,9 @@
 #
 # Product CONTROLS (not detection rules; rule-level mappings live elsewhere).
 # Every framework file in this directory (nist-ai-rmf.yaml, iso-iec-42001.yaml,
-# eu-ai-act.yaml, kvkk-gdpr.yaml) references capabilities and evidence sources
-# by the ids defined here.
+# eu-ai-act.yaml, kvkk-gdpr.yaml, iso-iec-27001.yaml, bddk-bsebh.yaml,
+# cbddo-big.yaml) references capabilities and evidence sources by the ids
+# defined here.
 #
 #   capabilities[].paths   repository files that implement the capability; a
 #                          test fails when one of them no longer exists
@@ -161,6 +162,18 @@ capabilities:
     paths:
       - packages/core/src/incidents/correlate.ts
       - packages/dashboard/src/ui/pages/IncidentsPage.tsx
+  - id: incident-triage
+    title: Incident triage with owner, resolution note, snooze and audit trail
+    description: >-
+      Owners and admins move each incident through open, acknowledged, resolved or false
+      positive, assign it to a workspace member, record a resolution note and snooze it.
+      Every change is kept in an append-only history and the administrative audit log.
+      Triage never changes enforcement.
+    signal: always
+    paths:
+      - supabase/migrations/20261014000100_incident_triage.sql
+      - supabase/functions/incidents/index.ts
+      - packages/dashboard/src/ui/pages/IncidentsPage.tsx
   - id: siem-export
     title: SIEM export of incidents
     description: Incidents are delivered to the organisation's SIEM from a durable local queue.
@@ -233,12 +246,18 @@ capabilities:
       - packages/dashboard/src/ui/pages/GovernancePage.tsx
       - supabase/migrations/20260927000060_governance_scorecard.sql
   - id: governance-digest
-    title: Scheduled governance summary by email
-    description: Weekly or monthly counts-only summary sent to the workspace owners (and admins).
+    title: Scheduled governance summary and executive report by email (English or Turkish)
+    description: >-
+      Weekly or monthly counts-only summary with an executive summary sent to the workspace
+      owners (and admins), with the printable executive report attached; a team rollup for
+      administrators of several workspaces in the dashboard.
     signal: governance_digest_enabled
     paths:
       - supabase/functions/governance-digest/index.ts
+      - supabase/functions/reports/index.ts
+      - supabase/functions/_shared/executive-report.ts
       - supabase/migrations/20260927000061_governance_digest_schedule.sql
+      - supabase/migrations/20261014000200_executive_reports.sql
       - scripts/deployment-maintenance.mjs
 
 evidence:
@@ -270,6 +289,14 @@ evidence:
     kind: table
     ref: admin_audit_logs
     detail: Append-only administrative audit log.
+  - id: incident_triage
+    kind: table
+    ref: incident_triage
+    detail: Current triage state of each incident (status, owner, resolution note, snooze).
+  - id: incident_triage_history
+    kind: table
+    ref: incident_triage_history
+    detail: Append-only history of incident triage changes (who, when, from and to status, note).
   - id: posture_findings
     kind: table
     ref: posture_findings
@@ -354,6 +381,10 @@ evidence:
     kind: function
     ref: governance-digest
     detail: Scheduled governance summary dispatch and test sends.
+  - id: executive-report
+    kind: function
+    ref: reports
+    detail: Executive summary, team rollup and printable executive report (English or Turkish).
   - id: governance-scorecard
     kind: rpc
     ref: governance_scorecard

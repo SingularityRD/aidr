@@ -32,6 +32,11 @@ const ADDRESS = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 /** "Name <address>" or a bare address; no line breaks or control characters. */
 const SENDER = /^(?:[^<>\p{Cc}]{1,120} <[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+>|[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+)$/u;
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:/-]{1,256}$/;
+const ATTACHMENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const ATTACHMENT_TYPES = new Set(["text/html", "application/pdf"]);
+const ATTACHMENT_MAX = 3;
+/** Base64 characters per attachment (about 2 MB of content). */
+const ATTACHMENT_MAX_BASE64 = 2_800_000;
 
 type MailProvider = "resend" | "none";
 
@@ -42,6 +47,15 @@ export interface MailMessage {
 	text: string;
 	/** Provider-side de-duplication key. Must not contain a secret. */
 	idempotencyKey?: string;
+	/** Optional files (for example the printable executive report). */
+	attachments?: MailAttachment[];
+}
+
+export interface MailAttachment {
+	filename: string;
+	contentType: "text/html" | "application/pdf";
+	/** Base64 of the file bytes. */
+	contentBase64: string;
 }
 
 export type MailResult =
@@ -83,7 +97,26 @@ function validMessage(message: MailMessage): boolean {
 		message.html !== "" &&
 		typeof message.text === "string" &&
 		message.text !== "" &&
-		(message.idempotencyKey === undefined || IDEMPOTENCY_KEY.test(message.idempotencyKey))
+		(message.idempotencyKey === undefined || IDEMPOTENCY_KEY.test(message.idempotencyKey)) &&
+		validAttachments(message.attachments)
+	);
+}
+
+function validAttachments(attachments: MailAttachment[] | undefined): boolean {
+	if (attachments === undefined) return true;
+	return (
+		Array.isArray(attachments) &&
+		attachments.length <= ATTACHMENT_MAX &&
+		attachments.every(
+			(item) =>
+				typeof item?.filename === "string" &&
+				ATTACHMENT_NAME.test(item.filename) &&
+				ATTACHMENT_TYPES.has(item.contentType) &&
+				typeof item.contentBase64 === "string" &&
+				item.contentBase64.length > 0 &&
+				item.contentBase64.length <= ATTACHMENT_MAX_BASE64 &&
+				/^[A-Za-z0-9+/]+={0,2}$/.test(item.contentBase64),
+		)
 	);
 }
 
@@ -111,6 +144,15 @@ export function createResendMailer(apiKey: string, from: string, deps: MailerDep
 						subject: message.subject,
 						html: message.html,
 						text: message.text,
+						...(message.attachments && message.attachments.length > 0
+							? {
+									attachments: message.attachments.map((item) => ({
+										filename: item.filename,
+										content: item.contentBase64,
+										content_type: item.contentType,
+									})),
+								}
+							: {}),
 					}),
 					signal: AbortSignal.timeout(timeoutMs),
 				});

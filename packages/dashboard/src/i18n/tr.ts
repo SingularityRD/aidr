@@ -45,6 +45,7 @@ const base: Record<BaseMessageKey, string> = {
 	"nav.siem": "SIEM aktarımı",
 	"nav.compliance": "Uyum raporu",
 	"nav.governance": "Yapay zekâ yönetişimi",
+	"nav.reports": "Yönetici raporları",
 	"nav.detectionExceptions": "Tespit istisnaları",
 	"nav.aiRegister": "Yapay zekâ varlık envanteri",
 

@@ -1,12 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { type EvidenceAuditRow, EvidenceView } from "../../enterprise/evidence-view";
-import { useTeam } from "../../enterprise/team-provider";
+import { type TeamMember, useTeam } from "../../enterprise/team-provider";
 import type { DashboardMessageKey } from "../../i18n/en";
 import { type Translate, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
+import {
+	effectiveStatus,
+	isSnoozed,
+	listTriage,
+	type TriageList,
+	type TriageRow,
+	triageErrorMessage,
+} from "../../lib/incidents";
 import { supabase } from "../../lib/supabase";
 import { FrameworkTags } from "../framework-coverage";
+import { TRIAGE_FILTERS, TriageCells, type TriageFilter, TriagePanel } from "../incident-triage";
 import { pluginScanFindingsCount, pluginScanSummary } from "../plugin-scan";
 
 type AgentRow = {
@@ -117,12 +126,135 @@ export function IncidentsPage() {
 	return <TenantIncidentsPage key={currentTeam.id} tenantId={currentTeam.id} />;
 }
 
+const TRIAGE_FILTER_LABEL: Readonly<Record<TriageFilter, DashboardMessageKey>> = {
+	active: "inc.filter.active",
+	snoozed: "inc.filter.snoozed",
+	closed: "inc.filter.closed",
+	all: "inc.filter.all",
+};
+
+function matchesFilter(filter: TriageFilter, row: TriageRow | undefined, nowMs: number): boolean {
+	const status = effectiveStatus(row);
+	const closed = status === "resolved" || status === "false_positive";
+	switch (filter) {
+		case "active":
+			return !closed && !isSnoozed(row, nowMs);
+		case "snoozed":
+			return isSnoozed(row, nowMs);
+		case "closed":
+			return closed;
+		default:
+			return true;
+	}
+}
+
+function IncidentRow(props: {
+	event: EventRow;
+	agent: AgentRow | undefined;
+	triage: TriageList;
+	nowMs: number;
+	members: TeamMember[];
+	onManage: (eventId: number) => void;
+}) {
+	const t = useT();
+	const { event: e, agent } = props;
+	const agentName = agent?.display_name ?? agent?.iid?.slice(0, 12) ?? e.agent_id;
+	return (
+		<tr>
+			<td className="mono">{new Date(e.created_at).toLocaleString()}</td>
+			<td>
+				{agent ? (
+					<Link className="mono" to={`/agents/${agent.id}`}>
+						{agentName}
+					</Link>
+				) : (
+					<span className="mono">{agentName}</span>
+				)}
+				{agent?.agent_runtime ? <div className="muted small">{agent.agent_runtime}</div> : null}
+			</td>
+			<td>
+				<span className="badge badge-neutral badge-plain mono">{e.type}</span>
+				{isCanaryTrigger(e) ? (
+					<div>
+						<span className="badge badge-deny">{t("incidents.canary")}</span>
+					</div>
+				) : null}
+			</td>
+			<td className="mono">
+				{summarize(e, t)}
+				{e.type === "runtime_verdict" || e.type === "incident" ? (
+					<FrameworkTags ruleId={e.payload?.matched_threat_id} />
+				) : null}
+			</td>
+			<TriageCells
+				eventId={e.id}
+				row={props.triage.rows.get(e.id)}
+				nowMs={props.nowMs}
+				members={props.members}
+				canTriage={props.triage.canTriage}
+				onManage={props.onManage}
+			/>
+		</tr>
+	);
+}
+
+/** Triage state of the workspace's incidents, re-read every 30 seconds. */
+function useIncidentTriage(tenantId: string) {
+	const [triage, setTriage] = useState<TriageList>({ canTriage: false, rows: new Map() });
+	const [triageError, setTriageError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		const load = async () => {
+			const result = await listTriage(tenantId);
+			if (cancelled) return;
+			if (result.ok) {
+				setTriage(result.value);
+				setTriageError(null);
+			} else setTriageError(result.error);
+		};
+		void load();
+		const timer = setInterval(() => void load(), 30_000);
+		return () => {
+			cancelled = true;
+			clearInterval(timer);
+		};
+	}, [tenantId]);
+
+	const onSaved = useCallback((row: TriageRow) => {
+		setTriage((previous) => {
+			const rows = new Map(previous.rows);
+			rows.set(row.eventId, row);
+			return { ...previous, rows };
+		});
+	}, []);
+
+	return { triage, triageError, onSaved };
+}
+
+function emptyMessage(
+	t: Translate,
+	events: EventRow[] | null,
+	loaded: boolean,
+	incidents: number,
+): string {
+	if (events === null) return loaded ? t("incidents.unavailable") : t("incidents.loading");
+	return incidents > 0 ? t("inc.noneInFilter") : t("incidents.empty");
+}
+
 function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 	const t = useT();
+	const team = useTeam();
+	const members = team.members ?? [];
+	const currentUserId = team.currentUserId ?? "";
 	const [agents, setAgents] = useState<Map<string, AgentRow>>(new Map());
 	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loaded, setLoaded] = useState(false);
+	const { triage, triageError, onSaved } = useIncidentTriage(tenantId);
+	const [filter, setFilter] = useState<TriageFilter>("active");
+	const [mineOnly, setMineOnly] = useState(false);
+	const [selected, setSelected] = useState<number | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -199,6 +331,14 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 	}, [tenantId]);
 
 	const incidentEvents = useMemo(() => (events ?? []).filter(isIncidentLikeEvent), [events]);
+	const nowMs = Date.now();
+	const visibleEvents = incidentEvents.filter((e) => {
+		const row = triage.rows.get(e.id);
+		if (!matchesFilter(filter, row, nowMs)) return false;
+		return !mineOnly || row?.ownerUserId === currentUserId;
+	});
+	const selectedEvent =
+		selected === null ? null : (incidentEvents.find((e) => e.id === selected) ?? null);
 
 	// The evidence view groups each payload correlation id within its producing
 	// agent, so it is fed the same incident-like rows the table shows.
@@ -270,7 +410,48 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 						{error}
 					</div>
 				) : null}
+				{triageError ? (
+					<div className="notice notice-error" role="alert">
+						{t("inc.triageUnavailable", { reason: triageErrorMessage(triageError, t) })}
+					</div>
+				) : null}
+				<div className="row" style={{ marginTop: 14, alignItems: "center" }}>
+					<label>
+						{t("inc.show")}{" "}
+						<select value={filter} onChange={(e) => setFilter(e.target.value as TriageFilter)}>
+							{TRIAGE_FILTERS.map((value) => (
+								<option key={value} value={value}>
+									{t(TRIAGE_FILTER_LABEL[value])}
+								</option>
+							))}
+						</select>
+					</label>
+					<label>
+						<input
+							type="checkbox"
+							checked={mineOnly}
+							onChange={(e) => setMineOnly(e.target.checked)}
+						/>{" "}
+						{t("inc.mine")}
+					</label>
+				</div>
 			</div>
+
+			{selectedEvent ? (
+				<TriagePanel
+					key={selectedEvent.id}
+					tenantId={tenantId}
+					eventId={selectedEvent.id}
+					agentId={selectedEvent.agent_id}
+					summary={summarize(selectedEvent, t)}
+					ruleId={selectedEvent.payload?.matched_threat_id}
+					triage={triage.rows.get(selectedEvent.id)}
+					canTriage={triage.canTriage}
+					members={members}
+					onClose={() => setSelected(null)}
+					onSaved={onSaved}
+				/>
+			) : null}
 
 			<div className="card">
 				<div className="table-wrap">
@@ -281,52 +462,27 @@ function TenantIncidentsPage({ tenantId }: { tenantId: string }) {
 								<th>{t("activity.agent")}</th>
 								<th>{t("activity.type")}</th>
 								<th>{t("activity.summary")}</th>
+								<th>{t("inc.col.status")}</th>
+								<th>{t("inc.col.owner")}</th>
+								<th />
 							</tr>
 						</thead>
 						<tbody>
-							{incidentEvents.map((e) => {
-								const agent = agents.get(e.agent_id);
-								const agentName = agent?.display_name ?? agent?.iid?.slice(0, 12) ?? e.agent_id;
-								return (
-									<tr key={e.id}>
-										<td className="mono">{new Date(e.created_at).toLocaleString()}</td>
-										<td>
-											{agent ? (
-												<Link className="mono" to={`/agents/${agent.id}`}>
-													{agentName}
-												</Link>
-											) : (
-												<span className="mono">{agentName}</span>
-											)}
-											{agent?.agent_runtime ? (
-												<div className="muted small">{agent.agent_runtime}</div>
-											) : null}
-										</td>
-										<td>
-											<span className="badge badge-neutral badge-plain mono">{e.type}</span>
-											{isCanaryTrigger(e) ? (
-												<div>
-													<span className="badge badge-deny">{t("incidents.canary")}</span>
-												</div>
-											) : null}
-										</td>
-										<td className="mono">
-											{summarize(e, t)}
-											{e.type === "runtime_verdict" || e.type === "incident" ? (
-												<FrameworkTags ruleId={e.payload?.matched_threat_id} />
-											) : null}
-										</td>
-									</tr>
-								);
-							})}
-							{incidentEvents.length === 0 ? (
+							{visibleEvents.map((e) => (
+								<IncidentRow
+									key={e.id}
+									event={e}
+									agent={agents.get(e.agent_id)}
+									triage={triage}
+									nowMs={nowMs}
+									members={members}
+									onManage={setSelected}
+								/>
+							))}
+							{visibleEvents.length === 0 ? (
 								<tr>
-									<td colSpan={4} className="muted">
-										{events === null
-											? loaded
-												? t("incidents.unavailable")
-												: t("incidents.loading")
-											: t("incidents.empty")}
+									<td colSpan={7} className="muted">
+										{emptyMessage(t, events, loaded, incidentEvents.length)}
 									</td>
 								</tr>
 							) : null}

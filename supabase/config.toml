@@ -196,6 +196,18 @@ verify_jwt = true
 # session, identity barrier, owner/admin role and a tenant rate limit, and the
 # SQL re-checks under locks.
 verify_jwt = true
+[functions.incidents]
+# Incident triage (status, owner, resolution note, snooze, history). Dashboard
+# sessions only; the handler repeats session, identity barrier and membership,
+# adds owner/admin and AAL2 for changes and a tenant rate limit, and the RPC
+# re-checks under a tenant lock and writes the history and audit rows.
+verify_jwt = true
+[functions.reports]
+# Executive summary, team rollup, printable report and scheduled-report
+# options. Dashboard sessions only; the handler repeats session, identity
+# barrier (per workspace in the rollup), owner/admin role, AAL2 for option
+# changes and a tenant rate limit.
+verify_jwt = true
 
 [functions.notification-channels]
 # Tenant alert channels (Settings -> Notifications). The handler repeats session,

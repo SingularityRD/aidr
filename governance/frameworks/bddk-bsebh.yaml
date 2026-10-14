@@ -1,0 +1,141 @@
+# BDDK, Bankalarin Bilgi Sistemleri ve Elektronik Bankacilik Hizmetleri Hakkinda
+# Yonetmelik (Resmi Gazete 15.03.2020, No. 31069): vendor control mapping for
+# Singularity AIDR, by requirement topic.
+#
+# The mapping is made at topic level (information security management, asset
+# inventory, access, audit trails, cyber incidents, ...), not article by
+# article: identifiers are this repository's own topic codes (BSEBY-*), and the
+# institution's compliance function maps them to the articles of the
+# consolidated text in force. The regulation's text is not reproduced. This is
+# a vendor mapping; it is not a BDDK approval, an audit opinion or a statement
+# that a bank meets the regulation. Coverage values: see nist-ai-rmf.yaml.
+
+framework:
+  id: bddk-bsebh
+  name: BDDK Bilgi Sistemleri ve Elektronik Bankacılık Hizmetleri Yönetmeliği
+  version: "Resmî Gazete 15.03.2020, No. 31069 (topic-level mapping)"
+  reference: https://www.mevzuat.gov.tr
+  scope: >-
+    Requirement topics of the BDDK information systems and electronic banking regulation
+    where Singularity AIDR provides a technical measure or evidence for the bank's use of
+    AI coding agents, AI chat sites and MCP servers. Topic codes are this mapping's own;
+    article references, applicability and the bank's other information systems are the
+    bank's to determine. Vendor mapping only, not a regulatory approval.
+
+controls:
+  - id: BSEBY-BGYS
+    group: Bilgi güvenliği yönetimi
+    title: Bilgi güvenliği politikası ve yönetimi (information security policy and management)
+    capabilities: [runtime-policy-management, acceptable-use-notice, governance-scorecard]
+    evidence: [tenant_runtime_policies, runtime_policy_revisions, governance-scorecard]
+    coverage: partial
+    note: >-
+      Versioned runtime and DLP policy carry the bank's AI-use rules into enforcement and
+      the scorecard shows whether they are deployed. The bank's information security
+      management system, policy approval and committees are outside the product.
+  - id: BSEBY-VARLIK
+    group: Bilgi güvenliği yönetimi
+    title: Bilgi varlıkları envanteri (information asset inventory)
+    capabilities: [ai-asset-inventory, mcp-inventory]
+    evidence: [agents, posture_findings, compliance-report.protection_coverage]
+    coverage: partial
+    note: >-
+      AI coding agents, browser installs, AI sites in use and MCP servers are inventoried
+      for the endpoints that run an AIDR connector or Browser Guard. The bank's full asset
+      inventory and classification remain the bank's.
+  - id: BSEBY-ERISIM
+    group: Bilgi güvenliği yönetimi
+    title: Kimlik doğrulama ve erişim yönetimi (authentication and access management)
+    capabilities: [identity-access-control, tenant-isolation]
+    evidence: [tenant_identity_policies, compliance-report.access_identity]
+    coverage: partial
+    note: >-
+      Control-plane access uses roles, MFA, SAML/OIDC single sign-on and SCIM, enforced on
+      every tenant table; administrators and their MFA status appear in the evidence
+      report. Access to banking systems is outside the product.
+  - id: BSEBY-IZKAYDI
+    group: Bilgi güvenliği yönetimi
+    title: İz kayıtları (audit trails)
+    capabilities: [audit-logging, audit-export, siem-export]
+    evidence: [admin_audit_logs, local-audit-log, audit-export, siem-export]
+    coverage: partial
+    note: >-
+      Decisions on agent actions and administrative changes are kept in append-only logs,
+      exportable to the bank's SIEM. Integrity protection and retention periods of the
+      bank's central log store are the bank's.
+  - id: BSEBY-OLAY
+    group: Siber olay yönetimi
+    title: Siber olay yönetimi ve müdahale (cyber incident management and response)
+    capabilities: [incident-management, incident-triage, siem-export]
+    evidence: [events.incident, incident_triage, incident_triage_history]
+    coverage: partial
+    note: >-
+      Blocked and flagged AI tool actions are listed as incidents with owner, status,
+      resolution note and an append-only history, and can be sent to the SIEM. Notifying
+      the regulator and running the bank's incident response team are the bank's.
+  - id: BSEBY-GIZLILIK
+    group: Veri güvenliği
+    title: Gizli ve müşteri sırrı niteliğindeki verilerin korunması (protection of confidential and customer-secret data)
+    capabilities: [browser-guard-masking, prompt-dlp-protection, output-inspection]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity, tenant_dlp_policies]
+    coverage: partial
+    note: >-
+      TCKN, IBAN, card numbers, other personal data and secrets are masked or blocked
+      before they reach AI services, and DLP rules apply to agent prompts and tool inputs.
+      Other leakage channels and the bank's data classification are outside the product.
+  - id: BSEBY-ZARARLI
+    group: Bilgi güvenliği yönetimi
+    title: Zararlı yazılımlara karşı koruma (protection against malicious software)
+    capabilities: [runtime-enforcement, plugin-skill-scanning, mcp-gateway]
+    evidence: [events.runtime_verdict, threat-rules]
+    coverage: partial
+    note: >-
+      Malicious commands, packages, plugins, skills and MCP results are blocked on the
+      coding-agent path before they run. The product does not replace endpoint protection.
+  - id: BSEBY-ZAFIYET
+    group: Bilgi güvenliği yönetimi
+    title: Güvenlik açığı yönetimi ve sızma testleri (vulnerability management and penetration tests)
+    capabilities: [ai-posture-scanning]
+    evidence: [posture_findings, compliance-report.ai_security_posture]
+    coverage: customer-responsibility
+    note: >-
+      CVE and exposed-component findings of the AI tool chain are reported by severity.
+      Penetration tests, their scope and remediation tracking are the bank's.
+  - id: BSEBY-DEGISIKLIK
+    group: Bilgi sistemleri yönetimi
+    title: Değişiklik yönetimi (change management)
+    capabilities: [runtime-policy-management]
+    evidence: [runtime_policy_revisions, dlp_policy_revisions]
+    coverage: partial
+    note: >-
+      Security policy changes are versioned with digests, can be staged in rings and can
+      require four-eyes approval. Change management for banking systems is the bank's.
+  - id: BSEBY-SAKLAMA
+    group: Bilgi sistemleri yönetimi
+    title: Kayıtların saklanması ve imhası (retention and disposal of records)
+    capabilities: [retention-legal-hold, audit-logging]
+    evidence: [tenant_data_retention_policies, tenant_legal_holds, compliance-report.retention_deletion]
+    coverage: partial
+    note: >-
+      Retention days per data class, legal holds and offboarding receipts are recorded.
+      Statutory retention periods are set by the bank; backup copies need separate evidence.
+  - id: BSEBY-YONETIM
+    group: Bilgi sistemleri yönetimi
+    title: Üst yönetime raporlama ve gözetim (reporting to and oversight by senior management)
+    capabilities: [governance-digest, governance-scorecard, human-approval, oversight-analytics]
+    evidence: [executive-report, governance_digest_deliveries, approval_requests]
+    coverage: partial
+    note: >-
+      A scheduled executive report in Turkish or English, the scorecard and human-approval
+      analytics give management a counts-only view of AI tool use. Board and committee
+      oversight duties are the bank's.
+  - id: BSEBY-DISHIZMET
+    group: Bilgi sistemleri yönetimi
+    title: Dış hizmet ve tedarikçi riskleri (outsourcing and supplier risk)
+    capabilities: [data-flow-inventory]
+    evidence: [privacy-data-flow-matrix, compliance-report.data_flows]
+    coverage: customer-responsibility
+    note: >-
+      The data-flow and subprocessor inventory supports the bank's assessment of
+      Singularity AIDR as a supplier. Assessing AI service providers and any support
+      service obligations are the bank's.
