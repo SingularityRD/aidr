@@ -92,8 +92,8 @@ export const oidcSsoMessages = {
 		"Kimlik belirteçlerinizi üreten yetkilendirme sunucusunun issuer değeri.",
 	],
 	"sso.hint.generic": [
-		"Any OpenID Connect provider with a discovery document.",
-		"Keşif belgesi olan herhangi bir OpenID Connect sağlayıcısı.",
+		"Any OpenID Connect provider with a discovery document, for example Keycloak (https://sso.example.com/realms/<realm>) or ADFS (https://adfs.example.com/adfs).",
+		"Keşif belgesi olan herhangi bir OpenID Connect sağlayıcısı; örneğin Keycloak (https://sso.example.com/realms/<realm>) ya da ADFS (https://adfs.example.com/adfs).",
 	],
 	"sso.selectTenant": [
 		"Select a tenant to manage single sign-on.",
@@ -109,8 +109,8 @@ export const oidcSsoMessages = {
 	],
 	"sso.title": ["Single sign-on (OIDC)", "Tek oturum açma (OIDC)"],
 	"sso.lead": [
-		"Configure OpenID Connect sign-in for {team} with Microsoft Entra ID, Okta or another provider. SCIM still provisions users and roles; this page controls how they sign in.",
-		"{team} için Microsoft Entra ID, Okta ya da başka bir sağlayıcıyla OpenID Connect oturum açmayı yapılandırın. Kullanıcıları ve rolleri yine SCIM sağlar; bu sayfa yalnızca nasıl oturum açtıklarını belirler.",
+		"Configure OpenID Connect sign-in for {team} with Microsoft Entra ID, Okta, Keycloak, ADFS or another provider. Users and roles come from SCIM or, if you turn it on below, from just-in-time provisioning at sign-in.",
+		"{team} için Microsoft Entra ID, Okta, Keycloak, ADFS ya da başka bir sağlayıcıyla OpenID Connect oturum açmayı yapılandırın. Kullanıcılar ve roller SCIM'den ya da aşağıda açarsanız oturum açılırken anında hesap oluşturmadan (JIT) gelir.",
 	],
 	"sso.redirect": [
 		"Register this redirect URI at your provider: {uri}",
@@ -139,8 +139,8 @@ export const oidcSsoMessages = {
 	"sso.groupsClaim": ["Groups claim (optional)", "Grup claim'i (isteğe bağlı)"],
 	"sso.groupRequirement": ["Group requirement", "Grup şartı"],
 	"sso.ignoreGroups": [
-		"Ignore groups (SCIM decides access)",
-		"Grupları yok say (erişime SCIM karar verir)",
+		"Ignore groups (SCIM or just-in-time provisioning decides access)",
+		"Grupları yok say (erişime SCIM ya da anında hesap oluşturma karar verir)",
 	],
 	"sso.requireGroup": [
 		"Require a mapped group (exact group IDs from SCIM mappings)",
@@ -187,5 +187,86 @@ export const oidcSsoMessages = {
 	"sso.breakGlassOff": [
 		"Break-glass: disabled. Enable break-glass recovery in identity policy before enforcing, so an identity provider outage is recoverable.",
 		"Acil durum erişimi: kapalı. Kimlik sağlayıcı kesintisinden kurtulabilmek için zorunlu kılmadan önce kimlik politikasında acil durum kurtarmasını açın.",
+	],
+	"sso.extraScopes": ["Extra scopes (optional)", "Ek kapsamlar (isteğe bağlı)"],
+	"sso.extraScopesHint": [
+		"Only allatclaims (ADFS, needed for group claims in the ID token), groups (Okta) or roles (Keycloak). Leave empty otherwise.",
+		"Yalnızca allatclaims (ADFS; kimlik belirtecinde grup claim'leri için gerekir), groups (Okta) ya da roles (Keycloak). Aksi halde boş bırakın.",
+	],
+	"sso.jit.title": ["Just-in-time provisioning", "Anında hesap oluşturma (JIT)"],
+	"sso.jit.lead": [
+		"Without SCIM, create the AIDR membership when a user first signs in. The role comes from the user's groups in the identity provider; a user whose groups no longer map loses access at the next sign-in. SCIM-provisioned users are never managed here.",
+		"SCIM olmadan, kullanıcı ilk kez oturum açtığında AIDR üyeliğini oluşturun. Rol, kullanıcının kimlik sağlayıcıdaki gruplarından gelir; grupları artık eşleşmeyen kullanıcı bir sonraki oturum açışta erişimini kaybeder. SCIM ile oluşturulan kullanıcılar burada yönetilmez.",
+	],
+	"sso.jit.enable": ["Create members at sign-in", "Oturum açılırken üye oluştur"],
+	"sso.jit.domains": ["Allowed email domains", "İzin verilen e-posta alan adları"],
+	"sso.jit.domainsHint": [
+		"Comma-separated. Each domain must be verified above.",
+		"Virgülle ayırın. Her alan adı yukarıda doğrulanmış olmalıdır.",
+	],
+	"sso.jit.defaultRole": ["Role when no group matches", "Hiçbir grup eşleşmezse rol"],
+	"sso.jit.noDefault": [
+		"No access (a mapped group is required)",
+		"Erişim yok (eşleşen bir grup gerekir)",
+	],
+	"sso.jit.viewer": ["Viewer", "Görüntüleyici"],
+	"sso.jit.member": ["Member", "Üye"],
+	"sso.jit.mappings": ["Group to role mapping", "Grup - rol eşlemesi"],
+	"sso.jit.mappingsHint": [
+		"Exact group claim values, one per line as value=role (admin, member or viewer), for example /aidr/admins=admin. Matching is case-sensitive; the highest role wins; owner is never granted. Set the groups claim name in the provider settings above.",
+		"Grup claim değerlerini tam olarak, her satıra bir tane değer=rol (admin, member ya da viewer) biçiminde yazın; örneğin /aidr/admins=admin. Eşleşme büyük-küçük harfe duyarlıdır; en yüksek rol geçerlidir; sahip (owner) rolü asla verilmez. Grup claim adını yukarıdaki sağlayıcı ayarlarında belirtin.",
+	],
+	"sso.jit.save": ["Save provisioning", "Hesap oluşturma ayarını kaydet"],
+	"sso.jit.saved": ["Just-in-time provisioning saved.", "Anında hesap oluşturma ayarı kaydedildi."],
+	"sso.jit.invalidMapping": [
+		"Line {line} is not value=role with role admin, member or viewer.",
+		"{line}. satır değer=rol biçiminde değil ya da rol admin, member veya viewer değil.",
+	],
+	"sso.jit.issuerChanged": [
+		"The provider's issuer changed since this was saved. Nobody is provisioned until you save again.",
+		"Bu ayar kaydedildikten sonra sağlayıcının issuer değeri değişti. Yeniden kaydedene kadar kimse için hesap oluşturulmaz.",
+	],
+	"sso.jit.directoryAuthoritative": [
+		"Directory-authoritative membership is on, so only SCIM can grant access. Turn it off to use just-in-time provisioning.",
+		"Dizin yetkili üyelik modu açık; bu nedenle erişimi yalnızca SCIM verebilir. Anında hesap oluşturmayı kullanmak için bu modu kapatın.",
+	],
+	"sso.jit.groupModeHint": [
+		"Keep Group requirement on Ignore groups: just-in-time provisioning applies the mapping in this section.",
+		'Grup şartını "Grupları yok say" olarak bırakın: anında hesap oluşturma bu bölümdeki kendi eşlemesini uygular.',
+	],
+	"sso.jit.activeMembers": [
+		"Members created at sign-in: {count}",
+		"Oturum açılırken oluşturulan üyeler: {count}",
+	],
+	"sso.jit.removed": ["Removed by an administrator", "Bir yönetici tarafından çıkarıldı"],
+	"sso.jit.removedLead": [
+		"These users were removed in AIDR and are not re-added at sign-in until you re-admit them.",
+		"Bu kullanıcılar AIDR'da çıkarıldı; siz yeniden kabul edene kadar oturum açtıklarında geri eklenmezler.",
+	],
+	"sso.jit.readmit": ["Re-admit {user}", "{user} kullanıcısını yeniden kabul et"],
+	"sso.jit.readmitted": [
+		"Re-admitted. The user gets access again at the next sign-in.",
+		"Yeniden kabul edildi. Kullanıcı bir sonraki oturum açışta erişimi yeniden alır.",
+	],
+	"sso.err.jitDomain": [
+		"Each allowed domain must be a verified domain of this workspace.",
+		"İzin verilen her alan adı bu çalışma alanının doğrulanmış bir alan adı olmalıdır.",
+	],
+	"sso.err.jitDomainRequired": [
+		"Add at least one allowed email domain before turning this on.",
+		"Bunu açmadan önce en az bir izin verilen e-posta alan adı ekleyin.",
+	],
+	"sso.err.jitPolicy": [
+		"The provisioning settings were rejected. Check the domains, the default role and the mapping lines.",
+		"Hesap oluşturma ayarları reddedildi. Alan adlarını, varsayılan rolü ve eşleme satırlarını kontrol edin.",
+	],
+	"sso.err.jitDirectory": [
+		"Directory-authoritative membership is on; only SCIM can grant access.",
+		"Dizin yetkili üyelik modu açık; erişimi yalnızca SCIM verebilir.",
+	],
+	"sso.err.providerMissing": ["Save the provider first.", "Önce sağlayıcıyı kaydedin."],
+	"sso.err.notRemoved": [
+		"This user is not in the removed list any more.",
+		"Bu kullanıcı artık çıkarılanlar listesinde değil.",
 	],
 } as const satisfies MessagePairs<string>;

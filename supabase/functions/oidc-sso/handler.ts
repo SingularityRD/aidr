@@ -8,7 +8,8 @@
 //   get_config                         - tenant owner
 //   put_provider, refresh_discovery,
 //   add_domain, verify_domain,
-//   remove_domain, set_enforcement     - tenant owner at AAL2
+//   remove_domain, set_enforcement,
+//   put_jit_policy, jit_readmit        - tenant owner at AAL2
 // Every owner action above (not start/callback/break-glass/bind_session) also
 // requires the plan feature `entra_sso` (402 plan_feature_required, or 503
 // plan_entitlement_unavailable when the plan cannot be resolved).
@@ -23,8 +24,10 @@ import {
 	constantTimeEqual,
 	discoveryUrlFor,
 	emailDomain,
+	groupClaimValues,
 	isDnsDomain,
 	isPkceVerifier,
+	type MappedRole,
 	mapGroupClaims,
 	normalizeIssuer,
 	type OidcAlgorithm,
@@ -35,14 +38,18 @@ import {
 	verifyIdToken,
 	base64UrlEncode,
 } from "./oidc.ts";
-import type {
-	AuthenticatedCaller,
-	OidcDeps,
-	OidcProviderRow,
-	ProviderKind,
-	RefreshDiscoveryResult,
-	SaveProviderResult,
-	TokenAuthMethod,
+import {
+	type AuthenticatedCaller,
+	EXTRA_SCOPES,
+	type ExtraScope,
+	type JitMapping,
+	type JitStatus,
+	type OidcDeps,
+	type OidcProviderRow,
+	type ProviderKind,
+	type RefreshDiscoveryResult,
+	type SaveProviderResult,
+	type TokenAuthMethod,
 } from "./types.ts";
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -71,6 +78,9 @@ const DOMAIN_TXT_LABEL = "_aidr-sso";
 const DOMAIN_TXT_PREFIX = "aidr-sso-verification=";
 const ENTRA_ISSUER = /^https:\/\/login\.microsoftonline\.com\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/v2\.0$/;
 
+const JIT_MAX_DOMAINS = 50;
+const JIT_MAX_MAPPINGS = 100;
+
 type Body = Record<string, unknown>;
 type LoginFailureReason =
 	| "request_invalid"
@@ -86,6 +96,26 @@ type LoginFailureReason =
 	| "identity_conflict"
 	| "session_unavailable";
 
+// JIT outcomes that leave the user with a membership (JIT-, admin- or SCIM-owned).
+const JIT_ADMITTED: ReadonlySet<JitStatus> = new Set<JitStatus>([
+	"provisioned",
+	"updated",
+	"unchanged",
+	"manual_membership",
+	"scim_managed",
+	"scim_bound",
+]);
+// Coarse browser reason and HTTP status for JIT denials; the precise status goes
+// to the identity.oidc.login_failed audit detail only. Unlisted: not_provisioned.
+const JIT_DENIAL: Partial<Record<JitStatus, { reason: LoginFailureReason; status: number }>> = {
+	domain_not_allowed: { reason: "domain_not_verified", status: 403 },
+	groups_unevaluable: { reason: "groups_overage", status: 403 },
+	no_role: { reason: "group_not_mapped", status: 403 },
+	revoked: { reason: "group_not_mapped", status: 403 },
+	scim_conflict: { reason: "identity_conflict", status: 409 },
+	other_tenant: { reason: "identity_conflict", status: 409 },
+};
+
 function isRecord(value: unknown): value is Body {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -95,6 +125,14 @@ function str(value: unknown, max: number): string | null {
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;
+
+function hasControlCharacter(value: string): boolean {
+	for (const char of value) {
+		const code = char.charCodeAt(0);
+		if (code < 0x20 || code === 0x7f) return true;
+	}
+	return false;
+}
 
 export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Response> {
 	const { store } = deps;
@@ -210,7 +248,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 				state,
 				nonce,
 				codeChallenge: await pkceChallenge(verifier),
-				scopes: SCOPES,
+				scopes: [...SCOPES, ...provider.extra_scopes],
 			}),
 			expires_in: AUTH_REQUEST_TTL_MS / 1000,
 		});
@@ -362,7 +400,9 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		}
 
 		if (authRequest.mode === "link") return link(req, provider, authRequest.link_user_id, subject, email, claimsRole);
-		return login(req, provider, subject, email, claimsRole);
+		const jitEnabled = await store.jitEnabled(provider.tenant_id);
+		if (jitEnabled === null) return failLogin(req, provider, "provider_unavailable", "jit_policy_unavailable", 503);
+		return login(req, provider, subject, email, claimsRole, jitEnabled ? claims : null);
 	}
 
 	async function link(
@@ -423,12 +463,43 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		return null;
 	}
 
+	/**
+	 * Just-in-time provisioning (opt-in per tenant). The database transaction
+	 * re-checks the policy, issuer pin, allowed and verified domain, SCIM
+	 * precedence and directory authority, maps the exact group values to a role
+	 * and audits every membership change. Returns the JIT status or a denial.
+	 */
+	async function provisionJit(
+		req: Request,
+		provider: OidcProviderRow,
+		userId: string,
+		subject: string,
+		email: string,
+		claims: Record<string, unknown>,
+	): Promise<JitStatus | Response> {
+		const groups = groupClaimValues(claims, provider.groups_claim);
+		const result = await store.jitProvision({
+			providerId: provider.id,
+			authUserId: userId,
+			subject,
+			emailDomain: emailDomain(email) ?? "",
+			groups: groups.evaluable && provider.groups_claim ? groups.values : null,
+			groupsEvaluable: groups.evaluable,
+			requestId: deps.requestId(req),
+		});
+		if (result === "error") return failLogin(req, provider, "provider_unavailable", "jit_provision_failed", 503);
+		if (JIT_ADMITTED.has(result.status)) return result.status;
+		const denial = JIT_DENIAL[result.status] ?? { reason: "not_provisioned" as const, status: 403 };
+		return failLogin(req, provider, denial.reason, `jit_${result.status}`, denial.status);
+	}
+
 	async function login(
 		req: Request,
 		provider: OidcProviderRow,
 		subject: string,
 		email: string,
 		claimsRole: string | null,
+		jitClaims: Record<string, unknown> | null,
 	): Promise<Response> {
 		const userId = await resolveAuthUser(provider, subject, email);
 		if (userId === null) return failLogin(req, provider, "session_unavailable", "auth_user_unavailable", 503);
@@ -443,10 +514,17 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 			} catch {
 				return failLogin(req, provider, "identity_conflict", "scim_bind_conflict", 403);
 			}
-			// Membership comes from SCIM (and manual owners); no membership, no session.
-			if (!(await store.memberRole(userId, provider.tenant_id)))
-				return failLogin(req, provider, "not_provisioned", "not_provisioned", 403);
 		}
+		let jit: JitStatus | null = null;
+		if (jitClaims) {
+			const outcome = await provisionJit(req, provider, userId, subject, email, jitClaims);
+			if (outcome instanceof Response) return outcome;
+			jit = outcome;
+		}
+		// Membership comes from SCIM, JIT or a manual grant. When the tenant
+		// enforces SSO or opted into JIT, no membership means no session.
+		if ((enforced || jit) && !(await store.memberRole(userId, provider.tenant_id)))
+			return failLogin(req, provider, "not_provisioned", "not_provisioned", 403);
 
 		const tokenHash = await store.generateSessionTokenHash(userId);
 		if (!tokenHash) return failLogin(req, provider, "session_unavailable", "session_token_unavailable", 503);
@@ -470,6 +548,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 				enforced,
 				subject_sha256: await sha256Hex(subject),
 				claims_role: claimsRole,
+				jit,
 				request_id: deps.requestId(req),
 			},
 		});
@@ -555,12 +634,13 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 	async function getConfig(req: Request, body: Body): Promise<Response> {
 		const context = await ownerContext(req, body, { requireAal2: false });
 		if (context instanceof Response) return context;
-		const [provider, domains, policy] = await Promise.all([
+		const [provider, domains, policy, jit] = await Promise.all([
 			store.findProviderByTenant(context.tenantId),
 			store.listDomains(context.tenantId),
 			store.policy(context.tenantId),
+			store.jitConfig(context.tenantId),
 		]);
-		if (!domains || !policy) return deps.json(req, 503, { error: "sso_unavailable" });
+		if (!domains || !policy || !jit) return deps.json(req, 503, { error: "sso_unavailable" });
 		return deps.json(req, 200, {
 			ok: true,
 			redirect_uri: redirectUri,
@@ -576,6 +656,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 				subject_claim: provider.subject_claim,
 				groups_claim: provider.groups_claim,
 				groups_mode: provider.groups_mode,
+				extra_scopes: provider.extra_scopes,
 				session_max_seconds: provider.session_max_seconds,
 				enabled: provider.enabled,
 				discovery_ready: provider.discovery !== null,
@@ -589,7 +670,100 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 			enforced: policy.required_oidc_provider_id !== null,
 			saml_enforced: policy.required_saml_provider_id !== null,
 			break_glass_enabled: policy.break_glass_enabled,
+			jit: {
+				enabled: jit.policy?.enabled === true,
+				// A policy saved for another issuer provisions nobody until it is saved again.
+				issuer_matches: Boolean(jit.policy && provider && jit.policy.issuer === provider.issuer),
+				allowed_domains: jit.policy?.allowed_domains ?? [],
+				default_role: jit.policy?.default_role ?? null,
+				mappings: jit.mappings,
+				directory_authoritative: jit.directory_authoritative,
+				active_members: jit.members.filter((member) => member.removed_at === null).length,
+				removed_members: jit.members
+					.filter((member) => member.removed_at !== null)
+					.map((member) => ({ user_id: member.user_id, email: member.email_claim, removed_at: member.removed_at })),
+			},
 		});
+	}
+
+	function parseJitMappings(value: unknown): JitMapping[] | null {
+		if (value === undefined) return [];
+		if (!Array.isArray(value) || value.length > JIT_MAX_MAPPINGS) return null;
+		const seen = new Set<string>();
+		const mappings: JitMapping[] = [];
+		for (const entry of value) {
+			if (!isRecord(entry)) return null;
+			const group = typeof entry.group === "string" ? entry.group.trim() : "";
+			const role = entry.role as MappedRole;
+			if (!group || group.length > 256 || hasControlCharacter(group) || seen.has(group)) return null;
+			if (role !== "admin" && role !== "member" && role !== "viewer") return null;
+			seen.add(group);
+			mappings.push({ group, role });
+		}
+		return mappings;
+	}
+
+	async function putJitPolicy(req: Request, body: Body): Promise<Response> {
+		const context = await ownerContext(req, body, { requireAal2: true });
+		if (context instanceof Response) return context;
+		const rawDomains = body.allowed_domains ?? [];
+		const allowedDomains =
+			Array.isArray(rawDomains) && rawDomains.length <= JIT_MAX_DOMAINS
+				? rawDomains.map((domain) => (typeof domain === "string" ? domain.trim().toLowerCase() : ""))
+				: null;
+		const defaultRole = body.default_role ?? null;
+		const mappings = parseJitMappings(body.mappings);
+		if (
+			typeof body.enabled !== "boolean" ||
+			!allowedDomains ||
+			!allowedDomains.every(isDnsDomain) ||
+			(defaultRole !== null && defaultRole !== "member" && defaultRole !== "viewer") ||
+			!mappings
+		)
+			return deps.json(req, 400, { error: "invalid_jit_policy" });
+		const provider = await store.findProviderByTenant(context.tenantId);
+		if (!provider) return deps.json(req, 404, { error: "provider_not_found" });
+		const saved = await store.saveJitPolicy({
+			actorUserId: context.caller.userId,
+			tenantId: context.tenantId,
+			providerId: provider.id,
+			enabled: body.enabled,
+			allowedDomains: [...new Set(allowedDomains)],
+			defaultRole,
+			mappings,
+			requestId: deps.requestId(req),
+		});
+		switch (saved) {
+			case "saved":
+				return deps.json(req, 200, { ok: true, enabled: body.enabled });
+			case "owner_required":
+				return deps.json(req, 403, { error: "owner_required" });
+			case "provider_missing":
+				return deps.json(req, 404, { error: "provider_not_found" });
+			case "invalid":
+				return deps.json(req, 400, { error: "invalid_jit_policy" });
+			case "error":
+				return deps.json(req, 503, { error: "sso_unavailable" });
+			default:
+				return deps.json(req, 409, { error: `jit_${saved}` });
+		}
+	}
+
+	async function jitReadmit(req: Request, body: Body): Promise<Response> {
+		const context = await ownerContext(req, body, { requireAal2: true });
+		if (context instanceof Response) return context;
+		const userId = normalizeUuid(body.user_id);
+		if (!userId) return deps.json(req, 400, { error: "invalid_request" });
+		const result = await store.jitReadmit({
+			actorUserId: context.caller.userId,
+			tenantId: context.tenantId,
+			userId,
+			requestId: deps.requestId(req),
+		});
+		if (result === "readmitted") return deps.json(req, 200, { ok: true });
+		if (result === "owner_required") return deps.json(req, 403, { error: "owner_required" });
+		if (result === "not_removed") return deps.json(req, 409, { error: "jit_member_not_removed" });
+		return deps.json(req, 503, { error: "sso_unavailable" });
 	}
 
 	async function fetchDiscovery(provider: OidcProviderRow): Promise<OidcProviderRow | string> {
@@ -633,6 +807,14 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 		if (!Number.isInteger(skew) || (skew as number) < 0 || (skew as number) > 120) return "invalid_clock_skew";
 		const displayName = str(body.display_name, 64);
 		if (!displayName) return "invalid_display_name";
+		const extraScopes = body.extra_scopes ?? [];
+		if (
+			!Array.isArray(extraScopes) ||
+			extraScopes.length > EXTRA_SCOPES.length ||
+			new Set(extraScopes).size !== extraScopes.length ||
+			!extraScopes.every((scope) => EXTRA_SCOPES.includes(scope as ExtraScope))
+		)
+			return "invalid_extra_scopes";
 		const identityChanged =
 			!existing || existing.issuer !== issuer || existing.kind !== kind || existing.allowed_algs.join() !== (algs as string[]).join();
 		return {
@@ -653,6 +835,7 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 			// Changing the issuer/algorithms invalidates what was discovered.
 			discovery: identityChanged ? null : existing.discovery,
 			enabled: false,
+			extra_scopes: extraScopes as ExtraScope[],
 		};
 	}
 
@@ -864,6 +1047,10 @@ export function createOidcHandler(deps: OidcDeps): (req: Request) => Promise<Res
 					return await removeDomain(req, body);
 				case "set_enforcement":
 					return await setEnforcement(req, body);
+				case "put_jit_policy":
+					return await putJitPolicy(req, body);
+				case "jit_readmit":
+					return await jitReadmit(req, body);
 				default:
 					return deps.json(req, 400, { error: "invalid_action" });
 			}

@@ -15,7 +15,7 @@ import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { getRequestId } from "../_shared/response.ts";
-import { safeFetchJson } from "../_shared/safe-fetch.ts";
+import { INTERNAL_HOSTS_ENV, type InternalHosts, parseInternalHosts, safeFetchJson } from "../_shared/safe-fetch.ts";
 import { INGRESS_SECRET_ENV, validIngressSecret, verifiedIngressIp } from "../_shared/trusted-ingress.ts";
 import { jwtIssuedAtMs, jwtSessionId } from "../identity-security/logic.ts";
 import { resolveClientSecret } from "./client-secrets.ts";
@@ -27,11 +27,17 @@ import type { AuthenticatedCaller, AuthenticationFailure, OidcDeps } from "./typ
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "AIDR_DASHBOARD_URL"] as const;
 const INGRESS_CONTEXT = "oidc-sso:v1";
 
+// Operator-listed internal IdP hosts (on-prem Keycloak / ADFS). Parsed once per
+// isolate; a malformed value fails every request closed (server_misconfigured)
+// instead of silently dropping or widening the exemption.
+const internalHosts = parseInternalHosts(Deno.env.get(INTERNAL_HOSTS_ENV));
+const egress: { internalHosts?: InternalHosts } = internalHosts.ok ? { internalHosts: internalHosts.hosts } : {};
+
 // Warm-isolate cache: signing keys are shared by every tenant using the same IdP
 // document, and rotation is handled inside JwksCache.
 const jwks = new JwksCache({
 	fetchKeys: async (jwksUri) => {
-		const response = await safeFetchJson(jwksUri, { method: "GET", headers: { accept: "application/json" } });
+		const response = await safeFetchJson(jwksUri, { method: "GET", headers: { accept: "application/json" } }, egress);
 		return response.ok ? parseJwks(response.json) : null;
 	},
 });
@@ -42,6 +48,10 @@ Deno.serve(async (req) => {
 	const config = loadConfig(runtimeEnv, REQUIRED_ENV);
 	if (!config.ok) {
 		return configFailure("oidc-sso", config.error, (status, body) => corsJson(req, status, body));
+	}
+	if (!internalHosts.ok) {
+		console.error(`oidc-sso: ${INTERNAL_HOSTS_ENV} is malformed; refusing every request`);
+		return corsJson(req, 500, { error: "server_misconfigured" });
 	}
 	let dashboardBaseUrl: string;
 	try {
@@ -102,7 +112,7 @@ Deno.serve(async (req) => {
 		// Released only for an operator binding of (ref -> tenant, issuer[, client]).
 		getClientSecret: (request) => resolveClientSecret((name) => Deno.env.get(name), request),
 		fetchJson: async (url, init) => {
-			const response = await safeFetchJson(url, init);
+			const response = await safeFetchJson(url, init, egress);
 			return response.ok ? { ok: true, json: response.json } : { ok: false, error: response.error, status: response.status };
 		},
 		resolveTxt: async (name) => (await Deno.resolveDns(name, "TXT")).map((chunks) => chunks.join("")),

@@ -178,6 +178,7 @@ jobs:
           node --test scripts/device-poll-membership-revocation-postgres.test.mjs
           docker pull supabase/postgres:17.11.0.004
           node --test scripts/oidc-administration-postgres.test.mjs
+          node --test scripts/oidc-jit-provisioning-postgres.test.mjs
           node --test scripts/workspace-retention-oidc-save-postgres.test.mjs
           node --test scripts/browser-guard-settings-postgres.test.mjs
           node --test scripts/saml-administration-postgres.test.mjs
@@ -580,6 +581,7 @@ jobs:
         run: >-
           node --test
           scripts/deployment-prepare.test.mjs
+          scripts/lib/onprem-sso.test.mjs
           scripts/dockerfile-context.test.mjs
           scripts/rate-limit-scope-contract.test.mjs
           scripts/deployment-doctor.test.mjs

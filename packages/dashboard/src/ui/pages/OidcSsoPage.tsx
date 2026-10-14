@@ -1,5 +1,12 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { readFunctionError, redirectToIdp, startOidcFlow } from "../../auth/oidc-sso";
+import {
+	formatJitMappingLines,
+	type JitMappingLine,
+	parseJitMappingLines,
+	readFunctionError,
+	redirectToIdp,
+	startOidcFlow,
+} from "../../auth/oidc-sso";
 import { useTeam } from "../../enterprise/team-provider";
 import type { DashboardMessageKey } from "../../i18n/en";
 import { useRichT, useT } from "../../i18n/I18nProvider";
@@ -17,10 +24,21 @@ type ProviderView = {
 	subject_claim: "sub" | "oid";
 	groups_claim: string | null;
 	groups_mode: "ignore" | "require_mapped";
+	extra_scopes?: string[];
 	enabled: boolean;
 	discovery_ready: boolean;
 };
 type DomainView = { domain: string; verified: boolean; txt_name: string; txt_value?: string };
+type JitView = {
+	enabled: boolean;
+	issuer_matches: boolean;
+	allowed_domains: string[];
+	default_role: "member" | "viewer" | null;
+	mappings: JitMappingLine[];
+	directory_authoritative: boolean;
+	active_members: number;
+	removed_members: Array<{ user_id: string; email: string | null; removed_at: string }>;
+};
 type Snapshot = {
 	redirect_uri: string;
 	provider: ProviderView | null;
@@ -28,6 +46,8 @@ type Snapshot = {
 	enforced: boolean;
 	saml_enforced: boolean;
 	break_glass_enabled: boolean;
+	/** Absent when the server predates just-in-time provisioning. */
+	jit?: JitView;
 };
 
 const SAFE_ERRORS: Record<string, DashboardMessageKey> = {
@@ -48,6 +68,12 @@ const SAFE_ERRORS: Record<string, DashboardMessageKey> = {
 	oidc_existing_identity_conflict: "sso.err.identityConflict",
 	oidc_saml_enforcement_active: "sso.err.saml",
 	oidc_provider_unavailable: "sso.err.providerDisabled",
+	invalid_jit_policy: "sso.err.jitPolicy",
+	jit_domain_not_verified: "sso.err.jitDomain",
+	jit_domain_required: "sso.err.jitDomainRequired",
+	jit_directory_authoritative: "sso.err.jitDirectory",
+	provider_not_found: "sso.err.providerMissing",
+	jit_member_not_removed: "sso.err.notRemoved",
 	invalid_request: "sso.err.invalid",
 	sso_unavailable: "sso.err.unavailable",
 };
@@ -107,6 +133,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 		token_auth_method: "client_secret_basic",
 		groups_claim: "",
 		groups_mode: "ignore",
+		extra_scopes: "",
 		enabled: false,
 	});
 	const [domain, setDomain] = useState("");
@@ -145,6 +172,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 					token_auth_method: provider.token_auth_method,
 					groups_claim: provider.groups_claim ?? "",
 					groups_mode: provider.groups_mode,
+					extra_scopes: (provider.extra_scopes ?? []).join(" "),
 					enabled: provider.enabled,
 				}));
 			setError(null);
@@ -184,6 +212,7 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 				token_auth_method: form.token_auth_method,
 				groups_claim: form.groups_claim.trim() || null,
 				groups_mode: form.groups_mode,
+				extra_scopes: form.extra_scopes.split(/[\s,]+/).filter(Boolean),
 				enabled: form.enabled,
 			});
 			return t("sso.saved");
@@ -315,6 +344,17 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 					<option value="ignore">{t("sso.ignoreGroups")}</option>
 					<option value="require_mapped">{t("sso.requireGroup")}</option>
 				</select>
+				<label className="label" htmlFor="oidc-extra-scopes">
+					{t("sso.extraScopes")}
+				</label>
+				<input
+					id="oidc-extra-scopes"
+					value={form.extra_scopes}
+					// i18n-exempt: scope name
+					placeholder="allatclaims"
+					onChange={(event) => setForm({ ...form, extra_scopes: event.target.value })}
+				/>
+				<p className="muted small">{t("sso.extraScopesHint")}</p>
 				<label className="label">
 					<input
 						type="checkbox"
@@ -396,6 +436,16 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 					{t("sso.addDomain")}
 				</button>
 			</section>
+
+			<JitProvisioningCard
+				jit={snapshot?.jit}
+				busy={busy}
+				hasProvider={provider !== null}
+				requireMappedGroups={form.groups_mode === "require_mapped"}
+				verifiedDomains={verifiedDomains.map((entry) => entry.domain)}
+				invoke={invoke}
+				run={run}
+			/>
 
 			<section className="card" aria-labelledby="oidc-enforce-heading">
 				<h2 id="oidc-enforce-heading">{t("sso.enforcement")}</h2>
@@ -488,5 +538,154 @@ function TenantSso({ tenantId, teamName }: { tenantId: string; teamName: string 
 				</p>
 			</section>
 		</div>
+	);
+}
+
+type JitProps = {
+	jit: JitView;
+	busy: boolean;
+	hasProvider: boolean;
+	requireMappedGroups: boolean;
+	verifiedDomains: string[];
+	invoke: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+	run: (action: () => Promise<string>) => Promise<void>;
+};
+
+/** Hidden when the server predates just-in-time provisioning. */
+function JitProvisioningCard({
+	jit,
+	...rest
+}: Omit<JitProps, "jit"> & { jit: JitView | undefined }) {
+	// Re-seed the form whenever the server state changes.
+	return jit ? <JitProvisioning key={JSON.stringify(jit)} jit={jit} {...rest} /> : null;
+}
+
+function JitProvisioning({
+	jit,
+	busy,
+	hasProvider,
+	requireMappedGroups,
+	verifiedDomains,
+	invoke,
+	run,
+}: JitProps) {
+	const t = useT();
+	const [jitForm, setJitForm] = useState({
+		enabled: jit.enabled,
+		domains: jit.allowed_domains.join(", "),
+		default_role: jit.default_role ?? "",
+		mappings: formatJitMappingLines(jit.mappings),
+	});
+
+	function saveJit(event: FormEvent) {
+		event.preventDefault();
+		void run(async () => {
+			const parsed = parseJitMappingLines(jitForm.mappings);
+			if (!parsed.ok) throw new Error(t("sso.jit.invalidMapping", { line: parsed.line }));
+			await invoke({
+				action: "put_jit_policy",
+				enabled: jitForm.enabled,
+				allowed_domains: jitForm.domains
+					.split(/[\s,]+/)
+					.map((entry) => entry.trim().toLowerCase())
+					.filter(Boolean),
+				default_role: jitForm.default_role || null,
+				mappings: parsed.mappings,
+			});
+			return t("sso.jit.saved");
+		});
+	}
+
+	return (
+		<form className="card" onSubmit={saveJit} aria-labelledby="oidc-jit-heading">
+			<h2 id="oidc-jit-heading">{t("sso.jit.title")}</h2>
+			<p className="muted">{t("sso.jit.lead")}</p>
+			{jit.directory_authoritative ? (
+				<p className="notice notice-warning" role="note">
+					{t("sso.jit.directoryAuthoritative")}
+				</p>
+			) : null}
+			{jit.enabled && !jit.issuer_matches ? (
+				<p className="notice notice-warning" role="note">
+					{t("sso.jit.issuerChanged")}
+				</p>
+			) : null}
+			<label className="label">
+				<input
+					type="checkbox"
+					checked={jitForm.enabled}
+					onChange={(event) => setJitForm({ ...jitForm, enabled: event.target.checked })}
+				/>{" "}
+				{t("sso.jit.enable")}
+			</label>
+			<label className="label" htmlFor="oidc-jit-domains">
+				{t("sso.jit.domains")}
+			</label>
+			<input
+				id="oidc-jit-domains"
+				value={jitForm.domains}
+				placeholder={verifiedDomains.join(", ") || "example.com"}
+				onChange={(event) => setJitForm({ ...jitForm, domains: event.target.value })}
+			/>
+			<p className="muted small">{t("sso.jit.domainsHint")}</p>
+			<label className="label" htmlFor="oidc-jit-default-role">
+				{t("sso.jit.defaultRole")}
+			</label>
+			<select
+				id="oidc-jit-default-role"
+				value={jitForm.default_role}
+				onChange={(event) => setJitForm({ ...jitForm, default_role: event.target.value })}
+			>
+				<option value="">{t("sso.jit.noDefault")}</option>
+				<option value="viewer">{t("sso.jit.viewer")}</option>
+				<option value="member">{t("sso.jit.member")}</option>
+			</select>
+			<label className="label" htmlFor="oidc-jit-mappings">
+				{t("sso.jit.mappings")}
+			</label>
+			<textarea
+				id="oidc-jit-mappings"
+				rows={5}
+				value={jitForm.mappings}
+				// i18n-exempt: sample group claim values
+				placeholder={"/aidr/admins=admin\n/aidr/users=member"}
+				onChange={(event) => setJitForm({ ...jitForm, mappings: event.target.value })}
+			/>
+			<p className="muted small">{t("sso.jit.mappingsHint")}</p>
+			{requireMappedGroups ? <p className="muted small">{t("sso.jit.groupModeHint")}</p> : null}
+			<p className="muted small">{t("sso.jit.activeMembers", { count: jit.active_members })}</p>
+			<button className="button" type="submit" disabled={busy || !hasProvider}>
+				{t("sso.jit.save")}
+			</button>
+			{jit.removed_members.length > 0 ? (
+				<>
+					<h3>{t("sso.jit.removed")}</h3>
+					<p className="muted small">{t("sso.jit.removedLead")}</p>
+					<ul>
+						{jit.removed_members.map((member) => {
+							const label = member.email ?? member.user_id;
+							return (
+								<li key={member.user_id}>
+									{label}{" "}
+									<button
+										type="button"
+										className="button button-secondary"
+										disabled={busy}
+										onClick={() =>
+											void run(async () => {
+												await invoke({ action: "jit_readmit", user_id: member.user_id });
+												return t("sso.jit.readmitted");
+											})
+										}
+									>
+										{t("sso.jit.readmit", { user: label })}
+									</button>
+								</li>
+							);
+						})}
+					</ul>
+				</>
+			) : null}
+		</form>
 	);
 }

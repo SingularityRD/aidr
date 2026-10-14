@@ -232,3 +232,36 @@ export async function completeOidcFlow(
 	}
 	return { ok: true, mode: "login", returnTo: binding.returnTo };
 }
+
+type JitRole = "admin" | "member" | "viewer";
+export type JitMappingLine = { group: string; role: JitRole };
+
+/**
+ * Parse the just-in-time group mapping textarea: one `value=role` per line.
+ * The LAST `=` separates the role, so LDAP-style group DNs such as
+ * `cn=aidr-admins,ou=groups,dc=corp,dc=example=admin` keep their own `=`.
+ * Blank lines are ignored; the first malformed line is reported (1-based).
+ */
+export function parseJitMappingLines(
+	text: string,
+): { ok: true; mappings: JitMappingLine[] } | { ok: false; line: number } {
+	const mappings: JitMappingLine[] = [];
+	for (const [index, raw] of text.split(/\r?\n/).entries()) {
+		const line = raw.trim();
+		if (!line) continue;
+		const separator = line.lastIndexOf("=");
+		const group = separator > 0 ? line.slice(0, separator).trim() : "";
+		const role = line
+			.slice(separator + 1)
+			.trim()
+			.toLowerCase();
+		if (!group || (role !== "admin" && role !== "member" && role !== "viewer"))
+			return { ok: false, line: index + 1 };
+		mappings.push({ group, role });
+	}
+	return { ok: true, mappings };
+}
+
+export function formatJitMappingLines(mappings: readonly JitMappingLine[]): string {
+	return mappings.map((mapping) => `${mapping.group}=${mapping.role}`).join("\n");
+}

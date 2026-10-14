@@ -474,3 +474,36 @@ export function mapGroupClaims(
 	}
 	return best ? { status: "mapped", role: best, matched } : { status: "none" };
 }
+
+export type GroupClaimValues = { evaluable: true; values: string[] } | { evaluable: false; reason: "overage" | "invalid" };
+
+const MAX_GROUP_VALUES = 1000;
+const MAX_GROUP_LENGTH = 256;
+
+/**
+ * Exact group values for JIT provisioning. Unlike mapGroupClaims it returns the
+ * values themselves (the role is resolved inside the database transaction) and
+ * it accepts a single string, because ADFS emits a one-element multi-valued
+ * claim as a plain string. Overage (Entra) and malformed claims are "not
+ * evaluable": the caller then changes nothing and denies. No claim name, or a
+ * claim the IdP left out, means "no groups".
+ */
+export function groupClaimValues(claims: Record<string, unknown>, claimName: string | null): GroupClaimValues {
+	if (!claimName) return { evaluable: true, values: [] };
+	const value = claims[claimName];
+	if (value === undefined) {
+		const names = claims._claim_names;
+		const overage =
+			(names && typeof names === "object" && claimName in (names as Record<string, unknown>)) ||
+			claims.hasgroups === true;
+		return overage ? { evaluable: false, reason: "overage" } : { evaluable: true, values: [] };
+	}
+	const list: unknown = typeof value === "string" ? [value] : value;
+	if (
+		!Array.isArray(list) ||
+		list.length > MAX_GROUP_VALUES ||
+		!list.every((item) => typeof item === "string" && item.length >= 1 && item.length <= MAX_GROUP_LENGTH)
+	)
+		return { evaluable: false, reason: "invalid" };
+	return { evaluable: true, values: [...new Set(list as string[])] };
+}

@@ -66,6 +66,7 @@ for (const file of [
 	"lib/atomic-write.mjs",
 	"lib/deployment-credentials.mjs",
 	"lib/deployment-input-copy.mjs",
+	"lib/onprem-sso.mjs",
 	"lib/node-helper-image.mjs",
 	"lib/node-helper.Dockerfile",
   "deployment-bootstrap.mjs",

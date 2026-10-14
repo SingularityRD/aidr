@@ -80,6 +80,18 @@ spec:
             - name: NPM_CONFIG_REGISTRY
               value: {{ . | quote }}
             {{- end }}
+            {{- $idp := $values.identityProvider | default (dict) }}
+            # Internal IdP hosts the oidc-sso function may reach on private addresses.
+            - name: AIDR_OIDC_INTERNAL_IDP_HOSTS
+              value: {{ join "," ($idp.internalHosts | default (list)) | quote }}
+            {{- $idpCa := $idp.caBundle | default (dict) }}
+            {{- if $idpCa.existingConfigMap }}
+            # Public roots stay trusted; the customer CA file is added to them.
+            - name: DENO_TLS_CA_STORE
+              value: mozilla,system
+            - name: SSL_CERT_FILE
+              value: /etc/aidr/idp-ca.pem
+            {{- end }}
             {{- with $values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -100,10 +112,24 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if $idpCa.existingConfigMap }}
+            - name: idp-ca
+              mountPath: /etc/aidr/idp-ca.pem
+              subPath: {{ $idpCa.key | default "ca.crt" }}
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 1Gi
+        {{- if $idpCa.existingConfigMap }}
+        - name: idp-ca
+          configMap:
+            name: {{ $idpCa.existingConfigMap }}
+            items:
+              - key: {{ $idpCa.key | default "ca.crt" }}
+                path: {{ $idpCa.key | default "ca.crt" }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
