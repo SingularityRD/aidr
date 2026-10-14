@@ -12,6 +12,10 @@ export const notificationsMessages = {
 	"notify.event.test": ["Test", "Test"],
 	"notify.event.agentOffline": ["Agent offline", "Yapay zekâ aracı çevrim dışı"],
 	"notify.event.agentRecovered": ["Agent back online", "Yapay zekâ aracı yeniden çevrim içi"],
+	"notify.event.agentUnprotected": [
+		"AIDR hook removed, disabled or untrusted",
+		"AIDR kancası kaldırıldı, kapatıldı ya da güvenilmiyor",
+	],
 	"notify.event.reviewOverdue": ["AI reviews overdue", "Gecikmiş yapay zekâ incelemeleri"],
 	"notify.event.intakeRequested": ["AI intake request", "Yapay zekâ kullanım talebi"],
 	"notify.event.changePending": [
@@ -156,8 +160,8 @@ export const notificationsMessages = {
 		"Yapay zekâ aracı çevrim dışı eşiği (dakika)",
 	],
 	"notify.filters.offlineNote": [
-		"minutes (one alert per outage, plus a notice when it reports again)",
-		"dakika (her kesinti için bir uyarı; yeniden bildirim gönderdiğinde ayrıca bir bilgi)",
+		"minutes (one alert per outage, plus a notice when it reports again). Also alerts when an AI tool's AIDR hook is removed, disabled or not trusted.",
+		"dakika (her kesinti için bir uyarı; yeniden bildirim gönderdiğinde ayrıca bir bilgi). Bir yapay zekâ aracındaki AIDR kancası kaldırıldığında, kapatıldığında ya da güvenilmediğinde de uyarır.",
 	],
 	"notify.filters.governance": ["AI governance", "Yapay zekâ yönetişimi"],
 	"notify.filters.overdue": [

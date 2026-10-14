@@ -22,6 +22,8 @@ vi.mock("@singularityrd/aidr-core", () => ({
 	loadConfig: mocks.loadConfig,
 	runSessionStart: mocks.runSessionStart,
 	pruneOrphanedTmpFiles: vi.fn(() => Promise.resolve()),
+	readProtectionLock: () => ({ locked: false, source: "none" }),
+	recordProtectionEvent: () => Promise.resolve(true),
 	resolvePath: () => "/test/.singularity-aidr",
 }));
 

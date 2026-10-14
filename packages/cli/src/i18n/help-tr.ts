@@ -337,4 +337,28 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 	"With --check, emit a machine-readable result": "--check ile makinece okunabilir sonuç üret",
 	"Background install started by update.auto=install":
 		"update.auto=install ile başlatılan arka plan kurulumu",
+
+	// aidr heartbeat / aidr machine-hooks
+	"Report whether each AI tool's AIDR hook is in place to the control plane (run hourly by the per-machine installers)":
+		"Her yapay zekâ aracındaki AIDR kancasının yerinde olup olmadığını yönetim paneline bildir (makine kurulumları saatte bir çalıştırır)",
+	"Print the measured report as JSON": "Ölçülen raporu JSON olarak yazdır",
+	"Measure and print; send nothing": "Ölç ve yazdır; hiçbir şey gönderme",
+	"Print only errors (for the scheduler)": "Yalnızca hataları yazdır (zamanlayıcı için)",
+	"Deploy AIDR hooks through each AI tool's system-wide managed policy so users cannot remove or disable them (administrator)":
+		"AIDR kancalarını her yapay zekâ aracının sistem geneli yönetilen ilkesiyle kur; kullanıcılar kaldıramaz ya da kapatamaz (yönetici)",
+	"Register the hooks for every user of this machine (Claude Code managed settings, Codex system config)":
+		"Kancaları bu makinedeki her kullanıcı için kaydet (Claude Code yönetilen ayarları, Codex sistem yapılandırması)",
+	"Also make the hosts run only managed hooks (Claude Code allowManagedHooksOnly, Codex allow_managed_hooks_only)":
+		"Araçların yalnızca yönetilen kancaları çalıştırmasını da sağla (Claude Code allowManagedHooksOnly, Codex allow_managed_hooks_only)",
+	"Also schedule the hourly 'aidr heartbeat' for every user":
+		"Her kullanıcı için saatlik 'aidr heartbeat' görevini de zamanla",
+	"Installed AIDR bundle whose hook binaries the hosts run (default: this bundle)":
+		"Araçların kanca dosyalarını çalıştıracağı kurulu AIDR paketi (varsayılan: bu paket)",
+	"Show what would change; change nothing": "Neyin değişeceğini göster; hiçbir şeyi değiştirme",
+	"Emit machine-readable results": "Makinece okunabilir sonuç üret",
+	"Remove only AIDR's system-wide hook registrations":
+		"Yalnızca AIDR'nin sistem geneli kanca kayıtlarını kaldır",
+	"Also remove the scheduled heartbeat": "Zamanlanmış sinyal görevini de kaldır",
+	"Show where the system-wide AIDR hooks are registered and whether only administrators can change them":
+		"Sistem geneli AIDR kancalarının nerede kayıtlı olduğunu ve yalnızca yöneticilerin değiştirip değiştiremeyeceğini göster",
 };

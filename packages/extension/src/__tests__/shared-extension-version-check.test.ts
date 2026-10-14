@@ -23,6 +23,8 @@ vi.mock("@singularityrd/aidr-core", () => ({
 			? `${config.control_plane.endpoint}/v1/version-check`
 			: "https://public.example/v1/version-check",
 	pruneOrphanedTmpFiles: () => Promise.resolve(),
+	readProtectionLock: () => ({ locked: false, source: "none" }),
+	recordProtectionEvent: () => Promise.resolve(true),
 	resolvePath: () => "/test/.singularity-aidr",
 }));
 

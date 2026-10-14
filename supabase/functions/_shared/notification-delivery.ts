@@ -30,6 +30,7 @@ const NOTIFICATION_EVENT_TYPES = [
 	"notification.test",
 	"agent.offline",
 	"agent.recovered",
+	"agent.unprotected",
 	"governance.review_overdue",
 	"governance.intake_requested",
 	"governance.change_pending",
@@ -70,6 +71,24 @@ const DIGEST_COUNT_KEYS = [
 	"policy_changes_pending",
 ] as const;
 type DigestCountKey = (typeof DIGEST_COUNT_KEYS)[number];
+
+/** Hook states a connector heartbeat reports (migration 20261014000200). */
+const CONNECTOR_STATES = [
+	"hook_missing",
+	"hook_disabled",
+	"hook_untrusted",
+	"hook_broken",
+	"disable_attempted",
+] as const;
+type ConnectorState = (typeof CONNECTOR_STATES)[number];
+
+const CONNECTOR_STATE_LABELS: Record<ConnectorState, string> = {
+	hook_missing: "AIDR hook removed",
+	hook_disabled: "AIDR hook disabled",
+	hook_untrusted: "AIDR hook not trusted by the host",
+	hook_broken: "AIDR hook broken",
+	disable_attempted: "Attempt to turn off locked protection",
+};
 
 const DIGEST_LABELS: Record<DigestCountKey, string> = {
 	agents_enrolled: "Agents enrolled",
@@ -126,6 +145,8 @@ export interface NotificationMessage {
 	};
 	/** Covered period of a governance digest. */
 	period?: { from: string; to: string } | null;
+	/** Measured hook state of the connector named in `category` (agent.unprotected only). */
+	connector_state?: ConnectorState | null;
 	/** Counts-only governance digest (governance.digest), allow-listed keys. */
 	digest?: Partial<Record<DigestCountKey, number>> | null;
 	links: { dashboard: string | null };
@@ -152,6 +173,7 @@ const DEEP_LINK_PATHS: Record<NotificationEventType, string> = {
 	"notification.test": "/settings",
 	"agent.offline": "/agents",
 	"agent.recovered": "/agents",
+	"agent.unprotected": "/agents",
 	"governance.review_overdue": "/governance/register",
 	"governance.intake_requested": "/governance/requests",
 	"governance.change_pending": "/governance/change-control",
@@ -232,6 +254,11 @@ export function buildNotification(delivery: DeliveryRecord, dashboardUrl: string
 	message.counts.offline_minutes = boundedInt(p.offline_minutes, 10_000_000);
 	message.period = delivery.eventType === "governance.digest" && periodFrom && periodTo ? { from: periodFrom, to: periodTo } : null;
 	message.digest = delivery.eventType === "governance.digest" ? digestCounts(p.digest) : null;
+	if (delivery.eventType === "agent.unprotected") {
+		message.connector_state = CONNECTOR_STATES.includes(p.connector_state as ConnectorState)
+			? (p.connector_state as ConnectorState)
+			: null;
+	}
 	// Keep the key order stable: links last, as in the original events.
 	const { links, ...rest } = message;
 	return { ...rest, links };
@@ -259,6 +286,10 @@ export function notificationTitle(message: NotificationMessage): string {
 			return message.counts.offline_minutes != null
 				? `Agent back online after ${message.counts.offline_minutes} min`
 				: "Agent back online";
+		case "agent.unprotected": {
+			const what = message.connector_state ? CONNECTOR_STATE_LABELS[message.connector_state] : "AIDR protection lost";
+			return message.category ? `${what}: ${message.category}` : what;
+		}
 		case "governance.review_overdue":
 			return message.counts.items != null
 				? `${message.counts.items} AI register ${message.counts.items === 1 ? "item is" : "items are"} past the review date`
@@ -283,6 +314,7 @@ function notificationFacts(message: NotificationMessage): Array<[string, string]
 	if (message.category) facts.push(["Category", message.category]);
 	if (message.subject.incident_id) facts.push(["Incident", message.subject.incident_id]);
 	if (message.subject.agent_id) facts.push(["Agent", message.subject.agent_id]);
+	if (message.connector_state) facts.push(["Hook state", message.connector_state]);
 	if (message.subject.request_id) facts.push(["Request", message.subject.request_id]);
 	if (message.subject.event_id) facts.push(["Event ID", message.subject.event_id]);
 	if (message.counts.findings !== null) facts.push(["Findings", String(message.counts.findings)]);

@@ -39,6 +39,7 @@ import {
 	exceptionListCommand,
 	exceptionRemoveCommand,
 } from "./commands/exceptions.js";
+import heartbeatCommand from "./commands/heartbeat.js";
 import {
 	learningApproveCommand,
 	learningExecuteCommand,
@@ -46,6 +47,11 @@ import {
 	learningIngestCommand,
 	learningKeygenCommand,
 } from "./commands/learning.js";
+import {
+	machineHooksInstallCommand,
+	machineHooksRemoveCommand,
+	machineHooksStatusCommand,
+} from "./commands/machine-hooks.js";
 import privacyScanCommand from "./commands/privacy.js";
 import {
 	profileListCommand,
@@ -409,6 +415,56 @@ program
 	.option("--json", "Emit a machine-readable report")
 	.option("-v, --verbose", "Explain each check (paths, reasons, key storage)")
 	.action((options) => doctorCommand(options));
+
+program
+	.command("heartbeat")
+	.description(
+		"Report whether each AI tool's AIDR hook is in place to the control plane (run hourly by the per-machine installers)",
+	)
+	.option("--json", "Print the measured report as JSON")
+	.option("--dry-run", "Measure and print; send nothing")
+	.option("--quiet", "Print only errors (for the scheduler)")
+	.action((options) => heartbeatCommand(options));
+
+const machineHooksProgram = program
+	.command("machine-hooks")
+	.description(
+		"Deploy AIDR hooks through each AI tool's system-wide managed policy so users cannot remove or disable them (administrator)",
+	);
+
+machineHooksProgram
+	.command("install")
+	.description(
+		"Register the hooks for every user of this machine (Claude Code managed settings, Codex system config)",
+	)
+	.option(
+		"--lock-other-hooks",
+		"Also make the hosts run only managed hooks (Claude Code allowManagedHooksOnly, Codex allow_managed_hooks_only)",
+	)
+	.option("--heartbeat", "Also schedule the hourly 'aidr heartbeat' for every user")
+	.option(
+		"--bundle-root <dir>",
+		"Installed AIDR bundle whose hook binaries the hosts run (default: this bundle)",
+	)
+	.option("--dry-run", "Show what would change; change nothing")
+	.option("--json", "Emit machine-readable results")
+	.action((options) => machineHooksInstallCommand(options));
+
+machineHooksProgram
+	.command("remove")
+	.description("Remove only AIDR's system-wide hook registrations")
+	.option("--heartbeat", "Also remove the scheduled heartbeat")
+	.option("--dry-run", "Show what would change; change nothing")
+	.option("--json", "Emit machine-readable results")
+	.action((options) => machineHooksRemoveCommand(options));
+
+machineHooksProgram
+	.command("status")
+	.description(
+		"Show where the system-wide AIDR hooks are registered and whether only administrators can change them",
+	)
+	.option("--json", "Emit machine-readable results")
+	.action((options) => machineHooksStatusCommand(options));
 
 program
 	.command("support-bundle")

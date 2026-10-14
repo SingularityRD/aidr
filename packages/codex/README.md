@@ -124,6 +124,22 @@ error. After installing, review and trust the hook through Codex's hook UI, or
 run with `--dangerously-bypass-hook-trust` in automation that already vets its
 hook sources.
 
+`aidr doctor` reports the trust state of every AIDR handler in the user's Codex
+home (`codex_hook_trust`): it fails when a handler has no trust record in
+`config.toml` (`[hooks.state."<path>:<event>:<group>:<handler>"]`) or is turned
+off there. It cannot recompute Codex's trust hash, so a recorded trust is
+reported as recorded, not proven.
+
+On a per-machine install the hook is better deployed through Codex's system
+config layer: `aidr machine-hooks install` merges the three handlers into
+`/etc/codex/hooks.json` (Windows: `%ProgramData%\OpenAI\Codex\hooks.json`).
+Codex treats hooks from that layer as managed: trusted without `/hooks` review
+and not switchable off from user config (codex-rs `rust-v0.141.0`,
+`hooks/src/engine/discovery.rs`). `--lock-other-hooks` also sets
+`allow_managed_hooks_only = true` in the system `requirements.toml`. A crashed,
+timed-out or killed hook still lets the call through. See
+[docs/operations/hook-tamper-resistance.md](../../docs/operations/hook-tamper-resistance.md).
+
 ## How this connector handles Codex's fail-open behaviour
 
 This matters more than any other detail here. Verified against `codex-cli`

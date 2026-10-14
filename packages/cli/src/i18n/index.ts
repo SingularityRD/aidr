@@ -67,7 +67,10 @@ export const HELP_GROUPS = [
 	{ heading: "Setup:", commands: ["assistant", "setup", "update", "config", "uninstall"] },
 	{ heading: "Daily use:", commands: ["status", "verify", "audit", "privacy", "scan"] },
 	{ heading: "Approvals:", commands: ["pending", "approve", "allowlist", "exception"] },
-	{ heading: "Diagnostics:", commands: ["doctor", "support-bundle", "simulate", "coverage"] },
+	{
+		heading: "Diagnostics:",
+		commands: ["doctor", "heartbeat", "support-bundle", "simulate", "coverage"],
+	},
 	{
 		heading: "Advanced:",
 		commands: [
@@ -80,6 +83,7 @@ export const HELP_GROUPS = [
 			"restore",
 			"profile",
 			"canary",
+			"machine-hooks",
 		],
 	},
 ] as const;

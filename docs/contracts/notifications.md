@@ -33,6 +33,7 @@ re-validates each field against a fixed allow-list before it renders a message
 | `notification.test` | Console **Send test** | always (one attempt, no retries) |
 | `agent.offline` | Scheduled scan: an enrolled agent (`public.agents`) whose `last_seen` is older than the channel's threshold | `agent_offline` with `agent_offline_minutes` (5–10080). One alert per agent per outage; only outages that begin after the filter was armed (created, enabled or switched on) alert |
 | `agent.recovered` | Scheduled scan: the agent of an alerted outage reported again | `agent_offline`; `counts.offline_minutes` is the outage length |
+| `agent.unprotected` | A device heartbeat (`connector-heartbeat`, migration `20261014000200`): a connector last reported `protected` is now `hook_missing`, `hook_disabled`, `hook_untrusted` or `hook_broken`, or the count of blocked "Disable protection" attempts on a policy-locked editor rose (`disable_attempted`) | `agent_offline` (the agent-health filter); `category` = connector id, `connector_state` = the state; one alert per agent, connector, state and episode. A stopped heartbeat raises `agent.offline` |
 | `governance.review_overdue` | Scheduled scan: AI register items (not retired) past `review_due_at` | `governance_review_overdue`; a count, at most once per channel per UTC day, only when the count is non-zero |
 | `governance.intake_requested` | A new AI intake request (same transaction) | `governance_intake_requested`; `subject.request_id`, `category` = asset type |
 | `governance.change_pending` | A new four-eyes policy change request (same transaction) | `governance_change_pending`; `subject.request_id`, `category` = change kind |
@@ -133,6 +134,7 @@ included):
 | `counts.items` | integer ≥ 0 or null | `governance.review_overdue`, `governance.exception_expiring` |
 | `counts.window_days` | integer 1–90 or null | `governance.exception_expiring` |
 | `counts.offline_minutes` | integer ≥ 0 or null | `agent.offline` (threshold), `agent.recovered` (outage length) |
+| `connector_state` | `hook_missing`, `hook_disabled`, `hook_untrusted`, `hook_broken`, `disable_attempted` or null | `agent.unprotected` only |
 | `period` | `{ "from", "to" }` date-times or null | `governance.digest` |
 | `digest` | object of integers or null | `governance.digest`: `agents_enrolled`, `agents_active`, `decisions_allow`, `decisions_ask`, `decisions_deny`, `approvals_requested`, `approvals_pending`, `incidents_reported`, `incidents_open`, `incidents_open_critical`, `browser_blocked`, `browser_masked`, `mcp_not_approved`, `reviews_overdue`, `intake_pending`, `policy_changes_pending` |
 

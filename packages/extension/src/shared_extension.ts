@@ -14,6 +14,8 @@ import {
 	loadManagedState,
 	managedStatePath,
 	pruneOrphanedTmpFiles,
+	readProtectionLock,
+	recordProtectionEvent,
 	resolvePath,
 	runSessionStart,
 	versionCheckEndpoint,
@@ -54,7 +56,11 @@ export function activateManagedHooksExtension(
 	const version = (context.extension.packageJSON as Record<string, unknown>).version as string;
 	const hostVersion = detectHostVersion(host, vscode.version, safeAppRoot());
 	const hostAssessment = assessHostVersion(host, hostVersion);
-	void repairInstalledHooks(context, target);
+	const lock = readProtectionLock();
+	publishProtectionLock(lock.locked);
+	void repairInstalledHooks(context, target).then(() =>
+		lock.locked ? restoreLockedProtection(context, target, host) : undefined,
+	);
 	warnOnceForUnverifiedHost(context, hostAssessment);
 	if (version) {
 		void checkForExtensionUpdate(version, host);
@@ -140,8 +146,20 @@ export function activateManagedHooksExtension(
 	context.subscriptions.push(
 		vscode.commands.registerCommand("aidr.disableProtection", async () => {
 			await withErrorBoundary(async () => {
+				// Read the machine policy at the moment of the request: a lock set
+				// after activation still applies, and a lifted one no longer does.
+				if (readProtectionLock().locked) {
+					await recordProtectionEvent(host, "disable_blocked");
+					void vscode.window.showWarningMessage(
+						localize(
+							"Singularity AIDR protection is locked by your organization's policy and cannot be turned off here. This attempt was recorded and is reported to your administrator.",
+						),
+					);
+					return;
+				}
 				const scope = getScope(target.scopeSettingKey);
 				const configPath = await target.installer.removeManagedHooks(scope);
+				await recordProtectionEvent(host, "disabled_by_user");
 				vscode.window.showInformationMessage(
 					localize("Singularity AIDR managed hooks removed from {0}.", configPath),
 				);
@@ -287,6 +305,54 @@ async function repairInstalledHooks(
 		const message = error instanceof Error ? error.message : String(error);
 		void vscode.window.showWarningMessage(
 			`Singularity AIDR could not verify its installed hooks (${message}). Run Show hook health.`,
+		);
+	}
+}
+
+/**
+ * Hide "Disable protection" from the command palette while the machine policy
+ * locks it (package.json `menus.commandPalette`). The command itself re-checks
+ * the policy, so invoking it another way is still refused and recorded.
+ */
+function publishProtectionLock(locked: boolean): void {
+	try {
+		void Promise.resolve(
+			vscode.commands.executeCommand("setContext", "aidr.protectionLocked", locked),
+		).catch(() => undefined);
+	} catch {
+		// A host without setContext still refuses the command at run time.
+	}
+}
+
+/**
+ * With the protection lock set, a hook registration the user deleted by hand
+ * is put back on activation (configured scope only) and counted, so the
+ * heartbeat reports it. Never throws: activation must not fail on it.
+ */
+async function restoreLockedProtection(
+	context: vscode.ExtensionContext,
+	target: ExtensionTarget,
+	host: ExtensionHookHost,
+): Promise<void> {
+	try {
+		const scope = getScope(target.scopeSettingKey);
+		const health = await target.installer.getHookHealth({ context, scope });
+		if (health.installedEvents.length > 0) return;
+		const restored = await target.installer.installManagedHooks({ context, scope });
+		await recordProtectionEvent(host, "hook_restored");
+		void vscode.window.showWarningMessage(
+			localize(
+				"Singularity AIDR hooks were missing and have been restored at {0}: your organization's policy keeps protection on.",
+				restored.configPath,
+			),
+		);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		void vscode.window.showWarningMessage(
+			localize(
+				"Singularity AIDR could not restore its hooks ({0}). Run Enable protection.",
+				message,
+			),
 		);
 	}
 }

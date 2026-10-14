@@ -215,7 +215,13 @@ describe("Windows MSI inputs", () => {
 		assert.match(wxs, /<CustomAction Id="AidrSetupForUser"[\s\S]*?ExeCommand="setup"[\s\S]*?Impersonate="yes"/);
 		// Never as LocalSystem: every action of the execute sequence (setup,
 		// uninstall and the company-connection handoff) is guarded on the SYSTEM SID.
-		const customs = [...sequence(wxs, "InstallExecuteSequence").matchAll(/<Custom\b[^>]*>/g)].map((m) => m[0]);
+		// The machine-hooks actions are the one deliberate exception: they write
+		// system-wide policy, run elevated (Impersonate="no") and must also run
+		// under an Intune/SCCM install in the system context. They run nothing
+		// for a user.
+		const customs = [...sequence(wxs, "InstallExecuteSequence").matchAll(/<Custom\b[^>]*>/g)]
+			.map((m) => m[0])
+			.filter((custom) => !/Action="AidrMachineHooks/.test(custom));
 		assert.equal(customs.length, 6);
 		for (const custom of customs) assert.match(custom, /UserSID &lt;&gt; &quot;S-1-5-18&quot;/, custom);
 		assert.match(wxs, /AIDR_OPERATOR_NONINTERACTIVE=1&amp;&amp; &quot;\[#AidrExe\]&quot; uninstall --yes --keep-data/);
@@ -351,6 +357,34 @@ describe("Windows MSI install wizard", () => {
 		assert.match(tr.strings.get("AidrExitQuickStart"), /href="\[#AidrQuickStartTr\]">/);
 		assert.match(wxs, /File Id="AidrQuickStartEn"[^>]*quick-start\.en-US\.html/);
 		assert.match(wxs, /File Id="AidrQuickStartTr"[^>]*quick-start\.tr-TR\.html/);
+	});
+
+	test("a per-machine install deploys the system-wide hooks elevated, and removes them on final uninstall only (C10)", () => {
+		const execute = sequence(wxs, "InstallExecuteSequence");
+		for (const [id, command] of [
+			["AidrMachineHooksInstall", "machine-hooks install --heartbeat"],
+			["AidrMachineHooksInstallLocked", "machine-hooks install --heartbeat --lock-other-hooks"],
+			["AidrMachineHooksRemove", "machine-hooks remove --heartbeat"],
+		]) {
+			assert.deepEqual(element(wxs, "CustomAction", id), {
+				Id: id,
+				FileRef: "AidrExe",
+				ExeCommand: command,
+				Execute: "deferred",
+				Impersonate: "no",
+				Return: "ignore",
+			});
+			const custom = attrs(new RegExp(`<Custom Action="${id}"[^>]*>`).exec(execute)[0]);
+			assert.match(custom.Condition, /ALLUSERS=1/, id);
+		}
+		const remove = attrs(/<Custom Action="AidrMachineHooksRemove"[^>]*>/.exec(execute)[0]);
+		assert.match(remove.Condition, /REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE/);
+		const install = attrs(/<Custom Action="AidrMachineHooksInstall"[^>]*>/.exec(execute)[0]);
+		assert.match(install.Condition, /AIDR_MACHINE_HOOKS <> "0"/);
+		assert.equal(element(wxs, "Property", "AIDR_MACHINE_HOOKS").Value, "1");
+		const lock = /<Component Id="ProtectionLocked"[\s\S]*?<\/Component>/.exec(wxs)[0];
+		assert.match(lock, /Condition="ALLUSERS=1 AND AIDR_PROTECTION_LOCKED=1"/);
+		assert.match(lock, /Key="Software\\Policies\\Singularity AIDR" Name="protection_locked" Type="integer" Value="1"/);
 	});
 
 	test("a silent install behaves as before: same setup action, no new required property", () => {
@@ -511,7 +545,9 @@ describe("Linux packages", () => {
 			const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !["SUDO_USER", "AIDR_INSTALL_SKIP_SETUP", "AIDR_MDM_MANAGED"].includes(name)));
 			const result = spawnSync("sh", [join(prefix, "libexec/package-hook.sh"), ...args], {
 				encoding: "utf8",
-				env: { ...clean, AIDR_PREFIX: prefix, AIDR_PACKAGE_HOOK_TARGET_HOME: home, AIDR_MDM_MARKER: mdmMarker, ...env },
+				// System-wide hooks are off unless a test asks for them; HOME points at
+				// the temp home so a root run of the fake binary logs there.
+				env: { ...clean, AIDR_PREFIX: prefix, AIDR_PACKAGE_HOOK_TARGET_HOME: home, AIDR_MDM_MARKER: mdmMarker, AIDR_MACHINE_HOOKS: "0", HOME: home, ...env },
 			});
 			const log = existsSync(join(home, "aidr-calls.log")) ? readFileSync(join(home, "aidr-calls.log"), "utf8") : "";
 			return { ...result, log, home };
@@ -563,6 +599,24 @@ describe("Linux packages", () => {
 			assert.equal(existsSync(mdmMarker), true, "an upgrade keeps the marker");
 			hook(["preremove", "1"], {});
 			assert.equal(existsSync(mdmMarker), false);
+		});
+
+		test("as root, postinstall deploys the system-wide hooks and final removal takes them away (C10)", () => {
+			const install = hook(["postinstall"], { AIDR_INSTALL_SKIP_SETUP: "1", AIDR_MACHINE_HOOKS: "1", AIDR_LOCK_OTHER_HOOKS: "1" });
+			assert.equal(install.status, 0, install.stderr);
+			if (asRoot) {
+				assert.match(install.log, /^0 HOME=\S+ OP= machine-hooks install --heartbeat --lock-other-hooks$/m);
+			} else {
+				assert.equal(install.log, "");
+				assert.match(install.stdout, /system-wide hooks not deployed \(not root\)/);
+			}
+			const upgrade = hook(["preremove", "0"], { AIDR_MACHINE_HOOKS: "1" });
+			assert.equal(upgrade.log, "", "an upgrade keeps the system-wide hooks");
+			const removal = hook(["preremove", "1"], { AIDR_MACHINE_HOOKS: "1" });
+			assert.equal(removal.status, 0);
+			if (asRoot) assert.match(removal.log, /^0 HOME=\S+ OP= machine-hooks remove --heartbeat$/m);
+			const off = hook(["postinstall"], { AIDR_INSTALL_SKIP_SETUP: "1" });
+			assert.equal(off.log, "", "AIDR_MACHINE_HOOKS=0 deploys nothing");
 		});
 
 		test("preremove uninstalls with operator confirmation on final removal only", { skip: !canSwitch && "runuser not available" }, () => {

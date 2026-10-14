@@ -361,6 +361,34 @@ describe("agent and governance alerts", () => {
 		for (const text of [...rendered(offline), ...rendered(recovered)]) expect(text).not.toMatch(SENSITIVE);
 	});
 
+	it("announces an unprotected connector with its measured hook state only", () => {
+		const removed = buildNotification(row("agent.unprotected", {
+			agent_id: AGENT, category: "claude-code", connector_state: "hook_missing", severity: "high",
+			occurred_at: "2026-10-14T05:00:00.000Z",
+		}), "https://aidr.example.com");
+		expect(removed).toMatchObject({
+			event: "agent.unprotected",
+			severity: "high",
+			category: "claude-code",
+			connector_state: "hook_missing",
+			subject: { agent_id: AGENT },
+			links: { dashboard: "https://aidr.example.com/agents" },
+		});
+		expect(emailContent(removed).subject).toBe("[AIDR] AIDR hook removed: claude-code");
+		expect(emailContent(removed).text).toContain("Hook state: hook_missing");
+		const attempt = buildNotification(row("agent.unprotected", {
+			agent_id: AGENT, category: "cursor", connector_state: "disable_attempted",
+		}), null);
+		expect(slackPayload(attempt).text).toBe("Attempt to turn off locked protection: cursor");
+		// An unknown state is dropped, never echoed to the receiver.
+		const odd = buildNotification(row("agent.unprotected", { agent_id: AGENT, connector_state: "rm -rf /" }), null);
+		expect(odd.connector_state).toBeNull();
+		for (const text of [...rendered(removed), ...rendered(attempt), ...rendered(odd)]) expect(text).not.toMatch(SENSITIVE);
+		// Other events keep their published v1 body without the new key.
+		const offline = buildNotification(row("agent.offline", { agent_id: AGENT, connector_state: "hook_missing" }), null);
+		expect("connector_state" in offline).toBe(false);
+	});
+
 	it("renders governance events with counts, request ids and governance deep links", () => {
 		const overdue = buildNotification(row("governance.review_overdue", { items_count: 3, category: "ai_register" }), "https://aidr.example.com");
 		expect(notificationTitleOf(overdue)).toBe("3 AI register items are past the review date");

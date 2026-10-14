@@ -155,6 +155,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.policy-ack]
 verify_jwt = false
+[functions.connector-heartbeat]
+# Tenant API key (the enrolled device key); see supabase/functions/connector-heartbeat.
+verify_jwt = false
 [functions.browser-guard-policy]
 # Signed Browser Guard policy (Shadow AI decisions). Browser Guard authenticates with
 # its hash-only telemetry key (scope ingest:browser_guard or tenant), not a Supabase

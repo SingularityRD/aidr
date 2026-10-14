@@ -1411,6 +1411,22 @@ export {
 	scanPromptSafety,
 	type TenantPromptSafetyPolicy,
 } from "./prompt-safety.js";
+export type {
+	ProtectionEventConnector,
+	ProtectionEventCounts,
+	ProtectionEventKind,
+	ProtectionEvents,
+	ProtectionLock,
+	ProtectionLockDeps,
+} from "./protection-lock.js";
+export {
+	LINUX_MACHINE_POLICY_PATH,
+	PROTECTION_LOCKED_KEY,
+	protectionEventsPath,
+	readProtectionEvents,
+	readProtectionLock,
+	recordProtectionEvent,
+} from "./protection-lock.js";
 export {
 	scanCachedProvisionedOutput,
 	scanProvisionedOutput,

@@ -95,7 +95,8 @@ function regExecutable(env: NodeJS.ProcessEnv = process.env): string {
 	);
 }
 
-function defaultRegQuery(key: string, value: string): string | null {
+/** `reg query <key> /v <value>` stdout, or null when absent or unreadable (Windows only). */
+export function defaultRegQuery(key: string, value: string): string | null {
 	try {
 		const result = spawnSync(regExecutable(), ["query", key, "/v", value], {
 			encoding: "utf8",

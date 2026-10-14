@@ -222,7 +222,10 @@ HTTPS webhook (URL plus HMAC secret) or 1–10 e-mail recipients — and its
 filters: new incidents at or above a minimum severity, critical runtime denies,
 approval requests (`ask` verdicts; approval itself stays out-of-band) and
 spikes of blocked Browser Guard prompts (threshold within a window). At most 20
-channels per workspace.
+channels per workspace. The agent-health filter (`agent_offline`) also delivers
+`agent.unprotected` when a device's heartbeat reports that an AI tool's AIDR hook
+was removed, disabled or is not trusted
+([`docs/operations/hook-tamper-resistance.md`](operations/hook-tamper-resistance.md)).
 
 **Write-only destinations.** The `notification-channels` Edge Function
 validates a destination (https only, provider host allow-list for Slack/Teams,

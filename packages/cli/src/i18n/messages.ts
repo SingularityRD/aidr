@@ -363,6 +363,41 @@ export const CLI_EN = {
 	"simulate.html.description": "Description",
 	"simulate.html.footer":
 		"This report reflects locally shipped detection rules evaluated against defanged test fixtures. No commands were executed and no network requests were made during the self-test.",
+	"heartbeat.none": "Heartbeat: no supported AI tool was found on this device.",
+	"heartbeat.line": "  {connector}: {state} ({enforcement})",
+	"heartbeat.localMode":
+		"Heartbeat: local mode, so nothing was sent. Hook removal alerts need a managed (enrolled) installation.",
+	"heartbeat.dryRun": "Heartbeat: dry run, nothing was sent.",
+	"heartbeat.sent": "Heartbeat sent for {count} AI tool(s).",
+	"heartbeat.failed":
+		"Heartbeat could not be sent ({error}). The control plane raises 'agent offline' when heartbeats stop.",
+	"machineHooks.noBundle":
+		"machine-hooks needs the installed AIDR bundle (run it as the bundle's 'aidr', or pass --bundle-root <dir>).",
+	"machineHooks.needsAdmin":
+		"machine-hooks writes system-wide host policy: run it as root (Linux) or from an elevated prompt (Windows).",
+	"machineHooks.installTitle": "System-wide AIDR hooks (apply to every user of this machine):",
+	"machineHooks.precedenceNote":
+		'Note: if Claude Code policy also comes from server-managed settings, MDM or the HKLM registry, that source wins over files; add these hooks there or set managedSourcesBehavior to "merge" (Claude Code 2.1.242+).',
+	"machineHooks.editorsNote":
+		"Cursor and VS Code: set protection_locked in the AIDR machine policy so the extension refuses 'Disable protection' and restores removed hooks.",
+	"machineHooks.statusRegistered":
+		"  {host}: registered in {path}; other hooks blocked: {locked}; admin-only file: {tamper}",
+	"machineHooks.statusAbsent": "  {host}: not registered in {path}",
+	"machineHooks.lockedYes": "yes",
+	"machineHooks.lockedNo": "no",
+	"machineHooks.tamperYes": "yes",
+	"machineHooks.tamperNo": "NO (a non-administrator can change it)",
+	"machineHooks.tamperUnknown": "not measured on this platform (check the file ACL)",
+	"doctor.codexTrustUntrusted":
+		"Codex has not trusted the AIDR hook ({events}): Codex skips an untrusted hook without warning, so these calls are not inspected.",
+	"doctor.codexTrustDisabled":
+		"The AIDR Codex hook is turned off in Codex ({events}); these calls are not inspected.",
+	"doctor.codexTrustRecorded":
+		"Codex has a trust record for the AIDR hook ({events}); AIDR cannot recompute Codex's hash, so run /hooks once if the hook changed.",
+	"doctor.codexTrustManaged":
+		"The AIDR Codex hook is deployed by machine policy; Codex trusts it without review.",
+	"doctor.codexTrustFix":
+		"Fix: open Codex, run /hooks and trust the AIDR hooks, or have an administrator run 'aidr machine-hooks install' so Codex trusts them by policy.",
 } as const;
 
 export type CliMessageKey = keyof typeof CLI_EN;
@@ -728,4 +763,40 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"simulate.html.description": "Açıklama",
 	"simulate.html.footer":
 		"Bu rapor, yerelde gelen tespit kurallarının zararsızlaştırılmış test örnekleri üzerindeki sonucunu gösterir. Öz sınama sırasında hiçbir komut çalıştırılmadı ve hiçbir ağ isteği yapılmadı.",
+	"heartbeat.none": "Sinyal: bu cihazda desteklenen bir yapay zekâ aracı bulunamadı.",
+	"heartbeat.line": "  {connector}: {state} ({enforcement})",
+	"heartbeat.localMode":
+		"Sinyal: yerel kip, hiçbir şey gönderilmedi. Kanca kaldırma uyarıları için yönetilen (kayıtlı) kurulum gerekir.",
+	"heartbeat.dryRun": "Sinyal: deneme çalıştırması, hiçbir şey gönderilmedi.",
+	"heartbeat.sent": "{count} yapay zekâ aracı için sinyal gönderildi.",
+	"heartbeat.failed":
+		"Sinyal gönderilemedi ({error}). Sinyaller kesilirse yönetim paneli 'ajan çevrim dışı' uyarısı verir.",
+	"machineHooks.noBundle":
+		"machine-hooks kurulu AIDR paketine ihtiyaç duyar (paketin 'aidr' dosyasıyla çalıştırın ya da --bundle-root <dizin> verin).",
+	"machineHooks.needsAdmin":
+		"machine-hooks sistem geneli araç ilkesini yazar: root olarak (Linux) ya da yönetici komut isteminden (Windows) çalıştırın.",
+	"machineHooks.installTitle":
+		"Sistem geneli AIDR kancaları (bu makinedeki her kullanıcıya uygulanır):",
+	"machineHooks.precedenceNote":
+		'Not: Claude Code ilkesi ayrıca sunucu tarafı yönetilen ayarlardan, MDM\'den ya da HKLM kayıt defterinden geliyorsa o kaynak dosyalardan önce gelir; bu kancaları oraya ekleyin ya da managedSourcesBehavior değerini "merge" yapın (Claude Code 2.1.242+).',
+	"machineHooks.editorsNote":
+		"Cursor ve VS Code: eklentinin 'Korumayı kapat' komutunu reddetmesi ve silinen kancaları geri koyması için AIDR makine ilkesinde protection_locked değerini açın.",
+	"machineHooks.statusRegistered":
+		"  {host}: {path} içinde kayıtlı; diğer kancalar engelli: {locked}; yalnızca yönetici değiştirebilir: {tamper}",
+	"machineHooks.statusAbsent": "  {host}: {path} içinde kayıtlı değil",
+	"machineHooks.lockedYes": "evet",
+	"machineHooks.lockedNo": "hayır",
+	"machineHooks.tamperYes": "evet",
+	"machineHooks.tamperNo": "HAYIR (yönetici olmayan biri değiştirebilir)",
+	"machineHooks.tamperUnknown": "bu platformda ölçülmedi (dosya izinlerini denetleyin)",
+	"doctor.codexTrustUntrusted":
+		"Codex, AIDR kancasına güvenmiyor ({events}): Codex güvenilmeyen kancayı uyarmadan atlar, bu çağrılar denetlenmez.",
+	"doctor.codexTrustDisabled":
+		"AIDR Codex kancası Codex içinde kapatılmış ({events}); bu çağrılar denetlenmez.",
+	"doctor.codexTrustRecorded":
+		"Codex'te AIDR kancası için güven kaydı var ({events}); AIDR, Codex'in özetini yeniden hesaplayamaz, kanca değiştiyse /hooks komutunu bir kez çalıştırın.",
+	"doctor.codexTrustManaged":
+		"AIDR Codex kancası makine ilkesiyle kurulmuş; Codex ona incelemeden güvenir.",
+	"doctor.codexTrustFix":
+		"Çözüm: Codex'i açın, /hooks ile AIDR kancalarına güvenin ya da bir yöneticiye 'aidr machine-hooks install' komutunu çalıştırtın; Codex ilke yoluyla güvenir.",
 };

@@ -23,5 +23,8 @@
   "tool output inspection: blocks further model processing": "araç çıktısı incelemesi: modelin çıktıyı işlemeye devam etmesini engeller",
   "assistant response inspection: unsupported by the host hook API": "asistan yanıtı incelemesi: ana makinenin hook API'si desteklemiyor",
   "output inspection limit: {0} bytes; larger output is coverage-limited, never clean": "çıktı inceleme sınırı: {0} bayt; daha büyük çıktı kısmi kapsamla incelenir, asla temiz sayılmaz",
-  "Singularity AIDR: {0}": "Singularity AIDR: {0}"
+  "Singularity AIDR: {0}": "Singularity AIDR: {0}",
+  "Singularity AIDR protection is locked by your organization's policy and cannot be turned off here. This attempt was recorded and is reported to your administrator.": "Singularity AIDR koruması kuruluşunuzun ilkesiyle kilitlendi ve buradan kapatılamaz. Bu deneme kaydedildi ve yöneticinize bildirilir.",
+  "Singularity AIDR hooks were missing and have been restored at {0}: your organization's policy keeps protection on.": "Singularity AIDR kancaları eksikti ve {0} konumuna geri yüklendi: kuruluşunuzun ilkesi korumayı açık tutar.",
+  "Singularity AIDR could not restore its hooks ({0}). Run Enable protection.": "Singularity AIDR kancalarını geri yükleyemedi ({0}). Korumayı etkinleştir komutunu çalıştırın."
 }
