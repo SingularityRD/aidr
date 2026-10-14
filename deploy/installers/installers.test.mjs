@@ -49,7 +49,7 @@ import {
 	packageVersion,
 	rpmSpec,
 } from "./linux/build-linux-packages.mjs";
-import { MSI_CULTURES, msiInputs } from "./windows/msi-inputs.mjs";
+import { MSI_CULTURES, msiInputs, WIZARD_URL_PATTERN, wizardCustomerName } from "./windows/msi-inputs.mjs";
 import { bmpInfo, renderSvgToBmp, WIZARD_BITMAPS } from "./windows/ui/render-bitmaps.mjs";
 
 const scratch = [];
@@ -201,7 +201,9 @@ describe("Windows MSI inputs", () => {
 		// A new ProductCode per build (WiX's default before), shared by every culture of that build.
 		assert.match(signed.productCode, /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/);
 		assert.notEqual(signed.productCode, unsigned.productCode);
-		assert.deepEqual(signed.cultures, MSI_CULTURES);
+		assert.deepEqual(signed.cultures, MSI_CULTURES.map((culture) => ({ ...culture, customerName: null })));
+		assert.equal(signed.customerServer, null);
+		assert.equal(signed.customerUpdatesUntil, null);
 		assert.throws(() => msiInputs({ seaDir: sea, trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0", signing: "" }), /--signing/);
 		assert.throws(() => msiInputs({ seaDir: fakeSeaBundle(), trustKey: key.path, trustKeyFingerprint: key.fingerprint, version: "0.6.0", signing: "signed" }), /not win32/);
 		assert.throws(() => msiInputs({ seaDir: sea, trustKey: key.path, trustKeyFingerprint: "1".repeat(64), version: "0.6.0", signing: "signed" }), /fingerprint mismatch/);
@@ -742,6 +744,94 @@ describe("per-customer Windows installer", () => {
 		assert.match(ps1, /'-d', "CustomerPacket=\$packet"/);
 		assert.match(ps1, /'-d', "ProductName=\$\(\$inputs\.productName\)"/);
 		assert.match(ps1, /Copy-Item -LiteralPath \(Resolve-Path \$CustomerPacket\)\.Path -Destination \$packet[\s\S]*--customer-packet', \$packet/);
+	});
+
+	test("the wizard names the customer, its company address and the update date from the packet", () => {
+		const base = { seaDir: fakeSeaBundle({ platform: "win32" }), trustKey: releaseKey.path, trustKeyFingerprint: releaseKey.fingerprint, version: "0.6.0", signing: "signed" };
+		const license = { format: "aidr-license-v1", key_id: "vendor-2026", payload: { customer_id: "bilgem", expires_at: "2027-01-01T00:00:00Z", grace_days: 30 }, sig: "AA==" };
+		const inputs = msiInputs({
+			...base,
+			customerPacket: customerPacket({ payload: { license, control_plane_url: "https://aidr.bilgem.example/" } }),
+		});
+		// Each culture gets the name its code page holds: Turkish letters in the Turkish wizard,
+		// spelled in ASCII in the English one (Windows-1252 has no İ).
+		assert.deepEqual(
+			inputs.cultures.map((c) => [c.culture, c.customerName]),
+			[
+				["en-US", "TUBITAK BILGEM"],
+				["tr-TR", "TÜBİTAK BİLGEM"],
+			],
+		);
+		assert.equal(inputs.customerServer, "https://aidr.bilgem.example/");
+		assert.equal(inputs.customerUpdatesUntil, "2027-01-31", "expires_at + grace_days");
+		// No address, no grace days: the generic company page, and no update line.
+		const plain = msiInputs({ ...base, customerPacket: customerPacket() });
+		assert.equal(plain.customerServer, null);
+		assert.equal(plain.customerUpdatesUntil, null);
+		// An address the enrollment handoff would refuse fails the build, not the endpoint.
+		for (const url of ["https://aidr.example/?x=1", "https://user@aidr.example/"]) {
+			assert.throws(() => msiInputs({ ...base, customerPacket: customerPacket({ payload: { control_plane_url: url } }) }), /not an address the installer accepts/);
+		}
+		assert.equal(WIZARD_URL_PATTERN.source, /^https:\/\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:\/[A-Za-z0-9._~%/-]*)?$/u.source);
+		const cs = windowsFile("ca/EnrollmentActions.cs");
+		assert.equal(new RegExp('const string UrlPattern = @"([^"]*)"').exec(cs)[1], WIZARD_URL_PATTERN.source.replaceAll("\\/", "/"));
+		// Never text WiX would expand; else the customer label.
+		assert.equal(wizardCustomerName("Acme $(var.ProductCode)", "ACME", 1252), "ACME");
+		assert.equal(wizardCustomerName("Acme !(loc.AidrDialogTitle)", "ACME", 1254), "ACME");
+		assert.equal(wizardCustomerName("北京", "BEIJING", 1254), "BEIJING");
+		assert.equal(wizardCustomerName(null, "BILGEM", 1252), "BILGEM");
+		// build-msi defines the variables only when set, the name once per culture build.
+		assert.match(ps1, /if \(\$inputs\.customerServer\) \{ \$common \+= @\('-d', "CustomerServer=/);
+		assert.match(ps1, /if \(\$inputs\.customerUpdatesUntil\) \{ \$common \+= @\('-d', "CustomerUpdatesUntil=/);
+		assert.match(ps1, /if \(\$culture\.customerName\) \{ \$customerName = @\('-d', "CustomerName=\$\(\$culture\.customerName\)"\) \}/);
+	});
+
+	test("the customer company page hands the packet's address to setup like a typed one", () => {
+		const ui = windowsFile("ui/AidrUI.wxs");
+		for (const [variable, property] of [
+			["CustomerName", "AidrCustomerName"],
+			["CustomerServer", "AidrCustomerServer"],
+			["CustomerUpdatesUntil", "AidrUpdatesUntil"],
+		]) {
+			assert.match(ui, new RegExp(`<\\?ifdef ${variable} \\?>\\s*<Property Id="${property}" Value="\\$\\(var\\.${variable}\\)" />\\s*<\\?endif\\?>`), variable);
+			assert.match(property, /[a-z]/, "private: a command line cannot set it");
+		}
+		// A command-line ENROLLMENT_URL wins over the packet (the generic company page then shows it).
+		assert.deepEqual(element(ui, "SetProperty", "AidrUsePacketServer"), {
+			Id: "AidrUsePacketServer",
+			Value: "1",
+			Sequence: "ui",
+			After: "AppSearch",
+			Condition: "AidrCustomerServer AND NOT ENROLLMENT_URL",
+		});
+		const scopeNext = /<Dialog Id="AidrScopeDlg"[\s\S]*?<Control Id="Next"[\s\S]*?<\/Control>/.exec(ui)[0];
+		assert.match(scopeNext, /Value="AidrCompanyDlg"[^>]*Condition="NOT AidrUsePacketServer"/);
+		assert.match(scopeNext, /Value="AidrCustomerCompanyDlg"[^>]*Condition="AidrUsePacketServer"/);
+		assert.match(scopeNext, /Value="\[AIDR_DEFAULT_CONTROL_PLANE\]"[^>]*Condition="NOT ENROLLMENT_URL AND NOT AidrUsePacketServer"/);
+		const readyBack = /<Dialog Id="AidrReadyDlg"[\s\S]*?<Control Id="Back"[\s\S]*?<\/Control>/.exec(ui)[0];
+		assert.match(readyBack, /Value="AidrCompanyDlg"[^>]*Condition="NOT AidrUsePacketServer"/);
+		assert.match(readyBack, /Value="AidrCustomerCompanyDlg"[^>]*Condition="AidrUsePacketServer"/);
+		const page = /<Dialog Id="AidrCustomerCompanyDlg"[\s\S]*?<\/Dialog>/.exec(ui)[0];
+		const code = attrs(/<Control Id="CustomerCode"[^>]*>/.exec(page)[0]);
+		assert.deepEqual([code.Property, code.Password], ["ENROLLMENT_CODE", "yes"]);
+		const next = /<Control Id="Next"[\s\S]*?<\/Control>/.exec(page)[0];
+		const events = [...next.matchAll(/<Publish\b[^>]*>/g)].map((m) => attrs(m[0]));
+		assert.deepEqual(
+			events.map((e) => [e.Property ?? e.Event, e.Value, e.Condition]),
+			[
+				["ENROLLMENT_URL", "[AidrCustomerServer]", undefined],
+				["DoAction", "AidrValidateEnrollmentInput", undefined],
+				["SpawnDialog", "AidrEnrollmentInvalidDlg", "AIDR_ENROLLMENT_ERROR"],
+				["NewDialog", "AidrReadyDlg", "NOT AIDR_ENROLLMENT_ERROR"],
+			],
+		);
+		// The connection is "company", so Install never clears the address it set.
+		assert.equal(element(ui, "SetProperty", "AIDR_CONNECTION").Condition, "ENROLLMENT_URL OR ENROLLMENT_CODE OR AidrCustomerServer");
+		// The generic build shows none of it.
+		for (const id of ["Customer", "UpdatesUntil"]) {
+			const control = attrs(new RegExp(`<Control Id="${id}"[^>]*>`).exec(/<Dialog Id="AidrReadyDlg"[\s\S]*?<\/Dialog>/.exec(ui)[0])[0]);
+			assert.match(control.HideCondition, /^NOT Aidr/, id);
+		}
 	});
 
 	test("the setup EXE wraps exactly the signed MSI and is Authenticode-signed engine first", () => {

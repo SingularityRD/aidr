@@ -210,7 +210,25 @@ export function checkCustomerPacket(path, { expectedCustomerId } = {}) {
 	if (expectedCustomerId !== undefined && customerId !== checkCustomerId(expectedCustomerId)) {
 		throw new InstallerInputError(`the customer packet is for ${customerId}, not ${expectedCustomerId}`);
 	}
-	return { bytes, customerId, packetId: payload.packet_id, sha256: createHash("sha256").update(bytes).digest("hex") };
+	return {
+		bytes,
+		customerId,
+		packetId: payload.packet_id,
+		sha256: createHash("sha256").update(bytes).digest("hex"),
+		// What the install wizard shows; `aidr setup` re-checks all of it against the signature.
+		displayName: typeof payload.display_name === "string" ? payload.display_name : null,
+		controlPlaneUrl: typeof payload.control_plane_url === "string" ? payload.control_plane_url : null,
+		updatesUntil: licenseUpdatesUntil(payload.license.payload),
+	};
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** expires_at + grace_days as YYYY-MM-DD (UTC), or null when the license does not say. */
+function licenseUpdatesUntil(license) {
+	const expiresAt = Date.parse(license.expires_at);
+	if (!Number.isFinite(expiresAt) || !Number.isInteger(license.grace_days) || license.grace_days < 0) return null;
+	return new Date(expiresAt + license.grace_days * DAY_MS).toISOString().slice(0, 10);
 }
 
 /** The customer id as product and file names carry it (BILGEM, HAVELSAN-ANKARA). */

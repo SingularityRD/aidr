@@ -298,10 +298,16 @@ try {
     '-d', "HasCustomerPacket=$($inputs.hasCustomerPacket)",
     '-d', "CustomerPacket=$packet",
     '-d', "InstallerActionsDll=$actionsDll")
+  # Customer wizard pages (ui/AidrUI.wxs): defined only when the packet says so.
+  if ($inputs.customerServer) { $common += @('-d', "CustomerServer=$($inputs.customerServer)") }
+  if ($inputs.customerUpdatesUntil) { $common += @('-d', "CustomerUpdatesUntil=$($inputs.customerUpdatesUntil)") }
   $built = @{}
   foreach ($culture in $inputs.cultures) {
     $out = Join-Path $stage "aidr.$($culture.culture).msi"
-    Invoke-Checked 'wix' (@('build', (Join-Path $here 'aidr.wxs'), (Join-Path $here 'ui\AidrUI.wxs')) + $common +
+    # The customer's name in this culture's code page (msi-inputs.mjs wizardCustomerName).
+    $customerName = @()
+    if ($culture.customerName) { $customerName = @('-d', "CustomerName=$($culture.customerName)") }
+    Invoke-Checked 'wix' (@('build', (Join-Path $here 'aidr.wxs'), (Join-Path $here 'ui\AidrUI.wxs')) + $common + $customerName +
       @('-culture', $culture.culture, '-loc', (Join-Path $here "ui\aidr.$($culture.culture).wxl"),
         '-d', "AidrCulture=$($culture.culture)", '-o', $out))
     $built[$culture.culture] = $out

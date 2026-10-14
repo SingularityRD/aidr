@@ -44,9 +44,54 @@ const ACTIVE_SETUP_ID = "{0D9B6C2E-7A41-4F35-B8E2-5C3A91D0E6F4}";
  * one an embedded language transform named by its LCID (build-msi.ps1).
  */
 export const MSI_CULTURES = Object.freeze([
-	Object.freeze({ culture: "en-US", lcid: 1033 }),
-	Object.freeze({ culture: "tr-TR", lcid: 1055 }),
+	Object.freeze({ culture: "en-US", lcid: 1033, codepage: 1252 }),
+	Object.freeze({ culture: "tr-TR", lcid: 1055, codepage: 1254 }),
 ]);
+
+/**
+ * The company addresses the installer's enrollment handoff accepts
+ * (ca/EnrollmentActions.cs UrlPattern; installers.test.mjs keeps them equal).
+ */
+export const WIZARD_URL_PATTERN = /^https:\/\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:\/[A-Za-z0-9._~%/-]*)?$/u;
+const WIZARD_URL_MAX_LENGTH = 512;
+
+const codepageChars = new Map();
+/** The characters a Windows code page can hold (its MSI string tables are in it). */
+function charsOf(codepage) {
+	if (!codepageChars.has(codepage)) {
+		const decoded = new TextDecoder(`windows-${codepage}`).decode(Uint8Array.from({ length: 256 }, (_, i) => i));
+		codepageChars.set(codepage, new Set(decoded));
+	}
+	return codepageChars.get(codepage);
+}
+
+const TURKISH_TO_ASCII = { İ: "I", ı: "i", Ş: "S", ş: "s", Ğ: "G", ğ: "g", Ç: "C", ç: "c", Ö: "O", ö: "o", Ü: "U", ü: "u" };
+
+/**
+ * The customer's name as one wizard culture shows it: the packet's display_name
+ * when the culture's code page holds it, else with Turkish letters spelled in
+ * ASCII, else the customer label (BILGEM). Never text the WiX preprocessor or
+ * binder would expand.
+ */
+export function wizardCustomerName(displayName, label, codepage) {
+	const fits = (text) =>
+		!/[$!]\(/u.test(text) && !/[\u0000-\u001f\u007f]/u.test(text) && [...text].every((ch) => charsOf(codepage).has(ch));
+	if (displayName && fits(displayName)) return displayName;
+	const ascii = displayName?.replace(/[İıŞşĞğÇçÖöÜü]/gu, (ch) => TURKISH_TO_ASCII[ch]);
+	if (ascii && fits(ascii)) return ascii;
+	return label;
+}
+
+/** The packet's company address as the wizard hands it on, or null when the packet has none. */
+function wizardServer(controlPlaneUrl) {
+	if (controlPlaneUrl === null) return null;
+	if (controlPlaneUrl.length > WIZARD_URL_MAX_LENGTH || !WIZARD_URL_PATTERN.test(controlPlaneUrl)) {
+		throw new InstallerInputError(
+			`the customer packet's control_plane_url ${JSON.stringify(controlPlaneUrl)} is not an address the installer accepts (https://host[:port][/path])`,
+		);
+	}
+	return controlPlaneUrl;
+}
 
 export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, signing, catalogKey, customerPacket, customerId }) {
 	checkVersion(version);
@@ -94,7 +139,14 @@ export function msiInputs({ seaDir, trustKey, trustKeyFingerprint, version, sign
 		// New for every build, as WiX's default was; shared by the culture builds
 		// so the Turkish one is a language transform of the English one.
 		productCode: randomUUID().toUpperCase(),
-		cultures: MSI_CULTURES,
+		// Install wizard (ui/AidrUI.wxs): the customer's name per culture, its company
+		// address (replaces the company page's choices) and the last update date.
+		customerServer: packet ? wizardServer(packet.controlPlaneUrl) : null,
+		customerUpdatesUntil: packet?.updatesUntil ?? null,
+		cultures: MSI_CULTURES.map((culture) => ({
+			...culture,
+			customerName: packet ? wizardCustomerName(packet.displayName, customerLabel(packet.customerId), culture.codepage) : null,
+		})),
 	};
 }
 

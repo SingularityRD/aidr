@@ -124,6 +124,24 @@ her yer tutucu, ekran görüntüsünün neyi göstereceğini anlatır.
 Onarma ve kaldırma (Ayarlar > Uygulamalar ya da MSI'yi yeniden çalıştırmak)
 standart Windows Installer sayfalarını kullanır ve aynı Son sayfasıyla biter.
 
+**Müşteriye özel yükleyici** (`SingularityAIDR-<MÜŞTERİ>-<sürüm>-<mimari>.msi`
+ya da `.exe`, [Müşteriye özel derlemeler](../operations/customer-builds.md)):
+sayfalar aynıdır, ek olarak:
+
+- *Hoş geldiniz* sayfası kimin için hazırlandığını yazar ("TÜBİTAK BİLGEM için
+  hazırlanmıştır").
+- Müşteri paketi şirket adresini içeriyorsa 4. sayfada seçenek yoktur: o adres
+  gösterilir ve yalnızca isteğe bağlı kayıt kodu sorulur. Adres, genel sayfada
+  yazılmış gibi kuruluma aktarılır. Komut satırında `ENROLLMENT_URL` verilirse o
+  geçerli olur ve genel sayfa gösterilir.
+- *Kuruluma hazır* sayfası "Lisans sahibi" bilgisini ve kural/tehdit
+  güncellemelerinin kabul edileceği son günü (lisansın `expires_at` tarihi ile
+  ek süresi) gösterir. Koruma bu tarihten sonra da çalışır.
+
+Sessiz kurulum (`/qn`) hiçbir sayfa göstermez ve eskisi gibi davranır: şirkete
+yalnızca `ENROLLMENT_URL` ile bağlanır; aksi halde paketteki adres, onaylı bir
+sonraki `aidr setup` çalıştırmasında uygulanır.
+
 #### Yükleyiciden şirket bağlantısı
 
 Kayıt kodu tek kullanımlık bir gizli bilgidir; yükleyici onu hiçbir zaman komut

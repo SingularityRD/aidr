@@ -123,6 +123,24 @@ yet: each placeholder below says what the screenshot will show.
 Repair and removal (Settings > Apps, or running the MSI again) use the
 standard Windows Installer pages and end on the same Finish page.
 
+**Per-customer installer** (`SingularityAIDR-<CUSTOMER>-<version>-<arch>.msi`
+or `.exe`, [Per-customer builds](../operations/customer-builds.md)): the same
+pages, plus:
+
+- *Welcome* says who it was prepared for ("Prepared for TÜBİTAK BİLGEM").
+- When the customer packet names the company address, page 4 has no choices:
+  it shows that address and asks only for the optional enrollment code. The
+  address is handed to setup exactly as one typed on the generic page. An
+  `ENROLLMENT_URL` given on the command line wins and brings back the generic
+  page.
+- *Ready to install* adds "Licensed to" and the last day rule and threat
+  updates are accepted (the license's `expires_at` plus its grace days).
+  Protection keeps working after that day.
+
+A silent install (`/qn`) shows no pages and behaves as before: it connects to
+the company only with `ENROLLMENT_URL`, otherwise the packet's address is
+applied by the next confirmed `aidr setup`.
+
 #### Company connection from the installer
 
 The enrollment code is a one-time secret, so the installer never puts it on a

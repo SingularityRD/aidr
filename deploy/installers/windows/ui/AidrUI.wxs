@@ -6,6 +6,9 @@
 
   First install:  AidrWelcomeDlg -> AidrLicenseDlg -> AidrScopeDlg -> AidrCompanyDlg
                   -> AidrReadyDlg -> ProgressDlg -> AidrExitDlg
+  Per-customer:   the same, naming the customer on the welcome and ready pages; when
+                  the customer packet names the company address, AidrCustomerCompanyDlg
+                  (that address, optional code) replaces AidrCompanyDlg
   Maintenance:    MaintenanceWelcomeDlg -> MaintenanceTypeDlg (repair/remove) -> VerifyReadyDlg
                   -> ProgressDlg -> AidrExitDlg
   The support dialogs (progress, errors, cancel, files in use, resume) are the
@@ -27,6 +30,22 @@
     <Property Id="AIDR_DEFAULT_CONTROL_PLANE" Value="https://aidr.singularityrd.com" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
+    <!--
+      Per-customer build (build-msi.ps1 defines these from the customer packet via
+      msi-inputs.mjs): the customer's name in this culture's code page, the
+      packet's company address and the last day new updates are accepted.
+      Private properties: shown by the wizard only, never set from a command line.
+    -->
+    <?ifdef CustomerName ?>
+    <Property Id="AidrCustomerName" Value="$(var.CustomerName)" />
+    <?endif?>
+    <?ifdef CustomerServer ?>
+    <Property Id="AidrCustomerServer" Value="$(var.CustomerServer)" />
+    <?endif?>
+    <?ifdef CustomerUpdatesUntil ?>
+    <Property Id="AidrUpdatesUntil" Value="$(var.CustomerUpdatesUntil)" />
+    <?endif?>
+
     <!-- An existing per-user install preselects "Only for me" (a scope change would not upgrade it). -->
     <Property Id="AIDR_PERUSER_EXE">
       <DirectorySearch Id="AidrPerUserBin" Path="[LocalAppDataFolder]Programs\Singularity AIDR\bundle\bin" Depth="0">
@@ -35,9 +54,12 @@
     </Property>
     <SetProperty Id="AIDR_SCOPE" Value="user" Sequence="ui" After="AppSearch"
                  Condition="MSIINSTALLPERUSER = 1 OR AIDR_PERUSER_EXE" />
-    <!-- Company details given on the command line preselect "Connect to my company". -->
+    <!-- Company details given on the command line (or by the customer packet) preselect "Connect to my company". -->
     <SetProperty Id="AIDR_CONNECTION" Value="company" Sequence="ui" After="AppSearch"
-                 Condition="ENROLLMENT_URL OR ENROLLMENT_CODE" />
+                 Condition="ENROLLMENT_URL OR ENROLLMENT_CODE OR AidrCustomerServer" />
+    <!-- The packet's company address is used unless a command line gave another one. -->
+    <SetProperty Id="AidrUsePacketServer" Value="1" Sequence="ui" After="AppSearch"
+                 Condition="AidrCustomerServer AND NOT ENROLLMENT_URL" />
 
     <!-- Format check of the company address and enrollment code (sets AIDR_ENROLLMENT_ERROR). -->
     <CustomAction Id="AidrValidateEnrollmentInput" BinaryRef="AidrInstallerActions" DllEntry="ValidateEnrollmentInput"
@@ -78,7 +100,9 @@
         <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeTitle)" />
         <Control Id="Value" Type="Text" X="135" Y="70" Width="220" Height="50" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeValue)" />
         <Control Id="Version" Type="Text" X="135" Y="125" Width="220" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeVersion)" />
-        <Control Id="Continue" Type="Text" X="135" Y="150" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeContinue)" />
+        <Control Id="Customer" Type="Text" X="135" Y="142" Width="220" Height="24" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeCustomer)"
+                 ShowCondition="AidrCustomerName" HideCondition="NOT AidrCustomerName" />
+        <Control Id="Continue" Type="Text" X="135" Y="170" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrWelcomeContinue)" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUIBack)" />
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
@@ -141,8 +165,9 @@
           <Publish Property="INSTALLFOLDER" Value="[ProgramFiles64Folder]Singularity AIDR\" Order="6" Condition='AIDR_SCOPE = "machine"' />
           <!-- Re-resolve the folder (and [#AidrExe], which the Finish page launches) for the chosen scope. -->
           <Publish Event="SetTargetPath" Value="INSTALLFOLDER" Order="7" />
-          <Publish Property="ENROLLMENT_URL" Value="[AIDR_DEFAULT_CONTROL_PLANE]" Order="8" Condition="NOT ENROLLMENT_URL" />
-          <Publish Event="NewDialog" Value="AidrCompanyDlg" Order="9" />
+          <Publish Property="ENROLLMENT_URL" Value="[AIDR_DEFAULT_CONTROL_PLANE]" Order="8" Condition="NOT ENROLLMENT_URL AND NOT AidrUsePacketServer" />
+          <Publish Event="NewDialog" Value="AidrCompanyDlg" Order="9" Condition="NOT AidrUsePacketServer" />
+          <Publish Event="NewDialog" Value="AidrCustomerCompanyDlg" Order="10" Condition="AidrUsePacketServer" />
         </Control>
         <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
           <Publish Event="SpawnDialog" Value="CancelDlg" />
@@ -186,6 +211,37 @@
         </Control>
       </Dialog>
 
+      <!--
+        4b. Company connection of a per-customer build whose packet names the
+        company address: that address (no other choice; local protection runs
+        either way) and the optional enrollment code. The address goes to setup
+        exactly as one typed on AidrCompanyDlg would.
+      -->
+      <Dialog Id="AidrCustomerCompanyDlg" Width="370" Height="270" Title="!(loc.AidrDialogTitle)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="290" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrCustomerCompanyTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.AidrCustomerCompanyDescription)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="Server" Type="Text" X="20" Y="58" Width="330" Height="30" NoPrefix="yes" Text="!(loc.AidrCustomerCompanyServer)" />
+        <Control Id="CustomerCodeLabel" Type="Text" X="20" Y="96" Width="330" Height="10" Text="!(loc.AidrCompanyCodeLabel)" />
+        <!-- The enrollment code is a one-time secret: masked here, Hidden in the log (aidr.wxs). -->
+        <Control Id="CustomerCode" Type="Edit" X="20" Y="108" Width="330" Height="18" Property="ENROLLMENT_CODE" Password="yes" Text="{80}" />
+        <Control Id="CustomerHelp" Type="Text" X="20" Y="134" Width="330" Height="60" NoPrefix="yes" Text="!(loc.AidrCustomerCompanyHelp)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="AidrScopeDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Property="ENROLLMENT_URL" Value="[AidrCustomerServer]" Order="1" />
+          <Publish Event="DoAction" Value="AidrValidateEnrollmentInput" Order="2" />
+          <Publish Event="SpawnDialog" Value="AidrEnrollmentInvalidDlg" Order="3" Condition="AIDR_ENROLLMENT_ERROR" />
+          <Publish Event="NewDialog" Value="AidrReadyDlg" Order="4" Condition="NOT AIDR_ENROLLMENT_ERROR" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
       <Dialog Id="AidrEnrollmentInvalidDlg" Width="260" Height="95" Title="!(loc.AidrDialogTitle)">
         <Control Id="UrlProblem" Type="Text" X="15" Y="15" Width="230" Height="45" NoPrefix="yes" Text="!(loc.AidrInvalidUrl)"
                  ShowCondition='AIDR_ENROLLMENT_ERROR = "url"' HideCondition='AIDR_ENROLLMENT_ERROR &lt;&gt; "url"' />
@@ -211,11 +267,17 @@
                  ShowCondition='AIDR_CONNECTION = "local"' HideCondition='AIDR_CONNECTION &lt;&gt; "local"' />
         <Control Id="Company" Type="Text" X="25" Y="106" Width="320" Height="24" NoPrefix="yes" Text="!(loc.AidrReadyCompany)"
                  ShowCondition='AIDR_CONNECTION = "company"' HideCondition='AIDR_CONNECTION &lt;&gt; "company"' />
-        <Control Id="Setup" Type="Text" X="25" Y="138" Width="320" Height="40" NoPrefix="yes" Text="!(loc.AidrReadySetup)"
+        <Control Id="Setup" Type="Text" X="25" Y="134" Width="320" Height="40" NoPrefix="yes" Text="!(loc.AidrReadySetup)"
                  ShowCondition="NOT AIDR_SKIP_SETUP" HideCondition="AIDR_SKIP_SETUP" />
+        <!-- Per-customer build: who it is for and until when new updates are accepted. -->
+        <Control Id="Customer" Type="Text" X="25" Y="178" Width="320" Height="15" NoPrefix="yes" Text="!(loc.AidrReadyCustomer)"
+                 ShowCondition="AidrCustomerName" HideCondition="NOT AidrCustomerName" />
+        <Control Id="UpdatesUntil" Type="Text" X="25" Y="194" Width="320" Height="30" NoPrefix="yes" Text="!(loc.AidrReadyUpdatesUntil)"
+                 ShowCondition="AidrUpdatesUntil" HideCondition="NOT AidrUpdatesUntil" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
-          <Publish Event="NewDialog" Value="AidrCompanyDlg" />
+          <Publish Event="NewDialog" Value="AidrCompanyDlg" Order="1" Condition="NOT AidrUsePacketServer" />
+          <Publish Event="NewDialog" Value="AidrCustomerCompanyDlg" Order="2" Condition="AidrUsePacketServer" />
         </Control>
         <!-- Per-machine: the UAC shield says Windows will ask for administrator approval. -->
         <Control Id="Install" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" ElevationShield="yes" Text="!(loc.AidrReadyInstall)"

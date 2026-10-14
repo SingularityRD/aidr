@@ -136,6 +136,12 @@ installer with the existing Authenticode flow and uploads files named
   installed under the install directory's `config\` and as a permanent machine
   copy under `%ProgramData%\Singularity AIDR\`, so a later generic
   `aidr update` keeps it.
+  The install wizard names the customer (`display_name`; in the English pages
+  Turkish letters are spelled in ASCII, since Windows-1252 has no `İ`), shows
+  the packet's `control_plane_url` as the company address and the last update
+  day ([the Windows install wizard](../installation/desktop-installers.md#the-windows-install-wizard)).
+  The build fails when `control_plane_url` is not a plain
+  `https://host[:port][/path]` address the installer can hand to setup.
 - Linux: deb and rpm install it as `/etc/singularity-aidr/customer-packet.json`
   (a configuration file that upgrades do not overwrite); the tar.gz carries it
   at `config/customer-packet.json`.

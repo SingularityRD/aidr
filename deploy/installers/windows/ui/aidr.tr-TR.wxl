@@ -13,6 +13,7 @@
   <String Id="AidrWelcomeTitle" Value="{\WixUI_Font_Bigger}Singularity AIDR'ye hoş geldiniz" />
   <String Id="AidrWelcomeValue" Value="Singularity AIDR, yapay zekâ kodlama araçlarınızın yaptıklarını (komutlar, dosyalar ve web istekleri) denetler ve zararlı işlemleri çalışmadan önce durdurur." />
   <String Id="AidrWelcomeVersion" Value="Sürüm [ProductVersion]" />
+  <String Id="AidrWelcomeCustomer" Value="[AidrCustomerName] için hazırlanmıştır" />
   <String Id="AidrWelcomeContinue" Value="Devam etmek için İleri'ye, kurulumdan çıkmak için İptal'e tıklayın." />
 
   <String Id="AidrLicenseTitle" Value="{\WixUI_Font_Title}Lisans sözleşmesi" />
@@ -34,6 +35,11 @@
   <String Id="AidrCompanyUrlLabel" Value="Şirket adresi (BT ekibinizden):" />
   <String Id="AidrCompanyCodeLabel" Value="Kayıt kodu (isteğe bağlı):" />
   <String Id="AidrCompanyHelp" Value="Kod girmezseniz yapay zekâ aracınız ilk açılışında kısa bir kod ve bir bağlantı gösterir; bu bilgisayar orada onaylanır. Kurulum kodu yalnızca sizin hesabınızın açabildiği bir dosyada tutar ve kullanıldıktan sonra siler." />
+  
+  <String Id="AidrCustomerCompanyTitle" Value="{\WixUI_Font_Title}Şirket bağlantısı" />
+  <String Id="AidrCustomerCompanyDescription" Value="Bu kurulum [AidrCustomerName] sunucusuna bağlanır." />
+  <String Id="AidrCustomerCompanyServer" Value="Şirket adresi: [AidrCustomerServer]" />
+  <String Id="AidrCustomerCompanyHelp" Value="Koruma, sunucuya ulaşılsa da ulaşılmasa da bu bilgisayarda çalışır. Kod girmezseniz yapay zekâ aracınız ilk açılışında kısa bir kod ve bir bağlantı gösterir; bu bilgisayar orada onaylanır. Kurulum kodu yalnızca sizin hesabınızın açabildiği bir dosyada tutar ve kullanıldıktan sonra siler." />
 
   <String Id="AidrInvalidUrl" Value="Şirket adresi https:// ile başlamalı ve yalnızca bir sunucu adı ile yol içermelidir; örneğin https://aidr.example.com." />
   <String Id="AidrInvalidCode" Value="Kayıt kodu eksik. Kod aidr_enroll_ ile başlar ve 55 karakterdir. Şirketinizin konsolundan yeniden kopyalayın." />
@@ -46,6 +52,8 @@
   <String Id="AidrReadyLocal" Value="Şirket bağlantısı: yok (yalnızca yerel koruma)" />
   <String Id="AidrReadyCompany" Value="Şirket bağlantısı: [ENROLLMENT_URL]" />
   <String Id="AidrReadySetup" Value="Kurulumdan sonra yapay zekâ araçlarınız (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw) bulunur ve Singularity AIDR onlara bağlanır." />
+  <String Id="AidrReadyCustomer" Value="Lisans sahibi: [AidrCustomerName]" />
+  <String Id="AidrReadyUpdatesUntil" Value="Kural ve tehdit güncellemeleri şu tarihe kadar: [AidrUpdatesUntil]. Koruma bu tarihten sonra da çalışmaya devam eder." />
   <String Id="AidrReadyInstall" Value="&amp;Kur" />
 
   <String Id="AidrExitTitleInstalled" Value="{\WixUI_Font_Bigger}Singularity AIDR kuruldu" />

@@ -12,6 +12,7 @@
   <String Id="AidrWelcomeTitle" Value="{\WixUI_Font_Bigger}Welcome to Singularity AIDR" />
   <String Id="AidrWelcomeValue" Value="Singularity AIDR checks what your AI coding tools do (commands, files and web requests) and stops harmful actions before they run." />
   <String Id="AidrWelcomeVersion" Value="Version [ProductVersion]" />
+  <String Id="AidrWelcomeCustomer" Value="Prepared for [AidrCustomerName]" />
   <String Id="AidrWelcomeContinue" Value="Click Next to continue, or Cancel to exit Setup." />
 
   <String Id="AidrLicenseTitle" Value="{\WixUI_Font_Title}License agreement" />
@@ -33,6 +34,11 @@
   <String Id="AidrCompanyUrlLabel" Value="Company address (from your IT team):" />
   <String Id="AidrCompanyCodeLabel" Value="Enrollment code (optional):" />
   <String Id="AidrCompanyHelp" Value="Without a code, your AI tool shows a short code and a link the first time it starts, and this computer is approved there. Setup keeps the code in a file only your account can open and deletes it once it has been used." />
+  
+  <String Id="AidrCustomerCompanyTitle" Value="{\WixUI_Font_Title}Company connection" />
+  <String Id="AidrCustomerCompanyDescription" Value="This installer connects to [AidrCustomerName]'s server." />
+  <String Id="AidrCustomerCompanyServer" Value="Company address: [AidrCustomerServer]" />
+  <String Id="AidrCustomerCompanyHelp" Value="Protection runs on this computer whether or not the server can be reached. Without a code, your AI tool shows a short code and a link the first time it opens; this computer is approved there. Setup keeps the code in a file only your account can open and deletes it once it is used." />
 
   <String Id="AidrInvalidUrl" Value="The company address must start with https:// and contain only a server name and a path, for example https://aidr.example.com." />
   <String Id="AidrInvalidCode" Value="The enrollment code is not complete. It starts with aidr_enroll_ and is 55 characters long. Copy it again from your company's console." />
@@ -45,6 +51,8 @@
   <String Id="AidrReadyLocal" Value="Company connection: none (local protection only)" />
   <String Id="AidrReadyCompany" Value="Company connection: [ENROLLMENT_URL]" />
   <String Id="AidrReadySetup" Value="After installing, Setup finds your AI tools (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw) and connects Singularity AIDR to them." />
+  <String Id="AidrReadyCustomer" Value="Licensed to: [AidrCustomerName]" />
+  <String Id="AidrReadyUpdatesUntil" Value="Rule and threat updates until: [AidrUpdatesUntil]. Protection keeps working after that date." />
   <String Id="AidrReadyInstall" Value="&amp;Install" />
 
   <String Id="AidrExitTitleInstalled" Value="{\WixUI_Font_Bigger}Singularity AIDR is installed" />
