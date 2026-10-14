@@ -337,6 +337,18 @@ msiexec /i singularity-aidr-<sürüm>-windows-x64.msi /qn /l*v aidr-install.log
   `C:\Program Files\Singularity AIDR\bundle\bin\aidr.exe` dosyası.
 - Yüklemeden önce imzayı doğrulayın: `signtool verify /pa /v <msi>`.
 
+### Çok makine: filo kayıt anahtarı
+
+Bütün filoyu makine başına kod ya da tarayıcı onayı olmadan bağlamak için bir
+filo kayıt anahtarı oluşturun (`aidr_fleet_…`, sahip/yönetici, panelde
+**API anahtarları → Filo kayıt anahtarları**) ve paketi kuran Intune, GPO,
+SCCM ya da Ansible adımında kontrol sunucusu adresiyle birlikte makine ilkesine
+yazın (`HKLM\SOFTWARE\Policies\Singularity AIDR` altında `enrollment_key` ve
+`control_plane_url`; Linux'ta `/etc/singularity-aidr/managed.json`). Anahtar
+çok kullanımlıktır, belirlediğiniz yeni makine sayısıyla sınırlıdır, süresi
+dolar, iptal edilebilir ve msiexec komut satırına hiç yazılmaz. Ayrıntılar:
+[Filo kayıt anahtarları](fleet-enrollment.tr.md).
+
 ### Linux: apt / yum / dnf / yapılandırma yönetimi
 
 ```sh

@@ -159,7 +159,8 @@ describe("selected-team credentials", () => {
 						],
 					},
 				};
-			return { error: null, data: { ok: true, tokens: [] } };
+			// Enrollment tokens and fleet keys: empty lists.
+			return { error: null, data: { ok: true, tokens: [], keys: [] } };
 		});
 		render(<ApiKeysPage />);
 		const revoke = await screen.findByRole("button", { name: "Revoke" });

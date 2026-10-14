@@ -72,6 +72,10 @@
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/enrollment-exchange.test.ts"]
     },
+    "fleet-keys": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/fleet-enrollment-keys.test.ts"]
+    },
     "identity-security": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/identity-security.test.ts", "supabase/functions/__tests__/identity-barrier.test.ts"]

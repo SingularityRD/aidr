@@ -57,9 +57,9 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 	{
 		route: "supabase/functions/enroll/index.ts",
 		rateLimited: true,
-		mechanism: "one-time enrollment token",
+		mechanism: "one-time enrollment token or fleet enrollment key",
 		justification:
-			"Exchanges a one-time enrollment token (Bearer) for an API key; the caller has neither an account JWT nor an API key by definition.",
+			"Exchanges a one-time enrollment token or a seat-capped, expiring, revocable fleet enrollment key (Bearer) for a per-machine API key; the caller has neither an account JWT nor an API key by definition.",
 	},
 	{
 		route: "supabase/functions/waitlist-signup/index.ts",

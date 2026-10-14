@@ -19,6 +19,7 @@ import { dlpHistoryMessages } from "./dlp-history";
 import { downloadCenterMessages } from "./download-center";
 import { enterpriseAuthMessages } from "./enterprise-auth";
 import { evidenceMessages } from "./evidence";
+import { fleetKeysMessages } from "./fleet-keys";
 import { frameworkMessages } from "./framework";
 import { governanceMessages } from "./governance";
 import { governanceChangeMessages } from "./governance-change";
@@ -73,6 +74,7 @@ export const pageMessages = {
 	...downloadCenterMessages,
 	...enterpriseAuthMessages,
 	...evidenceMessages,
+	...fleetKeysMessages,
 	...frameworkMessages,
 	...governanceMessages,
 	...governanceChangeMessages,
@@ -128,6 +130,7 @@ export const messageModules = [
 	downloadCenterMessages,
 	enterpriseAuthMessages,
 	evidenceMessages,
+	fleetKeysMessages,
 	frameworkMessages,
 	governanceMessages,
 	governanceChangeMessages,
