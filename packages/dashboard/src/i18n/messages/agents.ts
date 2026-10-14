@@ -31,6 +31,70 @@ export const agentsMessages = {
 		"Henüz yapay zekâ aracı yok. İlk yapay zekâ aracınızı bağlamak için {link} sayfasına gidin.",
 	],
 
+	"agents.retiredCount": [
+		"Retired (no seat): {count}.",
+		"Emekliye ayrılan (koltuk tutmuyor): {count}.",
+	],
+	"agents.status": ["Status", "Durum"],
+	"agents.status.active": ["Active", "Etkin"],
+	"agents.status.retired": ["Retired", "Emekliye ayrıldı"],
+	"agents.status.retiredOffline": ["Retired (offline)", "Emekliye ayrıldı (çevrimdışı)"],
+	"agents.retire.action": ["Retire", "Emekliye ayır"],
+	"agents.retire.confirm": [
+		"Retire this device? Its seat is freed and its device key is revoked, so it stops syncing. Local detection on the device keeps enforcing. To use it again, enroll it again.",
+		"Bu cihaz emekliye ayrılsın mı? Koltuğu boşalır ve cihaz anahtarı iptal edilir; cihaz artık eşitleme yapmaz. Cihazdaki yerel koruma çalışmaya devam eder. Yeniden kullanmak için cihazı tekrar kaydedin.",
+	],
+	"agents.retire.confirmButton": ["Retire device", "Cihazı emekliye ayır"],
+	"agents.retire.cancel": ["Cancel", "Vazgeç"],
+	"agents.retire.busy": ["Retiring…", "Emekliye ayrılıyor…"],
+	"agents.retire.done": [
+		"Device retired. Device keys revoked: {count}.",
+		"Cihaz emekliye ayrıldı. İptal edilen cihaz anahtarı: {count}.",
+	],
+	"agents.retire.err.role": [
+		"Only workspace owners and admins can retire devices.",
+		"Cihazları yalnızca çalışma alanı sahipleri ve yöneticileri emekliye ayırabilir.",
+	],
+	"agents.retire.err.mfa": [
+		"Confirm with your second factor (MFA) and try again.",
+		"İkinci doğrulama adımıyla (MFA) onaylayıp tekrar deneyin.",
+	],
+	"agents.retire.err.notFound": ["This device no longer exists.", "Bu cihaz artık yok."],
+	"agents.retire.err.rateLimited": [
+		"Too many changes. Wait a minute and try again.",
+		"Çok fazla değişiklik. Bir dakika bekleyip tekrar deneyin.",
+	],
+	"agents.retire.err.unavailable": [
+		"The change could not be confirmed. Reload and try again.",
+		"Değişiklik doğrulanamadı. Sayfayı yenileyip tekrar deneyin.",
+	],
+	"agents.autoRetire.title": ["Automatic retirement", "Otomatik emekliye ayırma"],
+	"agents.autoRetire.body": [
+		"Retire devices that have not reported for the chosen number of days, so reinstalled machines, new user profiles and non-persistent VDI desktops do not keep seats. A retired device that reports again or enrolls again gets a seat back only if one is free.",
+		"Seçilen gün sayısı boyunca bağlanmayan cihazları emekliye ayırın; böylece yeniden kurulan makineler, yeni kullanıcı profilleri ve kalıcı olmayan VDI masaüstleri koltuk tutmaya devam etmez. Emekliye ayrılan bir cihaz yeniden bağlanırsa ya da yeniden kaydedilirse yalnızca boş koltuk varsa koltuk alır.",
+	],
+	"agents.autoRetire.days": [
+		"Days offline (7–365, empty = off)",
+		"Çevrimdışı gün (7–365, boş = kapalı)",
+	],
+	"agents.autoRetire.save": ["Save", "Kaydet"],
+	"agents.autoRetire.saved": ["Saved.", "Kaydedildi."],
+	"agents.autoRetire.off": ["Off", "Kapalı"],
+	"agents.autoRetire.current": ["Current setting: {value}", "Geçerli ayar: {value}"],
+	"agents.autoRetire.daysValue": ["{days} days", "{days} gün"],
+	"agents.autoRetire.err.days": [
+		"Enter a whole number between 7 and 365, or leave it empty to switch off.",
+		"7 ile 365 arasında tam sayı girin ya da kapatmak için boş bırakın.",
+	],
+	"agents.autoRetire.readOnly": [
+		"Only workspace owners and admins can change this.",
+		"Bunu yalnızca çalışma alanı sahipleri ve yöneticileri değiştirebilir.",
+	],
+	"agents.autoRetire.unavailable": [
+		"The automatic retirement setting is unavailable right now.",
+		"Otomatik emekliye ayırma ayarı şu anda alınamıyor.",
+	],
+
 	"agent.missingId": ["Agent identifier is missing.", "Yapay zekâ aracı kimliği eksik."],
 	"agent.noTeam": [
 		"Select a team to view this agent.",
@@ -69,4 +133,13 @@ export const agentsMessages = {
 	],
 	"agent.loadingEvents": ["Loading events…", "Olaylar yükleniyor…"],
 	"agent.noEvents": ["No events yet.", "Henüz olay yok."],
+	"agent.retired": [
+		"This device was retired on {date} ({reason}). It holds no seat and its device key is revoked.",
+		"Bu cihaz {date} tarihinde emekliye ayrıldı ({reason}). Koltuk tutmuyor ve cihaz anahtarı iptal edildi.",
+	],
+	"agent.retiredReason.manual": ["by an administrator", "bir yönetici tarafından"],
+	"agent.retiredReason.offline": [
+		"automatically, after being offline",
+		"çevrimdışı kaldığı için otomatik olarak",
+	],
 } as const satisfies MessagePairs<string>;

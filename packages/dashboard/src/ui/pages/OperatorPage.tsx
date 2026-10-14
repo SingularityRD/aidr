@@ -19,6 +19,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { ThemeToggle } from "../ThemeToggle";
 import { useSessionSnapshot } from "../use-session";
+import { OperatorLicenseImports } from "./OperatorLicenseImports";
 
 /**
  * Platform-operator console: tenant licences, usage and seats.
@@ -349,6 +350,17 @@ function OperatorConsole({
 					<span className="muted small">{t("op.page", { page: cursors.length })}</span>
 				</div>
 			</section>
+
+			<OperatorLicenseImports
+				accessToken={accessToken}
+				selectedTenantId={selected?.id ?? null}
+				onApplied={refreshList}
+				onForbidden={(status, code) => {
+					const forced = gateFor(status, code);
+					if (forced) setGate(forced);
+					return Boolean(forced);
+				}}
+			/>
 
 			{selected ? (
 				<TenantPanel

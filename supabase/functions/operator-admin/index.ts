@@ -13,21 +13,29 @@
 // row enforced by grant_licensed_tenant_admission: platform-operator status
 // alone never admits a tenant.
 //
+// Signed license import (C11/B9): `list_license_imports` shows licenses tenant
+// admins staged; `apply_license` re-verifies an aidr-license-v1 document
+// against the deployment's trust registry (AIDR_LICENSE_PUBLIC_KEYS_B64) with
+// the server clock and applies its signed seats, plan, license id and
+// admission end (expires_at + grace_days) through the same grant path.
+//
 // Callers: scripts/operator-admin.mjs and the dashboard Operator console
 // (/operator). Browser calls pass the shared CORS allowlist (AIDR_ALLOWED_ORIGINS);
 // the origin check is not an authorization control — every check above still
 // runs on each request, and an unlisted origin is refused before any of them.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
-import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
+import { configFailure, type EnvReader, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
+import { checkLicenseDocument, licenseSummary, MAX_LICENSE_DOCUMENT_BYTES } from "../_shared/license.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
 // a missing variable answers with an explicit 500 that names it (AIDR-011).
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
-const MAX_BODY_BYTES = 16 * 1024;
+// Large enough for a signed license document plus the action envelope.
+const MAX_BODY_BYTES = MAX_LICENSE_DOCUMENT_BYTES + 8 * 1024;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 const MAX_SEATS = 100_000;
@@ -39,6 +47,8 @@ export const OPERATOR_ACTIONS = [
 	"revoke_license",
 	"list_tenants",
 	"tenant_usage",
+	"list_license_imports",
+	"apply_license",
 ] as const;
 export type OperatorAction = (typeof OPERATOR_ACTIONS)[number];
 
@@ -62,6 +72,8 @@ type OperatorAdminDatabase = {
 			operator_revoke_license: OperatorRpc;
 			operator_list_tenants: OperatorRpc;
 			operator_tenant_usage: OperatorRpc;
+			operator_list_license_imports: OperatorRpc;
+			operator_apply_license: OperatorRpc;
 		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;
@@ -73,6 +85,8 @@ export interface OperatorAdminDeps {
 	/** Overrides the service-role client; used by the contract suite. */
 	db?: SupabaseClient<OperatorAdminDatabase>;
 	now?: () => number;
+	/** Overrides the environment (license trust registry); used by the contract suite. */
+	env?: EnvReader;
 }
 
 type Rpc = { name: RpcName; args: Record<string, unknown> };
@@ -225,6 +239,40 @@ export function planOperatorAction(
 				args: { p_actor_user_id: actorId, p_tenant_id: tenantId },
 			};
 		}
+		case "list_license_imports": {
+			const limit = body.limit ?? DEFAULT_PAGE_SIZE;
+			if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) {
+				return { error: "invalid_page" };
+			}
+			return { name: "operator_list_license_imports", args: { p_actor_user_id: actorId, p_limit: limit } };
+		}
+		case "apply_license": {
+			const tenantId = uuid(body.tenant_id);
+			if (!tenantId) return { error: "invalid_tenant" };
+			if (!isRecord(body.license)) return { error: "invalid_license" };
+			let importId: string | null = null;
+			if (body.import_id !== undefined && body.import_id !== null) {
+				importId = uuid(body.import_id);
+				if (!importId) return { error: "invalid_import" };
+			}
+			let ownerId: string | null = null;
+			if (body.owner_user_id !== undefined && body.owner_user_id !== null) {
+				ownerId = uuid(body.owner_user_id);
+				if (!ownerId) return { error: "invalid_owner" };
+			}
+			// p_canonical_sha256 is filled in only after the signature verifies.
+			return {
+				name: "operator_apply_license",
+				args: {
+					p_actor_user_id: actorId,
+					p_tenant_id: tenantId,
+					p_import_id: importId,
+					p_document: body.license,
+					p_canonical_sha256: null,
+					p_owner_user_id: ownerId,
+				},
+			};
+		}
 	}
 }
 
@@ -243,6 +291,13 @@ const RPC_ERRORS: Record<string, readonly [number, string]> = {
 	tenant_admission_closed: [409, "tenant_closed"],
 	invalid_admission_revocation: [400, "invalid_reason"],
 	invalid_page: [400, "invalid_page"],
+	invalid_license_import: [400, "invalid_license"],
+	invalid_license_document: [400, "invalid_license"],
+	license_expired: [422, "license_expired"],
+	license_not_yet_valid: [422, "license_not_yet_valid"],
+	license_import_not_pending: [409, "license_import_not_pending"],
+	license_import_mismatch: [409, "license_import_mismatch"],
+	license_bound_to_other_tenant: [409, "license_bound_to_other_tenant"],
 };
 
 function rpcFailure(json: Reply, action: OperatorAction, error: { message?: unknown; code?: unknown }) {
@@ -276,6 +331,11 @@ function validResult(action: OperatorAction, args: Record<string, unknown>, data
 				(data.next_cursor === null || uuid(data.next_cursor) !== null);
 		case "tenant_usage":
 			return isRecord(data.tenant) && data.tenant.id === args.p_tenant_id;
+		case "list_license_imports":
+			return Array.isArray(data.imports) && data.imports.length <= (args.p_limit as number);
+		case "apply_license":
+			return data.status === "granted" && data.tenant_id === args.p_tenant_id && isRecord(data.import) &&
+				data.import.status === "applied" && data.import.canonical_sha256 === args.p_canonical_sha256;
 	}
 }
 
@@ -333,12 +393,26 @@ export function createOperatorAdminHandler(deps: OperatorAdminDeps = {}) {
 		const plan = planOperatorAction(operatorAction, body, actorId, now);
 		if ("error" in plan) return json(400, { error: plan.error });
 
+		let license: ReturnType<typeof licenseSummary> | null = null;
+		if (operatorAction === "apply_license") {
+			// Re-verify at apply time: the registry, a key's status or the clock
+			// may have changed since the tenant admin staged the file.
+			const check = await checkLicenseDocument(plan.args.p_document, deps.env ?? runtimeEnv, now, "apply");
+			if (!check.ok) return json(check.status, { error: check.error, ...(check.reason ? { reason: check.reason } : {}) });
+			plan.args.p_canonical_sha256 = check.verified.canonical_sha256;
+			license = licenseSummary(check.verified);
+		}
+
 		const { data, error } = await supabase.rpc(plan.name, plan.args);
 		if (error) return rpcFailure(json, operatorAction, error);
 		if (!validResult(operatorAction, plan.args, data)) {
 			return json(503, { error: "operator_action_unavailable" });
 		}
-		return json(200, { ok: true, action: operatorAction, result: data as Record<string, unknown> });
+		return json(200, {
+			ok: true,
+			action: operatorAction,
+			result: license ? { ...(data as Record<string, unknown>), license } : data as Record<string, unknown>,
+		});
 	};
 }
 

@@ -12,10 +12,17 @@
 // Every run (re)writes <dir>/maintenance-evidence.json and prints it; an
 // incomplete --apply run exits 2, a failed one exits 1.
 //
+// The run also retires agents offline longer than each tenant's configured
+// auto_retire_offline_days (seat lifecycle) and, for Compose installs, writes
+// <dir>/health/license.json: the earliest licensed admission's license expiry
+// and grace end, which the dashboard publishes as aidr_license_* metrics
+// (deploy/monitoring). A license read failure is recorded, never reported as
+// a healthy license.
+//
 // deploy/helm/aidr/files/deployment-maintenance.mjs must stay a byte-identical
 // copy (the chart ships it in a ConfigMap; deploy/helm/chart.test.mjs checks):
 //   cp scripts/deployment-maintenance.mjs deploy/helm/aidr/files/
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 
 const isCount = n => Number.isInteger(n) && n >= 0;
@@ -32,19 +39,29 @@ function loadTarget(args) {
       throw new Error("Maintenance requires HTTPS or an in-cluster Service URL");
     }
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    return { dir, base, serviceRoleKey: (process.env.SERVICE_ROLE_KEY ?? "").trim() };
+    return { dir, base, serviceRoleKey: (process.env.SERVICE_ROLE_KEY ?? "").trim(), healthDir: null };
   }
   const manifest = JSON.parse(readFileSync(join(dir, "deployment.json"), "utf8"));
   const env = Object.fromEntries(readFileSync(join(dir, ".env"), "utf8").split(/\r?\n/).filter(s => s.includes("=")).map(s => [s.slice(0, s.indexOf("=")), s.slice(s.indexOf("=")+1)]));
   const base = new URL(manifest.supabase_url);
   if (base.protocol !== "https:" && !(manifest.development && base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname))) throw new Error("Maintenance requires HTTPS or a loopback development deployment");
-  return { dir, base, serviceRoleKey: env.SERVICE_ROLE_KEY };
+  const healthDir = join(dir, "health");
+  return { dir, base, serviceRoleKey: env.SERVICE_ROLE_KEY, healthDir: existsSync(healthDir) ? healthDir : null };
+}
+
+// Same atomic, world-readable evidence convention as the readiness worker:
+// the dashboard container reads /run/aidr-health read-only.
+function writeHealthEvidence(path, value) {
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(value)}\n`, { mode: 0o644 });
+  chmodSync(temporary, 0o644);
+  renameSync(temporary, path);
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes("--apply");
-  const { dir, base, serviceRoleKey } = loadTarget(args);
+  const { dir, base, serviceRoleKey, healthDir } = loadTarget(args);
   if (!serviceRoleKey) throw new Error("Deployment service credential missing");
   // Replace stale success evidence BEFORE any authorization or external side effect.
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify({
@@ -340,6 +357,54 @@ async function main() {
       break;
     }
   }
+  // Seat lifecycle: retire agents not seen for each tenant's configured number
+  // of days (agent_retirement_settings). Each retirement revokes the device's
+  // bound keys and is audited; local detection on the device is unaffected.
+  const agentRetirement = { eligible_observed: 0, retired: 0, remaining: 0, batches: 0, contended_tenants: 0, complete: false };
+  for (let batch = 0; batch < 100; batch++) {
+    const result = await request("/rest/v1/rpc/retire_offline_agents", "POST", { p_limit: 500, p_apply: apply });
+    if (!result || ![result.eligible, result.retired, result.remaining, result.contended_tenants].every(isCount)
+      || result.applied !== apply || result.retired > result.eligible || result.retired > 500
+      || result.remaining !== result.eligible - result.retired
+      || (!apply && result.retired !== 0)
+      || typeof result.cutoff !== "string" || !Number.isFinite(Date.parse(result.cutoff))) {
+      throw new Error("Invalid agent retirement response");
+    }
+    if (batch === 0) agentRetirement.eligible_observed = result.eligible;
+    agentRetirement.retired += result.retired;
+    agentRetirement.remaining = result.remaining;
+    agentRetirement.batches += 1;
+    agentRetirement.contended_tenants = result.contended_tenants;
+    if (!apply || result.remaining === 0 || result.retired === 0) {
+      agentRetirement.complete = result.remaining === 0 && result.contended_tenants === 0;
+      break;
+    }
+  }
+  // License expiry evidence for monitoring. Never written as "ok" without a
+  // successful, well-formed read.
+  const licenseHealth = { file: healthDir ? "health/license.json" : null, status: "not_written" };
+  if (healthDir) {
+    const checkedAt = new Date().toISOString();
+    let document = { schema_version: 1, status: "failed", checked_at: checkedAt };
+    try {
+      const summary = await request("/rest/v1/rpc/license_expiry_summary", "POST", {});
+      const expires = summary?.license_expires_at ?? null;
+      const grace = summary?.grace_ends_at ?? null;
+      if (!summary || !isCount(summary.licensed_tenants) || typeof summary.signed !== "boolean") throw new Error("invalid");
+      if (summary.licensed_tenants === 0) {
+        document = { schema_version: 1, status: "unlicensed", checked_at: checkedAt };
+      } else if (typeof expires === "string" && typeof grace === "string"
+        && Number.isFinite(Date.parse(expires)) && Number.isFinite(Date.parse(grace)) && Date.parse(grace) >= Date.parse(expires)) {
+        document = { schema_version: 1, status: "ok", checked_at: checkedAt,
+          license_expires_at: new Date(expires).toISOString(), grace_ends_at: new Date(grace).toISOString(),
+          signed: summary.signed };
+      }
+    } catch {
+      // Keep the failed document: monitoring alerts on it.
+    }
+    writeHealthEvidence(join(healthDir, "license.json"), document);
+    licenseHealth.status = document.status;
+  }
   // Scheduled governance summaries (supabase/functions/governance-digest): the
   // function claims due schedules under a lease, mails counts-only summaries to
   // each workspace's owners/admins and records every outcome. A failed send is
@@ -374,10 +439,11 @@ async function main() {
       ? "invalid_dispatch_response" : "dispatch_unavailable";
   }
   const retentionComplete = exportsComplete && billing.complete && telemetry.complete && trialSubjects.complete
-    && waitlist.complete && invitations.complete && approvals.complete && governance.complete && rateLimits.complete;
+    && waitlist.complete && invitations.complete && approvals.complete && governance.complete && rateLimits.complete
+    && agentRetirement.complete;
   const evidence = {
     checked_at: new Date().toISOString(),
-    action: "expire-private-audit-exports-billing-webhooks-telemetry-trial-subjects-waitlist-signups-team-invitations-approval-requests-ai-governance-records-and-rate-limits",
+    action: "expire-private-audit-exports-billing-webhooks-telemetry-trial-subjects-waitlist-signups-team-invitations-approval-requests-ai-governance-records-rate-limits-and-offline-agents",
     applied: apply, selected, removed,
     complete: retentionComplete && governanceDigest.complete, cutoff,
     status: !apply ? "dry_run" : retentionComplete && governanceDigest.complete ? "completed" : "incomplete",
@@ -390,8 +456,10 @@ async function main() {
     approval_request_retention: approvals,
     ai_governance_maintenance: governance,
     rate_limit_pruning: rateLimits,
+    agent_retirement: agentRetirement,
+    license_health: licenseHealth,
     governance_digest: governanceDigest,
-    scope: "Deletes authorized expired temporary export objects, completed attributed billing webhooks for active unheld tenants, expired events for active tenants according to each tenant's telemetry retention policy, pseudonymous trial-subject digests at the original 14-day expiry, public waitlist sign-ups without a tenant 365 days after sign-up, expired unaccepted team invitations only after each active tenant's existing identity_membership retention window, decided or expired dashboard approval requests only after each active tenant's telemetry retention window, and operational rate-limit counters at least 15 minutes after their last update. Accepted and unexpired invitations are preserved; held and inactive-tenant invitation rows are retained. Active tenants missing identity_membership policy and contention/hold-race cases keep the run incomplete. Tenant rate-limit counters under legal hold or outside active tenancy are retained for the tenant lifecycle; global counters have no tenant association. Settlement request keys remain durable; unfinished, unattributed, held, and inactive-tenant webhooks are retained. Events without a telemetry policy and non-active tenants are not selected; legal-hold tenants are preserved. The append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure. The run also dispatches due governance summaries (counts-only e-mail to workspace owners/admins) and records their delivery outcome; a dry run only counts due schedules.",
+    scope: "Deletes authorized expired temporary export objects, completed attributed billing webhooks for active unheld tenants, expired events for active tenants according to each tenant's telemetry retention policy, pseudonymous trial-subject digests at the original 14-day expiry, public waitlist sign-ups without a tenant 365 days after sign-up, expired unaccepted team invitations only after each active tenant's existing identity_membership retention window, decided or expired dashboard approval requests only after each active tenant's telemetry retention window, and operational rate-limit counters at least 15 minutes after their last update. Agents offline longer than a tenant's configured auto-retirement period are retired (their seat is freed and their bound device keys revoked); tenants without the setting are untouched. Accepted and unexpired invitations are preserved; held and inactive-tenant invitation rows are retained. Active tenants missing identity_membership policy and contention/hold-race cases keep the run incomplete. Tenant rate-limit counters under legal hold or outside active tenancy are retained for the tenant lifecycle; global counters have no tenant association. Settlement request keys remain durable; unfinished, unattributed, held, and inactive-tenant webhooks are retained. Events without a telemetry policy and non-active tenants are not selected; legal-hold tenants are preserved. The append-only settlement ledger is never touched. Counts acknowledge Storage API responses, not an independent deletion receipt or backup erasure. The run also dispatches due governance summaries (counts-only e-mail to workspace owners/admins) and records their delivery outcome; a dry run only counts due schedules.",
   };
   writeFileSync(join(dir, "maintenance-evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));

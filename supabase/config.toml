@@ -125,6 +125,16 @@ verify_jwt = false
 # Platform-operator surface (admission mode, legal documents, licenses). The
 # handler repeats session revocation, operator allowlist and AAL2 checks.
 verify_jwt = true
+[functions.agent-lifecycle]
+# Device retirement and automatic offline retirement (seat lifecycle). The
+# handler repeats session, identity barrier, owner/admin role and AAL2 checks;
+# the RPCs re-check the role under the tenant lock.
+verify_jwt = true
+[functions.license-admin]
+# Tenant side of the signed license import: verifies the aidr-license-v1
+# signature against AIDR_LICENSE_PUBLIC_KEYS_B64 and only stages the license.
+# Session, identity barrier, owner/admin role and AAL2 are checked per request.
+verify_jwt = true
 [functions.pilot-admin]
 verify_jwt = true
 [functions.pilot-apply]

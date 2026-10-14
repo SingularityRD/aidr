@@ -133,6 +133,20 @@ AIDR_QUEUE_MAX_FAILED_JOBS=0
 AIDR_CERT_MIN_REMAINING_SECONDS=1209600
 ```
 
+## License expiry gauges (optional)
+
+When `AIDR_LICENSE_HEALTH_FILE` points at the license evidence that
+`scripts/deployment-maintenance.mjs` writes hourly (`<deployment>/health/license.json`,
+mounted as `/run/aidr-health/license.json`), `/metrics` adds
+`aidr_license_evidence_ok`, `aidr_license_present`,
+`aidr_license_status_age_seconds`, `aidr_license_remaining_seconds` and
+`aidr_license_grace_remaining_seconds` for the earliest-ending licensed
+admission. A missing, malformed, failed or future-dated document publishes
+`aidr_license_evidence_ok 0` and no remaining-time gauges. License expiry is not
+a readiness check and never affects `/readyz`; the `aidr-license` alert group
+warns at 30 days, pages at 7 days, during grace and after it
+([licensing](../../docs/operations/licensing.md#expiry-warnings)).
+
 ## Prometheus and paging
 
 Load [prometheus-alerts.yml](./prometheus-alerts.yml) into Prometheus and adapt

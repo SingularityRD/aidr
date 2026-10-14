@@ -246,4 +246,60 @@ export const operatorMessages = {
 		"No verified authenticator factor is enrolled for this account.",
 		"Bu hesap için kayıtlı ve doğrulanmış bir doğrulama uygulaması yok.",
 	],
+	"op.err.license": [
+		"That is not an aidr-license-v1 document.",
+		"Bu bir aidr-license-v1 belgesi değil.",
+	],
+	"op.err.licenseRejected": [
+		"The licence was refused by signature verification ({reason}).",
+		"Lisans imza doğrulamasında reddedildi ({reason}).",
+	],
+	"op.err.licenseExpired": ["The licence is past its grace period.", "Lisansın ek süresi dolmuş."],
+	"op.err.licenseNotYetValid": [
+		"The licence is not valid yet; apply it on or after its start date.",
+		"Lisans henüz geçerli değil; başlangıç tarihinde ya da sonrasında uygulayın.",
+	],
+	"op.err.licenseNotPending": [
+		"That import is no longer waiting; reload the list.",
+		"Bu içe aktarma artık beklemede değil; listeyi yenileyin.",
+	],
+	"op.err.licenseMismatch": [
+		"The licence does not match the staged import.",
+		"Lisans, bekleyen içe aktarmayla eşleşmiyor.",
+	],
+	"op.err.licenseOtherTenant": [
+		"That licence is already applied to another tenant.",
+		"Bu lisans zaten başka bir çalışma alanına uygulanmış.",
+	],
+	"op.err.licenseRegistry": [
+		"No trusted licence keys are installed in this deployment (AIDR_LICENSE_PUBLIC_KEYS_B64).",
+		"Bu kurulumda güvenilen lisans anahtarı yok (AIDR_LICENSE_PUBLIC_KEYS_B64).",
+	],
+	"op.license": ["Signed licence imports", "İmzalı lisans içe aktarmaları"],
+	"op.licenseLead": [
+		"Licences that workspace admins verified and submitted. Applying one re-verifies the signature and grants its signed seats, plan and end date (end + grace) through the licensed-admission path; you must be the tenant's admission operator and not a member of the tenant.",
+		"Çalışma alanı yöneticilerinin doğrulayıp gönderdiği lisanslar. Uygulama, imzayı yeniden doğrular ve imzalı koltuk, plan ve bitiş tarihini (bitiş + ek süre) lisanslı kabul yolundan verir; çalışma alanının kabul operatörü olmalı ve o çalışma alanının üyesi olmamalısınız.",
+	],
+	"op.licenseEmpty": ["No licence is waiting.", "Bekleyen lisans yok."],
+	"op.licenseLoad": ["Load waiting licences", "Bekleyen lisansları yükle"],
+	"op.licenseRow": [
+		"{id} · {seats} seats · ends {date} · tenant {tenant}",
+		"{id} · {seats} koltuk · bitiş {date} · çalışma alanı {tenant}",
+	],
+	"op.licenseApply": ["Apply licence", "Lisansı uygula"],
+	"op.licenseApplying": ["Applying…", "Uygulanıyor…"],
+	"op.licenseApplied": [
+		"Licence {id} applied: {seats} seats until {date}.",
+		"{id} lisansı uygulandı: {date} tarihine kadar {seats} koltuk.",
+	],
+	"op.licenseUpload": ["Apply a licence file", "Lisans dosyası uygula"],
+	"op.licenseUploadLead": [
+		"Apply a vendor-signed aidr-license-v1 file directly to a tenant (for example from an air-gapped transfer). The same checks apply.",
+		"Satıcı imzalı aidr-license-v1 dosyasını doğrudan bir çalışma alanına uygulayın (örneğin ağdan yalıtılmış bir aktarımdan). Aynı denetimler geçerlidir.",
+	],
+	"op.licenseFile": ["Licence file", "Lisans dosyası"],
+	"op.licenseUnconfirmed": [
+		"The licence was not confirmed as applied.",
+		"Lisansın uygulandığı doğrulanamadı.",
+	],
 } as const satisfies MessagePairs<string>;

@@ -371,6 +371,7 @@ test("generated self-hosted deployment wires protected monitoring without invent
 			AIDR_SIGNING_HEALTH_FILE: "/run/aidr-health/signing.json",
 			AIDR_BACKUP_HEALTH_FILE: "/run/aidr-health/backup.json",
 			AIDR_QUEUE_HEALTH_FILE: "/run/aidr-health/queue.json",
+			AIDR_LICENSE_HEALTH_FILE: "/run/aidr-health/license.json",
 			AIDR_PUBLIC_HTTPS_URL: dashboardUrl,
 			AIDR_METRICS_TOKEN: "${AIDR_METRICS_TOKEN:?AIDR_METRICS_TOKEN is required}",
 			AIDR_READINESS_REQUIRED_CHECKS: "database,storage,functions,signing,backup,queue,certificate",
@@ -402,6 +403,11 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		const functionEnv = readFileSync(join(output, ".env.functions"), "utf8");
 		assert.ok(functionEnv.split(/\r?\n/).includes(`AIDR_RUNTIME_CAPABILITIES_BY_TENANT=${JSON.stringify(JSON.parse(process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT?.trim() || "{}"))}`));
 		assert.match(functionEnv, /^AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
+		// The license import trust root is the kit's shipped registry, byte for byte.
+		const licenseKeys = functionEnv.split(/\r?\n/).find((line) => line.startsWith("AIDR_LICENSE_PUBLIC_KEYS_B64="));
+		assert.ok(licenseKeys, "license trust registry missing from the function environment");
+		assert.equal(Buffer.from(licenseKeys.slice("AIDR_LICENSE_PUBLIC_KEYS_B64=".length), "base64").toString("utf8"),
+			readFileSync(join(root, "deploy", "onprem", "license-public-keys.json"), "utf8"));
 		assert.match(functionEnv, /^AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_PACK_DOWNLOAD_GRANT_SECRET=[A-Za-z0-9_-]{43}$/m);

@@ -4,6 +4,7 @@ import { TeamProvider, useTeam } from "../enterprise/team-provider";
 import type { DashboardMessageKey } from "../i18n/en";
 import { LanguageToggle, useT } from "../i18n/I18nProvider";
 import { supabaseEnvError } from "../lib/supabase";
+import { LicenseBanner } from "./LicenseBanner";
 import { signOut } from "./session";
 import { ThemeToggle } from "./ThemeToggle";
 import { usePendingApprovalCount } from "./use-pending-approvals";
@@ -21,7 +22,12 @@ function ManagedOutlet() {
 		);
 	// TeamProvider now bootstraps identity and gates BEFORE any protected table
 	// read. Requiring currentTeam to discover the MFA policy deadlocked at AAL1.
-	return <Outlet />;
+	return (
+		<>
+			<LicenseBanner />
+			<Outlet />
+		</>
+	);
 }
 
 interface NavAccess {

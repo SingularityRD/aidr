@@ -121,6 +121,9 @@ export function loadReadinessConfig(env = process.env) {
 		signingFile: evidencePath(env.AIDR_SIGNING_HEALTH_FILE, "AIDR_SIGNING_HEALTH_FILE"),
 		backupFile: evidencePath(env.AIDR_BACKUP_HEALTH_FILE, "AIDR_BACKUP_HEALTH_FILE"),
 		queueFile: evidencePath(env.AIDR_QUEUE_HEALTH_FILE, "AIDR_QUEUE_HEALTH_FILE"),
+		// Optional and never a readiness check: license expiry is a commercial
+		// signal, and local detection on endpoints never depends on it.
+		licenseFile: evidencePath(env.AIDR_LICENSE_HEALTH_FILE, "AIDR_LICENSE_HEALTH_FILE"),
 		certificateUrl: endpoint(env.AIDR_PUBLIC_HTTPS_URL, "AIDR_PUBLIC_HTTPS_URL", ["https:"]),
 		signingMaxAgeSeconds: integer(env, "AIDR_SIGNING_MAX_AGE_SECONDS", 300, 1, 86400),
 		signingKeyMinRemainingSeconds: integer(env, "AIDR_SIGNING_KEY_MIN_REMAINING_SECONDS", 604800, 60, 31536000),
@@ -336,6 +339,41 @@ async function probeQueue(config, dependencies, now) {
 	};
 }
 
+/**
+ * License expiry evidence written by scripts/deployment-maintenance.mjs:
+ * `{schema_version:1,status:"ok",checked_at,license_expires_at,grace_ends_at,signed}`,
+ * `{schema_version:1,status:"unlicensed",checked_at}` or a `failed` document.
+ * Unconfigured -> no license metrics at all. Anything unreadable, malformed or
+ * failed publishes aidr_license_evidence_ok 0 and no remaining-time gauges, so
+ * a broken producer can never look like a healthy license.
+ */
+async function probeLicense(config, dependencies, now) {
+	if (!config.licenseFile) return null;
+	const evidence = await readEvidence(config.licenseFile, dependencies);
+	if (!evidence.ok) return { licenseEvidenceOk: 0 };
+	const { document } = evidence;
+	const checked = timestamp(document.checked_at);
+	if (document.schema_version !== 1 || checked === null || checked > now) return { licenseEvidenceOk: 0 };
+	const age = { licenseStatusAgeSeconds: ageSeconds(now, checked) };
+	if (hasExactKeys(document, ["schema_version", "status", "checked_at"]) && document.status === "unlicensed") {
+		return { licenseEvidenceOk: 1, licensePresent: 0, ...age };
+	}
+	const expires = timestamp(document.license_expires_at);
+	const graceEnds = timestamp(document.grace_ends_at);
+	if (!hasExactKeys(document, ["schema_version", "status", "checked_at", "license_expires_at", "grace_ends_at", "signed"])
+		|| document.status !== "ok" || typeof document.signed !== "boolean"
+		|| expires === null || graceEnds === null || graceEnds < expires) {
+		return { licenseEvidenceOk: 0, ...age };
+	}
+	return {
+		licenseEvidenceOk: 1,
+		licensePresent: 1,
+		...age,
+		licenseRemainingSeconds: Math.max(0, Math.floor((expires - now) / 1000)),
+		licenseGraceRemainingSeconds: Math.max(0, Math.floor((graceEnds - now) / 1000)),
+	};
+}
+
 function defaultCertificateProbe(url, timeoutMs) {
 	if (!url) return Promise.resolve({ ok: false, code: "unconfigured" });
 	return new Promise((resolve) => {
@@ -392,7 +430,7 @@ function renderPrometheus(snapshot) {
 	for (const name of CHECK_NAMES.filter((value) => snapshot.required.includes(value))) {
 		lines.push(`aidr_readiness_check{check="${name}"} ${snapshot.checks[name]?.ok ? 1 : 0}`);
 	}
-	const metrics = Object.assign({}, ...Object.values(snapshot.checks).map((check) => check.metrics || {}));
+	const metrics = Object.assign({}, ...Object.values(snapshot.checks).map((check) => check.metrics || {}), snapshot.license || {});
 	const gauges = [
 		["aidr_signing_last_success_age_seconds", metrics.signingLastSuccessAgeSeconds],
 		["aidr_signing_key_remaining_seconds", metrics.signingKeyRemainingSeconds],
@@ -403,6 +441,11 @@ function renderPrometheus(snapshot) {
 		["aidr_queue_oldest_age_seconds", metrics.queueOldestAgeSeconds],
 		["aidr_queue_failed_jobs", metrics.queueFailedJobs],
 		["aidr_certificate_remaining_seconds", metrics.certificateRemainingSeconds],
+		["aidr_license_evidence_ok", metrics.licenseEvidenceOk],
+		["aidr_license_present", metrics.licensePresent],
+		["aidr_license_status_age_seconds", metrics.licenseStatusAgeSeconds],
+		["aidr_license_remaining_seconds", metrics.licenseRemainingSeconds],
+		["aidr_license_grace_remaining_seconds", metrics.licenseGraceRemainingSeconds],
 	];
 	for (const [name, value] of gauges) {
 		if (Number.isFinite(value) && value >= 0) lines.push(`# TYPE ${name} gauge`, `${name} ${value}`);
@@ -437,6 +480,7 @@ export function createReadinessMonitor(config, overrides = {}) {
 			ready: config.required.every((name) => checks[name].ok),
 			required: config.required,
 			checks,
+			license: await probeLicense(config, dependencies, now),
 			collectedAt: now,
 		};
 	}

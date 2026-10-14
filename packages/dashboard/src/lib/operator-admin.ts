@@ -53,7 +53,7 @@ export interface TenantUsage {
 
 export type OperatorCall<T> =
 	| { ok: true; result: T }
-	| { ok: false; status: number | null; code: string | null };
+	| { ok: false; status: number | null; code: string | null; reason?: string | null };
 
 export type GrantLicenseInput = {
 	tenant_id: string;
@@ -88,6 +88,15 @@ const OPERATOR_ERRORS: Record<string, DashboardMessageKey> = {
 	invalid_json: "op.err.rejected",
 	invalid_action: "op.err.rejected",
 	origin_not_allowed: "op.err.origin",
+	invalid_license: "op.err.license",
+	license_expired: "op.err.licenseExpired",
+	license_not_yet_valid: "op.err.licenseNotYetValid",
+	license_import_not_pending: "op.err.licenseNotPending",
+	license_import_mismatch: "op.err.licenseMismatch",
+	license_bound_to_other_tenant: "op.err.licenseOtherTenant",
+	license_registry_unavailable: "op.err.licenseRegistry",
+	license_registry_empty: "op.err.licenseRegistry",
+	license_registry_invalid: "op.err.licenseRegistry",
 };
 
 export function operatorErrorMessage(
@@ -194,12 +203,18 @@ export function parseTenantUsage(value: unknown, tenantId: string): TenantUsage 
 	};
 }
 
-async function errorBody(error: unknown): Promise<{ status: number | null; code: string | null }> {
+async function errorBody(
+	error: unknown,
+): Promise<{ status: number | null; code: string | null; reason?: string | null }> {
 	if (isRecord(error) && error.context instanceof Response) {
 		const status = error.context.status;
 		try {
 			const body: unknown = await error.context.clone().json();
-			return { status, code: isRecord(body) && typeof body.error === "string" ? body.error : null };
+			return {
+				status,
+				code: isRecord(body) && typeof body.error === "string" ? body.error : null,
+				...(isRecord(body) && typeof body.reason === "string" ? { reason: body.reason } : {}),
+			};
 		} catch {
 			return { status, code: null };
 		}
@@ -240,4 +255,68 @@ export async function callOperatorAdmin(
 	} catch {
 		return { ok: false, status: null, code: null };
 	}
+}
+
+/** A licence a workspace admin verified and staged; the operator applies it. */
+export interface PendingLicenseImport {
+	id: string;
+	tenantId: string;
+	licenseId: string;
+	seats: number;
+	planId: string;
+	expiresAt: string;
+	graceEndsAt: string;
+	submittedAt: string;
+	/** The signed document, sent back unchanged so operator-admin re-verifies it. */
+	document: Record<string, unknown>;
+}
+
+export function parseLicenseImports(value: unknown): PendingLicenseImport[] | null {
+	if (!isRecord(value) || !Array.isArray(value.imports)) return null;
+	const rows: PendingLicenseImport[] = [];
+	for (const row of value.imports) {
+		if (
+			!isRecord(row) ||
+			typeof row.id !== "string" ||
+			!UUID.test(row.id) ||
+			typeof row.tenant_id !== "string" ||
+			!UUID.test(row.tenant_id) ||
+			typeof row.license_id !== "string" ||
+			!count(row.seats) ||
+			typeof row.plan_id !== "string" ||
+			!isDate(row.expires_at) ||
+			!isDate(row.grace_ends_at) ||
+			!isDate(row.submitted_at) ||
+			!isRecord(row.document)
+		)
+			return null;
+		rows.push({
+			id: row.id.toLowerCase(),
+			tenantId: row.tenant_id.toLowerCase(),
+			licenseId: row.license_id,
+			seats: row.seats,
+			planId: row.plan_id,
+			expiresAt: row.expires_at,
+			graceEndsAt: row.grace_ends_at,
+			submittedAt: row.submitted_at,
+			document: row.document,
+		});
+	}
+	return rows;
+}
+
+/** The applied import an `apply_license` result must carry. */
+export function appliedLicense(
+	value: unknown,
+): { licenseId: string; seats: number; graceEndsAt: string } | null {
+	if (!isRecord(value) || value.status !== "granted" || !isRecord(value.import)) return null;
+	const row = value.import;
+	if (
+		row.status !== "applied" ||
+		typeof row.license_id !== "string" ||
+		!count(row.seats) ||
+		!isDate(row.grace_ends_at)
+	)
+		return null;
+	return { licenseId: row.license_id, seats: row.seats, graceEndsAt: row.grace_ends_at };
 }

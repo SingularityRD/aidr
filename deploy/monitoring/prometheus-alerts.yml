@@ -186,3 +186,72 @@ groups:
         annotations:
           summary: AIDR dashboard is rapidly consuming its internal availability error budget
           action: Check the failing status class, recent deployment, instance logs, and dependency readiness before rollback or traffic removal.
+
+  - name: aidr-license
+    rules:
+      # License expiry is a commercial signal, never a readiness check: local
+      # detection on endpoints keeps enforcing whatever these alerts say. The
+      # gauges come from <deployment>/health/license.json, written hourly by
+      # scripts/deployment-maintenance.mjs (docs/operations/licensing.md).
+      - alert: AIDRLicenseExpiresIn30Days
+        expr: |
+          aidr_license_present{job="aidr-control-plane"} == 1
+          and on (job, instance) aidr_license_remaining_seconds{job="aidr-control-plane"} <= 2592000
+          and on (job, instance) aidr_license_remaining_seconds{job="aidr-control-plane"} > 604800
+        for: 1h
+        labels:
+          severity: warning
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR license ends within 30 days
+          action: Ask the vendor for the renewed signed license, have a workspace admin import it and an admission operator apply it.
+
+      - alert: AIDRLicenseExpiresIn7Days
+        expr: |
+          aidr_license_present{job="aidr-control-plane"} == 1
+          and on (job, instance) aidr_license_remaining_seconds{job="aidr-control-plane"} <= 604800
+          and on (job, instance) aidr_license_remaining_seconds{job="aidr-control-plane"} > 0
+        for: 15m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR license ends within 7 days
+          action: Escalate the renewal; import and apply the renewed signed license before the end date to avoid the grace period.
+
+      - alert: AIDRLicenseInGracePeriod
+        expr: |
+          aidr_license_present{job="aidr-control-plane"} == 1
+          and on (job, instance) aidr_license_remaining_seconds{job="aidr-control-plane"} == 0
+          and on (job, instance) aidr_license_grace_remaining_seconds{job="aidr-control-plane"} > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR license has ended and the grace period is running
+          action: Apply the renewed signed license now; managed features (enrollment, policy sync, telemetry) stop when the grace period ends. Local detection is unaffected.
+
+      - alert: AIDRLicenseExpired
+        expr: |
+          aidr_license_present{job="aidr-control-plane"} == 1
+          and on (job, instance) aidr_license_grace_remaining_seconds{job="aidr-control-plane"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR license and grace period have ended; managed features are stopped
+          action: Apply a renewed signed license. Endpoints keep enforcing local detection but cannot enroll or sync until admission is restored.
+
+      - alert: AIDRLicenseEvidenceUnhealthy
+        expr: |
+          aidr_license_evidence_ok{job="aidr-control-plane"} == 0
+          or aidr_license_status_age_seconds{job="aidr-control-plane"} > 10800
+        for: 30m
+        labels:
+          severity: warning
+          service: aidr-control-plane
+        annotations:
+          summary: AIDR license expiry evidence is missing, failed or stale
+          action: Check the hourly aidr-export-retention maintenance run and its license_health receipt; until it recovers, license expiry alerts cannot fire.

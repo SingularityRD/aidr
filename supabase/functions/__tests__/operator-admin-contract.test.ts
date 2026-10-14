@@ -1,4 +1,9 @@
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// @ts-expect-error JavaScript module without type declarations
+import { publicKeyEntry, signLicense } from "../../../scripts/license-issue.mjs";
+// @ts-expect-error JavaScript module without type declarations
+import { canonicalJson } from "../../../scripts/license-verify.mjs";
 
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 	createClient: () => {
@@ -90,6 +95,19 @@ function database(options: {
 					data: {
 						tenants: [{ id: TENANT, name: "Acme", kind: "team", status: "active", admission: null }],
 						next_cursor: TENANT,
+					},
+					error: null,
+				};
+			case "operator_list_license_imports":
+				return { data: { imports: [] }, error: null };
+			case "operator_apply_license":
+				return {
+					data: {
+						status: "granted",
+						tenant_id: args.p_tenant_id,
+						plan_id: "enterprise",
+						import: { status: "applied", license_id: "LIC-2026-0042", seats: 250,
+							grace_ends_at: "2027-09-15T00:00:00Z", canonical_sha256: args.p_canonical_sha256 },
 					},
 					error: null,
 				};
@@ -494,5 +512,110 @@ describe("operator-admin SQL failures fail closed", () => {
 		const response = await handle(request(body));
 		expect(response.status).toBe(503);
 		expect(await response.json()).toEqual({ error: "operator_action_unavailable" });
+	});
+});
+
+// DEV test keys only: generated in memory for every run.
+const licenseKey = generateKeyPairSync("ed25519").privateKey;
+const strangerKey = generateKeyPairSync("ed25519").privateKey;
+const licenseRegistry = Buffer.from(JSON.stringify({
+	format: "aidr-license-public-keys-v1",
+	schema_version: 1,
+	keys: [publicKeyEntry(licenseKey, { keyId: "dev-1", notBefore: "2026-01-01T00:00:00Z" })],
+})).toString("base64");
+
+function signedLicense(overrides: Record<string, unknown> = {}, key = licenseKey) {
+	return signLicense({
+		license_id: "LIC-2026-0042",
+		customer: "Example Customer AG",
+		plan_id: "enterprise",
+		seats: 250,
+		features: ["managed_policy"],
+		deployment: "onprem",
+		issued_at: "2026-09-01T00:00:00Z",
+		not_before: "2026-09-01T00:00:00Z",
+		expires_at: "2027-09-01T00:00:00Z",
+		grace_days: 14,
+		...overrides,
+	}, { privateKey: key, keyId: "dev-1" });
+}
+
+describe("operator-admin signed licence import", () => {
+	it("re-verifies the document and applies it with its canonical digest", async () => {
+		vi.stubEnv("AIDR_LICENSE_PUBLIC_KEYS_B64", licenseRegistry);
+		const document = signedLicense();
+		const { handle, rpc } = await handler();
+		const response = await handle(request({
+			action: "apply_license", tenant_id: TENANT, license: document,
+			import_id: "44444444-4444-4444-8444-444444444444",
+		}));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body.result.license).toMatchObject({ license_id: "LIC-2026-0042", seats: 250, status: "valid" });
+		expect(rpc).toHaveBeenCalledWith("operator_apply_license", {
+			p_actor_user_id: ACTOR,
+			p_tenant_id: TENANT,
+			p_import_id: "44444444-4444-4444-8444-444444444444",
+			p_document: document,
+			p_canonical_sha256: createHash("sha256").update(canonicalJson(document)).digest("hex"),
+			p_owner_user_id: null,
+		});
+	});
+
+	it("never reaches SQL with a tampered, foreign, expired or not-yet-valid licence", async () => {
+		vi.stubEnv("AIDR_LICENSE_PUBLIC_KEYS_B64", licenseRegistry);
+		const valid = signedLicense();
+		for (const [document, reason] of [
+			[{ ...valid, payload: { ...valid.payload, seats: 9999 } }, "bad_signature"],
+			[signedLicense({}, strangerKey), "bad_signature"],
+			[signedLicense({ expires_at: "2026-09-02T00:00:00Z" }), "expired"],
+			[signedLicense({ not_before: "2026-12-01T00:00:00Z" }), "not_yet_valid"],
+		] as const) {
+			const { handle, rpc } = await handler();
+			const response = await handle(request({ action: "apply_license", tenant_id: TENANT, license: document }));
+			expect(response.status, reason).toBe(422);
+			expect(await response.json(), reason).toEqual({ error: "license_rejected", reason });
+			expect(rpc, reason).not.toHaveBeenCalled();
+		}
+	});
+
+	it("fails closed without a trust registry", async () => {
+		vi.stubEnv("AIDR_LICENSE_PUBLIC_KEYS_B64", "");
+		const { handle, rpc } = await handler();
+		const response = await handle(request({ action: "apply_license", tenant_id: TENANT, license: signedLicense() }));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "license_registry_unavailable" });
+		expect(rpc).not.toHaveBeenCalled();
+	});
+
+	it("validates the envelope before verification and maps SQL refusals", async () => {
+		vi.stubEnv("AIDR_LICENSE_PUBLIC_KEYS_B64", licenseRegistry);
+		const { handle } = await handler();
+		expect((await handle(request({ action: "apply_license", tenant_id: TENANT, license: "x" }))).status).toBe(400);
+		expect((await handle(request({ action: "apply_license", tenant_id: TENANT, license: signedLicense(), import_id: "nope" }))).status).toBe(400);
+		for (const [message, status, error] of [
+			["license_import_not_pending", 409, "license_import_not_pending"],
+			["license_bound_to_other_tenant", 409, "license_bound_to_other_tenant"],
+			["admission_operator_forbidden", 403, "admission_operator_required"],
+		] as const) {
+			const failing = await handler({ rpcError: { message } });
+			const response = await failing.handle(request({ action: "apply_license", tenant_id: TENANT, license: signedLicense() }));
+			expect(response.status, message).toBe(status);
+			expect(await response.json()).toEqual({ error });
+		}
+	});
+
+	it("refuses a drifted apply result", async () => {
+		vi.stubEnv("AIDR_LICENSE_PUBLIC_KEYS_B64", licenseRegistry);
+		const { handle } = await handler({ rpcData: { status: "granted", tenant_id: TENANT, import: { status: "applied", canonical_sha256: "0".repeat(64) } } });
+		const response = await handle(request({ action: "apply_license", tenant_id: TENANT, license: signedLicense() }));
+		expect(response.status).toBe(503);
+	});
+
+	it("lists staged imports through the operator wrapper", async () => {
+		const { handle, rpc } = await handler();
+		const response = await handle(request({ action: "list_license_imports" }));
+		expect(response.status).toBe(200);
+		expect(rpc).toHaveBeenCalledWith("operator_list_license_imports", { p_actor_user_id: ACTOR, p_limit: 50 });
 	});
 });
