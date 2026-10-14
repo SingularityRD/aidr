@@ -364,6 +364,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `restoreResponses` | boolean | `true` |
 | `useNativeHost` | boolean | `false` (also a user setting unless managed; forced on by `requireNativeNer` or `exactData`) |
 | `requireNativeNer` | boolean (managed only; the signed dashboard policy can also switch it on, `true` wins): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
+| `workAccounts` | `{ action: warn \| block \| mask-only, unverified?: enforce \| allow, sites: { chatgpt?, claude?, gemini?, copilot?: { workspaceIds?, emailDomains? } } }` (managed only; see [Personal vs company AI accounts](#personal-vs-company-ai-accounts)) | none (no account check) |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
 | `policyId` | string reported with telemetry | `aidr-browser-guard-default` |
@@ -485,6 +486,20 @@ signed document expires (24 h by default) without a successful refresh, its bloc
 stay and its sanctions are dropped. Deploy `telemetry` through managed policy as well,
 so a user cannot disconnect the refresh. The GPO/MDM `shadowAi` snippet remains the
 alternative for fleets without a control plane.
+
+### Personal vs company AI accounts
+
+`workAccounts` (managed only) checks, on ChatGPT, Claude, Gemini and Copilot, whether the
+user is signed in with the organisation's account: a listed ChatGPT workspace id or Claude
+organisation UUID, an account email in a listed domain (Gemini, Microsoft 365 Copilot Chat),
+or the Microsoft 365 host itself. Any other account gets the configured action: `warn`
+(the first send asks Continue / Cancel), `block` (sends and uploads refused) or `mask-only`
+(always masked: no monitor mode, pause or **Send original** on that account). An account the
+page does not identify is treated like a personal one unless `unverified: "allow"`. Signals
+are read from the page's URL, non-HttpOnly cookies and DOM only; ids and domains never leave
+the content script, and telemetry carries only an `account_type` enum. What each site
+exposes, what cannot be detected (desktop apps, Safari, other browsers) and the recommended
+proxy and identity-provider controls are in [`docs/work-accounts.md`](docs/work-accounts.md).
 
 ### Exact data match
 

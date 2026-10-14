@@ -401,7 +401,8 @@ class Harness {
 					});
 				}
 				if (request.method() === "GET" && request.resourceType() === "document") {
-					const html = fs.readFileSync(path.join(FIXTURES, site.fixture), "utf8");
+					const fixture = site.pathFixtures?.[url.pathname] ?? site.fixture;
+					const html = fs.readFileSync(path.join(FIXTURES, fixture), "utf8");
 					return route.fulfill({
 						status: 200,
 						contentType: "text/html; charset=utf-8",
@@ -426,7 +427,7 @@ class Harness {
 	 * observed through CDP: its isolated world shows up as an execution context
 	 * whose origin is the extension.
 	 */
-	async openSite(siteKey, { expectContentScript = true } = {}) {
+	async openSite(siteKey, { expectContentScript = true, path: sitePath } = {}) {
 		const site = SITES[siteKey];
 		const page = await this.context.newPage();
 		const pageErrors = [];
@@ -445,7 +446,7 @@ class Harness {
 		});
 		await cdp.send("Runtime.enable");
 
-		await page.goto(`${site.origin}${site.path}`, { waitUntil: "load" });
+		await page.goto(`${site.origin}${sitePath ?? site.path}`, { waitUntil: "load" });
 		await page.bringToFront();
 		await waitFor(
 			() => page.evaluate(() => document.documentElement.getAttribute("data-fixture-ready")),

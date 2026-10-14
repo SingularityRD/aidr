@@ -38,6 +38,7 @@
 import { toBase64 } from "../../../privacy/src/browser/transport.js";
 import { type Counts, countFindings } from "../engine/counts.js";
 import { MAX_OCR_IMAGE_BYTES } from "../engine/office/images.js";
+import { type AccountProbe, type AccountVerdict, accountVerdict } from "../sites/accounts.js";
 import {
 	type DetectionEngine,
 	type EditorAccess,
@@ -121,6 +122,11 @@ export interface ContentGuardDeps {
 	readonly nativeTimeoutMs?: number;
 	/** Upper bound for waiting on NATIVE_IMAGE_SCAN (ms); defaults to NATIVE_IMAGE_REPLY_TIMEOUT_MS. */
 	readonly nativeImageTimeoutMs?: number;
+	/**
+	 * What the page exposes about the signed-in account (policy.workAccounts); defaults to
+	 * this window's URL, `document.cookie` and document.
+	 */
+	accountProbe?(): AccountProbe;
 }
 
 export interface ContentGuard {
@@ -409,6 +415,73 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const monitoring = (p: GuardPolicy): boolean =>
 		p.mode === "monitor" || p.disabledSites.includes(adapter.id);
 
+	// ---- personal vs company account (policy.workAccounts, ../sites/accounts.ts) ----------
+
+	const accountProbe = (): AccountProbe => {
+		if (deps.accountProbe) return deps.accountProbe();
+		let cookie = "";
+		try {
+			cookie = doc.cookie;
+		} catch {
+			// A sandboxed document has no cookie access: the signal is simply absent.
+		}
+		return { url: win.location?.href ?? "", cookie, root: doc };
+	};
+	/** The account check on this page, or null when the site is not account-checked. */
+	const accountCheck = (policy: GuardPolicy | null): AccountVerdict | null => {
+		if (!policy?.workAccounts) return null;
+		try {
+			return accountVerdict(policy.workAccounts, adapter.id, accountProbe());
+		} catch {
+			// Fail closed: an account that cannot be checked is not confirmed.
+			return { type: "unverified", enforce: true, action: policy.workAccounts.action, key: "" };
+		}
+	};
+	/** The `warn` acknowledgement given on this page (verdict key), if any. */
+	let accountAcknowledged: string | null = null;
+	/** Verdict keys already explained once on this page (mask-only notice, upload warning). */
+	const accountNoticed = new Set<string>();
+	/** mask-only: the explanation still to show with this send, if not shown yet. */
+	let accountNotice: { key: string; text: string } | null = null;
+	/** The pending mask-only explanation as extra message lines (consumed once). */
+	const takeAccountNotice = (): string[] => {
+		const notice = accountNotice;
+		accountNotice = null;
+		if (!notice || accountNoticed.has(notice.key)) return [];
+		accountNoticed.add(notice.key);
+		return [notice.text];
+	};
+	let maskOnlyBase: GuardPolicy | null = null;
+	let maskOnlyDerived: GuardPolicy | null = null;
+	/**
+	 * `mask-only` on an account that is not the organisation's: sends are masked whatever the
+	 * mode (monitor, a user pause and a user-disabled site do not apply) and "Send original" is
+	 * not offered. Memoised per base policy so the scan cache keeps working.
+	 */
+	const maskOnly = (policy: GuardPolicy): GuardPolicy => {
+		if (maskOnlyBase !== policy || !maskOnlyDerived) {
+			maskOnlyBase = policy;
+			maskOnlyDerived = Object.freeze({
+				...policy,
+				mode: policy.mode === "monitor" ? "auto" : policy.mode,
+				allowSendAnyway: false,
+				disabledSites: policy.disabledSites.filter((site) => site !== adapter.id),
+			});
+		}
+		return maskOnlyDerived;
+	};
+	/** The policy in force on this page: the worker's, tightened by a mask-only account check. */
+	const currentPolicy = (): GuardPolicy | null => {
+		const policy = deps.getPolicy();
+		if (!policy) return null;
+		const verdict = accountCheck(policy);
+		return verdict?.enforce && verdict.action === "mask-only" ? maskOnly(policy) : policy;
+	};
+	const accountLines = (verdict: AccountVerdict): string[] => {
+		const s = strings();
+		return verdict.type === "company" ? [] : [s.accountReason(verdict.type, adapter.label)];
+	};
+
 	const record = (
 		action: PrivacyScanEvent["action"],
 		channel: PrivacyScanEvent["channel"],
@@ -421,6 +494,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 		const use = recordedNative(native);
 		try {
+			const account = accountCheck(deps.getPolicy())?.type;
 			void Promise.resolve(
 				deps.send({
 					type: "RECORD",
@@ -429,6 +503,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 					channel,
 					counts: safe,
 					...(use ? { native: use } : {}),
+					...(account ? { account } : {}),
 				}),
 			).catch(() => undefined);
 		} catch {
@@ -759,7 +834,10 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			record("blocked", "prompt", counts);
 			return;
 		}
-		ui.toast([s.maskedToast(summarize(counts)), ...nativeLines(scanned)].join(" "), "info");
+		ui.toast(
+			[s.maskedToast(summarize(counts)), ...nativeLines(scanned), ...takeAccountNotice()].join(" "),
+			"info",
+		);
 		record("masked", "prompt", counts, scanned.native);
 		await replay(origin, editor, masked);
 	};
@@ -864,6 +942,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			lines: [
 				s.confirmBody(summarize(counts), exampleLabel(counts), restoresAny(policy, counts)),
 				...coaching,
+				...takeAccountNotice(),
 			],
 			actions,
 			tone: "warn",
@@ -985,7 +1064,72 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			refuseSend(event, strings().siteBlocked);
 			return null;
 		}
-		return policy;
+		return accountAllowsSend(event, policy) ? currentPolicy() : null;
+	};
+
+	/**
+	 * policy.workAccounts on a send: `block` refuses it, `warn` holds the first one on the page
+	 * (per account) until the user presses Continue, `mask-only` explains once that originals
+	 * cannot be sent. An organisation rule: applies in every mode, like a site block.
+	 */
+	const accountAllowsSend = (event: Event, policy: GuardPolicy): boolean => {
+		const verdict = accountCheck(policy);
+		if (!verdict?.enforce) return true;
+		const s = strings();
+		if (verdict.action === "block") {
+			stopEvent(event);
+			showBlocked([...accountLines(verdict), s.accountBlocked(adapter.label)], s.accountTitle);
+			record("blocked", "prompt", {});
+			return false;
+		}
+		if (verdict.action === "mask-only") {
+			// Explained with the first masked send (or confirm bubble) of this account.
+			accountNotice = accountNoticed.has(verdict.key)
+				? null
+				: { key: verdict.key, text: [...accountLines(verdict), s.accountMaskOnly].join(" ") };
+			return true;
+		}
+		if (accountAcknowledged === verdict.key) return true;
+		stopEvent(event);
+		record("warned", "prompt", {});
+		void ui
+			.bubble({
+				title: s.accountTitle,
+				lines: [...accountLines(verdict), s.accountWarn],
+				actions: [
+					{ id: "account-cancel", label: s.accountCancel, primary: true },
+					{ id: "account-continue", label: s.accountContinue },
+				],
+				tone: "warn",
+			})
+			.then((choice) => {
+				if (choice !== "account-continue") return;
+				accountAcknowledged = verdict.key;
+				ui.toast(strings().accountSendAgain, "info");
+			})
+			.catch(() => undefined);
+		return false;
+	};
+
+	/**
+	 * policy.workAccounts on an upload: the block message under `block`, otherwise null (under
+	 * `warn` the upload goes on with the usual checks after a one-time warning).
+	 */
+	const accountUploadBlock = (): string | null => {
+		const verdict = accountCheck(deps.getPolicy());
+		if (!verdict?.enforce) return null;
+		const s = strings();
+		const reason = accountLines(verdict);
+		if (verdict.action === "block")
+			return [...reason, s.accountUploadBlocked(adapter.label)].join(" ");
+		if (verdict.action === "warn" && accountAcknowledged !== verdict.key) {
+			const key = `upload:${verdict.key}`;
+			if (!accountNoticed.has(key)) {
+				accountNoticed.add(key);
+				ui.toast([...reason, s.accountUploadWarn].join(" "), "warn");
+			}
+		}
+		return null;
 	};
 
 	/**
@@ -1155,12 +1299,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	// ---- pre-scan while typing --------------------------------------------------------
 
 	const schedulePrescan = (): void => {
-		const policy = deps.getPolicy();
+		const policy = currentPolicy();
 		if (!policy || monitoring(policy) || siteBlocked(policy)) return;
 		if (prescanTimer !== undefined) win.clearTimeout(prescanTimer);
 		prescanTimer = win.setTimeout(() => {
 			prescanTimer = undefined;
-			const current = deps.getPolicy();
+			const current = currentPolicy();
 			const editor = editorFor(null);
 			if (!current || !editor) return;
 			let text: string;
@@ -1214,7 +1358,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const maskText = async (
 		text: string,
 	): Promise<{ text: string; counts: Counts } | typeof NATIVE_UNAVAILABLE | null> => {
-		const policy = deps.getPolicy();
+		const policy = currentPolicy();
 		const result = await scan(text, policy);
 		if (!result) return null;
 		if (policy && nativeMissing(policy, result)) return NATIVE_UNAVAILABLE;
@@ -1267,7 +1411,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	 * refused (no policy, blocked site) or left to the page (maskPaste off).
 	 */
 	const pastePolicy = (event: Event): GuardPolicy | null => {
-		const policy = deps.getPolicy();
+		const policy = currentPolicy();
 		if (!policy) {
 			stopEvent(event);
 			ui.toast(strings().policyMissing, "error");
@@ -1371,7 +1515,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		vault: fileVault,
 		ui,
 		sanitizeFile: deps.sanitizeFile,
-		getPolicy: deps.getPolicy,
+		getPolicy: currentPolicy,
+		accountUploadBlock,
 		strings,
 		record,
 		maskText,

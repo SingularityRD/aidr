@@ -44,6 +44,7 @@ belirtilmiştir.
     - [13a. Gölge Yapay Zekâ (Shadow AI) keşfi ve denetimi](#13a-gölge-yapay-zekâ-shadow-ai-keşfi-ve-denetimi)
     - [13b. Kurum içi özel yapay zekâ siteleri](#13b-kurum-içi-özel-yapay-zekâ-siteleri)
     - [13c. Yapay zekâ kabul edilebilir kullanım bildirimi](#13c-yapay-zekâ-kabul-edilebilir-kullanım-bildirimi)
+    - [13d. Kişisel ve kurumsal yapay zekâ hesapları](#13d-kişisel-ve-kurumsal-yapay-zekâ-hesapları)
 14. [Kurumsal yönetilen politika ve dağıtım](#14-kurumsal-yönetilen-politika-ve-dağıtım)
 15. [Yalnızca sayım içeren telemetri ve Browser Guard panel sayfası](#15-yalnızca-sayım-içeren-telemetri-ve-browser-guard-panel-sayfası)
 16. [NER ve OCR için isteğe bağlı native host](#16-ner-ve-ocr-için-isteğe-bağlı-native-host)
@@ -1352,6 +1353,56 @@ onaylayan tarayıcı kurulumu sayısını bir artırır.
 **Sınırlamalar**
 - Kodlama ajanı connector'ları bildirimi göstermez; bu bir Browser Guard özelliğidir.
 - Telemetri yapılandırılmamışken verilen bir onay sonradan raporlanmaz.
+
+### 13d. Kişisel ve kurumsal yapay zekâ hesapları
+
+**Ne yapar** — ChatGPT, Claude, Gemini ve Copilot'ta kullanıcının kurumun hesabıyla mı yoksa
+kişisel bir hesapla mı oturum açtığını denetler; kurum hesabı doğrulanamazsa uyarır, gönderimi
+engeller ya da yalnızca maskeli gönderime izin verir.
+
+**Neden önemli** — Kurumsal sürümler (ChatGPT Team/Enterprise, Claude Team/Enterprise, Google
+Workspace ile Gemini, Microsoft 365 Copilot Chat) istemleri sözleşme, saklama ve denetim
+ayarlarıyla korur; aynı sitedeki kişisel hesap bunları sağlamaz.
+
+**Nasıl çalışır** — Yöneticiler yönetilen `workAccounts` anahtarında site başına izin verilen
+çalışma alanı kimliklerini (`workspaceIds`: ChatGPT çalışma alanı, Claude kuruluş UUID'si) ve
+e-posta alan adlarını (`emailDomains`) listeler ve diğer hesaplar için eylemi seçer: `warn`
+(sayfadaki ilk gönderimde **Devam et** / **Vazgeç** sorulur), `block` (gönderim ve dosya
+yükleme reddedilir) ya da `mask-only` (gönderim her zaman maskelenir; o hesapta izleme modu,
+duraklatma ve **Send original** geçerli değildir). Sayfanın tanıtmadığı bir hesap,
+`unverified: "allow"` verilmedikçe kişisel hesap gibi ele alınır. Browser Guard yalnızca
+sayfanın adresini, HttpOnly olmayan çerezlerini ve DOM'unu okur; kimlik ve alan adı içerik
+betiğinden çıkmaz. Telemetri yalnızca `account_type` değerini (company, personal, other,
+unverified) taşır.
+
+**Nasıl kullanılır** — Örnek: `{"workAccounts": {"action": "block", "sites": {"gemini":
+{"emailDomains": ["acme.com.tr"]}, "copilot": {"emailDomains": ["acme.com.tr"]}}}}`. Her
+sitenin ne gösterdiği ve neyin algılanamadığı
+[`packages/browser-guard/docs/work-accounts.md`](../../../../packages/browser-guard/docs/work-accounts.md)
+belgesindedir.
+
+**Örnek** — Gemini'ye gmail.com hesabıyla giren kullanıcı mesaj gönderemez: "Hiçbir şey
+gönderilmedi. Kurumunuz Gemini hizmetini yalnızca kurum hesabıyla kullanmaya izin veriyor.
+Kurum hesabınıza geçip yeniden deneyin." Aynı sekmede acme.com.tr hesabına geçince gönderim
+her zamanki gibi maskelenerek yapılır.
+
+**Kapsam**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (katalog) |
+| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped |
+| Platformlar | Chrome, Edge, Firefox (masaüstü) |
+
+**Sınırlamalar**
+- Masaüstü ve mobil uygulamalar (ChatGPT, Claude, Copilot uygulamaları), Safari ve eklentisiz
+  tarayıcılar kapsam dışıdır. Bunlar için Entra ID Tenant Restrictions v2, proxy'de
+  `X-GoogApps-Allowed-Domains` başlığı, ChatGPT/Claude alan adı doğrulaması ve SSO zorunluluğu
+  ile uygulama denetimi (Intune, AppLocker, WDAC) önerilir.
+- Sinyaller satıcı API'si değil, sayfada gözlenen işaretleme ve çerezlerdir; canlı kiracılarda
+  henüz doğrulanmadı (BG-LIVE). Sinyal kaybolursa hesap "doğrulanamadı" sayılır.
+- Şirket e-postasıyla açılmış kişisel bir Google hesabı Gemini'de kurum hesabı gibi görünür.
+- Kontrol düzlemi `account_type` alanını henüz saklamıyor; panel raporu sonraki adımdır.
 
 ### 14. Kurumsal yönetilen politika ve dağıtım
 

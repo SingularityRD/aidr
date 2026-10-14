@@ -32,6 +32,7 @@ import { fromBase64 } from "../../../privacy/src/browser/transport.js";
 import { serviceForUrl } from "../sites/catalog.js";
 import { isFrameGuardUrl } from "../sites/frames.js";
 import type {
+	AccountType,
 	GuardError,
 	GuardPolicy,
 	GuardResponse,
@@ -79,6 +80,7 @@ import {
 	type StorageChange,
 } from "./storage.js";
 import {
+	isAccountType,
 	type NavigatorLike,
 	POLICY_ERRORS_MAX,
 	TELEMETRY_ALARM,
@@ -97,6 +99,17 @@ const NATIVE_SCAN_MAX_CHARS = 1_000_000;
 const ACTIONS: readonly PrivacyScanEvent["action"][] = ["masked", "blocked", "warned", "allowed"];
 const CHANNELS: readonly PrivacyScanEvent["channel"][] = ["prompt", "paste", "file"];
 const NATIVE_NER_USES: readonly NativeNerUse[] = ["used", "unavailable"];
+
+/** RECORD fields: a known action and channel, optional native NER and account enums. */
+function isRecordMessage(message: Record<string, unknown>): boolean {
+	const { action, channel, native, account } = message;
+	return (
+		ACTIONS.includes(action as PrivacyScanEvent["action"]) &&
+		CHANNELS.includes(channel as PrivacyScanEvent["channel"]) &&
+		(native === undefined || NATIVE_NER_USES.includes(native as NativeNerUse)) &&
+		(account === undefined || isAccountType(account))
+	);
+}
 /** policy.requireNativeNer: only a host answer with NER coverage counts (see native.ts). */
 const REQUIRE_NER: NativeScanOptions = Object.freeze({ requireNer: true });
 /** After the native host could not supply exact-data keys, ask again no sooner than this. */
@@ -658,11 +671,8 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 
 	async function record(message: Record<string, unknown>, who: Sender): Promise<GuardResponse> {
 		if (who.kind !== "content") return fail("NOT_ALLOWED");
-		const { action, channel, counts, native } = message;
-		if (!ACTIONS.includes(action as PrivacyScanEvent["action"])) return fail("BAD_MESSAGE");
-		if (!CHANNELS.includes(channel as PrivacyScanEvent["channel"])) return fail("BAD_MESSAGE");
-		if (native !== undefined && !NATIVE_NER_USES.includes(native as NativeNerUse))
-			return fail("BAD_MESSAGE");
+		const { action, channel, counts, native, account } = message;
+		if (!isRecordMessage(message)) return fail("BAD_MESSAGE");
 		const marks = await telemetryMarks();
 		// The site is derived from the sender, never taken from the message.
 		const tab = await stats.record(
@@ -680,6 +690,7 @@ export function startBackground(options: BackgroundOptions): BackgroundControlle
 				counts,
 				policyId: current.policyId,
 				...(native !== undefined ? { nativeNer: native as NativeNerUse } : {}),
+				...(account !== undefined ? { accountType: account as AccountType } : {}),
 				...marks,
 			})
 			.catch(() => log("telemetry: failed to queue event"));

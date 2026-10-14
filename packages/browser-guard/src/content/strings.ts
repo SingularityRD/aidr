@@ -99,6 +99,27 @@ export interface Strings {
 	readonly aupRecorded: string;
 	readonly aupRecordFailed: string;
 	aupVersion(version: number): string;
+	/**
+	 * Personal vs company account (managed `workAccounts`). `site` is the site's display name;
+	 * no workspace id, email or domain is ever shown.
+	 */
+	readonly accountTitle: string;
+	/** Why the account is not confirmed as the organisation's. */
+	accountReason(type: "personal" | "other" | "unverified", site: string): string;
+	/** warn: what to do; the bubble offers Continue / Cancel. */
+	readonly accountWarn: string;
+	/** block: nothing was sent. */
+	accountBlocked(site: string): string;
+	/** block: an upload was refused. */
+	accountUploadBlocked(site: string): string;
+	/** warn: shown for an upload (it continues with the usual checks). */
+	readonly accountUploadWarn: string;
+	/** mask-only: shown once per page. */
+	readonly accountMaskOnly: string;
+	readonly accountContinue: string;
+	readonly accountCancel: string;
+	/** warn: after Continue (the held message was not sent). */
+	readonly accountSendAgain: string;
 }
 
 /** Brand name; never translated or upper-cased (the UI marks it lang="en"). */
@@ -333,6 +354,26 @@ const EN: Strings = {
 	aupRecorded: "Thank you. Your acknowledgement was recorded.",
 	aupRecordFailed: "Your acknowledgement could not be saved; the notice will be shown again.",
 	aupVersion: (version) => `Acceptable-use notice, version ${version}`,
+	accountTitle: "Company account not confirmed",
+	accountReason: (type, site) =>
+		type === "personal"
+			? `You appear to be signed in to ${site} with a personal account.`
+			: type === "other"
+				? `This ${site} account is not one of your organisation's approved accounts.`
+				: `${BRAND} could not confirm that you are signed in to ${site} with your organisation's account.`,
+	accountWarn:
+		"Share company data only through your organisation's account. Switch accounts, or press Continue if this is intended.",
+	accountBlocked: (site) =>
+		`Nothing was sent. Your organisation allows ${site} only with its company account. Switch to your company account and try again.`,
+	accountUploadBlocked: (site) =>
+		`The file was not uploaded. Your organisation allows ${site} only with its company account. Switch to your company account and try again.`,
+	accountUploadWarn:
+		"This does not look like your organisation's account. Share company files only through your organisation's account.",
+	accountMaskOnly:
+		"This is not your organisation's account, so sensitive data is always masked here and the original cannot be sent.",
+	accountContinue: "Continue",
+	accountCancel: "Cancel",
+	accountSendAgain: "Press send again to send your message.",
 };
 
 const TR: Strings = {
@@ -408,6 +449,26 @@ const TR: Strings = {
 	aupRecorded: "Teşekkürler. Onayınız kaydedildi.",
 	aupRecordFailed: "Onayınız kaydedilemedi; bildirim yeniden gösterilecek.",
 	aupVersion: (version) => `Kabul edilebilir kullanım bildirimi, sürüm ${version}`,
+	accountTitle: "Kurum hesabı doğrulanamadı",
+	accountReason: (type, site) =>
+		type === "personal"
+			? `${site} hizmetine kişisel bir hesapla girmiş görünüyorsunuz.`
+			: type === "other"
+				? `Bu ${site} hesabı, kurumunuzun onayladığı hesaplardan biri değil.`
+				: `${BRAND}, ${site} hizmetine kurumunuzun hesabıyla girdiğinizi doğrulayamadı.`,
+	accountWarn:
+		"Kurum verilerini yalnızca kurumunuzun hesabıyla paylaşın. Hesabınızı değiştirin; bilerek devam ediyorsanız «Devam et» düğmesine basın.",
+	accountBlocked: (site) =>
+		`Hiçbir şey gönderilmedi. Kurumunuz ${site} hizmetini yalnızca kurum hesabıyla kullanmaya izin veriyor. Kurum hesabınıza geçip yeniden deneyin.`,
+	accountUploadBlocked: (site) =>
+		`Dosya yüklenmedi. Kurumunuz ${site} hizmetini yalnızca kurum hesabıyla kullanmaya izin veriyor. Kurum hesabınıza geçip yeniden deneyin.`,
+	accountUploadWarn:
+		"Bu, kurumunuzun hesabı gibi görünmüyor. Kurum dosyalarını yalnızca kurumunuzun hesabıyla paylaşın.",
+	accountMaskOnly:
+		"Bu, kurumunuzun hesabı değil; bu nedenle burada hassas veriler her zaman maskelenir ve asıl hâli gönderilemez.",
+	accountContinue: "Devam et",
+	accountCancel: "Vazgeç",
+	accountSendAgain: "Mesajınızı göndermek için gönder düğmesine yeniden basın.",
 };
 
 export const STRINGS: Readonly<Record<Lang, Strings>> = { en: EN, tr: TR };

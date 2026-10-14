@@ -9,10 +9,13 @@
  * `policy.policyErrors` so the popup, the options page and telemetry can report it. Warnings
  * and error codes name keys only, never values (an apiKey must not reach a log line).
  */
+import { WORKSPACE_ID_PATTERN } from "../sites/accounts.js";
 import { AI_SERVICE_ID_PATTERN, AI_SERVICES } from "../sites/catalog.js";
 import { CUSTOM_SITE_LIMITS, SELECTOR_FORBIDDEN } from "../sites/custom.js";
 import {
+	ACCOUNT_SITE_IDS,
 	type AcceptableUseNotice,
+	type AccountSiteId,
 	type CustomSiteConfig,
 	type DashboardPolicyTrust,
 	ENTITY_TYPES,
@@ -26,6 +29,9 @@ import {
 	type SiteId,
 	type TelemetryConfig,
 	type UserSettings,
+	type WorkAccountAction,
+	type WorkAccountPolicy,
+	type WorkAccountSiteRule,
 } from "../types.js";
 import { SITE_HOSTS, SITE_PATHS } from "./dnr.js";
 import { sha256Hex } from "./sha256.js";
@@ -104,6 +110,7 @@ export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
 	policyId: "aidr-browser-guard-default",
 	acceptableUse: null,
 	dashboardPolicy: null,
+	workAccounts: null,
 } satisfies GuardPolicy);
 
 type Validator = (raw: unknown) => { ok: true; value: unknown } | { ok: false };
@@ -538,6 +545,95 @@ const dashboardPolicy: Validator = (raw) => {
 	} satisfies DashboardPolicyTrust);
 };
 
+export const WORK_ACCOUNT_ACTIONS: readonly WorkAccountAction[] = Object.freeze([
+	"warn",
+	"block",
+	"mask-only",
+]);
+export const WORK_ACCOUNT_LIMITS = Object.freeze({ maxIdsPerSite: 64, maxDomainsPerSite: 64 });
+const WORK_ACCOUNT_KEYS = ["action", "unverified", "sites"];
+const WORK_ACCOUNT_RULE_KEYS = ["workspaceIds", "emailDomains"];
+
+const workspaceIdEntry = (item: unknown): string | null =>
+	typeof item === "string" && WORKSPACE_ID_PATTERN.test(item) ? item.toLowerCase() : null;
+
+/** An email domain: a bare hostname (an `@` prefix is tolerated), lowercase. */
+const emailDomainEntry = (item: unknown): string | null => {
+	if (typeof item !== "string") return null;
+	const domain = item.trim().toLowerCase().replace(/^@/, "");
+	return HOSTNAME_PATTERN.test(domain) && !/^[0-9.]+$/.test(domain) ? domain : null;
+};
+
+/** One site's rule; `strict` refuses any bad entry, otherwise bad entries are dropped. */
+function workAccountRule(raw: unknown, strict: boolean): WorkAccountSiteRule | null {
+	if (!isPlainObject(raw)) return strict ? null : { workspaceIds: [], emailDomains: [] };
+	if (strict && Object.keys(raw).some((k) => !WORK_ACCOUNT_RULE_KEYS.includes(k))) return null;
+	const lists = [
+		[raw.workspaceIds, WORK_ACCOUNT_LIMITS.maxIdsPerSite, workspaceIdEntry],
+		[raw.emailDomains, WORK_ACCOUNT_LIMITS.maxDomainsPerSite, emailDomainEntry],
+	] as const;
+	const out: string[][] = [];
+	for (const [list, max, entry] of lists) {
+		if (list === undefined) {
+			out.push([]);
+			continue;
+		}
+		if (strict && (!Array.isArray(list) || list.length > max || !list.every((v) => entry(v))))
+			return null;
+		out.push(validEntries(list, max, entry));
+	}
+	return { workspaceIds: out[0] ?? [], emailDomains: out[1] ?? [] };
+}
+
+/**
+ * Rules of the sites listed in `raw.sites`; `strict` refuses an unknown site or a bad rule,
+ * otherwise every known site is kept with its valid identifiers.
+ */
+function workAccountSites(
+	raw: unknown,
+	strict: boolean,
+): Partial<Record<AccountSiteId, WorkAccountSiteRule>> | null {
+	if (!isPlainObject(raw)) return strict ? null : {};
+	const out: Partial<Record<AccountSiteId, WorkAccountSiteRule>> = {};
+	for (const [site, value] of Object.entries(raw)) {
+		if (!(ACCOUNT_SITE_IDS as readonly string[]).includes(site)) {
+			if (strict) return null;
+			continue;
+		}
+		const rule = workAccountRule(value, strict);
+		if (!rule) return null;
+		out[site as AccountSiteId] = rule;
+	}
+	return out;
+}
+
+/** `workAccounts`: personal vs company AI accounts (managed only). */
+const workAccounts: Validator = (raw) => {
+	if (!isPlainObject(raw) || Object.keys(raw).some((k) => !WORK_ACCOUNT_KEYS.includes(k)))
+		return invalid;
+	if (!WORK_ACCOUNT_ACTIONS.includes(raw.action as WorkAccountAction)) return invalid;
+	const unverified = raw.unverified ?? "enforce";
+	if (unverified !== "enforce" && unverified !== "allow") return invalid;
+	const sites = workAccountSites(raw.sites, true);
+	if (!sites || Object.keys(sites).length === 0) return invalid;
+	return valid({
+		action: raw.action as WorkAccountAction,
+		unverified,
+		sites,
+	} satisfies WorkAccountPolicy);
+};
+
+/**
+ * An invalid `workAccounts` keeps every known site with its valid identifiers and takes the
+ * strictest settings: `block`, unverified accounts enforced. With no usable site it stays off
+ * (there is nothing to check), and the key is still reported in `policyErrors`.
+ */
+function failSafeWorkAccounts(raw: unknown): WorkAccountPolicy | null {
+	const sites = workAccountSites(isPlainObject(raw) ? raw.sites : undefined, false) ?? {};
+	if (Object.keys(sites).length === 0) return null;
+	return { action: "block", unverified: "enforce", sites };
+}
+
 type ManagedKey = Exclude<keyof GuardPolicy, "version" | "managedKeys" | "policyErrors">;
 
 const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
@@ -566,6 +662,7 @@ const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	policyId,
 	acceptableUse,
 	dashboardPolicy,
+	workAccounts,
 };
 
 /** The valid entries of a list (at most `max`, duplicates dropped); [] for a non-list. */
@@ -671,6 +768,7 @@ const FAIL_SAFE: Readonly<Partial<Record<ManagedKey, (raw: unknown) => unknown>>
 	restoreResponses: () => false,
 	useNativeHost: () => true,
 	requireNativeNer: () => true,
+	workAccounts: failSafeWorkAccounts,
 };
 
 /**

@@ -42,6 +42,7 @@ Related documents: [product overview](../../overview.md) ·
     - [13a. Shadow AI discovery and control](#13a-shadow-ai-discovery-and-control)
     - [13b. Custom internal AI sites](#13b-custom-internal-ai-sites)
     - [13c. AI acceptable-use notice](#13c-ai-acceptable-use-notice)
+    - [13d. Personal vs company AI accounts](#13d-personal-vs-company-ai-accounts)
 14. [Enterprise managed policy and deployment](#14-enterprise-managed-policy-and-deployment)
 15. [Counts-only telemetry and the Browser Guard dashboard page](#15-counts-only-telemetry-and-the-browser-guard-dashboard-page)
 16. [Optional native host for NER and OCR](#16-optional-native-host-for-ner-and-ocr)
@@ -1281,6 +1282,55 @@ install for version 2.
 **Limitations**
 - Coding-agent connectors do not show the notice; it is a Browser Guard feature.
 - An acknowledgement made while telemetry is not configured is not reported later.
+
+### 13d. Personal vs company AI accounts
+
+**What it does** — Checks, on ChatGPT, Claude, Gemini and Copilot, whether the user is signed
+in with the organisation's account, and warns, blocks sending, or allows masked sends only
+when it is not.
+
+**Why it matters** — The company products (ChatGPT Team/Enterprise, Claude Team/Enterprise,
+Gemini with Google Workspace, Microsoft 365 Copilot Chat) keep prompts under the company's
+contract, retention and audit settings; a personal account on the same website does not.
+
+**How it works** — Administrators list, per site, the allowed workspace ids (`workspaceIds`:
+ChatGPT workspace, Claude organisation UUID) and email domains (`emailDomains`) in the
+managed key `workAccounts`, and pick the action for every other account: `warn` (the first
+send on the page asks **Continue** / **Cancel**), `block` (sends and uploads refused) or
+`mask-only` (sends always masked; monitor mode, pause and **Send original** do not apply on
+that account). An account the page does not identify is treated like a personal one unless
+`unverified: "allow"`. Browser Guard reads only the page's URL, its non-HttpOnly cookies and
+its DOM; ids and domains never leave the content script. Telemetry carries only an
+`account_type` enum (company, personal, other, unverified).
+
+**How to use** — Example: `{"workAccounts": {"action": "block", "sites": {"gemini":
+{"emailDomains": ["acme.com.tr"]}, "copilot": {"emailDomains": ["acme.com.tr"]}}}}`. What each
+site exposes and what cannot be detected:
+[`packages/browser-guard/docs/work-accounts.md`](../../../../packages/browser-guard/docs/work-accounts.md).
+
+**Example** — A user signed in to Gemini with a gmail.com account cannot send: "Nothing was
+sent. Your organisation allows Gemini only with its company account. Switch to your company
+account and try again." After switching to the acme.com.tr account in the same tab, the next
+send is masked as usual.
+
+**Availability**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (catalog) |
+| Deployment | Local / Cloud / On-prem / Air-gapped |
+| Platforms | Chrome, Edge, Firefox (desktop) |
+
+**Limitations**
+- Desktop and mobile apps (ChatGPT, Claude, Copilot), Safari and browsers without the
+  extension are not covered. Pair it with Entra ID Tenant Restrictions v2, the
+  `X-GoogApps-Allowed-Domains` header at the proxy, ChatGPT/Claude domain verification with
+  SSO enforcement, and application control (Intune, AppLocker, WDAC).
+- The signals are observed page markup and cookies, not vendor APIs, and are not yet verified
+  against live tenants (BG-LIVE). When a signal disappears, the account counts as unverified.
+- A personal Google account created with a company email address looks like a company account
+  on Gemini.
+- The control plane does not store `account_type` yet; dashboard reporting is a follow-up.
 
 ### 14. Enterprise managed policy and deployment
 

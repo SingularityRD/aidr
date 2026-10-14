@@ -232,6 +232,55 @@ export interface ShadowAiPolicy {
 	readonly blocked: readonly string[];
 }
 
+/**
+ * Sites where Browser Guard can tell a company workspace from a personal account
+ * (src/sites/accounts.ts). Other sites expose no usable signal and are never account-checked.
+ */
+export const ACCOUNT_SITE_IDS = ["chatgpt", "claude", "gemini", "copilot"] as const;
+export type AccountSiteId = (typeof ACCOUNT_SITE_IDS)[number];
+
+/**
+ * What the guard does on a configured site when the signed-in account is not confirmed as one
+ * of the organisation's (managed key `workAccounts`):
+ *   warn       the first send on the page asks the user to confirm (Continue / Cancel); uploads
+ *              show a warning; masking runs as usual
+ *   block      prompt sends and file uploads are refused
+ *   mask-only  sends are allowed, but only masked: monitor mode, a user pause, a site the user
+ *              disabled and "Send original" do not apply there
+ */
+export type WorkAccountAction = "warn" | "block" | "mask-only";
+
+/** Organisation identifiers accepted on one site; both empty = any recognised work account. */
+export interface WorkAccountSiteRule {
+	/** ChatGPT workspace account ids, Claude organisation UUIDs (compared case-insensitively). */
+	readonly workspaceIds: readonly string[];
+	/** Email domains of the signed-in account; subdomains of a listed domain match too. */
+	readonly emailDomains: readonly string[];
+}
+
+/** Managed key `workAccounts` (managed only). */
+export interface WorkAccountPolicy {
+	readonly action: WorkAccountAction;
+	/**
+	 * `enforce` (default): an account the page does not identify is treated like a personal
+	 * one (fail closed). `allow`: only an account positively recognised as personal or as
+	 * another organisation's gets the action.
+	 */
+	readonly unverified: "enforce" | "allow";
+	/** Only the sites listed here are account-checked. */
+	readonly sites: Readonly<Partial<Record<AccountSiteId, WorkAccountSiteRule>>>;
+}
+
+/**
+ * Result of the account check (telemetry `account_type`, an enum only):
+ *   company     an allowed workspace / email domain (or any work account when the site lists none)
+ *   personal    a recognised personal / consumer account
+ *   other       an identified account that is not on the allowed list
+ *   unverified  the page exposed no usable account signal
+ */
+export const ACCOUNT_TYPES = ["company", "personal", "other", "unverified"] as const;
+export type AccountType = (typeof ACCOUNT_TYPES)[number];
+
 export interface SiteAdapter {
 	readonly id: SiteId;
 	readonly label: string;
@@ -342,6 +391,11 @@ export interface GuardPolicy {
 	 * decisions are never fetched or applied. Optional for the same reason as `acceptableUse`.
 	 */
 	readonly dashboardPolicy?: DashboardPolicyTrust | null;
+	/**
+	 * Personal vs company AI accounts (managed-only key `workAccounts`). Absent or null: no
+	 * account check. Optional for the same reason as `acceptableUse`.
+	 */
+	readonly workAccounts?: WorkAccountPolicy | null;
 }
 
 /**
@@ -411,6 +465,11 @@ export interface PrivacyScanEvent {
 	 * (1..64; "*" counts as one). Absent: the managed policy was valid (or there is none).
 	 */
 	readonly policy_errors?: number;
+	/**
+	 * Account check result on a site listed in the managed `workAccounts` (an enum only: never
+	 * a workspace id, email or domain). Absent: the site is not account-checked.
+	 */
+	readonly account_type?: AccountType;
 }
 
 /** Why a privacy_scan event was not enforced as the policy mode says (optional). */
@@ -490,6 +549,8 @@ export type GuardMessage =
 			readonly channel: PrivacyScanEvent["channel"];
 			readonly counts: Readonly<Partial<Record<EntityType, number>>>;
 			readonly native?: NativeNerUse;
+			/** Account check result when the site is listed in `workAccounts` (enum only). */
+			readonly account?: AccountType;
 	  }
 	| { readonly type: "GET_STATS"; readonly tabId?: number }
 	| { readonly type: "SET_USER_SETTINGS"; readonly settings: Partial<UserSettings> }
