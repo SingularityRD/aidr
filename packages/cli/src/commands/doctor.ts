@@ -75,6 +75,18 @@ export interface DoctorDeps {
 	localDlpPolicyPath?: string;
 	/** Customer packet discovery: candidate files, key registry, clock. */
 	customerPacket?: CustomerPacketOptions;
+	/** Reads the control plane's clock (its HTTP `Date` header); defaults to a HEAD request. */
+	serverTime?: (endpoint: string) => Promise<ServerTimeSample>;
+}
+
+/** One reading of the control plane's clock, bracketed by the local clock. */
+export interface ServerTimeSample {
+	/** Local time (ms) just before the request was sent. */
+	sentAt: number;
+	/** Local time (ms) when the response arrived. */
+	receivedAt: number;
+	/** The server's `Date` header in ms, or null when it sent none. */
+	serverAt: number | null;
 }
 
 function message(error: unknown): string {
@@ -546,6 +558,89 @@ function checkAgentEnvironment(connectors: ConnectorStatus[], deps: DoctorDeps):
 	};
 }
 
+/** Above this offset the doctor warns; signed-artifact checks still tolerate it. */
+export const CLOCK_WARN_SECONDS = 60;
+/**
+ * Above this offset the doctor fails: it is the tolerance the core allows for
+ * attestations and audit epochs, so anything larger is rejected somewhere.
+ */
+export const CLOCK_FAIL_SECONDS = 300;
+const CLOCK_TIMEOUT_MS = 5_000;
+
+async function headServerTime(endpoint: string): Promise<ServerTimeSample> {
+	const sentAt = Date.now();
+	const response = await fetch(endpoint, {
+		method: "HEAD",
+		redirect: "manual",
+		signal: AbortSignal.timeout(CLOCK_TIMEOUT_MS),
+	});
+	const receivedAt = Date.now();
+	const header = response.headers.get("date");
+	const parsed = header ? Date.parse(header) : Number.NaN;
+	return { sentAt, receivedAt, serverAt: Number.isFinite(parsed) ? parsed : null };
+}
+
+/**
+ * Local clock against the control plane's. Only in managed mode with an
+ * endpoint: a local-only install has no reference clock and makes no network
+ * call here. `Date` has one-second resolution, so an offset within half the
+ * round trip plus one second is reported as in sync.
+ */
+async function checkClock(config: Config, deps: DoctorDeps): Promise<DoctorCheck | null> {
+	const endpoint = config.control_plane.endpoint;
+	if (config.mode !== "managed" || !config.control_plane.enabled || !endpoint) return null;
+	const read = deps.serverTime ?? headServerTime;
+	let sample: ServerTimeSample;
+	try {
+		sample = await read(endpoint);
+	} catch (error) {
+		return {
+			id: "clock",
+			status: "warn",
+			summary: ct("doctor.clockUnchecked", { reason: message(error) }),
+			notes: [ct("doctor.clockWhy")],
+			detail: { endpoint, state: "unreachable" },
+		};
+	}
+	if (sample.serverAt === null) {
+		return {
+			id: "clock",
+			status: "warn",
+			summary: ct("doctor.clockUnchecked", { reason: "no Date header" }),
+			notes: [ct("doctor.clockWhy")],
+			detail: { endpoint, state: "no_date_header" },
+		};
+	}
+	const uncertaintyMs = (sample.receivedAt - sample.sentAt) / 2 + 1_000;
+	const rawOffsetMs = (sample.sentAt + sample.receivedAt) / 2 - sample.serverAt;
+	const offsetMs = Math.abs(rawOffsetMs) <= uncertaintyMs ? 0 : rawOffsetMs;
+	const seconds = Math.round(Math.abs(offsetMs) / 1_000);
+	const direction = offsetMs > 0 ? ct("doctor.clockAhead") : ct("doctor.clockBehind");
+	let status: CheckStatus = "ok";
+	let summary = ct("doctor.clockOk", { seconds: CLOCK_WARN_SECONDS });
+	if (seconds > CLOCK_FAIL_SECONDS) {
+		status = "fail";
+		summary = ct("doctor.clockSkewed", { seconds, direction });
+	} else if (seconds > CLOCK_WARN_SECONDS) {
+		status = "warn";
+		summary = ct("doctor.clockDrift", { seconds, direction });
+	}
+	return {
+		id: "clock",
+		status,
+		summary,
+		notes: [ct("doctor.clockWhy")],
+		detail: {
+			endpoint,
+			state: "compared",
+			offset_ms: Math.round(offsetMs),
+			uncertainty_ms: Math.round(uncertaintyMs),
+			warn_seconds: CLOCK_WARN_SECONDS,
+			fail_seconds: CLOCK_FAIL_SECONDS,
+		},
+	};
+}
+
 async function checkLastVerdict(config: Config): Promise<DoctorCheck> {
 	if (!config.logging.enabled) {
 		return { id: "last_verdict", status: "warn", summary: ct("doctor.auditDisabled") };
@@ -591,6 +686,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 	checks.push(checkReleaseKey(config));
 	const customer = checkCustomer(deps);
 	if (customer) checks.push(customer);
+	const clock = await checkClock(config, deps);
+	if (clock) checks.push(clock);
 	checks.push(await checkRules());
 	const connectors = deps.connectors
 		? deps.connectors()
