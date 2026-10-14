@@ -207,4 +207,8 @@ Open questions for the founder:
 1. Separate Browser Guard-only seat for non-developer users (support, finance, HR)?
 2. Annual-only Team for the first ten customers, or a 90-day paid pilot credited to
    annual?
-3. Quote currency: USD only at launch, or TRY for Turkish customers?
+3. Quote currency: USD only at launch, or TRY for Turkish customers? A TRY quote
+   template with the on-prem SKU structure (seat tiers, editions, support levels,
+   air-gap add-on) and placeholder amounts is drafted in
+   [onprem-teklif-sablonu.tr.md](onprem-teklif-sablonu.tr.md), with the
+   [e-Fatura / e-Arşiv checklist](e-fatura-kontrol-listesi.tr.md).

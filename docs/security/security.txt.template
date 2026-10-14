@@ -1,0 +1,18 @@
+# DRAFT TEMPLATE - not served anywhere yet. Do not publish with placeholders.
+# RFC 9116 security.txt for SingularityRD / Singularity AIDR.
+#
+# Before publishing (needs a human, see docs/security/vulnerability-disclosure-policy.md):
+#   1. Replace every <...> with a monitored, staffed destination.
+#   2. Serve it at https://<vendor-domain>/.well-known/security.txt (and optionally /security.txt).
+#   3. Set Expires to at most one year ahead and put a renewal reminder in the calendar.
+#   4. Sign it with the published security PGP key (clearsign) if one is issued.
+#   5. Delete these comment lines.
+
+Contact: mailto:<security@vendor-domain>
+Contact: <https://vendor-domain/security/report>
+Expires: <YYYY-MM-DDT00:00:00.000Z>
+Encryption: <https://vendor-domain/.well-known/pgp-key.asc>
+Preferred-Languages: tr, en
+Canonical: https://<vendor-domain>/.well-known/security.txt
+Policy: <https://vendor-domain/security/disclosure-policy>
+Acknowledgments: <https://vendor-domain/security/thanks>

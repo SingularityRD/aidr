@@ -51,6 +51,7 @@ import {
 } from "./linux/build-linux-packages.mjs";
 import { MSI_CULTURES, msiInputs, WIZARD_URL_PATTERN, wizardCustomerName } from "./windows/msi-inputs.mjs";
 import { bmpInfo, renderSvgToBmp, WIZARD_BITMAPS } from "./windows/ui/render-bitmaps.mjs";
+import { EULA_PAGES, renderEulaRtf } from "./windows/ui/render-eula.mjs";
 
 const scratch = [];
 after(() => {
@@ -435,16 +436,42 @@ describe("Windows MSI install wizard", () => {
 		}
 	});
 
-	test("the licence page is a marked placeholder and points at the shipped third-party notices", () => {
-		const decode = (rtf) => rtf.replace(/\\u(\d+)\?/g, (_, n) => String.fromCharCode(Number(n)));
-		for (const culture of ["en-US", "tr-TR"]) {
-			const rtf = windowsFile(`ui/eula.${culture}.rtf`);
+	test("the licence page is the draft EULA rendered from docs/legal, marked as a draft, with the required clauses", () => {
+		const decode = (rtf) => rtf.replace(/\\u(\d+)\?/g, (_, n) => String.fromCharCode(Number(n))).replace(/\\\\/g, "\\");
+		const clauses = {
+			"en-US": [
+				"DRAFT - LEGAL REVIEW REQUIRED",
+				"reverse engineer, decompile or disassemble",
+				"Licence Term",
+				"up to the number of Seats",
+				"entitled to Updates only during a paid Licence Term",
+				"Data Processing Agreement",
+				"Local detection on endpoints keeps working",
+			],
+			"tr-TR": [
+				"TASLAK - HUKUK/\u0130\u015e ONAYI GEREK\u0130R",
+				"tersine m\u00fchendisli\u011fe tabi tutamaz",
+				"Lisans S\u00fcresi",
+				"Koltuk say\u0131s\u0131na kadar",
+				"G\u00fcncellemelere yaln\u0131z \u00fccretli bir Lisans S\u00fcresi boyunca",
+				"Veri \u0130\u015fleme S\u00f6zle\u015fmesi",
+				"yerel tespit",
+			],
+		};
+		for (const page of EULA_PAGES) {
+			const rtf = readFileSync(page.rtf, "utf8");
 			assert.match(rtf, /^\{\\rtf1\\ansi/);
-			assert.match(rtf, /^[\t\n\r\x20-\x7e]*$/, `${culture} RTF must be ASCII (\\u escapes)`);
+			assert.match(rtf, /^[\t\n\r\x20-\x7e]*$/, `${page.culture} RTF must be ASCII (\\u escapes)`);
+			assert.equal(rtf, renderEulaRtf(readFileSync(page.markdown, "utf8"), page), `${page.rtf} is stale: run render-eula.mjs`);
 			const text = decode(rtf);
-			assert.ok(text.includes("<EULA TEXT \u2014 legal review required>"), culture);
-			assert.ok(text.includes("THIRD_PARTY_NOTICES.txt"), culture);
+			assert.ok(!text.includes("<EULA TEXT"), `${page.culture}: the old placeholder is gone`);
+			for (const clause of clauses[page.culture]) assert.ok(text.includes(clause), `${page.culture}: ${clause}`);
+			assert.ok(text.includes("THIRD_PARTY_NOTICES.txt"), page.culture);
+			assert.ok(text.includes("C:\\Program Files\\Singularity AIDR\\docs\\THIRD_PARTY_NOTICES.txt"), page.culture);
 		}
+		assert.throws(() => renderEulaRtf("| a | b |\n", EULA_PAGES[0]), /unsupported Markdown/);
+		assert.throws(() => renderEulaRtf("**open\n", EULA_PAGES[0]), /unbalanced/);
+		assert.match(windowsFile("build-msi.ps1"), /render-eula\.mjs'\), '--check'/);
 		assert.match(ui, /<Text SourceFile="\$\(sys\.SOURCEFILEDIR\)eula\.\$\(var\.AidrCulture\)\.rtf" \/>/);
 		assert.match(wxs, /Source="\$\(sys\.SOURCEFILEDIR\)\.\.\\\.\.\\\.\.\\THIRD_PARTY_NOTICES" Name="THIRD_PARTY_NOTICES\.txt"/);
 	});

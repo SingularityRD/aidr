@@ -1,5 +1,14 @@
 # Control Plane (Auth, Dashboard, Licensing)
 
+**One control plane.** The product control plane, for on-prem and for the
+hosted service alike, is the Supabase stack and the Vite dashboard in this
+repository (`supabase/`, `packages/dashboard`, `deploy/`). The separate
+`aidr-landing` application is the marketing website and SingularityRD's vendor
+`/admin` panel (customer records, licence issuing, installer builds); it is not
+a customer control plane and runs nothing at the customer.
+
+Install it on-prem with the [on-prem runbook](operations/onprem-runbook.md).
+
 The control plane is the managed layer for:
 
 - User authentication (dashboard login)

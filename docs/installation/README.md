@@ -31,6 +31,8 @@ use; see [Release status](../../README.md#release-status).
 | [Deploying Browser Guard in an organisation](browser-guard-enterprise.md) | Force-install and lock settings with Intune, Google Admin console, GPO, Jamf (macOS) and Firefox policies; pilot, rollout and rollback |
 | [Browser Guard policy files](../../deploy/browser-guard/README.md) | Example policy files and every managed setting |
 | [Fleet scripts](../../deploy/fleet/windows/README.md) | Script-based fleet install, upgrade and uninstall (Windows; [Linux](../../deploy/fleet/linux/README.md)) |
+| [VDI, devcontainers, Remote-SSH, WSL, CI runners](special-environments.md) | Where to install AIDR when the agent does not run on the user's own desktop |
+| [Leaving employees and machine swaps](../runbooks/offboarding-and-device-swap.md) | Revoking devices, keeping local audit logs, reassigning machines |
 | [Operator approvals](../configuration.md#operator-approvals) | How a held action is approved by a person (`aidr pending`, `aidr approve`, dashboard Approvals) |
 | [Configuration](../configuration.md) | Every setting and file path |
 | [Support diagnostics](../support-diagnostics.md) | `aidr support-bundle` and what it contains |
@@ -44,7 +46,9 @@ use; see [Release status](../../README.md#release-status).
 | [Running AIDR on Kubernetes](../operations/kubernetes.md) | Helm chart: images, credentials, install, upgrade and rollback, backup |
 | [Configuration reference](../operations/onprem-config-reference.md) | Every on-prem setting |
 | [Upgrade runbook](../../deploy/UPGRADE.md) | Control-plane upgrades and rollback |
+| [End-to-end on-prem runbook](../operations/onprem-runbook.md) | The whole journey in order: prerequisites, NTP, TLS with a public or internal CA, install, endpoints, acceptance |
 | [Licensing](../operations/licensing.md) | Offline licence and what happens when it lapses |
+| [KVKK guide](../operations/kvkk.md) (Turkish) | Data inventory per component, retention presets, VERBİS, cross-border transfer, DPIA template |
 | [First-customer guide](../../deploy/FIRST_CUSTOMER.md) (Turkish) | Installation and acceptance checklist |
 
 ## Release and portal operator (Singularity / vendor side)

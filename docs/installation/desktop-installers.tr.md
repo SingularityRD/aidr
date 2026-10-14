@@ -546,8 +546,12 @@ bir MSI yayımlanır.** Derleme için WiX 5 ve `WixToolset.UI.wixext` 5.0.2
 net472) için .NET SDK gerekir. Sihirbaz görselleri (`windows/ui/banner.bmp`
 493×58, `dialog.bmp` 493×312) `banner.svg` ve `dialog.svg` dosyalarından
 `node deploy/installers/windows/ui/render-bitmaps.mjs` ile üretilir; güncel
-değillerse derleme durur. Lisans sayfası, incelenmiş metin gelene kadar bir yer
-tutucudur (`<EULA TEXT — legal review required>`, `windows/ui/eula.*.rtf`).
+değillerse derleme durur. Lisans sayfası (`windows/ui/eula.*.rtf`),
+[`docs/legal/eula.tr.md`](../legal/eula.tr.md) ve
+[`eula.en.md`](../legal/eula.en.md) içindeki taslak sözleşmeden
+`node deploy/installers/windows/ui/render-eula.mjs` ile üretilir; RTF güncel
+değilse derleme durur. Metin, hukuk onaylayana kadar taslak başlığı taşır;
+onay yalnızca Markdown kaynağını değiştirir.
 
 `pnpm test:installers` sihirbaz kaynaklarını her işletim sisteminde yapısal
 olarak denetler. Bir sürümden önce gerçek bir Windows makinesinde şunlar
