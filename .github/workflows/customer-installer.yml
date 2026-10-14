@@ -13,8 +13,10 @@ name: Customer Installer Build
 #
 # The packet comes from the environment secret AIDR_CUSTOMER_PACKET_<ID>
 # (base64 of the packet file; <ID> is the customer id upper-cased with '-' as
-# '_') or from an artifact named customer-packet-<customer id> uploaded by an
-# earlier run of this repository (packet_run_id). It never holds a secret.
+# '_'), from an artifact named customer-packet-<customer id> uploaded by an
+# earlier run of this repository (packet_run_id), or inline as base64 in the
+# packet_b64 input (the vendor admin panel dispatches this way). It never holds
+# a secret, and whatever its source the packet is verified before it is used.
 
 on:
   workflow_dispatch:
@@ -31,10 +33,14 @@ on:
         description: "Where the customer packet comes from"
         required: true
         type: choice
-        options: [secret, artifact]
+        options: [secret, artifact, input]
         default: secret
       packet_run_id:
         description: "Run id that uploaded the customer-packet-<customer id> artifact (packet_source=artifact)"
+        required: false
+        type: string
+      packet_b64:
+        description: "Base64 of the customer packet file (packet_source=input)"
         required: false
         type: string
       build_exe:
@@ -80,6 +86,7 @@ jobs:
           CUSTOMER_ID: ${{ inputs.customer_id }}
           PACKET_SOURCE: ${{ inputs.packet_source }}
           PACKET_RUN_ID: ${{ inputs.packet_run_id }}
+          PACKET_INPUT_B64: ${{ inputs.packet_b64 }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           WORKFLOW_REF: ${{ github.ref }}
         run: |
@@ -97,9 +104,17 @@ jobs:
             exit 1
           }
           case "${PACKET_SOURCE}" in
+            secret|artifact) [[ -z "${PACKET_INPUT_B64}" ]] || { echo "packet_b64 is only for packet_source=input." >&2; exit 1; } ;;&
             secret) [[ -z "${PACKET_RUN_ID}" ]] || { echo "packet_run_id is only for packet_source=artifact." >&2; exit 1; } ;;
             artifact) [[ "${PACKET_RUN_ID}" =~ ^[0-9]+$ ]] || { echo "packet_source=artifact needs a numeric packet_run_id." >&2; exit 1; } ;;
-            *) echo "packet_source must be secret or artifact." >&2; exit 1 ;;
+            input)
+              [[ -z "${PACKET_RUN_ID}" ]] || { echo "packet_run_id is only for packet_source=artifact." >&2; exit 1; }
+              # At most 64 KiB of packet (scripts/customer-packet-verify.mjs refuses more).
+              [[ "${#PACKET_INPUT_B64}" -ge 4 && "${#PACKET_INPUT_B64}" -le 87384 && "${PACKET_INPUT_B64}" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || {
+                echo "packet_source=input needs packet_b64: the base64 of the packet file." >&2
+                exit 1
+              } ;;
+            *) echo "packet_source must be secret, artifact or input." >&2; exit 1 ;;
           esac
           version="${RELEASE_TAG#v}"
           version="${version%-rc.*}"
@@ -209,6 +224,7 @@ jobs:
           CUSTOMER_ID: ${{ inputs.customer_id }}
           PACKET_SOURCE: ${{ inputs.packet_source }}
           PACKET_B64: ${{ inputs.packet_source == 'secret' && secrets[steps.inputs.outputs.secret_name] || '' }}
+          PACKET_INPUT_B64: ${{ inputs.packet_source == 'input' && inputs.packet_b64 || '' }}
           SECRET_NAME: ${{ steps.inputs.outputs.secret_name }}
         run: |
           set -euo pipefail
@@ -219,6 +235,8 @@ jobs:
             [[ -n "${PACKET_B64}" ]] || { echo "The secret ${SECRET_NAME} is empty or missing." >&2; exit 1; }
             printf '%s' "${PACKET_B64}" | base64 --decode > "${packet}"
             unset PACKET_B64
+          elif [[ "${PACKET_SOURCE}" == "input" ]]; then
+            printf '%s' "${PACKET_INPUT_B64}" | base64 --decode > "${packet}"
           else
             mapfile -t found < <(find "${RUNNER_TEMP}/packet-artifact" -type f -name '*.json')
             [[ "${#found[@]}" -eq 1 ]] || { echo "The packet artifact must hold exactly one .json file." >&2; exit 1; }

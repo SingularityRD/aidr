@@ -69,6 +69,16 @@ installed.
 
 ## Runbook
 
+> **Vendor admin panel.** The `/admin` console of the `aidr-landing` site does
+> steps 1 to 3 from one screen: a company's name, device limit (`seats`), term,
+> plan and server address are kept there; "issue license" signs the license and
+> the packet with the same rules and byte format as the scripts below, and "build
+> installers" dispatches this workflow with the packet inline. The panel's
+> signing key is an online key: its public entry must be added to
+> `deploy/onprem/license-public-keys.json` (the panel shows it) and released
+> before any endpoint accepts what it signs. The offline scripts below stay the
+> reference procedure and work without the panel.
+
 All signing steps run in the isolated license-signing environment. The Ed25519
 private key comes from an owner-only file (`--private-key-file`, mode 0600) or
 from `AIDR_LICENSE_SIGNING_KEY_FILE` / `AIDR_LICENSE_SIGNING_KEY`; it is never
@@ -126,7 +136,8 @@ no trusted keys installed). `--now <ISO>` exists for rehearsals.
 
 Run the **customer installer** workflow (`.github/workflows/customer-installer.yml`,
 manual dispatch) with the promoted release tag and the customer id, and supply
-the packet as the workflow describes (a secret or an uploaded artifact). The
+the packet as the workflow describes (a secret, an uploaded artifact, or inline
+as `packet_b64` with `packet_source=input`). The
 workflow verifies the packet with `scripts/customer-packet-verify.mjs` before
 embedding it, reuses the already-signed release artifacts, signs the Windows
 installer with the existing Authenticode flow and uploads files named

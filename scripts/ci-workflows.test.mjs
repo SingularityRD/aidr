@@ -748,8 +748,8 @@ test("customer-installer: a verified packet and the promoted release's attested,
 	const text = raw("customer-installer.yml");
 	// Manual only, with exactly the documented inputs.
 	assert.deepEqual(Object.keys(wf.on), ["workflow_dispatch"]);
-	assert.deepEqual(Object.keys(wf.on.workflow_dispatch.inputs).sort(), ["build_exe", "customer_id", "packet_run_id", "packet_source", "release_tag"]);
-	assert.deepEqual(wf.on.workflow_dispatch.inputs.packet_source.options, ["secret", "artifact"]);
+	assert.deepEqual(Object.keys(wf.on.workflow_dispatch.inputs).sort(), ["build_exe", "customer_id", "packet_b64", "packet_run_id", "packet_source", "release_tag"]);
+	assert.deepEqual(wf.on.workflow_dispatch.inputs.packet_source.options, ["secret", "artifact", "input"]);
 	assert.deepEqual(wf.permissions, { contents: "read" });
 	assert.doesNotMatch(text, /environment:\s*production\b/u, "customer builds never hold production credentials");
 	assert.deepEqual(Object.keys(wf.jobs).sort(), ["linux-build", "linux-sign", "prepare", "windows"]);
@@ -788,6 +788,9 @@ test("customer-installer: a verified packet and the promoted release's attested,
 	assert.match(packet.run, /set -euo pipefail/u, "a refused packet (non-zero exit) stops the build");
 	assert.match(packet.run, /document_sha256 !== sha256/u, "the verified bytes are the embedded bytes");
 	assert.equal(packet.env.PACKET_B64, "${{ inputs.packet_source == 'secret' && secrets[steps.inputs.outputs.secret_name] || '' }}");
+	// The admin panel's inline packet is decoded only for packet_source=input, then verified like the others.
+	assert.equal(packet.env.PACKET_INPUT_B64, "${{ inputs.packet_source == 'input' && inputs.packet_b64 || '' }}");
+	assert.ok(packet.run.indexOf('base64 --decode > "${packet}"') < packet.run.indexOf("customer-packet-verify.mjs"));
 	const names = prepare.steps.map((step) => step.name);
 	assert.ok(names.indexOf(packet.name) < names.indexOf("Hand the verified packet to the build jobs (pinned)"));
 	// prepare reads public keys and the packet only, never a private key.
