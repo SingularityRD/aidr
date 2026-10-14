@@ -268,7 +268,10 @@ missing TLS, incomplete posture scanner inputs and the retired `aig` values key.
   ingress signer (`deploy/ingress/device-start.mjs`) in front of it. The chart does not
   deploy the signer; without it the function rejects requests (fails closed) and agents
   must enroll with enrollment tokens instead.
-- The readiness evidence worker, SIEM delivery and export-retention timers
+- Central SIEM forwarding runs as the `siem-forwarder` CronJob
+  (`siem.forwarder.enabled=true`, collectors listed in `networkPolicy.siemEgress`; see
+  [the SIEM forwarding contract](../contracts/siem-forwarding.md)). The host-side readiness
+  evidence worker, the per-endpoint SIEM queue drain and the export-retention timers
   (`deploy/maintenance`) are not yet shipped as CronJobs.
 - Storage with the `file` backend is a single replica on a `ReadWriteOnce` volume; use
   `storage.backend=s3` for more replicas.

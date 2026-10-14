@@ -1,0 +1,78 @@
+{{- if .Values.siem.forwarder.enabled }}
+{{- $component := "siem-forwarder" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.siem.forwarder -}}
+{{- $functions := include "aidr.component" (dict "root" . "component" "functions") -}}
+# Drains the central SIEM forwarding outbox (docs/contracts/siem-forwarding.md):
+# once per schedule tick it calls the in-cluster functions Service with the
+# deployment's dispatcher token (never the service-role key). The token is read
+# from the environment, so it never appears in the process arguments.
+# Forwarding itself (syslog, Splunk HEC, Elastic, Sentinel, webhook) leaves from
+# the functions pods: allow the collectors in networkPolicy.siemEgress.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  schedule: {{ $values.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 110
+      template:
+        metadata:
+          labels:
+            {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          {{- include "aidr.podCommon" (dict "root" . "values" (dict)) | nindent 10 }}
+          {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser "fsGroup" $values.runAsUser) | nindent 10 }}
+          containers:
+            - name: forward
+              image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "siem.forwarder.image" "defaultTag" true) }}
+              imagePullPolicy: {{ $values.image.pullPolicy }}
+              command:
+                - node
+                - -e
+                - |
+                  const token = process.env.AIDR_NOTIFICATION_DISPATCH_TOKEN ?? "";
+                  if (token.length < 32) {
+                    console.error("AIDR_NOTIFICATION_DISPATCH_TOKEN is missing or shorter than 32 characters");
+                    process.exit(1);
+                  }
+                  fetch(process.env.AIDR_DISPATCH_URL, {
+                    method: "POST",
+                    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+                    body: "{}",
+                    redirect: "error",
+                    signal: AbortSignal.timeout(90000),
+                  }).then(async (response) => {
+                    const body = await response.json().catch(() => null);
+                    if (!response.ok || !body || body.ok !== true) {
+                      const code = body && typeof body.error === "string" ? ", " + body.error : "";
+                      console.error("SIEM forwarding failed (HTTP " + response.status + code + ")");
+                      process.exit(1);
+                    }
+                    const { claimed, delivered, retrying, dead, lease_lost, pruned } = body;
+                    console.log(JSON.stringify({ claimed, delivered, retrying, dead, lease_lost, pruned }));
+                  }).catch(() => {
+                    console.error("SIEM forwarder unreachable");
+                    process.exit(1);
+                  });
+              {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 14 }}
+              env:
+                - name: AIDR_DISPATCH_URL
+                  value: {{ printf "http://%s:9000/siem-forwarder" $functions | quote }}
+                - name: AIDR_NOTIFICATION_DISPATCH_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "aidr.functionsSecretName" . }}
+                      key: AIDR_NOTIFICATION_DISPATCH_TOKEN
+              {{- include "aidr.resources" (dict "root" . "component" "siemForwarder" "override" $values.resources) | nindent 14 }}
+{{- end }}

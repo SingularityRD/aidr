@@ -248,6 +248,14 @@ functions:
   # npm registry mirror for the functions' npm: imports (air-gapped installs).
   npmRegistry: ""
   billingProvider: ""
+  # Outbound AIDR mail (alert channels, invitations, governance digest).
+  # With auth.smtp.host set, the functions reuse that relay (SMTP provider).
+  mail:
+    provider: ""          # "" (automatic) | smtp | resend | none
+    smtpSecurity: ""      # "" (465 => tls, else starttls) | starttls | tls | none
+    # Key in secrets.existingSecret holding base64 of the relay's internal CA
+    # PEM bundle ("" = system roots).
+    smtpCaSecretKey: ""
   pdb:
     enabled: true
     minAvailable: 1
@@ -453,6 +461,28 @@ notifications:
     runAsUser: 1000
 
 # ---------------------------------------------------------------------------
+# Central SIEM forwarding (docs/contracts/siem-forwarding.md)
+# ---------------------------------------------------------------------------
+siem:
+  # Let destinations opt in to RFC 1918 / ULA collectors (typical on-prem
+  # QRadar, Wazuh, Splunk). Loopback and link-local stay refused.
+  allowPrivateNetworks: false
+  forwarder:
+    # Off by default for the same reason as the alert dispatcher: it needs
+    # AIDR_NOTIFICATION_DISPATCH_TOKEN and AIDR_NOTIFICATION_ENCRYPTION_KEYS in
+    # the functions Secret. Collector egress: networkPolicy.siemEgress.
+    enabled: false
+    schedule: "* * * * *"
+    image:
+      registry: ""
+      repository: aidr/dashboard   # ships Node.js; runs a one-shot fetch
+      tag: ""
+      digest: ""
+      pullPolicy: IfNotPresent
+    resources: {}
+    runAsUser: 1000
+
+# ---------------------------------------------------------------------------
 # Ingress
 # ---------------------------------------------------------------------------
 ingress:
@@ -487,8 +517,12 @@ networkPolicy:
   # Extra egress CIDRs (port 443) for the functions runtime, e.g. an npm mirror,
   # identity provider or billing provider. Empty = no Internet egress.
   functionsEgressCIDRs: []
-  # Egress CIDRs (auth.smtp.port) for the SMTP relay used by auth e-mails.
+  # Egress CIDRs (auth.smtp.port) for the SMTP relay used by auth e-mails and,
+  # when auth.smtp.host is set, by the functions' alert and invitation mail.
   smtpEgressCIDRs: []
+  # SIEM collectors the functions forward to: [{ cidr: 10.20.0.0/24, port: 6514 }].
+  # Syslog UDP needs protocol: UDP. Empty = no collector reachable.
+  siemEgress: []
   # CIDRs (port 443) the dashboard may reach for the public certificate probe
   # and Sentry. Empty = none (the certificate check then reports failed).
   dashboardEgressCIDRs: []

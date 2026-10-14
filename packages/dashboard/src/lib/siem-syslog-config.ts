@@ -19,7 +19,11 @@ export type SyslogFormValues = {
 	allowPlaintextTransport: boolean;
 	caCertificatePem: string;
 	pinnedSha256: string;
+	/** MSG payload: RFC 5424 JSON (default), ArcSight CEF or QRadar LEEF. */
+	payloadFormat?: SyslogPayloadChoice;
 };
+
+export type SyslogPayloadChoice = "json" | "cef" | "leef";
 
 type SyslogAdapterConfig = {
 	provider: "syslog";
@@ -31,6 +35,7 @@ type SyslogAdapterConfig = {
 	allowPlaintextTransport?: boolean;
 	tlsCaCertificatePem?: string;
 	tlsPinnedSha256?: string[];
+	payloadFormat?: "cef" | "leef";
 };
 
 export type SyslogFormResult =
@@ -170,6 +175,10 @@ export function buildSyslogAdapter(
 			: {}),
 		...(values.transport === "tls" && ca ? { tlsCaCertificatePem: ca } : {}),
 		...(values.transport === "tls" && pins.length > 0 ? { tlsPinnedSha256: pins } : {}),
+		// JSON is the default and is omitted so existing host configurations stay byte-identical.
+		...(values.payloadFormat === "cef" || values.payloadFormat === "leef"
+			? { payloadFormat: values.payloadFormat }
+			: {}),
 	};
 	return { ok: true, adapter, warnings };
 }
@@ -185,4 +194,5 @@ export const DEFAULT_SYSLOG_FORM: SyslogFormValues = {
 	allowPlaintextTransport: false,
 	caCertificatePem: "",
 	pinnedSha256: "",
+	payloadFormat: "json",
 };

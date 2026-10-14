@@ -619,6 +619,11 @@ function ProtectedTeamProvider({
 	);
 }
 
+/** The team context, or null outside a TeamProvider (pages that also render standalone). */
+export function useOptionalTeam(): TeamContextType | null {
+	return useContext(TeamContext);
+}
+
 export function useTeam() {
 	const context = useContext(TeamContext);
 	if (!context) {

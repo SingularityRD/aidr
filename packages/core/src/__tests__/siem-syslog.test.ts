@@ -1,8 +1,8 @@
-import { X509Certificate, createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { createHash, X509Certificate } from "node:crypto";
 import { createSocket, type Socket as UdpSocket } from "node:dgram";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer, type AddressInfo, type Server } from "node:net";
+import { type AddressInfo, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createTlsServer } from "node:tls";
@@ -11,7 +11,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { Incident } from "../incidents/types.js";
 import { DurableSiemDelivery, type SiemAdapterConfig } from "../siem-delivery.js";
-import { exportToSyslog, formatSyslogMessage, SyslogMessageTooLargeError } from "../siem-export.js";
+import {
+	exportToCEF,
+	exportToLEEF,
+	exportToSyslog,
+	formatSyslogMessage,
+	SyslogMessageTooLargeError,
+} from "../siem-export.js";
 import { classifySyslogAddress, type SyslogSiemConfig } from "../siem-syslog.js";
 
 const cleanup: Array<() => Promise<void> | void> = [];
@@ -379,6 +385,73 @@ describe("syslog delivery over loopback", () => {
 			deliveryCode: "syslog_tcp_written",
 		});
 		expect(stored?.lastErrorCode).toBeUndefined();
+	});
+
+	it.each([
+		[
+			"cef",
+			/^<130>\w{3} [ \d]\d \d{2}:\d{2}:\d{2} aidr-test aidr: CEF:0\|Singularity\|AIDR\|[^|]+\|AIDR\/critical\/DOMAIN\|/,
+		],
+		[
+			"leef",
+			/^<130>\w{3} [ \d]\d \d{2}:\d{2}:\d{2} aidr-test aidr: LEEF:1\.0\|Singularity\|AIDR\|[^|]+\|AIDR-CRITICAL\|cat=incident\t/,
+		],
+	] as const)(
+		"delivers %s records from the core exporters for QRadar / ArcSight",
+		async (payloadFormat, header) => {
+			const collector = await tcpCollector();
+			const sender = await delivery({
+				provider: "syslog",
+				endpoint: `tcp://127.0.0.1:${collector.port}`,
+				allowInsecureLoopback: true,
+				hostname: "aidr-test",
+				payloadFormat,
+			});
+			await sender.enqueue(incident);
+			expect(await sender.flush()).toMatchObject({ attempted: 1, delivered: 1 });
+			await untilTruthy(() => collector.received.length === 1);
+			const [frame] = parseOctetFrames(collector.received[0] as Buffer);
+			expect(frame).toMatch(header);
+			// The record is exactly what exportToCEF / exportToLEEF produce for the incident.
+			const exported = payloadFormat === "cef" ? exportToCEF([incident]) : exportToLEEF([incident]);
+			expect((frame as string).slice((frame as string).indexOf(": ") + 2)).toBe(exported);
+		},
+	);
+
+	it("keeps the incident in a CEF record that must shed correlated events to fit", async () => {
+		const collector = await tcpCollector();
+		const busy: Incident = {
+			...incident,
+			events: Array.from({ length: 40 }, (_, index) => ({
+				...(incident.events[0] as Incident["events"][number]),
+				signal_id: `sig-${index}`,
+				summary: "x".repeat(60),
+			})),
+		};
+		const sender = await delivery({
+			provider: "syslog",
+			endpoint: `tcp://127.0.0.1:${collector.port}`,
+			allowInsecureLoopback: true,
+			payloadFormat: "cef",
+			maxMessageBytes: 1024,
+		});
+		await sender.enqueue(busy);
+		expect(await sender.flush()).toMatchObject({ delivered: 1 });
+		await untilTruthy(() => collector.received.length === 1);
+		const [frame] = parseOctetFrames(collector.received[0] as Buffer);
+		expect(Buffer.byteLength(frame as string)).toBeLessThanOrEqual(1024);
+		expect(frame).toContain("incident_id=inc-syslog-1");
+	});
+
+	it("refuses an unknown payload format at startup", async () => {
+		await expect(
+			delivery({
+				provider: "syslog",
+				endpoint: "tcp://127.0.0.1:514",
+				allowInsecureLoopback: true,
+				payloadFormat: "xml" as never,
+			}),
+		).rejects.toThrow(/payloadFormat/);
 	});
 
 	it("frames the exact UTF-8 byte length for multi-byte content", async () => {

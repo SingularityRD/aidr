@@ -141,6 +141,23 @@ random 32+ character `AIDR_NOTIFICATION_DISPATCH_TOKEN`). Deliveries leave from 
 pods, so add the receivers' CIDRs (or an egress proxy) to `networkPolicy.functionsEgressCIDRs`;
 that list opens port 443 only, so a generic webhook on 8443 also needs its own egress rule.
 
+E-mail alerts, invitations and the governance digest reuse the Auth relay: with
+`auth.smtp.host` set, the functions receive the same `SMTP_*` values and select the SMTP
+mail provider (STARTTLS by default, implicit TLS on 465). Put base64 of the relay's internal
+CA bundle in `secrets.existingSecret` and name the key in `functions.mail.smtpCaSecretKey`;
+`smtpEgressCIDRs` then opens the relay for the functions pods too.
+
+## Central SIEM forwarding
+
+The SIEM page lets owners and administrators add collectors (syslog TCP/TLS/UDP with JSON,
+CEF or LEEF; Splunk HEC; Elastic; Microsoft Sentinel; signed webhook). Set
+`siem.forwarder.enabled=true` to render the `siem-forwarder` CronJob (every minute,
+`concurrencyPolicy: Forbid`); it uses the same two notification keys as the alert
+dispatcher. Forwarding leaves from the functions pods: list each collector in
+`networkPolicy.siemEgress` (`{ cidr, port, protocol }`, protocol `UDP` for UDP syslog).
+On-prem collectors on RFC 1918 addresses also need `siem.allowPrivateNetworks=true`, and each
+destination must opt in. Contract: [docs/contracts/siem-forwarding.md](../../../docs/contracts/siem-forwarding.md).
+
 `deploy/helm/generate-secrets.mjs` writes both Secrets plus the operator record used by
 `scripts/deployment-bootstrap.mjs` and the `agent-config.json` enrolled agents need. You
 may instead source the same keys from an external secret manager (External Secrets,
@@ -167,6 +184,10 @@ Vault, sealed-secrets) as long as the Secret names match.
 | `backup.storage.enabled` | `false` | Also archive the `storage.backend=file` volume (tar.gz + SHA-256) |
 | `backup.storage.acknowledgeNotBackedUp` | `false` | Dev only: accept database-only backups with `storage.backend=file` |
 | `notifications.dispatcher.enabled` | `false` | Minute CronJob draining the alert outbox (needs the notification keys in the functions Secret) |
+| `siem.forwarder.enabled` | `false` | Minute CronJob draining the central SIEM forwarding outbox (same keys) |
+| `siem.allowPrivateNetworks` | `false` | Let SIEM destinations opt in to RFC 1918 / ULA collectors |
+| `networkPolicy.siemEgress` | `[]` | Collector `{ cidr, port, protocol }` entries the functions may reach |
+| `functions.mail.*` | `""` | Mail provider override, SMTP security and the internal CA key for the Auth relay reuse |
 | `ingress.certManager.*` | disabled | Adds the cert-manager issuer annotation |
 | `networkPolicy.enabled` | `true` | Default-deny plus per-component allows |
 | `networkPolicy.*EgressCIDRs` | `[]` | Opt-in egress: functions (npm mirror/IdP/billing), SMTP, dashboard certificate probe, S3 |

@@ -106,6 +106,15 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 		justification:
 			"Scheduler-only outbox dispatcher: POST with `Authorization: Bearer <AIDR_NOTIFICATION_DISPATCH_TOKEN>` (at least 32 chars, compared in constant time) before any row is read; it has no user or tenant caller, fails closed when the token or keyring is unset, and never accepts the service-role key.",
 	},
+	{
+		route: "supabase/functions/siem-forwarder/index.ts",
+		// Same scheduler credential as the alert dispatcher: no anonymous caller to
+		// rate limit, so not application rate limited (declared honestly).
+		rateLimited: false,
+		mechanism: "dedicated dispatcher bearer token",
+		justification:
+			"Scheduler-only SIEM outbox forwarder: POST with `Authorization: Bearer <AIDR_NOTIFICATION_DISPATCH_TOKEN>` (at least 32 chars, compared in constant time) before any row is read; it has no user or tenant caller, fails closed when the token or keyring is unset, and never accepts the service-role key.",
+	},
 ]);
 
 export const RATE_LIMIT_MODULE = "../_shared/rate-limit.ts";

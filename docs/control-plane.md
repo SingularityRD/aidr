@@ -304,6 +304,24 @@ there is no automatic re-encryption).
 **Not included.** `agent.offline` alerts, per-user notification preferences,
 digest/batching, and mTLS to webhook receivers are not implemented.
 
+**E-mail on-prem.** Set `SMTP_HOST` (and the other `SMTP_*` values) in `.env`
+for Auth mail; the functions reuse the same relay for alert, invitation and
+digest mail (`smtp` provider, STARTTLS or implicit TLS, internal CA in
+`AIDR_SMTP_CA_PEM_B64`). Air-gapped installations need no Internet mail API.
+
+## Central SIEM forwarding
+
+The **SIEM** page lets owners and administrators send incidents, agent
+decisions and Browser Guard events from the control plane to syslog (TLS, TCP
+or UDP; JSON, CEF or LEEF), Splunk HEC, Elastic, Microsoft Sentinel or a
+signed webhook. Delivery is at-least-once with retries, a bounded backlog and
+re-queueable dead letters; connection secrets are encrypted with the alert
+keyring and never shown again. Scheduling: the `siem-forwarder` CronJob
+(Helm), the `siem-forwarder` Compose service, or pg_cron on Supabase Cloud.
+Contract: [contracts/siem-forwarding.md](contracts/siem-forwarding.md);
+QRadar and Wazuh set-up: [integrations/qradar.md](integrations/qradar.md),
+[integrations/wazuh.md](integrations/wazuh.md).
+
 ## Retention maintenance
 
 Time-based deletion and the scheduled governance digest only happen when the

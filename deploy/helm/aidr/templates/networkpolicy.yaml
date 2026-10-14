@@ -191,6 +191,9 @@ spec:
         {{- if .Values.notifications.dispatcher.enabled }}
         {{- include "aidr.np.peer" (dict "root" . "component" "notification-dispatch") | nindent 8 }}
         {{- end }}
+        {{- if .Values.siem.forwarder.enabled }}
+        {{- include "aidr.np.peer" (dict "root" . "component" "siem-forwarder") | nindent 8 }}
+        {{- end }}
       ports:
         - port: 9000
           protocol: TCP
@@ -202,6 +205,17 @@ spec:
         - port: 8000
           protocol: TCP
     {{- include "aidr.np.cidrs" (dict "cidrs" $np.functionsEgressCIDRs "port" 443) | nindent 4 }}
+    {{- if .Values.auth.smtp.host }}
+    {{- include "aidr.np.cidrs" (dict "cidrs" $np.smtpEgressCIDRs "port" .Values.auth.smtp.port) | nindent 4 }}
+    {{- end }}
+    {{- range $np.siemEgress }}
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr }}
+      ports:
+        - port: {{ int .port }}
+          protocol: {{ .protocol | default "TCP" }}
+    {{- end }}
 ---
 {{- if .Values.maintenance.enabled }}
 apiVersion: networking.k8s.io/v1
@@ -234,6 +248,26 @@ spec:
   podSelector:
     matchLabels:
       {{- include "aidr.selectorLabels" (dict "root" . "component" "notification-dispatch") | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  egress:
+    - to:
+        {{- include "aidr.np.peer" (dict "root" . "component" "functions") | nindent 8 }}
+      ports:
+        - port: 9000
+          protocol: TCP
+---
+{{- end }}
+{{- if .Values.siem.forwarder.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "aidr.component" (dict "root" . "component" "siem-forwarder") }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" "network-policy") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "aidr.selectorLabels" (dict "root" . "component" "siem-forwarder") | nindent 6 }}
   policyTypes: ["Ingress", "Egress"]
   egress:
     - to:

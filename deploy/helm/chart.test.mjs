@@ -559,6 +559,41 @@ test("the notification dispatcher CronJob is opt-in, token-authenticated and nev
 	assert.match(policies, /component" "notification-dispatch"\) \| nindent 8 \}\}[\s\S]*?port: 9000/);
 });
 
+test("the SIEM forwarder CronJob is opt-in, token-authenticated and collectors are an explicit egress list", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.siem.forwarder.enabled, false);
+	assert.equal(values.siem.allowPrivateNetworks, false, "private collectors stay an operator opt-in");
+	assert.deepEqual(values.networkPolicy.siemEgress, []);
+	const template = readFileSync(join(chartDir, "templates", "siem-forwarder-cronjob.yaml"), "utf8");
+	assert.match(template, /^\{\{- if \.Values\.siem\.forwarder\.enabled \}\}/);
+	assert.match(template, /concurrencyPolicy: Forbid/);
+	assert.match(template, /secretKeyRef:\s+name: \{\{ include "aidr\.functionsSecretName" \. \}\}\s+key: AIDR_NOTIFICATION_DISPATCH_TOKEN/);
+	assert.match(template, /http:\/\/%s:9000\/siem-forwarder/);
+	assert.doesNotMatch(template, /service-role-key|SERVICE_ROLE/);
+	const policies = readFileSync(join(chartDir, "templates", "networkpolicy.yaml"), "utf8");
+	assert.match(policies, /component" "siem-forwarder"\) \| nindent 8 \}\}[\s\S]*?port: 9000/);
+	assert.match(policies, /range \$np\.siemEgress/);
+	const functions = readFileSync(join(chartDir, "templates", "functions.yaml"), "utf8");
+	// AIDR mail reuses the Auth relay; the password only ever comes from the Secret.
+	assert.match(functions, /name: SMTP_HOST\s+value: \{\{ \.Values\.auth\.smtp\.host \| quote \}\}/);
+	assert.match(functions, /"env" "SMTP_PASS" "key" \.Values\.auth\.smtp\.passwordKey/);
+	assert.match(functions, /AIDR_SIEM_ALLOW_PRIVATE_NETWORKS/);
+});
+
+test("rendered prod values add the SIEM forwarder, SMTP mail env and collector egress", { skip: helmSkip }, () => {
+	const docs = renderDocs("prod");
+	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-siem-forwarder"));
+	assert.ok(cron, "siem-forwarder CronJob");
+	const functionsPolicy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith("-functions"));
+	assert.ok(JSON.stringify(functionsPolicy.spec.ingress).includes("siem-forwarder"));
+	assert.ok(functionsPolicy.spec.egress.some((rule) => rule.ports?.[0]?.port === 514 && rule.ports[0].protocol === "UDP"));
+	const deployment = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-functions"));
+	const env = Object.fromEntries(deployment.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry]));
+	assert.equal(env.AIDR_SIEM_ALLOW_PRIVATE_NETWORKS.value, "true");
+	assert.ok(env.SMTP_HOST, "functions reuse the Auth SMTP relay");
+	assert.ok(!renderDocs("default").some((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-siem-forwarder")));
+});
+
 test("rendered prod values add the notification dispatcher with its own network allow-list", { skip: helmSkip }, () => {
 	const docs = renderDocs("prod");
 	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-notification-dispatch"));

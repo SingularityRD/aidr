@@ -33,6 +33,26 @@ const STUDIO_ADMIN_LISTENER_PORT = 8001;
 // the PostgREST pool timeouts keep their defaults. Operators override the whole
 // parameter string with AIDR_POSTGREST_DB_URI_PARAMS in `.env`.
 const POSTGREST_DB_URI_PARAMS = "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000";
+// Auth relay settings the Edge Functions mailer reuses (SMTP provider).
+const SMTP_PASSTHROUGH = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_ADMIN_EMAIL", "SMTP_SENDER_NAME"];
+// The Compose SIEM forwarder scheduler loop (node -e). It prints counts only,
+// never the token, a destination or a payload, and keeps running on failures.
+const SIEM_FORWARDER_LOOP = [
+	"const token = process.env.AIDR_NOTIFICATION_DISPATCH_TOKEN ?? '';",
+	"const every = Math.min(3600, Math.max(15, Number(process.env.AIDR_SIEM_FORWARD_INTERVAL_SECONDS) || 60)) * 1000;",
+	"const tick = async () => {",
+	"  if (token.length < 32) { console.error('siem-forwarder: AIDR_NOTIFICATION_DISPATCH_TOKEN is missing from .env (same value as .env.functions)'); return; }",
+	"  try {",
+	"    const r = await fetch(process.env.AIDR_SIEM_FORWARDER_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: '{}', redirect: 'error', signal: AbortSignal.timeout(90000) });",
+	"    const b = await r.json().catch(() => null);",
+	"    if (!r.ok || !b || b.ok !== true) { console.error('siem-forwarder: run failed (HTTP ' + r.status + (b && typeof b.error === 'string' ? ', ' + b.error : '') + ')'); return; }",
+	"    const { claimed, delivered, retrying, dead, lease_lost, pruned } = b;",
+	"    if (claimed || dead || pruned) console.log(JSON.stringify({ claimed, delivered, retrying, dead, lease_lost, pruned }));",
+	"    require('node:fs').writeFileSync('/tmp/siem-forwarder.ok', String(Date.now()));",
+	"  } catch { console.error('siem-forwarder: functions unreachable'); }",
+	"};",
+	"(async () => { for (;;) { await tick(); await new Promise((done) => setTimeout(done, every)); } })();",
+].join("\n");
 const ENVOY_ROUTES = ["filter_chains", 0, "filters", 0, "typed_config", "route_config", "virtual_hosts", 0, "routes"];
 function isolateStudioListener(path) {
 	const doc = parseDocument(readFileSync(path, "utf8"));
@@ -551,6 +571,9 @@ const functionEnv = {
 	AIDR_NOTIFICATION_ENCRYPTION_KEYS: `k1:${randomBytes(32).toString("base64")}`,
 	AIDR_NOTIFICATION_DISPATCH_TOKEN: randomBytes(32).toString("base64url"),
 };
+// The Compose `siem-forwarder` scheduler reads the same token through `.env`
+// interpolation, so it never needs the whole `.env.functions` keyring.
+if (values.mode === "self-hosted") env.AIDR_NOTIFICATION_DISPATCH_TOKEN = functionEnv.AIDR_NOTIFICATION_DISPATCH_TOKEN;
 for (const service of Object.values(compose.services)) {
 	delete service.container_name; delete service.ports;
 	service.logging = { driver: "json-file", options: { "max-size": "20m", "max-file": "3" } };
@@ -578,6 +601,32 @@ if (values.mode === "self-hosted") {
 		`${loopbackBinding(supabaseUrl)}:${studioAdminHostPort}:${STUDIO_ADMIN_LISTENER_PORT}`,
 	];
 	compose.services.functions.env_file = [".env.functions"];
+	// AIDR mail (alerts, invitations, digest) reuses the Auth relay in `.env`;
+	// supabase/functions/_shared/mailer.ts selects SMTP once SMTP_HOST is set.
+	compose.services.functions.environment = {
+		...(compose.services.functions.environment ?? {}),
+		...Object.fromEntries(SMTP_PASSTHROUGH.map((name) => [name, `\${${name}:-}`])),
+	};
+	// Central SIEM forwarding scheduler: a tiny loop in the dashboard image that
+	// POSTs to the in-network `siem-forwarder` function with the dispatcher token.
+	// It never sees any other secret; forwarding itself leaves from `functions`.
+	compose.services["siem-forwarder"] = {
+		image: `aidr-dashboard:${aidrVersion}`, build: "./dashboard", read_only: true,
+		cap_drop: ["ALL"], security_opt: ["no-new-privileges:true"],
+		command: ["node", "-e", SIEM_FORWARDER_LOOP],
+		tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=1m"],
+		// Healthy only while runs succeed: a missing token, a broken keyring or an
+		// unreachable functions service turns the container unhealthy.
+		healthcheck: {
+			test: ["CMD", "node", "-e", "const t = Number(require('node:fs').readFileSync('/tmp/siem-forwarder.ok', 'utf8')); const every = Math.min(3600, Math.max(15, Number(process.env.AIDR_SIEM_FORWARD_INTERVAL_SECONDS) || 60)); process.exit(Date.now() - t < (every * 3 + 60) * 1000 ? 0 : 1)"],
+			interval: "60s", timeout: "5s", retries: 3, start_period: "180s",
+		},
+		environment: {
+			AIDR_NOTIFICATION_DISPATCH_TOKEN: "${AIDR_NOTIFICATION_DISPATCH_TOKEN:-}",
+			AIDR_SIEM_FORWARDER_URL: "http://functions:9000/siem-forwarder",
+			AIDR_SIEM_FORWARD_INTERVAL_SECONDS: "${AIDR_SIEM_FORWARD_INTERVAL_SECONDS:-60}",
+		},
+	};
 	const restDbUri = compose.services.rest.environment.PGRST_DB_URI;
 	if (typeof restDbUri !== "string" || !restDbUri.startsWith("postgres://authenticator:") || restDbUri.includes("?")) {
 		throw new Error("The reviewed upstream PostgREST database URI changed; refusing to prepare it without connection keepalives");

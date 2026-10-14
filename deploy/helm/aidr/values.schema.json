@@ -210,6 +210,15 @@
         "runAsUser": { "$ref": "#/definitions/uid" },
         "npmRegistry": { "type": "string", "pattern": "^(|https?://.+)$" },
         "billingProvider": { "type": "string", "enum": ["", "stripe", "paddle"] },
+        "mail": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string", "enum": ["", "smtp", "resend", "none"] },
+            "smtpSecurity": { "type": "string", "enum": ["", "starttls", "tls", "none"] },
+            "smtpCaSecretKey": { "type": "string" }
+          }
+        },
         "pdb": { "$ref": "#/definitions/pdb" },
         "autoscaling": { "$ref": "#/definitions/autoscaling" }
       }
@@ -340,6 +349,22 @@
         }
       }
     },
+    "siem": {
+      "type": "object",
+      "properties": {
+        "allowPrivateNetworks": { "type": "boolean" },
+        "forwarder": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "schedule": { "type": "string", "minLength": 9 },
+            "image": { "$ref": "#/definitions/image" },
+            "resources": { "$ref": "#/definitions/resources" },
+            "runAsUser": { "$ref": "#/definitions/uid" }
+          }
+        }
+      }
+    },
     "ingress": {
       "type": "object",
       "properties": {
@@ -367,6 +392,19 @@
         "dnsPodSelector": { "type": "object" },
         "functionsEgressCIDRs": { "$ref": "#/definitions/cidrList" },
         "smtpEgressCIDRs": { "$ref": "#/definitions/cidrList" },
+        "siemEgress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cidr", "port"],
+            "properties": {
+              "cidr": { "type": "string", "pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$" },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "protocol": { "type": "string", "enum": ["TCP", "UDP"] }
+            }
+          }
+        },
         "dashboardEgressCIDRs": { "$ref": "#/definitions/cidrList" },
         "storageEgressCIDRs": { "$ref": "#/definitions/cidrList" }
       }

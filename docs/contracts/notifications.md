@@ -1,4 +1,15 @@
-# Alert notification contract (`aidr.notification.v1`)
+# Alert notification contract (`aidr.notification.v1`, schema revision 1.1)
+
+**Schema revision 1.1** — [`notification.v1.1.schema.json`](notification.v1.1.schema.json)
+(JSON Schema draft 2020-12, `$id` `https://schemas.singularityrd.com/aidr/notification/v1.1.json`)
+is the complete body schema for **all twelve events** the control plane emits. Revision 1.0
+(the schema embedded below) listed only the original five events. Nothing changed on the
+wire: the body still says `"schema": "aidr.notification.v1"`, and every body valid under 1.0
+is valid under 1.1. A receiver that validates strictly should switch to the 1.1 file before
+enabling agent or governance filters. The contract suite
+(`supabase/functions/__tests__/notification-schema.test.ts`) validates the body emitted for
+every event against it and pins its event list to the producer, the outbox constraint and
+this document.
 
 Status: implemented. Producer: the control plane (`supabase/functions/notification-dispatch`,
 shared code in `supabase/functions/_shared/notification-delivery.ts`). Consumers: Slack
@@ -136,8 +147,9 @@ included):
 | `period` | `{ "from", "to" }` date-times or null | `governance.digest` |
 | `digest` | object of integers or null | `governance.digest`: `agents_enrolled`, `agents_active`, `decisions_allow`, `decisions_ask`, `decisions_deny`, `approvals_requested`, `approvals_pending`, `incidents_reported`, `incidents_open`, `incidents_open_critical`, `browser_blocked`, `browser_masked`, `mcp_not_approved`, `reviews_overdue`, `intake_pending`, `policy_changes_pending` |
 
-A receiver that validates strictly should add these event names and optional fields to
-its copy of the schema before enabling the corresponding filters.
+These events always carry every key in the table (`null` when not applicable); the original
+five never carry any of them. Schema revision 1.1 encodes both rules, so a strict receiver can
+use [`notification.v1.1.schema.json`](notification.v1.1.schema.json) as is.
 
 Example:
 
@@ -214,9 +226,13 @@ or a legacy Office 365 connector (`*.webhook.office.com`) with
 ## E-mail
 
 One message per recipient (1 to 10 recipients) through the deployment's mailer
-(`AIDR_MAIL_PROVIDER` / Resend, see `supabase/functions/_shared/mailer.ts`), subject
-`[AIDR] <title>`, text and HTML bodies listing the same facts plus the deep link. The
-provider idempotency key is `aidr-notification:<delivery id>:<recipient index>`. With no
+(`AIDR_MAIL_PROVIDER`, see `supabase/functions/_shared/mailer.ts`): the organisation's own SMTP
+relay (`smtp`, reusing the on-prem `SMTP_*` settings, STARTTLS or implicit TLS with an
+optional internal CA in `AIDR_SMTP_CA_PEM_B64`; certificates are always verified) or Resend.
+Subject `[AIDR] <title>`, text and HTML bodies listing the same facts plus the deep link. The
+idempotency key is `aidr-notification:<delivery id>:<recipient index>`: Resend de-duplicates
+on it, and over SMTP it derives a stable `Message-ID`, so a retried alert carries the same
+id. A 4xx SMTP reply or an unreachable relay is retried; a 5xx reply is permanent. With no
 mailer configured, e-mail deliveries fail permanently with `mail_not_configured`.
 
 ## Delivery semantics

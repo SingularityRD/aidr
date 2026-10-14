@@ -206,6 +206,17 @@ verify_jwt = true
 # Outbox dispatcher, invoked by the deployment scheduler with the dedicated
 # AIDR_NOTIFICATION_DISPATCH_TOKEN bearer (not a JWT); never browser-facing.
 verify_jwt = false
+
+[functions.siem-destinations]
+# Central SIEM forwarding destinations (SIEM page). The handler repeats session,
+# identity barrier, owner/admin, AAL2 and the siem_export plan check;
+# connection settings are write-only.
+verify_jwt = true
+
+[functions.siem-forwarder]
+# SIEM outbox forwarder, invoked by the deployment scheduler with the
+# AIDR_NOTIFICATION_DISPATCH_TOKEN bearer (not a JWT); never browser-facing.
+verify_jwt = false
 [functions.oauth-callback]
 verify_jwt = true
 [functions.audit-export]
