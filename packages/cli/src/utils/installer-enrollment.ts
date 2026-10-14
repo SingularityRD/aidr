@@ -1,6 +1,6 @@
 /**
  * The company connection the Windows installer's wizard collected (control-plane
- * address and, optionally, a one-time enrollment code).
+ * address and, optionally, a one-time enrollment code or a fleet enrollment key).
  *
  * The MSI's custom action (deploy/installers/windows/ca/EnrollmentActions.cs)
  * writes it, as the installing user, to `~/.singularity-aidr/installer-enrollment.json`
@@ -16,7 +16,9 @@ import { join } from "node:path";
 
 const INSTALLER_ENROLLMENT_URL_PATTERN =
 	/^https:\/\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:\/[A-Za-z0-9._~%/-]*)?$/;
-const INSTALLER_ENROLLMENT_CODE_PATTERN = /^aidr_enroll_[A-Za-z0-9_-]{43}$/;
+// A one-time enrollment code, or a multi-use fleet enrollment key (`aidr_fleet_`).
+const INSTALLER_ENROLLMENT_CODE_PATTERN =
+	/^(?:aidr_enroll_[A-Za-z0-9_-]{43}|aidr_fleet_[A-Za-z0-9_-]{16,256})$/;
 const MAX_URL_LENGTH = 512;
 const MAX_FILE_BYTES = 4096;
 const FORMAT = "aidr-installer-enrollment/1";

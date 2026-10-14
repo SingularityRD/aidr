@@ -42,7 +42,7 @@
   <String Id="AidrCustomerCompanyHelp" Value="Koruma, sunucuya ulaşılsa da ulaşılmasa da bu bilgisayarda çalışır. Kod girmezseniz yapay zekâ aracınız ilk açılışında kısa bir kod ve bir bağlantı gösterir; bu bilgisayar orada onaylanır. Kurulum kodu yalnızca sizin hesabınızın açabildiği bir dosyada tutar ve kullanıldıktan sonra siler." />
 
   <String Id="AidrInvalidUrl" Value="Şirket adresi https:// ile başlamalı ve yalnızca bir sunucu adı ile yol içermelidir; örneğin https://aidr.example.com." />
-  <String Id="AidrInvalidCode" Value="Kayıt kodu eksik. Kod aidr_enroll_ ile başlar ve 55 karakterdir. Şirketinizin konsolundan yeniden kopyalayın." />
+  <String Id="AidrInvalidCode" Value="Kayıt kodu eksik. Tek kullanımlık kod aidr_enroll_ ile başlar ve 55 karakterdir; filo anahtarı aidr_fleet_ ile başlar. Şirketinizin konsolundan yeniden kopyalayın." />
 
   <String Id="AidrReadyTitle" Value="{\WixUI_Font_Title}Kuruluma hazır" />
   <String Id="AidrReadyDescription" Value="Seçimlerinizi kontrol edin, ardından Kur'a tıklayın." />

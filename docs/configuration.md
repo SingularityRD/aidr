@@ -230,7 +230,7 @@ the central policy cannot be loaded, including while managed features are off.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `api_key` | (none) | API key for managed control plane services (telemetry + licensing). |
-| `enrollment_token` | (none) | Optional one-time token for bootstrapping managed mode (support/fallback path). |
+| `enrollment_token` | (none) | Optional enrollment code (`aidr_enroll_…`, one-time) or fleet enrollment key (`aidr_fleet_…`) exchanged for a credential on first use. A fleet key in the machine policy fills this for a managed install that has no credential. |
 
 ### `control_plane`
 
@@ -244,6 +244,43 @@ the central policy cannot be loaded, including while managed features are off.
 | `sync_incidents` | `false` | Also send incident events (when emitted) |
 | `grace_period_hours` | `72` | Offline grace window for managed mode |
 | `redact_mode` | `"hash"` | Remote minimisation: `"hash"` replaces summaries/artifacts with SHA-256 digests; `"full"` omits them; `"none"` is debug-only and still receives mandatory credential/query redaction. |
+| `remote_policy_required` | `false` | An enrolled endpoint must hold the central runtime policy; without it (past the offline grace) every call is denied. |
+| `remote_policy_offline_grace_seconds` | `3600` | How long the last central policy may be used after it expired while the control plane is unreachable. Never renewed offline. |
+| `offline_policy` | (unset) | Install-time choice for an unreachable control plane: `"keep_enforcing_local"` (local detection keeps deciding every call; sets `remote_policy_required: false`) or `"block_after_grace"` (deny every call once the grace is over; sets `remote_policy_required: true`). Chosen with `deployment-prepare --offline-policy` and usually delivered by the [machine policy](installation/desktop-installers.md#machine-policy-every-user-of-a-computer). While the control plane does not answer, each session start tells the user which applies and, for `block_after_grace`, when the block begins. |
+
+### `network`
+
+Outbound settings for every first-party request (control plane, reputation,
+version and update checks). Certificate verification is never turned off: these
+only add trust anchors or a route.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `ca_file` | (none) | PEM bundle of an internal CA or a TLS-inspecting proxy, trusted **in addition** to Node's bundled roots. |
+| `use_os_trust_store` | `false` | Also trust the operating system's store (Windows certificate store, `/etc/ssl`). Needs Node.js 22.15+ (the standalone build bundles it). |
+| `https_proxy` | (none) | `http://host:port` proxy for outbound HTTPS (HTTP `CONNECT` tunnel; TLS stays end-to-end). Unset: `HTTPS_PROXY` / `https_proxy` from the environment. |
+| `no_proxy` | (none) | Comma-separated hosts, domain suffixes, `host:port` or `*` that go direct. Unset: `NO_PROXY` / `no_proxy`. Loopback always goes direct. |
+
+An unparseable value is ignored (a connectivity setting never changes what is
+enforced). Without any of these, and without `HTTPS_PROXY`, nothing changes.
+
+### `organization`
+
+Display only: shown to users by the connectors and the offline notice.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `support_contact_url` | (none) | `https://` or `mailto:` support contact of the organisation. |
+| `privacy_notice_url` | (none) | `https://` privacy notice (aydınlatma metni) of the organisation. |
+
+### Machine policy
+
+An administrator can set `control_plane.endpoint`, a fleet enrollment key,
+`licensing.public_keys_pem`, `network.*`, `organization.*`,
+`operator_approvals.approvals_mode` and `control_plane.offline_policy` for every
+user of a computer in `HKLM\SOFTWARE\Policies\Singularity AIDR` (Windows) or
+`/etc/singularity-aidr/managed.json` (Linux, root-owned). Those values win over
+this file. See [Machine policy](installation/desktop-installers.md#machine-policy-every-user-of-a-computer).
 
 ### `policy`
 
@@ -871,6 +908,11 @@ VS Code hooks. OpenClaw, OpenCode and Codex always use the operator channel.
 ```json
 { "operator_approvals": { "mode": "operator" } }
 ```
+
+`approvals_mode`: unset (default), `"dashboard_only"` or `"host_dialog"`. The
+organisation-wide choice, normally from the machine policy: `"dashboard_only"`
+sets `dashboard_only: true`; `"host_dialog"` sets `dashboard_only: false` and
+`mode: "host_dialog"`.
 
 ### `disabled_threats`
 

@@ -84,7 +84,7 @@ try {
  for(const mode of["self-hosted","cloud"]){
   const output=join(outputs,mode);
   try {
-   const result=spawnSync(process.execPath,[join(kit,"scripts/deployment-prepare.mjs"),"--mode",mode,"--output",output,"--dashboard-url","https://console.customer.example","--supabase-url","https://api.customer.example","--region","self-hosted","--tenant-region","self-hosted","--artifact-verification-public-key-file",artifactPublicKey,"--telemetry-queue-root","/var/lib/aidr-telemetry"],{cwd:kit,env:isolatedEnv,encoding:"utf8",timeout:60000});
+   const result=spawnSync(process.execPath,[join(kit,"scripts/deployment-prepare.mjs"),"--mode",mode,"--output",output,"--dashboard-url","https://console.customer.example","--supabase-url","https://api.customer.example","--region","self-hosted","--tenant-region","self-hosted","--artifact-verification-public-key-file",artifactPublicKey,"--telemetry-queue-root","/var/lib/aidr-telemetry","--offline-policy","keep_enforcing_local"],{cwd:kit,env:isolatedEnv,encoding:"utf8",timeout:60000});
    assert.equal(result.status,0,result.stderr);
    const deployment=JSON.parse(readFileSync(join(output,"deployment.json"),"utf8"));assert.equal(deployment.mode,mode);assert.equal(deployment.development,false,"customer-kit production rehearsal must not use development mode");assert.equal(deployment.migrations.length,migrationCount);
    const config=JSON.parse(readFileSync(join(output,"agent-config.json"),"utf8"));assert.equal(config.control_plane.remote_policy_required,true);assert.equal(config.control_plane.remote_policy_offline_grace_seconds,3600);

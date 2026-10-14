@@ -38,7 +38,7 @@ Bu mühendislik adayında kurumun resmi yayıncı anahtarı ve bağımsız polic
 Komutları paketin kökünde çalıştırın. Yeni kurulum dizini seçin; mevcut bir kurulumda yeniden hazırlama çalıştırmayın.
 
 ```sh
-node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --region self-hosted --tenant-region self-hosted --dashboard-url https://console.customer.example --supabase-url https://api.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --region self-hosted --tenant-region self-hosted --dashboard-url https://console.customer.example --supabase-url https://api.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry --offline-policy keep_enforcing_local
 docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --build
 node scripts/deployment-migrate.mjs /srv/aidr
 ```
@@ -106,6 +106,22 @@ Packages erişimi, sürüm doğrulama ve OpenClaw/OpenCode/Codex kurulum adımla
 çalışma ağacındaki kaynak derlemeleri müşteri kurulumu için dağıtım paketi
 sayılmaz.
 
+Masaüstü kurulum paketleriyle (MSI, .deb, .rpm) dağıtımda `agent-config.json` dosyasını
+elle birleştirmeniz gerekmez: `deployment-prepare` çıktı dizinindeki `endpoint-policy/`
+klasörü, her uç cihaza konacak **makine politikasını** üretir (`managed.json`,
+`aidr-machine-policy.reg`, `licensing-public-keys.pem` ve hazır `msiexec` / `apt` komutları
+içeren `README.txt`). Makine politikası şirket adresini, bu kurulumun imza anahtarını ve
+çevrimdışı davranış seçimini taşır; Windows'ta `HKLM\SOFTWARE\Policies\Singularity AIDR`,
+Linux'ta `/etc/singularity-aidr/managed.json` (root sahipli) olarak yazılır ve her kullanıcının
+`aidr setup` çalıştırması (Windows'ta Active Setup ile oturum açılışında) bilgisayarı onay
+sormadan şirkete bağlar. Filo kayıt anahtarını (`aidr_fleet_…`) panelden oluşturup
+`AIDR_POLICY_ENROLLMENT_KEY` olarak ekleyin. Kurumsal vekil sunucu veya iç CA için
+`AIDR_POLICY_HTTPS_PROXY`, `AIDR_POLICY_NO_PROXY`, `AIDR_POLICY_CA_FILE` ya da
+`AIDR_POLICY_USE_OS_TRUST_STORE=1` kullanın. Ayrıntılar:
+[masaüstü kurulum kılavuzu](../docs/installation/desktop-installers.md#machine-policy-every-user-of-a-computer).
+Müşteriye özel kurulum paketi isteniyorsa `licensing-public-keys.pem` dosyasını üreticiye verin;
+üretici bu anahtarı imzalı müşteri paketine ekler ve `aidr setup` onu güvenilir anahtar olarak kaydeder.
+
 Claude Code için ayrı kontrol düzlemi/uç cihaz kurulumunda, `deployment-prepare` tarafından
 üretilen `agent-config.json` dosyasını imzalama anahtarıyla bağımsız doğrulanmış
 güvenli bir kanaldan her uç cihaza aktarın. Uç cihazda örnekteki
@@ -170,7 +186,7 @@ Paket `release-source.json` içinde `inline_mcp_gateway_bundled: true` bildiriyo
 
 Yeni müşteri için başlangıç politikası ilk yönetici işlemiyle yayınlanır. Policies ekranında bir taslağı seçili ajanlara dağıtın; hedef sürüm ve ajanın yüklediğini bildirdiği sürümü kontrol edin. Bildirim gelmeyen ajan Unknown, beş dakikadan eski bildirim Stale görünür. Bu bildirim, hostun her eylemi engellediğine dair bağımsız kanıt değildir. Review ile eski sürümü inceleyin; Publish version to all agents geçmiş içeriği yeni sürüm olarak yayınlar ve deneme atamalarını kaldırır. Büyük filolar Next agents ile sayfalanır.
 
-Dağıtımın agent-config.json dosyası kayıtlı ajan için merkezi politikayı zorunlu tutar. Son geçerli önbellek normal süresi bittikten sonra varsayılan 3.600 saniye kullanılabilir; bu süre sabittir, dosyanın yeniden okunması süreyi uzatmaz. Ağ kesintisi bu süreyi aşarsa işlemler engellenir. 401/403, bozuk politika veya farklı anahtara ait önbellek eski politikaya dönüş izni vermez. Kuruma ait süreyi `control_plane.remote_policy_offline_grace_seconds` ile seçin; sahada çevrimdışı ve yeniden bağlantı denemesi yapın. Kayıtsız uç cihaz yerel tespitle çalışır.
+Kontrol sunucusuna ulaşılamadığında uç cihazların ne yapacağı kurulumda açıkça seçilir: `deployment-prepare --offline-policy keep_enforcing_local|block_after_grace` (terminalde sorulur; üretim kurulumunda seçim zorunludur). `keep_enforcing_local` seçildiğinde kesinti boyunca yerel tespit her işlemi denetlemeye devam eder, merkezi politika değişiklikleri sunucu dönünce gelir. `block_after_grace` seçildiğinde dağıtımın agent-config.json dosyası ve makine politikası kayıtlı ajan için merkezi politikayı zorunlu tutar: son geçerli önbellek normal süresi bittikten sonra varsayılan 3.600 saniye kullanılabilir; bu süre sabittir, dosyanın yeniden okunması süreyi uzatmaz. Ağ kesintisi bu süreyi aşarsa işlemler engellenir. Compose kurulumu tek sunucudur (HA yok); bu seçenek her kesintide tüm filoda yapay zekâ araçlarını durdurabilir. Kesinti sırasında açılan her oturumda kullanıcıya, engellemenin hangi saatte başlayacağı (veya yerel korumanın sürdüğü) ve varsa destek adresi gösterilir; kontrol sunucusunun izlenmesi ve alarmı kurumun izleme sistemindedir. 401/403, bozuk politika veya farklı anahtara ait önbellek eski politikaya dönüş izni vermez. Kuruma ait süreyi `control_plane.remote_policy_offline_grace_seconds` ile seçin; sahada çevrimdışı ve yeniden bağlantı denemesi yapın. Kayıtsız uç cihaz yerel tespitle çalışır.
 
 ## Denetim dışa aktarımı ve geçici dosyaların temizliği
 

@@ -43,7 +43,7 @@ substitute a different production output path without updating those units and
 their environment files:
 
 ```sh
-node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry --offline-policy keep_enforcing_local
 docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml config --quiet
 docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --build
 node scripts/deployment-migrate.mjs /srv/aidr
@@ -141,7 +141,7 @@ containerized dashboard and trusted ingress, not a Cloudflare deployment.
 
 ```powershell
 pnpm build
-node scripts/deployment-prepare.mjs --mode cloud --output .aidr-cloud --region managed-cloud --tenant-region managed-cloud --dashboard-url https://aidr.example.com --supabase-url https://api.aidr.example.com --device-start-upstream-url https://PROJECT.supabase.co/functions/v1/device-start --artifact-verification-public-key-file C:\secure-delivery\aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+node scripts/deployment-prepare.mjs --mode cloud --output .aidr-cloud --region managed-cloud --tenant-region managed-cloud --dashboard-url https://aidr.example.com --supabase-url https://api.aidr.example.com --device-start-upstream-url https://PROJECT.supabase.co/functions/v1/device-start --artifact-verification-public-key-file C:\secure-delivery\aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry --offline-policy keep_enforcing_local
 ```
 
 Use a provisioned managed Supabase project in the approved region. Declare that
@@ -316,7 +316,7 @@ On the connected staging host (network plus a running Docker daemon):
 
 ```powershell
 pnpm build
-node scripts/deployment-prepare.mjs --mode self-hosted --output .aidr-deploy --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file C:\secure-delivery\aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+node scripts/deployment-prepare.mjs --mode self-hosted --output .aidr-deploy --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file C:\secure-delivery\aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry --offline-policy keep_enforcing_local
 docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml build
 node scripts/build-airgap-images.mjs --compose .aidr-deploy/compose.yml --output .aidr-airgap --platform linux/amd64
 ```

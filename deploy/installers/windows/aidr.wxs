@@ -16,6 +16,13 @@
     * for every other user of a per-machine install, through Active Setup at that
       user's next logon (this is also how an Intune/SCCM/GPO install in the
       system context reaches the users).
+  Machine policy (per-machine): AIDR_POLICY_CONTROL_PLANE_URL, AIDR_POLICY_ENROLLMENT_KEY
+  (fleet key, Hidden), AIDR_POLICY_LICENSING_PUBLIC_KEYS, AIDR_POLICY_CA_FILE,
+  AIDR_POLICY_USE_OS_TRUST_STORE, AIDR_POLICY_HTTPS_PROXY, AIDR_POLICY_NO_PROXY,
+  AIDR_POLICY_SUPPORT_CONTACT_URL, AIDR_POLICY_PRIVACY_NOTICE_URL,
+  AIDR_POLICY_APPROVALS_MODE and AIDR_POLICY_OFFLINE_POLICY are written to
+  HKLM\SOFTWARE\Policies\Singularity AIDR; Active Setup's plain `aidr setup`
+  then connects every user without a prompt.
   AIDR_SKIP_SETUP=1 installs files only. AIDR_MDM_MANAGED=1 (per-machine) marks the
   install as owned by device management (HKLM\SOFTWARE\Policies\Singularity AIDR,
   MdmManaged=1): `aidr update` and automatic updates then leave updates to the
@@ -65,6 +72,91 @@
     <Property Id="ENROLLMENT_URL" Secure="yes" />
     <Property Id="ENROLLMENT_CODE" Secure="yes" Hidden="yes" />
     <Property Id="AidrWriteEnrollmentHandoff" Hidden="yes" />
+    <!--
+      Machine policy (per-machine installs only): each AIDR_POLICY_* property
+      becomes a value of HKLM\SOFTWARE\Policies\Singularity AIDR, which every
+      user's `aidr setup` (Active Setup at logon) and every hook read
+      (packages/core/src/machine-policy.ts). A value the command line does not
+      pass keeps what the machine already has (read by AppSearch), so a
+      plain upgrade or `aidr update` does not drop the policy. Only
+      administrators can write the key.
+    -->
+    <Property Id="AIDR_POLICY_CONTROL_PLANE_URL" Secure="yes" />
+    <Property Id="AIDR_POLICY_CONTROL_PLANE_URL_SAVED">
+      <RegistrySearch Id="AidrPolicySavedControlPlaneUrl" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="control_plane_url" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_ENROLLMENT_KEY" Secure="yes" Hidden="yes" />
+    <Property Id="AIDR_POLICY_ENROLLMENT_KEY_SAVED" Hidden="yes">
+      <RegistrySearch Id="AidrPolicySavedEnrollmentKey" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="enrollment_key" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_LICENSING_PUBLIC_KEYS" Secure="yes" />
+    <Property Id="AIDR_POLICY_LICENSING_PUBLIC_KEYS_SAVED">
+      <RegistrySearch Id="AidrPolicySavedLicensingPublicKeys" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="licensing_public_keys_pem" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_CA_FILE" Secure="yes" />
+    <Property Id="AIDR_POLICY_CA_FILE_SAVED">
+      <RegistrySearch Id="AidrPolicySavedCaFile" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="ca_file" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_USE_OS_TRUST_STORE" Secure="yes" />
+    <Property Id="AIDR_POLICY_USE_OS_TRUST_STORE_SAVED">
+      <RegistrySearch Id="AidrPolicySavedUseOsTrustStore" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="use_os_trust_store" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_HTTPS_PROXY" Secure="yes" />
+    <Property Id="AIDR_POLICY_HTTPS_PROXY_SAVED">
+      <RegistrySearch Id="AidrPolicySavedHttpsProxy" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="https_proxy" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_NO_PROXY" Secure="yes" />
+    <Property Id="AIDR_POLICY_NO_PROXY_SAVED">
+      <RegistrySearch Id="AidrPolicySavedNoProxy" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="no_proxy" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_SUPPORT_CONTACT_URL" Secure="yes" />
+    <Property Id="AIDR_POLICY_SUPPORT_CONTACT_URL_SAVED">
+      <RegistrySearch Id="AidrPolicySavedSupportContactUrl" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="support_contact_url" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_PRIVACY_NOTICE_URL" Secure="yes" />
+    <Property Id="AIDR_POLICY_PRIVACY_NOTICE_URL_SAVED">
+      <RegistrySearch Id="AidrPolicySavedPrivacyNoticeUrl" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="privacy_notice_url" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_APPROVALS_MODE" Secure="yes" />
+    <Property Id="AIDR_POLICY_APPROVALS_MODE_SAVED">
+      <RegistrySearch Id="AidrPolicySavedApprovalsMode" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="approvals_mode" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_OFFLINE_POLICY" Secure="yes" />
+    <Property Id="AIDR_POLICY_OFFLINE_POLICY_SAVED">
+      <RegistrySearch Id="AidrPolicySavedOfflinePolicy" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="offline_policy" Type="raw" Bitness="always64" />
+    </Property>
+
+    <SetProperty Id="AIDR_POLICY_CONTROL_PLANE_URL" Value="[AIDR_POLICY_CONTROL_PLANE_URL_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_CONTROL_PLANE_URL AND AIDR_POLICY_CONTROL_PLANE_URL_SAVED" />
+    <SetProperty Id="AIDR_POLICY_ENROLLMENT_KEY" Value="[AIDR_POLICY_ENROLLMENT_KEY_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_ENROLLMENT_KEY AND AIDR_POLICY_ENROLLMENT_KEY_SAVED" />
+    <SetProperty Id="AIDR_POLICY_LICENSING_PUBLIC_KEYS" Value="[AIDR_POLICY_LICENSING_PUBLIC_KEYS_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_LICENSING_PUBLIC_KEYS AND AIDR_POLICY_LICENSING_PUBLIC_KEYS_SAVED" />
+    <SetProperty Id="AIDR_POLICY_CA_FILE" Value="[AIDR_POLICY_CA_FILE_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_CA_FILE AND AIDR_POLICY_CA_FILE_SAVED" />
+    <SetProperty Id="AIDR_POLICY_USE_OS_TRUST_STORE" Value="[AIDR_POLICY_USE_OS_TRUST_STORE_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_USE_OS_TRUST_STORE AND AIDR_POLICY_USE_OS_TRUST_STORE_SAVED" />
+    <SetProperty Id="AIDR_POLICY_HTTPS_PROXY" Value="[AIDR_POLICY_HTTPS_PROXY_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_HTTPS_PROXY AND AIDR_POLICY_HTTPS_PROXY_SAVED" />
+    <SetProperty Id="AIDR_POLICY_NO_PROXY" Value="[AIDR_POLICY_NO_PROXY_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_NO_PROXY AND AIDR_POLICY_NO_PROXY_SAVED" />
+    <SetProperty Id="AIDR_POLICY_SUPPORT_CONTACT_URL" Value="[AIDR_POLICY_SUPPORT_CONTACT_URL_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_SUPPORT_CONTACT_URL AND AIDR_POLICY_SUPPORT_CONTACT_URL_SAVED" />
+    <SetProperty Id="AIDR_POLICY_PRIVACY_NOTICE_URL" Value="[AIDR_POLICY_PRIVACY_NOTICE_URL_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_PRIVACY_NOTICE_URL AND AIDR_POLICY_PRIVACY_NOTICE_URL_SAVED" />
+    <SetProperty Id="AIDR_POLICY_APPROVALS_MODE" Value="[AIDR_POLICY_APPROVALS_MODE_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_APPROVALS_MODE AND AIDR_POLICY_APPROVALS_MODE_SAVED" />
+    <SetProperty Id="AIDR_POLICY_OFFLINE_POLICY" Value="[AIDR_POLICY_OFFLINE_POLICY_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_OFFLINE_POLICY AND AIDR_POLICY_OFFLINE_POLICY_SAVED" />
+
+    <!-- A SYSTEM-context install (Intune/SCCM/GPO) has no user to hand the company
+         connection to: ENROLLMENT_URL (and a fleet key given as ENROLLMENT_CODE)
+         become the machine policy instead of being ignored. A one-time code cannot
+         serve every user and stays unused. -->
+    <SetProperty Id="AIDR_POLICY_CONTROL_PLANE_URL" Action="AidrPolicyFromEnrollmentUrl" Value="[ENROLLMENT_URL]" Before="CostInitialize" Sequence="execute"
+                 Condition="ALLUSERS=1 AND UserSID = &quot;S-1-5-18&quot; AND ENROLLMENT_URL AND NOT AIDR_POLICY_CONTROL_PLANE_URL" />
+    <SetProperty Id="AIDR_POLICY_ENROLLMENT_KEY" Action="AidrPolicyFromEnrollmentCode" Value="[ENROLLMENT_CODE]" Before="CostInitialize" Sequence="execute"
+                 Condition="ALLUSERS=1 AND UserSID = &quot;S-1-5-18&quot; AND ENROLLMENT_CODE &lt;&lt; &quot;aidr_fleet_&quot; AND NOT AIDR_POLICY_ENROLLMENT_KEY" />
 
     <UIRef Id="AidrUI" />
     <WixVariable Id="WixUIBannerBmp" Value="$(sys.SOURCEFILEDIR)ui\banner.bmp" />
@@ -158,6 +250,41 @@
       <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="MdmManaged" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
+    <!-- Machine policy values (see the AIDR_POLICY_* properties above). -->
+    <Component Id="AidrPolicyControlPlaneUrl" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_CONTROL_PLANE_URL" Guid="3B7E1C52-8A04-4D6F-9E21-5C8A7F0B3D61">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="control_plane_url" Type="string" Value="[AIDR_POLICY_CONTROL_PLANE_URL]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyEnrollmentKey" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_ENROLLMENT_KEY" Guid="8D2F4A16-C3E9-4B70-A5D8-1E6B9C2F7A43">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="enrollment_key" Type="string" Value="[AIDR_POLICY_ENROLLMENT_KEY]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyLicensingPublicKeys" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_LICENSING_PUBLIC_KEYS" Guid="F14C9E27-6B38-4A05-8D72-3A9E5B1C0D86">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="licensing_public_keys_pem" Type="string" Value="[AIDR_POLICY_LICENSING_PUBLIC_KEYS]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyCaFile" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_CA_FILE" Guid="26A8D3F1-9C47-4E5B-B0A2-7F1D4C6E8B39">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="ca_file" Type="string" Value="[AIDR_POLICY_CA_FILE]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyUseOsTrustStore" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_USE_OS_TRUST_STORE" Guid="C9E05B74-2D16-4F83-A7C9-4B2E8D0F1A65">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="use_os_trust_store" Type="string" Value="[AIDR_POLICY_USE_OS_TRUST_STORE]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyHttpsProxy" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_HTTPS_PROXY" Guid="5F3A1D88-E7B2-4C69-9D04-2A6C8E1B7F30">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="https_proxy" Type="string" Value="[AIDR_POLICY_HTTPS_PROXY]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyNoProxy" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_NO_PROXY" Guid="A0D7C4E2-5B19-4F36-8E7A-9C3B1D5F2E84">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="no_proxy" Type="string" Value="[AIDR_POLICY_NO_PROXY]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicySupportContactUrl" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_SUPPORT_CONTACT_URL" Guid="7E4B2F91-0A6C-4D58-B3E1-6F9A2C8D4B17">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="support_contact_url" Type="string" Value="[AIDR_POLICY_SUPPORT_CONTACT_URL]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyPrivacyNoticeUrl" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_PRIVACY_NOTICE_URL" Guid="1C6F8A3D-4E72-4B9A-9F05-8D2E7B3C6A58">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="privacy_notice_url" Type="string" Value="[AIDR_POLICY_PRIVACY_NOTICE_URL]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyApprovalsMode" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_APPROVALS_MODE" Guid="E8B3D7A4-1F59-4C26-A0E8-5B7C9D2F3E41">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="approvals_mode" Type="string" Value="[AIDR_POLICY_APPROVALS_MODE]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyOfflinePolicy" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_OFFLINE_POLICY" Guid="4D9A6E1B-7C83-4F02-B5D6-0E3F8A9C1B72">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="offline_policy" Type="string" Value="[AIDR_POLICY_OFFLINE_POLICY]" KeyPath="yes" />
+    </Component>
+
     <Feature Id="Main" Title="Singularity AIDR" Level="1">
       <ComponentGroupRef Id="SeaBundle" />
       <ComponentRef Id="AidrCli" />
@@ -174,6 +301,17 @@
       <ComponentRef Id="PathUser" />
       <ComponentRef Id="ActiveSetup" />
       <ComponentRef Id="MdmManagedMarker" />
+      <ComponentRef Id="AidrPolicyControlPlaneUrl" />
+      <ComponentRef Id="AidrPolicyEnrollmentKey" />
+      <ComponentRef Id="AidrPolicyLicensingPublicKeys" />
+      <ComponentRef Id="AidrPolicyCaFile" />
+      <ComponentRef Id="AidrPolicyUseOsTrustStore" />
+      <ComponentRef Id="AidrPolicyHttpsProxy" />
+      <ComponentRef Id="AidrPolicyNoProxy" />
+      <ComponentRef Id="AidrPolicySupportContactUrl" />
+      <ComponentRef Id="AidrPolicyPrivacyNoticeUrl" />
+      <ComponentRef Id="AidrPolicyApprovalsMode" />
+      <ComponentRef Id="AidrPolicyOfflinePolicy" />
     </Feature>
 
     <!-- Interactive install: configure the installing user (not elevated, not SYSTEM). -->

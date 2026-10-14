@@ -3,6 +3,8 @@ import {
 	ConfigSchema,
 	DEFAULT_CONTROL_PLANE_ENDPOINT,
 	isCommercialBuild,
+	type MachinePolicyRead,
+	readMachinePolicy,
 	resolvePath,
 	VERSION,
 } from "@singularityrd/aidr-core";
@@ -85,6 +87,8 @@ interface SetupDeps extends OperatorCommandDeps {
 	standaloneRoot?: string | null;
 	/** Customer packet discovery (tests): candidate files, key registry, clock. */
 	customerPacket?: CustomerPacketOptions;
+	/** This computer's machine policy (tests); default: HKLM / /etc/singularity-aidr/managed.json. */
+	machinePolicy?: MachinePolicyRead;
 }
 
 const ACTION_TEXT: Record<HostInstallResult["action"], CliMessageKey> = {
@@ -446,6 +450,103 @@ async function applyInstallerEnrollment(
 	console.error(`✓ ${ct(applied, { endpoint })}`);
 }
 
+const OFFLINE_TEXT = {
+	keep_enforcing_local: "setup.machinePolicy.offline.keep_enforcing_local",
+	block_after_grace: "setup.machinePolicy.offline.block_after_grace",
+} as const;
+
+/**
+ * Apply the machine policy an administrator set for every user of this
+ * computer (HKLM\SOFTWARE\Policies\Singularity AIDR or
+ * /etc/singularity-aidr/managed.json; packages/core/src/machine-policy.ts).
+ *
+ * Only an administrator can write it, so its company connection is applied
+ * without the operator confirmation a user-supplied address needs: this is
+ * what lets an Intune/SCCM/GPO install (Active Setup runs plain `aidr setup`
+ * at each user's logon) and a root package install connect every user. The
+ * fleet enrollment key, the deployment keys and the network settings are read
+ * from the policy at runtime, never copied into the user's config.
+ *
+ * Returns true when the machine policy decides the company connection.
+ */
+async function applyMachinePolicy(
+	env: Environment,
+	options: SetupOptions,
+	deps: SetupDeps,
+	dryRun: boolean,
+): Promise<boolean> {
+	const machine = deps.machinePolicy ?? readMachinePolicy();
+	if (machine.state === "none") return false;
+	if (machine.state === "refused") {
+		console.error(
+			`! ${ct("setup.machinePolicy.refused", { source: machine.source, reason: machine.reason })}`,
+		);
+		return false;
+	}
+	const { policy, source } = machine;
+	console.error(`✓ ${ct("setup.machinePolicy.found", { source })}`);
+	if (policy.offline_policy) console.error(`  ${ct(OFFLINE_TEXT[policy.offline_policy])}`);
+	const endpoint = policy.control_plane_url;
+	if (!endpoint) return false;
+	if (dryRun) {
+		console.error(ct("setup.machinePolicy.wouldConnect", { endpoint }));
+		return true;
+	}
+	try {
+		const current = (getConfig() ?? {}) as Config & ManagedConfigView;
+		if (
+			current.mode === "managed" &&
+			current.control_plane?.endpoint === endpoint &&
+			current.control_plane?.enabled !== false
+		) {
+			console.error(`✓ ${ct("setup.machinePolicy.alreadyConnected", { endpoint })}`);
+			return true;
+		}
+		connectToCompany({ controlPlaneUrl: endpoint, enrollmentCode: "" }, endpoint);
+		// Managed mode carries a CLI credential: mint it now, as a fresh managed setup would.
+		await createConfig(env, false, { secretStoreSelection: options.secretStore });
+	} catch (error) {
+		console.error(`! ${ct("setup.company.failed", { reason: errorText(error) })}`);
+		return true;
+	}
+	const applied = policy.enrollment_key
+		? "setup.machinePolicy.connected"
+		: "setup.machinePolicy.connectedApprove";
+	console.error(`✓ ${ct(applied, { endpoint })}`);
+	return true;
+}
+
+/** The machine policy decides the connection: an installer handoff is not applied, and not kept. */
+function discardHandoffForMachinePolicy(home: string): void {
+	if (readInstallerEnrollment(home).state === "none") return;
+	discardHandoff(home);
+	console.error(`! ${ct("setup.machinePolicy.handoffIgnored")}`);
+}
+
+/**
+ * Trust the deployment signing keys the vendor put in the customer packet
+ * (`licensing.public_keys_pem`), next to any already configured. A machine
+ * policy's keys still win at runtime.
+ */
+function applyPacketLicensingKeys(packet: VerifiedCustomerPacket): void {
+	const keys = packet.licensingPublicKeysPem ?? [];
+	if (keys.length === 0) return;
+	const current = (getConfig() ?? {}) as Config & { licensing?: Record<string, unknown> };
+	const existing = Array.isArray(current.licensing?.public_keys_pem)
+		? (current.licensing.public_keys_pem as unknown[]).filter(
+				(key): key is string => typeof key === "string",
+			)
+		: [];
+	const merged = [...new Set([...existing, ...keys])];
+	if (merged.length === existing.length) return;
+	const update = { licensing: { ...(current.licensing ?? {}), public_keys_pem: merged } };
+	if (!ConfigSchema.safeParse({ ...current, ...update }).success) {
+		throw new Error("the resulting configuration is not valid");
+	}
+	updateConfig(update as Partial<Config>);
+	console.error(`✓ ${ct("setup.packet.licensingKeys", { count: keys.length })}`);
+}
+
 /** Set the packet's sensitivity preset unless the configuration already chose one. */
 function applyPacketSensitivity(packet: VerifiedCustomerPacket): void {
 	if (!packet.sensitivity) return;
@@ -491,6 +592,7 @@ function applyCustomerPacket(
 	try {
 		recordCustomerPacket(home, packet);
 		applyPacketSensitivity(packet);
+		applyPacketLicensingKeys(packet);
 	} catch (error) {
 		console.error(`! ${ct("setup.packet.recordFailed", { reason: errorText(error) })}`);
 	}
@@ -550,6 +652,7 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 		if (options.dryRun) {
 			console.error(ct("setup.skipConfig"));
 			applyCustomerPacket(home, discovery, true);
+			await applyMachinePolicy(env, options, deps, true);
 		} else {
 			console.error(ct("setup.creatingConfig"));
 			// Local mode needs no credential, so no vault either; a managed config's
@@ -570,7 +673,11 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 				console.log(`  ${ct("setup.rerunConfig", { path: config.path })}`);
 			}
 			const packet = applyCustomerPacket(home, discovery, false);
-			await applyInstallerEnrollment(home, env, options, deps, packet);
+			if (await applyMachinePolicy(env, options, deps, false)) {
+				discardHandoffForMachinePolicy(home);
+			} else {
+				await applyInstallerEnrollment(home, env, options, deps, packet);
+			}
 		}
 
 		// A release build's hooks trust nothing until the release key is set up:

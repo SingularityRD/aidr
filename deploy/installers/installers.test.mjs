@@ -226,6 +226,27 @@ describe("Windows MSI inputs", () => {
 		assert.match(wxs, /<Property Id="AIDR_MDM_MANAGED" Secure="yes" \/>/);
 		assert.match(wxs, /Condition="ALLUSERS=1 AND AIDR_MDM_MANAGED=1"[\s\S]*?Key="Software\\Policies\\Singularity AIDR" Name="MdmManaged" Type="integer" Value="1"/);
 		assert.match(wxs, /<ComponentRef Id="MdmManagedMarker" \/>/);
+		// Machine policy: one HKLM value per contract key, per-machine only, never dropped by an upgrade.
+		const coreSource = readFileSync(new URL("../../packages/core/src/machine-policy.ts", import.meta.url), "utf8");
+		const schemaBody = /const MachinePolicySchema = z\s*\.object\(\{([\s\S]*?)\n\t\}\)/.exec(coreSource)[1];
+		const contractKeys = [...schemaBody.matchAll(/^\t\t(\w+):/gm)].map((m) => m[1]).sort();
+		const policyValues = [...wxs.matchAll(/<Component Id="AidrPolicy\w+" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND (AIDR_POLICY_\w+)"[^>]*>\s*<RegistryValue Root="HKLM" Key="Software\\Policies\\Singularity AIDR" Name="(\w+)" Type="string" Value="\[(AIDR_POLICY_\w+)\]" KeyPath="yes" \/>/g)];
+		assert.deepEqual(policyValues.map((m) => m[2]).sort(), contractKeys);
+		const hook = readFileSync(new URL("./linux/package-hook.sh", import.meta.url), "utf8");
+		for (const [, condition, name, value] of policyValues) {
+			assert.equal(condition, value, name);
+			assert.match(wxs, new RegExp(`<Property Id="${value}" Secure="yes"( Hidden="yes")? />`), value);
+			assert.match(wxs, new RegExp(`<SetProperty Id="${value}" Value="\\[${value}_SAVED\\]" After="AppSearch" Sequence="both"\\s+Condition="NOT ${value} AND ${value}_SAVED" />`), `${value} is remembered`);
+			assert.match(wxs, new RegExp(`<Property Id="${value}_SAVED"[^>]*>\\s*<RegistrySearch [^>]*Root="HKLM" Key="Software\\\\Policies\\\\Singularity AIDR" Name="${name}"`), `${value} is read back`);
+			assert.match(wxs, new RegExp(`<ComponentRef Id="AidrPolicy\\w+" />`));
+			// The Linux package hook takes the same variables.
+			assert.ok(hook.includes(value) || hook.includes(value.replace("AIDR_POLICY_", "")), `${value} in package-hook.sh`);
+		}
+		assert.match(wxs, /<Property Id="AIDR_POLICY_ENROLLMENT_KEY" Secure="yes" Hidden="yes" \/>/);
+		assert.match(wxs, /<Property Id="AIDR_POLICY_ENROLLMENT_KEY_SAVED" Hidden="yes">/);
+		// A SYSTEM install turns its company address (and a fleet key) into the machine policy.
+		assert.match(wxs, /Action="AidrPolicyFromEnrollmentUrl" Value="\[ENROLLMENT_URL\]"[^>]*Condition="ALLUSERS=1 AND UserSID = &quot;S-1-5-18&quot; AND ENROLLMENT_URL AND NOT AIDR_POLICY_CONTROL_PLANE_URL"/);
+		assert.match(wxs, /Action="AidrPolicyFromEnrollmentCode" Value="\[ENROLLMENT_CODE\]"[^>]*ENROLLMENT_CODE &lt;&lt; &quot;aidr_fleet_&quot;/);
 		const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8");
 		assert.match(ps1, /Pass -SignThumbprint for a release build or -Unsigned for a local build/);
 		assert.match(ps1, /--remanifest/);
@@ -504,14 +525,15 @@ describe("Linux packages", () => {
 		const canSwitch = !asRoot || have("runuser");
 		// Never touch the real /etc marker from a test.
 		const mdmMarker = join(root, "etc/singularity-aidr/mdm-managed");
+		const machinePolicy = join(root, "etc/singularity-aidr/managed.json");
 
 		function hook(args, env) {
 			const home = tempDir("home");
 			chmodSync(home, 0o777);
-			const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !["SUDO_USER", "AIDR_INSTALL_SKIP_SETUP", "AIDR_MDM_MANAGED"].includes(name)));
+			const clean = Object.fromEntries(Object.entries(process.env).filter(([name]) => !["SUDO_USER", "AIDR_INSTALL_SKIP_SETUP", "AIDR_MDM_MANAGED"].includes(name) && !name.startsWith("AIDR_POLICY_")));
 			const result = spawnSync("sh", [join(prefix, "libexec/package-hook.sh"), ...args], {
 				encoding: "utf8",
-				env: { ...clean, AIDR_PREFIX: prefix, AIDR_PACKAGE_HOOK_TARGET_HOME: home, AIDR_MDM_MARKER: mdmMarker, ...env },
+				env: { ...clean, AIDR_PREFIX: prefix, AIDR_PACKAGE_HOOK_TARGET_HOME: home, AIDR_MDM_MARKER: mdmMarker, AIDR_MACHINE_POLICY: machinePolicy, ...env },
 			});
 			const log = existsSync(join(home, "aidr-calls.log")) ? readFileSync(join(home, "aidr-calls.log"), "utf8") : "";
 			return { ...result, log, home };
@@ -563,6 +585,47 @@ describe("Linux packages", () => {
 			assert.equal(existsSync(mdmMarker), true, "an upgrade keeps the marker");
 			hook(["preremove", "1"], {});
 			assert.equal(existsSync(mdmMarker), false);
+		});
+
+		test("AIDR_POLICY_* variables write the machine policy before setup; an upgrade without them keeps it", () => {
+			rmSync(machinePolicy, { force: true });
+			const keyFile = join(tempDir("policy-keys"), "licensing-public-keys.pem");
+			const pems = [generateKeyPairSync("ed25519"), generateKeyPairSync("ed25519")].map(({ publicKey }) => publicKey.export({ type: "spki", format: "pem" }));
+			writeFileSync(keyFile, pems.join(""));
+			const fleetKey = `aidr_fleet_${"k".repeat(43)}`;
+			const run = hook(["postinstall"], {
+				AIDR_INSTALL_SKIP_SETUP: "1",
+				AIDR_POLICY_CONTROL_PLANE_URL: "https://aidr.corp.example/functions/v1",
+				AIDR_POLICY_ENROLLMENT_KEY: fleetKey,
+				AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE: keyFile,
+				AIDR_POLICY_CA_FILE: "/etc/pki/corp-ca.pem",
+				AIDR_POLICY_USE_OS_TRUST_STORE: "1",
+				AIDR_POLICY_HTTPS_PROXY: "http://proxy.corp.example:3128",
+				AIDR_POLICY_NO_PROXY: "corp.example,10.0.0.5",
+				AIDR_POLICY_OFFLINE_POLICY: "keep_enforcing_local",
+				AIDR_POLICY_APPROVALS_MODE: "dashboard_only",
+			});
+			assert.equal(run.status, 0, run.stderr);
+			assert.match(run.stdout, /machine policy written to/);
+			const policy = JSON.parse(readFileSync(machinePolicy, "utf8"));
+			assert.deepEqual(Object.keys(policy).sort(), ["approvals_mode", "ca_file", "control_plane_url", "enrollment_key", "https_proxy", "licensing_public_keys_pem", "no_proxy", "offline_policy", "use_os_trust_store"]);
+			assert.equal(policy.enrollment_key, fleetKey);
+			assert.equal(policy.use_os_trust_store, true);
+			assert.deepEqual(policy.licensing_public_keys_pem, pems.map((pem) => pem.replace(/-----[A-Z ]+-----|\s/g, "")));
+			assert.equal(statSync(machinePolicy).mode & 0o777, 0o644);
+			// An upgrade (no variables) keeps the administrator's policy as it is.
+			const before = readFileSync(machinePolicy, "utf8");
+			assert.equal(hook(["postinstall"], { AIDR_INSTALL_SKIP_SETUP: "1" }).status, 0);
+			assert.equal(readFileSync(machinePolicy, "utf8"), before);
+			// A value that would break the JSON is refused; the install still succeeds and the old policy stays.
+			const bad = hook(["postinstall"], { AIDR_INSTALL_SKIP_SETUP: "1", AIDR_POLICY_SUPPORT_CONTACT_URL: 'https://x.example/"}' });
+			assert.equal(bad.status, 0);
+			assert.match(bad.stderr, /AIDR_POLICY_SUPPORT_CONTACT_URL contains a quote/);
+			assert.equal(readFileSync(machinePolicy, "utf8"), before);
+			const badKey = hook(["postinstall"], { AIDR_INSTALL_SKIP_SETUP: "1", AIDR_POLICY_LICENSING_PUBLIC_KEYS: "not a key!" });
+			assert.match(badKey.stderr, /not a base64 public key/);
+			assert.equal(readFileSync(machinePolicy, "utf8"), before);
+			rmSync(machinePolicy, { force: true });
 		});
 
 		test("preremove uninstalls with operator confirmation on final removal only", { skip: !canSwitch && "runuser not available" }, () => {

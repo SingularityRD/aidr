@@ -312,9 +312,16 @@ msiexec /i singularity-aidr-<version>-windows-x64.msi /qn /l*v aidr-install.log
   names the property, never its value. `ENROLLMENT_CODE` is hidden from the
   msiexec log, but a value on a command line can be seen by other programs
   while msiexec runs and may be kept by your deployment tool: prefer
-  short-lived codes. A system-context install has no interactive user to
-  connect and ignores both; enroll those users with the managed configuration
-  ([`mode`](../configuration.md#mode), [`auth`](../configuration.md#auth)).
+  short-lived codes. `ENROLLMENT_CODE` also accepts a fleet enrollment key
+  (`aidr_fleet_…`). A system-context install has no interactive user to hand
+  them to: there `ENROLLMENT_URL` (and a fleet key given as `ENROLLMENT_CODE`)
+  become the [machine policy](#machine-policy-every-user-of-a-computer); a
+  one-time `aidr_enroll_` code cannot serve every user and is not used.
+- **Connect every user without a prompt:** pass the `AIDR_POLICY_*` properties
+  of the [machine policy](#machine-policy-every-user-of-a-computer), for example
+  `msiexec /i … /qn ALLUSERS=1 AIDR_POLICY_CONTROL_PLANE_URL=https://api.aidr.example.com/functions/v1 AIDR_POLICY_ENROLLMENT_KEY=aidr_fleet_… AIDR_POLICY_OFFLINE_POLICY=keep_enforcing_local`.
+  `deployment-prepare` writes the exact command for your deployment to
+  `endpoint-policy/README.txt`.
 - **Language:** the MSI shows Turkish when the display language is Turkish.
   `TRANSFORMS=:1055` forces the Turkish wizard; a silent install is the same
   in both languages.
@@ -338,6 +345,67 @@ an invoking user (`SUDO_USER`) installs files only and prints `aidr setup`;
 run it per user, for example from a login script:
 `sudo -u alice -H aidr setup`. `AIDR_INSTALL_SKIP_SETUP=1` installs files only
 even when `SUDO_USER` is set.
+
+To connect every user without a prompt, give the package the
+[machine policy](#machine-policy-every-user-of-a-computer) as `AIDR_POLICY_*`
+variables (sudo drops the environment, so pass them through `env`):
+
+```sh
+sudo env AIDR_POLICY_CONTROL_PLANE_URL=https://api.aidr.example.com/functions/v1 \
+  AIDR_POLICY_ENROLLMENT_KEY=aidr_fleet_… \
+  AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE=endpoint-policy/licensing-public-keys.pem \
+  AIDR_POLICY_OFFLINE_POLICY=keep_enforcing_local \
+  apt-get install -y ./singularity-aidr_<version>_amd64.deb
+```
+
+The hook writes `/etc/singularity-aidr/managed.json` (root, `0644`) before any
+setup runs. Configuration management can install that file directly instead
+(`deployment-prepare` writes one to `endpoint-policy/managed.json`).
+
+### Machine policy (every user of a computer)
+
+An administrator's settings for every user of a computer, in a place only an
+administrator can write. It wins over each user's `~/.singularity-aidr/config.json`
+for its keys, and every `aidr setup` and every hook reads it.
+
+| Platform | Location | Written by |
+| --- | --- | --- |
+| Windows | `HKLM\SOFTWARE\Policies\Singularity AIDR` (string values) | MSI `AIDR_POLICY_*` properties (per-machine), Group Policy / Intune registry settings, `endpoint-policy/aidr-machine-policy.reg` |
+| Linux | `/etc/singularity-aidr/managed.json` (owned by root, not group/world writable, nor its directory) | package hook `AIDR_POLICY_*` variables, configuration management |
+
+| Key (registry value / JSON key) | MSI property / Linux variable | Meaning |
+| --- | --- | --- |
+| `control_plane_url` | `AIDR_POLICY_CONTROL_PLANE_URL` | Company control plane (`https://…/functions/v1`). `aidr setup` switches every user to managed mode with it, without the `connect` confirmation. |
+| `enrollment_key` | `AIDR_POLICY_ENROLLMENT_KEY` | Fleet enrollment key (`aidr_fleet_…`, created in the dashboard): a managed install without a credential enrolls with it on the first AI tool call. Without it, each computer is approved in the console. |
+| `licensing_public_keys_pem` | `AIDR_POLICY_LICENSING_PUBLIC_KEYS` (base64 SPKI, space separated) or `AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE` (Linux, PEM file) | The deployment's signing keys (`endpoint-policy/licensing-public-keys.pem`): signed entitlements and runtime policy verify against them, so managed features turn on. |
+| `ca_file` | `AIDR_POLICY_CA_FILE` | PEM bundle of your internal CA or TLS-inspection proxy, trusted in addition to the bundled roots. |
+| `use_os_trust_store` | `AIDR_POLICY_USE_OS_TRUST_STORE` (`1`/`0`) | Also trust the Windows certificate store / `/etc/ssl` (enterprise CAs deployed by GPO). |
+| `https_proxy`, `no_proxy` | `AIDR_POLICY_HTTPS_PROXY`, `AIDR_POLICY_NO_PROXY` | Proxy for every outbound AIDR request (control plane, reputation, update and version checks). Without them the standard `HTTPS_PROXY` / `NO_PROXY` environment variables apply. Loopback always goes direct. |
+| `support_contact_url`, `privacy_notice_url` | `AIDR_POLICY_SUPPORT_CONTACT_URL`, `AIDR_POLICY_PRIVACY_NOTICE_URL` | Shown to users (support link in the offline notice; privacy notice). |
+| `approvals_mode` | `AIDR_POLICY_APPROVALS_MODE` | `dashboard_only` (an ask is released only from the dashboard) or `host_dialog`. |
+| `offline_policy` | `AIDR_POLICY_OFFLINE_POLICY` | `keep_enforcing_local` or `block_after_grace` when the control plane is unreachable (chosen in `deployment-prepare --offline-policy`). |
+
+- A policy that fails a check (an `http://` address, a single-use code instead
+  of a fleet key, a value that is not a public key, an unknown key, a file
+  others could write) is **refused as a whole** and reported by `aidr setup`
+  and the hook logs; it is never half-applied. Local protection continues.
+- The fleet key is readable by every local user by design: it is multi-use,
+  seat-capped, expiring and revocable. Revoke it in the dashboard when it
+  leaks. A value on an msiexec command line can also appear in the verbose
+  msiexec log and in your deployment tool; keep those logs restricted.
+- A proxy URL with credentials is stored as written; prefer a proxy that
+  authenticates the machine instead.
+- An MSI upgrade or `aidr update` without the properties keeps the values the
+  machine already has. Removing the product removes the values the MSI wrote.
+  A Linux upgrade without the variables keeps `managed.json`.
+- After a policy change delivered outside the MSI (Group Policy), users run
+  `aidr setup` again (or reinstall, which bumps Active Setup) to switch an
+  existing local install to managed mode; the other keys apply on the next
+  AI tool call.
+- The proxy and CA settings apply to every connector and to `aidr update`
+  and the Setup Assistant, which load the same configuration. They need the
+  bundled Node.js runtime of the standalone build (22.15 or newer for
+  `use_os_trust_store`).
 
 Verify downloads before deploying:
 

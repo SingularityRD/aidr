@@ -111,6 +111,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -141,6 +144,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
     "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -374,6 +378,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -404,6 +411,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
     "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -640,6 +648,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -670,6 +681,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
     "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -906,6 +918,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -936,6 +951,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
     "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -1169,6 +1185,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -1199,6 +1218,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
     "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,

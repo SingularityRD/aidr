@@ -12,6 +12,12 @@ import {
 } from "./clients/control-plane-url.js";
 import { getFileContent } from "./file-utils.js";
 import { setConfiguredLocale } from "./i18n/index.js";
+import {
+	type MachinePolicyRead,
+	overlayMachinePolicy,
+	readMachinePolicy,
+} from "./machine-policy.js";
+import { configureOutboundNetwork } from "./outbound-network.js";
 import { resolveSecretStore, type SecretStore } from "./secret-store.js";
 import type { Config, Logger } from "./types.js";
 import { ConfigSchema, nullLogger } from "./types.js";
@@ -116,6 +122,37 @@ function normalizeStateFilePath(
 	return fallbackPath;
 }
 
+/**
+ * The install-time choices that decide other fields: `control_plane.offline_policy`
+ * decides `remote_policy_required`, `operator_approvals.approvals_mode` decides
+ * the approval channel. Unset leaves those fields as configured.
+ */
+function applyInstallChoices(config: Config): Config {
+	let next = config;
+	const offlinePolicy = next.control_plane.offline_policy;
+	if (offlinePolicy) {
+		next = {
+			...next,
+			control_plane: {
+				...next.control_plane,
+				remote_policy_required: offlinePolicy === "block_after_grace",
+			},
+		};
+	}
+	const approvalsMode = next.operator_approvals?.approvals_mode;
+	if (approvalsMode) {
+		next = {
+			...next,
+			operator_approvals: {
+				...next.operator_approvals,
+				dashboard_only: approvalsMode === "dashboard_only",
+				...(approvalsMode === "host_dialog" ? { mode: "host_dialog" as const } : {}),
+			},
+		};
+	}
+	return next;
+}
+
 function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 	const cachePath = defaultCachePath();
 	const allowlistPath = defaultAllowlistPath();
@@ -201,6 +238,8 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 		};
 	}
 
+	next = applyInstallChoices(next);
+
 	next = {
 		...next,
 		logging: {
@@ -262,42 +301,91 @@ export function isInvalidConfig(config: Config): boolean {
 	return invalidRuntimeConfigs.has(config);
 }
 
-function safeConfigForInvalidFile(logger: Logger): Config {
+function safeConfigForInvalidFile(logger: Logger, machine: MachinePolicyRead): Config {
 	// A present but malformed/unreadable config must not silently disable a
 	// centrally required policy by falling back to ordinary local defaults.
-	const config = sanitizeConfigPaths(
-		parseRuntimeConfig({ control_plane: { remote_policy_required: true } }),
+	const sanitized = sanitizeConfigPaths(
+		parseWithMachinePolicy({ control_plane: { remote_policy_required: true } }, machine, logger),
 		logger,
 	);
+	// Not even the machine policy's offline choice relaxes this.
+	const config = {
+		...sanitized,
+		control_plane: { ...sanitized.control_plane, remote_policy_required: true },
+	};
 	invalidRuntimeConfigs.add(config);
 	return config;
+}
+
+/**
+ * Lay the machine policy over the document, then validate. A machine policy
+ * that does not validate together with this document is reported and left
+ * out, never half-applied.
+ */
+function parseWithMachinePolicy(
+	data: Record<string, unknown>,
+	machine: MachinePolicyRead,
+	logger: Logger,
+): Config {
+	if (machine.state === "refused") {
+		logger.warn(`Machine policy ${machine.source} refused: ${machine.reason}`);
+	}
+	if (machine.state !== "loaded") return parseRuntimeConfig(data);
+	try {
+		return parseRuntimeConfig(overlayMachinePolicy(data, machine.policy));
+	} catch (error) {
+		logger.warn(`Machine policy ${machine.source} could not be applied`, { error: String(error) });
+		return parseRuntimeConfig(data);
+	}
 }
 
 function isMissingFileError(error: unknown): boolean {
 	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
+export interface ConfigSource {
+	/** The config document's text; null means "no file" (a fresh install). */
+	raw: string | null;
+	/** The machine policy to apply (tests); default: this computer's. */
+	machinePolicy?: MachinePolicyRead;
+}
+
 export async function loadConfig(
 	configPath?: string,
 	logger: Logger = nullLogger,
 	secretStore?: SecretStore,
-	source?: { raw: string | null },
+	source?: ConfigSource,
+): Promise<Config> {
+	const machine = source?.machinePolicy ?? readMachinePolicy();
+	const config = await loadConfigDocument(configPath, logger, secretStore, source, machine);
+	// Proxy and CA settings for every first-party client; never changes enforcement.
+	await configureOutboundNetwork(config.network, logger).catch(() => undefined);
+	return config;
+}
+
+async function loadConfigDocument(
+	configPath: string | undefined,
+	logger: Logger,
+	secretStore: SecretStore | undefined,
+	source: ConfigSource | undefined,
+	machine: MachinePolicyRead,
 ): Promise<Config> {
 	const path = configPath ?? defaultConfigPath();
+	const fresh = () => sanitizeConfigPaths(parseWithMachinePolicy({}, machine, logger), logger);
 
 	let raw: string;
 	try {
-		if (source?.raw === null) return sanitizeConfigPaths(parseRuntimeConfig({}), logger);
+		if (source?.raw === null) return fresh();
 		raw = source ? (source.raw as string) : await getFileContent(path);
 	} catch (error) {
 		if (isMissingFileError(error)) {
 			// Missing file is a deliberate fresh-install state: use local defaults.
-			return sanitizeConfigPaths(parseRuntimeConfig({}), logger);
+			return fresh();
 		}
 		logger.warn(`Failed to read config from ${path}; requiring central policy`, {
 			error: String(error),
 		});
-		return safeConfigForInvalidFile(logger);
+		return safeConfigForInvalidFile(logger, machine);
 	}
 
 	let data: unknown;
@@ -307,21 +395,22 @@ export async function loadConfig(
 		logger.warn(`Failed to parse config from ${path}; requiring central policy`, {
 			error: String(e),
 		});
-		return safeConfigForInvalidFile(logger);
+		return safeConfigForInvalidFile(logger, machine);
 	}
 
 	if (typeof data !== "object" || data === null || Array.isArray(data)) {
 		logger.warn(`Config file ${path} does not contain a JSON object; requiring central policy`);
-		return safeConfigForInvalidFile(logger);
+		return safeConfigForInvalidFile(logger, machine);
 	}
 
+	let document: Record<string, unknown>;
 	try {
-		return sanitizeConfigPaths(
-			parseRuntimeConfig(resolveCommercialAuth(data as Record<string, unknown>, secretStore)),
-			logger,
-		);
+		document = resolveCommercialAuth(data as Record<string, unknown>, secretStore);
+		// The document alone must be valid: a machine policy never repairs a broken config.
+		parseRuntimeConfig(document);
 	} catch (e) {
 		logger.warn(`Config validation failed; requiring central policy`, { error: String(e) });
-		return safeConfigForInvalidFile(logger);
+		return safeConfigForInvalidFile(logger, machine);
 	}
+	return sanitizeConfigPaths(parseWithMachinePolicy(document, machine, logger), logger);
 }

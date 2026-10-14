@@ -22,6 +22,11 @@
  *   control_plane_url  optional, absolute https: URL, no credentials, no fragment, <= 2048 chars
  *   sensitivity        optional, paranoid | balanced | relaxed
  *   display_name       optional, 1..60 printable characters, no surrounding whitespace
+ *   licensing_public_keys_pem
+ *                      optional, 1..8 Ed25519 SPKI public keys (PEM) of the customer's own
+ *                      deployment (deployment-prepare.mjs writes them to
+ *                      endpoint-policy/licensing-public-keys.pem); `aidr setup` trusts them for
+ *                      signed entitlements and runtime policy. Public keys only, never a secret.
  *
  * A packet has no expiry of its own. A packet whose embedded license is expired
  * still verifies, because local detection must install and keep enforcing
@@ -31,7 +36,7 @@
  * packet (malformed, empty registry, unknown/revoked key, bad signature, bad
  * embedded license, customer mismatch) is refused: verification fails closed.
  */
-import { createHash, verify } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -58,7 +63,8 @@ export const MAX_CONTROL_PLANE_URL_LENGTH = 2048;
 export const MAX_DISPLAY_NAME_LENGTH = 60;
 const PACKET_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const REQUIRED_KEYS = ["customer_id", "issued_at", "license", "packet_id"];
-const OPTIONAL_KEYS = ["control_plane_url", "display_name", "sensitivity"];
+const OPTIONAL_KEYS = ["control_plane_url", "display_name", "licensing_public_keys_pem", "sensitivity"];
+const MAX_LICENSING_KEYS = 8;
 /** The license verifier says `valid`; the packet contract names that state `active`. */
 const LICENSE_STATE = { valid: "active", grace: "grace", expired: "expired", not_yet_valid: "not_yet_valid" };
 
@@ -98,6 +104,21 @@ function validateDisplayName(value) {
 	}
 }
 
+function validateLicensingPublicKeys(value) {
+	const fail = () => refuse("invalid_payload", `licensing_public_keys_pem must be 1..${MAX_LICENSING_KEYS} Ed25519 public keys in PEM (SPKI)`);
+	if (!Array.isArray(value) || value.length < 1 || value.length > MAX_LICENSING_KEYS) throw fail();
+	for (const pem of value) {
+		if (typeof pem !== "string" || pem.length > 1024 || !pem.trim().startsWith("-----BEGIN PUBLIC KEY-----")) throw fail();
+		let key;
+		try {
+			key = createPublicKey(pem);
+		} catch {
+			throw fail();
+		}
+		if (key.asymmetricKeyType !== "ed25519") throw fail();
+	}
+}
+
 /**
  * Validate the packet's own signed terms (not the embedded license, which is
  * verified separately). Unknown fields are refused.
@@ -127,6 +148,7 @@ export function validateCustomerPacketPayload(payload) {
 		throw refuse("invalid_payload", `sensitivity must be one of ${SENSITIVITIES.join(", ")}`);
 	}
 	if (payload.display_name !== undefined) validateDisplayName(payload.display_name);
+	if (payload.licensing_public_keys_pem !== undefined) validateLicensingPublicKeys(payload.licensing_public_keys_pem);
 	return { issuedAt };
 }
 
@@ -212,6 +234,7 @@ export function verifyCustomerPacket(document, { publicKeys, now = Date.now(), e
 		...(payload.control_plane_url === undefined ? {} : { control_plane_url: payload.control_plane_url }),
 		...(payload.sensitivity === undefined ? {} : { sensitivity: payload.sensitivity }),
 		...(payload.display_name === undefined ? {} : { display_name: payload.display_name }),
+		...(payload.licensing_public_keys_pem === undefined ? {} : { licensing_public_keys_pem: payload.licensing_public_keys_pem }),
 		key_id: document.key_id,
 		key_status: key.status,
 		license_state: LICENSE_STATE[license.status],
@@ -256,6 +279,7 @@ export function summarizeCustomerPacket(result) {
 		...(result.display_name === undefined ? {} : { display_name: result.display_name }),
 		...(result.control_plane_url === undefined ? {} : { control_plane_url: result.control_plane_url }),
 		...(result.sensitivity === undefined ? {} : { sensitivity: result.sensitivity }),
+		...(result.licensing_public_keys_pem === undefined ? {} : { licensing_public_keys: result.licensing_public_keys_pem.length }),
 		key_id: result.key_id,
 		key_status: result.key_status,
 		license_id: terms.license_id,

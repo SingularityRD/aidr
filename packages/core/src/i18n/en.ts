@@ -143,6 +143,13 @@ export const en = {
 	"session.policy.expiredAge": "{policy} cache expired, {seconds}s old",
 	"session.policy.invalid": "cache invalid",
 	"session.policy.defaultName": "policy",
+	"session.offline.keepLocal":
+		"⚠️ The company AIDR server did not answer. Local protection continues on this computer; central policy changes arrive once the server is reachable again.",
+	"session.offline.blockAt":
+		"⚠️ The company AIDR server did not answer. Unless it is reachable again, AI tool calls on this computer will be BLOCKED from {time} (about {minutes} min from now): your company chose to block after the offline grace period. Tell your IT team now.",
+	"session.offline.blocked":
+		"⛔ The company AIDR server did not answer and the offline grace period has run out: AI tool calls on this computer are BLOCKED until it is reachable again (your company's choice). Tell your IT team.",
+	"session.offline.support": "Support: {contact}",
 	"session.clean": "🛡️ Singularity AIDR v{version} ✅ No threats found",
 	"session.disabled": "Singularity AIDR v{version} - Disabled ({reason})",
 	"session.localOnly":

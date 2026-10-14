@@ -40,6 +40,7 @@ An `aidr-customer-packet-v1` document:
 | `control_plane_url` | no | Absolute `https:` URL, no credentials, no fragment, at most 2048 characters |
 | `sensitivity` | no | `paranoid`, `balanced` or `relaxed` |
 | `display_name` | no | 1..60 printable characters, no surrounding whitespace |
+| `licensing_public_keys_pem` | no | 1..8 Ed25519 SPKI public keys in PEM: the customer deployment's own signing keys (`endpoint-policy/licensing-public-keys.pem` from `deployment-prepare`). `aidr setup` adds them to `licensing.public_keys_pem`, so signed entitlements and runtime policy from that deployment verify and managed features turn on. Public keys only. A packet with this field is refused by `aidr` versions released before it. |
 
 - The signature covers `aidr-customer-packet-v1\n` followed by the canonical
   JSON of `payload` (the same canonical form as the license). The first line is
@@ -108,8 +109,16 @@ node scripts/customer-packet-issue.mjs --private-key-file /secure/aidr-license-2
   --customer-id example-ag --packet-id PKT-example-ag-2026-10 \
   --control-plane-url https://aidr.example-ag.internal/ --sensitivity balanced \
   --display-name "Example AG" \
+  --licensing-public-key-file licensing-public-keys.pem \
   --public-keys deploy/onprem/license-public-keys.json --out customer-packet.json
 ```
+
+- `--licensing-public-key-file` (optional, repeatable) embeds the public signing
+  keys of the customer's own deployment. The customer sends
+  `endpoint-policy/licensing-public-keys.pem` from their `deployment-prepare`
+  output; check its fingerprint with them over a second channel. Without it,
+  the same keys reach endpoints through the
+  [machine policy](../installation/desktop-installers.md#machine-policy-every-user-of-a-computer).
 
 - `--public-keys` is required: it is the registry the customer will ship. The
   signing key must be `active` there, and the embedded license must verify

@@ -130,6 +130,57 @@ export interface SessionStartResult {
 	 * never a neutral count in `posture`.
 	 */
 	coverageFindings?: SessionStartCoverageFinding[];
+	/**
+	 * Set when the company control plane did not answer this session's
+	 * heartbeat: what the install-time offline choice means now, so the user
+	 * hears about a coming block before the grace runs out.
+	 */
+	offline?: SessionStartOfflineNotice;
+}
+
+interface SessionStartOfflineNotice {
+	policy: "keep_enforcing_local" | "block_after_grace";
+	/** block_after_grace: when tool calls start being denied (absent: already denied). */
+	blocksAt?: string;
+	/** Who to tell (machine policy / config `organization.support_contact_url`). */
+	supportContact?: string;
+}
+
+const NOT_A_NETWORK_FAILURE = new Set([
+	"missing_endpoint",
+	"missing_api_key",
+	"degraded_safe_mode",
+	"missing_iid",
+	"invalid_events",
+]);
+
+/** A heartbeat that did not reach a working control plane (network, timeout, 5xx). */
+function heartbeatUnreachable(result: { ok: boolean; status?: number; error?: string }): boolean {
+	if (result.ok) return false;
+	if (result.error && NOT_A_NETWORK_FAILURE.has(result.error)) return false;
+	return result.status === undefined || result.status >= 500;
+}
+
+/** The offline notice for an unreachable control plane. */
+async function offlineNoticeFor(
+	config: Config,
+	token: string,
+	now = Date.now(),
+): Promise<SessionStartOfflineNotice> {
+	const supportContact = config.organization?.support_contact_url;
+	const extra = supportContact ? { supportContact } : {};
+	if (!config.control_plane.remote_policy_required) {
+		return { policy: "keep_enforcing_local", ...extra };
+	}
+	const cache = await inspectRemoteRuntimePolicyCache(config, token, now).catch(() => undefined);
+	const graceEnd = cache?.usable ? Date.parse(cache.offlineGraceExpiresAt ?? "") : Number.NaN;
+	return {
+		policy: "block_after_grace",
+		...(Number.isFinite(graceEnd) && graceEnd > now
+			? { blocksAt: new Date(graceEnd).toISOString() }
+			: {}),
+		...extra,
+	};
 }
 
 /** Host name for the device-code request; the control plane drops a malformed one. */
@@ -566,6 +617,8 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 		}
 	}
 
+	// Whether this session's heartbeat reached the control plane (undefined: no heartbeat).
+	let controlPlaneReachable: boolean | undefined;
 	const managedHeartbeat =
 		config.mode === "managed" && config.control_plane.enabled && token
 			? async () => {
@@ -657,6 +710,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 							agent_runtime_version: ctx.agentRuntimeVersion,
 							events,
 						});
+						controlPlaneReachable = !heartbeatUnreachable(result);
 						const next = applyIngestResult(
 							managedState,
 							result,
@@ -683,6 +737,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 						}
 					} catch {
 						// Fail open
+						controlPlaneReachable ??= false;
 					}
 				}
 			: async () => {};
@@ -703,17 +758,25 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 			checkUrls: ctx.checkUrls,
 			checkFileHashes: ctx.checkFileHashes,
 		});
-	const finish = (
+	const finish = async (
 		report: SessionStartScanReport,
 		versionCheck: VersionCheckResult | null,
-	): SessionStartResult => ({
-		enabled: true,
-		scanResults: report.results,
-		...(report.rulesIncomplete ? { rulesIncomplete: report.rulesIncomplete } : {}),
-		versionCheck,
-		posture,
-		coverageFindings,
-	});
+	): Promise<SessionStartResult> => {
+		// Only after the heartbeat: it is what tells whether the control plane answered.
+		const offline =
+			controlPlaneReachable === false
+				? await offlineNoticeFor(config, token ?? "").catch(() => undefined)
+				: undefined;
+		return {
+			enabled: true,
+			scanResults: report.results,
+			...(report.rulesIncomplete ? { rulesIncomplete: report.rulesIncomplete } : {}),
+			versionCheck,
+			posture,
+			coverageFindings,
+			...(offline ? { offline } : {}),
+		};
+	};
 
 	// Commercial build: enforce strict startup order by waiting for managed heartbeat
 	// (revocations + entitlement refresh) before scanning or loading packs.

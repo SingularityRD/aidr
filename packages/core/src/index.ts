@@ -398,6 +398,7 @@ export {
 // Config
 export {
 	AIDR_DIR,
+	type ConfigSource,
 	isInvalidConfig,
 	loadConfig,
 	resolveAuditSignedChain,
@@ -1102,6 +1103,20 @@ export {
 } from "./local-dlp-policy.js";
 // Logger
 export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
+// Machine policy (HKLM\SOFTWARE\Policies\Singularity AIDR, /etc/singularity-aidr/managed.json)
+export {
+	clearMachinePolicyCache,
+	FLEET_ENROLLMENT_KEY_PATTERN,
+	LINUX_MACHINE_POLICY_PATH,
+	MACHINE_POLICY_KEYS,
+	type MachinePolicy,
+	type MachinePolicyDeps,
+	type MachinePolicyRead,
+	overlayMachinePolicy,
+	parseMachinePolicy,
+	readMachinePolicy,
+	WINDOWS_MACHINE_POLICY_KEY,
+} from "./machine-policy.js";
 export type { ApprovalPublicKeyEntry, ManagedState } from "./managed.js";
 // Verified managed identity and entitlement state for connector provisioning.
 export {
@@ -1284,6 +1299,12 @@ export {
 	verifyOperatorRecord,
 	withOperatorFileLock,
 } from "./operator-approvals.js";
+// Outbound proxy / CA for first-party clients
+export {
+	configureOutboundNetwork,
+	type OutboundNetworkResult,
+	resolveOutboundNetwork,
+} from "./outbound-network.js";
 export { type OutputFinding, scanModelOutput } from "./output-scanner.js";
 // High-precision credential / payment-card detection shared by output scanning and the CLI
 export { detectOutputSensitiveData, type OutputSensitiveMatch } from "./output-sensitive-data.js";
@@ -1839,6 +1860,8 @@ export {
 	AgentSafetyConfigSchema,
 	AiSupplyChainConfigSchema,
 	AllowlistConfigSchema,
+	APPROVALS_MODES,
+	type ApprovalsMode,
 	ArtifactSchema,
 	ArtifactTypeSchema,
 	AuthConfigSchema,
@@ -1853,6 +1876,8 @@ export {
 	IntelPacksConfigSchema,
 	LoggingConfigSchema,
 	nullLogger,
+	OFFLINE_POLICIES,
+	type OfflinePolicy,
 	PackageCheckConfigSchema,
 	PoisoningProtectionConfigSchema,
 	PromptContentSafetySchema,

@@ -3,8 +3,8 @@
  *
  * A customer packet is what makes a generic, signed installer a customer's
  * installer: the customer id (also a leak-trace mark), the customer's license,
- * and optional setup defaults (control-plane URL, sensitivity, display name). It
- * never carries a secret.
+ * and optional setup defaults (control-plane URL, sensitivity, display name, and the
+ * public keys of the customer's own deployment). It never carries a secret.
  *
  * The signature covers `aidr-customer-packet-v1\n` + canonicalJson(payload) and is
  * made by a key from the same registry as licenses; the different prefix keeps a
@@ -14,6 +14,7 @@
  * expired still verifies so setup can install detection; callers read
  * `licenseState` to decide about updates and managed features.
  */
+import { createPublicKey } from "node:crypto";
 import {
 	CUSTOMER_ID_PATTERN,
 	checkEnvelope,
@@ -34,7 +35,13 @@ export const CUSTOMER_PACKET_FORMAT = "aidr-customer-packet-v1";
 
 const PACKET_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const REQUIRED_KEYS = ["customer_id", "issued_at", "license", "packet_id"] as const;
-const OPTIONAL_KEYS = ["control_plane_url", "display_name", "sensitivity"] as const;
+const OPTIONAL_KEYS = [
+	"control_plane_url",
+	"display_name",
+	"licensing_public_keys_pem",
+	"sensitivity",
+] as const;
+const MAX_LICENSING_KEYS = 8;
 const SENSITIVITIES = ["paranoid", "balanced", "relaxed"] as const;
 const MAX_URL_LENGTH = 2048;
 
@@ -48,6 +55,7 @@ export interface CustomerPacketPayload {
 	control_plane_url?: string;
 	sensitivity?: CustomerPacketSensitivity;
 	display_name?: string;
+	licensing_public_keys_pem?: string[];
 }
 
 export interface VerifiedCustomerPacket {
@@ -64,6 +72,8 @@ export interface VerifiedCustomerPacket {
 	controlPlaneUrl?: string;
 	sensitivity?: CustomerPacketSensitivity;
 	displayName?: string;
+	/** Ed25519 public keys of the customer's deployment (entitlements, runtime policy). */
+	licensingPublicKeysPem?: string[];
 	license: VerifiedLicense;
 	/** The embedded license's state; an expired license does not fail the packet. */
 	licenseState: LicenseState;
@@ -102,6 +112,30 @@ function checkDisplayName(value: unknown): string {
 	return value as string;
 }
 
+function checkLicensingPublicKeys(value: unknown): string[] {
+	const fail = () =>
+		invalid(
+			`licensing_public_keys_pem must be 1..${MAX_LICENSING_KEYS} Ed25519 public keys in PEM (SPKI)`,
+		);
+	if (!Array.isArray(value) || value.length < 1 || value.length > MAX_LICENSING_KEYS) fail();
+	for (const pem of value as unknown[]) {
+		if (
+			typeof pem !== "string" ||
+			pem.length > 1024 ||
+			!pem.trim().startsWith("-----BEGIN PUBLIC KEY-----")
+		)
+			fail();
+		let type: string | undefined;
+		try {
+			type = createPublicKey(pem as string).asymmetricKeyType;
+		} catch {
+			fail();
+		}
+		if (type !== "ed25519") fail();
+	}
+	return value as string[];
+}
+
 function validatePacketPayload(payload: unknown): CustomerPacketPayload {
 	if (!isPlainObject(payload)) invalid("customer packet payload must be an object");
 	const p = payload as Record<string, unknown>;
@@ -125,6 +159,8 @@ function validatePacketPayload(payload: unknown): CustomerPacketPayload {
 	)
 		invalid(`sensitivity must be one of ${SENSITIVITIES.join(", ")}`);
 	if (p.display_name !== undefined) checkDisplayName(p.display_name);
+	if (p.licensing_public_keys_pem !== undefined)
+		checkLicensingPublicKeys(p.licensing_public_keys_pem);
 	return p as unknown as CustomerPacketPayload;
 }
 
@@ -181,6 +217,9 @@ export function verifyCustomerPacket(
 			: { controlPlaneUrl: payload.control_plane_url }),
 		...(payload.sensitivity === undefined ? {} : { sensitivity: payload.sensitivity }),
 		...(payload.display_name === undefined ? {} : { displayName: payload.display_name }),
+		...(payload.licensing_public_keys_pem === undefined
+			? {}
+			: { licensingPublicKeysPem: [...payload.licensing_public_keys_pem] }),
 		license,
 		licenseState: license.state,
 	};

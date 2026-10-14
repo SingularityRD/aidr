@@ -293,6 +293,23 @@ export const CLI_EN = {
 	"setup.packet.notYetValid":
 		"The license starts on {date}; updates are accepted from then on. Local detection works now.",
 	"setup.packet.sensitivity": "Sensitivity set to {level} by the customer packet.",
+	"setup.packet.licensingKeys":
+		"Your company's deployment signing keys from the customer packet are trusted ({count}).",
+	"setup.machinePolicy.found": "Machine policy set by your administrator: {source}",
+	"setup.machinePolicy.refused":
+		"The machine policy {source} was refused ({reason}) and was not used. Local protection continues; tell your IT team.",
+	"setup.machinePolicy.connected":
+		"Connected to your company ({endpoint}) by the machine policy. The connection completes the next time an AI tool starts.",
+	"setup.machinePolicy.connectedApprove":
+		"Company address set by the machine policy ({endpoint}). The next time an AI tool starts, it shows a code and a link: approve this computer there.",
+	"setup.machinePolicy.wouldConnect": "Would connect to {endpoint} as the machine policy says.",
+	"setup.machinePolicy.alreadyConnected": "Connected to {endpoint} as the machine policy says.",
+	"setup.machinePolicy.handoffIgnored":
+		"The company connection saved by the installer was not used: the machine policy decides the company connection on this computer.",
+	"setup.machinePolicy.offline.keep_enforcing_local":
+		"If the company server cannot be reached, protection on this computer keeps working locally.",
+	"setup.machinePolicy.offline.block_after_grace":
+		"If the company server cannot be reached for longer than the offline grace period, AI tool calls on this computer are blocked.",
 	"customer.state.active": "active",
 	"customer.state.grace": "in its grace period",
 	"customer.state.expired": "ended",
@@ -657,6 +674,23 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"setup.packet.notYetValid":
 		"Lisans {date} tarihinde başlıyor; güncellemeler o tarihten itibaren kabul edilir. Yerel tespit şimdiden çalışıyor.",
 	"setup.packet.sensitivity": "Hassasiyet, müşteri paketi tarafından {level} olarak ayarlandı.",
+	"setup.packet.licensingKeys":
+		"Şirketinizin kurulum imza anahtarları müşteri paketinden alındı ve güvenilir olarak kaydedildi ({count}).",
+	"setup.machinePolicy.found": "Yöneticinizin belirlediği makine politikası: {source}",
+	"setup.machinePolicy.refused":
+		"{source} makine politikası reddedildi ({reason}) ve kullanılmadı. Yerel koruma sürüyor; BT ekibinize haber verin.",
+	"setup.machinePolicy.connected":
+		"Makine politikasıyla şirketinize bağlandı ({endpoint}). Bağlantı, bir yapay zekâ aracı bir sonraki açılışında tamamlanır.",
+	"setup.machinePolicy.connectedApprove":
+		"Şirket adresi makine politikasıyla ayarlandı ({endpoint}). Bir yapay zekâ aracı bir sonraki açılışında bir kod ve bağlantı gösterir: bu bilgisayarı orada onaylayın.",
+	"setup.machinePolicy.wouldConnect": "Makine politikası gereği {endpoint} adresine bağlanılacak.",
+	"setup.machinePolicy.alreadyConnected": "Makine politikası gereği {endpoint} adresine bağlı.",
+	"setup.machinePolicy.handoffIgnored":
+		"Kurulum programının kaydettiği şirket bağlantısı kullanılmadı: bu bilgisayarda şirket bağlantısını makine politikası belirliyor.",
+	"setup.machinePolicy.offline.keep_enforcing_local":
+		"Şirket sunucusuna ulaşılamazsa bu bilgisayardaki koruma yerel olarak çalışmaya devam eder.",
+	"setup.machinePolicy.offline.block_after_grace":
+		"Şirket sunucusuna çevrimdışı süreden uzun ulaşılamazsa bu bilgisayarda yapay zekâ araçlarının işlemleri engellenir.",
 	"customer.state.active": "etkin",
 	"customer.state.grace": "ek süresinde",
 	"customer.state.expired": "sona erdi",
