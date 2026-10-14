@@ -192,6 +192,7 @@ export const ONPREM_EXTRA_SUITE_PATTERNS = Object.freeze([
 	/^customer-packet[\w-]*\.test\.mjs$/u,
 	/^license[\w-]*\.test\.mjs$/u,
 	/^import-offline-pack[\w-]*\.test\.mjs$/u,
+	/^(?:intel-pack|sign-intel-pack)[\w-]*\.test\.mjs$/u,
 	/^onprem-[\w-]+\.test\.mjs$/u,
 ]);
 

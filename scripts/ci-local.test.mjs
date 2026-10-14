@@ -475,12 +475,14 @@ test("parseArgs understands every documented flag", () => {
 });
 
 test("selectExtraSuites adds uncovered on-prem suites and never Postgres or duplicates", () => {
-	const files = ["customer-packet.test.mjs", "deployment-doctor.test.mjs", "deployment-smoke.test.mjs", "license.test.mjs", "onprem-licensed-bootstrap-postgres.test.mjs", "onprem-aig-compose.test.mjs", "deployment-doctor.mjs", "unrelated.test.mjs"];
+	const files = ["customer-packet.test.mjs", "deployment-doctor.test.mjs", "intel-pack-release.test.mjs", "sign-intel-pack-manifest.test.mjs", "intel-pack-release.mjs", "deployment-smoke.test.mjs", "license.test.mjs", "onprem-licensed-bootstrap-postgres.test.mjs", "onprem-aig-compose.test.mjs", "deployment-doctor.mjs", "unrelated.test.mjs"];
 	assert.deepEqual(selectExtraSuites(files, ONPREM_EXTRA_SUITE_PATTERNS, "node --test scripts/deployment-doctor.test.mjs"), [
 		"scripts/customer-packet.test.mjs",
 		"scripts/deployment-smoke.test.mjs",
+		"scripts/intel-pack-release.test.mjs",
 		"scripts/license.test.mjs",
 		"scripts/onprem-aig-compose.test.mjs",
+		"scripts/sign-intel-pack-manifest.test.mjs",
 	]);
 });
 

@@ -199,6 +199,10 @@ A disconnected installation cannot poll a feed. Signed intel packs are carried
 in on approved media and imported with `scripts/import-offline-pack.mjs`, which
 verifies everything before it writes anything and never contacts the network.
 
+How the vendor builds, signs and schedules these packs, and the license
+revocation list that travels with them, is in
+[intel pack releases](intel-pack-releases.md).
+
 **What the vendor delivers.** A signed pack directory in the format the release
 tooling already produces: `manifest.json` (`pack_id`, `version`, `issued_at`,
 optional `expires_at`, `key_id`, `files[]` with SHA-256 or ciphertext SHA-256),

@@ -32,6 +32,8 @@
     "src/__tests__/guard-dashboard-approval.test.ts",
     "src/__tests__/i18n.test.ts",
     "src/__tests__/host-observation.test.ts",
+    "src/__tests__/license-fixtures.ts",
+    "src/__tests__/license-revocations.test.ts",
     "src/__tests__/logger.test.ts",
     "src/__tests__/managed-mode-disarm.test.ts",
     "src/__tests__/mcp-attestation.test.ts",

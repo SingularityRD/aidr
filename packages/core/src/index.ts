@@ -1045,7 +1045,18 @@ export {
 	verifyArtifactIntegrityAndLog,
 } from "./integrity/index.js";
 // Intel packs (signed offline intelligence)
-export { acceptPack, type PackAcceptance, type PackRefusalCode } from "./intel/acceptance.js";
+export {
+	type AcceptPackOptions,
+	acceptPack,
+	type PackAcceptance,
+	type PackRefusalCode,
+} from "./intel/acceptance.js";
+export {
+	LICENSE_REVOCATIONS_FORMAT,
+	type LicenseRevocationsPayload,
+	type VerifiedLicenseRevocations,
+	verifyLicenseRevocations,
+} from "./intel/license-revocations.js";
 export { loadMergedIntelFromDisk } from "./intel/loader.js";
 export type {
 	IntelReputationProvider,

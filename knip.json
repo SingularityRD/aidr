@@ -26,6 +26,7 @@
 				"scripts/deployment-maintenance.mjs",
 				"scripts/encrypt-intel-pack-file.mjs",
 				"scripts/intel-pack-keys.mjs",
+				"scripts/license-revocations-issue.mjs",
 				"scripts/endpoint-install.mjs",
 				"scripts/generate-provenance.mjs",
 				"scripts/generate-production-sales-gap-audit.mjs",
