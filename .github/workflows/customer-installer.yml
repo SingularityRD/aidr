@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Promoted release tag (vX.Y.Z-rc.N) whose signed bundles to package"
+        description: "Promoted release tag (final vX.Y.Z, or the promoted vX.Y.Z-rc.N) whose signed bundles to package"
         required: true
         type: string
       customer_id:
@@ -95,10 +95,17 @@ jobs:
             echo "Customer installers are built only from the protected default branch." >&2
             exit 1
           }
-          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.(0|[1-9][0-9]{0,3})$ ]] || {
-            echo "release_tag must be a promoted vX.Y.Z-rc.N tag." >&2
+          # A promoted vX.Y.Z-rc.N tag, or the final vX.Y.Z tag promotion republishes the
+          # same signed files under (scripts/lib/rc-tag.mjs). Either way the installers
+          # carry the final version X.Y.Z, never "-rc.N".
+          if [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.(0|[1-9][0-9]{0,3})$ ]]; then
+            :
+          elif [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            :
+          else
+            echo "release_tag must be a promoted vX.Y.Z-rc.N tag or the final vX.Y.Z tag." >&2
             exit 1
-          }
+          fi
           [[ "${CUSTOMER_ID}" =~ ^[a-z0-9][a-z0-9-]{1,31}$ ]] || {
             echo "customer_id must be 2 to 32 lower-case letters, digits or '-', starting with a letter or digit." >&2
             exit 1
@@ -178,6 +185,26 @@ jobs:
           }
           tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq .sha)"
           [[ "${tag_sha}" =~ ^[0-9a-f]{40}$ ]] || { echo "Could not resolve ${RELEASE_TAG}." >&2; exit 1; }
+          # The bundles were built and attested by release-rc.yml under an RC tag. A final
+          # vX.Y.Z release republishes the files of exactly one promoted RC of that version
+          # at the same commit; the attestation is checked against that RC tag.
+          source_tag="${RELEASE_TAG}"
+          if [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            mapfile -t promoted < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+              | grep -E "^${RELEASE_TAG//./\\.}-rc\.(0|[1-9][0-9]{0,3})$" || true)
+            [[ "${#promoted[@]}" -eq 1 ]] || {
+              echo "${RELEASE_TAG} must republish exactly one promoted RC release; found ${#promoted[@]}." >&2
+              exit 1
+            }
+            source_tag="${promoted[0]}"
+            rc_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${source_tag}" --jq .sha)"
+            [[ "${rc_sha}" == "${tag_sha}" ]] || {
+              echo "${RELEASE_TAG} does not point at the commit of the promoted ${source_tag}." >&2
+              exit 1
+            }
+            echo "Final release ${RELEASE_TAG} republishes the promoted ${source_tag}."
+          fi
           sea="${RUNNER_TEMP}/sea"
           mkdir -p "${sea}"
           gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --dir "${sea}" \
@@ -191,7 +218,7 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-rc.yml" \
               --predicate-type "https://slsa.dev/provenance/v1" \
-              --source-ref "refs/tags/${RELEASE_TAG}" \
+              --source-ref "refs/tags/${source_tag}" \
               --source-digest "${tag_sha}" \
               --hostname "${GITHUB_SERVER_URL#https://}" >/dev/null
             dir="${sea}/${platform}"
@@ -470,6 +497,7 @@ jobs:
     permissions:
       contents: read
       attestations: write
+      # Build provenance, and the GitHub OIDC token the azure-key-vault signer exchanges.
       id-token: write
     steps:
       - name: Checkout trusted packaging tools (pinned)
@@ -512,8 +540,20 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           EXPECTED_SEA_SHA256: ${{ needs.prepare.outputs.windows_sha256 }}
           EXPECTED_PACKET_SHA256: ${{ needs.prepare.outputs.packet_sha256 }}
-          WINDOWS_CODE_SIGNING_PFX_B64: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 }}
-          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD }}
+          # Signer backend (scripts/windows-authenticode-signer.ps1, docs/operations/windows-code-signing.md):
+          # pfx (ephemeral PFX custody, local tests), azure-key-vault (AzureSignTool) or jsign (cloud HSM / token).
+          AIDR_WINDOWS_SIGNER: ${{ vars.AIDR_WINDOWS_SIGNER || 'pfx' }}
+          AIDR_AZURE_KEY_VAULT_URL: ${{ vars.AIDR_AZURE_KEY_VAULT_URL }}
+          AIDR_AZURE_KEY_VAULT_CERTIFICATE: ${{ vars.AIDR_AZURE_KEY_VAULT_CERTIFICATE }}
+          AIDR_AZURE_TENANT_ID: ${{ vars.AIDR_AZURE_TENANT_ID }}
+          AIDR_AZURE_CLIENT_ID: ${{ vars.AIDR_AZURE_CLIENT_ID }}
+          AIDR_JSIGN_STORETYPE: ${{ vars.AIDR_JSIGN_STORETYPE }}
+          AIDR_JSIGN_KEYSTORE: ${{ vars.AIDR_JSIGN_KEYSTORE }}
+          AIDR_JSIGN_ALIAS: ${{ vars.AIDR_JSIGN_ALIAS }}
+          AIDR_JSIGN_CERTCHAIN_PEM: ${{ vars.AIDR_JSIGN_CERTCHAIN_PEM }}
+          AIDR_JSIGN_STOREPASS: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'jsign' && secrets.AIDR_JSIGN_STOREPASS || '' }}
+          WINDOWS_CODE_SIGNING_PFX_B64: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'pfx' && secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 || '' }}
+          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'pfx' && secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD || '' }}
           WINDOWS_CODE_SIGNING_THUMBPRINT: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_THUMBPRINT }}
           WINDOWS_TIMESTAMP_SERVER: ${{ vars.AIDR_WINDOWS_TIMESTAMP_SERVER }}
           SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
@@ -521,11 +561,20 @@ jobs:
           CATALOG_PUBLIC_KEY: ${{ vars.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM || secrets.AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_PEM }}
         run: |
           $ErrorActionPreference = "Stop"
-          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "PFX import requires an ephemeral GitHub-hosted runner" }
+          . ./scripts/windows-authenticode-signer.ps1
+          $signer = Resolve-AidrAuthenticodeSigner $env:AIDR_WINDOWS_SIGNER
+          if ($signer -eq 'pfx') {
+            if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "PFX import requires an ephemeral GitHub-hosted runner" }
+          } elseif (-not [string]::IsNullOrWhiteSpace($env:AIDR_JSIGN_CERTCHAIN_PEM)) {
+            # The public certificate chain some jsign store types need (--certfile).
+            $env:AIDR_JSIGN_CERTFILE = Join-Path $env:RUNNER_TEMP 'aidr-jsign-chain.pem'
+            [System.IO.File]::WriteAllText($env:AIDR_JSIGN_CERTFILE, $env:AIDR_JSIGN_CERTCHAIN_PEM)
+          }
           if ([string]::IsNullOrWhiteSpace($env:SIGNING_PUBLIC_KEY) -or [string]::IsNullOrWhiteSpace($env:SIGNING_PUBLIC_KEY_FINGERPRINT)) { throw "The release trust public key and its fingerprint are required to build installers" }
           $thumbprint = $env:WINDOWS_CODE_SIGNING_THUMBPRINT
           $timestamp = $env:WINDOWS_TIMESTAMP_SERVER
-          if ($thumbprint -cnotmatch '^[0-9A-F]{40}$' -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_B64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD)) { throw "Protected Windows signing certificate, password and thumbprint are required; no unsigned MSI is delivered" }
+          if ($thumbprint -cnotmatch '^[0-9A-F]{40}$') { throw "The independently pinned Windows signing thumbprint is required; no unsigned MSI is delivered" }
+          if ($signer -eq 'pfx' -and ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_B64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD))) { throw "Protected Windows signing certificate, password and thumbprint are required; no unsigned MSI is delivered" }
           $timestampUri = $null
           if (-not [Uri]::TryCreate($timestamp, [UriKind]::Absolute, [ref]$timestampUri) -or $timestampUri.Scheme -cne 'https' -or $timestampUri.UserInfo -or $timestampUri.Query -or $timestampUri.Fragment) { throw "An approved protected HTTPS timestamp server is required" }
           $packet = Join-Path $env:RUNNER_TEMP "packet/customer-packet.json"
@@ -554,6 +603,7 @@ jobs:
           $imported = $false
           $collection = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
           try {
+            if ($signer -eq 'pfx') {
             New-Item -ItemType Directory -Path $privateDirectory -ErrorAction Stop | Out-Null
             $acl = [System.Security.AccessControl.DirectorySecurity]::new()
             $acl.SetAccessRuleProtection($true, $false)
@@ -579,9 +629,10 @@ jobs:
             $imported = Test-Path -LiteralPath $certificatePath
             if ($importedCertificates.Count -ne 1 -or $importedCertificates[0].Thumbprint -cne $thumbprint -or -not $imported) { throw "Runner certificate import did not preserve the approved identity" }
             Remove-Item -LiteralPath $pfxPath -Force
+            }
             $bundleArgs = @{}
             if ($env:BUILD_EXE -eq 'true') { $bundleArgs = @{ Bundle = $true } }
-            & ./deploy/installers/windows/build-msi.ps1 -SeaDir $sea -TrustKey $trustKey -TrustKeyFingerprint $env:SIGNING_PUBLIC_KEY_FINGERPRINT -Version $env:VERSION -OutDir $out -SignThumbprint $thumbprint -TimestampServer $timestamp -CatalogKey $catalogKey -CustomerPacket $packet -CustomerId $env:CUSTOMER_ID @bundleArgs
+            & ./deploy/installers/windows/build-msi.ps1 -SeaDir $sea -TrustKey $trustKey -TrustKeyFingerprint $env:SIGNING_PUBLIC_KEY_FINGERPRINT -Version $env:VERSION -OutDir $out -SignThumbprint $thumbprint -Signer $signer -TimestampServer $timestamp -CatalogKey $catalogKey -CustomerPacket $packet -CustomerId $env:CUSTOMER_ID @bundleArgs
           } finally {
             $passwordText = $null
             Remove-Item Env:WINDOWS_CODE_SIGNING_PFX_B64, Env:WINDOWS_CODE_SIGNING_PFX_PASSWORD -ErrorAction SilentlyContinue

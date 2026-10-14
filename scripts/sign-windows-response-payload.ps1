@@ -8,8 +8,12 @@ param(
     [string]$ReceiptPath,
     [switch]$CheckOnly,
     [ValidateSet('CurrentUser/My', 'LocalMachine/My')][string]$CertificateStore = 'CurrentUser/My',
-    [string]$SignToolPath
+    [string]$SignToolPath,
+    # pfx (certificate in the store) | azure-key-vault | jsign (key stays in an HSM); scripts/windows-authenticode-signer.ps1
+    [ValidateSet('pfx', 'azure-key-vault', 'jsign')][string]$Signer = 'pfx'
 )
+
+. (Join-Path $PSScriptRoot 'windows-authenticode-signer.ps1')
 
 $script:AidrSigningFleetFiles = @(
     'Common.ps1', 'Install-Aidr.ps1', 'Install-AidrResponseWorker.ps1',
@@ -281,7 +285,8 @@ function Invoke-AidrWindowsSigning {
         [Parameter(Mandatory)][string]$ReceiptPath,
         [switch]$CheckOnly,
         [ValidateSet('CurrentUser/My', 'LocalMachine/My')][string]$CertificateStore = 'CurrentUser/My',
-        [string]$SignToolPath
+        [string]$SignToolPath,
+        [ValidateSet('pfx', 'azure-key-vault', 'jsign')][string]$Signer = 'pfx'
     )
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'windows_signing_required' }
     if (-not $CheckOnly -and $PSVersionTable.PSVersion.Major -lt 7) { throw 'powershell_7_signing_required' }
@@ -327,16 +332,31 @@ function Invoke-AidrWindowsSigning {
     foreach ($file in $files) {
         if ((Get-AidrSigningHash $file.absolute) -cne $preimages[$file.logical]) { throw 'signing_preimage_mismatch' }
     }
-    $tool = Resolve-AidrSigningTool $SignToolPath
-    $certificate = Get-AidrSigningCertificate $CertificateStore $thumbprint
-    Assert-AidrSigningCertificate $certificate $thumbprint $true
-    foreach ($file in $files) {
-        Assert-AidrSigningPath $file.absolute $false | Out-Null
-        if ((Get-AidrSigningHash $file.absolute) -cne $preimages[$file.logical]) { throw 'signing_preimage_mismatch' }
-        $arguments = @('sign', '/q', '/fd', 'SHA256', '/tr', $TimestampServer, '/td', 'SHA256', '/sha1', $thumbprint, '/s', 'My')
-        if ($CertificateStore -ceq 'LocalMachine/My') { $arguments += '/sm' }
-        $arguments += $file.absolute
-        Invoke-AidrSigningTool $tool $arguments
+    if ($Signer -ceq 'pfx') {
+        $tool = Resolve-AidrSigningTool $SignToolPath
+        $certificate = Get-AidrSigningCertificate $CertificateStore $thumbprint
+        Assert-AidrSigningCertificate $certificate $thumbprint $true
+        foreach ($file in $files) {
+            Assert-AidrSigningPath $file.absolute $false | Out-Null
+            if ((Get-AidrSigningHash $file.absolute) -cne $preimages[$file.logical]) { throw 'signing_preimage_mismatch' }
+            $arguments = @('sign', '/q', '/fd', 'SHA256', '/tr', $TimestampServer, '/td', 'SHA256', '/sha1', $thumbprint, '/s', 'My')
+            if ($CertificateStore -ceq 'LocalMachine/My') { $arguments += '/sm' }
+            $arguments += $file.absolute
+            Invoke-AidrSigningTool $tool $arguments
+        }
+    } else {
+        # The key stays in the HSM/token: no certificate store, no private key on
+        # this runner. The pinned identity is enforced on every signed file below
+        # (and by Invoke-AidrAuthenticodeSign), and the certificate must be current.
+        foreach ($file in $files) {
+            Assert-AidrSigningPath $file.absolute $false | Out-Null
+            if ((Get-AidrSigningHash $file.absolute) -cne $preimages[$file.logical]) { throw 'signing_preimage_mismatch' }
+        }
+        Invoke-AidrAuthenticodeSign -Signer $Signer -Files @($files | ForEach-Object { $_.absolute }) -Thumbprint $thumbprint -TimestampServer $TimestampServer
+        $signerCertificate = (Get-AuthenticodeSignature -LiteralPath $files[0].absolute -ErrorAction Stop).SignerCertificate
+        Assert-AidrSigningCertificate $signerCertificate $thumbprint $false
+        $now = [DateTime]::UtcNow
+        if ($signerCertificate.NotBefore.ToUniversalTime() -gt $now -or $signerCertificate.NotAfter.ToUniversalTime() -lt $now) { throw 'expired_signing_certificate' }
     }
     $outputs = @()
     foreach ($file in $files) {

@@ -24,6 +24,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { embeddedBuildFlavors } from "../lib/release-minify.mjs";
 
+const IS_WINDOWS = process.platform === "win32";
+
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CRASH_HOOK = path.join(REPO_ROOT, "scripts", "real-host-e2e", "crash-hook.mjs");
 
@@ -37,18 +39,52 @@ export const HOST_PINS = Object.freeze({
 
 export const HOST_IDS = Object.keys(HOST_PINS);
 
-/** Minimal child environment: no proxy, no credentials, no operator HOME. */
-function baseEnv(sandbox, extraPath = []) {
-	const pathEntries = [...extraPath, path.dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"];
+/**
+ * Minimal child environment: no proxy, no credentials, no operator HOME. On
+ * Windows the profile folders point into the sandbox too, and the system and Git
+ * for Windows directories stay on PATH (Claude Code runs its Bash tool through
+ * Git Bash: CLAUDE_CODE_GIT_BASH_PATH).
+ */
+export function baseEnv(sandbox, extraPath = [], platform = process.platform, env = process.env) {
+	if (platform !== "win32") {
+		const pathEntries = [...extraPath, path.dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"];
+		return {
+			PATH: [...new Set(pathEntries)].join(path.delimiter),
+			HOME: sandbox.home,
+			USERPROFILE: sandbox.home,
+			TMPDIR: sandbox.tmp,
+			LANG: "C.UTF-8",
+			NO_COLOR: "1",
+			CI: "1",
+		};
+	}
+	const systemRoot = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\\Windows";
+	const git = env.AIDR_GIT_FOR_WINDOWS ?? "C:\\Program Files\\Git";
+	const pathEntries = [...extraPath, path.win32.dirname(process.execPath), path.win32.join(git, "cmd"), path.win32.join(git, "bin"), path.win32.join(git, "usr", "bin"), path.win32.join(systemRoot, "System32"), systemRoot, path.win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0")];
 	return {
-		PATH: [...new Set(pathEntries)].join(path.delimiter),
+		PATH: [...new Set(pathEntries)].join(";"),
 		HOME: sandbox.home,
 		USERPROFILE: sandbox.home,
-		TMPDIR: sandbox.tmp,
-		LANG: "C.UTF-8",
+		APPDATA: path.win32.join(sandbox.home, "AppData", "Roaming"),
+		LOCALAPPDATA: path.win32.join(sandbox.home, "AppData", "Local"),
+		TEMP: sandbox.tmp,
+		TMP: sandbox.tmp,
+		SystemRoot: systemRoot,
+		windir: systemRoot,
+		ComSpec: path.win32.join(systemRoot, "System32", "cmd.exe"),
+		PATHEXT: env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD",
+		CLAUDE_CODE_GIT_BASH_PATH: env.CLAUDE_CODE_GIT_BASH_PATH ?? path.win32.join(git, "bin", "bash.exe"),
 		NO_COLOR: "1",
 		CI: "1",
 	};
+}
+
+/**
+ * How to start a host binary: a JavaScript entry point runs under this Node.js
+ * (Windows cannot spawn an npm .cmd shim without a shell, and a shell is never used).
+ */
+export function launcher(command, args) {
+	return /\.[cm]?js$/iu.test(command) ? [process.execPath, [command, ...args]] : [command, args];
 }
 
 /** Receipt contract from packages/core/src/host-observation.ts: proves the connector handled the call. */
@@ -63,7 +99,8 @@ function observationEnv(sandbox) {
 
 function runProcess(command, args, { cwd, env, timeoutMs }) {
 	return new Promise((resolve) => {
-		const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+		const [file, argv] = launcher(command, args);
+		const child = spawn(file, argv, { cwd, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 		let stdout = "";
 		let stderr = "";
 		let timedOut = false;
@@ -89,7 +126,8 @@ function runProcess(command, args, { cwd, env, timeoutMs }) {
 }
 
 function versionOf(command, args, env) {
-	const result = spawnSync(command, args, { encoding: "utf8", env, timeout: 60_000 });
+	const [file, argv] = launcher(command, args);
+	const result = spawnSync(file, argv, { encoding: "utf8", env, timeout: 60_000, windowsHide: true });
 	const text = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim().split(/\r?\n/u).filter(Boolean).at(-1);
 	return result.status === 0 && text ? text : null;
 }
@@ -101,11 +139,11 @@ function versionOf(command, args, env) {
  */
 function npmInstall(prefix, spec, postinstall = null) {
 	mkdirSync(prefix, { recursive: true });
-	const result = spawnSync("npm", ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--ignore-scripts", spec], {
-		encoding: "utf8",
-		timeout: 900_000,
-		env: process.env,
-	});
+	// npm is a .cmd shim on Windows; it runs through the shell there with fixed, quoted arguments.
+	const args = ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--ignore-scripts", spec];
+	const result = IS_WINDOWS
+		? spawnSync("npm.cmd", args.map((arg) => `"${arg}"`), { encoding: "utf8", timeout: 900_000, env: process.env, shell: true, windowsHide: true })
+		: spawnSync("npm", args, { encoding: "utf8", timeout: 900_000, env: process.env });
 	if (result.status !== 0) {
 		throw new Error(`npm install ${spec} failed: ${(result.stderr || result.stdout || "").slice(-2000)}`);
 	}
@@ -123,12 +161,27 @@ function npmInstall(prefix, spec, postinstall = null) {
  * pinned local install (installed on demand when `install` is set). The package's
  * own postinstall runs only when `runPostinstall` is set, after npmInstall checks it.
  */
+/** The installed bin: the .bin link on POSIX, the package's JavaScript entry point on Windows. */
+function localBin(hostsDir, name) {
+	const pin = HOST_PINS[name];
+	if (!IS_WINDOWS) return path.join(hostsDir, name, "node_modules", ".bin", name);
+	const packageDir = path.join(hostsDir, name, "node_modules", ...pin.npm.split("/"));
+	try {
+		const { bin } = JSON.parse(readFileSync(path.join(packageDir, "package.json"), "utf8"));
+		const entry = typeof bin === "string" ? bin : bin?.[name];
+		return entry ? path.join(packageDir, entry) : path.join(packageDir, "missing-bin");
+	} catch {
+		return path.join(packageDir, "missing-bin");
+	}
+}
+
 function resolveNpmHost(hostsDir, install, name, { runPostinstall }) {
 	const pin = HOST_PINS[name];
-	const local = path.join(hostsDir, name, "node_modules", ".bin", name);
+	let local = localBin(hostsDir, name);
 	let binary = [process.env[pin.envOverride], local].filter(Boolean).find((candidate) => existsSync(candidate));
 	if (!binary && install) {
 		npmInstall(path.join(hostsDir, name), `${pin.npm}@${pin.version}`, runPostinstall ? pin.npm : null);
+		local = localBin(hostsDir, name);
 		binary = local;
 	}
 	if (!binary || !existsSync(binary)) return null;
@@ -165,6 +218,11 @@ function nodeMajorMinor(nodePath) {
 }
 
 function onPath(name) {
+	if (IS_WINDOWS) {
+		// Only a real executable: an npm .cmd shim cannot be spawned without a shell.
+		const result = spawnSync("where.exe", [name], { encoding: "utf8", windowsHide: true });
+		return result.status === 0 ? (result.stdout.split(/\r?\n/u).find((line) => /\.exe$/iu.test(line.trim()))?.trim() ?? null) : null;
+	}
 	const result = spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" });
 	return result.status === 0 ? result.stdout.trim() : null;
 }
@@ -246,6 +304,8 @@ const codex = {
 	hostName: "Codex CLI",
 	protocol: "openai-responses",
 	canaryTool: "shell",
+	// Codex runs shell commands with PowerShell on Windows.
+	shellDialect: () => (IS_WINDOWS ? "powershell" : "posix"),
 	supportsCrashProbe: true,
 	supportsOutputInspection: false,
 	async resolve({ hostsDir, install }) {

@@ -10,8 +10,12 @@
      flavour, Ed25519 signatures against the release key, win32 build, the
      multi-call aidr.exe) and the release trust key fingerprint.
   2. Signed build (-SignThumbprint): the bundle .exe is Authenticode-signed
-     with the certificate already imported into CurrentUser\My (the same custody
-     as release-rc.yml's windows-authenticode job), the SEA manifest is rewritten
+     with the selected signer backend (-Signer, default AIDR_WINDOWS_SIGNER, else
+     pfx: the certificate already imported into CurrentUser\My; azure-key-vault
+     or jsign: a key that stays in a cloud HSM or token, see
+     scripts/windows-authenticode-signer.ps1 and
+     docs/operations/windows-code-signing.md). Every signed file must carry the
+     pinned -SignThumbprint certificate and a timestamp. The SEA manifest is rewritten
      over the signed bytes (build-sea.mjs --remanifest, which repeats the
      relocated deny canary), the MSI is built and signed, and both signatures
      are verified with signtool /pa.
@@ -56,6 +60,8 @@ param(
   [Parameter(Mandatory = $true)][string]$Version,
   [Parameter(Mandatory = $true)][string]$OutDir,
   [string]$SignThumbprint = '',
+  # Authenticode signer backend: pfx | azure-key-vault | jsign (default: AIDR_WINDOWS_SIGNER, else pfx).
+  [string]$Signer = '',
   [string]$TimestampServer = 'http://timestamp.digicert.com',
   # Optional Ed25519 public key `aidr update` verifies the installer catalog with.
   [string]$CatalogKey = '',
@@ -71,9 +77,11 @@ $ErrorActionPreference = 'Stop'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo = Resolve-Path (Join-Path $here '..\..\..')
+. (Join-Path $repo 'scripts\windows-authenticode-signer.ps1')
 $signing = if ($SignThumbprint) { 'signed' } elseif ($Unsigned) { 'unsigned' } else { '' }
 if (-not $signing) { throw 'Pass -SignThumbprint for a release build or -Unsigned for a local build.' }
 if ($SignThumbprint -and $Unsigned) { throw '-SignThumbprint and -Unsigned are mutually exclusive.' }
+if ($signing -eq 'signed') { $Signer = Resolve-AidrAuthenticodeSigner $Signer }
 
 # The WiX UI extension, pinned to the WiX version the release workflow installs.
 $WixUiExtension = 'WixToolset.UI.wixext'
@@ -105,8 +113,9 @@ function Install-WixExtension([string]$Name) {
   }
 }
 
-function Invoke-AuthenticodeSign([string]$SignTool, [string[]]$Files) {
-  Invoke-Checked $SignTool (@('sign', '/sha1', $SignThumbprint, '/fd', 'sha256', '/tr', $TimestampServer, '/td', 'sha256', '/d', 'Singularity AIDR') + $Files)
+# Sign with the selected backend (pinned identity checked per file), then signtool /pa.
+function Invoke-AuthenticodeSign([string]$SignTool, [string[]]$Files, [string]$Description = 'Singularity AIDR') {
+  Invoke-AidrAuthenticodeSign -Signer $Signer -Files $Files -Thumbprint $SignThumbprint -TimestampServer $TimestampServer -Description $Description -SignTool $SignTool
   Invoke-Checked $SignTool (@('verify', '/pa') + $Files)
 }
 
@@ -263,11 +272,19 @@ try {
   if ($signing -eq 'signed') {
     $signtool = Find-SignTool
     $exes = Get-ChildItem (Join-Path $bundle 'bin') -Filter *.exe | ForEach-Object { $_.FullName }
-    Invoke-Checked $signtool (@('sign', '/sha1', $SignThumbprint, '/fd', 'sha256', '/tr', $TimestampServer, '/td', 'sha256') + $exes)
+    Invoke-AidrAuthenticodeSign -Signer $Signer -Files $exes -Thumbprint $SignThumbprint -TimestampServer $TimestampServer -SignTool $signtool
     Invoke-Checked $signtool (@('verify', '/pa', '/all') + $exes)
     # Signing changed the binary: re-manifest the bundle over the signed bytes (the
     # signed runtime manifest is untouched) and re-run the canary with the release key.
     Invoke-Checked 'node' @((Join-Path $repo 'packages\claude-code\scripts\build-sea.mjs'), '--remanifest', $bundle, '--public-key', (Resolve-Path $TrustKey).Path)
+  }
+
+  # Per-user cleanup script (kept after removal, run by Active Setup as each user): a staged
+  # copy is Authenticode-signed so it also runs where policy demands AllSigned.
+  $profileCleanup = Join-Path $stage 'Remove-AidrUserRegistrations.ps1'
+  Copy-Item -LiteralPath (Join-Path $here 'Remove-AidrUserRegistrations.ps1') -Destination $profileCleanup
+  if ($signing -eq 'signed') {
+    Invoke-AidrAuthenticodeSign -Signer $Signer -Files @($profileCleanup) -Thumbprint $SignThumbprint -TimestampServer $TimestampServer -SignTool $signtool
   }
 
   # Company connection custom actions (embedded as a Binary; the MSI signature covers them).
@@ -297,7 +314,8 @@ try {
     '-d', "CatalogKey=$(if ($CatalogKey) { (Resolve-Path $CatalogKey).Path } else { '' })",
     '-d', "HasCustomerPacket=$($inputs.hasCustomerPacket)",
     '-d', "CustomerPacket=$packet",
-    '-d', "InstallerActionsDll=$actionsDll")
+    '-d', "InstallerActionsDll=$actionsDll",
+    '-d', "ProfileCleanupScript=$profileCleanup")
   # Customer wizard pages (ui/AidrUI.wxs): defined only when the packet says so.
   if ($inputs.customerServer) { $common += @('-d', "CustomerServer=$($inputs.customerServer)") }
   if ($inputs.customerUpdatesUntil) { $common += @('-d', "CustomerUpdatesUntil=$($inputs.customerUpdatesUntil)") }
@@ -325,7 +343,7 @@ try {
   Move-Item -LiteralPath $package -Destination $msi
 
   if ($signing -eq 'signed') {
-    Invoke-Checked $signtool @('sign', '/sha1', $SignThumbprint, '/fd', 'sha256', '/tr', $TimestampServer, '/td', 'sha256', '/d', 'Singularity AIDR', $msi)
+    Invoke-AidrAuthenticodeSign -Signer $Signer -Files @($msi) -Thumbprint $SignThumbprint -TimestampServer $TimestampServer -Description 'Singularity AIDR' -SignTool $signtool
     Invoke-Checked $signtool @('verify', '/pa', $msi)
   } else {
     Write-Warning "UNSIGNED MSI (local build only, never publish): $msi"

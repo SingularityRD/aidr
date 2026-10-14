@@ -4,7 +4,11 @@
     builds this with `dotnet build -c Release` and embeds AidrInstallerActions.CA.dll
     (the self-extracting package the DTF build targets produce) as a Binary.
 
-    It does exactly two things, both for the company connection page:
+    It does three things. Machine-wide removal (ProfileCleanupActions.cs):
+      * RegisterProfileCleanup / UnregisterProfileCleanup (deferred, LocalSystem,
+        HKLM only): register the per-user cleanup script as an Active Setup
+        component on final removal, and remove that registration on install.
+    And two for the company connection page (EnrollmentActions.cs):
       * ValidateEnrollmentInput (immediate, wizard): format check of the
         control-plane address and the enrollment code;
       * WriteEnrollmentHandoff / RemoveEnrollmentHandoff (deferred, impersonated

@@ -135,13 +135,19 @@ no trusted keys installed). `--now <ISO>` exists for rehearsals.
 ### 3. Build the customer installer
 
 Run the **customer installer** workflow (`.github/workflows/customer-installer.yml`,
-manual dispatch) with the promoted release tag and the customer id, and supply
+manual dispatch) with the release tag and the customer id, and supply
 the packet as the workflow describes (a secret, an uploaded artifact, or inline
-as `packet_b64` with `packet_source=input`). The
+as `packet_b64` with `packet_source=input`). The release tag is the final
+`vX.Y.Z` that promotion publishes (or the promoted `vX.Y.Z-rc.N` it came from;
+both name the same signed files, and for a final tag the workflow checks that
+exactly one promoted RC of that version exists at the same commit and verifies
+the bundles' attestations against that RC). The
 workflow verifies the packet with `scripts/customer-packet-verify.mjs` before
 embedding it, reuses the already-signed release artifacts, signs the Windows
-installer with the existing Authenticode flow and uploads files named
-`SingularityAIDR-<CUSTOMER>-<version>-<arch>.<ext>`:
+installer with the selected Authenticode signer
+([HSM-held certificate](windows-code-signing.md)) and uploads files named
+`SingularityAIDR-<CUSTOMER>-<version>-<arch>.<ext>`, where `<version>` is always
+the final `X.Y.Z`:
 
 - Windows: MSI (and optionally a bootstrapper EXE wrapping it). The packet is
   installed under the install directory's `config\` and as a permanent machine

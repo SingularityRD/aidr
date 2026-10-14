@@ -480,11 +480,36 @@ hooks stay, and `~/.singularity-aidr` (configuration, audit log) is kept. To
 delete that data and the AIDR vault items too, run `aidr uninstall` yourself
 **before** removing the package.
 
-Other users of the machine who ran `aidr setup` must run `aidr uninstall`
-before the package is removed. Afterwards their `~/.claude/settings.json`
-keeps hook entries marked `Singularity AIDR managed installation` that point
-at the removed binary; delete those entries. (On Windows, Active Setup does
-not run on uninstall.)
+**Every other user of the machine is cleaned up too**, without anyone signing
+in as them:
+
+- **Linux (.deb, .rpm, tarball):** final removal runs
+  `aidr uninstall --yes --keep-data` for every local account whose home holds
+  a `~/.singularity-aidr` directory it owns, each **as that account**
+  (`runuser`), so root never edits a user's files. Accounts the passwd
+  database does not list (some LDAP/SSSD setups that disable enumeration) are
+  not seen; they run `aidr uninstall` themselves.
+- **Windows (per-machine MSI):** final removal registers
+  `C:\Program Files\Singularity AIDR\cleanup\Remove-AidrUserRegistrations.ps1`
+  (kept after removal, Authenticode-signed) as an Active Setup component.
+  Windows runs it once for every user at their **next sign-in, as that user**:
+  it removes the hook entries marked `Singularity AIDR managed installation`
+  from `~/.claude/settings.json` and the `aidr-codex-hook` handlers from
+  `~/.codex/hooks.json`, keeps a backup next to each changed file and leaves
+  everything else alone. Until a user signs in again, their AI tools report a
+  failing hook for the removed binary. Installing AIDR again removes the
+  cleanup registration first.
+
+**Fleet removal.** Linux: run
+`sudo /opt/singularity-aidr/libexec/package-hook.sh deregister-all` from your
+configuration management, then remove the package (or just remove the package:
+it does the same). Windows: `msiexec /x {ProductCode} /qn` from Intune, SCCM or
+GPO (system context is fine: the per-user cleanup runs at each user's next
+sign-in). To clean profiles right away without waiting for a sign-in, run the
+same script in the users' context (Intune: "Run this script using the logged on
+credentials"):
+`powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File "C:\Program Files\Singularity AIDR\cleanup\Remove-AidrUserRegistrations.ps1"`.
+It does nothing while AIDR is still installed.
 
 Upgrades (`apt install` of a newer `.deb`, `dnf upgrade`, a newer MSI) keep
 every registration and rerun setup for the installing user.

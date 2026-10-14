@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-14",
+  "source_commit": "dec0222cf8489549231165a5e05346ca9de3cf87 plus this change (deploy/dashboard unchanged)",
+  "scanner": {
+    "tool": "trivy",
+    "version": "0.75.0",
+    "install": "github.com/aquasecurity/trivy release trivy_0.75.0_Linux-64bit.tar.gz, sha256 c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f (the TRIVY_SHA256 pin in release-images.yml)",
+    "vulnerability_db": {
+      "version": 2,
+      "updated_at": "2026-10-14T19:14:58.511503573Z",
+      "downloaded_at": "2026-10-14T22:43:20.393900514Z",
+      "repository": "mirror.gcr.io/aquasec/trivy-db:2"
+    }
+  },
+  "policy": {
+    "command": "trivy image --input <docker-save.tar> --scanners vuln --pkg-types os,library --skip-db-update --ignorefile <empty> --config <empty> --format json",
+    "ignore_file": "none (empty file)",
+    "vex": "none",
+    "counting": "every package/target occurrence"
+  },
+  "build": {
+    "base": "node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 pulled from mirror.gcr.io/library/node by that digest (Docker Hub rate limit), tagged under the official name",
+    "command": "docker build --pull=false --network=none (legacy builder) of the context scripts/deployment-prepare.mjs assembles: deploy/dashboard + deploy/saml-config.mjs + supabase/templates + packages/dashboard/dist"
+  },
+  "images": {
+    "node-base-stock": {
+      "reference": "node:24.21.0-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1",
+      "image_id": null,
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.2"
+      },
+      "counts": {
+        "MEDIUM": 13,
+        "HIGH": 8,
+        "LOW": 1
+      },
+      "targets": [
+        {
+          "target": "image.tar (alpine 3.24.2)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "findings": 1
+        },
+        {
+          "target": "Node.js",
+          "class": "lang-pkgs",
+          "type": "node-pkg",
+          "findings": 21
+        }
+      ],
+      "critical_high": [
+        {
+          "severity": "HIGH",
+          "package": "brace-expansion",
+          "installed": "5.0.7",
+          "id": "CVE-2026-102276",
+          "fixed": "5.0.10, 3.0.7, 2.1.5, 1.1.19",
+          "target": "Node.js"
+        },
+        {
+          "severity": "HIGH",
+          "package": "brace-expansion",
+          "installed": "5.0.7",
+          "id": "CVE-2026-102278",
+          "fixed": "5.0.11, 3.0.8, 2.1.6, 1.1.20",
+          "target": "Node.js"
+        },
+        {
+          "severity": "HIGH",
+          "package": "brace-expansion",
+          "installed": "5.0.7",
+          "id": "CVE-2026-14257",
+          "fixed": "5.0.8, 3.0.3, 2.1.3, 1.1.17",
+          "target": "Node.js"
+        },
+        {
+          "severity": "HIGH",
+          "package": "brace-expansion",
+          "installed": "5.0.7",
+          "id": "CVE-2026-69152",
+          "fixed": "1.1.18, 2.1.4, 3.0.6, 5.0.9",
+          "target": "Node.js"
+        },
+        {
+          "severity": "HIGH",
+          "package": "http-cache-semantics",
+          "installed": "4.2.0",
+          "id": "CVE-2026-93748",
+          "fixed": null,
+          "target": "Node.js"
+        },
+        {
+          "severity": "HIGH",
+          "package": "ip-address",
+          "installed": "10.2.0",
+          "id": "CVE-2026-69192",
+          "fixed": "10.3.1",
+          "target": "Node.js"
+        },
+        {
+          "severity": "HIGH",
+          "package": "tar",
+          "installed": "7.5.19",
+          "id": "CVE-2026-73566",
+          "fixed": "7.5.21",
+          "target": "Node.js"
+        },
+        {
+          "severity": "HIGH",
+          "package": "undici",
+          "installed": "6.27.0",
+          "id": "CVE-2026-19534",
+          "fixed": "6.28.1, 7.29.1, 8.10.2",
+          "target": "Node.js"
+        }
+      ]
+    },
+    "aidr-dashboard": {
+      "reference": "deploy/dashboard/Dockerfile",
+      "image_id": "sha256:24ba16f858379a874cedf4c925dcf6a608a35183132f12f8ea254c5f7c846555",
+      "os": {
+        "Family": "alpine",
+        "Name": "3.24.2"
+      },
+      "counts": {
+        "MEDIUM": 1
+      },
+      "targets": [
+        {
+          "target": "image.tar (alpine 3.24.2)",
+          "class": "os-pkgs",
+          "type": "alpine",
+          "findings": 1
+        }
+      ],
+      "critical_high": []
+    }
+  },
+  "runtime_check": {
+    "flags": "--read-only --cap-drop ALL --security-opt no-new-privileges:true --network none --memory 256m --pids-limit 128",
+    "uid": 1000,
+    "cap_eff": "0000000000000000",
+    "no_new_privs": 1,
+    "app_write": "Read-only file system",
+    "global_node_modules_entries": 0,
+    "package_managers_on_path": [],
+    "livez": 200,
+    "readyz": "503 (no database/storage/functions upstream in the isolated run, as designed)",
+    "index": "200 with Content-Security-Policy"
+  }
+}

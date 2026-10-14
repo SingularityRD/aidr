@@ -302,65 +302,106 @@ guides. A universal MDM installer is still open.
 
 ## Disconnected (air-gapped) installation
 
-The self-hosted control plane needs container images, and a disconnected host
-cannot pull them. `scripts/build-airgap-images.mjs` turns a prepared compose file
-into `docker save` tarballs plus a digest manifest; `--verify` re-checks the
-transferred bundle offline and never contacts a registry or the Docker daemon.
-Connector/CLI dependencies are already vendored into the customer kit
-(`deploy/vendor`, produced by `scripts/customer-kit.mjs`), and the Linux endpoint
-connector has its own signed offline fleet bundle
-(`deploy/fleet/linux/build-offline-bundle.sh`); the image bundle covers the
-remaining gap.
+A disconnected host cannot pull container images and should not build them.
+The vendor delivers every image of the default self-hosted stack as one
+**signed transfer bundle**, and the installation's credentials are generated on
+the disconnected host itself. Nothing secret is ever on the transfer media.
 
-On the connected staging host (network plus a running Docker daemon):
+### What the vendor delivers
 
-```powershell
-pnpm build
-node scripts/deployment-prepare.mjs --mode self-hosted --output .aidr-deploy --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file C:\secure-delivery\aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
-docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml build
-node scripts/build-airgap-images.mjs --compose .aidr-deploy/compose.yml --output .aidr-airgap --platform linux/amd64
+`release-images.yml` (job `airgap-bundle`) builds, from the same protected and
+signed release tag as the release itself, `aidr-offline-bundle-<version>.tar`:
+
+- `docker save` tarballs of every image the default stack runs (the Supabase
+  services, Envoy, imgproxy and the `aidr-dashboard:<version>` image built from
+  the tag) and of the build base images, with a digest manifest
+  (`scripts/build-airgap-images.mjs`);
+- an Ed25519 signature over the bundle manifest with the vendor offline-bundle
+  key, verifiable with Node.js alone and no network
+  (`scripts/onprem-offline-bundle.mjs`);
+- a keyless cosign signature (`<bundle>.tar.cosign.bundle`, GitHub OIDC
+  identity of that workflow) and a GitHub build-provenance attestation.
+
+The image list comes from a throwaway stack that `deployment-prepare.mjs`
+writes on the vendor's runner and deletes there; its generated credentials are
+never part of the bundle. The bundle, its cosign bundle and the vendor public
+key (`airgap/offline-bundle-signing-public.pem`) travel inside the signed
+customer kit (`scripts/customer-kit.mjs --airgap-bundle <dir>`), so the outer
+release signature covers them too. The kit also carries the Helm chart
+(`deploy/helm/`, guide `KUBERNETES.md`) for Kubernetes installations.
+
+Optional components (`--with-privacy-gateway`, `--with-posture-scanner`) are not
+in the default bundle; for those, build their images on a connected staging host
+from the same kit and carry them with an operator-signed bundle as below.
+
+### On the disconnected host
+
+```sh
+# 1. Verify the kit (outer signature, then the extracted file set) as in START-HERE.md.
+# 2. Prepare the installation HERE: this generates its credentials locally.
+node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+# 3. Verify the signed image bundle against the vendor key AND against the stack
+#    just prepared (every image it needs is present, nothing else), then load it.
+node scripts/onprem-offline-bundle.mjs import --bundle airgap/aidr-offline-bundle-<version>.tar \
+  --public-key airgap/offline-bundle-signing-public.pem --compose /srv/aidr/compose.yml --load-images
+# 4. Start without --build: the loaded aidr-dashboard image is used as is.
+docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d
+node scripts/deployment-migrate.mjs /srv/aidr
 ```
 
-`--compose` reads every `image:` reference from the prepared stack and, for
-each `build:` service, the `FROM` base images of its Dockerfile (stage aliases
-and `scratch` excluded, `ARG` defaults and build args substituted), so the
-disconnected host can rebuild offline. A service with both `build:` and
-`image:` (the `aidr-dashboard:<version>` image, and `aidr-aig-*` with
-`--with-posture-scanner`) is a local build: it is never pulled, must already exist from the
-`docker compose build` step, and is saved into the bundle. See the
-[on-prem sizing and posture scanner guide](onprem/README.md). `--plan
-<json>` (a `{ "images": [{ "ref": "...", "digest": "sha256:..." }] }` document) or
-repeated `--images <ref>` are the alternatives when no compose file is available.
-Pinned digests are enforced when supplied. Every `docker save` output is hashed,
-and `.aidr-airgap/aidr-airgap-images.manifest.json` is written only after all
-images were saved and hashed. If Docker or its daemon is unavailable the command
-exits non-zero before writing anything and never reports a bundle it did not
-produce. The recorded digests mirror what the staging host pulled; they are not
-registry publication and not a publisher identity.
+Where the customer's security team runs cosign, the second signature can be
+checked too (cosign needs its trust root available offline, from its embedded
+root or `--trusted-root`):
 
-Transfer the whole `.aidr-airgap` directory together with the signed release or
-customer kit on the customer-approved media. On the disconnected host:
-
-```powershell
-node scripts/build-airgap-images.mjs --verify --compose .aidr-deploy/compose.yml --output .aidr-airgap
-# repeat for every entry in aidr-airgap-images.manifest.json:
-docker load -i .aidr-airgap/tarballs/<name>.tar
-docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml up -d
-node scripts/deployment-migrate.mjs .aidr-deploy
+```sh
+cosign verify-blob --offline --bundle airgap/aidr-offline-bundle-<version>.tar.cosign.bundle \
+  --certificate-identity-regexp '^https://github.com/SingularityRD/aidr/\.github/workflows/release-images\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com airgap/aidr-offline-bundle-<version>.tar
 ```
+
+The import refuses, before loading anything, a bundle whose signature does not
+verify with the vendor key, a changed or extra file, a tarball whose size or
+SHA-256 differs from the signed manifest, and an image set that does not match
+the prepared compose file. Backups later build a small helper image
+(`scripts/lib/node-helper.Dockerfile`) with `--network=none` from the pinned
+Node.js base that the bundle carries; nothing is downloaded.
 
 As with a connected production first boot, do not wait for `/readyz` before
 installing the evidence workers, TLS ingress and offsite backup. After those
 are active, require `node scripts/deployment-doctor.mjs --deployment
-.aidr-deploy --online` to pass; the offline image check alone is not readiness.
+/srv/aidr --online` to pass; the offline image check alone is not readiness.
 
-`--verify` needs neither network nor Docker: it fails on a missing tarball, a
-size or SHA-256 mismatch, a manifest entry that is not a regular file, or an
-image set that does not exactly match the supplied plan. Keep the manifest and
-tarballs together — a digest list without its bytes proves nothing. This
-procedure is delivery media integrity and plan completeness only; notarization,
-MDM distribution, registry publication and publisher key custody remain external
-and are not claimed here.
+### Operator-built bundle (optional components, or no vendor bundle)
+
+On a connected staging host with the same kit and a running Docker daemon,
+prepare a throwaway stack with the options you need, build, save, and sign the
+images with your own Ed25519 key; then delete the throwaway stack. Do not copy
+it to the disconnected host: it contains generated credentials.
+
+```sh
+node scripts/deployment-prepare.mjs --mode self-hosted --output /tmp/aidr-plan --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+docker compose --project-directory /tmp/aidr-plan -f /tmp/aidr-plan/compose.yml build
+node scripts/onprem-offline-bundle.mjs build --output /media/aidr-offline --signing-key /secure/operator-offline.pem --key-id operator-1 --compose /tmp/aidr-plan/compose.yml --platform linux/amd64 --tar
+rm -rf /tmp/aidr-plan
+```
+
+`--compose` reads every `image:` reference from the prepared stack and, for
+each `build:` service, the `FROM` base images of its Dockerfile (stage aliases
+and `scratch` excluded, `ARG` defaults and build args substituted). A service
+with both `build:` and `image:` (the `aidr-dashboard:<version>` image, and
+`aidr-aig-*` with `--with-posture-scanner`) is a local build: it is never
+pulled, must already exist from the `docker compose build` step, and is saved
+into the bundle. See the
+[on-prem sizing and posture scanner guide](onprem/README.md). Pinned digests are
+enforced when supplied. If Docker or its daemon is unavailable the command
+exits non-zero before writing anything and never reports a bundle it did not
+produce. On the disconnected host, import it exactly as above with the
+operator's public key. The recorded digests mirror what the staging host pulled;
+an operator-signed bundle authenticates the operator, not the vendor.
+
+`scripts/build-airgap-images.mjs --verify` (also run by the import) needs
+neither network nor Docker. Keep the manifest and tarballs together — a digest
+list without its bytes proves nothing.
 
 Threat-intelligence packs reach a disconnected installation on the same approved
 media. `node scripts/import-offline-pack.mjs` verifies the vendor-signed pack

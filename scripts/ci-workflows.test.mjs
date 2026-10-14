@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { RC_TAG_PATTERN, RC_TAG_SHELL_PATTERN } from "./lib/rc-tag.mjs";
+import { FINAL_TAG_PATTERN, FINAL_TAG_SHELL_PATTERN, finalTagFor, parseReleaseTag, RC_TAG_PATTERN, RC_TAG_SHELL_PATTERN } from "./lib/rc-tag.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workflowDir = path.join(root, ".github", "workflows");
@@ -773,12 +773,20 @@ test("customer-installer: a verified packet and the promoted release's attested,
 	const validate = stepNamed(prepare, "Validate customer build inputs").run;
 	assert.match(validate, /refs\/heads\/\$\{DEFAULT_BRANCH\}/u, "runs from the protected default branch only");
 	assert.ok(validate.includes(`[[ "\${RELEASE_TAG}" =~ ${RC_TAG_SHELL_PATTERN} ]]`), "the shared rc.N tag grammar");
+	assert.ok(validate.includes(`[[ "\${RELEASE_TAG}" =~ ${FINAL_TAG_SHELL_PATTERN} ]]`), "or the final vX.Y.Z tag promotion publishes");
 	assert.ok(validate.includes('[[ "${CUSTOMER_ID}" =~ ^[a-z0-9][a-z0-9-]{1,31}$ ]]'), "the contract's customer id grammar");
 	assert.match(validate, /stem=SingularityAIDR-\$\{label\}-\$\{version\}-x64/u);
 
 	const bundles = stepNamed(prepare, "Verify the promoted release and its signed SEA bundles").run;
 	assert.match(bundles, /isDraft,isPrerelease[\s\S]*"false false"/u, "only a promoted (final, non-draft) release");
-	assert.match(bundles, /gh attestation verify "\$\{archive\}"[\s\S]*--signer-workflow "\$\{GITHUB_REPOSITORY\}\/\.github\/workflows\/release-rc\.yml"[\s\S]*--source-ref "refs\/tags\/\$\{RELEASE_TAG\}"[\s\S]*--source-digest "\$\{tag_sha\}"/u);
+	assert.match(bundles, /gh attestation verify "\$\{archive\}"[\s\S]*--signer-workflow "\$\{GITHUB_REPOSITORY\}\/\.github\/workflows\/release-rc\.yml"[\s\S]*--source-ref "refs\/tags\/\$\{source_tag\}"[\s\S]*--source-digest "\$\{tag_sha\}"/u);
+	// A final tag: exactly one promoted RC of that version, at the same commit, is the attested source.
+	assert.match(bundles, /source_tag="\$\{RELEASE_TAG\}"/u, "an RC tag is its own attestation source");
+	assert.ok(bundles.includes(`if [[ "\${RELEASE_TAG}" =~ ${FINAL_TAG_SHELL_PATTERN} ]]; then`));
+	assert.match(bundles, /select\(\.draft == false and \.prerelease == false\)/u, "only a promoted RC release");
+	assert.match(bundles, /\[\[ "\$\{#promoted\[@\]\}" -eq 1 \]\]/u, "exactly one promoted RC per version");
+	assert.match(bundles, /\[\[ "\$\{rc_sha\}" == "\$\{tag_sha\}" \]\]/u, "the final tag points at the RC's commit");
+	assert.ok(bundles.indexOf('source_tag="${promoted[0]}"') < bundles.indexOf("gh attestation verify"));
 	assert.match(bundles, /build-sea\.mjs --verify "\$\{dir\}" --public-key/u, "Ed25519 release-key signatures and the release flavour");
 	assert.match(bundles, /grep -q "sha256:\$\{fingerprint#sha256:\}"/u, "the release key matches its pinned fingerprint");
 
@@ -834,4 +842,222 @@ test("customer-installer: a verified packet and the promoted release's attested,
 	// The builders the workflow calls accept the per-customer flags.
 	assert.match(readFileSync(path.join(root, "deploy/installers/linux/build-linux-packages.mjs"), "utf8"), /"customer-packet",\n\s+"customer-id",/u);
 	assert.match(readFileSync(path.join(root, "deploy/installers/windows/build-msi.ps1"), "utf8"), /\[string\]\$CustomerPacket = ''[\s\S]*\[switch\]\$Bundle/u);
+});
+
+// ─── final release tags (B1) ──────────────────────────────────────────────
+
+test("final vX.Y.Z tags: one grammar, accepted next to rc.N, never built", () => {
+	const shell = new RegExp(FINAL_TAG_SHELL_PATTERN, "u");
+	for (const tag of ["v1.0.0", "v2.10.3", "v1.0.0-rc.1", "v1.0", "1.0.0", "v1.0.0-beta", "v1.0.0 ", "v1.0.0-sprint3"]) {
+		assert.equal(shell.test(tag), FINAL_TAG_PATTERN.test(tag), tag);
+	}
+	assert.deepEqual(parseReleaseTag("v1.0.0"), { version: "1.0.0", rc: null, final: true });
+	assert.deepEqual(parseReleaseTag("v1.0.0-rc.3"), { version: "1.0.0", rc: 3, final: false });
+	assert.throws(() => parseReleaseTag("v1.0.0-sprint3"), /neither/u);
+	assert.equal(finalTagFor("v1.4.2-rc.7"), "v1.4.2");
+	// release-rc.yml and release-images.yml still build only RC tags: a final tag carries the promoted RC's bytes.
+	assert.deepEqual(workflow("release-rc.yml").on.push.tags, ["v*.*.*-rc.*"]);
+	assert.deepEqual(workflow("release-images.yml").on.push.tags, ["v*.*.*-rc.*"]);
+});
+
+test("release-promote: the final vX.Y.Z release republishes the promoted RC's signed files at its commit, after the GO gate", () => {
+	const promote = workflow("release-promote.yml").jobs.promote;
+	const names = promote.steps.map((step) => step.name);
+	const go = goStepIndex(promote, "promote");
+	const resolve = stepNamed(promote, "Resolve the final release tag for this RC");
+	assert.equal(resolve.id, "final_tag");
+	const resolveAt = names.indexOf(resolve.name);
+	assert.ok(resolveAt > go, "resolved after the GO gate");
+	const firstMutation = promote.steps.findIndex(isProductionMutation);
+	assert.ok(resolveAt < firstMutation, "a conflicting final tag stops promotion before anything is published");
+	assert.match(resolve.run, /final_tag="\$\{RELEASE_TAG%-rc\.\*\}"/u);
+	assert.ok(resolve.run.includes(`[[ "\${final_tag}" =~ ${FINAL_TAG_SHELL_PATTERN} ]]`));
+	assert.match(resolve.run, /\[\[ "\$\{final_sha\}" == "\$\{rc_sha\}" \]\][\s\S]*nothing was promoted/u, "an existing final tag elsewhere refuses promotion");
+	const final = stepNamed(promote, "Publish the final vX.Y.Z release from the same bundle (pinned)");
+	assert.ok(names.indexOf(final.name) > names.indexOf("Publish final GitHub release from the same bundle (pinned)"), "after the RC release itself is final");
+	assert.ok(names.indexOf(final.name) < names.indexOf("Publish installers to the download portal"));
+	assert.ok(isProductionMutation(final), "the final release is a production mutation behind the GO gate");
+	assert.equal(final.with.tag_name, "${{ steps.final_tag.outputs.tag }}");
+	assert.equal(final.with.target_commitish, "${{ steps.final_tag.outputs.sha }}");
+	assert.equal(final.with.files, "release-output/*", "the same verified bundle, nothing rebuilt");
+	assert.equal(final.with.prerelease, false);
+	assert.equal(final.with.draft, false);
+	assert.equal(final.with.make_latest, true);
+});
+
+// ─── Windows Authenticode signer backends (B3) ─────────────────────────────
+
+const WINDOWS_SIGNING_STEPS = [
+	["release-rc.yml", "windows-authenticode", "Authenticode sign with ephemeral runner certificate custody", /& \.\/scripts\/sign-windows-response-payload\.ps1 [^\n]*-ExpectedThumbprint \$thumbprint[^\n]*-Signer \$signer/u],
+	["release-rc.yml", "installers-windows", "Build and Authenticode-sign the MSI with ephemeral runner certificate custody", /build-msi\.ps1 [^\n]*-SignThumbprint \$thumbprint -Signer \$signer/u],
+	["customer-installer.yml", "windows", "Build and Authenticode-sign with ephemeral runner certificate custody", /build-msi\.ps1 [^\n]*-SignThumbprint \$thumbprint -Signer \$signer/u],
+];
+
+test("Windows Authenticode: every signing job selects pfx, azure-key-vault or jsign by repository variable, with one pinned identity", () => {
+	for (const [file, jobId, stepName, call] of WINDOWS_SIGNING_STEPS) {
+		const job = workflow(file).jobs[jobId];
+		const step = stepNamed(job, stepName);
+		const label = `${file}:${jobId}`;
+		assert.equal(step.env.AIDR_WINDOWS_SIGNER, "${{ vars.AIDR_WINDOWS_SIGNER || 'pfx' }}", `${label}: the backend is a repository/environment variable, PFX by default`);
+		// Backend secrets reach only the backend that uses them.
+		assert.equal(step.env.WINDOWS_CODE_SIGNING_PFX_B64, "${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'pfx' && secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 || '' }}", label);
+		assert.equal(step.env.WINDOWS_CODE_SIGNING_PFX_PASSWORD, "${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'pfx' && secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD || '' }}", label);
+		assert.equal(step.env.AIDR_JSIGN_STOREPASS, "${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'jsign' && secrets.AIDR_JSIGN_STOREPASS || '' }}", label);
+		for (const name of ["AIDR_AZURE_KEY_VAULT_URL", "AIDR_AZURE_KEY_VAULT_CERTIFICATE", "AIDR_AZURE_TENANT_ID", "AIDR_AZURE_CLIENT_ID", "AIDR_JSIGN_STORETYPE", "AIDR_JSIGN_KEYSTORE", "AIDR_JSIGN_ALIAS"]) {
+			assert.equal(step.env[name], `\${{ vars.${name} }}`, `${label}: ${name} is a non-secret variable`);
+		}
+		assert.deepEqual([...secretsIn(Object.fromEntries(Object.entries(step.env).filter(([key]) => /AZURE/u.test(key))))], [], `${label}: the Azure signer holds no client secret (OIDC federation)`);
+		assert.equal(job.permissions["id-token"], "write", `${label}: the azure-key-vault signer exchanges a GitHub OIDC token`);
+		const run = step.run;
+		assert.ok(run.indexOf(". ./scripts/windows-authenticode-signer.ps1") < run.indexOf("Resolve-AidrAuthenticodeSigner $env:AIDR_WINDOWS_SIGNER"), label);
+		// The pinned thumbprint is required for every backend; the PFX only for pfx.
+		assert.match(run, /if \(\$thumbprint -cnotmatch '\^\[0-9A-F\]\{40\}\$'\) \{ throw /u, `${label}: every backend is checked against the pinned thumbprint`);
+		assert.match(run, /if \(\$signer -eq 'pfx' -and \(\[string\]::IsNullOrWhiteSpace\(\$env:WINDOWS_CODE_SIGNING_PFX_B64\)/u, label);
+		assert.match(run, /if \(\$signer -eq 'pfx'\) \{\n\s+if \(\$env:GITHUB_ACTIONS -ne 'true' -or \$env:RUNNER_ENVIRONMENT -ne 'github-hosted'\) \{ throw "PFX import requires an ephemeral GitHub-hosted runner" \}/u, `${label}: PFX custody stays on ephemeral runners`);
+		const pfxBlock = run.search(/if \(\$signer -eq 'pfx'\) \{\n\s+New-Item -ItemType Directory -Path \$privateDirectory/u);
+		assert.ok(pfxBlock > 0 && pfxBlock < run.indexOf("Import-PfxCertificate"), `${label}: the PFX is imported only for the pfx backend`);
+		assert.match(run, call, `${label}: the signer reaches the signing script`);
+		assert.match(run, /finally \{[\s\S]*Remove-Item -LiteralPath \$certificatePath -DeleteKey -Force/u, `${label}: PFX cleanup unchanged`);
+		assert.doesNotMatch(run, /-Unsigned\b/u, `${label}: no unsigned build`);
+	}
+});
+
+test("Windows Authenticode signer library: pinned tools, secrets by reference, pinned identity verified after every backend", () => {
+	const lib = readFileSync(path.join(root, "scripts/windows-authenticode-signer.ps1"), "utf8");
+	assert.match(lib, /\$script:AidrSignerBackends = @\('pfx', 'azure-key-vault', 'jsign'\)/u);
+	assert.match(lib, /\$script:AidrJsignSha256 = '[0-9a-f]{64}'/u);
+	assert.match(lib, /\$script:AidrAzureSignToolSha256 = '[0-9a-f]{64}'/u);
+	assert.match(lib, /\$script:AidrJsignUrl = 'https:\/\/github\.com\/ebourg\/jsign\/releases\/download\/7\.4\/jsign-7\.4\.jar'/u);
+	assert.match(lib, /\$script:AidrAzureSignToolUrl = 'https:\/\/api\.nuget\.org\/v3-flatcontainer\/azuresigntool\/7\.0\.1\/azuresigntool\.7\.0\.1\.nupkg'/u);
+	assert.match(lib, /pinned_tool_hash_mismatch/u, "a downloaded tool whose hash differs is deleted and refused");
+	assert.match(lib, /<packageSources><clear \/>/u, "AzureSignTool installs only from the hash-checked local package");
+	for (const storeType of ["AZUREKEYVAULT", "TRUSTEDSIGNING", "GOOGLECLOUD", "AWS", "DIGICERTONE", "ESIGNER", "PKCS11", "CRYPTOCERTUM", "ETOKEN", "YUBIKEY"]) {
+		assert.match(lib, new RegExp(`'${storeType}'`, "u"), `jsign store type ${storeType}`);
+	}
+	// jsign reads the store password from the environment by name; the secret is never an argument.
+	assert.match(lib, /'--storepass', 'env:AIDR_JSIGN_STOREPASS'/u);
+	assert.match(lib, /'--tsmode', 'RFC3161'/u);
+	assert.match(lib, /'-fd', 'sha256', '-tr', \$TimestampServer, '-td', 'sha256'/u);
+	assert.match(lib, /'sign', '\/fd', 'SHA256', '\/tr', \$TimestampServer, '\/td', 'SHA256', '\/sha1', \$Thumbprint/u);
+	assert.match(lib, /api:\/\/AzureADTokenExchange/u, "Azure access through GitHub OIDC federation");
+	assert.doesNotMatch(lib, /client_secret|-kvs\b/u, "no Azure client secret path");
+	// Verification after signing, for every backend.
+	const invoke = lib.slice(lib.indexOf("function Invoke-AidrAuthenticodeSign"));
+	assert.match(invoke, /Invoke-AidrSignerProcess[\s\S]*Assert-AidrAuthenticodeSigned -Files \$Files -Thumbprint \$pinned\s*\}\s*$/u);
+	const verify = lib.slice(lib.indexOf("function Assert-AidrAuthenticodeSigned"), lib.indexOf("function Invoke-AidrAuthenticodeSign"));
+	for (const guard of ["invalid_authenticode_signature", "unexpected_signing_certificate", "1.3.6.1.5.5.7.3.3", "missing_authenticode_timestamp"]) {
+		assert.ok(verify.includes(guard), `verification keeps ${guard}`);
+	}
+	assert.doesNotMatch(lib, /^Set-StrictMode/mu, "a dot-sourced library must not change the caller's strict mode");
+});
+
+test("Windows Authenticode: MSI, Burn engine and setup EXE all sign through the selected backend", () => {
+	const ps1 = readFileSync(path.join(root, "deploy/installers/windows/build-msi.ps1"), "utf8");
+	assert.match(ps1, /\[string\]\$Signer = ''/u);
+	assert.match(ps1, /\. \(Join-Path \$repo 'scripts\\windows-authenticode-signer\.ps1'\)/u);
+	assert.match(ps1, /if \(\$signing -eq 'signed'\) \{ \$Signer = Resolve-AidrAuthenticodeSigner \$Signer \}/u);
+	assert.doesNotMatch(ps1, /'sign', '\/sha1'/u, "no signing call bypasses the backend");
+	assert.equal((ps1.match(/Invoke-AidrAuthenticodeSign -Signer \$Signer /gu) ?? []).length, 4, "bundle executables, the per-user cleanup script, the MSI and the Invoke-AuthenticodeSign helper (Burn engine + EXE)");
+	assert.match(ps1, /function Invoke-AuthenticodeSign\([^)]*\) \{\n\s+Invoke-AidrAuthenticodeSign -Signer \$Signer -Files \$Files -Thumbprint \$SignThumbprint/u);
+	const payload = readFileSync(path.join(root, "scripts/sign-windows-response-payload.ps1"), "utf8");
+	assert.match(payload, /\[ValidateSet\('pfx', 'azure-key-vault', 'jsign'\)\]\[string\]\$Signer = 'pfx'/u);
+	assert.match(payload, /\. \(Join-Path \$PSScriptRoot 'windows-authenticode-signer\.ps1'\)/u);
+	const hsm = payload.slice(payload.indexOf("# The key stays in the HSM/token"));
+	assert.match(hsm, /signing_preimage_mismatch[\s\S]*Invoke-AidrAuthenticodeSign -Signer \$Signer[\s\S]*expired_signing_certificate/u, "preimages checked first, certificate validity checked after");
+	// The receipt and the per-file signature checks are shared by every backend.
+	assert.ok(payload.indexOf("Assert-AidrSigningSignature $file.absolute $thumbprint", payload.indexOf("$outputs = @()")) > 0);
+});
+
+// ─── vendor-signed air-gap image bundle (C6) ─────────────────────────────
+
+test("release-images: the air-gap bundle is built from the verified tag, Ed25519- and cosign-signed, and carries no credentials", () => {
+	const release = workflow("release-images.yml");
+	const build = release.jobs["build-sign"];
+	assert.equal(build.outputs.sha, "${{ steps.identity.outputs.sha }}");
+	assert.equal(build.outputs.tag, "${{ steps.identity.outputs.tag }}");
+	const job = release.jobs["airgap-bundle"];
+	assert.ok(job, "the airgap-bundle job is missing");
+	assert.deepEqual([job.needs].flat(), ["build-sign"], "only after the signed-tag identity check and the image scan gate");
+	assert.equal(job.environment, "release-images");
+	assert.deepEqual(job.permissions, { contents: "read", "id-token": "write", attestations: "write" });
+	const names = job.steps.map((step) => step.name);
+	const checkout = stepNamed(job, "Checkout protected tag (pinned)");
+	assert.equal(checkout.with.ref, "${{ needs.build-sign.outputs.tag }}");
+	assert.equal(checkout.with["persist-credentials"], false);
+	const confirm = names.indexOf("Confirm the checkout is the verified release commit");
+	const firstTool = job.steps.findIndex((step) => /(?:^|[\s;&|(])(?:pnpm|node|go|docker|cosign)\s/mu.test(step.run ?? ""));
+	assert.ok(confirm >= 0 && confirm < firstTool, "the commit is checked against build-sign's verified SHA before any tag code runs");
+	assert.match(stepNamed(job, names[confirm]).run, /"\$\(git rev-parse HEAD\)" == "\$\{EXPECTED_SHA\}"/u);
+
+	const save = stepNamed(job, "Save every image of the default self-hosted stack (throwaway stack, credentials discarded)").run;
+	assert.match(save, /trap 'rm -rf "\$\{stack\}" "\$\{scratch\}"' EXIT/u, "the throwaway stack and its generated credentials are deleted on the runner");
+	assert.ok(save.indexOf("node scripts/deployment-prepare.mjs --mode self-hosted --output \"${stack}\"") < save.indexOf("docker compose --project-directory \"${stack}\" -f \"${stack}/compose.yml\" build"));
+	assert.match(save, /build-airgap-images\.mjs --compose "\$\{stack\}\/compose\.yml" --output "\$\{RUNNER_TEMP\}\/aidr-airgap"/u);
+	assert.match(save, /build-airgap-images\.mjs --verify --compose "\$\{stack\}\/compose\.yml"/u, "the bundle is checked complete against the stack");
+
+	// AIDR-079: the first-party dashboard image in the bundle has no CRITICAL/HIGH finding, no ignores.
+	const gate = stepNamed(job, "Gate the bundled dashboard image (no CRITICAL or HIGH, no ignores)").run;
+	assert.ok(gate.indexOf("sha256sum --check --strict") < gate.indexOf("tar -xzf"), "Trivy is verified before it is unpacked");
+	assert.match(gate, /--severity CRITICAL,HIGH --exit-code 1/u);
+	assert.match(gate, /--ignorefile "\$\{empty\}\/empty\.trivyignore"/u);
+	assert.doesNotMatch(gate, /--ignore-unfixed|--vex|--skip-files/u);
+	const savedAt = names.indexOf("Save every image of the default self-hosted stack (throwaway stack, credentials discarded)");
+	assert.ok(savedAt < names.indexOf("Gate the bundled dashboard image (no CRITICAL or HIGH, no ignores)") && names.indexOf("Gate the bundled dashboard image (no CRITICAL or HIGH, no ignores)") < names.indexOf("Sign the transfer bundle (Ed25519 offline signature and cosign keyless)"), "nothing is signed before the gate passes");
+
+	const sign = stepNamed(job, "Sign the transfer bundle (Ed25519 offline signature and cosign keyless)");
+	assert.deepEqual([...secretsIn(sign.env)], ["AIDR_OFFLINE_BUNDLE_SIGNING_KEY_PEM"]);
+	assert.deepEqual([...secretsIn(Object.assign({}, ...job.steps.map((step) => step.env ?? {})))], ["AIDR_OFFLINE_BUNDLE_SIGNING_KEY_PEM"], "the job holds no other secret");
+	assert.match(sign.run, /no unsigned air-gap bundle is produced/u);
+	assert.match(sign.run, /trap 'rm -rf "\$\{key_dir\}"' EXIT/u);
+	const order = [
+		"node scripts/onprem-offline-bundle.mjs build",
+		"--signing-key \"${key_dir}/signing.pem\"",
+		"node scripts/onprem-offline-bundle.mjs verify --bundle",
+		"cosign sign-blob --yes --bundle",
+		"cosign verify-blob --bundle",
+		"--certificate-oidc-issuer https://token.actions.githubusercontent.com",
+	].map((needle) => sign.run.indexOf(needle));
+	assert.ok(order.every((at) => at >= 0), order.join(","));
+	assert.deepEqual([...order].sort((a, b) => a - b), order, "sign, verify offline, cosign sign, cosign verify");
+	assert.match(stepNamed(job, "Attest the air-gap bundle (pinned)").with["subject-path"], /airgap-release\/\$\{\{ steps\.bundle\.outputs\.name \}\}\.tar$/u);
+	const upload = stepNamed(job, "Upload the signed air-gap bundle (pinned)");
+	assert.equal(upload.with["if-no-files-found"], "error");
+	assert.deepEqual(job.steps.filter(isProductionMutation).map((step) => step.name), [], "the bundle is an artifact, not a publication");
+});
+
+// ─── Windows real-host evidence (D5) ───────────────────────────────────────
+
+test("windows-real-host-e2e: opt-in, secret-free Windows runs of the real hosts and the VS Code extension host", async () => {
+	const wf = workflow("windows-real-host-e2e.yml");
+	const text = raw("windows-real-host-e2e.yml");
+	assert.deepEqual(Object.keys(wf.on), ["workflow_dispatch"], "opt-in only: never on push or schedule");
+	assert.deepEqual(wf.permissions, { contents: "read" });
+	assert.doesNotMatch(text, /secrets\./u, "the scripted mock model needs no API key or credential");
+	assert.doesNotMatch(text, /environment:/u);
+	for (const job of Object.values(wf.jobs)) {
+		assert.equal(job["runs-on"], "windows-latest");
+		assert.deepEqual(job.steps.filter(isProductionMutation).map((step) => step.name), []);
+		for (const step of job.steps) {
+			if (/^actions\/checkout@/u.test(step.uses ?? "")) assert.equal(step.with["persist-credentials"], false);
+		}
+	}
+	const realHost = wf.jobs["real-host"];
+	assert.deepEqual(realHost.strategy.matrix.host, ["claude-code", "codex"]);
+	assert.equal(realHost.strategy["fail-fast"], false);
+	const { HOST_PINS } = await import("./real-host-e2e/hosts.mjs");
+	assert.equal(wf.env.CLAUDE_CODE_VERSION, HOST_PINS["claude-code"].version, "the Claude Code pin is the harness pin");
+	const scenarios = stepNamed(realHost, "Run the real-host scenarios").run;
+	assert.match(scenarios, /node scripts\/real-host-e2e\/run\.mjs --host \$env:HOST_ID --install/u);
+	assert.match(scenarios, /--evidence-dir docs\/evidence\/real-host\/windows/u, "Windows records never overwrite the Linux ones");
+	assert.match(scenarios, /if \(\$LASTEXITCODE -ne 0\) \{ throw/u, "a failing scenario fails the job");
+	assert.match(stepNamed(realHost, "Frozen install and development build").run, /node --test scripts\/real-host-e2e\/mock-llm-server\.test\.mjs scripts\/real-host-e2e\/hosts\.test\.mjs/u);
+	assert.equal(stepNamed(realHost, "Upload the Windows evidence record (pinned)").if, "success() || failure()");
+	const vscode = wf.jobs.vscode;
+	assert.equal(vscode.if, "inputs.run_vscode");
+	assert.match(stepNamed(vscode, "Download pinned VS Code").run, /downloadAndUnzipVSCode\(process\.env\.VSCODE_VERSION\)/u);
+	assert.match(stepNamed(vscode, "Download pinned VS Code").run, /VSCODE_EXECUTABLE_PATH=\$code/u);
+	assert.equal(stepNamed(vscode, "Run the VS Code extension E2E").env.AIDR_E2E_ENABLE_IDE_HOST, "1");
+	// What is not automated is written down.
+	const readme = readFileSync(path.join(root, "docs/evidence/real-host/README.md"), "utf8");
+	for (const needle of ["## Windows", "What still needs a human on Windows", "Cursor", "A real model", "A person reviews them"]) assert.ok(readme.includes(needle), needle);
 });

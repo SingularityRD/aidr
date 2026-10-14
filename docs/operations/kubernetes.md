@@ -234,7 +234,13 @@ operate on a Compose deployment directory and do not apply to the chart.
 
 ## Air-gapped installs
 
-Build the AIDR images and bundle every upstream image the chart renders with
+The customer kit carries this chart (`deploy/helm/aidr`) and the credential
+generator (`deploy/helm/generate-secrets.mjs`); run the generator on a host inside
+the isolated environment so the credentials never travel. The vendor-signed image
+bundle in the kit (`airgap/`, see the installation guide) covers the Compose
+stack, not the chart's image set: for Kubernetes, mirror the vendor's
+cosign-signed, digest-pinned images (`cosign verify` as above) and every upstream
+image the chart renders through a connected host with
 `scripts/build-airgap-images.mjs` (see the chart README). In the isolated environment,
 push them to the internal registry and set `global.imageRegistry`. The edge functions
 import `npm:` packages at first use; point `functions.npmRegistry` at an internal npm

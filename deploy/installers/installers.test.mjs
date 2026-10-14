@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import {
 	chmodSync,
+	chownSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -20,6 +21,7 @@ import {
 	readlinkSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
@@ -215,7 +217,9 @@ describe("Windows MSI inputs", () => {
 		assert.match(wxs, /<CustomAction Id="AidrSetupForUser"[\s\S]*?ExeCommand="setup"[\s\S]*?Impersonate="yes"/);
 		// Never as LocalSystem: every action of the execute sequence (setup,
 		// uninstall and the company-connection handoff) is guarded on the SYSTEM SID.
-		const customs = [...sequence(wxs, "InstallExecuteSequence").matchAll(/<Custom\b[^>]*>/g)].map((m) => m[0]);
+		// The profile-cleanup registration is the one exception: it runs as LocalSystem
+		// and only writes HKLM (asserted in the machine-wide removal test below).
+		const customs = [...sequence(wxs, "InstallExecuteSequence").matchAll(/<Custom\b[^>]*>/g)].map((m) => m[0]).filter((custom) => !/ProfileCleanup"/.test(custom));
 		assert.equal(customs.length, 6);
 		for (const custom of customs) assert.match(custom, /UserSID &lt;&gt; &quot;S-1-5-18&quot;/, custom);
 		assert.match(wxs, /AIDR_OPERATOR_NONINTERACTIVE=1&amp;&amp; &quot;\[#AidrExe\]&quot; uninstall --yes --keep-data/);
@@ -230,6 +234,38 @@ describe("Windows MSI inputs", () => {
 		assert.match(ps1, /Pass -SignThumbprint for a release build or -Unsigned for a local build/);
 		assert.match(ps1, /--remanifest/);
 		assert.match(ps1, /'verify', '\/pa', \$msi/);
+	});
+
+	test("final removal cleans every other profile at its next sign-in, as that user, never by editing profiles as SYSTEM", () => {
+		const wxs = readFileSync(new URL("./windows/aidr.wxs", import.meta.url), "utf8");
+		const execute = sequence(wxs, "InstallExecuteSequence");
+		const removal = 'REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND ALLUSERS=1';
+		assert.match(execute, new RegExp(`<Custom Action="AidrRegisterProfileCleanup" After="AidrUninstallForUser"\\s+Condition="${removal}" />`), "final per-machine removal only, after the uninstalling user's own `aidr uninstall`");
+		assert.match(execute, new RegExp(`<Custom Action="AidrPrepareProfileCleanup" Before="AidrRegisterProfileCleanup"\\s+Condition="${removal}" />`));
+		assert.match(execute, /<Custom Action="AidrUnregisterProfileCleanup" After="InstallInitialize"\s+Condition="NOT REMOVE AND ALLUSERS=1" \/>/, "a reinstall removes the cleanup registration");
+		assert.match(wxs, /<CustomAction Id="AidrRegisterProfileCleanup"[\s\S]*?DllEntry="RegisterProfileCleanup"[\s\S]*?Impersonate="no"[\s\S]*?Return="ignore"/);
+		assert.match(wxs, /Value="install=\[INSTALLFOLDER\];system=\[System64Folder\]"/);
+		// The script stays after removal and is the signed staged copy.
+		assert.match(wxs, /<Component Id="ProfileCleanupScript" Directory="CLEANUPDIR" Condition="ALLUSERS=1" Permanent="yes"[\s\S]*?Source="\$\(var\.ProfileCleanupScript\)" Name="Remove-AidrUserRegistrations\.ps1"/);
+		assert.match(wxs, /<ComponentRef Id="ProfileCleanupScript" \/>/);
+		const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8");
+		assert.ok(ps1.indexOf("Invoke-AidrAuthenticodeSign -Signer $Signer -Files @($profileCleanup)") < ps1.indexOf("'-d', \"ProfileCleanupScript=$profileCleanup\""), "signed before it is packaged");
+		// The LocalSystem action writes one HKLM Active Setup key; it never opens a file.
+		const ca = readFileSync(new URL("./windows/ca/ProfileCleanupActions.cs", import.meta.url), "utf8");
+		assert.match(ca, /RegistryHive\.LocalMachine/);
+		assert.doesNotMatch(ca, /\bFile\.|\bDirectory\.|FileStream|Process\.Start|RegistryHive\.Users|CurrentUser/);
+		assert.match(ca, /-ExecutionPolicy RemoteSigned -File/);
+		// The script runs as the signed-in user, edits only that user's files and only AIDR's entries.
+		const cleanup = readFileSync(new URL("./windows/Remove-AidrUserRegistrations.ps1", import.meta.url), "utf8");
+		assert.match(cleanup, /\$Marker = 'Singularity AIDR managed installation'/);
+		assert.match(cleanup, /\$CodexHook = '\\baidr-codex-hook\\b'/);
+		assert.match(cleanup, /LocalSystemSid[\s\S]*?never as SYSTEM/);
+		assert.match(cleanup, /'bundle\\bin\\aidr\.exe'[\s\S]*?nothing to clean up/, "a reinstalled AIDR owns its registrations");
+		assert.match(cleanup, /ReparsePoint/);
+		assert.match(cleanup, /changed while it was read; left unchanged/);
+		assert.doesNotMatch(cleanup, /HKLM|Registry::|Set-ItemProperty|Remove-Item -Recurse/);
+		const docs = readFileSync(new URL("../../docs/installation/desktop-installers.md", import.meta.url), "utf8");
+		assert.doesNotMatch(docs, /Other users of the machine who ran `aidr setup` must run `aidr uninstall`\s+before the package is removed/);
 	});
 });
 
@@ -405,7 +441,7 @@ describe("Windows MSI install wizard", () => {
 		assert.match(ps1, /'-ext', \$WixUiExtension/);
 		assert.match(ps1, /\$WixUiExtensionVersion = '5\.0\.2'/);
 		assert.match(ps1, /'-culture', \$culture\.culture, '-loc'/);
-		assert.match(ps1, /Add-LanguageTransform -Base[\s\S]*Set-PackageLanguages -Msi[\s\S]*Test-LanguageTransforms -Msi[\s\S]*'sign', '\/sha1'/);
+		assert.match(ps1, /Add-LanguageTransform -Base[\s\S]*Set-PackageLanguages -Msi[\s\S]*Test-LanguageTransforms -Msi[\s\S]*Invoke-AidrAuthenticodeSign -Signer \$Signer -Files @\(\$msi\)/, "the language transforms are embedded before the MSI is signed");
 		assert.match(ps1, /render-bitmaps\.mjs'\), '--check'/);
 	});
 
@@ -565,13 +601,56 @@ describe("Linux packages", () => {
 			assert.equal(existsSync(mdmMarker), false);
 		});
 
-		test("preremove uninstalls with operator confirmation on final removal only", { skip: !canSwitch && "runuser not available" }, () => {
-			const upgrade = hook(["preremove", "0"], { SUDO_USER: invoker });
+		/** A passwd-format account list whose homes are temp dirs, each with or without ~/.singularity-aidr. */
+		function accounts(entries) {
+			const lines = [];
+			const homes = {};
+			for (const { name, uid, state = "dir", owner = uid } of entries) {
+				const home = tempDir(`acct-${name}`);
+				chmodSync(home, 0o777);
+				if (state === "dir") {
+					mkdirSync(join(home, ".singularity-aidr"));
+					if (asRoot) chownSync(join(home, ".singularity-aidr"), Number(owner), Number(owner));
+				} else if (state === "link") {
+					mkdirSync(join(home, "elsewhere"));
+					symlinkSync(join(home, "elsewhere"), join(home, ".singularity-aidr"));
+				}
+				homes[name] = home;
+				lines.push(`${name}:x:${uid}:${uid}::${home}:/bin/sh`);
+			}
+			const passwd = join(tempDir("passwd"), "passwd");
+			writeFileSync(passwd, `${lines.join("\n")}\n`);
+			return { passwd, homes };
+		}
+		const callsIn = (home) => (existsSync(join(home, "aidr-calls.log")) ? readFileSync(join(home, "aidr-calls.log"), "utf8") : "");
+
+		test("final removal uninstalls the connectors of EVERY account that ran setup, each as that account", { skip: !canSwitch && "runuser not available" }, () => {
+			const me = spawnSync("id", ["-u", invoker], { encoding: "utf8" }).stdout.trim();
+			const other = asRoot ? [{ name: "root", uid: "0" }] : [];
+			const { passwd, homes } = accounts([
+				{ name: invoker, uid: me },
+				...other,
+				{ name: "linked", uid: me, state: "link" },
+				{ name: "never-setup", uid: me, state: "none" },
+				...(asRoot ? [{ name: "foreign", uid: me, owner: "0" }] : []),
+			]);
+			const upgrade = hook(["preremove", "0"], { AIDR_PACKAGE_HOOK_PASSWD: passwd });
 			assert.equal(upgrade.status, 0);
-			assert.equal(upgrade.log, "");
-			const removal = hook(["preremove", "1"], { SUDO_USER: invoker });
-			assert.equal(removal.status, 0);
-			assert.match(removal.log, / OP=1 uninstall --yes --keep-data$/m);
+			assert.equal(callsIn(homes[invoker]), "", "an upgrade keeps every registration");
+			const removal = hook(["preremove", "1"], { AIDR_PACKAGE_HOOK_PASSWD: passwd });
+			assert.equal(removal.status, 0, removal.stderr);
+			assert.match(callsIn(homes[invoker]), new RegExp(`^${me} HOME=${homes[invoker]} OP=1 uninstall --yes --keep-data$`, "m"), "runs as the account, with its HOME");
+			if (asRoot) assert.match(callsIn(homes.root), new RegExp(`^0 HOME=${homes.root} OP=1 uninstall --yes --keep-data$`, "m"), "a second profile is cleaned too");
+			for (const skipped of ["linked", "never-setup", ...(asRoot ? ["foreign"] : [])]) assert.equal(callsIn(homes[skipped]), "", `${skipped} is skipped`);
+			assert.match(removal.stdout, new RegExp(`connectors removed for ${asRoot ? 2 : 1} of ${asRoot ? 2 : 1} account\\(s\\)`));
+			assert.doesNotMatch(removal.stdout, /must run 'aidr uninstall' before the package is removed/);
+			// Fleet removal without removing the package: same set, and a failure is reported.
+			const fleet = hook(["deregister-all"], { AIDR_PACKAGE_HOOK_PASSWD: passwd });
+			assert.equal(fleet.status, 0, fleet.stderr);
+			assert.equal(callsIn(homes[invoker]).split("\n").filter(Boolean).length, 2);
+			const none = hook(["deregister-all"], { AIDR_PACKAGE_HOOK_PASSWD: accounts([{ name: "never-setup", uid: me, state: "none" }]).passwd });
+			assert.equal(none.status, 0);
+			assert.match(none.stdout, /no account on this machine has AIDR connectors registered/);
 		});
 	});
 

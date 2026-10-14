@@ -309,6 +309,33 @@ jobs:
             --ledger "${RUNNER_TEMP}/aidr-promotion-state/production-go-ledger.json" \
             --record
 
+      # Promotion also publishes the same signed files as the final vX.Y.Z release
+      # (scripts/lib/rc-tag.mjs), so customers and customer-installer.yml name the
+      # version without "-rc.N". Checked before any production mutation: an existing
+      # final tag must point at this RC's commit; a missing one is created at that
+      # commit by "Publish the final vX.Y.Z release" below.
+      - name: Resolve the final release tag for this RC
+        id: final_tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          final_tag="${RELEASE_TAG%-rc.*}"
+          [[ "${final_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Cannot derive the final tag from ${RELEASE_TAG}." >&2; exit 1; }
+          rc_sha="$(git rev-list -n 1 "${RELEASE_TAG}^{commit}")"
+          [[ "${rc_sha}" =~ ^[0-9a-f]{40}$ ]] || { echo "Cannot resolve ${RELEASE_TAG}." >&2; exit 1; }
+          if final_sha="$(git rev-parse -q --verify "refs/tags/${final_tag}^{commit}")"; then
+            [[ "${final_sha}" == "${rc_sha}" ]] || {
+              echo "${final_tag} already exists at ${final_sha}, not at ${RELEASE_TAG} (${rc_sha}); nothing was promoted." >&2
+              exit 1
+            }
+            echo "${final_tag} already points at ${RELEASE_TAG}."
+          else
+            echo "${final_tag} does not exist yet; promotion creates it at ${rc_sha}."
+          fi
+          { echo "tag=${final_tag}"; echo "sha=${rc_sha}"; } >> "${GITHUB_OUTPUT}"
+
       - name: Persist anti-rollback state and verification receipt (pinned)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -433,6 +460,23 @@ jobs:
           name: AIDR ${{ inputs.tag }}
           prerelease: false
           draft: false
+          generate_release_notes: false
+          files: release-output/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The same signed files again, under the final tag at the RC's commit. Nothing
+      # is rebuilt: customer-installer.yml checks their attestation against the RC tag.
+      - name: Publish the final vX.Y.Z release from the same bundle (pinned)
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ steps.final_tag.outputs.tag }}
+          target_commitish: ${{ steps.final_tag.outputs.sha }}
+          name: AIDR ${{ steps.final_tag.outputs.tag }}
+          body: "Final release. The files are those of the signed release candidate ${{ inputs.tag }} (same commit, same bytes), promoted after its production GO."
+          prerelease: false
+          draft: false
+          make_latest: true
           generate_release_notes: false
           files: release-output/*
         env:

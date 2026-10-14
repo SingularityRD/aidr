@@ -375,6 +375,9 @@ jobs:
     environment: release-candidate
     permissions:
       contents: read
+      # Only for the azure-key-vault / jsign AZUREKEYVAULT signer: a GitHub OIDC token
+      # exchanged for a short-lived Azure token (no client secret is stored).
+      id-token: write
     outputs:
       receipt_sha256: ${{ steps.windows_sign.outputs.receipt_sha256 }}
       archive_sha256: ${{ steps.windows_sign.outputs.archive_sha256 }}
@@ -415,16 +418,37 @@ jobs:
         id: windows_sign
         shell: pwsh
         env:
-          WINDOWS_CODE_SIGNING_PFX_B64: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 }}
-          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD }}
+          # Signer backend (scripts/windows-authenticode-signer.ps1, docs/operations/windows-code-signing.md):
+          # pfx (ephemeral PFX custody, local tests), azure-key-vault (AzureSignTool) or jsign (cloud HSM / token).
+          AIDR_WINDOWS_SIGNER: ${{ vars.AIDR_WINDOWS_SIGNER || 'pfx' }}
+          AIDR_AZURE_KEY_VAULT_URL: ${{ vars.AIDR_AZURE_KEY_VAULT_URL }}
+          AIDR_AZURE_KEY_VAULT_CERTIFICATE: ${{ vars.AIDR_AZURE_KEY_VAULT_CERTIFICATE }}
+          AIDR_AZURE_TENANT_ID: ${{ vars.AIDR_AZURE_TENANT_ID }}
+          AIDR_AZURE_CLIENT_ID: ${{ vars.AIDR_AZURE_CLIENT_ID }}
+          AIDR_JSIGN_STORETYPE: ${{ vars.AIDR_JSIGN_STORETYPE }}
+          AIDR_JSIGN_KEYSTORE: ${{ vars.AIDR_JSIGN_KEYSTORE }}
+          AIDR_JSIGN_ALIAS: ${{ vars.AIDR_JSIGN_ALIAS }}
+          AIDR_JSIGN_CERTCHAIN_PEM: ${{ vars.AIDR_JSIGN_CERTCHAIN_PEM }}
+          AIDR_JSIGN_STOREPASS: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'jsign' && secrets.AIDR_JSIGN_STOREPASS || '' }}
+          WINDOWS_CODE_SIGNING_PFX_B64: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'pfx' && secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 || '' }}
+          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'pfx' && secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD || '' }}
           WINDOWS_CODE_SIGNING_THUMBPRINT: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_THUMBPRINT }}
           WINDOWS_TIMESTAMP_SERVER: ${{ vars.AIDR_WINDOWS_TIMESTAMP_SERVER }}
         run: |
           $ErrorActionPreference = "Stop"
-          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "PFX import requires an ephemeral GitHub-hosted runner" }
+          . ./scripts/windows-authenticode-signer.ps1
+          $signer = Resolve-AidrAuthenticodeSigner $env:AIDR_WINDOWS_SIGNER
+          if ($signer -eq 'pfx') {
+            if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "PFX import requires an ephemeral GitHub-hosted runner" }
+          } elseif (-not [string]::IsNullOrWhiteSpace($env:AIDR_JSIGN_CERTCHAIN_PEM)) {
+            # The public certificate chain some jsign store types need (--certfile).
+            $env:AIDR_JSIGN_CERTFILE = Join-Path $env:RUNNER_TEMP 'aidr-jsign-chain.pem'
+            [System.IO.File]::WriteAllText($env:AIDR_JSIGN_CERTFILE, $env:AIDR_JSIGN_CERTCHAIN_PEM)
+          }
           $thumbprint = $env:WINDOWS_CODE_SIGNING_THUMBPRINT
           $timestamp = $env:WINDOWS_TIMESTAMP_SERVER
-          if ($thumbprint -cnotmatch '^[0-9A-F]{40}$' -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_B64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD)) { throw "Protected Windows signing certificate, password and thumbprint are required" }
+          if ($thumbprint -cnotmatch '^[0-9A-F]{40}$') { throw "The independently pinned Windows signing thumbprint is required" }
+          if ($signer -eq 'pfx' -and ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_B64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD))) { throw "Protected Windows signing certificate, password and thumbprint are required" }
           $timestampUri = $null
           if (-not [Uri]::TryCreate($timestamp, [UriKind]::Absolute, [ref]$timestampUri) -or $timestampUri.Scheme -cne 'https' -or $timestampUri.UserInfo -or $timestampUri.Query -or $timestampUri.Fragment) { throw "An approved protected HTTPS timestamp server is required" }
           $certificatePath = "Cert:\CurrentUser\My\$thumbprint"
@@ -434,6 +458,7 @@ jobs:
           $imported = $false
           $collection = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
           try {
+            if ($signer -eq 'pfx') {
             New-Item -ItemType Directory -Path $privateDirectory -ErrorAction Stop | Out-Null
             $acl = [System.Security.AccessControl.DirectorySecurity]::new()
             $acl.SetAccessRuleProtection($true, $false)
@@ -459,8 +484,9 @@ jobs:
             $imported = Test-Path -LiteralPath $certificatePath
             if ($importedCertificates.Count -ne 1 -or $importedCertificates[0].Thumbprint -cne $thumbprint -or -not $imported) { throw "Runner certificate import did not preserve the approved identity" }
             Remove-Item -LiteralPath $pfxPath -Force
+            }
             $stage = Join-Path $env:RUNNER_TEMP "windows-authenticode"
-            & ./scripts/sign-windows-response-payload.ps1 -FleetScriptRoot (Join-Path $stage 'fleet') -ClaudeDist (Join-Path $stage 'claude') -InputManifestPath (Join-Path $stage 'input-manifest.json') -ExpectedThumbprint $thumbprint -TimestampServer $timestamp -ReceiptPath (Join-Path $stage 'authenticode-receipt.json')
+            & ./scripts/sign-windows-response-payload.ps1 -FleetScriptRoot (Join-Path $stage 'fleet') -ClaudeDist (Join-Path $stage 'claude') -InputManifestPath (Join-Path $stage 'input-manifest.json') -ExpectedThumbprint $thumbprint -TimestampServer $timestamp -ReceiptPath (Join-Path $stage 'authenticode-receipt.json') -Signer $signer
             if ($LASTEXITCODE -ne 0) { throw "Windows Authenticode signing failed" }
             $receiptHash = (Get-FileHash -LiteralPath (Join-Path $stage 'authenticode-receipt.json') -Algorithm SHA256).Hash.ToLowerInvariant()
             $signedArchive = Join-Path $env:RUNNER_TEMP 'windows-authenticode.tgz'
@@ -1901,6 +1927,8 @@ jobs:
     environment: release-candidate
     permissions:
       contents: read
+      # Only for the azure-key-vault / jsign AZUREKEYVAULT signer (GitHub OIDC -> Azure token).
+      id-token: write
     steps:
       - name: Checkout immutable RC commit (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1933,8 +1961,20 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_ARCHIVE_SHA256: ${{ needs.installers-sea-sign.outputs.windows_sha256 }}
-          WINDOWS_CODE_SIGNING_PFX_B64: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 }}
-          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD }}
+          # Signer backend (scripts/windows-authenticode-signer.ps1, docs/operations/windows-code-signing.md):
+          # pfx (ephemeral PFX custody, local tests), azure-key-vault (AzureSignTool) or jsign (cloud HSM / token).
+          AIDR_WINDOWS_SIGNER: ${{ vars.AIDR_WINDOWS_SIGNER || 'pfx' }}
+          AIDR_AZURE_KEY_VAULT_URL: ${{ vars.AIDR_AZURE_KEY_VAULT_URL }}
+          AIDR_AZURE_KEY_VAULT_CERTIFICATE: ${{ vars.AIDR_AZURE_KEY_VAULT_CERTIFICATE }}
+          AIDR_AZURE_TENANT_ID: ${{ vars.AIDR_AZURE_TENANT_ID }}
+          AIDR_AZURE_CLIENT_ID: ${{ vars.AIDR_AZURE_CLIENT_ID }}
+          AIDR_JSIGN_STORETYPE: ${{ vars.AIDR_JSIGN_STORETYPE }}
+          AIDR_JSIGN_KEYSTORE: ${{ vars.AIDR_JSIGN_KEYSTORE }}
+          AIDR_JSIGN_ALIAS: ${{ vars.AIDR_JSIGN_ALIAS }}
+          AIDR_JSIGN_CERTCHAIN_PEM: ${{ vars.AIDR_JSIGN_CERTCHAIN_PEM }}
+          AIDR_JSIGN_STOREPASS: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'jsign' && secrets.AIDR_JSIGN_STOREPASS || '' }}
+          WINDOWS_CODE_SIGNING_PFX_B64: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'pfx' && secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_B64 || '' }}
+          WINDOWS_CODE_SIGNING_PFX_PASSWORD: ${{ (vars.AIDR_WINDOWS_SIGNER || 'pfx') == 'pfx' && secrets.AIDR_WINDOWS_CODE_SIGNING_PFX_PASSWORD || '' }}
           WINDOWS_CODE_SIGNING_THUMBPRINT: ${{ secrets.AIDR_WINDOWS_CODE_SIGNING_THUMBPRINT }}
           WINDOWS_TIMESTAMP_SERVER: ${{ vars.AIDR_WINDOWS_TIMESTAMP_SERVER }}
           SIGNING_PUBLIC_KEY: ${{ secrets.AIDR_SIGNING_PUBLIC_KEY_PEM }}
@@ -1943,11 +1983,20 @@ jobs:
           RC_VERSION: ${{ needs.build-rc.outputs.version }}
         run: |
           $ErrorActionPreference = "Stop"
-          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "PFX import requires an ephemeral GitHub-hosted runner" }
+          . ./scripts/windows-authenticode-signer.ps1
+          $signer = Resolve-AidrAuthenticodeSigner $env:AIDR_WINDOWS_SIGNER
+          if ($signer -eq 'pfx') {
+            if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "PFX import requires an ephemeral GitHub-hosted runner" }
+          } elseif (-not [string]::IsNullOrWhiteSpace($env:AIDR_JSIGN_CERTCHAIN_PEM)) {
+            # The public certificate chain some jsign store types need (--certfile).
+            $env:AIDR_JSIGN_CERTFILE = Join-Path $env:RUNNER_TEMP 'aidr-jsign-chain.pem'
+            [System.IO.File]::WriteAllText($env:AIDR_JSIGN_CERTFILE, $env:AIDR_JSIGN_CERTCHAIN_PEM)
+          }
           if ([string]::IsNullOrWhiteSpace($env:SIGNING_PUBLIC_KEY) -or [string]::IsNullOrWhiteSpace($env:SIGNING_PUBLIC_KEY_FINGERPRINT)) { throw "The release trust public key and its fingerprint are required to build installers" }
           $thumbprint = $env:WINDOWS_CODE_SIGNING_THUMBPRINT
           $timestamp = $env:WINDOWS_TIMESTAMP_SERVER
-          if ($thumbprint -cnotmatch '^[0-9A-F]{40}$' -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_B64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD)) { throw "Protected Windows signing certificate, password and thumbprint are required; no unsigned MSI is published" }
+          if ($thumbprint -cnotmatch '^[0-9A-F]{40}$') { throw "The independently pinned Windows signing thumbprint is required; no unsigned MSI is published" }
+          if ($signer -eq 'pfx' -and ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_B64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CODE_SIGNING_PFX_PASSWORD))) { throw "Protected Windows signing certificate, password and thumbprint are required; no unsigned MSI is published" }
           $timestampUri = $null
           if (-not [Uri]::TryCreate($timestamp, [UriKind]::Absolute, [ref]$timestampUri) -or $timestampUri.Scheme -cne 'https' -or $timestampUri.UserInfo -or $timestampUri.Query -or $timestampUri.Fragment) { throw "An approved protected HTTPS timestamp server is required" }
           $archive = Join-Path $env:RUNNER_TEMP "sea-signed/aidr-sea-windows-signed.tgz"
@@ -1971,6 +2020,7 @@ jobs:
           $imported = $false
           $collection = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
           try {
+            if ($signer -eq 'pfx') {
             New-Item -ItemType Directory -Path $privateDirectory -ErrorAction Stop | Out-Null
             $acl = [System.Security.AccessControl.DirectorySecurity]::new()
             $acl.SetAccessRuleProtection($true, $false)
@@ -1996,7 +2046,8 @@ jobs:
             $imported = Test-Path -LiteralPath $certificatePath
             if ($importedCertificates.Count -ne 1 -or $importedCertificates[0].Thumbprint -cne $thumbprint -or -not $imported) { throw "Runner certificate import did not preserve the approved identity" }
             Remove-Item -LiteralPath $pfxPath -Force
-            & ./deploy/installers/windows/build-msi.ps1 -SeaDir $sea -TrustKey $trustKey -TrustKeyFingerprint $env:SIGNING_PUBLIC_KEY_FINGERPRINT -Version $env:RC_VERSION -OutDir $out -SignThumbprint $thumbprint -TimestampServer $timestamp -CatalogKey $catalogKey
+            }
+            & ./deploy/installers/windows/build-msi.ps1 -SeaDir $sea -TrustKey $trustKey -TrustKeyFingerprint $env:SIGNING_PUBLIC_KEY_FINGERPRINT -Version $env:RC_VERSION -OutDir $out -SignThumbprint $thumbprint -Signer $signer -TimestampServer $timestamp -CatalogKey $catalogKey
           } finally {
             $passwordText = $null
             Remove-Item Env:WINDOWS_CODE_SIGNING_PFX_B64, Env:WINDOWS_CODE_SIGNING_PFX_PASSWORD -ErrorAction SilentlyContinue

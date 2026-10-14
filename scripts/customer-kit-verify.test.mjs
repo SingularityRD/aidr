@@ -25,6 +25,7 @@ const aliases = {
   "CONTROL-PLANE.md": "supabase/README.md",
 	"NATIVE-HOST-ACCEPTANCE.md": "docs/production-readiness/native-host-matrix-v6.md",
 	"SUPPORT-RUNBOOK.md": "docs/runbooks/support-v7.md",
+	"KUBERNETES.md": "docs/operations/kubernetes.md",
 	"SECRETS-RUNBOOK.md": "docs/runbooks/secrets-management.md",
 	"LICENSING.md": "docs/operations/licensing.md",
 	"THREAT-SYNC.md": "docs/operations/threat-sync.md",
@@ -305,6 +306,67 @@ test("a regenerated checksum inventory cannot omit the installer, doctor or hold
 			rmSync(kit, { recursive: true, force: true });
 		}
 	}
+});
+
+test("the Helm chart and its credential generator ship in every kit", () => {
+	for (const missing of ["deploy/helm/aidr/Chart.yaml", "deploy/helm/aidr/values.schema.json", "deploy/helm/generate-secrets.mjs", "KUBERNETES.md"]) {
+		const kit = createKit();
+		try {
+			unlinkSync(join(kit, missing));
+			writeChecksums(kit);
+			const result = run(kit);
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, new RegExp(`Required customer acceptance artifact is missing: ${missing.replaceAll(".", "\\.")}`));
+		} finally {
+			rmSync(kit, { recursive: true, force: true });
+		}
+	}
+	const assembler = readFileSync(join(repoRoot, "scripts", "customer-kit.mjs"), "utf8");
+	assert.ok(assembler.includes('copy(join(root, "deploy/helm/aidr"), join(output, "deploy/helm/aidr"));'));
+	assert.ok(assembler.includes('["docs/operations/kubernetes.md", "KUBERNETES.md"]'));
+	// In the kit the generator uses the bundled YAML runtime, not packages/core.
+	assert.match(readFileSync(join(repoRoot, "deploy/helm/generate-secrets.mjs"), "utf8"), /deploy\/vendor\/yaml\.cjs/);
+});
+
+const AIRGAP_FILES = ["aidr-offline-bundle-1.0.0.tar", "aidr-offline-bundle-1.0.0.tar.cosign.bundle", "offline-bundle-signing-public.pem", "SHA256SUMS"];
+
+function addAirgapBundle(kit, { declare = true, files = AIRGAP_FILES } = {}) {
+	mkdirSync(join(kit, "airgap"), { recursive: true });
+	for (const name of files) writeFileSync(join(kit, "airgap", name), `${name} fixture\n`);
+	const sourcePath = join(kit, "release-source.json");
+	const source = JSON.parse(readFileSync(sourcePath, "utf8"));
+	source.airgap_image_bundle_bundled = declare;
+	writeFileSync(sourcePath, `${JSON.stringify(source, null, 2)}\n`);
+	writeChecksums(kit);
+}
+
+test("a vendor air-gap image bundle in the kit is complete when declared and absent otherwise", () => {
+	const cases = [
+		[{}, null],
+		[{ declare: false }, /Air-gap bundle files are present but release-source\.json does not declare them/],
+		[{ files: AIRGAP_FILES.filter((name) => !name.endsWith(".cosign.bundle")) }, /Air-gap bundle is incomplete: airgap\/aidr-offline-bundle-1\.0\.0\.tar\.cosign\.bundle/],
+		[{ files: AIRGAP_FILES.slice(1) }, /exactly one signed air-gap transfer archive/],
+		[{ files: [...AIRGAP_FILES, "deployment.env"] }, /Unexpected files in airgap\/: airgap\/deployment\.env/],
+	];
+	for (const [options, failure] of cases) {
+		const kit = createKit();
+		try {
+			addAirgapBundle(kit, options);
+			const result = run(kit);
+			if (failure) {
+				assert.notEqual(result.status, 0, JSON.stringify(options));
+				assert.match(result.stderr, failure);
+			} else {
+				assert.equal(result.status, 0, result.stderr);
+			}
+		} finally {
+			rmSync(kit, { recursive: true, force: true });
+		}
+	}
+	const assembler = readFileSync(join(repoRoot, "scripts", "customer-kit.mjs"), "utf8");
+	const block = assembler.slice(assembler.indexOf('if (values["airgap-bundle"]) {'), assembler.indexOf("airgapBundled = true;"));
+	assert.ok(block.indexOf("does not match SHA256SUMS") < block.indexOf("await verifyOfflineBundle("), "checksums before the signature check");
+	assert.ok(block.indexOf("await verifyOfflineBundle(") < block.indexOf('copy(join(bundleDir, name), join(output, "airgap", name))'), "nothing enters the kit before the Ed25519 signature verifies");
 });
 
 test("an extra unlisted artifact fails the checksum set check", () => {
