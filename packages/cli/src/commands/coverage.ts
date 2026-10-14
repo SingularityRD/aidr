@@ -9,9 +9,12 @@ import {
 	renderCoverageMarkdown,
 	renderCoverageTable,
 	toCoverageRules,
+	type UnprotectedAiTool,
 	validateFrameworkMappingsAgainstRules,
 } from "@singularityrd/aidr-core";
+import { ct } from "../i18n/index.js";
 import { resolveBundledDataDirs } from "../utils/test-protection.js";
+import { unprotectedAiTools } from "../utils/unprotected-tools.js";
 
 const COVERAGE_FORMATS = ["table", "json", "markdown"] as const;
 type CoverageFormat = (typeof COVERAGE_FORMATS)[number];
@@ -23,6 +26,8 @@ export interface CoverageOptions {
 /** Test seams; production callers pass nothing. */
 export interface CoverageDependencies {
 	threatsDir?: string;
+	/** AI tools without an AIDR connector; detected from the home directory and PATH by default. */
+	unprotectedTools?: UnprotectedAiTool[];
 	out?: (text: string) => void;
 	err?: (text: string) => void;
 }
@@ -76,9 +81,21 @@ export async function runCoverage(
 	}
 
 	const matrix = buildCoverageMatrix(mappings, rules);
-	if (format === "json") out(`${JSON.stringify(coverageMatrixToJson(matrix), null, 2)}\n`);
-	else if (format === "markdown") out(renderCoverageMarkdown(matrix));
-	else out(renderCoverageTable(matrix));
+	// The mapped coverage applies only to agents AIDR has a connector for: name the others.
+	const unprotected = unprotectedAiTools(dependencies);
+	const labels = unprotected.map((tool) => tool.label).join(", ");
+	const unprotectedLine =
+		unprotected.length > 0
+			? ct("coverage.unprotected", { tools: labels })
+			: ct("coverage.unprotectedNone");
+	if (format === "json") {
+		const json = {
+			...coverageMatrixToJson(matrix),
+			unprotected_ai_tools: unprotected.map((tool) => ({ id: tool.id, label: tool.label })),
+		};
+		out(`${JSON.stringify(json, null, 2)}\n`);
+	} else if (format === "markdown") out(`${renderCoverageMarkdown(matrix)}\n${unprotectedLine}\n`);
+	else out(`${renderCoverageTable(matrix)}\n${unprotectedLine}\n`);
 
 	// The matrix is still printed, but an inconsistent mapping is never reported
 	// as a clean result: list the problems and exit non-zero.

@@ -56,6 +56,7 @@ const FINDING_KINDS = new Set([
 // Mirrors AGENT_HOSTS / AGENT_POSTURE_CHECKS in packages/core/src/agent-environment-posture.ts.
 const AGENT_HOSTS = [
 	"claude-code", "cursor", "vscode", "codex", "opencode", "openclaw", "gemini-cli", "aider", "environment",
+	"windsurf", "jetbrains-ai", "cline", "roo-code", "copilot-cli", "amazon-q", "kiro", "zed",
 ] as const;
 const AGENT_POSTURE_CHECKS = [
 	"permission_bypass_mode", "broad_shell_allow_rule", "hooks_disabled", "aidr_hook_missing",

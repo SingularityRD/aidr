@@ -54,7 +54,12 @@ import {
 	CODEX_POST_TOOL_USE,
 	enforceCodexPostToolUse,
 } from "./output-protection.js";
-import { CODEX_USER_PROMPT_SUBMIT, enforceCodexUserPromptSubmit } from "./prompt-protection.js";
+import {
+	CODEX_USER_PROMPT_SUBMIT,
+	codexPromptNotices,
+	enforceCodexUserPromptSubmit,
+	withUserNotice,
+} from "./prompt-protection.js";
 
 /** Measured from process start: Codex's hook timeout runs from launch. */
 const startedAt = Date.now();
@@ -158,7 +163,14 @@ function blockUnconditionally(reason: string): void {
  */
 async function handleUserPromptSubmit(input: Record<string, unknown>): Promise<void> {
 	try {
-		const { outcome, wire } = await enforceCodexUserPromptSubmit(input, { startedAt, logger });
+		const { outcome, wire: inspected } = await enforceCodexUserPromptSubmit(input, {
+			startedAt,
+			logger,
+		});
+		const wire =
+			outcome.decision === "block"
+				? inspected
+				: withUserNotice(inspected, await codexPromptNotices({ logger }));
 		if (wire) emit(`${JSON.stringify(wire)}\n`);
 		recordHostObservation(hostObservation, {
 			connector: "codex",

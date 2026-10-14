@@ -36,7 +36,7 @@ export const DEFAULT_FILTERS: NotificationFilters = Object.freeze({
 	incidentCreated: true,
 	incidentMinSeverity: "high",
 	runtimeDenyCritical: true,
-	approvalRequested: false,
+	approvalRequested: true,
 	privacyBlockedSpike: false,
 	privacySpikeThreshold: 10,
 	privacySpikeWindowMinutes: 15,

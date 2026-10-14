@@ -19,6 +19,7 @@ import {
 } from "./agent-safety/runaway-guard.js";
 import { loadTrustedModelSources, type TrustedModelSources } from "./ai-supply-chain.js";
 import { allowlistedArtifacts, isAllowlisted, loadAllowlist } from "./allowlist.js";
+import { ApprovalStore } from "./approval-store.js";
 import {
 	buildIncidentEntry,
 	buildRuntimeVerdictEntry,
@@ -1111,6 +1112,7 @@ async function recordEarlyVerdict(
 			verdict,
 			allowlisted,
 			durationMs,
+			ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId),
 		);
 	} catch {
 		// An audit failure cannot erase the detector decision.
@@ -2737,6 +2739,7 @@ async function recordPipelineVerdict(
 			verdict,
 			false,
 			durationMs,
+			ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId),
 		);
 	} catch {
 		// Fail open.

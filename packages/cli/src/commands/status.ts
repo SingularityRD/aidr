@@ -7,6 +7,7 @@ import {
 	readPersistedAuditLossState,
 	readTelemetryLossSummary,
 	resolvePath,
+	type UnprotectedAiTool,
 } from "@singularityrd/aidr-core";
 import { ct } from "../i18n/index.js";
 import { type ConnectorStatus, detectConnectorStatuses } from "../utils/connector-status.js";
@@ -22,6 +23,7 @@ import { readSetupLedger } from "../utils/setup-ledger.js";
 import { standaloneBundleRoot } from "../utils/standalone.js";
 import { buildStatusVerdict, type StatusVerdict } from "../utils/status-verdict.js";
 import { loadBundledThreatCount, verifyDetection } from "../utils/test-protection.js";
+import { unprotectedAiTools } from "../utils/unprotected-tools.js";
 import { modeLabel } from "./doctor.js";
 
 const CONFIG_STATE_KEY = {
@@ -76,6 +78,8 @@ function printCustomer(discovery: CustomerPacketDiscovery): void {
 export interface StatusDeps {
 	/** Customer packet discovery: candidate files, key registry, clock. */
 	customerPacket?: CustomerPacketOptions;
+	/** AI tools without an AIDR connector; detected from the home directory and PATH by default. */
+	unprotectedTools?: UnprotectedAiTool[];
 }
 
 export default async function statusCommand(
@@ -94,6 +98,8 @@ export default async function statusCommand(
 		detail = error instanceof Error ? error.message : String(error);
 	}
 	const connectors = detectConnectorStatuses();
+	// Never part of "ready": AIDR cannot fix another product. But it is never silent.
+	const unprotected = unprotectedAiTools(deps);
 	// Informational only: a refused packet or an ended license never makes the
 	// installation "not ready", because local detection does not depend on it.
 	const customer = discoverCustomerPacket(standaloneBundleRoot(), deps.customerPacket);
@@ -171,6 +177,8 @@ export default async function statusCommand(
 			telemetry: telemetryLoss,
 		},
 		connectors,
+		// AI coding tools found here that AIDR has no connector for: not inspected.
+		unprotected_ai_tools: unprotected.map((tool) => ({ id: tool.id, label: tool.label })),
 		configuration_ready: configurationReady,
 		host_enforcement: "unverified",
 		verdict,
@@ -199,6 +207,11 @@ export default async function statusCommand(
 			console.log(
 				`  ${connector.label}: ${connector.state === "installed" ? ct("status.registrationDetected") : connector.state} — ${connector.detail}`,
 			);
+		console.log(
+			unprotected.length > 0
+				? ct("status.unprotected", { tools: unprotected.map((tool) => tool.label).join(", ") })
+				: ct("status.unprotectedNone"),
+		);
 		if (config.mode !== "managed") {
 			console.log(ct("status.managedInactive", { mode: modeLabel(config.mode) }));
 		} else {

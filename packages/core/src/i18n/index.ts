@@ -10,7 +10,11 @@
  *   1. `AIDR_LOCALE` (explicit override, e.g. `tr` or `en`)
  *   2. the `locale` key of ~/.singularity-aidr/config.json (set by loadConfig)
  *   3. the POSIX locale: `LC_ALL`, then `LC_MESSAGES`, then `LANG`
- *   4. English
+ *   4. the operating system's locale as `Intl` reports it (Windows sets no
+ *      POSIX variables; a Turkish Windows reports `tr-TR` here)
+ *   5. English
+ * The VS Code / Cursor hook launcher sets `AIDR_LOCALE` from the editor's
+ * display language when it is not already set.
  * An unsupported value at any step is skipped, never an error.
  */
 import { en, type MessageKey } from "./en.js";
@@ -47,8 +51,21 @@ export function normalizeLocale(value: unknown): Locale | undefined {
 
 type LocaleEnv = Record<string, string | undefined>;
 
+/** The OS locale `Intl` reports, or undefined when the runtime has none. */
+function systemIntlLocale(): string | undefined {
+	try {
+		return Intl.DateTimeFormat().resolvedOptions().locale;
+	} catch {
+		return undefined;
+	}
+}
+
 /** Resolve the display locale from the environment and an optional configured value. */
-export function resolveLocale(env: LocaleEnv = processEnv(), configLocale?: unknown): Locale {
+export function resolveLocale(
+	env: LocaleEnv = processEnv(),
+	configLocale?: unknown,
+	intlLocale: string | null | undefined = systemIntlLocale(),
+): Locale {
 	const explicit = normalizeLocale(env.AIDR_LOCALE);
 	if (explicit) return explicit;
 	const configured = normalizeLocale(configLocale);
@@ -59,7 +76,7 @@ export function resolveLocale(env: LocaleEnv = processEnv(), configLocale?: unkn
 		const value = env[name];
 		if (value && value.trim() !== "") return normalizeLocale(value) ?? DEFAULT_LOCALE;
 	}
-	return DEFAULT_LOCALE;
+	return normalizeLocale(intlLocale) ?? DEFAULT_LOCALE;
 }
 
 function processEnv(): LocaleEnv {

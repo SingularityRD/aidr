@@ -14,6 +14,11 @@ import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SecretDetector } from "./dlp/secret-detector.js";
 import { parseJsonc } from "./jsonc.js";
+import {
+	detectUnprotectedAiTools,
+	UNSUPPORTED_AI_TOOL_IDS,
+	type UnprotectedAiTool,
+} from "./unprotected-agents.js";
 
 export const AGENT_HOSTS = [
 	"claude-code",
@@ -25,6 +30,15 @@ export const AGENT_HOSTS = [
 	"gemini-cli",
 	"aider",
 	"environment",
+	// AI coding tools without an AIDR connector (unprotected-agents.ts).
+	"windsurf",
+	"jetbrains-ai",
+	"cline",
+	"roo-code",
+	"copilot-cli",
+	"amazon-q",
+	"kiro",
+	"zed",
 ] as const;
 export type AgentHost = (typeof AGENT_HOSTS)[number];
 
@@ -91,6 +105,8 @@ export interface AgentEnvironmentOptions {
 	mcpConfigPaths?: string[];
 	/** Docker socket path; overridable for tests. */
 	dockerSocketPath?: string;
+	/** AI tools without a connector; detected from `home`, `env` and PATH when omitted. */
+	unprotectedTools?: UnprotectedAiTool[];
 	now?: Date;
 }
 
@@ -476,8 +492,8 @@ export function inspectAgentEnvironment(options: AgentEnvironmentOptions): Agent
 	const cursorDir = join(home, ".cursor");
 	const vscodeDir = join(home, ".vscode");
 	const openclawConfig = join(home, ".openclaw", "openclaw.json");
-	const geminiDir = join(home, ".gemini");
-	const aiderConfig = join(home, ".aider.conf.yml");
+	const unprotected =
+		options.unprotectedTools ?? detectUnprotectedAiTools({ home, env, platform: options.platform });
 
 	const hosts: AgentHostDetection[] = [
 		{ host: "claude-code", detected: claude.detected, connector: true, evidence: claude.evidence },
@@ -491,13 +507,15 @@ export function inspectAgentEnvironment(options: AgentEnvironmentOptions): Agent
 			connector: true,
 			evidence: [openclawConfig],
 		},
-		{
-			host: "gemini-cli",
-			detected: existsSync(geminiDir),
-			connector: false,
-			evidence: [geminiDir],
-		},
-		{ host: "aider", detected: existsSync(aiderConfig), connector: false, evidence: [aiderConfig] },
+		...UNSUPPORTED_AI_TOOL_IDS.map((id): AgentHostDetection => {
+			const tool = unprotected.find((entry) => entry.id === id);
+			return {
+				host: id,
+				detected: tool !== undefined,
+				connector: false,
+				evidence: tool?.evidence ?? [],
+			};
+		}),
 	];
 
 	for (const host of hosts) {

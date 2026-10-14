@@ -20,10 +20,17 @@
  */
 
 import {
+	checkDashboardDecisions,
+	detectUnprotectedAiTools,
+	formatDashboardDecisionNotices,
 	inspectUserPrompt,
+	isInvalidConfig,
 	type Logger,
+	loadConfig,
 	type PromptInspectionOutcome,
+	resolvePath,
 	resolvePromptInspectionDeadlineMs,
+	takeFirstRunPrivacyNotice,
 } from "@singularityrd/aidr-core";
 
 export const CODEX_USER_PROMPT_SUBMIT = "UserPromptSubmit" as const;
@@ -62,6 +69,56 @@ export function toCodexPromptWire(outcome: PromptInspectionOutcome): CodexPrompt
 			hookEventName: CODEX_USER_PROMPT_SUBMIT,
 			additionalContext: outcome.modelContext,
 		},
+	};
+}
+
+/**
+ * What the developer must be told on the next prompt, for the user only
+ * (`systemMessage`, never the model's context): the first-run privacy notice
+ * (Codex has no session-start hook, so the first prompt carries it) and
+ * dashboard approval decisions that landed since. Bounded; never throws.
+ */
+export async function codexPromptNotices(options: {
+	logger?: Logger;
+	aidrDir?: string;
+	unprotectedTools?: string[];
+}): Promise<string | null> {
+	try {
+		const config = await loadConfig(undefined, options.logger);
+		if (!config || isInvalidConfig(config)) return null;
+		const tools =
+			options.unprotectedTools ??
+			detectUnprotectedAiTools({ home: resolvePath("~"), env: process.env }).map(
+				(tool) => tool.label,
+			);
+		const notice = await takeFirstRunPrivacyNotice(config, "codex", {
+			aidrDir: options.aidrDir,
+			unprotectedTools: tools,
+		});
+		const decisions = formatDashboardDecisionNotices(
+			await checkDashboardDecisions(config, {
+				logger: options.logger,
+				totalBudgetMs: 1_500,
+				requestTimeoutMs: 1_500,
+			}),
+		);
+		const lines = [decisions, notice].filter((line): line is string => Boolean(line));
+		return lines.length > 0 ? lines.join("\n") : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Add a user-only notice to an allow or warn answer; a block is left as it is. */
+export function withUserNotice(
+	wire: CodexPromptWireOutput | null,
+	notice: string | null,
+): CodexPromptWireOutput | null {
+	if (!notice || wire?.decision === "block") return wire;
+	if (!wire) return { systemMessage: notice };
+	return {
+		...wire,
+		systemMessage: wire.systemMessage ? `${wire.systemMessage}\n${notice}` : notice,
 	};
 }
 

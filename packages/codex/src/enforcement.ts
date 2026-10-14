@@ -160,7 +160,7 @@ function resultForGuard(guard: GuardResult, artifacts: Artifact[]): CodexEnforce
 		return {
 			decision: "deny",
 			reasonCode: verdict.category || "aidr_denied",
-			wire: toWireOutput("deny", formatDenyMessage(verdict, responseActions, artifacts)),
+			wire: toWireOutput("deny", formatDenyMessage(verdict, responseActions, artifacts, actionId)),
 		};
 	}
 

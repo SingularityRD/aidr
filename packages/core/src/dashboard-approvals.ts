@@ -39,7 +39,7 @@
 
 import { createPublicKey, verify as cryptoVerify, type KeyObject } from "node:crypto";
 import { lstat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { logDashboardApprovalEvent, toolInputSummaryText } from "./audit-log.js";
 import { assertSecureControlPlaneEndpoint, controlPlaneUrl } from "./clients/control-plane-url.js";
@@ -482,7 +482,39 @@ export interface ApprovalRequestBody {
 	expires_at: string;
 }
 
-type SubmitResult = { ok: true; requestId: string } | { ok: false; error: string };
+type SubmitResult =
+	| { ok: true; requestId: string; consoleOrigin?: string }
+	| { ok: false; error: string };
+
+/**
+ * The dashboard origin from a control-plane `console_url`, or undefined. Only
+ * the origin is kept: the deep link is rebuilt locally from it and the request
+ * id, so it can never carry a token or any other server-chosen path or query.
+ */
+export function dashboardConsoleOrigin(value: unknown): string | undefined {
+	if (typeof value !== "string" || value.length > 2048) return undefined;
+	try {
+		const url = new URL(value);
+		const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+		if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) return undefined;
+		if (url.username || url.password) return undefined;
+		return url.origin;
+	} catch {
+		return undefined;
+	}
+}
+
+/** `{origin}/approvals?request={id}`: the dashboard page for one request; never a token. */
+export function dashboardApprovalLink(
+	consoleOrigin: string | undefined,
+	requestId: string | undefined,
+): string | undefined {
+	if (!consoleOrigin || !requestId || !REQUEST_ID.test(requestId)) return undefined;
+	const origin = dashboardConsoleOrigin(consoleOrigin);
+	return origin
+		? `${origin}/approvals?request=${encodeURIComponent(requestId.toLowerCase())}`
+		: undefined;
+}
 
 /** `POST {base}/v1/approval-requests`. Idempotent server side on (tenant, iid, action_id). */
 async function submitApprovalRequest(
@@ -502,13 +534,23 @@ async function submitApprovalRequest(
 	if (typeof requestId !== "string" || !REQUEST_ID.test(requestId)) {
 		return { ok: false, error: "invalid_response" };
 	}
-	return { ok: true, requestId: requestId.toLowerCase() };
+	return {
+		ok: true,
+		requestId: requestId.toLowerCase(),
+		consoleOrigin: dashboardConsoleOrigin(result.body.console_url),
+	};
 }
 
 export type ApprovalRequestStatus = "pending" | "approved" | "denied" | "expired";
 
 type StatusResult =
-	| { ok: true; status: ApprovalRequestStatus; token?: string; keyId?: string }
+	| {
+			ok: true;
+			status: ApprovalRequestStatus;
+			token?: string;
+			keyId?: string;
+			consoleOrigin?: string;
+	  }
 	| { ok: false; error: string; notFound: boolean };
 
 /** `GET {base}/v1/approval-requests/{request_id}`. */
@@ -541,6 +583,7 @@ async function fetchApprovalStatus(
 		status,
 		token: typeof result.body.token === "string" ? result.body.token : undefined,
 		keyId: typeof result.body.key_id === "string" ? result.body.key_id : undefined,
+		consoleOrigin: dashboardConsoleOrigin(result.body.console_url),
 	};
 }
 
@@ -555,6 +598,10 @@ const RequestRecordSchema = z.object({
 	tool: z.string().max(MAX_TOOL),
 	created_at: z.string().max(64),
 	expires_at: z.string().max(64),
+	/** Dashboard origin the control plane named for this request (deep link). */
+	console_origin: z.string().max(512).optional(),
+	/** The decision the developer was already told about (decision notices). */
+	notified: z.enum(["approved", "denied", "expired"]).optional(),
 });
 
 type RequestRecord = z.infer<typeof RequestRecordSchema>;
@@ -639,6 +686,8 @@ export interface DashboardApprovalOutcome {
 	approverId?: string;
 	/** Set by the guard when `operator_approvals.dashboard_only` is in force. */
 	dashboardOnly?: boolean;
+	/** The dashboard page for this request, when the control plane named one. */
+	consoleUrl?: string;
 }
 
 export interface DashboardApprovalInput {
@@ -792,7 +841,11 @@ async function pollExistingRequest(
 		});
 		return { status: "pending", requestId, reason: polled.error };
 	}
-	if (polled.status === "pending") return { status: "pending", requestId };
+	const remembered = run.records.find((r) => r.request_id === requestId)?.console_origin;
+	const consoleUrl = dashboardApprovalLink(polled.consoleOrigin ?? remembered, requestId);
+	if (polled.status === "pending") {
+		return { status: "pending", requestId, ...(consoleUrl ? { consoleUrl } : {}) };
+	}
 	if (polled.status === "denied" || polled.status === "expired") {
 		await run.forget(requestId);
 		await run.audit(polled.status, { requestId });
@@ -838,10 +891,16 @@ async function submitNewRequest(run: ApprovalRun): Promise<DashboardApprovalOutc
 		tool: binding.tool,
 		created_at: new Date(requestNow).toISOString(),
 		expires_at: expiresAt,
+		...(submitted.consoleOrigin ? { console_origin: submitted.consoleOrigin } : {}),
 	});
 	await writeRequests(run.statePath, run.records, run.now(), run.logger);
 	await run.audit("requested", { requestId: submitted.requestId });
-	return { status: "requested", requestId: submitted.requestId };
+	const consoleUrl = dashboardApprovalLink(submitted.consoleOrigin, submitted.requestId);
+	return {
+		status: "requested",
+		requestId: submitted.requestId,
+		...(consoleUrl ? { consoleUrl } : {}),
+	};
 }
 
 /** Rejections after which polling the same request again cannot succeed. */
@@ -894,4 +953,170 @@ async function consumeApprovedToken(
 	const approverId = redactTelemetryString(payload.approver_id, 128);
 	await run.audit("consumed", { requestId, approverId });
 	return { status: "released", requestId, approverId };
+}
+
+// ── Decision notices and `aidr pending` (out of the hook's critical path) ──
+
+/** A remembered dashboard request and, when it was polled, its current status. */
+export interface DashboardRequestView {
+	requestId: string;
+	actionId: string;
+	tool: string;
+	createdAt: string;
+	expiresAt: string;
+	/** `unknown` when the control plane was not or could not be asked. */
+	status: ApprovalRequestStatus | "unknown";
+	consoleUrl?: string;
+}
+
+const DECISION_CHECK_FILE = "dashboard-approval-decisions.json";
+/** Decision notices poll at most this often (shared by every connector process). */
+const DASHBOARD_DECISION_CHECK_INTERVAL_MS = 20_000;
+
+function viewOf(
+	record: RequestRecord,
+	status: DashboardRequestView["status"],
+	origin?: string,
+): DashboardRequestView {
+	const consoleUrl = dashboardApprovalLink(origin ?? record.console_origin, record.request_id);
+	return {
+		requestId: record.request_id,
+		actionId: record.action_id,
+		tool: record.tool,
+		createdAt: record.created_at,
+		expiresAt: record.expires_at,
+		status,
+		...(consoleUrl ? { consoleUrl } : {}),
+	};
+}
+
+/**
+ * The dashboard requests this installation filed that have not expired. With
+ * `poll`, each one's status is asked from the control plane (bounded by the
+ * options' budget); otherwise the status is `unknown`. Read-only: nothing here
+ * verifies or spends a token or releases a call. Never throws.
+ */
+export async function listDashboardApprovalRequests(
+	config: Config,
+	options: DashboardApprovalOptions & { poll?: boolean } = {},
+): Promise<DashboardRequestView[]> {
+	try {
+		const now = options.now ?? Date.now;
+		const records = (await readRequests(dashboardApprovalStatePath(options))).filter(
+			(r) => (isoMs(r.expires_at) ?? 0) > now(),
+		);
+		if (records.length === 0) return [];
+		if (!options.poll) return records.map((r) => viewOf(r, "unknown"));
+		const resolved = await resolveDashboardApprovalContext(config, options);
+		if (!resolved.available) return records.map((r) => viewOf(r, "unknown"));
+		const budget: RequestBudget = {
+			deadline: now() + (options.totalBudgetMs ?? 10_000),
+			perRequestMs: options.requestTimeoutMs ?? 3_000,
+			now,
+		};
+		const fetchImpl = options.fetch ?? globalThis.fetch;
+		const views: DashboardRequestView[] = [];
+		for (const record of records) {
+			const polled = await fetchApprovalStatus(
+				resolved.context,
+				record.request_id,
+				budget,
+				fetchImpl,
+			);
+			views.push(
+				polled.ok ? viewOf(record, polled.status, polled.consoleOrigin) : viewOf(record, "unknown"),
+			);
+		}
+		return views;
+	} catch {
+		return [];
+	}
+}
+
+/** A decision the developer has not been told about yet. */
+export interface DashboardDecisionNotice {
+	requestId: string;
+	actionId: string;
+	status: "approved" | "denied" | "expired";
+	consoleUrl?: string;
+}
+
+/** Whether a decision check is due, recording this check when it is. */
+async function decisionCheckDue(path: string, now: number, intervalMs: number): Promise<boolean> {
+	try {
+		const raw = JSON.parse(await getFileContent(path)) as { checked_at?: unknown };
+		const last = typeof raw.checked_at === "number" ? raw.checked_at : 0;
+		// A clock set back must not silence notices for the skew.
+		if (last <= now && now - last < intervalMs) return false;
+	} catch {
+		// No or unreadable marker: check now.
+	}
+	await atomicWriteJson(path, { checked_at: now }, { mode: 0o600 }).catch(() => undefined);
+	return true;
+}
+
+/**
+ * Poll the requests this installation filed (at most once per
+ * {@link DASHBOARD_DECISION_CHECK_INTERVAL_MS} across processes) and return the
+ * decisions that landed since the last notice, each reported once. Read-only:
+ * an approved request's token is not verified or spent here; the retry of the
+ * exact call does that. Never throws; [] outside managed mode or when nothing
+ * is waiting.
+ */
+export async function checkDashboardDecisions(
+	config: Config,
+	options: DashboardApprovalOptions & { minIntervalMs?: number } = {},
+): Promise<DashboardDecisionNotice[]> {
+	if (config.mode !== "managed") return [];
+	try {
+		const now = options.now ?? Date.now;
+		const statePath = dashboardApprovalStatePath(options);
+		const open = (await readRequests(statePath)).filter(
+			(r) => !r.notified && (isoMs(r.expires_at) ?? 0) > now(),
+		);
+		if (open.length === 0) return [];
+		const markerPath = join(dirname(statePath), DECISION_CHECK_FILE);
+		const interval = options.minIntervalMs ?? DASHBOARD_DECISION_CHECK_INTERVAL_MS;
+		if (!(await decisionCheckDue(markerPath, now(), interval))) return [];
+		const resolved = await resolveDashboardApprovalContext(config, options);
+		if (!resolved.available) return [];
+		const budget: RequestBudget = {
+			deadline: now() + (options.totalBudgetMs ?? DASHBOARD_APPROVAL_TOTAL_BUDGET_MS),
+			perRequestMs: options.requestTimeoutMs ?? DASHBOARD_APPROVAL_REQUEST_TIMEOUT_MS,
+			now,
+		};
+		const fetchImpl = options.fetch ?? globalThis.fetch;
+		const notices: DashboardDecisionNotice[] = [];
+		for (const record of open) {
+			const polled = await fetchApprovalStatus(
+				resolved.context,
+				record.request_id,
+				budget,
+				fetchImpl,
+			);
+			if (!polled.ok || polled.status === "pending") continue;
+			const consoleUrl = dashboardApprovalLink(
+				polled.consoleOrigin ?? record.console_origin,
+				record.request_id,
+			);
+			notices.push({
+				requestId: record.request_id,
+				actionId: record.action_id,
+				status: polled.status,
+				...(consoleUrl ? { consoleUrl } : {}),
+			});
+		}
+		if (notices.length > 0) {
+			// Re-read so a request another process filed meanwhile is kept.
+			const latest = await readRequests(statePath);
+			for (const entry of latest) {
+				const notified = notices.find((n) => n.requestId === entry.request_id);
+				if (notified) entry.notified = notified.status;
+			}
+			await writeRequests(statePath, latest, now(), options.logger ?? nullLogger);
+		}
+		return notices;
+	} catch {
+		return [];
+	}
 }

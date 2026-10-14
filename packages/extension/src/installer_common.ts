@@ -42,6 +42,16 @@ async function resolveRunnerPath(context: vscode.ExtensionContext): Promise<stri
 	);
 }
 
+/** The editor's display language, or undefined when the host does not expose it. */
+function editorLanguage(): string | undefined {
+	try {
+		const language = vscode.env?.language;
+		return typeof language === "string" && language.trim() ? language.trim() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 function resolveNodeRuntimePath(): string {
 	return process.env.VSCODE_NODE_EXEC_PATH?.trim() || process.execPath;
 }
@@ -67,6 +77,7 @@ export async function prepareManagedHookCommand(
 		extensionId: extension?.id,
 		version: (extension?.packageJSON as { version?: string } | undefined)?.version,
 		configPath,
+		displayLanguage: editorLanguage(),
 	});
 	const shimPath = await writeHookShims(
 		host,

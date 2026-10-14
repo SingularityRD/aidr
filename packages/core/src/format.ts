@@ -281,6 +281,20 @@ function scanHeadline(version: string, result: SessionStartResult): string {
 }
 
 export function formatSessionStartMessage(version: string, result: SessionStartResult): string {
+	const extra: string[] = [];
+	if (result.unprotectedTools && result.unprotectedTools.length > 0) {
+		extra.push(
+			t("session.unprotectedTools", {
+				tools: result.unprotectedTools.map((tool) => tool.label).join(", "),
+			}),
+		);
+	}
+	if (result.privacyNotice) extra.push(result.privacyNotice);
+	const base = formatSessionStartBody(version, result);
+	return extra.length > 0 ? `${base}\n${extra.join("\n")}` : base;
+}
+
+function formatSessionStartBody(version: string, result: SessionStartResult): string {
 	if (result.enabled === false) {
 		const reason = result.disabled_reason ?? "disabled";
 		// Only claim the product is off when it actually is. The managed-only

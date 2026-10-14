@@ -1121,6 +1121,26 @@ export const ConfigSchema = z.object({
 	 */
 	locale: z.enum(["en", "tr"]).optional().catch(undefined),
 	disabled_threats: z.array(z.string()).default([]),
+	/**
+	 * Machine-policy keys (`HKLM\SOFTWARE\Policies\Singularity AIDR`,
+	 * `/etc/singularity-aidr/managed.json`); machine policy wins over the user
+	 * configuration for them. Display-only links: a malformed or non-http(s)
+	 * value is never shown and never changes enforcement.
+	 *
+	 * `support_contact_url`: where a developer reports a false positive (block
+	 * messages, `aidr report-fp`). `privacy_notice_url`: the organisation's
+	 * privacy notice (aydınlatma metni) linked from the first-run notice.
+	 */
+	support_contact_url: z.string().max(2048).optional().catch(undefined),
+	privacy_notice_url: z.string().max(2048).optional().catch(undefined),
+	/**
+	 * Who releases an `ask` in managed mode. `dashboard_only`: only an
+	 * administrator in the dashboard (same as `operator_approvals.dashboard_only`).
+	 * `host_dialog`: the host's own dialog / the operator CLI, as in local mode.
+	 * Unset: managed mode with a usable dashboard approval channel defaults to
+	 * the dashboard; otherwise the host dialog. Ignored in local mode.
+	 */
+	approvals_mode: z.enum(["dashboard_only", "host_dialog"]).optional().catch(undefined),
 	operator_approvals: OperatorApprovalsConfigSchema.default({}),
 	agent_safety: AgentSafetyConfigSchema.default({}),
 });

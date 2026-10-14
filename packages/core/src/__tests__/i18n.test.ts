@@ -128,8 +128,8 @@ describe("locale resolution", () => {
 	});
 
 	it("defaults to English", () => {
-		expect(resolveLocale({})).toBe("en");
-		expect(resolveLocale({ LANG: "de_DE.UTF-8" })).toBe("en");
+		expect(resolveLocale({}, undefined, null)).toBe("en");
+		expect(resolveLocale({ LANG: "de_DE.UTF-8" }, undefined, "tr-TR")).toBe("en");
 		expect(resolveLocale({ LANG: "C" })).toBe("en");
 	});
 

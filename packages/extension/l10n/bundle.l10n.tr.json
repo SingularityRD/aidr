@@ -23,5 +23,7 @@
   "tool output inspection: blocks further model processing": "araç çıktısı incelemesi: modelin çıktıyı işlemeye devam etmesini engeller",
   "assistant response inspection: unsupported by the host hook API": "asistan yanıtı incelemesi: ana makinenin hook API'si desteklemiyor",
   "output inspection limit: {0} bytes; larger output is coverage-limited, never clean": "çıktı inceleme sınırı: {0} bayt; daha büyük çıktı kısmi kapsamla incelenir, asla temiz sayılmaz",
-  "Singularity AIDR: {0}": "Singularity AIDR: {0}"
+  "Singularity AIDR: {0}": "Singularity AIDR: {0}",
+  "Show details": "Ayrıntıları göster",
+  "Open approval page": "Onay sayfasını aç"
 }

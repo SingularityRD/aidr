@@ -47,6 +47,7 @@ import {
 	learningKeygenCommand,
 } from "./commands/learning.js";
 import privacyScanCommand from "./commands/privacy.js";
+import { privacyNoticeCommand } from "./commands/privacy-notice.js";
 import {
 	profileListCommand,
 	profileShowCommand,
@@ -60,6 +61,7 @@ import {
 	quarantineShowCommand,
 	restoreCommand,
 } from "./commands/quarantine.js";
+import { reportFpCommand } from "./commands/report-fp.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import simulateCommand from "./commands/simulate.js";
@@ -223,6 +225,14 @@ privacyProgram
 		"any",
 	)
 	.action(privacyScanCommand);
+
+privacyProgram
+	.command("notice")
+	.description(
+		"Show what Singularity AIDR guards and does not guard, what it records on this computer and what it sends where",
+	)
+	.option("--json", "Print the facts the notice is built from")
+	.action((options) => privacyNoticeCommand(options));
 
 program
 	.command("simulate")
@@ -435,6 +445,22 @@ program
 	)
 	.option("--json", "Emit machine-readable JSON")
 	.action((options) => pendingCommand(options));
+
+program
+	.command("report-fp")
+	.description(
+		"Report a blocked or held action as a false positive to your IT or security team (ids and rule only; never the command)",
+	)
+	.argument("<actionId>", "The id from the block message (its first 8+ characters are enough)")
+	.option(
+		"--reason <code>",
+		"Why it is a false positive: benign_automation, benign_maintenance, expected_egress, expected_file_write, legitimate_mcp_tool, developer_test, environment_specific, insufficient_context, policy_too_strict or other",
+		"other",
+	)
+	.option("--note <text>", "A short note for the reviewer (secrets are masked; max 500 characters)")
+	.option("--dry-run", "Show what would be reported without sending it")
+	.option("--json", "Emit a machine-readable result")
+	.action((actionId, options) => reportFpCommand(actionId, options));
 
 program
 	.command("approve")

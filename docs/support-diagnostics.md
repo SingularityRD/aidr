@@ -24,8 +24,23 @@ draft and does not activate a support channel either.
 aidr doctor            # hosts, hook registration, rules, mode, DLP, profiles, approvals, last verdict
 aidr status            # protection summary, audit-log write losses
 aidr audit tail -n 20  # recent verdicts (redacted)
-aidr pending           # asks waiting for an operator approval
+aidr pending           # asks waiting for an operator approval, and dashboard requests with their status
+aidr report-fp <id>    # report a block as a false positive (the id is in the block message)
+aidr privacy notice    # what AIDR guards, records and sends
 ```
+
+`aidr report-fp <id>` finds the blocked call in the local audit log by the short
+id the block message printed (`aidr report-fp 1a2b3c4d`) and, on a managed
+computer, files it in the console's false-positive queue
+(`POST /v1/false-positive-reports`, table `false_positive_reports`): the action
+id, rule, decision, severity, tool, a reason code (`--reason`) and an optional
+note (`--note`, secrets masked, at most 500 characters). The command, file
+content and URL never leave the computer. A report allows nothing by itself:
+the security team reviews it and, if they agree, adds a time-limited
+[detection exception](configuration.md#detection-exceptions). Without a console
+it prints the details to send to the team at the organisation's
+`support_contact_url`. Each statement has a deterministic id, so reporting the
+same block twice files it once.
 
 `aidr doctor` exits non-zero when a check fails and prints the fix for each
 failed check. A hook registered on disk is not proof the host runs it; confirm

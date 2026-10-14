@@ -174,4 +174,46 @@ export const tr: Record<MessageKey, string> = {
 	"session.enrollmentRepair":
 		"Kayıt yerel olarak doğrulanamadı. Bir operatörün kayıt sonucunu netleştirmesi ve etkilenen anahtarları kontrol düzleminde iptal etmesi, ardından yeni bir eşleştirme başlatıp tarayıcıda onaylaması gerekir. Kurulum kimliğini ve kiracıyı koruyun; önceki yetkilendirme kodunu yeniden kullanmayın.",
 	"session.activate": "Singularity AIDR'yi etkinleştirmek için:",
+
+	// Block-message additions, decision notices, unprotected tools, first-run privacy notice.
+	"block.reportFp":
+		"Yanlış alarmı bildirmek için kendi terminalinizde şunu çalıştırın: aidr report-fp {shortId}",
+	"block.support": "BT veya güvenlik ekibinizden yardım: {url}",
+	"dashboard.link": "Paneldeki onay sayfası: {url}",
+	"dashboard.decided.approved":
+		"✅ Singularity AIDR: {requestId} numaralı onay isteği panelde onaylandı. Yapay zekâ aracından aynı işlemi yeniden yapmasını isteyin; onay, sınırlı bir süre için tek bir yeniden denemeyi kapsar.",
+	"dashboard.decided.denied":
+		"⛔ Singularity AIDR: {requestId} numaralı onay isteği panelde reddedildi; işlem engelli kalıyor.",
+	"dashboard.decided.expired":
+		"Singularity AIDR: {requestId} numaralı onay isteğinin süresi karar verilmeden doldu; işlem engelli kalıyor.",
+	"session.unprotectedTools":
+		"⚠️ Bu bilgisayarda Singularity AIDR korumasıyla çalışmayan yapay zekâ araçları bulundu: {tools}. Bu araçların komutları, dosya değişiklikleri ve web istekleri İNCELENMİYOR. Ayrıntılar: `aidr status`.",
+	"notice.title": "🛡️ Singularity AIDR bu bilgisayarda etkin. Ne yaptığı ve neyi kaydettiği:",
+	"notice.guards":
+		"• Neyi korur: Yapay zekâ kodlama aracınız (Claude Code, Cursor, VS Code, Codex, OpenCode veya OpenClaw) bir komut çalıştırmadan, bir dosyayı okumadan ya da değiştirmeden, bir web sayfasını açmadan veya bir MCP aracını çağırmadan önce Singularity AIDR bunu güvenlik kurallarıyla karşılaştırır ve riskli olanları engeller ya da onaya bekletir. Aracın izin verdiği yerlerde istemleriniz gizli anahtar ve kişisel veri için de denetlenir.",
+	"notice.notGuarded":
+		"• Neyi korumaz: Sıradan bir komutun doğru olup olmadığına karar vermez. Örneğin `kubectl delete`, `git push --force` veya `docker system prune`, kurumunuz bunlar için bir kural eklemedikçe uyarısız çalışır. Yapay zekâ aracı dışında kendi yazdığınız komutlar incelenmez; Singularity AIDR bağlayıcısı olmayan yapay zekâ araçları korunmaz.",
+	"notice.unprotected": "• Bu bilgisayarda korumasız bulunan araçlar: {tools}.",
+	"notice.localLog":
+		"• Bu bilgisayarda kaydedilenler: engellenen ve onaya bekletilen işlemler; komutun, dosyanın veya adresin gizli bilgileri maskelenmiş kısa bir özetiyle birlikte {path} dosyasına yazılır.",
+	"notice.localLogClean":
+		"• Bu bilgisayarda kaydedilenler: incelenen her işlem (izin verilenler de); komutun, dosyanın veya adresin gizli bilgileri maskelenmiş kısa bir özetiyle birlikte {path} dosyasına yazılır.",
+	"notice.localLogOff": "• Bu bilgisayarda kaydedilenler: hiçbir şey; karar kaydı kapalı.",
+	"notice.sent.local":
+		"• Bu bilgisayardan dışarı gidenler: çalışmanızla ilgili hiçbir şey. {versionCheck}",
+	"notice.sent.versionCheck":
+		"Yalnızca güncelleme denetimi ürün sürümünü, bir kurulum kimliğini ve temel sistem bilgilerini (işletim sistemi, yapay zekâ aracı) gönderir.",
+	"notice.sent.noVersionCheck": "Güncelleme denetimi kapalı.",
+	"notice.sent.managed":
+		"• Bu bilgisayardan dışarı gidenler: Bu bilgisayar kurumunuz tarafından yönetiliyor. Engellenen ve onaya bekletilen kararlar{clean} kurumunuzun Singularity AIDR konsoluna ({host}) gönderilir; {redaction} Konsol ayrıca bu cihazın koruma durumunu, yapay zekâ aracı ve MCP sunucusu envanterini ve başlattığınız onay isteklerini alır.",
+	"notice.sent.managedClean": " (ve izin verilen işlemler)",
+	"notice.sent.managedNoAudit":
+		"• Bu bilgisayardan dışarı gidenler: Bu bilgisayar kurumunuz tarafından yönetiliyor. Kararlar gönderilmez; kurumunuzun Singularity AIDR konsolu ({host}) bu cihazın koruma durumunu, yapay zekâ aracı ve MCP sunucusu envanterini ve başlattığınız onay isteklerini alır.",
+	"notice.redaction.hash": "içlerindeki hassas değerler tek yönlü parmak izleriyle değiştirilir.",
+	"notice.redaction.full": "komut, dosya ve adres özetleri gönderilmez.",
+	"notice.redaction.none": "komut, dosya ve adres özetleri kaydedildiği gibi gönderilir.",
+	"notice.privacyUrl": "• Kurumunuzun aydınlatma metni: {url}",
+	"notice.privacyAsk": "• Kurumunuzun aydınlatma metni için BT veya güvenlik ekibinize başvurun.",
+	"notice.support": "• Sorularınız veya hatalı olduğunu düşündüğünüz bir engel için: {url}",
+	"notice.again": "Bu bilgiyi istediğiniz zaman yeniden görmek için: aidr privacy notice",
 };

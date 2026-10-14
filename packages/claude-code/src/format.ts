@@ -26,11 +26,13 @@ export function formatBlockReason(
 	verdict: Verdict,
 	artifacts?: readonly Artifact[],
 	dashboardNotice?: string | null,
+	actionId?: string,
 ): string {
 	return formatBlockMessage(verdict, {
 		approval: verdict.decision === "ask" ? { kind: "host_dialog" } : { kind: "none" },
 		artifacts,
 		dashboardNotice,
+		actionId,
 		audience: "user",
 	});
 }

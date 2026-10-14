@@ -826,11 +826,18 @@ English.
 
 Resolution order, first match wins: the `AIDR_LOCALE` environment variable,
 this key, then the POSIX locale (`LC_ALL`, `LC_MESSAGES`, `LANG`, so
-`LANG=tr_TR.UTF-8` selects Turkish), then English. An unsupported value is
-ignored; it never makes the configuration invalid.
+`LANG=tr_TR.UTF-8` selects Turkish), then the operating system locale as Node's
+`Intl` reports it (Windows sets no POSIX variables; a Turkish Windows selects
+Turkish here), then English. An unsupported value is ignored; it never makes the
+configuration invalid.
 
-The Cursor / VS Code extension follows the editor's display language, and the
-dashboard has its own language switcher.
+The Cursor / VS Code extension follows the editor's display language, and so do
+its hooks: the host starts the hook without the editor's environment, so the
+extension records `vscode.env.language` in the hook launcher's `runner.json` on
+every activation and the launcher sets `AIDR_LOCALE` from it, unless
+`AIDR_LOCALE` is already set (then that wins). Because it arrives as
+`AIDR_LOCALE`, the editor language takes precedence over this key inside
+editor-launched hooks. The dashboard has its own language switcher.
 
 ### `operator_approvals`
 
@@ -871,6 +878,41 @@ VS Code hooks. OpenClaw, OpenCode and Codex always use the operator channel.
 ```json
 { "operator_approvals": { "mode": "operator" } }
 ```
+
+### `support_contact_url`, `privacy_notice_url`, `approvals_mode`
+
+Machine-policy keys (Windows `HKLM\SOFTWARE\Policies\Singularity AIDR`, Linux
+`/etc/singularity-aidr/managed.json`); machine policy wins over the user
+configuration for them. All three only change what people are shown and who
+approves; none of them weakens detection.
+
+- `support_contact_url`: where a developer reports a block they think is wrong.
+  Block messages show it next to the `aidr report-fp <id>` line, and `aidr
+  report-fp` prints it. Only plain `http(s)` links without credentials, spaces,
+  control or bidi characters are shown; anything else is dropped.
+- `privacy_notice_url`: the organisation's privacy notice (aydınlatma metni),
+  linked from the first-run notice every connector shows (see
+  [First-run notice](#first-run-privacy-notice)). Same link rules.
+- `approvals_mode`: `"dashboard_only"` or `"host_dialog"`; see
+  [Managed mode: dashboard approvals](#managed-mode-dashboard-approvals).
+
+### First-run privacy notice
+
+Every connector (Claude Code and OpenClaw / OpenCode at session start, Codex on
+the first prompt, Cursor / VS Code on activation) shows the developer, once, what
+Singularity AIDR guards and what it does not guard (an ordinary `kubectl delete`,
+`git push --force` or `docker system prune` runs without a warning unless a rule
+is added; commands typed outside the assistant and AI tools without a connector
+are not inspected), what it records on the computer (the audit log path and
+whether allowed actions are included) and what leaves the computer (nothing about
+the developer's work in local mode; in managed mode the console host, the
+redaction mode and whether allowed actions are sent), with the
+`privacy_notice_url`. This includes MDM and silent installs, where nobody ran the
+welcome flow. It is shown again whenever one of those facts changes (for example
+on enrolment), and `aidr privacy notice` prints it at any time
+(`--json` for the facts). The shown state is kept in
+`~/.singularity-aidr/privacy-notice-state.json`; losing it only means the notice
+is shown again.
 
 ### `disabled_threats`
 
@@ -1362,12 +1404,35 @@ nor any same-user process can mint an approval, re-bind one to another call, or
 replay one. What remains local is *which* request to poll, and tampering with that
 only ever results in a block.
 
-By default the local operator channel keeps working alongside the dashboard (and
-Claude Code / VS Code keep their native dialog). Set
-`operator_approvals.dashboard_only: true` to make the dashboard the **only**
-channel: `aidr approve` approvals are ignored, native dialogs become blocks, and if
-the dashboard is unavailable (not enrolled, no signed entitlement, control plane
-unreachable) the call stays blocked with the reason in the message.
+**Default in managed mode: the dashboard.** When the installation is managed and
+its dashboard approval channel is usable (enrolled, an active signed entitlement,
+a secure control-plane endpoint), an `ask` is released **only** by a dashboard
+approval, so a developer cannot approve their own blocked action with the host's
+"Yes" or `aidr approve`. A managed installation without a usable dashboard keeps
+the host dialog / operator channel rather than leaving an ask that nothing can
+release. Who decides is set by the machine-policy key `approvals_mode`, which wins
+over the user configuration:
+
+| `approvals_mode` | Behaviour |
+| --- | --- |
+| unset (default) | Dashboard when usable, as above; `operator_approvals.mode: "operator"` keeps the operator channel. |
+| `"dashboard_only"` | Dashboard only, always (same as `operator_approvals.dashboard_only: true`): `aidr approve` approvals are ignored, native dialogs become blocks, and if the dashboard is unavailable the call stays blocked with the reason in the message. |
+| `"host_dialog"` | The pre-0.7 behaviour: the local operator channel works alongside the dashboard and Claude Code / VS Code keep their native dialog. |
+
+**The developer's side of the loop.** The block message names the request and
+links its dashboard page, `https://<dashboard>/approvals?request=<request id>`,
+when the control plane has `AIDR_DASHBOARD_URL` set; the link carries no token,
+and the connector rebuilds it from the dashboard origin alone. `aidr pending`
+lists the requests this computer filed with their live status (waiting, approved,
+denied, expired) and the page link. When a decision lands, the developer is told
+once, without retrying: on the next prompt in Claude Code and Codex, and as an
+editor notification in Cursor / VS Code (polled every 30 s while requests are
+waiting, at most every 20 s across processes). The notice never spends the
+approval: the identical retry still verifies and spends the single-use token.
+
+**Approver notifications.** New notification channels select "approval
+requested" by default (migration `20261014003300`); existing channels keep what
+their administrators chose. The notification links the dashboard approvals page.
 
 ## Detection exceptions
 

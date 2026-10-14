@@ -18,6 +18,7 @@
  * not part of the text.
  */
 
+import { configuredSupportContact } from "./display-settings.js";
 import { categoryLabel, displayReason, ruleTitleById, sourceLabel } from "./i18n/display.js";
 import { severityLabel, t } from "./i18n/index.js";
 import { type ResponseActionRecord, summarizeResponseActions } from "./response-actions.js";
@@ -42,6 +43,11 @@ export interface BlockMessageOptions {
 	responseActions?: readonly ResponseActionRecord[];
 	/** Managed-mode dashboard request line (see `formatDashboardApprovalNotice`). */
 	dashboardNotice?: string | null;
+	/**
+	 * The call's action id, for the `aidr report-fp` line. An `ask` released
+	 * through the terminal carries it in `approval` already.
+	 */
+	actionId?: string;
 	/**
 	 * `user` leaves out the line addressed to the agent, for host fields only a
 	 * person reads (Claude Code `systemMessage`, a native confirmation dialog).
@@ -228,20 +234,38 @@ function approvalLines(approval: BlockApproval, dashboardNotice: string | null):
 	return lines;
 }
 
+/**
+ * How to report a false positive: `aidr report-fp` with the call's short id
+ * (the CLI matches the prefix against the local audit log) and the support
+ * contact the organisation configured.
+ */
+function reportLines(actionId: string | undefined): string[] {
+	const lines: string[] = [];
+	if (actionId && /^[a-f0-9]{8,}$/i.test(actionId)) {
+		lines.push(t("block.reportFp", { shortId: actionId.slice(0, SHORT_ACTION_ID_LENGTH) }));
+	}
+	const support = configuredSupportContact();
+	if (support) lines.push(t("block.support", { url: support }));
+	return lines;
+}
+
 /** What the person can do next, after the facts: details, false-positive report, reference. */
 function nextLines(
 	verdict: Verdict,
 	approval: BlockApproval,
 	dashboardNotice?: string | null,
+	actionId?: string,
 ): string[] {
 	const rule = verdict.matchedThreatId;
 	if (approval.kind === "none") {
 		return [
 			...(dashboardNotice ? [dashboardNotice] : []),
 			rule ? t("block.deny.next", { rule }) : t("block.deny.nextNoRule"),
+			...reportLines(actionId),
 		];
 	}
 	const lines = [rule ? t("block.ask.next", { rule }) : t("block.ask.nextNoRule")];
+	lines.push(...reportLines(approval.kind === "cli" ? approval.actionId : actionId));
 	// The full id, for the agent to pass on and for scripts; the user's command
 	// above uses its short prefix.
 	if (approval.kind === "cli") {
@@ -262,7 +286,7 @@ export function formatBlockMessage(verdict: Verdict, options: BlockMessageOption
 	lines.push(...whyLines(verdict));
 	const response = responseText(options.responseActions);
 	if (response) lines.push(t("block.line.response", { response }));
-	lines.push(...nextLines(verdict, approval, options.dashboardNotice));
+	lines.push(...nextLines(verdict, approval, options.dashboardNotice, options.actionId));
 	if (options.audience !== "user") {
 		lines.push(t(isAsk ? "block.agent.ask" : "block.agent.deny"));
 	}

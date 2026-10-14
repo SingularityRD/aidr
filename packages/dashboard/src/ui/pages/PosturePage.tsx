@@ -110,6 +110,14 @@ const AGENT_HOST_LABELS: Record<string, string> = {
 	openclaw: "OpenClaw",
 	"gemini-cli": "Gemini CLI",
 	aider: "Aider",
+	windsurf: "Windsurf",
+	"jetbrains-ai": "JetBrains AI / Junie",
+	cline: "Cline",
+	"roo-code": "Roo Code",
+	"copilot-cli": "GitHub Copilot CLI",
+	"amazon-q": "Amazon Q Developer",
+	kiro: "Kiro",
+	zed: "Zed",
 };
 
 const SEVERITY_LABELS: Record<PostureSeverity, DashboardMessageKey> = {

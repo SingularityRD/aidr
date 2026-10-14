@@ -1,9 +1,13 @@
 import {
+	type Config,
+	type DashboardApprovalOptions,
+	type DashboardRequestView,
 	describeOperatorApprovalKey,
 	escapeTerminalText,
 	getPendingAsk,
 	type HostDialogAsk,
 	type ListedPendingAsk,
+	listDashboardApprovalRequests,
 	listHostDialogAsks,
 	listPendingAsks,
 	loadConfig,
@@ -27,6 +31,9 @@ import {
 /** Test seams; production callers pass nothing. */
 export interface ApprovalCommandDeps {
 	store?: OperatorApprovalStoreOptions;
+	/** Managed-mode dashboard requests; `false` skips them (tests). */
+	dashboard?: DashboardApprovalOptions | false;
+	config?: Config;
 	env?: NodeJS.ProcessEnv;
 	streams?: ConfirmationStreams;
 }
@@ -139,6 +146,46 @@ function printApprovablePending(pending: ListedPendingAsk[]): void {
 	console.log(ct("approvals.howToPick"));
 }
 
+/**
+ * Managed mode: the dashboard requests this computer filed and their status,
+ * with the dashboard page. Read-only: nothing here approves or spends anything.
+ */
+async function dashboardRequests(deps: ApprovalCommandDeps): Promise<DashboardRequestView[]> {
+	if (deps.dashboard === false) return [];
+	try {
+		const config = deps.config ?? (await loadConfig());
+		if (config.mode !== "managed") return [];
+		return await listDashboardApprovalRequests(config, { ...deps.dashboard, poll: true });
+	} catch {
+		return [];
+	}
+}
+
+const DASHBOARD_STATUS_KEYS = {
+	pending: "approvals.dashboardStatus.pending",
+	approved: "approvals.dashboardStatus.approved",
+	denied: "approvals.dashboardStatus.denied",
+	expired: "approvals.dashboardStatus.expired",
+	unknown: "approvals.dashboardStatus.unknown",
+} as const;
+
+function printDashboardRequests(requests: DashboardRequestView[]): void {
+	if (requests.length === 0) return;
+	console.log("");
+	console.log(ct("approvals.dashboardHeader", { count: requests.length }));
+	for (const request of requests) {
+		console.log(
+			ct("approvals.dashboardLine", {
+				requestId: request.requestId,
+				status: ct(DASHBOARD_STATUS_KEYS[request.status]),
+				tool: escapeTerminalText(request.tool),
+				expiresAt: localTime(request.expiresAt),
+			}),
+		);
+		if (request.consoleUrl) console.log(ct("approvals.dashboardLink", { url: request.consoleUrl }));
+	}
+}
+
 function printHostDialogAsks(informational: HostDialogAsk[]): void {
 	if (informational.length === 0) return;
 	console.log("");
@@ -170,6 +217,7 @@ export async function pendingCommand(
 		return;
 	}
 	const informational = await hostDialogAsks(store);
+	const dashboard = await dashboardRequests(deps);
 	if (options.json) {
 		console.log(
 			JSON.stringify(
@@ -179,6 +227,15 @@ export async function pendingCommand(
 					...(disabled ? { approvals_disabled_reason: disabled } : {}),
 					pending: pending.map(safePending),
 					host_dialog: informational.map(safePending),
+					dashboard_requests: dashboard.map((request) => ({
+						request_id: request.requestId,
+						action_id: request.actionId,
+						tool: escapeTerminalText(request.tool),
+						status: request.status,
+						created_at: request.createdAt,
+						expires_at: request.expiresAt,
+						...(request.consoleUrl ? { console_url: request.consoleUrl } : {}),
+					})),
 				},
 				null,
 				2,
@@ -189,6 +246,7 @@ export async function pendingCommand(
 	if (disabled) console.error(disabled);
 	printApprovablePending(pending);
 	printHostDialogAsks(informational);
+	printDashboardRequests(dashboard);
 }
 
 export interface ApproveOptions {

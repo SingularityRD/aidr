@@ -34,7 +34,7 @@ be parsed. That file is a coverage gap, not a clean result.
 | `sandbox_full_access` | Codex | critical | `sandbox_mode = "danger-full-access"` (root and profiles) | `"workspace-write"` or `"read-only"` |
 | `permission_allow_all` | OpenCode | high | `permission.bash` / `permission.edit` set to the string `"allow"` in `opencode.json` (user and project) | `"ask"` or per-command patterns |
 | `aidr_hook_missing` | Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw | high | Host detected but no AIDR registration found (same measurement as `aidr status`) | `aidr setup` and the host's platform guide |
-| `no_aidr_connector` | Gemini CLI, Aider | medium | `~/.gemini/` or `~/.aider.conf.yml` exists; AIDR has no connector for these hosts | Route through the AIDR MCP gateway or restrict by policy |
+| `no_aidr_connector` | Windsurf, JetBrains AI Assistant / Junie, Cline, Roo Code, GitHub Copilot CLI, Gemini CLI, Aider, Amazon Q Developer, Kiro, Zed | medium | The tool's own directory (`~/.codeium/windsurf`, `~/.junie`, `~/.copilot`, `~/.gemini`, `~/.aider.conf.yml`, `~/.aws/amazonq`, `~/.kiro`, `~/.config/zed`, `%APPDATA%\Zed`, ...), its editor extension (`saoudrizwan.claude-dev-*`, `rooveterinaryinc.roo-cline-*`), its JetBrains plugin (`ml-llm`, `junie`) or its executable on `PATH` exists (`packages/core/src/unprotected-agents.ts`; nothing is executed). AIDR has no connector for these tools: their commands, file changes and web requests are **not inspected**. `aidr status`, `aidr coverage`, the session banner and the first-run notice name them as unprotected | Route through the AIDR MCP gateway or restrict by policy |
 | `no_devcontainer` | environment | low | Cursor or VS Code detected, the project has no `.devcontainer/devcontainer.json` and the process is not in a container | Add a devcontainer |
 | `running_as_root` | environment | high | Effective uid is 0 | Run agents as an unprivileged user |
 | `docker_socket_writable` | environment | high | `/var/run/docker.sock` is writable (equivalent to root on the host) | Rootless Docker or remove the user from the docker group |
@@ -63,7 +63,9 @@ through the same identifiers-only posture pipeline as the MCP inventory and skil
 Each event carries:
 
 - the host (`claude-code`, `cursor`, `vscode`, `codex`, `opencode`, `openclaw`,
-  `gemini-cli`, `aider` or `environment`)
+  `gemini-cli`, `aider`, `windsurf`, `jetbrains-ai`, `cline`, `roo-code`, `copilot-cli`,
+  `amazon-q`, `kiro`, `zed` or `environment`; the last eight were added in
+  `supabase/migrations/20261014003300_approval_notify_unprotected_hosts_fp_reports.sql`)
 - the check id from the table above
 - the severity
 - a count (rules, variables or servers, from 0 to 10,000)

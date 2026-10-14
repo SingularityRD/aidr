@@ -3,6 +3,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+	ApprovalStore,
 	type Artifact,
 	type BlockApproval,
 	canonicalMcpToolName,
@@ -814,6 +815,8 @@ export interface HookEvaluation {
 	operatorHold?: string;
 	/** Extracted artifacts, so the message names what was stopped with its type. */
 	artifacts?: readonly Artifact[];
+	/** The call's action id, for the `aidr report-fp` line. */
+	actionId?: string;
 }
 
 async function evaluateNormalizedCall(
@@ -861,6 +864,7 @@ async function evaluateNormalizedCall(
 		dashboardOnly: resolution.dashboardOnly,
 		operatorHold: resolution.operatorHold?.message,
 		artifacts: call.artifacts,
+		actionId: ApprovalStore.actionId(call.toolName, call.toolInput, call.sessionId),
 	};
 }
 
@@ -1447,6 +1451,7 @@ function personMessage(
 		approval,
 		artifacts: evaluation.artifacts,
 		dashboardNotice: evaluation.dashboardNotice,
+		actionId: evaluation.actionId,
 		audience,
 	});
 }

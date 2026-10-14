@@ -40,6 +40,14 @@ Purpose: in MANAGED mode, an `ask` verdict can be approved by a human admin in t
 - Poll returns `404 approval_request_not_found` for another tenant's (or another bound
   agent's) request. Once decided it returns `{ request_id, status, token, key_id,
   token_expires_at }`.
+- Optional `console_url` on create and poll responses when the function has
+  `AIDR_DASHBOARD_URL`: `<dashboard origin>/approvals?request=<request_id>`. It never
+  carries a token. The connector keeps only the origin (https, or http on loopback, no
+  credentials) and rebuilds the same link itself, so a server-chosen path or query can
+  never reach the block message. The dashboard page brings `?request=` into view.
+- Client decision notices (`checkDashboardDecisions`) poll remembered requests at most
+  every 20 s across processes and report each decision once; they never verify or
+  spend the token, so the identical retry still releases exactly one call.
 - Dashboard decisions: `POST /approval-requests/{request_id}/decision` (contract form) or
   `POST /approval-requests { action: "decide", request_id, tenant_id, decision, reason }`
   (the dashboard's form, so the browser call site is statically checkable). `reason` is
