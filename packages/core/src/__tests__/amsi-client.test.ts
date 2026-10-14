@@ -123,6 +123,47 @@ describe("AmsiClient", () => {
 		expect(client.isAvailable).toBe(false);
 	});
 
+	it("reports a ConstrainedLanguage refusal as a structural unavailability (D3)", async () => {
+		vi.spyOn(process, "platform", "get").mockReturnValue("win32" as NodeJS.Platform);
+		const proc = createMockProcess();
+		mockSpawn.mockReturnValue(proc as never);
+		let fired = false;
+		proc.stdout.on("newListener", (event: string) => {
+			if (event === "data" && !fired) {
+				fired = true;
+				queueMicrotask(() => {
+					proc.stderr.emit("data", Buffer.from("AIDR_LANGUAGE_MODE=ConstrainedLanguage"));
+					proc.emit("exit", 3, null);
+				});
+			}
+		});
+
+		const client = new AmsiClient(mockLogger);
+		await client.init();
+		expect(client.isAvailable).toBe(false);
+		expect(client.unavailableKind).toBe("constrained_language");
+		expect(client.unavailableDetail).toContain("ConstrainedLanguage");
+		// The PowerShell script checks the language mode before Add-Type.
+		const script = String(mockSpawn.mock.calls.at(-1)?.[1]?.at(-1));
+		expect(script.indexOf("SessionState.LanguageMode")).toBeGreaterThan(-1);
+		expect(script.indexOf("SessionState.LanguageMode")).toBeLessThan(
+			script.indexOf("Add-Type -TypeDefinition"),
+		);
+	});
+
+	it("reports any other start-up failure as no_backend", async () => {
+		vi.spyOn(process, "platform", "get").mockReturnValue("win32" as NodeJS.Platform);
+		const proc = createMockProcess();
+		mockSpawn.mockReturnValue(proc as never);
+		emitExit(proc);
+
+		const client = new AmsiClient(mockLogger);
+		await client.init();
+		expect(client.unavailableKind).toBe("no_backend");
+		client.close();
+		expect(client.unavailableKind).toBeNull();
+	});
+
 	it("falls back to PowerShell when koffi fails", async () => {
 		vi.spyOn(process, "platform", "get").mockReturnValue("win32" as NodeJS.Platform);
 		const proc = createMockProcess();

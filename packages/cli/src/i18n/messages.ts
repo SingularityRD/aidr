@@ -215,6 +215,11 @@ export const CLI_EN = {
 	"doctor.environmentUnreadable": "{count} configuration file(s) could not be parsed.",
 	"doctor.auditDisabled": "Audit logging is disabled in the configuration.",
 	"doctor.noVerdict": "No verdict recorded yet; run `aidr verify` to confirm enforcement.",
+	"doctor.amsiAvailable": "AMSI malware scanning: available ({backend}).",
+	"doctor.amsiSlowFallback":
+		"AMSI malware scanning runs on the PowerShell fallback (about 0.3 to 0.5 s per tool call): the native koffi backend is missing from this installation. Reinstall with the official Windows installer.",
+	"doctor.amsiUnavailable":
+		"AMSI malware scanning cannot run on this computer, so content is NOT scanned by AMSI (local threat rules still apply). See --verbose for the reason.",
 	"doctor.lastVerdict": "Last verdict: {verdict} for {tool} at {time}.",
 	"doctor.auditUnreadable": "Audit log unreadable.",
 	"doctor.footerOk":
@@ -579,6 +584,11 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"doctor.auditDisabled": "Denetim kaydı yapılandırmada kapalı.",
 	"doctor.noVerdict":
 		"Henüz kayıtlı karar yok; korumanın çalıştığını doğrulamak için `aidr verify` çalıştırın.",
+	"doctor.amsiAvailable": "AMSI kötü amaçlı yazılım taraması: kullanılabilir ({backend}).",
+	"doctor.amsiSlowFallback":
+		"AMSI kötü amaçlı yazılım taraması PowerShell yedek yolu üzerinden çalışıyor (araç çağrısı başına yaklaşık 0,3-0,5 sn): bu kurulumda yerel koffi bileşeni eksik. Resmî Windows kurulum paketiyle yeniden kurun.",
+	"doctor.amsiUnavailable":
+		"AMSI kötü amaçlı yazılım taraması bu bilgisayarda çalışamıyor; içerik AMSI ile TARANMIYOR (yerel tehdit kuralları yine uygulanıyor). Nedeni için --verbose kullanın.",
 	"doctor.lastVerdict": "Son karar: {tool} için {verdict}, {time}.",
 	"doctor.auditUnreadable": "Denetim kaydı okunamadı.",
 	"doctor.footerOk":

@@ -29,6 +29,20 @@ const MAX_SCAN_LENGTH = 1_048_576; // 1 MB
 /** Timeout for PowerShell operations (ms). */
 const PS_TIMEOUT = 15_000;
 
+/** Written to stderr by the PowerShell backend when the language mode forbids Add-Type. */
+const LANGUAGE_MODE_MARKER = "AIDR_LANGUAGE_MODE=";
+
+/**
+ * Why a host that supports AMSI has no usable backend.
+ *
+ * - `constrained_language`: PowerShell runs in ConstrainedLanguage (AppLocker /
+ *   WDAC), so the P/Invoke fallback cannot compile, and the native backend is
+ *   not available either. This does not change from one call to the next.
+ * - `no_backend`: neither backend initialised for another reason (koffi
+ *   missing or blocked, PowerShell missing, slow or failing).
+ */
+export type AmsiUnavailableKind = "constrained_language" | "no_backend";
+
 /**
  * Bundled Claude hooks load the manifest-covered native addon from dist/vendor.
  * The unbundled core library keeps its normal optional dependency resolution.
@@ -326,6 +340,13 @@ public class SageAmsi {
 const PS_PERSISTENT_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 try {
+    # Add-Type is refused outside FullLanguage (AppLocker / WDAC put PowerShell
+    # in ConstrainedLanguage). Say so explicitly instead of failing on Add-Type.
+    $mode = [string]$ExecutionContext.SessionState.LanguageMode
+    if ($mode -ne 'FullLanguage') {
+        [Console]::Error.Write("${LANGUAGE_MODE_MARKER}" + $mode)
+        exit 3
+    }
     Add-Type -TypeDefinition @'
 ${AMSI_CSHARP_TYPE}
 '@
@@ -401,6 +422,8 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 	private process: ChildProcess | null = null;
 	private available = false;
 	private stdoutBuffer = "";
+	/** First stderr bytes of the process, kept to explain a failed start. */
+	private stderrText = "";
 	private scanQueue: Promise<void> = Promise.resolve();
 	private pendingResponse: {
 		resolve: (line: string) => void;
@@ -508,6 +531,7 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 			});
 
 			this.process.stderr?.on("data", (chunk: Buffer) => {
+				if (this.stderrText.length < 2048) this.stderrText += chunk.toString();
 				this.logger.debug("AMSI: PowerShell stderr", {
 					data: chunk.toString().slice(0, 200),
 				});
@@ -525,8 +549,34 @@ class PersistentPowershellAmsiBackend implements AmsiBackend {
 			this.logger.debug("AMSI: PowerShell persistent backend init failed", {
 				error: String(e),
 			});
+			await this.drainStderr();
 			this.close();
 		}
+	}
+
+	/**
+	 * `exit` can fire before the last stderr chunk is read. Give a process that
+	 * failed to start a moment to deliver it, so a language-mode refusal is
+	 * reported as such rather than as a generic failure.
+	 */
+	private async drainStderr(): Promise<void> {
+		const stderr = this.process?.stderr;
+		if (!stderr || this.stderrText.includes(LANGUAGE_MODE_MARKER)) return;
+		await new Promise<void>((resolve) => {
+			const timer = setTimeout(resolve, 250);
+			stderr.once("end", () => {
+				clearTimeout(timer);
+				resolve();
+			});
+		});
+	}
+
+	/** The PowerShell language mode reported by a failed start, or null. */
+	get refusedLanguageMode(): string | null {
+		const index = this.stderrText.indexOf(LANGUAGE_MODE_MARKER);
+		if (index === -1) return null;
+		const mode = /^[A-Za-z]{1,40}/.exec(this.stderrText.slice(index + LANGUAGE_MODE_MARKER.length));
+		return mode?.[0] ?? "unknown";
 	}
 
 	async scanString(content: string, contentName: string): Promise<AmsiCheckResult | null> {
@@ -701,6 +751,7 @@ export class AmsiClient {
 	 * null, and those cases stay silent no-ops.
 	 */
 	private unavailableReason: string | null = null;
+	private unavailableKindValue: AmsiUnavailableKind | null = null;
 
 	constructor(logger: Logger = nullLogger) {
 		this.logger = logger;
@@ -708,6 +759,21 @@ export class AmsiClient {
 
 	get isAvailable(): boolean {
 		return this.backend?.isAvailable ?? false;
+	}
+
+	/**
+	 * Why `init()` found no backend on a host that supports AMSI, or null (a
+	 * backend is available, the host does not support AMSI, or `init()` has not
+	 * run). Lets the caller tell a host where AMSI cannot run at all from a scan
+	 * that failed on a working backend.
+	 */
+	get unavailableKind(): AmsiUnavailableKind | null {
+		return this.unavailableKindValue;
+	}
+
+	/** Operator-readable reason paired with {@link unavailableKind}. */
+	get unavailableDetail(): string | null {
+		return this.unavailableReason;
 	}
 
 	/** Makes native availability and fallback visible to installers and diagnostics. */
@@ -756,9 +822,15 @@ export class AmsiClient {
 		this.selectedBackend = "unavailable";
 		// The host supports AMSI (see isAmsiSupported), so reaching this point is an
 		// outage of the leg itself, not "there was nothing to scan".
-		this.unavailableReason =
-			"no AMSI backend could be established on this host: the native koffi backend and the PowerShell fallback both failed to initialize";
-		this.logger.warn("AMSI unavailable: native and PowerShell backends failed");
+		const languageMode =
+			ps instanceof PersistentPowershellAmsiBackend ? ps.refusedLanguageMode : null;
+		this.unavailableKindValue = languageMode ? "constrained_language" : "no_backend";
+		this.unavailableReason = languageMode
+			? `no AMSI backend could be established on this host: the native koffi backend is unavailable and PowerShell runs in ${languageMode} mode (AppLocker/WDAC), which blocks the PowerShell fallback`
+			: "no AMSI backend could be established on this host: the native koffi backend and the PowerShell fallback both failed to initialize";
+		this.logger.warn("AMSI unavailable: native and PowerShell backends failed", {
+			kind: this.unavailableKindValue,
+		});
 	}
 
 	async scanString(content: string, contentName: string): Promise<AmsiCheckResult | null> {
@@ -781,5 +853,6 @@ export class AmsiClient {
 		this.backend = null;
 		this.selectedBackend = "unavailable";
 		this.unavailableReason = null;
+		this.unavailableKindValue = null;
 	}
 }

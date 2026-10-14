@@ -239,6 +239,52 @@ describe("doctor output", () => {
 	});
 });
 
+describe("doctor AMSI check (D3)", () => {
+	const base = { checkedAt: "2026-10-14T00:00:00.000Z", version: "x", host: "h" };
+	async function amsiCheck(record: unknown) {
+		const report = await runDoctor({
+			connectors: () => [installed],
+			operatorApprovals: store,
+			loadDetectors: async () => ({}),
+			agentEnvironment: () => ({
+				schema_version: 1,
+				scanned_at: "2026-10-13T00:00:00.000Z",
+				hosts: [],
+				findings: [],
+				unreadable: [],
+				scope: "test",
+			}),
+			amsiStatus: async () => record as never,
+		});
+		return report.checks.find((check) => check.id === "amsi");
+	}
+
+	it("reports nothing where AMSI does not apply", async () => {
+		expect(await amsiCheck(null)).toBeUndefined();
+	});
+
+	it("warns, with the reason behind --verbose, when AMSI cannot run", async () => {
+		const check = await amsiCheck({
+			state: "unavailable",
+			kind: "constrained_language",
+			reason: "PowerShell runs in ConstrainedLanguage mode",
+			...base,
+		});
+		expect(check).toMatchObject({ status: "warn" });
+		expect(check?.summary).toContain("NOT scanned by AMSI");
+		expect(check?.notes).toEqual(["PowerShell runs in ConstrainedLanguage mode"]);
+	});
+
+	it("warns on the slow PowerShell fallback and is ok with the native backend", async () => {
+		expect(
+			await amsiCheck({ state: "available", backend: "powershell-persistent", ...base }),
+		).toMatchObject({ status: "warn" });
+		expect(await amsiCheck({ state: "available", backend: "native-koffi", ...base })).toMatchObject(
+			{ status: "ok" },
+		);
+	});
+});
+
 describe("local time", () => {
 	it("prints a stored UTC time in the machine's zone with its offset", () => {
 		vi.stubEnv("TZ", "Europe/Istanbul");

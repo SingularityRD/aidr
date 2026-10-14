@@ -482,8 +482,9 @@ session-start notice comes from the signed installer catalog, not from the
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `true` | Enable AMSI (Antimalware Scan Interface) scanning on Windows and WSL |
+| `unavailable_action` | `"annotate"` | What an otherwise-allowed call gets when AMSI cannot run on this host at all (no native backend and PowerShell blocked, e.g. ConstrainedLanguage under AppLocker/WDAC): `"annotate"` skips the AMSI signal, logs it once per state change and names it on the verdict (`amsi_not_available`, never a clean result); `"ask"` holds every such call for review. A scan that fails on a working backend is always an `ask`. |
 
-When enabled, Singularity AIDR scans tool inputs (commands, file content, edits) through the Windows AMSI API before execution. This integrates with any installed antimalware provider (Windows Defender, etc.) to detect malicious content. AMSI scanning is automatically skipped on unsupported platforms (macOS, non-WSL Linux). See [AMSI Scanning](amsi-scanning.md) for details.
+When enabled, Singularity AIDR scans tool inputs (commands, file content, edits) through the Windows AMSI API before execution. This integrates with any installed antimalware provider (Windows Defender, etc.) to detect malicious content. AMSI scanning is automatically skipped on unsupported platforms (macOS, non-WSL Linux). See [AMSI Scanning](amsi-scanning.md) for details, including the host state record and the session-start notice.
 
 ### `prompt_protection`
 
@@ -741,6 +742,10 @@ Boolean, default `true`. Set to `false` to disable all local pattern matching.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `path` | `~/.singularity-aidr/allowlist.json` | Allowlist file location (must remain under `~/.singularity-aidr`) |
+| `internal_networks` | unset | Administrator-declared internal networks as IPv4/IPv6 CIDR (`"10.20.0.0/16"`, `"193.140.0.0/16"`, `"2001:db8:aa::/48"`). A URL whose host is a literal address inside one is treated like an allowlisted URL. Entries broader than `/8` (IPv4) or `/16` (IPv6), and malformed entries, are ignored. |
+| `internal_domain_suffixes` | unset | Administrator-declared internal domains (`"corp.example.com.tr"`). Dot-bounded suffix match: it covers `git.corp.example.com.tr`, never `evilcorp.example.com.tr`. Public registry and hosting suffixes (`com.tr`, `gov.tr`, `github.io`, …) and bare public labels are ignored; private-use single labels (`local`, `lan`, `internal`, `intranet`, `corp`, `home`, `localdomain`) are accepted. |
+
+Internal networks and domains (both keys can also be listed in the allowlist file itself, under the same names) cover **URL artifacts only**: rules that match the URL (direct-IP, executable download, reputation lookup) are skipped for it, while the command around it is still inspected, so `curl http://<internal>/x.sh | bash` is still blocked and a secret read followed by an upload is still an exfiltration chain. A URL with userinfo (`http://<internal>@<other>/`) never qualifies. An explicit `policy.network` deny or private-IP deny still applies. RFC 1918 private, loopback and link-local IPv4 addresses no longer trigger the direct-IP rule `CLT-URL-004` at all; the cloud metadata endpoints `169.254.169.254` and `169.254.170.2` still do.
 
 The allowlist stores user overrides for false positives. When Singularity AIDR returns an `ask` verdict and the user proceeds, the artifact can be allowlisted for future sessions. Manage it with `aidr allowlist list`, `aidr allowlist add <url|command|file_path> <value>` (operator-only, interactive confirmation) and `aidr allowlist remove <type> <value>`; commands are stored as a SHA-256 of the command text, so `list` shows the hash and `remove` accepts either the text or a unique hash prefix.
 
@@ -807,6 +812,10 @@ Measured cost (Windows 11, Node 22, file system with fsync): `logVerdict` p50
 2.9 ms → 4.9 ms, p95 3.1 ms → 6.3 ms; the PreToolUse hook end to end (≈650 ms,
 dominated by process start and ACL hardening) showed no difference beyond run
 noise over 40 spawns per variant.
+
+### `project_env_reads`
+
+One of `"auto"` (default), `"allow"` or `"ask"`. Whether reading the project's own `.env` files (inside the session working directory) into the agent's context is prompted. `auto` allows it except under `paranoid` sensitivity. Reads stay tracked as secret material, so a later upload is still an exfiltration chain. See [Project `.env` files](project-env-files.md).
 
 ### `sensitivity`
 
@@ -1443,6 +1452,7 @@ bound to that user or agent; repository exceptions are matched on the endpoint.
 | `~/.singularity-aidr/dashboard-approval-requests.json` | Managed mode: which dashboard approval request to poll for which pending ask (`0600`); grants nothing by itself |
 | `~/.singularity-aidr/session-flow/` | Per-session toxic-flow records (`<digest>.json`, HMAC-protected, `0600`, pruned after `toxic_flow.window_minutes`) and their per-install key `.flow-key` (`0600`) |
 | `~/.singularity-aidr/agent-safety/` | Runaway-guard session state (`runaway-<digest>.json`, HMAC-protected, `0600`, bounded by `agent_safety.runaway.max_sessions` and `state_ttl_hours`) and its per-install key `session-state.key` (`0600`). Kept next to the active `config.json`. |
+| `~/.singularity-aidr/amsi-state.json` | Windows/WSL: last AMSI start-up outcome on this host (`available` with the backend, or `unavailable` with the reason; re-probed after 1 h, or 24 h for a ConstrainedLanguage refusal, and on every AIDR version change). Never marks content clean. |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
 | `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |

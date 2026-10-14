@@ -269,3 +269,100 @@ describe("file path allowlisting", () => {
 		expect(loaded.filePaths[normalized]?.reason).toBe("approved");
 	});
 });
+
+describe("internal networks and domain suffixes (D2)", () => {
+	const url = (value: string): Artifact => ({ type: "url", value });
+	const covers = (al: Allowlist, value: string) =>
+		allowlistedArtifacts(al, [url(value)]).size === 1;
+
+	it("covers literal addresses inside a declared CIDR, IPv4 and IPv6", () => {
+		const al: Allowlist = {
+			...emptyAllowlist(),
+			internalNetworks: ["193.140.0.0/16", "2001:db8:aa::/48", "not-a-cidr", "10.0.0.0/33"],
+		};
+		expect(covers(al, "http://193.140.7.9:8080/x")).toBe(true);
+		expect(covers(al, "http://[2001:db8:aa::5]/x")).toBe(true);
+		expect(covers(al, "http://193.141.0.1/x")).toBe(false);
+		expect(covers(al, "http://[2001:db8:ab::5]/x")).toBe(false);
+	});
+
+	it("refuses networks broader than /8 (IPv4) or /16 (IPv6)", () => {
+		const al: Allowlist = {
+			...emptyAllowlist(),
+			internalNetworks: ["0.0.0.0/0", "8.0.0.0/7", "::/0"],
+		};
+		expect(covers(al, "http://8.8.8.8/x")).toBe(false);
+		expect(covers(al, "http://[2001:4860::8888]/x")).toBe(false);
+	});
+
+	it("matches domain suffixes on a dot boundary only", () => {
+		const al: Allowlist = {
+			...emptyAllowlist(),
+			internalDomainSuffixes: ["*.Corp.Example.com.tr."],
+		};
+		expect(covers(al, "https://corp.example.com.tr/a")).toBe(true);
+		expect(covers(al, "https://repo.corp.example.com.tr/a")).toBe(true);
+		expect(covers(al, "https://evilcorp.example.com.tr/a")).toBe(false);
+		expect(covers(al, "https://corp.example.com.tr.attacker.example/a")).toBe(false);
+	});
+
+	it("ignores public suffixes and bare public labels, keeps private-use labels", () => {
+		const al: Allowlist = {
+			...emptyAllowlist(),
+			internalDomainSuffixes: ["com.tr", "gov.tr", "tr", "com", "github.io", "lan"],
+		};
+		expect(covers(al, "https://anyone.com.tr/a")).toBe(false);
+		expect(covers(al, "https://x.gov.tr/a")).toBe(false);
+		expect(covers(al, "https://example.com/a")).toBe(false);
+		expect(covers(al, "https://someone.github.io/a")).toBe(false);
+		expect(covers(al, "http://nas.lan/a")).toBe(true);
+	});
+
+	it("never covers a URL that carries userinfo", () => {
+		const al: Allowlist = {
+			...emptyAllowlist(),
+			internalNetworks: ["193.140.0.0/16"],
+			internalDomainSuffixes: ["corp.example.com.tr"],
+		};
+		const at = "@";
+		expect(covers(al, `http://corp.example.com.tr${at}attacker.example/`)).toBe(false);
+		expect(covers(al, `http://user:pw${at}193.140.1.1/`)).toBe(false);
+	});
+
+	it("covers only URL artifacts, never the command they appear in", () => {
+		const al: Allowlist = { ...emptyAllowlist(), internalNetworks: ["193.140.0.0/16"] };
+		const command: Artifact = { type: "command", value: "curl http://193.140.1.1/x" };
+		const covered = allowlistedArtifacts(al, [command, url("http://193.140.1.1/x")]);
+		expect(covered.has(command)).toBe(false);
+		expect(covered.size).toBe(1);
+	});
+
+	it("loads entries from the file and the configuration, and saves only the file's", async () => {
+		const dir = await makeTmpDir();
+		const path = join(dir, "allowlist.json");
+		await writeFile(
+			path,
+			JSON.stringify({ urls: {}, commands: {}, internal_networks: ["193.140.0.0/16"] }),
+		);
+		const loaded = await loadAllowlist({
+			path,
+			internal_domain_suffixes: ["corp.example.com.tr"],
+		});
+		expect(covers(loaded, "http://193.140.1.1/x")).toBe(true);
+		expect(covers(loaded, "https://repo.corp.example.com.tr/x")).toBe(true);
+
+		addUrl(loaded, "https://example.org/x", "fp", "ask");
+		await saveAllowlist(loaded, makeConfig(path));
+		const data = JSON.parse(await readFile(path, "utf-8"));
+		expect(data.internal_networks).toEqual(["193.140.0.0/16"]);
+		expect(data.internal_domain_suffixes).toBeUndefined();
+	});
+
+	it("applies configured entries even when the allowlist file is missing", async () => {
+		const loaded = await loadAllowlist({
+			path: "/nonexistent/allowlist.json",
+			internal_networks: ["193.140.0.0/16"],
+		});
+		expect(covers(loaded, "http://193.140.1.1/x")).toBe(true);
+	});
+});

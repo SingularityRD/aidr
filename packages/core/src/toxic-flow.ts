@@ -925,6 +925,8 @@ export interface ToxicFlowOptions {
 	 * patterns; the embedded shipped copy is used when absent.
 	 */
 	threatsDir?: string;
+	/** Absolute working directory of the session (groups the project's `.env` files). */
+	workingDirectory?: string;
 	now?: () => number;
 }
 
@@ -1028,7 +1030,10 @@ export async function applyToxicFlow(
 
 	let classification: FlowClassification;
 	try {
-		classification = classifyToolCallFlow(request, settings);
+		classification = classifyToolCallFlow(request, {
+			...settings,
+			workingDirectory: options.workingDirectory,
+		});
 	} catch (error) {
 		logger.warn("Toxic-flow classification failed; the signal was skipped", {
 			error: error instanceof Error ? error.name : typeof error,

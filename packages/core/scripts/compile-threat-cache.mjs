@@ -30,6 +30,22 @@ const packageRoot = resolve(scriptDir, "..");
 const threatsDir = resolve(packageRoot, "..", "..", "threats");
 const outFile = join(packageRoot, "src", "generated", "threat-parse-cache.ts");
 
+/** Line endings are normalised so a CRLF checkout hashes like the LF source. */
+function contentHash(content) {
+	return createHash("sha256").update(content.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+}
+
+function yamlFilesIn(dir) {
+	try {
+		return readdirSync(dir)
+			.filter((f) => f.endsWith(".yaml"))
+			.sort()
+			.map((f) => join(dir, f));
+	} catch {
+		return [];
+	}
+}
+
 function parseThreatYaml(content) {
 	try {
 		return parseYaml(content);
@@ -46,7 +62,34 @@ for (const name of readdirSync(threatsDir)
 	const data = parseThreatYaml(content);
 	if (!Array.isArray(data)) continue;
 	// Line endings are normalised so a CRLF checkout hashes like the LF source.
-	entries[createHash("sha256").update(content.replace(/\r\n/g, "\n"), "utf8").digest("hex")] = data;
+	entries[contentHash(content)] = data;
+}
+
+/**
+ * Other shipped YAML data read on every hook call: the framework mappings
+ * (~40 KB, the largest single YAML parse left on the per-call path), the
+ * toxic-flow capability patterns and the allowlists. Same safety model: keyed
+ * by content hash, consulted only through `parseShippedYaml`, and any other
+ * content is parsed normally.
+ */
+const dataEntries = {};
+const allowlistsDir = resolve(packageRoot, "..", "..", "allowlists");
+const dataFiles = [
+	...yamlFilesIn(join(threatsDir, "mappings")),
+	...yamlFilesIn(join(threatsDir, "flow")),
+	...yamlFilesIn(allowlistsDir),
+	...yamlFilesIn(join(allowlistsDir, "model-sources")),
+];
+for (const file of dataFiles) {
+	const content = readFileSync(file, "utf-8");
+	let data;
+	try {
+		data = parseYaml(content);
+	} catch {
+		continue;
+	}
+	if (data === null || typeof data !== "object") continue;
+	dataEntries[contentHash(content)] = data;
 }
 
 const body = `/**
@@ -55,6 +98,9 @@ const body = `/**
  * See that script for the safety model (YAML on disk stays authoritative).
  */
 export const THREAT_PARSE_CACHE: Readonly<Record<string, readonly unknown[]>> = ${JSON.stringify(entries)};
+
+/** Pre-parsed shipped YAML data files (mappings, flow capabilities, allowlists), same keying. */
+export const DATA_PARSE_CACHE: Readonly<Record<string, unknown>> = ${JSON.stringify(dataEntries)};
 `;
 
 if (process.argv.includes("--check")) {
@@ -68,5 +114,7 @@ if (process.argv.includes("--check")) {
 	}
 } else {
 	writeFileSync(outFile, body);
-	console.log(`[core] wrote threat parse cache (${Object.keys(entries).length} files)`);
+	console.log(
+		`[core] wrote threat parse cache (${Object.keys(entries).length} rule files, ${Object.keys(dataEntries).length} data files)`,
+	);
 }

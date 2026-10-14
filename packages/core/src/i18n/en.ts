@@ -96,6 +96,8 @@ export const en = {
 		"Singularity AIDR blocked this tool call: the release key that proves its installed files are genuine is not set up, so it cannot trust its own rules. Every tool call is blocked until it is. Run 'aidr setup' once (or 'aidr setup --release-key <file.pem>' for a manual install).",
 	"hook.redacted":
 		"🛡️ Singularity AIDR redacted sensitive data from this tool call before it ran. {reason}",
+	"hook.amsiUnavailable":
+		"Singularity AIDR: AMSI malware scanning is not available on this computer ({reason}). Commands and file writes are still checked by local threat rules, but they are NOT scanned by AMSI. Ask your IT admin to run `aidr doctor`.",
 	"hook.sessionScanTimeout":
 		"Singularity AIDR could not finish scanning installed plugins in time; the plugin scan result is unavailable. Tool calls are still inspected.",
 	"hook.sessionStartFailed":

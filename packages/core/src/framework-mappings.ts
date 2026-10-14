@@ -12,7 +12,6 @@
  */
 
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
 import { getFileContent } from "./file-utils.js";
 import {
 	FRAMEWORK_IDS,
@@ -28,6 +27,7 @@ import {
 } from "./framework-catalog.js";
 import type { FrameworkRefs, FrameworkRefsJson, Logger, Threat } from "./types.js";
 import { nullLogger } from "./types.js";
+import { parseShippedYaml } from "./yaml-parse-cache.js";
 
 /** Path of the mapping file relative to a threats directory. */
 export const FRAMEWORK_MAPPINGS_RELATIVE_PATH = join("mappings", "frameworks.yaml");
@@ -190,7 +190,7 @@ export function parseFrameworkMappings(raw: unknown): FrameworkMappingsParseResu
 export function parseFrameworkMappingsYaml(text: string): FrameworkMappingsParseResult {
 	let raw: unknown;
 	try {
-		raw = parseYaml(text);
+		raw = parseShippedYaml(text);
 	} catch (error) {
 		return { mappings: null, errors: [`invalid YAML: ${String(error)}`] };
 	}
