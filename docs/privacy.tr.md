@@ -231,8 +231,8 @@ kalıpları sunar.
 
 Maskeleme geri döndürülemez (`[EMAIL]` biçiminde etiketler ya da
 `[REDACTED]`); isteğe bağlı belirteç modu tek yönlü bir HMAC'tir ve geri
-çevrilemez. Öğrenilmiş PERSON/ADDRESS NER modeli pakette yoktur ve ilk sürüm
-kapsamı dışındadır; müşteri onaylı
+çevrilemez. Öğrenilmiş PERSON/ADDRESS NER modeli pakette yoktur ve
+ilk sürüm kapsamı dışındadır; müşteri onaylı
 bir model sağlamadıkça ad/adres için tek sinyal bağlamsal kurallardır. Paketi
 derleyip Node test takımlarını çalıştırmak için `pnpm test:privacy`; Python,
 libseccomp ya da OpenSSL ön koşulu olmayan testler adıyla atlandı olarak

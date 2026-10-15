@@ -197,7 +197,8 @@ Binding on any quote, deck or email:
 - **Reputation checks are optional** and need a configured endpoint; an unavailable
   check is never "clean".
 - **Compliance wording:** "designed to support KVKK/GDPR obligations", never
-  "certified" or "compliant" (in Turkish: never "sertifikalı" or "KVKK uyumlu").
+  "certified" or "compliant" (in Turkish: never "sertifikalı" or "<law or standard>
+  uyumlu").
 - **No SLA in force.** The 99.9% monthly availability figure is a draft target for
   contract discussion ([SLA draft](../legal/sla.en.md)); do not promise it, or any
   response time, as a commitment.
