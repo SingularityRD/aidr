@@ -199,7 +199,8 @@ describe("Settings → Notifications", () => {
 		fireEvent.change(within(form).getByLabelText("Slack incoming-webhook URL"), {
 			target: { value: SLACK_URL },
 		});
-		fireEvent.click(within(form).getByLabelText("Actions waiting for a person's approval"));
+		// Approval notifications are on by default for a new channel (D8).
+		expect(within(form).getByLabelText("Actions waiting for a person's approval")).toBeChecked();
 		fireEvent.change(within(form).getByLabelText("Minimum incident severity"), {
 			target: { value: "critical" },
 		});
@@ -237,6 +238,8 @@ describe("Settings → Notifications", () => {
 			.closest("label");
 		fireEvent.click(incidents?.querySelector("input[type=checkbox]") as HTMLInputElement);
 		fireEvent.click(within(form).getByLabelText("Critical runtime denies"));
+		// Approval notifications are on by default (D8); this channel opts out.
+		fireEvent.click(within(form).getByLabelText("Actions waiting for a person's approval"));
 		const add = within(form).getByRole("button", { name: "Add channel" });
 		expect(add).toBeDisabled();
 		fireEvent.click(within(form).getByLabelText("Enrolled agent not seen for"));

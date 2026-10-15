@@ -43,6 +43,28 @@ export interface LauncherPointer {
 	version?: string;
 	/** Hook files that carry this host's managed entries (cleaned on uninstall). */
 	config_paths?: string[];
+	/**
+	 * The editor's display language (`vscode.env.language`, e.g. `tr`), recorded
+	 * on every activation. The host starts the hook without the editor's
+	 * environment, so the launcher passes it on as `AIDR_LOCALE`.
+	 */
+	display_language?: string;
+}
+
+const DISPLAY_LANGUAGE = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8}){0,3}$/;
+
+/**
+ * Set `AIDR_LOCALE` from the recorded editor language unless the user or an
+ * administrator already set it. Messages only: a locale never changes a verdict.
+ */
+export function applyDisplayLanguage(
+	pointer: LauncherPointer,
+	env: NodeJS.ProcessEnv = process.env,
+): void {
+	const language = pointer.display_language;
+	if (env.AIDR_LOCALE?.trim()) return;
+	if (typeof language !== "string" || !DISPLAY_LANGUAGE.test(language)) return;
+	env.AIDR_LOCALE = language;
 }
 
 export function readLauncherPointer(launcherDir: string): LauncherPointer {
@@ -127,7 +149,9 @@ export function runLauncher(
 	launcherDir: string = __dirname,
 ): void {
 	const host = argv[0];
-	const runner = resolveRunner(readLauncherPointer(launcherDir));
+	const pointer = readLauncherPointer(launcherDir);
+	applyDisplayLanguage(pointer);
+	const runner = resolveRunner(pointer);
 	if (runner && existsSync(runner)) {
 		try {
 			// The runner bootstrap starts the hook process on load and reads the

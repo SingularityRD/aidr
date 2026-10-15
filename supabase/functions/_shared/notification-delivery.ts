@@ -147,7 +147,7 @@ export interface DeliveryRecord {
 const DEEP_LINK_PATHS: Record<NotificationEventType, string> = {
 	"incident.created": "/incidents",
 	"runtime.deny_critical": "/incidents",
-	"approval.requested": "/incidents",
+	"approval.requested": "/approvals",
 	"privacy.blocked_spike": "/privacy-guard",
 	"notification.test": "/settings",
 	"agent.offline": "/agents",

@@ -45,7 +45,9 @@ import {
 	DASHBOARD_APPROVAL_SOURCE,
 	type DashboardApprovalOptions,
 	type DashboardApprovalOutcome,
+	type DashboardDecisionNotice,
 	processDashboardApproval,
+	resolveDashboardApprovalContext,
 } from "./dashboard-approvals.js";
 import type { ToolEvaluationContext, ToolEvaluationRequest } from "./evaluator.js";
 import { allowVerdict, evaluateToolCall } from "./evaluator.js";
@@ -138,9 +140,42 @@ export interface GuardOptions {
 	dashboardApprovals?: DashboardApprovalOptions | false;
 }
 
-/** Whether `operator_approvals.dashboard_only` is in force (managed mode only). */
+/**
+ * Whether the configuration explicitly makes the dashboard the only approval
+ * channel (managed mode only). The machine-policy
+ * `operator_approvals.approvals_mode` wins over
+ * `operator_approvals.dashboard_only`.
+ */
 function isDashboardOnly(config: Config | undefined): boolean {
-	return config?.mode === "managed" && config.operator_approvals?.dashboard_only === true;
+	if (config?.mode !== "managed") return false;
+	const approvalsMode = config.operator_approvals?.approvals_mode;
+	if (approvalsMode) return approvalsMode === "dashboard_only";
+	return config.operator_approvals?.dashboard_only === true;
+}
+
+/**
+ * Whether only the dashboard may release an `ask` for this call. Besides the
+ * explicit settings ({@link isDashboardOnly}), a managed installation whose
+ * dashboard approval channel is usable (enrolled, signed entitlement, secure
+ * control plane) defaults to it, so the developer cannot approve their own
+ * blocked action with the host's "Yes" or `aidr approve`. `approvals_mode:
+ * host_dialog` and `operator_approvals.mode: operator` opt out of the default;
+ * a managed installation without a usable dashboard keeps the host dialog
+ * rather than leaving an ask that nothing can release. Never throws.
+ */
+async function effectiveDashboardOnly(
+	config: Config | undefined,
+	options: DashboardApprovalOptions | false | undefined,
+): Promise<boolean> {
+	if (!config || config.mode !== "managed") return false;
+	if (isDashboardOnly(config)) return true;
+	if (config.operator_approvals?.approvals_mode === "host_dialog") return false;
+	if (options === false || config.operator_approvals?.mode === "operator") return false;
+	try {
+		return (await resolveDashboardApprovalContext(config, options ?? {})).available;
+	} catch {
+		return false;
+	}
 }
 
 /** The released verdict for an `ask` an approval channel let through. */
@@ -165,6 +200,7 @@ async function dashboardApprovalStep(
 	connector: string | undefined,
 	logger: Logger,
 	options: DashboardApprovalOptions | false | undefined,
+	dashboardOnly: boolean,
 ): Promise<{ outcome: DashboardApprovalOutcome | null; released: Verdict | null }> {
 	if (options === false || config.mode !== "managed") return { outcome: null, released: null };
 	const outcome = await processDashboardApproval(
@@ -181,7 +217,7 @@ async function dashboardApprovalStep(
 		{ logger, ...options },
 	);
 	if (!outcome) return { outcome: null, released: null };
-	if (isDashboardOnly(config)) outcome.dashboardOnly = true;
+	if (dashboardOnly) outcome.dashboardOnly = true;
 	if (outcome.status !== "released") return { outcome, released: null };
 	const released = releasedVerdict(verdict, DASHBOARD_APPROVAL_SOURCE, "dashboard");
 	if (config.logging) {
@@ -232,7 +268,7 @@ export async function resolveAskWithDashboardApproval(
 	try {
 		const config = await loadConfig(context.configPath, logger);
 		if (!config || isInvalidConfig(config)) return unchanged;
-		const dashboardOnly = isDashboardOnly(config);
+		const dashboardOnly = await effectiveDashboardOnly(config, options);
 		const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
 		const { outcome, released } = await dashboardApprovalStep(
 			request,
@@ -242,6 +278,7 @@ export async function resolveAskWithDashboardApproval(
 			context.agentRuntime,
 			logger,
 			options,
+			dashboardOnly,
 		);
 		if (released) {
 			return {
@@ -431,6 +468,7 @@ async function resolveLoadedHostAsk(
 		call.connector,
 		call.logger,
 		dashboardOptions,
+		dashboardOnly,
 	);
 	const dashboardApproval = step.outcome ?? undefined;
 	if (step.released) {
@@ -493,7 +531,7 @@ export async function resolveHostAsk(
 			mode: "host_dialog",
 		};
 	}
-	const dashboardOnly = isDashboardOnly(config);
+	const dashboardOnly = await effectiveDashboardOnly(config, options.dashboardApprovals);
 	const mode = hostAskMode(config);
 	if (mode === "operator" && config.sensitivity === "paranoid") {
 		// Same rule as the soft-gated connectors: a paranoid ask is a deny that no
@@ -838,8 +876,11 @@ export async function guardToolCall(
 					...options.operatorApprovals,
 				};
 	const approvable = effective.decision === "ask" && loadedConfig && !isInvalidConfig(loadedConfig);
-	// Managed + dashboard_only: the local operator CLI is not an approval channel.
-	const dashboardOnly = isDashboardOnly(config);
+	// Managed + dashboard_only (explicit, or the managed default when the
+	// dashboard channel is usable): the local operator CLI is not an approval channel.
+	const dashboardOnly = approvable
+		? await effectiveDashboardOnly(config, options.dashboardApprovals)
+		: isDashboardOnly(config);
 	let approvedBy: GuardResult["approvedBy"];
 	let dashboardApproval: DashboardApprovalOutcome | undefined;
 	if (approvable && hasApproval) {
@@ -882,6 +923,7 @@ export async function guardToolCall(
 			context.agentRuntime,
 			logger,
 			options.dashboardApprovals,
+			dashboardOnly,
 		);
 		dashboardApproval = step.outcome ?? undefined;
 		if (step.released) {
@@ -945,7 +987,8 @@ export async function guardToolCall(
 		}
 
 		if (effective.decision === "deny") {
-			return { verdict: effective, responseActions, signedChain };
+			// The id lets the user report a false positive (`aidr report-fp`).
+			return { verdict: effective, actionId, responseActions, signedChain };
 		}
 
 		approvalStore.setPending(actionId, {
@@ -1169,8 +1212,9 @@ export function formatDenyMessage(
 	verdict: Verdict,
 	actions?: ResponseActionRecord[],
 	artifacts?: Artifact[],
+	actionId?: string,
 ): string {
-	return formatBlockMessage(verdict, { responseActions: actions, artifacts });
+	return formatBlockMessage(verdict, { responseActions: actions, artifacts, actionId });
 }
 
 /**
@@ -1190,7 +1234,9 @@ export function formatDashboardApprovalNotice(
 			return null;
 		case "requested":
 		case "pending":
-			return t("dashboard.requested", { requestId: id });
+			return outcome.consoleUrl
+				? `${t("dashboard.requested", { requestId: id })}\n${t("dashboard.link", { url: outcome.consoleUrl })}`
+				: t("dashboard.requested", { requestId: id });
 		case "denied":
 			return t("dashboard.denied", { requestId: id });
 		case "expired":
@@ -1205,6 +1251,26 @@ export function formatDashboardApprovalNotice(
 			return outcome.dashboardOnly ? t("dashboard.unavailable", { reason }) : null;
 	}
 }
+
+/**
+ * One line per dashboard decision that landed since the last notice (see
+ * `checkDashboardDecisions`), or null when there is none. Shown to the
+ * developer on the next prompt or in the editor, so nobody has to poll.
+ */
+export function formatDashboardDecisionNotices(
+	notices: readonly DashboardDecisionNotice[],
+): string | null {
+	if (notices.length === 0) return null;
+	return notices
+		.map((notice) => t(DECISION_NOTICE_KEYS[notice.status], { requestId: notice.requestId }))
+		.join("\n");
+}
+
+const DECISION_NOTICE_KEYS = {
+	approved: "dashboard.decided.approved",
+	denied: "dashboard.decided.denied",
+	expired: "dashboard.decided.expired",
+} as const;
 
 /**
  * The block message for an `ask`. Pass `pendingRecorded` from the

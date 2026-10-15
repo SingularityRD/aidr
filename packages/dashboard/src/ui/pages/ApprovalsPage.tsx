@@ -194,6 +194,8 @@ function PendingCard({
 	return (
 		<li
 			className="card"
+			id={`approval-${request.id}`}
+			tabIndex={-1}
 			data-testid="approval-pending"
 			aria-label={t("approvals.card.label", { title })}
 		>
@@ -632,6 +634,19 @@ function TenantApprovalsPage() {
 			setLoadError(result.error);
 		}
 	}, [tenantId]);
+
+	// A connector's block message links `/approvals?request=<id>`: bring that
+	// request into view once the queue has loaded. The id only selects a card.
+	const focusedRequest = useRef(false);
+	useEffect(() => {
+		if (!rows || focusedRequest.current) return;
+		focusedRequest.current = true;
+		const id = new URLSearchParams(window.location.search).get("request") ?? "";
+		if (!/^[0-9a-f-]{36}$/i.test(id)) return;
+		const card = document.getElementById(`approval-${id.toLowerCase()}`);
+		card?.scrollIntoView?.({ block: "center" });
+		card?.focus?.();
+	}, [rows]);
 
 	useEffect(() => {
 		setRows(null);

@@ -458,6 +458,7 @@ export {
 export {
 	type ApprovalRequestBody,
 	type ApprovalRequestStatus,
+	checkDashboardDecisions,
 	DASHBOARD_APPROVAL_REQUEST_TIMEOUT_MS,
 	DASHBOARD_APPROVAL_REQUEST_TTL_MS,
 	DASHBOARD_APPROVAL_SOURCE,
@@ -471,12 +472,16 @@ export {
 	type DashboardApprovalStatus,
 	type DashboardApprovalTokenPayload,
 	type DashboardContextResult,
+	type DashboardDecisionNotice,
+	type DashboardRequestView,
 	type DashboardTokenRejection,
 	type DashboardTokenVerification,
 	type DashboardUnavailableReason,
+	dashboardApprovalLink,
 	dashboardApprovalStatePath,
 	dashboardArtifactDigest,
 	dashboardToolName,
+	listDashboardApprovalRequests,
 	processDashboardApproval,
 	resolveDashboardApprovalContext,
 	verifyDashboardApprovalToken,
@@ -585,6 +590,11 @@ export {
 	discoveryTargetPseudonym,
 	getDiscoveryTargetKey,
 } from "./discovery-target-pseudonym.js";
+// Display-only settings, first-run privacy notice, unprotected AI tools, `aidr report-fp`.
+export {
+	configuredSupportContact,
+	safeDisplayUrl,
+} from "./display-settings.js";
 // DLP (Data Loss Prevention)
 export type {
 	ContentClassification,
@@ -771,6 +781,14 @@ export {
 	recordFalsePositiveFeedback,
 	verifyFalsePositiveFeedbackStore,
 } from "./false-positive-feedback.js";
+export {
+	type AuditedBlock,
+	buildFalsePositiveReportBody,
+	FALSE_POSITIVE_REASON_CODES,
+	type FalsePositiveReportResult,
+	findAuditedBlocks,
+	submitFalsePositiveReport,
+} from "./false-positive-report.js";
 export type {
 	AnonymizedThreatPattern,
 	FederatedConfig,
@@ -881,6 +899,7 @@ export {
 	executeWithRollback,
 	formatAskMessage,
 	formatDashboardApprovalNotice,
+	formatDashboardDecisionNotices,
 	formatDenyMessage,
 	type GuardOptions,
 	type GuardResponseSettings,
@@ -1389,6 +1408,11 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+export {
+	formatPrivacyNotice,
+	privacyNoticeFacts,
+	takeFirstRunPrivacyNotice,
+} from "./privacy-notice.js";
 export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 // Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
 export {
@@ -1891,6 +1915,11 @@ export {
 	UrlCheckConfigSchema,
 	VerdictSeveritySchema,
 } from "./types.js";
+export {
+	detectUnprotectedAiTools,
+	UNSUPPORTED_AI_TOOL_IDS,
+	type UnprotectedAiTool,
+} from "./unprotected-agents.js";
 // Desktop-installer self-update (`aidr update`, session-start update notice)
 export type {
 	CatalogVerification,

@@ -380,6 +380,40 @@ export const CLI_EN = {
 	"simulate.html.description": "Description",
 	"simulate.html.footer":
 		"This report reflects locally shipped detection rules evaluated against defanged test fixtures. No commands were executed and no network requests were made during the self-test.",
+	"status.unprotectedNone": "AI tools without Singularity AIDR protection: none found.",
+	"status.unprotected":
+		"! AI tools without Singularity AIDR protection (their commands, file changes and web requests are NOT inspected): {tools}",
+	"coverage.unprotected":
+		"AI tools found on this computer that Singularity AIDR does not protect: {tools}. The coverage above does not apply to them.",
+	"coverage.unprotectedNone":
+		"No AI tools without a Singularity AIDR connector were found on this computer.",
+	"approvals.dashboardHeader": "Approval requests in the Singularity AIDR dashboard ({count}):",
+	"approvals.dashboardLine": "  {requestId}  {status}  tool: {tool}  expires: {expiresAt}",
+	"approvals.dashboardLink": "    {url}",
+	"approvals.dashboardStatus.pending": "waiting for an administrator",
+	"approvals.dashboardStatus.approved": "approved: ask the agent to run the same action again",
+	"approvals.dashboardStatus.denied": "denied",
+	"approvals.dashboardStatus.expired": "expired",
+	"approvals.dashboardStatus.unknown": "status unknown (the dashboard could not be reached)",
+	"reportFp.invalidId":
+		"Give the id from the block message (8 to 64 hexadecimal characters), for example: aidr report-fp 1a2b3c4d",
+	"reportFp.invalidReason": 'Unknown reason "{reason}". Use one of: {reasons}.',
+	"reportFp.notFound":
+		"No blocked or held action with id {id} was found in the local audit log ({path}). The log may be turned off or rotated; send the block message to your IT or security team instead.",
+	"reportFp.ambiguous": "The id {id} matches {count} actions; give more characters:",
+	"reportFp.found": "Action {id}: {decision} by rule {rule} ({severity}), tool {tool}, at {time}.",
+	"reportFp.decision.deny": "blocked",
+	"reportFp.decision.ask": "held for approval",
+	"reportFp.sent":
+		"Reported as a false positive (report {reportId}). Your IT or security team reviews it in the Singularity AIDR console; nothing is allowed until they add an exception.",
+	"reportFp.duplicate":
+		"This report was already filed (report {reportId}); nothing was filed twice.",
+	"reportFp.local":
+		"This computer is not connected to a Singularity AIDR console, so the report was not sent. Send the line above to your IT or security team.",
+	"reportFp.failed":
+		"The report could not be sent ({error}). Send the line above to your IT or security team, or try again later.",
+	"reportFp.support": "Your IT or security team: {url}",
+	"reportFp.dryRun": "Dry run: nothing was sent.",
 } as const;
 
 export type CliMessageKey = keyof typeof CLI_EN;
@@ -762,4 +796,40 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"simulate.html.description": "Açıklama",
 	"simulate.html.footer":
 		"Bu rapor, yerelde gelen tespit kurallarının zararsızlaştırılmış test örnekleri üzerindeki sonucunu gösterir. Öz sınama sırasında hiçbir komut çalıştırılmadı ve hiçbir ağ isteği yapılmadı.",
+	"status.unprotectedNone": "Singularity AIDR korumasıyla çalışmayan yapay zekâ aracı: bulunmadı.",
+	"status.unprotected":
+		"! Singularity AIDR korumasıyla çalışmayan yapay zekâ araçları (komutları, dosya değişiklikleri ve web istekleri İNCELENMİYOR): {tools}",
+	"coverage.unprotected":
+		"Bu bilgisayarda Singularity AIDR'nin korumadığı yapay zekâ araçları bulundu: {tools}. Yukarıdaki kapsam bu araçlar için geçerli değildir.",
+	"coverage.unprotectedNone":
+		"Bu bilgisayarda Singularity AIDR bağlayıcısı olmayan bir yapay zekâ aracı bulunmadı.",
+	"approvals.dashboardHeader": "Singularity AIDR panelindeki onay istekleri ({count}):",
+	"approvals.dashboardLine": "  {requestId}  {status}  araç: {tool}  bitiş: {expiresAt}",
+	"approvals.dashboardLink": "    {url}",
+	"approvals.dashboardStatus.pending": "bir yöneticinin kararını bekliyor",
+	"approvals.dashboardStatus.approved":
+		"onaylandı: yapay zekâ aracından aynı işlemi yeniden yapmasını isteyin",
+	"approvals.dashboardStatus.denied": "reddedildi",
+	"approvals.dashboardStatus.expired": "süresi doldu",
+	"approvals.dashboardStatus.unknown": "durum bilinmiyor (panele ulaşılamadı)",
+	"reportFp.invalidId":
+		"Engelleme mesajındaki kimliği verin (8 ile 64 arası onaltılık karakter), örneğin: aidr report-fp 1a2b3c4d",
+	"reportFp.invalidReason": 'Bilinmeyen neden "{reason}". Şunlardan birini kullanın: {reasons}.',
+	"reportFp.notFound":
+		"Yerel denetim kaydında ({path}) {id} kimlikli engellenmiş ya da onaya bekletilmiş bir işlem bulunamadı. Kayıt kapalı ya da döndürülmüş olabilir; bunun yerine engelleme mesajını BT veya güvenlik ekibinize iletin.",
+	"reportFp.ambiguous": "{id} kimliği {count} işlemle eşleşiyor; daha fazla karakter verin:",
+	"reportFp.found":
+		"İşlem {id}: {rule} kuralı tarafından {decision} ({severity}), araç {tool}, zaman {time}.",
+	"reportFp.decision.deny": "engellendi",
+	"reportFp.decision.ask": "onaya bekletildi",
+	"reportFp.sent":
+		"Yanlış alarm olarak bildirildi (bildirim {reportId}). BT veya güvenlik ekibiniz bunu Singularity AIDR konsolunda inceler; bir istisna ekleyene kadar hiçbir şeye izin verilmez.",
+	"reportFp.duplicate":
+		"Bu bildirim zaten yapılmış (bildirim {reportId}); ikinci kez kaydedilmedi.",
+	"reportFp.local":
+		"Bu bilgisayar bir Singularity AIDR konsoluna bağlı değil, bu yüzden bildirim gönderilmedi. Yukarıdaki satırı BT veya güvenlik ekibinize iletin.",
+	"reportFp.failed":
+		"Bildirim gönderilemedi ({error}). Yukarıdaki satırı BT veya güvenlik ekibinize iletin ya da daha sonra yeniden deneyin.",
+	"reportFp.support": "BT veya güvenlik ekibiniz: {url}",
+	"reportFp.dryRun": "Deneme çalıştırması: hiçbir şey gönderilmedi.",
 };

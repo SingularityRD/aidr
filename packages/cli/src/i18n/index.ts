@@ -66,7 +66,10 @@ export function initCliLocale(): void {
 export const HELP_GROUPS = [
 	{ heading: "Setup:", commands: ["assistant", "setup", "update", "config", "uninstall"] },
 	{ heading: "Daily use:", commands: ["status", "verify", "audit", "privacy", "scan"] },
-	{ heading: "Approvals:", commands: ["pending", "approve", "allowlist", "exception"] },
+	{
+		heading: "Approvals:",
+		commands: ["pending", "approve", "report-fp", "allowlist", "exception"],
+	},
 	{ heading: "Diagnostics:", commands: ["doctor", "support-bundle", "simulate", "coverage"] },
 	{
 		heading: "Advanced:",

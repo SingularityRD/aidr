@@ -10,6 +10,7 @@ import {
 	assertSecureControlPlaneEndpoint,
 	DEFAULT_CONTROL_PLANE_ENDPOINT,
 } from "./clients/control-plane-url.js";
+import { setConfiguredSupportContact } from "./display-settings.js";
 import { getFileContent } from "./file-utils.js";
 import { setConfiguredLocale } from "./i18n/index.js";
 import {
@@ -256,6 +257,7 @@ function sanitizeConfigPaths(config: Config, logger: Logger): Config {
 function parseRuntimeConfig(data: unknown): Config {
 	const config = ConfigSchema.parse(data);
 	setConfiguredLocale(config.locale);
+	setConfiguredSupportContact(config.organization?.support_contact_url);
 	assertSecureControlPlaneEndpoint(
 		config.control_plane.endpoint,
 		config.control_plane.allow_insecure_loopback,

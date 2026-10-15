@@ -154,6 +154,8 @@ export class FakeControlPlane {
 	readonly calls: Array<{ method: string; path: string }> = [];
 	/** When set, every call waits this long (for timeout tests). */
 	delayMs = 0;
+	/** When set, create and poll responses name this dashboard page (`console_url`). */
+	consoleUrl: ((requestId: string) => string) | null = null;
 	private server: Server | null = null;
 
 	constructor(
@@ -172,12 +174,18 @@ export class FakeControlPlane {
 			const body = JSON.parse(raw) as Record<string, unknown>;
 			for (const request of this.requests.values()) {
 				if (request.body.iid === body.iid && request.body.action_id === body.action_id) {
-					return { status: 200, body: { request_id: request.id, status: request.status } };
+					return {
+						status: 200,
+						body: { request_id: request.id, status: request.status, ...this.console(request.id) },
+					};
 				}
 			}
 			const request: FakeRequest = { id: randomUUID(), body, status: "pending" };
 			this.requests.set(request.id, request);
-			return { status: 201, body: { request_id: request.id, status: "pending" } };
+			return {
+				status: 201,
+				body: { request_id: request.id, status: "pending", ...this.console(request.id) },
+			};
 		}
 		if (method === "GET" && id) {
 			const request = this.requests.get(decodeURIComponent(id));
@@ -186,11 +194,16 @@ export class FakeControlPlane {
 				status: 200,
 				body: {
 					status: request.status,
+					...this.console(request.id),
 					...(request.token ? { token: request.token, key_id: request.keyId } : {}),
 				},
 			};
 		}
 		return { status: 405, body: { error: "method_not_allowed" } };
+	}
+
+	private console(requestId: string): Record<string, string> {
+		return this.consoleUrl ? { console_url: this.consoleUrl(requestId) } : {};
 	}
 
 	/** Approve a request: sign a token bound to it (fields overridable for negative tests). */

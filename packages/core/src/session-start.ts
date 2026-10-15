@@ -42,6 +42,7 @@ import {
 	type McpDiscoveryServer,
 } from "./mcp-discovery.js";
 import type { McpInventoryCoverageStatus } from "./mcp-inventory.js";
+import { takeFirstRunPrivacyNotice } from "./privacy-notice.js";
 import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import {
 	runSessionStartScanWithReport,
@@ -50,6 +51,7 @@ import {
 } from "./session-start-scan.js";
 import type { AgentRuntime, Config, Logger, PluginInfo, PluginScanResult } from "./types.js";
 import { nullLogger } from "./types.js";
+import { detectUnprotectedAiTools, type UnprotectedAiTool } from "./unprotected-agents.js";
 import { installerUpdateNotice, installerUpdatesApply } from "./update/check.js";
 import { checkForUpdate, type VersionCheckResult, versionCheckEndpoint } from "./version-check.js";
 
@@ -73,6 +75,13 @@ export interface SessionStartContext {
 	 * reported as unverifiable rather than as a neutral inventory row.
 	 */
 	mcpAttestation?: McpDiscoveryAttestationOptions;
+	/**
+	 * AI tools without an AIDR connector; detected from the home directory and
+	 * PATH when omitted. Pass `[]` to skip detection (tests).
+	 */
+	unprotectedTools?: UnprotectedAiTool[];
+	/** Skip the first-run privacy notice (tests, or a caller that shows it itself). */
+	skipPrivacyNotice?: boolean;
 }
 
 /**
@@ -130,6 +139,13 @@ export interface SessionStartResult {
 	 * never a neutral count in `posture`.
 	 */
 	coverageFindings?: SessionStartCoverageFinding[];
+	/**
+	 * The first-run privacy notice, set the first time this connector starts
+	 * with the current notice (and again when what is recorded or sent changes).
+	 */
+	privacyNotice?: string;
+	/** AI tools on this computer that AIDR does not protect; shown as a warning. */
+	unprotectedTools?: UnprotectedAiTool[];
 	/**
 	 * Set when the company control plane did not answer this session's
 	 * heartbeat: what the install-time offline choice means now, so the user
@@ -287,6 +303,45 @@ function startVersionCheck(
 }
 
 export async function runSessionStart(ctx: SessionStartContext): Promise<SessionStartResult> {
+	const result = await runSessionStartChecks(ctx);
+	return { ...result, ...(await sessionNotices(ctx)) };
+}
+
+/**
+ * What the developer must be told at every session start, whatever the scan
+ * found and whether or not managed features are available: AI tools AIDR does
+ * not protect, and (once) the privacy notice. Never throws.
+ */
+async function sessionNotices(
+	ctx: SessionStartContext,
+): Promise<Pick<SessionStartResult, "privacyNotice" | "unprotectedTools">> {
+	let unprotectedTools: UnprotectedAiTool[] = [];
+	try {
+		unprotectedTools =
+			ctx.unprotectedTools ??
+			detectUnprotectedAiTools({ home: resolvePath("~"), env: process.env });
+	} catch {
+		unprotectedTools = [];
+	}
+	let privacyNotice: string | null = null;
+	if (!ctx.skipPrivacyNotice) {
+		const config = await loadConfig(ctx.configPath, ctx.logger ?? nullLogger).catch(
+			() => undefined,
+		);
+		if (config && !isInvalidConfig(config)) {
+			privacyNotice = await takeFirstRunPrivacyNotice(config, ctx.agentRuntime, {
+				aidrDir: ctx.aidrDirPath ? resolvePath(ctx.aidrDirPath) : undefined,
+				unprotectedTools: unprotectedTools.map((tool) => tool.label),
+			});
+		}
+	}
+	return {
+		...(unprotectedTools.length > 0 ? { unprotectedTools } : {}),
+		...(privacyNotice ? { privacyNotice } : {}),
+	};
+}
+
+async function runSessionStartChecks(ctx: SessionStartContext): Promise<SessionStartResult> {
 	const logger = ctx.logger ?? nullLogger;
 	const aidrDirPath = resolvePath(ctx.aidrDirPath ?? "~/.singularity-aidr");
 	const config = await loadConfig(ctx.configPath, logger).catch(() => undefined);

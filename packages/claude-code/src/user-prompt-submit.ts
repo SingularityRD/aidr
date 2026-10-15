@@ -44,9 +44,12 @@
 
 import {
 	CANARY_PROMPT_BLOCK_MESSAGE,
+	type Config,
+	checkDashboardDecisions,
 	checkPromptForCanaries,
 	DEFAULT_PROMPT_PROTECTION,
 	exitAfterStdoutFlush,
+	formatDashboardDecisionNotices,
 	initialPromptFailureState,
 	initSentry,
 	isPromptTenantPolicyConfigured,
@@ -141,14 +144,38 @@ function writeTenantPolicyFailure(): void {
 	});
 }
 
-function writeResult(result: PromptProtectionResult): void {
+/**
+ * `decisionNotice`: dashboard approval decisions that landed since the last
+ * prompt, for the user only (never the model's context).
+ */
+function writeResult(result: PromptProtectionResult, decisionNotice: string | null = null): void {
 	if (result.decision === "block") {
 		write({ decision: "block", reason: result.userMessage });
 	} else if (result.decision === "warn") {
 		write({
-			systemMessage: result.userMessage,
+			systemMessage: decisionNotice
+				? `${result.userMessage}\n${decisionNotice}`
+				: result.userMessage,
 			hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: result.modelContext },
 		});
+	} else if (decisionNotice) {
+		write({ systemMessage: decisionNotice });
+	}
+}
+
+/** Bounded so a slow control plane never delays the prompt noticeably. */
+const DECISION_NOTICE_BUDGET_MS = 1_500;
+
+async function dashboardDecisionNotice(config: Config): Promise<string | null> {
+	try {
+		const notices = await checkDashboardDecisions(config, {
+			logger,
+			totalBudgetMs: DECISION_NOTICE_BUDGET_MS,
+			requestTimeoutMs: DECISION_NOTICE_BUDGET_MS,
+		});
+		return formatDashboardDecisionNotices(notices);
+	} catch {
+		return null;
 	}
 }
 
@@ -281,7 +308,9 @@ async function main(): Promise<void> {
 				// An audit failure cannot change the prompt decision.
 			}
 		}
-		writeResult(result);
+		const decisionNotice =
+			result.decision === "block" ? null : await dashboardDecisionNotice(config);
+		writeResult(result, decisionNotice);
 	} catch {
 		writeInspectionFailure();
 	}

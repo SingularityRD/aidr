@@ -124,12 +124,14 @@ afterEach(() => {
 
 describe("guardToolCall with managed dashboard approvals", () => {
 	it("ask -> request -> approve -> exactly one retry released -> next retry blocked", async () => {
+		// Opt out of the managed dashboard-only default so both channels are live.
+		useConfig({ operator_approvals: { approvals_mode: "host_dialog" } });
 		const blocked = await guard();
 		expect(blocked.verdict.decision).toBe("ask");
 		expect(blocked.dashboardApproval?.status).toBe("requested");
 		const requestId = blocked.dashboardApproval?.requestId as string;
 		expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
-		// The local operator channel still works alongside it (not dashboard_only).
+		// With operator_approvals.approvals_mode: host_dialog the local operator channel works alongside it.
 		expect(blocked.pendingRecorded).toBe(true);
 
 		const message = formatAskMessage(
@@ -251,7 +253,8 @@ describe("resolveAskWithDashboardApproval (native-dialog connectors)", () => {
 	it("submits, then releases the identical call once after approval", async () => {
 		const first = await resolve();
 		expect(first.verdict.decision).toBe("ask");
-		expect(first.dashboardOnly).toBe(false);
+		// Managed with a usable dashboard: the dashboard is the only channel by default.
+		expect(first.dashboardOnly).toBe(true);
 		expect(first.dashboardApproval?.status).toBe("requested");
 
 		cp.approve(first.dashboardApproval?.requestId as string);

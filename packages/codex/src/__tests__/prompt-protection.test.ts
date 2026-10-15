@@ -143,7 +143,16 @@ describe("Codex UserPromptSubmit hook (release trust)", () => {
 
 // AIDR-SKIP: AIDR-063 qa-owner - a release bundle without trusted public keys blocks every prompt before inspection, so these development-bundle assertions cannot hold; the release-trust test above covers that build
 describe.skipIf(releaseBundle)("Codex UserPromptSubmit hook (built bundle)", () => {
-	it("allows a clean prompt with empty stdout", () => {
+	it("allows a clean prompt with empty stdout (after the one-time first-run notice)", () => {
+		// The first prompt on a fresh computer carries the privacy notice for the
+		// user only: no block, nothing added to the model's context.
+		const first = submit("add a unit test for the parser");
+		expect(first.status).toBe(0);
+		if (first.stdout !== "") {
+			expect(first.wire?.decision).toBeUndefined();
+			expect(first.wire?.hookSpecificOutput).toBeUndefined();
+			expect(first.wire?.systemMessage).toContain("aidr privacy notice");
+		}
 		const run = submit("add a unit test for the parser");
 		expect(run.status).toBe(0);
 		expect(run.stdout).toBe("");

@@ -181,6 +181,18 @@ export const HELP_TR: Readonly<Record<string, string>> = {
 	"Show how the installed detection rules map to OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026 and MITRE ATLAS":
 		"Kurulu tespit kurallarının OWASP LLM Top 10 2025, OWASP Agentic Top 10 2026 ve MITRE ATLAS ile eşleşmesini göster",
 	"table, json or markdown": "table, json ya da markdown",
+	"Show what Singularity AIDR guards and does not guard, what it records on this computer and what it sends where":
+		"Singularity AIDR'nin neyi koruyup neyi korumadığını, bu bilgisayarda neyi kaydettiğini ve neyi nereye gönderdiğini göster",
+	"Print the facts the notice is built from": "Bildirimin dayandığı bilgileri yazdır",
+	"Report a blocked or held action as a false positive to your IT or security team (ids and rule only; never the command)":
+		"Engellenen ya da onaya bekletilen bir işlemi yanlış alarm olarak BT veya güvenlik ekibinize bildir (yalnızca kimlikler ve kural; komutun kendisi asla gönderilmez)",
+	"The id from the block message (its first 8+ characters are enough)":
+		"Engelleme mesajındaki kimlik (ilk 8+ karakteri yeterlidir)",
+	"Why it is a false positive: benign_automation, benign_maintenance, expected_egress, expected_file_write, legitimate_mcp_tool, developer_test, environment_specific, insufficient_context, policy_too_strict or other":
+		"Neden yanlış alarm olduğu: benign_automation, benign_maintenance, expected_egress, expected_file_write, legitimate_mcp_tool, developer_test, environment_specific, insufficient_context, policy_too_strict ya da other",
+	"A short note for the reviewer (secrets are masked; max 500 characters)":
+		"İnceleyen için kısa bir not (gizli bilgiler maskelenir; en fazla 500 karakter)",
+	"Show what would be reported without sending it": "Göndermeden neyin bildirileceğini göster",
 	"List blocked agent actions waiting for your approval (given only in your own terminal)":
 		"Onayınızı bekleyen engellenmiş yapay zekâ aracı eylemlerini listele (onay yalnızca kendi terminalinizden verilir)",
 	"The id from `aidr pending`, or its first 8+ characters; omit it in a terminal to pick from a list":

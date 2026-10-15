@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import {
+	ApprovalStore,
 	ArtifactIntegrityError,
 	createHookResponder,
 	formatAgentBlockReason,
@@ -73,6 +74,8 @@ async function runHook(
 	const addPendingApproval = vi.fn();
 	const core = {
 		allowVerdict: () => verdict("allow"),
+		// The real action id: block messages name it for `aidr report-fp`.
+		ApprovalStore,
 		// The hook reads the native-host acceptance contract at module load. This
 		// sandbox runs an ordinary session, so the contract is absent and the hook
 		// must behave exactly as before: createHostObservation returns null and

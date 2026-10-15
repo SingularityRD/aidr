@@ -190,6 +190,50 @@ export const en = {
 	"session.enrollmentRepair":
 		"Enrollment could not be confirmed locally. An operator must settle the enrollment outcome and revoke any affected key in the control plane, then start fresh pairing and approve it in the browser. Preserve the installation ID and tenant; do not reuse the previous authorization code.",
 	"session.activate": "To activate Singularity AIDR:",
+
+	// Block-message additions, decision notices, unprotected tools, first-run privacy notice.
+	"block.reportFp":
+		"To report a false positive, run this in your own terminal: aidr report-fp {shortId}",
+	"block.support": "Help from your IT or security team: {url}",
+	"dashboard.link": "Approval page in the dashboard: {url}",
+	"dashboard.decided.approved":
+		"✅ Singularity AIDR: approval request {requestId} was approved in the dashboard. Ask the agent to run the same action again; the approval covers one retry for a limited time.",
+	"dashboard.decided.denied":
+		"⛔ Singularity AIDR: approval request {requestId} was denied in the dashboard; the action stays blocked.",
+	"dashboard.decided.expired":
+		"Singularity AIDR: approval request {requestId} expired without a decision; the action stays blocked.",
+	"session.unprotectedTools":
+		"⚠️ AI tools without Singularity AIDR protection were found on this computer: {tools}. Their commands, file changes and web requests are NOT inspected. Details: `aidr status`.",
+	"notice.title":
+		"🛡️ Singularity AIDR is active on this computer. What it does and what it records:",
+	"notice.guards":
+		"• What it guards: before your AI coding assistant (Claude Code, Cursor, VS Code, Codex, OpenCode or OpenClaw) runs a command, reads or changes a file, fetches a web page or calls an MCP tool, Singularity AIDR checks it against security rules and blocks or holds the risky ones. Prompts are checked for secrets and personal data where the assistant allows it.",
+	"notice.notGuarded":
+		"• What it does not guard: it does not judge whether an ordinary command is a good idea. For example `kubectl delete`, `git push --force` or `docker system prune` run without a warning unless your organisation adds a rule for them. Commands you type yourself outside the assistant are not inspected, and AI tools without a Singularity AIDR connector are not protected.",
+	"notice.unprotected": "• Found on this computer without protection: {tools}.",
+	"notice.localLog":
+		"• Recorded on this computer: blocked and held actions, with a shortened summary of the command, file or address in which secrets are masked, in {path}.",
+	"notice.localLogClean":
+		"• Recorded on this computer: every inspected action (allowed ones too), with a shortened summary of the command, file or address in which secrets are masked, in {path}.",
+	"notice.localLogOff": "• Recorded on this computer: nothing; the decision log is turned off.",
+	"notice.sent.local": "• What leaves this computer: nothing about your work. {versionCheck}",
+	"notice.sent.versionCheck":
+		"Only the update check sends the product version, an installation id and basic system details (operating system, AI assistant).",
+	"notice.sent.noVersionCheck": "The update check is turned off.",
+	"notice.sent.managed":
+		"• What leaves this computer: it is managed by your organisation. Blocked and held decisions{clean} are sent to your organisation's Singularity AIDR console ({host}); {redaction} The console also receives this device's protection status, the AI tool and MCP server inventory, and approval requests you trigger.",
+	"notice.sent.managedClean": " (and allowed actions)",
+	"notice.sent.managedNoAudit":
+		"• What leaves this computer: it is managed by your organisation. Decisions are not sent; your organisation's Singularity AIDR console ({host}) receives this device's protection status, the AI tool and MCP server inventory, and approval requests you trigger.",
+	"notice.redaction.hash": "sensitive values in them are replaced by one-way fingerprints.",
+	"notice.redaction.full": "summaries of commands, files and addresses are left out.",
+	"notice.redaction.none":
+		"they include the summaries of commands, files and addresses as recorded.",
+	"notice.privacyUrl": "• Your organisation's privacy notice: {url}",
+	"notice.privacyAsk":
+		"• Your organisation's privacy notice (aydınlatma metni): ask your IT or security team.",
+	"notice.support": "• Questions, or a block you think is wrong: {url}",
+	"notice.again": "Show this again at any time: aidr privacy notice",
 } as const;
 
 export type MessageKey = keyof typeof en;

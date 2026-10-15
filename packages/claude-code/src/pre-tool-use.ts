@@ -8,6 +8,7 @@
  */
 
 import {
+	ApprovalStore,
 	type Artifact,
 	createHookResponder,
 	createHostObservation,
@@ -109,6 +110,8 @@ interface DashboardNote {
 	 * message; only `aidr approve` in the user's own terminal releases a retry.
 	 */
 	operatorHold?: string;
+	/** The call's action id, for the `aidr report-fp` line. */
+	actionId?: string;
 }
 
 /** Secure-code findings of a blocked or held call, listed under its message. */
@@ -166,6 +169,7 @@ function makeResponse(
 			approval: { kind: "dashboard" },
 			artifacts,
 			dashboardNotice: dashboard.notice,
+			actionId: dashboard.actionId,
 			audience: "user",
 		});
 		return denyWithBanner(
@@ -176,13 +180,16 @@ function makeResponse(
 
 	if (verdict.decision === "deny") {
 		return denyWithBanner(
-			withSecureCodeFindings(formatBlockReason(verdict, artifacts), verdict),
+			withSecureCodeFindings(
+				formatBlockReason(verdict, artifacts, null, dashboard.actionId),
+				verdict,
+			),
 			formatAgentBlockReason(verdict),
 		);
 	}
 
 	// Ask: the full message is shown once, in Claude Code's confirmation dialog.
-	const message = formatBlockReason(verdict, artifacts, dashboard.notice);
+	const message = formatBlockReason(verdict, artifacts, dashboard.notice, dashboard.actionId);
 	return {
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
@@ -375,6 +382,7 @@ async function main(): Promise<void> {
 		notice: formatDashboardApprovalNotice(resolution.dashboardApproval),
 		dashboardOnly: resolution.dashboardOnly,
 		operatorHold: resolution.operatorHold?.message,
+		actionId: ApprovalStore.actionId(toolName, toolInput, sessionId),
 	};
 
 	// Only track approvals for allowlistable types (content varies per call, not meaningful to allowlist).

@@ -86,7 +86,8 @@ afterEach(async () => {
 
 describe("Claude Code PreToolUse with managed dashboard approvals", () => {
 	it("requests approval, releases exactly one retry after it, then blocks again", async () => {
-		await setupHome();
+		// approvals_mode: host_dialog keeps the native dialog next to the dashboard.
+		await setupHome({ operator_approvals: { approvals_mode: "host_dialog" } });
 
 		const first = await runHook();
 		expect(hookOutput(first).permissionDecision).toBe("ask");
@@ -108,6 +109,22 @@ describe("Claude Code PreToolUse with managed dashboard approvals", () => {
 			"could not be verified (replayed)",
 		);
 	}, 90_000);
+
+	it("managed default: blocks instead of the native dialog and links the approval page", async () => {
+		cp.consoleUrl = (id) => `https://console.example.test/approvals?request=${id}`;
+		await setupHome();
+
+		const blocked = await runHook();
+		expect(hookOutput(blocked).permissionDecision).toBe("deny");
+		const requestId = cp.onlyRequestId();
+		expect(String(blocked.systemMessage)).toContain(
+			`https://console.example.test/approvals?request=${requestId}`,
+		);
+		expect(hookOutput(blocked).permissionDecisionReason).toContain("You cannot approve it");
+
+		cp.approve(requestId);
+		expect(await runHook()).toEqual({});
+	}, 60_000);
 
 	it("dashboard_only blocks instead of opening the native dialog", async () => {
 		await setupHome({ operator_approvals: { dashboard_only: true } });

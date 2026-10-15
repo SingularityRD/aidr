@@ -178,6 +178,12 @@ verify_jwt = true
 # handler verifies the API key (scope tenant) for create/poll and, for
 # decisions, the Supabase session, identity barrier, owner/admin role and AAL2.
 verify_jwt = false
+[functions.false-positive-reports]
+# `aidr report-fp`: developer false-positive reports. The CLI authenticates
+# with a hash-only tenant API key (not a Supabase JWT), so gateway JWT
+# verification is off; the handler verifies the key (scope tenant), applies a
+# tenant rate limit and writes only bounded ids and a redacted note.
+verify_jwt = false
 
 [functions.compliance-report]
 # Compliance evidence report. The handler repeats session, identity barrier,

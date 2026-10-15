@@ -5,7 +5,11 @@ import {
 	type AgentRuntime,
 	type Config,
 	ConfigSchema,
+	checkDashboardDecisions,
 	checkForUpdate,
+	type DashboardDecisionNotice,
+	detectUnprotectedAiTools,
+	formatDashboardDecisionNotices,
 	formatSessionStartMessage,
 	getEffectiveManagedApiKey,
 	getInstallationId,
@@ -16,6 +20,8 @@ import {
 	pruneOrphanedTmpFiles,
 	resolvePath,
 	runSessionStart,
+	t,
+	takeFirstRunPrivacyNotice,
 	versionCheckEndpoint,
 } from "@singularityrd/aidr-core";
 import * as vscode from "vscode";
@@ -49,6 +55,11 @@ export function activateManagedHooksExtension(
 ): void {
 	// Best-effort cleanup of orphaned .tmp files from crashed atomic writes
 	pruneOrphanedTmpFiles(resolvePath("~/.singularity-aidr")).catch(() => {});
+	// Core messages shown by the extension follow the editor's display language
+	// (the hook gets the same value through its launcher), unless set explicitly.
+	if (!process.env.AIDR_LOCALE?.trim() && typeof vscode.env?.language === "string") {
+		process.env.AIDR_LOCALE = vscode.env.language;
+	}
 
 	const host = hookHostOf(target);
 	const version = (context.extension.packageJSON as Record<string, unknown>).version as string;
@@ -56,6 +67,9 @@ export function activateManagedHooksExtension(
 	const hostAssessment = assessHostVersion(host, hostVersion);
 	void repairInstalledHooks(context, target);
 	warnOnceForUnverifiedHost(context, hostAssessment);
+	// Also on an MDM / silent install, where nobody ran Enable protection.
+	void showFirstRunNotices(host);
+	watchDashboardDecisions(context);
 	if (version) {
 		void checkForExtensionUpdate(version, host);
 	}
@@ -294,6 +308,99 @@ async function repairInstalledHooks(
 const HOST_WARNING_STATE_KEY = "aidr.hostVersionWarning";
 
 /** Show the unverified-host warning once per host version. */
+let noticeChannel: vscode.OutputChannel | undefined;
+
+/** Long text goes to an output channel; a notification only names it. */
+function showLongNotice(text: string, warning: boolean): void {
+	try {
+		noticeChannel ??= vscode.window.createOutputChannel("Singularity AIDR");
+		noticeChannel.appendLine(text);
+		noticeChannel.appendLine("");
+	} catch {
+		// No output channel API (a test stub): the notification still says it.
+	}
+	const [first] = text.split("\n");
+	const details = localize("Show details");
+	const shown = warning
+		? vscode.window.showWarningMessage(first ?? text, details)
+		: vscode.window.showInformationMessage(first ?? text, details);
+	void Promise.resolve(shown).then((choice) => {
+		if (choice === details) noticeChannel?.show(true);
+	});
+}
+
+/**
+ * The first-run privacy notice (once per notice version, shared with the
+ * other connectors' record) and the AI tools on this computer that AIDR does
+ * not protect. Display only; never throws.
+ */
+async function showFirstRunNotices(host: ExtensionHookHost): Promise<void> {
+	try {
+		const config = await loadConfig();
+		const unprotected = detectUnprotectedAiTools({ home: resolvePath("~"), env: process.env });
+		const notice = await takeFirstRunPrivacyNotice(config, host, {
+			unprotectedTools: unprotected.map((tool) => tool.label),
+		});
+		if (notice) showLongNotice(notice, false);
+		else if (unprotected.length > 0) {
+			showLongNotice(
+				t("session.unprotectedTools", {
+					tools: unprotected.map((tool) => tool.label).join(", "),
+				}),
+				true,
+			);
+		}
+	} catch {
+		// A notice must never break activation.
+	}
+}
+
+/** One editor notification per decision, with the dashboard page when known. */
+function notifyDecision(decision: DashboardDecisionNotice): void {
+	const text = formatDashboardDecisionNotices([decision]);
+	if (!text) return;
+	const open = localize("Open approval page");
+	const actions = decision.consoleUrl ? [open] : [];
+	const shown =
+		decision.status === "approved"
+			? vscode.window.showInformationMessage(text, ...actions)
+			: vscode.window.showWarningMessage(text, ...actions);
+	void Promise.resolve(shown).then((choice) => {
+		if (choice === open && decision.consoleUrl) {
+			void vscode.env.openExternal(vscode.Uri.parse(decision.consoleUrl));
+		}
+	});
+}
+
+/** How often the editor asks whether a dashboard approval was decided. */
+const DECISION_POLL_MS = 30_000;
+
+/**
+ * Managed mode: tell the developer when an administrator approved or denied
+ * one of their requests, so they do not have to keep retrying. Read-only (the
+ * retry still verifies and spends the token); polls only while requests are
+ * waiting, at most once per 20 s across every AIDR process.
+ */
+function watchDashboardDecisions(context: vscode.ExtensionContext): void {
+	let running = false;
+	const tick = async () => {
+		if (running) return;
+		running = true;
+		try {
+			const config = await loadConfig();
+			if (config.mode !== "managed") return;
+			for (const decision of await checkDashboardDecisions(config)) notifyDecision(decision);
+		} catch {
+			// Never surfaces as an error: the retry path still works.
+		} finally {
+			running = false;
+		}
+	};
+	const timer = setInterval(() => void tick(), DECISION_POLL_MS);
+	timer.unref?.();
+	context.subscriptions?.push({ dispose: () => clearInterval(timer) });
+}
+
 function warnOnceForUnverifiedHost(
 	context: vscode.ExtensionContext,
 	assessment: HostVersionAssessment,
