@@ -20,7 +20,7 @@ Türkçe kısa sürüm: [ilk müşteri kurulum ve kabul kılavuzu](../../deploy/
 | Topology | When | Reference |
 |---|---|---|
 | Docker Compose, one Linux host | Pilot, POC, up to roughly 1,000 endpoints on the `medium` profile after your own load test | [deploy/onprem/README.md](../../deploy/onprem/README.md) |
-| Kubernetes with the Helm chart | The customer runs Kubernetes and wants chart-managed upgrades; external HA Postgres recommended | [Running AIDR on Kubernetes](kubernetes.md), [`deploy/helm/aidr`](../../deploy/helm/aidr/README.md) |
+| Kubernetes with the Helm chart | The customer runs Kubernetes and wants chart-managed upgrades; external HA Postgres recommended. The chart is lint- and template-checked but has not yet been installed on a live cluster | [Running AIDR on Kubernetes](kubernetes.md), [`deploy/helm/aidr`](../../deploy/helm/aidr/README.md) |
 | Either, air-gapped | No route to the internet from the control plane or endpoints | [Air-gapped hosts](../../deploy/onprem/README.md#air-gapped-hosts) |
 
 The control plane always runs on **Linux**. Endpoints are Windows 10/11 x64

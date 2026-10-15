@@ -52,7 +52,10 @@ Catalog features (each plan includes the ones above it):
 - **Enterprise** — adds air-gapped deployment and dedicated support.
 
 A feature listed here still needs its own release acceptance before it is sold
-as supported; the catalog does not assert readiness.
+as supported; the catalog does not assert readiness. The hosted service is not
+live yet (no hosted region is deployed), so the cloud rows, the Free sign-up and
+the 14-day trial below cannot be used today; local detection and the on-premises
+control plane are the evaluation paths.
 
 ## Catalog columns
 

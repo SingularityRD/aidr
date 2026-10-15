@@ -16,6 +16,10 @@ signed with the release key) and the release public key, then runs
 | RHEL / Fedora / SUSE | `singularity-aidr-<version>-1.x86_64.rpm` (GPG-signed) | `/opt/singularity-aidr/`, `/usr/bin/aidr` |
 | Any Linux | `singularity-aidr-<version>-linux-x64.tar.gz` (+ `.asc`) | `/opt/singularity-aidr/`, `/usr/local/bin/aidr` |
 
+"Desktop installer" means an OS installer package for workstations. It installs the
+command-line tool, hooks and editor extensions; there is no AIDR desktop (GUI)
+application today.
+
 **macOS installers are not offered yet.** On macOS, use the connector
 packages described in [Getting Started](../getting-started.md).
 

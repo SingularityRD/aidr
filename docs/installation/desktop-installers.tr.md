@@ -16,6 +16,10 @@ içerir; ardından oturum açmış kullanıcı için `aidr setup` çalıştırı
 | RHEL / Fedora / SUSE | `singularity-aidr-<sürüm>-1.x86_64.rpm` (GPG imzalı) | `/opt/singularity-aidr/`, `/usr/bin/aidr` |
 | Her Linux | `singularity-aidr-<sürüm>-linux-x64.tar.gz` (+ `.asc`) | `/opt/singularity-aidr/`, `/usr/local/bin/aidr` |
 
+"Masaüstü yükleyici", iş istasyonları için bir işletim sistemi kurulum paketidir.
+Komut satırı aracını, kancaları ve düzenleyici eklentilerini kurar; bugün AIDR'ın
+bir masaüstü (grafik arayüzlü) uygulaması yoktur.
+
 **macOS yükleyicisi henüz sunulmuyor.** macOS'ta [Başlarken](../getting-started.md)
 belgesindeki bağlayıcı paketlerini kullanın.
 

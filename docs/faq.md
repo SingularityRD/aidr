@@ -6,6 +6,17 @@ Install a supported connector and validate its local decision path. Browser
 device authorization requires a deployed and configured control plane; without
 one, it cannot provide a working verification URL. See [Device Auth](device-auth.md).
 
+## Which agents are supported, and is there a hosted service?
+
+Six connectors are built: Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex
+CLI. The first five are the intended first general-availability scope; Codex is a
+preview outside it. Cursor and VS Code are a preview — no real-host acceptance evidence yet, and the other four have one
+linux/x64 real-host record each with a scripted model ([compatibility matrix](compatibility-matrix.md)).
+The hosted (SaaS) control plane is not live yet and no hosted region is deployed;
+evaluations run in local mode or against an on-premises control plane. There is no
+AIDR desktop application, no SLA in force (the [SLA](legal/sla.en.md) is a draft), and
+no SOC 2, ISO 27001 or penetration-test report.
+
 ## Is Singularity AIDR always running?
 
 On Claude Code, yes - it loads automatically via hooks on every session. On Cursor/VS Code (preview — no real-host acceptance evidence yet), you need to explicitly enable protection via the command palette. On OpenClaw, it runs once installed as a plugin.

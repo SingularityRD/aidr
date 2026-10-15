@@ -154,7 +154,7 @@ ve `policies.json` ile aynı içeriği (bölüm 7) kullanın ya da `policies.jso
    dosyayı bir başlangıç betiğiyle `reg import` edin.
 5. Pilot bir makinede `gpupdate /force` çalıştırın, sonra bölüm 8'i uygulayın.
 
-## 7. Firefox (`policies.json`, tüm platformlar)
+## 7. Firefox (`policies.json`, Windows, macOS ve Linux)
 
 1. Sürümün Mozilla imzalı XPI dosyasını alın (addons.mozilla.org'da liste dışı
    eklenti olarak imzalanır; yayıncı imzadan sonra AMO Developer Hub'dan indirir,

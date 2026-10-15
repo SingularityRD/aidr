@@ -14,7 +14,7 @@ is not yet verified end to end.
 
 | Deployment | Endpoint data | Control-plane data | Goes to SingularityRD | Residency statement we can make |
 |---|---|---|---|---|
-| Local mode only (no control plane) | On each endpoint | None | Nothing | "Detection runs on the device; no AIDR data leaves it." |
+| Local mode only (no control plane) | On each endpoint | None | Nothing | "Detection runs on the device; with the default settings no AIDR data leaves it." Optional URL/package/file reputation lookups and the version check send data only when an administrator enables them ([privacy](../privacy.md)) |
 | On-premises (Docker Compose or Helm) | On each endpoint | Customer's host, in the location the customer chooses | Nothing (support bundles only when the customer approves one) | "Stored where you run it." Holds when the backup target, SMTP, IdP, SIEM and optional lookups are also in-country; see [the KVKK guide](../operations/kvkk.md#4-yurt-dışına-aktarım) |
 | Air-gapped on-premises | On each endpoint | Customer's isolated network | Nothing; updates arrive as signed offline bundles | Same as on-premises, with no outbound path |
 | Hosted (SaaS) | On each endpoint | SingularityRD-operated cloud | Redacted events and dashboard data | Only the facts in the next section; no residency claim |
@@ -25,8 +25,9 @@ control plane the endpoint is enrolled in ([privacy](../privacy.md)).
 
 ## Hosted service: the facts we have
 
-The hosted service is not accepted for customer use
-([SaaS deployment](saas.md)). What is known, from the
+The hosted service is not live and not accepted for customer use: the app
+hostname does not resolve and no production region (EU, US or APAC) is
+deployed ([SaaS deployment](saas.md)). What is known, from the
 [COM-011 audit](../production-readiness/com-011-region-residency-audit-2026-09-23.md):
 
 - The linked pilot Supabase project's primary region is **`eu-central-1`

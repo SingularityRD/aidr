@@ -17,7 +17,7 @@ the customer's control plane instead of the hosted one.
 | Topology | Use when | Primary reference |
 | --- | --- | --- |
 | **Docker Compose, single host** | Evaluation or smaller installations | [deploy/README.md](../../deploy/README.md), [deploy/onprem/README.md](../../deploy/onprem/README.md) |
-| **Kubernetes (Helm)** | The customer runs Kubernetes and wants chart-managed upgrades | Helm chart under `deploy/helm/`, [docs/operations/kubernetes.md](../operations/kubernetes.md) |
+| **Kubernetes (Helm)** | The customer runs Kubernetes and wants chart-managed upgrades (the chart has not yet been installed on a live cluster) | Helm chart under `deploy/helm/`, [docs/operations/kubernetes.md](../operations/kubernetes.md) |
 | **Air-gapped** | No internet access from the control plane or endpoints | [deploy/README.md](../../deploy/README.md) "Disconnected (air-gapped) installation" and [deploy/onprem/README.md](../../deploy/onprem/README.md) |
 
 Sizing starts from [deploy/RESOURCE_REQUIREMENTS.md](../../deploy/RESOURCE_REQUIREMENTS.md).

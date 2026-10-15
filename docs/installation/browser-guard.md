@@ -14,6 +14,11 @@ Guard for you and you do not need to do anything; it appears in the toolbar mark
 
 ## Install
 
+> **Availability.** Browser Guard is not yet published in the Chrome Web Store, Edge
+> Add-ons or as a Mozilla-signed XPI, so no install link exists today; evaluations load
+> the built extension unpacked. It has been verified against hermetic copies of the AI
+> sites, not yet on the live sites. The steps below apply once the listings exist.
+
 You need the install link from your Singularity contact or your organisation. The
 listings are unlisted: they do not show up in store search, but they install like any
 other extension.
