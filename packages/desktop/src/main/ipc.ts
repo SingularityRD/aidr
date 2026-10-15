@@ -4,6 +4,8 @@ import type {
 	AuditEvent,
 	BrowserGuardStatus,
 	ConnectPreview,
+	IncidentDetail,
+	IncidentSummary,
 	InvokeChannel,
 	InvokeMap,
 	OpenTarget,
@@ -29,6 +31,9 @@ export interface AppServices {
 	disconnect(): Promise<ActionResult>;
 	selfTest(): Promise<SelfTestResult>;
 	recentAudit(): AuditEvent[];
+	incidentList(): Promise<IncidentSummary[]>;
+	incidentDetail(id: string): Promise<IncidentDetail | null>;
+	exportAudit(format: "jsonl" | "csv"): Promise<ActionResult>;
 	setLogClean(enabled: boolean): Promise<ActionResult>;
 	browserGuardStatus(): Promise<BrowserGuardStatus>;
 	stageBrowserGuard(): Promise<ActionResult>;
@@ -119,6 +124,22 @@ export function createIpcHandlers(services: AppServices): IpcHandlers {
 		"audit:recent": async (payload) => {
 			noPayload(payload);
 			return services.recentAudit();
+		},
+		"incidents:list": async (payload) => {
+			noPayload(payload);
+			return services.incidentList();
+		},
+		"incidents:get": async (payload) => {
+			const { id } = objectPayload(payload, ["id"]);
+			if (typeof id !== "string" || id.length === 0 || id.length > 512) {
+				throw new IpcValidationError("id must be a non-empty string");
+			}
+			return services.incidentDetail(id);
+		},
+		"audit:export": async (payload) => {
+			const { format } = objectPayload(payload, ["format"]);
+			if (format !== "jsonl" && format !== "csv") throw new IpcValidationError("format must be jsonl or csv");
+			return exclusive("export", () => services.exportAudit(format));
 		},
 		"audit:setLogClean": async (payload) => {
 			const { enabled } = objectPayload(payload, ["enabled"]);

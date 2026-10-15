@@ -789,6 +789,15 @@ td {
 	vertical-align: top;
 }
 
+tr.clickable {
+	cursor: pointer;
+}
+
+tr.clickable:hover td,
+tr.selected td {
+	background: var(--accent-soft);
+}
+
 tr:last-child td {
 	border-bottom: 0;
 }

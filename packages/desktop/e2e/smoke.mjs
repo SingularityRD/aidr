@@ -301,6 +301,50 @@ try {
 	check("deny filter shows only denies", denyRows.length > 0 && denyRows.every((decision) => decision === "deny"), `${denyRows.length} row(s)`);
 	await page.getByTestId("filter-all").click();
 
+	// 5b. Logs: every record type, type filter, redacted export through `aidr audit export`.
+	await page.getByTestId("filter-kind").selectOption("incident");
+	await page.waitForFunction(() => document.querySelectorAll('[data-testid="activity-row"]').length > 0, null, { timeout: 30_000 });
+	const kinds = await page.locator('[data-testid="activity-row"]').evaluateAll((rows) => rows.map((row) => row.getAttribute("data-kind")));
+	check("type filter shows incident records", kinds.length > 0 && kinds.every((kind) => kind === "incident"), `${kinds.length} row(s)`);
+	await shot("05b-logs-incident-records");
+	await page.getByTestId("filter-kind").selectOption("all");
+	const exportPath = join(sandbox, "export.jsonl");
+	// The save dialog is the only interactive step; answer it with a path in the sandbox.
+	await app.evaluate(({ dialog }, path) => {
+		dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
+	}, exportPath);
+	await page.getByTestId("export-jsonl").click();
+	await page.waitForFunction(() => document.querySelector(".toast")?.textContent?.includes("export.jsonl"), null, { timeout: 60_000 });
+	const exported = readFileSync(exportPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+	check(
+		"export holds the deny and the incident, session ids digested",
+		exported.some((entry) => entry.type === "runtime_verdict" && entry.verdict === "deny") &&
+			exported.some((entry) => entry.type === "incident_record") &&
+			exported.every((entry) => !("session_id" in entry)),
+		`${exported.length} record(s)`,
+	);
+
+	// Let the export toast fade so it does not cover the next screenshots.
+	await page.waitForTimeout(4200);
+
+	// 5c. Incidents.
+	await page.getByTestId("nav-incidents").click();
+	await page.getByTestId("incident-row").first().waitFor({ timeout: 30_000 });
+	const incidentCount = await page.getByTestId("incident-row").count();
+	check("incidents page lists the correlated incidents", incidentCount > 0, `${incidentCount} incident(s)`);
+	await page.getByTestId("incident-status-open").click();
+	const openFlags = await page.locator('[data-testid="incident-row"]').evaluateAll((rows) => rows.map((row) => row.getAttribute("data-open")));
+	check("status filter shows open incidents only", openFlags.every((flag) => flag === "true"));
+	await page.getByTestId("incident-status-all").click();
+	await shot("06-incidents");
+	// The incident of the self-test's denied canary: its verdict joined with rule and masked artifact.
+	const selfTestIncident = page.locator('[data-testid="incident-row"]', { hasText: "aidr-desktop-self" }).first();
+	await selfTestIncident.click();
+	await page.getByTestId("incident-detail").waitFor({ timeout: 15_000 });
+	const detail = (await page.getByTestId("incident-events").textContent()) ?? "";
+	check("incident detail shows the linked verdict with rule and masked artifact", detail.includes("CLT-CMD-001") && detail.includes("evil.test"));
+	await shot("07-incident-detail");
+
 	// 6. Browser Guard.
 	await page.getByTestId("nav-browserGuard").click();
 	await page.getByTestId("bg-install").waitFor({ timeout: 30_000 });
@@ -308,12 +352,12 @@ try {
 	await page.getByTestId("bg-staged-path").waitFor({ timeout: 30_000 });
 	const staged = (await page.getByTestId("bg-staged-path").textContent()) ?? "";
 	check("Browser Guard staged inside the profile", staged.includes(".singularity-aidr") && existsSync(join(home, ".singularity-aidr", "desktop", "browser-guard")));
-	await shot("06-browser-guard");
+	await shot("08-browser-guard");
 
 	// 7. Settings.
 	await page.getByTestId("nav-settings").click();
 	await page.getByTestId("page-settings").waitFor();
-	await shot("07-settings");
+	await shot("09-settings");
 
 	// 8. Disconnect: settings restored.
 	await page.getByTestId("nav-status").click();
@@ -342,7 +386,7 @@ try {
 		check("settings restored byte for byte", restored === originalText);
 	}
 	check("status is not protected again", (await page.getByTestId("protection-badge").getAttribute("class")).includes("warn"));
-	await shot("08-status-disconnected");
+	await shot("10-status-disconnected");
 } catch (error) {
 	failed = true;
 	console.error(error);

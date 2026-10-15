@@ -7,11 +7,14 @@ import type {
 	ConnectorView,
 	ConnectPreview,
 	Decision,
+	IncidentDetail,
+	IncidentSummary,
 	Lang,
 	SelfTestCase,
 	SelfTestResult,
 	StatusSnapshot,
 } from "../shared/contract.js";
+import { LOG_KINDS, type LogKind } from "../shared/contract.js";
 import { type MessageKey, translate } from "../shared/i18n.js";
 
 declare global {
@@ -22,11 +25,12 @@ declare global {
 
 const api = window.aidr;
 
-type Page = "status" | "selftest" | "activity" | "browserGuard" | "settings";
+type Page = "status" | "selftest" | "activity" | "incidents" | "browserGuard" | "settings";
 const PAGES: Array<{ id: Page; key: MessageKey }> = [
 	{ id: "status", key: "nav.status" },
 	{ id: "selftest", key: "nav.selftest" },
 	{ id: "activity", key: "nav.activity" },
+	{ id: "incidents", key: "nav.incidents" },
 	{ id: "browserGuard", key: "nav.browserGuard" },
 	{ id: "settings", key: "nav.settings" },
 ];
@@ -41,6 +45,11 @@ interface State {
 	events: AuditEvent[];
 	freshIds: Set<string>;
 	filter: "all" | Decision;
+	kindFilter: "all" | LogKind;
+	incidents: IncidentSummary[];
+	incidentSeverity: string;
+	incidentStatus: "all" | "open" | "closed";
+	selectedIncident: IncidentDetail | null;
 	search: string;
 	hideSelfTest: boolean;
 	browserGuard: BrowserGuardStatus | null;
@@ -58,6 +67,11 @@ const state: State = {
 	events: [],
 	freshIds: new Set(),
 	filter: "all",
+	kindFilter: "all",
+	incidents: [],
+	incidentSeverity: "all",
+	incidentStatus: "all",
+	selectedIncident: null,
 	search: "",
 	hideSelfTest: false,
 	browserGuard: null,
@@ -646,6 +660,7 @@ function filteredEvents(): AuditEvent[] {
 	const query = state.search.trim().toLowerCase();
 	return state.events
 		.filter((event) => state.filter === "all" || event.decision === state.filter)
+		.filter((event) => state.kindFilter === "all" || event.kind === state.kindFilter)
 		.filter((event) => !(state.hideSelfTest && event.origin !== null))
 		.filter(
 			(event) =>
@@ -678,6 +693,7 @@ function eventRows(): HTMLElement {
 				"tr",
 				{},
 				h("th", {}, t("activity.col.time")),
+				h("th", {}, t("activity.col.kind")),
 				h("th", {}, t("activity.col.decision")),
 				h("th", {}, t("activity.col.tool")),
 				h("th", {}, t("activity.col.summary")),
@@ -693,11 +709,13 @@ function eventRows(): HTMLElement {
 					{
 						class: state.freshIds.has(event.id) ? "fresh" : undefined,
 						"data-testid": "activity-row",
-						"data-decision": event.decision,
+						"data-decision": event.decision ?? "none",
+						"data-kind": event.kind,
 						"data-origin": event.origin ?? "agent",
 					},
 					h("td", { class: "time", title: event.at }, clockTime(event.at)),
-					h("td", {}, decisionChip(event.decision)),
+					h("td", {}, h("span", { class: "chip neutral", title: event.recordType }, t(`kind.${event.kind}`))),
+					h("td", {}, event.decision ? decisionChip(event.decision) : severityChip(event.severity)),
 					h(
 						"td",
 						{},
@@ -800,7 +818,13 @@ function renderActivity(): HTMLElement {
 			"div",
 			{ class: "page-head" },
 			h("h1", {}, t("activity.title")),
-			button(t("activity.openLog"), () => void openTarget("auditLog"), { variant: "ghost" }),
+			h(
+				"div",
+				{ class: "row" },
+				button(t("activity.exportJsonl"), () => void exportAudit("jsonl"), { testId: "export-jsonl" }),
+				button(t("activity.exportCsv"), () => void exportAudit("csv"), { testId: "export-csv" }),
+				button(t("activity.openLog"), () => void openTarget("auditLog"), { variant: "ghost" }),
+			),
 		),
 		h("p", { class: "muted" }, t("activity.intro", { path: status?.auditPath ?? "audit.jsonl" })),
 		h(
@@ -813,8 +837,259 @@ function renderActivity(): HTMLElement {
 				status?.configExists ? t("activity.logCleanHint") : t("activity.logCleanNeedsConfig"),
 			),
 		),
-		h("div", { class: "row" }, filters, search, h("span", { class: "spacer" }), hideSelfTest),
+		h("div", { class: "row" }, filters, kindSelect(refreshRows), search, h("span", { class: "spacer" }), hideSelfTest),
 		tableWrap,
+	);
+}
+
+function kindSelect(onChange: () => void): HTMLElement {
+	return select(
+		state.kindFilter,
+		[["all", t("kind.all")], ...LOG_KINDS.map((kind): [string, string] => [kind, t(`kind.${kind}`)])],
+		(value) => {
+			state.kindFilter = value as State["kindFilter"];
+			onChange();
+		},
+		"filter-kind",
+	);
+}
+
+async function exportAudit(format: "jsonl" | "csv"): Promise<void> {
+	try {
+		const result = await api.invoke("audit:export", { format });
+		if (result.ok) toast(t("activity.exported", { path: result.message }));
+		else if (result.message !== "canceled") toast(result.message);
+	} catch (error) {
+		toast((error as Error).message);
+	}
+}
+
+function severityChip(severity: string | null, testId?: string): HTMLElement {
+	const tone =
+		severity === "critical" || severity === "high"
+			? "danger"
+			: severity === "warning" || severity === "medium"
+				? "warn"
+				: "neutral";
+	return h("span", { class: `chip ${tone}`, "data-testid": testId }, severity ? t(severityKey(severity)) : "—");
+}
+
+function severityKey(severity: string): MessageKey {
+	return (["critical", "high", "warning", "info"].includes(severity) ? `severity.${severity}` : "severity.other") as MessageKey;
+}
+
+// ── Incidents page ─────────────────────────────────────────────────────
+
+function filteredIncidents(): IncidentSummary[] {
+	return state.incidents.filter(
+		(incident) =>
+			(state.incidentSeverity === "all" || incident.severity === state.incidentSeverity) &&
+			(state.incidentStatus === "all" || (state.incidentStatus === "open") === incident.open),
+	);
+}
+
+function shortSession(sessionId: string | null): string {
+	if (!sessionId) return "—";
+	return sessionId.length > 18 ? `${sessionId.slice(0, 18)}…` : sessionId;
+}
+
+function incidentRows(): HTMLElement {
+	const list = filteredIncidents();
+	if (list.length === 0) {
+		return h(
+			"div",
+			{ class: "empty", "data-testid": "incidents-empty" },
+			state.incidents.length === 0 ? t("incidents.empty") : t("incidents.emptyFiltered"),
+		);
+	}
+	return h(
+		"table",
+		{ "data-testid": "incidents-table" },
+		h(
+			"thead",
+			{},
+			h(
+				"tr",
+				{},
+				h("th", {}, t("incidents.col.severity")),
+				h("th", {}, t("incidents.col.status")),
+				h("th", {}, t("incidents.col.session")),
+				h("th", {}, t("incidents.col.connector")),
+				h("th", {}, t("incidents.col.firstSeen")),
+				h("th", {}, t("incidents.col.lastSeen")),
+				h("th", {}, t("incidents.col.events")),
+			),
+		),
+		h(
+			"tbody",
+			{},
+			...list.map((incident) =>
+				h(
+					"tr",
+					{
+						class: `clickable ${state.selectedIncident?.id === incident.id ? "selected" : ""}`.trim(),
+						"data-testid": "incident-row",
+						"data-severity": incident.severity,
+						"data-open": incident.open ? "true" : "false",
+						tabindex: 0,
+						onclick: () => void openIncident(incident.id),
+						onkeydown: (event: Event) => {
+							if ((event as KeyboardEvent).key === "Enter") void openIncident(incident.id);
+						},
+					},
+					h("td", {}, severityChip(incident.severity)),
+					h(
+						"td",
+						{},
+						h("span", { class: `chip ${incident.open ? "warn" : "ok"}` }, incident.open ? t("incidents.open") : t("incidents.closed")),
+						h("div", { class: "small muted" }, incident.status),
+					),
+					h(
+						"td",
+						{ class: "mono small", title: incident.sessionId ?? "" },
+						shortSession(incident.sessionId),
+						incident.origin
+							? h("div", {}, h("span", { class: "chip tag" }, t(incident.origin === "self-test" ? "activity.selfTestTag" : "activity.setupTag")))
+							: null,
+					),
+					h("td", {}, incident.connector ?? "—"),
+					h("td", { class: "time" }, clockTime(incident.firstSeen)),
+					h("td", { class: "time" }, clockTime(incident.lastSeen)),
+					h("td", { class: "latency" }, String(incident.eventCount)),
+				),
+			),
+		),
+	);
+}
+
+function incidentDetailView(detail: IncidentDetail): HTMLElement {
+	return h(
+		"section",
+		{ class: "card", "data-testid": "incident-detail" },
+		h(
+			"div",
+			{ class: "card-head" },
+			h("h2", {}, t("incidents.detailTitle")),
+			button(t("common.close"), () => {
+				state.selectedIncident = null;
+				render();
+			}, { variant: "ghost small" }),
+		),
+		h(
+			"dl",
+			{ class: "kv" },
+			h("dt", {}, t("incidents.id")),
+			h("dd", {}, h("code", {}, detail.id)),
+			h("dt", {}, t("incidents.col.severity")),
+			h("dd", {}, severityChip(detail.severity)),
+			h("dt", {}, t("incidents.col.status")),
+			h("dd", {}, detail.status),
+			...detail.correlation.flatMap(([key, value]) => [h("dt", {}, key), h("dd", {}, h("code", {}, value))]),
+		),
+		h("h3", {}, t("incidents.events", { n: detail.events.length })),
+		h(
+			"div",
+			{ class: "table-wrap" },
+			h(
+				"table",
+				{ "data-testid": "incident-events" },
+				h(
+					"thead",
+					{},
+					h(
+						"tr",
+						{},
+						h("th", {}, t("activity.col.time")),
+						h("th", {}, t("activity.col.decision")),
+						h("th", {}, t("incidents.col.artifact")),
+						h("th", {}, t("activity.col.rule")),
+					),
+				),
+				h(
+					"tbody",
+					{},
+					...detail.events.map((event) =>
+						h(
+							"tr",
+							{ "data-testid": "incident-event" },
+							h("td", { class: "time" }, event.at ? clockTime(event.at) : "—"),
+							h(
+								"td",
+								{},
+								event.verdict?.decision ? decisionChip(event.verdict.decision) : severityChip(event.severity),
+								h("div", { class: "small muted" }, event.signalType),
+							),
+							h(
+								"td",
+								{ class: "summary" },
+								event.verdict ? event.verdict.artifact : event.summary,
+								event.verdict ? h("div", { class: "small muted" }, event.verdict.tool) : null,
+							),
+							h(
+								"td",
+								{ class: "rule" },
+								event.verdict?.ruleId ? h("div", { class: "rule-id" }, event.verdict.ruleId) : null,
+								h("div", { class: "reason" }, event.verdict?.reason || (event.verdict ? "" : t("incidents.noVerdict"))),
+							),
+						),
+					),
+				),
+			),
+		),
+	);
+}
+
+async function openIncident(id: string): Promise<void> {
+	try {
+		state.selectedIncident = await api.invoke("incidents:get", { id });
+	} catch (error) {
+		toast((error as Error).message);
+	}
+	render();
+}
+
+function renderIncidents(): HTMLElement {
+	const severityFilter = select(
+		state.incidentSeverity,
+		[
+			["all", t("incidents.allSeverities")],
+			["critical", t("severity.critical")],
+			["high", t("severity.high")],
+			["warning", t("severity.warning")],
+			["info", t("severity.info")],
+		],
+		(value) => {
+			state.incidentSeverity = value;
+			render();
+		},
+		"incident-severity",
+	);
+	const statusFilter = h("div", { class: "segmented", role: "group" });
+	for (const value of ["all", "open", "closed"] as const) {
+		statusFilter.append(
+			h(
+				"button",
+				{
+					type: "button",
+					"aria-pressed": state.incidentStatus === value ? "true" : "false",
+					"data-testid": `incident-status-${value}`,
+					onclick: () => {
+						state.incidentStatus = value;
+						render();
+					},
+				},
+				t(value === "all" ? "incidents.all" : value === "open" ? "incidents.open" : "incidents.closed"),
+			),
+		);
+	}
+	return h(
+		"div",
+		{ class: "page", "data-testid": "page-incidents" },
+		h("div", { class: "page-head" }, h("h1", {}, t("incidents.title"))),
+		h("p", { class: "muted" }, t("incidents.intro", { path: state.status?.auditPath ?? "audit.jsonl" })),
+		h("div", { class: "row" }, statusFilter, severityFilter),
+		h("div", { class: "table-wrap", id: "incident-rows" }, incidentRows()),
+		state.selectedIncident ? incidentDetailView(state.selectedIncident) : null,
 	);
 }
 
@@ -1102,6 +1377,7 @@ function render(): void {
 		status: renderStatus,
 		selftest: renderSelfTest,
 		activity: renderActivity,
+		incidents: renderIncidents,
 		browserGuard: renderBrowserGuard,
 		settings: renderSettings,
 	};
@@ -1139,10 +1415,21 @@ async function start(): Promise<void> {
 			}
 		}
 	});
+	api.on("incidents:changed", (incidents) => {
+		state.incidents = incidents;
+		if (state.page !== "incidents") return;
+		const wrap = document.getElementById("incident-rows");
+		if (wrap) {
+			clear(wrap);
+			wrap.append(incidentRows());
+		}
+		if (state.selectedIncident) void openIncident(state.selectedIncident.id);
+	});
 	api.on("nav:go", (page) => {
 		if (PAGES.some((entry) => entry.id === page)) go(page as Page);
 	});
 	state.events = await api.invoke("audit:recent");
+	state.incidents = await api.invoke("incidents:list");
 	await loadStatus(false);
 }
 

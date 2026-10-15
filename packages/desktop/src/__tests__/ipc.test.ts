@@ -13,6 +13,9 @@ function services(overrides: Partial<AppServices> = {}): AppServices {
 		disconnect: vi.fn(async () => ok),
 		selfTest: vi.fn(async () => ({}) as never),
 		recentAudit: () => [],
+		incidentList: vi.fn(async () => []),
+		incidentDetail: vi.fn(async () => null),
+		exportAudit: vi.fn(async () => ok),
 		setLogClean: vi.fn(async () => ok),
 		browserGuardStatus: vi.fn(async () => ({}) as never),
 		stageBrowserGuard: vi.fn(async () => ok),
@@ -51,6 +54,15 @@ describe("IPC handlers", () => {
 		expect(api.setLogClean).toHaveBeenCalledWith(true);
 		await handlers["open:target"]({ target: "auditLog" });
 		expect(api.open).toHaveBeenCalledWith("auditLog");
+		await expect(handlers["audit:export"]({ format: "xml" })).rejects.toThrow(/jsonl or csv/);
+		await expect(handlers["audit:export"]({ format: "csv", output: "C:\\x" })).rejects.toThrow(/unexpected field/);
+		await expect(handlers["incidents:get"]({ id: 42 })).rejects.toThrow(/non-empty string/);
+		await expect(handlers["incidents:get"]({ id: "" })).rejects.toThrow(/non-empty string/);
+		await expect(handlers["incidents:list"]({})).rejects.toThrow(/no payload/);
+		await handlers["audit:export"]({ format: "csv" });
+		expect(api.exportAudit).toHaveBeenCalledWith("csv");
+		await handlers["incidents:get"]({ id: "inc_1" });
+		expect(api.incidentDetail).toHaveBeenCalledWith("inc_1");
 		await handlers["prefs:set"]({ theme: "dark", notifyOnDeny: false });
 		expect(api.setPreferences).toHaveBeenLastCalledWith({ theme: "dark", notifyOnDeny: false });
 	});

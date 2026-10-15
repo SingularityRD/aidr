@@ -147,12 +147,45 @@ export interface SelfTestResult {
 	cases: SelfTestCase[];
 }
 
+/**
+ * What an audit record is about: a tool call verdict, a prompt check
+ * (UserPromptSubmit), a tool-output finding (PostToolUse canary), a plugin
+ * scan, an incident, a response action, a dashboard approval, a detection
+ * exception, or another record type.
+ */
+export type LogKind =
+	| "tool"
+	| "prompt"
+	| "output"
+	| "plugin_scan"
+	| "incident"
+	| "response"
+	| "approval"
+	| "exception"
+	| "other";
+
+export const LOG_KINDS: readonly LogKind[] = [
+	"tool",
+	"prompt",
+	"output",
+	"plugin_scan",
+	"incident",
+	"response",
+	"approval",
+	"exception",
+	"other",
+];
+
 export interface AuditEvent {
 	id: string;
 	at: string;
-	decision: Decision;
+	/** The record's `type` as written (runtime_verdict, incident_record, plugin_scan, ...). */
+	recordType: string;
+	kind: LogKind;
+	/** The verdict, for records that carry one. */
+	decision: Decision | null;
 	tool: string;
-	/** `tool_input_summary` exactly as the audit log stores it (already redacted there). */
+	/** `tool_input_summary` (or the record's own text fields) as the audit log stores it, already redacted there. */
 	summary: string;
 	ruleId: string | null;
 	reason: string;
@@ -164,6 +197,44 @@ export interface AuditEvent {
 	 */
 	origin: "self-test" | "setup-canary" | null;
 	durationMs: number | null;
+}
+
+export interface IncidentSummary {
+	id: string;
+	severity: string;
+	/** As recorded: open, acknowledged, contained, resolved or suppressed. */
+	status: string;
+	open: boolean;
+	sessionId: string | null;
+	connector: string | null;
+	firstSeen: string;
+	lastSeen: string;
+	eventCount: number;
+	origin: AuditEvent["origin"];
+}
+
+export interface IncidentEventView {
+	signalId: string;
+	at: string;
+	signalType: string;
+	severity: string;
+	/** The incident's own one-line summary of the event. */
+	summary: string;
+	/** The audit verdict this event was correlated from, when it is in the log. */
+	verdict: {
+		decision: Decision | null;
+		tool: string;
+		ruleId: string | null;
+		reason: string;
+		/** `tool_input_summary`: the artifact, masked by the audit logger. */
+		artifact: string;
+	} | null;
+}
+
+export interface IncidentDetail extends IncidentSummary {
+	/** Correlation keys the incident was grouped by (session, plugin, domain, ...). */
+	correlation: Array<[string, string]>;
+	events: IncidentEventView[];
 }
 
 export interface BrowserExtensionHit {
@@ -208,6 +279,9 @@ export interface InvokeMap {
 	"selftest:run": { req: undefined; res: SelfTestResult };
 	"audit:recent": { req: undefined; res: AuditEvent[] };
 	"audit:setLogClean": { req: { enabled: boolean }; res: ActionResult };
+	"audit:export": { req: { format: "jsonl" | "csv" }; res: ActionResult };
+	"incidents:list": { req: undefined; res: IncidentSummary[] };
+	"incidents:get": { req: { id: string }; res: IncidentDetail | null };
 	"browserGuard:status": { req: undefined; res: BrowserGuardStatus };
 	"browserGuard:stage": { req: undefined; res: ActionResult };
 	"browserGuard:openExtensionsPage": { req: { browser: "chrome" | "edge" }; res: ActionResult };
@@ -229,6 +303,9 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
 	"selftest:run",
 	"audit:recent",
 	"audit:setLogClean",
+	"audit:export",
+	"incidents:list",
+	"incidents:get",
 	"browserGuard:status",
 	"browserGuard:stage",
 	"browserGuard:openExtensionsPage",
@@ -241,11 +318,12 @@ export interface PushMap {
 	"audit:events": AuditEvent[];
 	"status:changed": StatusSnapshot;
 	"nav:go": string;
+	"incidents:changed": IncidentSummary[];
 }
 
 export type PushChannel = keyof PushMap;
 
-export const PUSH_CHANNELS: readonly PushChannel[] = ["audit:events", "status:changed", "nav:go"];
+export const PUSH_CHANNELS: readonly PushChannel[] = ["audit:events", "status:changed", "nav:go", "incidents:changed"];
 
 /** What the preload exposes as `window.aidr`. */
 export interface AidrBridge {

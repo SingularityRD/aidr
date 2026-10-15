@@ -57,6 +57,13 @@ export function auditLogPath(home: string): string {
 	return join(dataDir(home), "audit.jsonl");
 }
 
+/** `logging.max_files`: how many rotated backups (`audit.jsonl.1` ...) may exist (core default 3). */
+export function auditMaxFiles(home: string): number {
+	const logging = readObject(configPath(home))?.logging as { max_files?: unknown } | undefined;
+	const value = logging?.max_files;
+	return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100 ? value : 3;
+}
+
 function logCleanEnabled(home: string): boolean {
 	const logging = readObject(configPath(home))?.logging as { log_clean?: unknown } | undefined;
 	return logging?.log_clean === true;
@@ -204,7 +211,7 @@ export async function collectStatus(deps: StatusDeps): Promise<StatusSnapshot> {
 		mode,
 		configState,
 		connectors,
-		lastVerdict: last ? { at: last.at, decision: last.decision } : null,
+		lastVerdict: last?.decision ? { at: last.at, decision: last.decision } : null,
 		auditPath: auditLogPath(deps.home),
 		logClean: logCleanEnabled(deps.home),
 		configExists: existsSync(configPath(deps.home)),

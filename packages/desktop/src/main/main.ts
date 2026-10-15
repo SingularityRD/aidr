@@ -1,8 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
 	app,
 	BrowserWindow,
+	dialog,
 	ipcMain,
 	Menu,
 	Notification,
@@ -27,7 +28,9 @@ import type {
 import { type MessageKey, resolveLanguage, translate } from "../shared/i18n.js";
 import { setLogClean } from "./aidr-config.js";
 import { APP_ENTRY, APP_HOST, APP_SCHEME, CONTENT_SECURITY_POLICY, resolveAppAsset } from "./app-protocol.js";
-import { AuditReader, watchAudit } from "./audit.js";
+import { auditLogFiles, readAuditEntries } from "../../../cli/src/commands/audit.js";
+import { type AuditRecord, AuditReader, watchAudit } from "./audit.js";
+import { AuditStore } from "./audit-store.js";
 import {
 	browserGuardStatus,
 	extensionsPageCommand,
@@ -37,10 +40,10 @@ import {
 import { connectClaude, disconnectClaude, previewConnect } from "./claude.js";
 import { runFile } from "./exec.js";
 import { assertHandlersMatchContract, createIpcHandlers, isTrustedSender } from "./ipc.js";
-import { aidrHome, claudeSettingsPath, dataDir } from "./paths.js";
+import { aidrHome, claudeSettingsPath, dataDir, runtimeBinary } from "./paths.js";
 import { loadPreferences, savePreferences } from "./prefs.js";
 import { runSelfTest } from "./selftest.js";
-import { auditLogPath, collectStatus } from "./status.js";
+import { auditLogPath, auditMaxFiles, collectStatus } from "./status.js";
 
 // Tests and demos can isolate Chromium's profile data (never the AIDR files,
 // which follow HOME/USERPROFILE exactly like the hooks).
@@ -49,7 +52,6 @@ if (userDataOverride) app.setPath("userData", userDataOverride);
 
 const APP_ID = "com.singularityrd.aidr.desktop";
 const STATUS_INTERVAL_MS = 30_000;
-const MAX_EVENTS = 1000;
 
 protocol.registerSchemesAsPrivileged([
 	{ scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: false } },
@@ -76,7 +78,7 @@ let statusInFlight: Promise<StatusSnapshot> | null = null;
 let auditPath = "";
 let auditReader: AuditReader | null = null;
 let stopAuditWatch: (() => void) | null = null;
-const events: AuditEvent[] = [];
+let store = new AuditStore();
 
 const t = (key: MessageKey, params?: Record<string, string | number>) => translate(language, key, params);
 
@@ -108,22 +110,34 @@ function notifyDeny(event: AuditEvent): void {
 	notification.show();
 }
 
-function onAuditEvents(fresh: AuditEvent[]): void {
-	events.push(...fresh);
-	if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
-	push("audit:events", fresh);
-	for (const event of fresh) if (event.decision === "deny") notifyDeny(event);
+function onAuditRecords(records: AuditRecord[]): void {
+	const { rows, incidentsChanged } = store.ingest(records);
+	if (rows.length > 0) push("audit:events", rows);
+	if (incidentsChanged) push("incidents:changed", store.incidentList());
+	for (const row of rows) if (row.recordType === "runtime_verdict" && row.decision === "deny") notifyDeny(row);
 }
 
-/** (Re)start following the audit log; its path can change with `logging.path`. */
-function followAudit(): void {
+/**
+ * (Re)start following the audit log; its path can change with `logging.path`.
+ * History comes from the rotated files (read with the CLI's own reader, the
+ * one `aidr audit export` uses) and the active file; new records are tailed.
+ */
+async function followAudit(): Promise<void> {
 	const path = auditLogPath(home);
 	if (path === auditPath && auditReader) return;
 	stopAuditWatch?.();
 	auditPath = path;
 	auditReader = new AuditReader(path);
-	events.splice(0, events.length, ...auditReader.initial(MAX_EVENTS));
-	stopAuditWatch = watchAudit(auditReader, onAuditEvents);
+	store = new AuditStore();
+	const rotated = auditLogFiles({ path, max_files: auditMaxFiles(home) }).filter((file) => file !== path);
+	try {
+		store.ingest((await readAuditEntries(rotated)).entries);
+	} catch {
+		// Unreadable backups only shorten the history shown.
+	}
+	store.ingest(auditReader.initial());
+	stopAuditWatch = watchAudit(auditReader, onAuditRecords);
+	push("incidents:changed", store.incidentList());
 }
 
 // ── Status and tray ────────────────────────────────────────────────────
@@ -134,11 +148,11 @@ function refreshStatus(): Promise<StatusSnapshot> {
 		appVersion: app.getVersion(),
 		bundledRuntime,
 		run: runFile,
-		lastVerdict: events.at(-1) ?? null,
+		lastVerdict: store.lastVerdict(),
 	})
 		.then((status) => {
 			lastStatus = status;
-			followAudit();
+			void followAudit();
 			updateTray();
 			push("status:changed", status);
 			return status;
@@ -288,6 +302,41 @@ async function openTarget(target: OpenTarget): Promise<ActionResult> {
 	return { ok: true, message: path, log: "" };
 }
 
+/**
+ * Export through `aidr audit export` (redacted again, session ids digested,
+ * rotated files included) to a file the user picks. Read-only on the log.
+ */
+async function exportAudit(format: "jsonl" | "csv"): Promise<ActionResult> {
+	const receipt = (() => {
+		try {
+			return JSON.parse(readFileSync(join(dataDir(home), "installation.json"), "utf8")) as { path?: unknown };
+		} catch {
+			return null;
+		}
+	})();
+	const root =
+		typeof receipt?.path === "string" && existsSync(runtimeBinary(receipt.path)) ? receipt.path : bundledRuntime;
+	if (!root) return { ok: false, message: "no AIDR runtime is available", log: "" };
+	const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+	const options = {
+		defaultPath: join(app.getPath("documents"), `aidr-audit-${stamp}.${format}`),
+		filters: [{ name: format.toUpperCase(), extensions: [format] }],
+	};
+	const choice = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
+	if (choice.canceled || !choice.filePath) return { ok: false, message: "canceled", log: "" };
+	// The save dialog already asked before replacing an existing file; the CLI
+	// itself only ever creates a new one.
+	if (existsSync(choice.filePath)) rmSync(choice.filePath);
+	const result = await runFile(runtimeBinary(root), ["audit", "export", "--format", format, "--output", choice.filePath], {
+		cwd: home,
+		timeoutMs: 120_000,
+	});
+	const log = [result.stdout.trim(), result.stderr.trim(), result.error ?? ""].filter(Boolean).join("\n");
+	return result.exitCode === 0 && existsSync(choice.filePath)
+		? { ok: true, message: choice.filePath, log }
+		: { ok: false, message: `aidr audit export failed (exit ${result.exitCode ?? result.error})`, log };
+}
+
 function applyStartAtLogin(): void {
 	if (!app.isPackaged) return;
 	app.setLoginItemSettings({
@@ -320,11 +369,14 @@ const handlers = createIpcHandlers({
 		// Pick up the verdicts the hook just wrote without waiting for the next tick.
 		if (auditReader) {
 			const fresh = auditReader.poll();
-			if (fresh.length > 0) onAuditEvents(fresh);
+			if (fresh.length > 0) onAuditRecords(fresh);
 		}
 		return result;
 	},
-	recentAudit: () => [...events],
+	recentAudit: () => store.allRows(),
+	incidentList: async () => store.incidentList(),
+	incidentDetail: async (id) => store.incidentDetail(id),
+	exportAudit: (format) => exportAudit(format),
 	setLogClean: async (enabled) => {
 		try {
 			setLogClean(enabled);
@@ -419,7 +471,7 @@ if (!app.requestSingleInstanceLock()) {
 				return (handler as (payload: unknown) => Promise<unknown>)(payload);
 			});
 		}
-		followAudit();
+		void followAudit();
 		createTray();
 		createWindow(!process.argv.includes("--hidden"));
 		void refreshStatus().catch(() => undefined);
