@@ -46,6 +46,7 @@ const EVENT_LABELS: Record<string, DashboardMessageKey> = {
 	"notification.test": "notify.event.test",
 	"agent.offline": "notify.event.agentOffline",
 	"agent.recovered": "notify.event.agentRecovered",
+	"agent.unprotected": "notify.event.agentUnprotected",
 	"governance.review_overdue": "notify.event.reviewOverdue",
 	"governance.intake_requested": "notify.event.intakeRequested",
 	"governance.change_pending": "notify.event.changePending",

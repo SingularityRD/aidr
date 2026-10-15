@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolvePath, VERSION } from "@singularityrd/aidr-core";
+import { type MachineHookState, machineHookStatus } from "./machine-hooks.js";
 
 /**
  * Detect whether a connector is actually installed for each supported runtime.
@@ -94,14 +95,36 @@ function unavailableStatus(
 }
 
 /**
+ * A registration in the host's system-wide managed policy (aidr machine-hooks)
+ * applies to every user and cannot be switched off from user settings, so it
+ * wins over whatever the user's own files say.
+ */
+function machinePolicyStatus(
+	id: "claude-code" | "codex",
+	label: string,
+	machine: MachineHookState | undefined,
+): ConnectorStatus | null {
+	if (!machine?.registered) return null;
+	return {
+		id,
+		label,
+		state: "installed",
+		detail: `AIDR hooks deployed by machine policy in ${machine.path}${machine.otherHooksLocked ? " (only managed hooks run)" : ""}; users cannot disable them; host execution unverified`,
+		evidence: [machine.path],
+	};
+}
+
+/**
  * Claude Code registers plugins through `~/.claude/settings.json` and/or an
  * enabled-plugins directory. A hook entry naming the aidr bundle is the signal
  * that enforcement will actually run.
  */
-function detectClaudeCode(home: string): ConnectorStatus {
+function detectClaudeCode(home: string, machine?: MachineHookState): ConnectorStatus {
 	const settings = join(home, ".claude", "settings.json");
 	const pluginsDir = join(home, ".claude", "plugins");
 	const evidence = [settings, pluginsDir];
+	const fromPolicy = machinePolicyStatus("claude-code", "Claude Code", machine);
+	if (fromPolicy) return fromPolicy;
 
 	const settingsRead = readJson(settings);
 	if (settingsRead.unavailable) return unavailableStatus("claude-code", "Claude Code", evidence);
@@ -352,10 +375,12 @@ function detectOpenCode(home: string, env: NodeJS.ProcessEnv): ConnectorStatus {
 }
 
 /** Codex registers hooks in config.toml and/or hooks.json. */
-function detectCodex(home: string): ConnectorStatus {
+function detectCodex(home: string, machine?: MachineHookState): ConnectorStatus {
 	const cfg = join(home, ".codex", "config.toml");
 	const hooksJson = join(home, ".codex", "hooks.json");
 	const evidence = [cfg, hooksJson];
+	const fromPolicy = machinePolicyStatus("codex", "Codex", machine);
+	if (fromPolicy) return fromPolicy;
 
 	// Codex requires the PascalCase event name; a lower-case table parses as valid
 	// TOML and is then silently ignored, so checking for the substring "hooks" is
@@ -448,14 +473,21 @@ function detectCodex(home: string): ConnectorStatus {
 export function detectConnectorStatuses(
 	home: string = resolvePath("~"),
 	env: NodeJS.ProcessEnv = process.env,
+	machine: readonly MachineHookState[] = machineHookStatus(),
 ): ConnectorStatus[] {
 	return [
-		detectClaudeCode(home),
+		detectClaudeCode(
+			home,
+			machine.find((entry) => entry.host === "claude-code"),
+		),
 		detectEditor("cursor", "Cursor", join(home, ".cursor", "extensions"), home),
 		detectEditor("vscode", "VS Code", join(home, ".vscode", "extensions"), home),
 		detectOpenClaw(home),
 		detectOpenCode(home, env),
-		detectCodex(home),
+		detectCodex(
+			home,
+			machine.find((entry) => entry.host === "codex"),
+		),
 	];
 }
 

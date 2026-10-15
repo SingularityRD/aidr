@@ -68,6 +68,14 @@
     <Property Id="ARPURLINFOABOUT" Value="https://singularityrd.com" />
     <Property Id="AIDR_SKIP_SETUP" Secure="yes" />
     <Property Id="AIDR_MDM_MANAGED" Secure="yes" />
+    <!-- C10, per-machine only: deploy the hooks through each AI tool's system-wide
+         policy (Claude Code managed-settings.d, Codex %ProgramData% config) and the
+         hourly heartbeat task; AIDR_MACHINE_HOOKS=0 turns it off. AIDR_LOCK_OTHER_HOOKS=1
+         also makes the hosts run only managed hooks. AIDR_PROTECTION_LOCKED=1 writes the
+         machine-policy value that stops the editor extension's Disable protection. -->
+    <Property Id="AIDR_MACHINE_HOOKS" Value="1" Secure="yes" />
+    <Property Id="AIDR_LOCK_OTHER_HOOKS" Secure="yes" />
+    <Property Id="AIDR_PROTECTION_LOCKED" Secure="yes" />
     <!-- Optional company connection (wizard page 4, or the command line). -->
     <Property Id="ENROLLMENT_URL" Secure="yes" />
     <Property Id="ENROLLMENT_CODE" Secure="yes" Hidden="yes" />
@@ -284,6 +292,11 @@
     <Component Id="AidrPolicyOfflinePolicy" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_OFFLINE_POLICY" Guid="4D9A6E1B-7C83-4F02-B5D6-0E3F8A9C1B72">
       <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="offline_policy" Type="string" Value="[AIDR_POLICY_OFFLINE_POLICY]" KeyPath="yes" />
     </Component>
+    <!-- Machine policy (W1 contract key): the editor extension refuses Disable protection and restores removed hooks (packages/core/src/protection-lock.ts). -->
+    <Component Id="ProtectionLocked" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_PROTECTION_LOCKED=1"
+               Guid="3B8D5E21-7A46-4C9F-B1E0-5D2A8C6F9E47">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="protection_locked" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
 
     <Feature Id="Main" Title="Singularity AIDR" Level="1">
       <ComponentGroupRef Id="SeaBundle" />
@@ -312,7 +325,28 @@
       <ComponentRef Id="AidrPolicyPrivacyNoticeUrl" />
       <ComponentRef Id="AidrPolicyApprovalsMode" />
       <ComponentRef Id="AidrPolicyOfflinePolicy" />
+      <ComponentRef Id="ProtectionLocked" />
     </Feature>
+
+    <!-- System-wide hooks and heartbeat task: elevated (not impersonated), per-machine only; a failure is logged and never fails the install. -->
+    <CustomAction Id="AidrMachineHooksInstall"
+                  FileRef="AidrExe"
+                  ExeCommand="machine-hooks install --heartbeat"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="AidrMachineHooksInstallLocked"
+                  FileRef="AidrExe"
+                  ExeCommand="machine-hooks install --heartbeat --lock-other-hooks"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="AidrMachineHooksRemove"
+                  FileRef="AidrExe"
+                  ExeCommand="machine-hooks remove --heartbeat"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
 
     <!-- Interactive install: configure the installing user (not elevated, not SYSTEM). -->
     <CustomAction Id="AidrSetupForUser"
@@ -364,6 +398,12 @@
     <InstallExecuteSequence>
       <Custom Action="AidrUninstallForUser" Before="RemoveFiles"
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+      <Custom Action="AidrMachineHooksRemove" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND ALLUSERS=1" />
+      <Custom Action="AidrMachineHooksInstall" Before="InstallFinalize"
+              Condition="NOT REMOVE AND ALLUSERS=1 AND AIDR_MACHINE_HOOKS &lt;&gt; &quot;0&quot; AND AIDR_LOCK_OTHER_HOOKS &lt;&gt; &quot;1&quot;" />
+      <Custom Action="AidrMachineHooksInstallLocked" Before="InstallFinalize"
+              Condition="NOT REMOVE AND ALLUSERS=1 AND AIDR_MACHINE_HOOKS &lt;&gt; &quot;0&quot; AND AIDR_LOCK_OTHER_HOOKS = &quot;1&quot;" />
       <Custom Action="AidrPrepareEnrollmentHandoff" Before="AidrRollbackEnrollmentHandoff"
               Condition="NOT REMOVE AND (ENROLLMENT_URL OR ENROLLMENT_CODE) AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
       <Custom Action="AidrRollbackEnrollmentHandoff" Before="AidrWriteEnrollmentHandoff"

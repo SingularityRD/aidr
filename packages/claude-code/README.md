@@ -101,6 +101,19 @@ claude --plugin-dir /absolute/path/to/aidr
 A fresh install enforces locally with no account or network access. Managed
 features are an opt-in layer on top of local enforcement.
 
+### Machine-wide deployment
+
+Hooks in `~/.claude/settings.json` belong to the user, who can delete them or
+set `disableAllHooks`. A per-machine install (MSI, .deb, .rpm) instead runs
+`aidr machine-hooks install`, which writes the bundle's hooks into a Claude Code
+managed-settings drop-in (`/etc/claude-code/managed-settings.d/50-singularity-aidr.json`,
+`C:\Program Files\ClaudeCode\managed-settings.d\…`). Managed hooks run for every
+user, and a user's `disableAllHooks` does not turn them off. With
+`--lock-other-hooks` the drop-in also sets `allowManagedHooksOnly`. If the
+organisation already delivers Claude Code policy through server-managed
+settings, MDM or the HKLM registry, that source wins over the files; see
+[docs/operations/hook-tamper-resistance.md](../../docs/operations/hook-tamper-resistance.md).
+
 ## Entry points
 
 | Artifact | Purpose |

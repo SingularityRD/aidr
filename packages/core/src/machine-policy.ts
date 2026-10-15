@@ -13,6 +13,7 @@
  *   support_contact_url, privacy_notice_url              shown to users (`organization.*`)
  *   approvals_mode             dashboard_only | host_dialog (`operator_approvals.approvals_mode`)
  *   offline_policy             keep_enforcing_local | block_after_grace (`control_plane.offline_policy`)
+ *   protection_locked          editors refuse "Disable protection" (read by protection-lock.ts, not config)
  *
  * The machine policy wins over the user's config.json for these keys. A policy
  * that fails its checks is refused as a whole and reported (`aidr setup`,
@@ -110,6 +111,7 @@ const MachinePolicySchema = z
 		privacy_notice_url: urlWith(["https:"]),
 		approvals_mode: z.enum(APPROVALS_MODES),
 		offline_policy: z.enum(OFFLINE_POLICIES),
+		protection_locked: z.boolean(),
 	})
 	.partial()
 	.strict();
@@ -189,7 +191,7 @@ export function parseRegQueryOutput(output: string): Record<string, unknown> {
 function registryValue(name: string, type: string, text: string): unknown {
 	if (!text) return "";
 	if (name === "licensing_public_keys_pem") return splitPublicKeyList(text);
-	if (name === "use_os_trust_store") return registryBoolean(text);
+	if (name === "use_os_trust_store" || name === "protection_locked") return registryBoolean(text);
 	return type === "REG_MULTI_SZ" ? text.split("\\0").filter(Boolean).join(",") : text;
 }
 

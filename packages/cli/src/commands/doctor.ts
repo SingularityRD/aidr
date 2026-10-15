@@ -21,6 +21,7 @@ import {
 } from "@singularityrd/aidr-core";
 import { ct } from "../i18n/index.js";
 import { scanAgentEnvironment } from "../utils/agent-posture.js";
+import { type CodexTrustReport, inspectCodexHookTrust } from "../utils/codex-trust.js";
 import { type ConnectorStatus, detectConnectorStatuses } from "../utils/connector-status.js";
 import {
 	type CustomerPacketOptions,
@@ -29,6 +30,7 @@ import {
 	discoverCustomerPacket,
 } from "../utils/customer-packet.js";
 import { localTime } from "../utils/local-time.js";
+import { type MachineHookState, machineHookStatus } from "../utils/machine-hooks.js";
 import {
 	describeReleaseKey,
 	releaseKeyFix,
@@ -75,6 +77,10 @@ export interface DoctorDeps {
 	localDlpPolicyPath?: string;
 	/** Customer packet discovery: candidate files, key registry, clock. */
 	customerPacket?: CustomerPacketOptions;
+	/** System-wide (machine policy) hook registrations. */
+	machine?: () => readonly MachineHookState[];
+	/** Codex hook trust inspection of the user's Codex home. */
+	codexTrust?: () => CodexTrustReport;
 }
 
 function message(error: unknown): string {
@@ -215,6 +221,54 @@ function checkConnectors(connectors: ConnectorStatus[]): DoctorCheck {
 				remedy: c.remedy,
 			})),
 		},
+	};
+}
+
+/**
+ * Codex drops an untrusted or disabled hook without a word and runs the call
+ * uninspected, so a registered AIDR hook is not proof of protection there.
+ * Null when Codex is absent or registers no AIDR handler (the connector check
+ * reports that).
+ */
+function checkCodexTrust(connectors: ConnectorStatus[], deps: DoctorDeps): DoctorCheck | null {
+	const codex = connectors.find((c) => c.id === "codex");
+	if (!codex || codex.state === "not_detected") return null;
+	const machine = (deps.machine ?? machineHookStatus)().find((entry) => entry.host === "codex");
+	if (machine?.registered) {
+		return {
+			id: "codex_hook_trust",
+			status: "ok",
+			summary: ct("doctor.codexTrustManaged"),
+			detail: { trust: "managed", path: machine.path },
+		};
+	}
+	const report = (
+		deps.codexTrust ?? (() => inspectCodexHookTrust(deps.home ?? resolvePath("~")))
+	)();
+	if (report.handlers.length === 0) return null;
+	const events = (trust: string) =>
+		[...new Set(report.handlers.filter((h) => h.trust === trust).map((h) => h.event))].join(", ");
+	const detail = { handlers: report.handlers.map((h) => ({ event: h.event, trust: h.trust })) };
+	for (const trust of ["untrusted", "disabled"] as const) {
+		if (!report.handlers.some((h) => h.trust === trust)) continue;
+		return {
+			id: "codex_hook_trust",
+			status: "fail",
+			summary: ct(
+				trust === "untrusted" ? "doctor.codexTrustUntrusted" : "doctor.codexTrustDisabled",
+				{
+					events: events(trust),
+				},
+			),
+			notes: [ct("doctor.codexTrustFix")],
+			detail,
+		};
+	}
+	return {
+		id: "codex_hook_trust",
+		status: "ok",
+		summary: ct("doctor.codexTrustRecorded", { events: events("trust_recorded") }),
+		detail,
 	};
 }
 
@@ -596,6 +650,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 		? deps.connectors()
 		: detectConnectorStatuses(deps.home ?? resolvePath("~"));
 	checks.push(checkConnectors(connectors));
+	const codexTrust = checkCodexTrust(connectors, deps);
+	if (codexTrust) checks.push(codexTrust);
 	checks.push(await checkDlp(connectors, deps, config));
 	checks.push(await checkAgentProfiles(connectors, deps));
 	checks.push(await checkApprovals(deps, config));

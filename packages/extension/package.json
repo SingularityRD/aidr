@@ -71,6 +71,14 @@
         "title": "%command.showHookHealth.title%"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "aidr.disableProtection",
+          "when": "!aidr.protectionLocked"
+        }
+      ]
+    },
     "configuration": {
       "title": "Singularity AIDR",
       "properties": {

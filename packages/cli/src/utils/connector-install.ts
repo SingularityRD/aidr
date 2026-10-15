@@ -14,12 +14,14 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { CODEX_HOOK_PATTERN, codexDesiredHooks, stripCodexHooks } from "./codex-hooks.js";
 import {
 	type ConnectorState,
 	type ConnectorStatus,
 	detectConnectorStatuses,
 } from "./connector-status.js";
 import { MANAGED_HOOK_MARKER } from "./install-hooks.js";
+import { type MachineHookState, machineHookStatus } from "./machine-hooks.js";
 import {
 	type HookProbe,
 	probeHookCommand,
@@ -99,6 +101,8 @@ export interface ConnectorDeps {
 	releaseKeys?: readonly string[];
 	/** A release (commercial) bundle: its runtime manifest must be signed by a trusted key. */
 	requireSignedBundle?: boolean;
+	/** System-wide (machine policy) registrations; measured from the host's policy paths by default. */
+	machine?: readonly MachineHookState[];
 }
 
 type HostInstallAction =
@@ -139,7 +143,6 @@ export interface ConnectorInstallOptions {
 const AIDR_OPENCODE_PACKAGE = "@singularityrd/aidr-opencode";
 const AIDR_OPENCLAW_PLUGIN_ID = "aidr-openclaw";
 const AIDR_CODEX_HOOK = "aidr-codex-hook";
-const CODEX_HOOK_PATTERN = /\baidr-codex-hook\b/;
 const OPENCODE_LOCAL_MARKER = "Singularity AIDR OpenCode plugin";
 const EXTENSION_IDS: Record<"cursor" | "vscode", string> = {
 	cursor: "singularityrd.aidr-cursor",
@@ -147,13 +150,6 @@ const EXTENSION_IDS: Record<"cursor" | "vscode", string> = {
 };
 const EDITOR_CLIS: Record<"cursor" | "vscode", string> = { cursor: "cursor", vscode: "code" };
 const HOST_COMMAND_TIMEOUT_MS = 180_000;
-
-/** The Codex registrations AIDR owns, in the documented form (packages/codex/README.md). */
-const CODEX_HOOK_EVENTS: ReadonlyArray<{ event: string; matcher?: string }> = [
-	{ event: "PreToolUse", matcher: "^(Bash|apply_patch|mcp__.+)$" },
-	{ event: "UserPromptSubmit" },
-	{ event: "PostToolUse", matcher: "^(Bash|mcp__.+)$" },
-];
 
 // ── Small helpers ───────────────────────────────────────────────────────
 
@@ -221,10 +217,37 @@ function findExecutable(name: string, env: NodeJS.ProcessEnv): string | null {
 	return null;
 }
 
-function measure(deps: Pick<ConnectorDeps, "home" | "env">, host: HostId): ConnectorStatus {
-	return detectConnectorStatuses(deps.home, deps.env ?? process.env).find(
-		(status) => status.id === host,
-	) as ConnectorStatus;
+function measure(
+	deps: Pick<ConnectorDeps, "home" | "env" | "machine">,
+	host: HostId,
+): ConnectorStatus {
+	return detectConnectorStatuses(
+		deps.home,
+		deps.env ?? process.env,
+		deps.machine ?? machineHookStatus(),
+	).find((status) => status.id === host) as ConnectorStatus;
+}
+
+/**
+ * The host already runs AIDR's hooks from its system-wide managed policy
+ * (`aidr machine-hooks install`, run by the per-machine installers). A user
+ * registration on top would inspect every call twice, so setup leaves the
+ * user's files alone.
+ */
+function machinePolicyResult(
+	deps: ConnectorDeps,
+	host: "claude-code" | "codex",
+	label: string,
+): HostInstallResult | null {
+	const machine = (deps.machine ?? machineHookStatus()).find((entry) => entry.host === host);
+	if (!machine?.registered) return null;
+	return result(
+		host,
+		label,
+		"already_installed",
+		`AIDR hooks are deployed for every user by machine policy (${machine.path}); the user configuration was left as is.`,
+		"installed",
+	);
 }
 
 /** Read a JSON object file: absent → {}, unparsable or not an object → error (never rewritten). */
@@ -347,56 +370,6 @@ function summarizeFailure(outcome: ReturnType<HostCommandRunner>): string {
 
 // ── Codex: hooks.json registration ─────────────────────────────────────
 
-function isAidrCodexHook(hook: unknown): boolean {
-	return (
-		isPlainObject(hook) && typeof hook.command === "string" && CODEX_HOOK_PATTERN.test(hook.command)
-	);
-}
-
-/** Remove every AIDR handler from a Codex hooks object, keeping everything else. */
-function stripCodexHooks(hooks: Record<string, unknown>): {
-	hooks: Record<string, unknown>;
-	removed: number;
-} {
-	const next: Record<string, unknown> = {};
-	let removed = 0;
-	for (const [event, entries] of Object.entries(hooks)) {
-		if (!Array.isArray(entries)) {
-			next[event] = entries;
-			continue;
-		}
-		const kept: unknown[] = [];
-		for (const entry of entries) {
-			if (!isPlainObject(entry) || !Array.isArray(entry.hooks)) {
-				kept.push(entry);
-				continue;
-			}
-			const remaining = entry.hooks.filter((hook) => !isAidrCodexHook(hook));
-			removed += entry.hooks.length - remaining.length;
-			if (remaining.length === entry.hooks.length) kept.push(entry);
-			else if (remaining.length > 0) kept.push({ ...entry, hooks: remaining });
-		}
-		if (kept.length > 0 || entries.length === 0) next[event] = kept;
-	}
-	return { hooks: next, removed };
-}
-
-function codexDesiredHooks(
-	existing: Record<string, unknown>,
-	command: string,
-): Record<string, unknown> {
-	const { hooks } = stripCodexHooks(existing);
-	for (const { event, matcher } of CODEX_HOOK_EVENTS) {
-		const entries = Array.isArray(hooks[event]) ? [...(hooks[event] as unknown[])] : [];
-		entries.push({
-			...(matcher ? { matcher } : {}),
-			hooks: [{ type: "command", command, timeout: 10 }],
-		});
-		hooks[event] = entries;
-	}
-	return hooks;
-}
-
 /** A Codex PreToolUse payload for a shell command (the fields Codex always sends). */
 function codexPayload(cwd: string): (shellCommand: string) => Record<string, unknown> {
 	return (shellCommand) => ({
@@ -426,6 +399,8 @@ function claudePayload(cwd: string): (shellCommand: string) => Record<string, un
 
 function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 	const label = "Codex";
+	const fromPolicy = machinePolicyResult(deps, "codex", label);
+	if (fromPolicy) return fromPolicy;
 	const before = measure(deps, "codex");
 	if (before.state === "installed" && before.detail.includes("config.toml")) {
 		return result(
@@ -847,6 +822,8 @@ function installClaude(
 	pluginDir: string | undefined,
 ): HostInstallResult {
 	const label = "Claude Code";
+	const fromPolicy = machinePolicyResult(deps, "claude-code", label);
+	if (fromPolicy) return fromPolicy;
 	if (!pluginDir && deps.standaloneRoot) return installClaudeStandalone(deps, dryRun);
 	const before = measure(deps, "claude-code");
 	if (before.state === "installed") {
