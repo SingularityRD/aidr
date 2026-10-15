@@ -213,7 +213,7 @@ function go(page: Page): void {
 	render();
 	(document.getElementById("main") as HTMLElement | null)?.scrollTo({ top: 0 });
 	if (page === "browserGuard") void loadBrowserGuard();
-	if (page === "status") void loadStatus();
+	if (page === "status") void loadStatus(false);
 }
 
 // ── Status page ────────────────────────────────────────────────────────
@@ -694,6 +694,7 @@ function eventRows(): HTMLElement {
 						class: state.freshIds.has(event.id) ? "fresh" : undefined,
 						"data-testid": "activity-row",
 						"data-decision": event.decision,
+						"data-origin": event.origin ?? "agent",
 					},
 					h("td", { class: "time", title: event.at }, clockTime(event.at)),
 					h("td", {}, decisionChip(event.decision)),
@@ -1059,14 +1060,26 @@ async function openTarget(target: "auditLog" | "claudeSettings" | "dataDir" | "b
 
 // ── Data loading & render loop ─────────────────────────────────────────
 
-async function loadStatus(): Promise<void> {
+/** Equal apart from the measurement time. */
+function sameStatus(a: StatusSnapshot | null, b: StatusSnapshot): boolean {
+	if (!a) return false;
+	return JSON.stringify({ ...a, checkedAt: "", engine: { ...a.engine, latencyMs: 0 } }) ===
+		JSON.stringify({ ...b, checkedAt: "", engine: { ...b.engine, latencyMs: 0 } });
+}
+
+/** Fetch the status; `force` re-renders even when nothing changed (after an action). */
+async function loadStatus(force = true): Promise<void> {
+	let unchanged = false;
 	try {
-		state.status = await api.invoke("status:get");
+		const status = await api.invoke("status:get");
+		unchanged = sameStatus(state.status, status) && state.statusError === null;
+		state.status = status;
 		state.statusError = null;
 	} catch (error) {
 		state.statusError = (error as Error).message;
 	}
-	render();
+	if (force || !unchanged) render();
+	else renderSidebar();
 }
 
 async function loadBrowserGuard(): Promise<void> {
@@ -1104,10 +1117,11 @@ async function start(): Promise<void> {
 	state.info = await api.invoke("app:info");
 	render();
 	api.on("status:changed", (status) => {
+		const unchanged = sameStatus(state.status, status);
 		state.status = status;
-		// Only the pages that show status are rebuilt; the others keep their DOM
-		// (and any control the user is about to click).
-		if (state.page === "status" || state.page === "activity") render();
+		// Rebuild only a page that shows status, and only when it changed: the
+		// DOM (and any control the user is about to click) stays otherwise.
+		if (!unchanged && (state.page === "status" || state.page === "activity")) render();
 		else renderSidebar();
 	});
 	api.on("audit:events", (fresh) => {
@@ -1129,7 +1143,7 @@ async function start(): Promise<void> {
 		if (PAGES.some((entry) => entry.id === page)) go(page as Page);
 	});
 	state.events = await api.invoke("audit:recent");
-	await loadStatus();
+	await loadStatus(false);
 }
 
 void start();

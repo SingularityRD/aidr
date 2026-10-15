@@ -328,7 +328,10 @@ const handlers = createIpcHandlers({
 	setLogClean: async (enabled) => {
 		try {
 			setLogClean(enabled);
-			return await afterChange({ ok: true, message: `logging.log_clean = ${enabled}`, log: "" });
+			// The status refresh runs in the background: it must not hold the
+			// action lock (a self-test right after the toggle would be refused).
+			void refreshStatus().catch(() => undefined);
+			return { ok: true, message: `logging.log_clean = ${enabled}`, log: "" };
 		} catch (error) {
 			return errorResult(error);
 		}
