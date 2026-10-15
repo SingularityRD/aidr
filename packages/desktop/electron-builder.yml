@@ -1,0 +1,56 @@
+# Windows packaging for the Singularity AIDR desktop app.
+#   pnpm --filter @singularityrd/aidr-desktop dist   ->  release/
+# Produces an unsigned per-user NSIS installer (no elevation) and a portable exe.
+# Signing: see README.md "Signing" (scripts/sign-windows.cjs is a no-op unless the
+# release pipeline's Authenticode variables are set).
+appId: com.singularityrd.aidr.desktop
+productName: Singularity AIDR
+copyright: Copyright © 2026 Singularity R&D
+directories:
+  output: release
+  buildResources: assets
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+# The AIDR runtime and the Browser Guard extension ship next to the app, outside
+# the asar archive: the runtime is copied to the user's profile and run by the
+# hooks, the extension is loaded by the browser. Both are staged by
+# scripts/stage-runtime.mjs.
+extraResources:
+  - from: build/runtime/aidr-sea
+    to: runtime/aidr-sea
+  - from: build/runtime/browser-guard
+    to: runtime/browser-guard
+asar: true
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+win:
+  icon: assets/icons/icon.ico
+  executableName: SingularityAIDR
+  requestedExecutionLevel: asInvoker
+  signtoolOptions:
+    sign: scripts/sign-windows.cjs
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Singularity AIDR
+  installerIcon: assets/icons/icon.ico
+  uninstallerIcon: assets/icons/icon.ico
+  deleteAppDataOnUninstall: false
+  artifactName: SingularityAIDR-Setup-${version}.${ext}
+portable:
+  artifactName: SingularityAIDR-Portable-${version}.${ext}

@@ -1,0 +1,37 @@
+{
+	"name": "@singularityrd/aidr-desktop",
+	"productName": "Singularity AIDR",
+	"private": true,
+	"license": "Proprietary",
+	"version": "0.6.0",
+	"type": "module",
+	"description": "Singularity AIDR desktop app for Windows: status, Claude Code connector, self-test, live activity and Browser Guard",
+	"author": "Singularity R&D",
+	"main": "dist/main/main.cjs",
+	"scripts": {
+		"build": "node scripts/build.mjs",
+		"build:runtime": "node scripts/stage-runtime.mjs",
+		"icons": "node scripts/icons.mjs",
+		"dev": "node scripts/build.mjs && node scripts/stage-runtime.mjs --if-missing && node scripts/dev.mjs",
+		"dist": "node scripts/build.mjs && node scripts/stage-runtime.mjs && electron-builder --win nsis portable --config electron-builder.yml --publish never",
+		"test:smoke": "node e2e/smoke.mjs",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@singularityrd/aidr-browser-guard": "workspace:*",
+		"@singularityrd/aidr-claude-code": "workspace:*",
+		"@singularityrd/aidr-cli": "workspace:*",
+		"@singularityrd/aidr-codex": "workspace:*",
+		"@singularityrd/aidr-core": "workspace:*",
+		"@types/node": "^22.0.0",
+		"electron": "44.5.1",
+		"electron-builder": "26.15.3",
+		"esbuild": "^0.28.2",
+		"playwright-core": "1.63.0",
+		"typescript": "^5.9.0",
+		"vitest": "^4.1.11"
+	},
+	"engines": {
+		"node": ">=22.12.0"
+	}
+}
