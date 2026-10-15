@@ -122,7 +122,10 @@ function bound(text: string): string {
 /** Collapse home-directory spellings so `~/.aws/x`, `$HOME/.aws/x` and `/home/<user>/.aws/x` agree. */
 export function normalizeFlowPath(raw: string): string {
 	let path = raw.trim().replace(/^["'`]+|["'`]+$/g, "");
-	path = path.replace(/^(?:\$HOME|\$\{HOME\}|%USERPROFILE%)(?=[\\/]|$)/i, "~");
+	path = path.replace(
+		/^(?:\$HOME|\$\{HOME\}|%USERPROFILE%|\$env:(?:USERPROFILE|HOME))(?=[\\/]|$)/i,
+		"~",
+	);
 	path = path.replace(/^\/(?:home|Users)\/[^\\/]+(?=[\\/]|$)/, "~");
 	path = path.replace(/^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/, "~");
 	path = path.replace(/\\/g, "/");
@@ -845,6 +848,15 @@ function classifyStage(
 	});
 }
 
+/** Windows path spellings in raw command text (drive, UNC-free home variables, `~\`). */
+const WINDOWS_PATH =
+	/(?:[A-Za-z]:|~|\$env:(?:USERPROFILE|HOMEPATH|HOME|APPDATA|LOCALAPPDATA)|%(?:USERPROFILE|HOMEPATH|APPDATA|LOCALAPPDATA)%)\\[^\s"'|;,()<>`]{1,1000}/gi;
+
+function windowsPathsIn(text: string): string[] {
+	if (!text.includes("\\")) return [];
+	return [...text.matchAll(WINDOWS_PATH)].map((match) => match[0].replace(/^@/, ""));
+}
+
 function classifyShellCommand(
 	command: string,
 	set: ObservationSet,
@@ -867,6 +879,12 @@ function classifyShellCommand(
 					if (!transfer && !candidate.startsWith("-")) reads.push(candidate);
 				}
 			});
+			// POSIX word splitting reads `\` as an escape, so a Windows path
+			// (`C:\Users\dev\.ssh\id_rsa`, `$env:USERPROFILE\.aws\credentials`)
+			// loses its separators above. Check those spellings from the raw text.
+			for (const path of windowsPathsIn(stage.text)) {
+				addSensitivePath(set, path, "shell access to", options);
+			}
 		}
 	}
 	for (const rule of options.patterns.credentialCommands) {

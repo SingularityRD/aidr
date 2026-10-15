@@ -29,6 +29,9 @@ export const CANONICAL_TOOL_NAMES: ReadonlyMap<string, string> = new Map<string,
 	["execute", "Bash"],
 	["run_command", "Bash"],
 	["run_terminal_cmd", "Bash"],
+	// Claude Code's PowerShell tool (the default shell on Windows without Git
+	// Bash) sends the command in `command`, exactly like Bash.
+	["powershell", "Bash"],
 	["write", "Write"],
 	["write_file", "Write"],
 	["create_file", "Write"],

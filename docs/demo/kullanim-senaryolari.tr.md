@@ -5,6 +5,10 @@ zekâ aracının göndereceği çağrının aynısını verir ve AIDR'nin karar�
 Hiçbir komut gerçekten çalıştırılmaz: kanca yalnızca kararı verir. Her şey geçici
 bir klasörde olur; sizin `~/.singularity-aidr` ayarlarınıza dokunulmaz.
 
+Diğer sürümler: [English](use-cases.md) ·
+[Windows PowerShell (Türkçe)](kullanim-senaryolari.windows.tr.md) ·
+[Windows PowerShell (English)](use-cases.windows.md)
+
 Karar şu şekilde okunur:
 
 - `{}` ya da `allow`: izin verildi.
@@ -24,9 +28,10 @@ echo "DB_PASSWORD=ornek-deger" > "$AIDR_DEMO/proj/.env"
 export AIDR_REPO="$PWD"
 
 # aidr_dene <araç> '<araç girdisi JSON>'  ->  kararı ve gerekçeyi yazar
+# Her çağrı kendi oturumunda çalışır; her sonuç tek başına geçerlidir.
 aidr_dene() {
-  printf '{"session_id":"demo","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":%s,"cwd":"%s"}' \
-    "$1" "$2" "$AIDR_DEMO/proj" |
+  printf '{"session_id":"%s","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":%s,"cwd":"%s"}' \
+    "${3:-demo-$RANDOM$RANDOM}" "$1" "$2" "$AIDR_DEMO/proj" |
   (cd "$AIDR_DEMO/proj" && HOME="$AIDR_DEMO/home" AIDR_LOCALE=tr \
     node "$AIDR_REPO/packages/claude-code/dist/pre-tool-use.bundle.cjs") |
   node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const h=(JSON.parse(s||"{}").hookSpecificOutput)||{};console.log((h.permissionDecision||"allow").toUpperCase()+"  "+(h.permissionDecisionReason||"").split("\n")[0])})'
