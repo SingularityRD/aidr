@@ -608,3 +608,91 @@ describe("SCIM directory-authoritative membership", () => {
 		expect(await screen.findByRole("alert")).toHaveTextContent("invalid membership mode");
 	});
 });
+
+describe("SCIM directory role attribution (T19)", () => {
+	const SCIM_USER = "44444444-4444-4444-8444-444444444444";
+	const NEXT_USER = "55555555-5555-4555-8555-555555555555";
+	const grant = {
+		scim_user_id: SCIM_USER,
+		user_name: "ada@example.com",
+		active: true,
+		bound: true,
+		status: "granted",
+		effective_role: "admin",
+		granted_by_external_group_id: "grp-ops-immutable",
+		mapped_groups: [
+			{ external_group_id: "grp-ops-immutable", display_name: "Ops", role: "admin" },
+			{ external_group_id: "grp-lookalike", display_name: "Admins", role: "viewer" },
+		],
+		mapped_group_count: 2,
+	};
+
+	it("loads on demand and shows which immutable group granted each member's role", async () => {
+		fixture.invoke.mockImplementation(async (name: string) => {
+			if (name === "scim-admin?view=role_grants")
+				return {
+					data: { ok: true, role_grants: [grant], next_grant_cursor: NEXT_USER },
+					error: null,
+				};
+			if (name === `scim-admin?view=role_grants&grant_after_scim_user_id=${NEXT_USER}`)
+				return {
+					data: {
+						ok: true,
+						role_grants: [
+							{
+								...grant,
+								scim_user_id: NEXT_USER,
+								user_name: "bob@example.com",
+								status: "inactive",
+								effective_role: null,
+								granted_by_external_group_id: null,
+							},
+						],
+						next_grant_cursor: null,
+					},
+					error: null,
+				};
+			return { data: snapshot(), error: null };
+		});
+		render(<ScimPage />);
+		const panel = await screen.findByRole("region", { name: "Directory role attribution" });
+		expect(fixture.invoke).not.toHaveBeenCalledWith(
+			"scim-admin?view=role_grants",
+			expect.anything(),
+		);
+		fireEvent.click(within(panel).getByRole("button", { name: "Show role attribution" }));
+		const row = (await within(panel).findByText("ada@example.com")).closest("tr") as HTMLElement;
+		expect(fixture.invoke).toHaveBeenCalledWith("scim-admin?view=role_grants", {
+			method: "GET",
+			headers: { "X-AIDR-Tenant-ID": "tenant-id" },
+		});
+		expect(within(row).getByText("Administrator")).toBeInTheDocument();
+		expect(within(row).getAllByText("grp-ops-immutable").length).toBeGreaterThan(0);
+		// The look-alike display name is labelled as display-only text.
+		expect(within(row).getByText(/shown as “Admins”/)).toBeInTheDocument();
+		fireEvent.click(within(panel).getByRole("button", { name: "Load more" }));
+		const bob = (await within(panel).findByText("bob@example.com")).closest("tr") as HTMLElement;
+		expect(within(bob).getByText("No access (deactivated in directory)")).toBeInTheDocument();
+		expect(within(panel).queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+	});
+
+	it("fails closed on an inconsistent attribution row", async () => {
+		fixture.invoke.mockImplementation(async (name: string) =>
+			name === "scim-admin?view=role_grants"
+				? {
+						data: {
+							ok: true,
+							role_grants: [{ ...grant, status: "not_granted" }],
+							next_grant_cursor: null,
+						},
+						error: null,
+					}
+				: { data: snapshot(), error: null },
+		);
+		render(<ScimPage />);
+		const panel = await screen.findByRole("region", { name: "Directory role attribution" });
+		fireEvent.click(within(panel).getByRole("button", { name: "Show role attribution" }));
+		expect(await within(panel).findByRole("alert")).toBeInTheDocument();
+		expect(within(panel).queryByText("ada@example.com")).not.toBeInTheDocument();
+	});
+});

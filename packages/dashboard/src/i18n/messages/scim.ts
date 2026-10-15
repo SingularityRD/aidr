@@ -289,4 +289,40 @@ export const scimMessages = {
 	"scim.removeConfirm": ["Remove mapping?", "Eşleme kaldırılsın mı?"],
 	"scim.confirmRemove": ["Confirm remove", "Kaldırmayı onayla"],
 	"scim.loadMore": ["Load more", "Daha fazla yükle"],
+	"scim.grants.title": ["Directory role attribution", "Dizin rol kaynağı"],
+	"scim.grants.lead": [
+		"Shows which mapped directory group (by immutable Group.externalId) gave each provisioned member their role. When a member is in several mapped groups, the highest role wins (admin, then member, then viewer). Display names are shown for reference only and never grant access.",
+		"Her sağlanan üyenin rolünü hangi eşlenmiş dizin grubunun (değişmez Group.externalId ile) verdiğini gösterir. Üye birden fazla eşlenmiş gruptaysa en yüksek rol geçerlidir (yönetici, sonra üye, sonra görüntüleyici). Görünen adlar yalnızca bilgi içindir ve asla erişim vermez.",
+	],
+	"scim.grants.show": ["Show role attribution", "Rol kaynağını göster"],
+	"scim.grants.refresh": ["Refresh", "Yenile"],
+	"scim.grants.empty": [
+		"No provisioned member is in a mapped group.",
+		"Eşlenmiş bir grupta sağlanan üye yok.",
+	],
+	"scim.grants.caption": [
+		"Provisioned members and the groups that grant their role",
+		"Sağlanan üyeler ve rollerini veren gruplar",
+	],
+	"scim.grants.col.user": ["Directory user", "Dizin kullanıcısı"],
+	"scim.grants.col.access": ["Access", "Erişim"],
+	"scim.grants.col.grantedBy": ["Granted by group ID", "Veren grup kimliği"],
+	"scim.grants.col.groups": ["Mapped groups", "Eşlenmiş gruplar"],
+	"scim.grants.displayName": ["shown as “{name}”", "“{name}” olarak görünür"],
+	"scim.grants.moreGroups": ["+{count} more mapped groups", "+{count} eşlenmiş grup daha"],
+	"scim.grants.status.granted": ["Granted", "Verildi"],
+	"scim.grants.status.inactive": [
+		"No access (deactivated in directory)",
+		"Erişim yok (dizinde devre dışı)",
+	],
+	"scim.grants.status.unbound": [
+		"No access (awaiting first SSO sign-in)",
+		"Erişim yok (ilk SSO girişi bekleniyor)",
+	],
+	"scim.grants.status.manualConflict": [
+		"Not applied (a manual membership exists)",
+		"Uygulanmadı (elle eklenmiş üyelik var)",
+	],
+	"scim.grants.status.notGranted": ["No access", "Erişim yok"],
+	"scim.grants.loadFailed": ["Role attribution could not be loaded.", "Rol kaynağı yüklenemedi."],
 } as const satisfies MessagePairs<string>;

@@ -257,9 +257,24 @@ function memberIds(value: unknown, remaining = MAX_SCIM_GROUP_MEMBERS): string[]
 	return [...new Set(ids)];
 }
 
+/**
+ * Group.externalId is the only directory-to-role authority, so it is kept
+ * byte-exact: values that would need trimming or contain control characters
+ * are refused rather than normalized into a look-alike of a mapped ID.
+ */
+function groupExternalId(value: unknown): string {
+	if (value === undefined || value === null) throw new ScimInvalidValueError("externalId is required");
+	if (typeof value !== "string") throw new ScimInvalidValueError("externalId must be a string");
+	if (value.length < 1 || value.length > 255) throw new ScimInvalidValueError("externalId must be 1-255 characters");
+	if (value.trim() !== value || /[\u0000-\u001f\u007f]/.test(value)) {
+		throw new ScimInvalidValueError("externalId must not contain surrounding whitespace or control characters");
+	}
+	return value;
+}
+
 function parseGroup(body: Record<string, unknown>): ScimCreateGroup {
 	return {
-		externalId: stringValue(body.externalId, "externalId", { required: true, max: 255 }) ?? "",
+		externalId: groupExternalId(body.externalId),
 		displayName: stringValue(body.displayName, "displayName", { required: true, max: 255 }) ?? "",
 		members: memberIds(body.members),
 	};

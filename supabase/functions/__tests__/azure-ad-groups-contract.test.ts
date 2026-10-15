@@ -35,6 +35,10 @@ interface FakeOptions {
 	membershipExpiry?: unknown;
 	overflowMemberships?: boolean;
 	includeOtherTenant?: boolean;
+	/** Adds an unmapped group whose display name equals a mapped external id. */
+	lookAlikeGroup?: boolean;
+	/** Forged session metadata returned by auth.getUser. */
+	forgedMetadata?: boolean;
 	/** tenant_plan_entitlements result per tenant; defaults to an entitled Business plan. */
 	plan?: (tenantId: string) => { data: unknown; error: unknown };
 }
@@ -62,6 +66,13 @@ function fakeDb(options: FakeOptions = {}) {
 			const overflowGroup = `88888888-8888-4${i.toString(16).padStart(3, "0")}-8888-${i.toString(16).padStart(12, "0")}`;
 			rows.scim_group_memberships.push({ tenant_id: TENANT, group_id: overflowGroup, user_id: SCIM_USER });
 		}
+	}
+	if (options.lookAlikeGroup) {
+		rows.scim_group_memberships.push({ tenant_id: TENANT, group_id: OTHER_GROUP, user_id: SCIM_USER });
+		rows.scim_groups.push({ tenant_id: TENANT, id: OTHER_GROUP, external_id: "attacker-controlled-id", display_name: "Admins" });
+		// A mapping keyed by the literal string "Admins" must not match a group
+		// that is merely displayed as "Admins".
+		rows.scim_group_role_mappings.push({ tenant_id: TENANT, external_group_id: "Admins", role: "admin" });
 	}
 	if (options.includeOtherTenant) {
 		rows.tenant_identity_policies.push({ tenant_id: OTHER_TENANT, require_mfa: false });
@@ -121,7 +132,18 @@ function fakeDb(options: FakeOptions = {}) {
 				return { data: null, error: { message: `unexpected rpc ${name}` } };
 			}),
 			auth: {
-				getUser: vi.fn(async () => ({ data: { user: { id: USER } }, error: null })),
+				getUser: vi.fn(async () => ({
+					data: {
+						user: options.forgedMetadata
+							? {
+								id: USER,
+								user_metadata: { groups: ["Admins", "immutable-directory-id"], role: "owner", tenant_id: OTHER_TENANT },
+								app_metadata: { provider: "azure", groups: ["Admins"] },
+							}
+							: { id: USER },
+					},
+					error: null,
+				})),
 				mfa: {
 					getAuthenticatorAssuranceLevel: vi.fn(async () => ({ data: { currentLevel: options.assurance ?? "aal1" }, error: null })),
 				},
@@ -155,6 +177,20 @@ describe("verified SCIM group read boundary", () => {
 		expect(fixture.db.auth.getUser).toHaveBeenCalledWith(TOKEN);
 		expect(fixture.calls.indexOf("identity_user_session_state")).toBeLessThan(fixture.calls.indexOf("tenant_members"));
 		expect(fixture.calls).not.toContain("admin_audit_logs");
+	});
+
+	it("ignores forged session metadata groups/roles/tenant and grants nothing to a look-alike display name", async () => {
+		const fixture = fakeDb({ forgedMetadata: true, lookAlikeGroup: true });
+		const response = await createAzureAdGroupsHandler({ db: fixture.db as never })(getRequest());
+		expect(response.status).toBe(200);
+		const payload = await response.json();
+		expect(payload.groups).toEqual([
+			{ id: "immutable-directory-id", external_id: "immutable-directory-id", display_name: "Renamed Admins", tenant_id: TENANT, role: "admin" },
+			{ id: "attacker-controlled-id", external_id: "attacker-controlled-id", display_name: "Admins", tenant_id: TENANT },
+		]);
+		// The forged tenant in user_metadata is never queried.
+		expect(JSON.stringify(payload)).not.toContain(OTHER_TENANT);
+		expect(payload.groups.every((group: { role?: string }) => group.role !== "owner")).toBe(true);
 	});
 
 	it("rejects an explicit tenant without active membership", async () => {

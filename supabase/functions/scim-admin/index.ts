@@ -38,6 +38,7 @@ type ScimAdminDatabase = {
 			scim_admin_remove_group_role_mapping: { Args: { p_tenant_id: string; p_actor_user_id: string; p_external_group_id: string }; Returns: boolean };
 			scim_admin_enable_directory_authority: { Args: { p_tenant_id: string; p_actor_user_id: string; p_directory_id: string; p_break_glass_user_ids: string[]; p_adopt_existing: boolean; p_remove_unmanaged: boolean }; Returns: Record<string, unknown> };
 			scim_admin_disable_directory_authority: { Args: { p_tenant_id: string; p_actor_user_id: string }; Returns: boolean };
+			scim_admin_list_role_grants: { Args: { p_tenant_id: string; p_actor_user_id: string; p_after_scim_user_id: string | null; p_limit: number }; Returns: Record<string, unknown> };
 		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;
@@ -265,6 +266,66 @@ function mappingCursor(url: URL): string | null | undefined {
 	return values.length === 1 && groupId(values[0]) !== null ? values[0] : undefined;
 }
 
+const MAX_ROLE_GRANTS = 100;
+const MAX_GRANT_GROUPS = 50;
+const GRANT_STATUSES = new Set(["granted", "inactive", "unbound", "manual_conflict", "not_granted"]);
+
+/** `undefined` = malformed; `null` = first page. */
+function grantCursor(url: URL): string | null | undefined {
+	const values = url.searchParams.getAll("grant_after_scim_user_id");
+	if (values.length === 0) return null;
+	return values.length === 1 && uuid(values[0]) ? values[0] : undefined;
+}
+
+function grantGroup(value: unknown): Row | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const row = value as Row;
+	if (groupId(row.external_group_id) === null || typeof row.display_name !== "string"
+		|| typeof row.role !== "string" || !ROLES.has(row.role)) return null;
+	return { external_group_id: row.external_group_id, display_name: row.display_name, role: row.role };
+}
+
+function roleGrant(value: unknown): Row | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const row = value as Row;
+	if (!uuid(row.scim_user_id) || typeof row.user_name !== "string" || typeof row.active !== "boolean"
+		|| typeof row.bound !== "boolean" || typeof row.status !== "string" || !GRANT_STATUSES.has(row.status)
+		|| !Array.isArray(row.mapped_groups) || row.mapped_groups.length > MAX_GRANT_GROUPS
+		|| typeof row.mapped_group_count !== "number" || !Number.isSafeInteger(row.mapped_group_count)
+		|| row.mapped_group_count < row.mapped_groups.length) return null;
+	const effectiveRole = row.effective_role ?? null;
+	if (effectiveRole !== null && (typeof effectiveRole !== "string" || !ROLES.has(effectiveRole))) return null;
+	const grantedBy = row.granted_by_external_group_id ?? null;
+	if (grantedBy !== null && groupId(grantedBy) === null) return null;
+	// A granted row must name the deciding group; any other row must not.
+	if ((row.status === "granted") !== (effectiveRole !== null)) return null;
+	if (effectiveRole === null && grantedBy !== null) return null;
+	const groups = row.mapped_groups.map(grantGroup);
+	if (groups.some((group) => group === null)) return null;
+	return {
+		scim_user_id: row.scim_user_id,
+		user_name: row.user_name,
+		active: row.active,
+		bound: row.bound,
+		status: row.status,
+		effective_role: effectiveRole,
+		granted_by_external_group_id: grantedBy,
+		mapped_groups: groups,
+		mapped_group_count: row.mapped_group_count,
+	};
+}
+
+function roleGrantPage(value: unknown): { grants: Row[]; next: string | null } | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const page = value as Row;
+	if (!Array.isArray(page.grants) || page.grants.length > MAX_ROLE_GRANTS) return null;
+	const next = page.next_after_scim_user_id ?? null;
+	if (next !== null && !uuid(next)) return null;
+	const grants = page.grants.map(roleGrant);
+	if (grants.some((grant) => grant === null)) return null;
+	return { grants: grants as Row[], next };
+}
+
 /**
  * Owner-only API for provisioning SCIM secrets, exact immutable group-role
  * mappings, and the tenant's directory-authoritative membership mode.
@@ -338,6 +399,21 @@ export function createScimAdminHandler(deps: ScimAdminDeps = {}) {
 
 			if (req.method === "GET") {
 				const url = new URL(req.url);
+				const view = url.searchParams.getAll("view");
+				if (view.length > 1 || (view.length === 1 && view[0] !== "role_grants")) return corsJson(req, 400, { error: "invalid_view" }, noStore());
+				if (view[0] === "role_grants") {
+					// Which mapped group backs each SCIM-managed membership. Read-only,
+					// informational; authorization stays in scim_reconcile_membership.
+					const after = grantCursor(url);
+					if (after === undefined) return corsJson(req, 400, { error: "invalid_pagination" }, noStore());
+					const { data, error } = await db.rpc("scim_admin_list_role_grants", {
+						p_tenant_id: tenantId, p_actor_user_id: userId, p_after_scim_user_id: after, p_limit: MAX_ROLE_GRANTS,
+					});
+					if (error) return rpcFailure(req, error);
+					const page = roleGrantPage(data);
+					if (!page) return corsJson(req, 503, { error: "scim_management_unavailable" }, noStore());
+					return corsJson(req, 200, { ok: true, role_grants: page.grants, next_grant_cursor: page.next }, noStore());
+				}
 				const tokenAfter = tokenCursor(url);
 				const mappingAfter = mappingCursor(url);
 				if (tokenAfter === undefined || mappingAfter === undefined) return corsJson(req, 400, { error: "invalid_pagination" }, noStore());
