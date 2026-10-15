@@ -46,7 +46,9 @@ describe("mailer configuration", () => {
 			[{ RESEND_API_KEY: KEY }, "AIDR_MAIL_FROM"],
 			[{ AIDR_MAIL_FROM: "a@b.example" }, "RESEND_API_KEY"],
 			[{ AIDR_MAIL_PROVIDER: "resend" }, "RESEND_API_KEY"],
-			[{ AIDR_MAIL_PROVIDER: "smtp", RESEND_API_KEY: KEY, AIDR_MAIL_FROM: "a@b.example" }, "AIDR_MAIL_PROVIDER"],
+			[{ AIDR_MAIL_PROVIDER: "sendmail", RESEND_API_KEY: KEY, AIDR_MAIL_FROM: "a@b.example" }, "AIDR_MAIL_PROVIDER"],
+			// An explicit SMTP choice never falls back to Resend when the relay is not configured.
+			[{ AIDR_MAIL_PROVIDER: "smtp", RESEND_API_KEY: KEY, AIDR_MAIL_FROM: "a@b.example" }, "SMTP_HOST"],
 			[{ RESEND_API_KEY: KEY, AIDR_MAIL_FROM: "Evil\r\nBcc: x@y.example <a@b.example>" }, "AIDR_MAIL_FROM"],
 		];
 		for (const [values, variable] of cases) {

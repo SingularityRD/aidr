@@ -11,17 +11,23 @@
 import { createHash, X509Certificate } from "node:crypto";
 import { createSocket } from "node:dgram";
 import { lookup as dnsLookup } from "node:dns/promises";
-import { connect as netConnect, isIP, type Socket } from "node:net";
+import { isIP, connect as netConnect, type Socket } from "node:net";
 import {
-	connect as tlsConnect,
 	type DetailedPeerCertificate,
 	type PeerCertificate,
+	connect as tlsConnect,
 } from "node:tls";
-
-import type { SiemDeliveryAttempt, SiemEventEnvelope } from "./siem-delivery.js";
-import { formatSyslogMessage, SyslogMessageTooLargeError } from "./siem-export.js";
-import { isPrivateIpAddress } from "./mcp-transport.js";
 import type { IncidentSeverity } from "./incidents/types.js";
+import { isPrivateIpAddress } from "./mcp-transport.js";
+import type { SiemDeliveryAttempt, SiemEventEnvelope } from "./siem-delivery.js";
+import {
+	exportToCEF,
+	exportToLEEF,
+	formatSyslogLegacyMessage,
+	formatSyslogMessage,
+	incidentFromSiemRecord,
+	SyslogMessageTooLargeError,
+} from "./siem-export.js";
 
 export type SyslogTransport = "tcp" | "tls" | "udp";
 
@@ -44,7 +50,15 @@ export interface SyslogSiemConfig {
 	tlsCaCertificatePem?: string;
 	/** TLS only. SHA-256 public-key pins (hex or base64) of any certificate in the verified chain. */
 	tlsPinnedSha256?: string[];
+	/**
+	 * MSG payload: `json` (default, RFC 5424 with BOM-prefixed JSON), or `cef` /
+	 * `leef` (ArcSight CEF / QRadar LEEF from `exportToCEF` / `exportToLEEF`
+	 * behind an RFC 3164 header, as QRadar, ArcSight and Wazuh expect).
+	 */
+	payloadFormat?: SyslogPayloadFormat;
 }
+
+type SyslogPayloadFormat = "json" | "cef" | "leef";
 
 export const SIEM_SYSLOG_CONFIG_JSON_SCHEMA = {
 	$schema: "https://json-schema.org/draft/2020-12/schema",
@@ -63,6 +77,7 @@ export const SIEM_SYSLOG_CONFIG_JSON_SCHEMA = {
 		appName: { type: "string", maxLength: 48 },
 		structuredDataId: { type: "string", pattern: "^[A-Za-z0-9_.-]{1,32}@[0-9]{1,10}$" },
 		maxMessageBytes: { type: "integer", minimum: 480, maximum: 1048576 },
+		payloadFormat: { enum: ["json", "cef", "leef"] },
 		tlsCaCertificatePem: { type: "string", maxLength: 65536 },
 		tlsPinnedSha256: {
 			type: "array",
@@ -486,6 +501,35 @@ function textField(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * A CEF or LEEF record (`exportToCEF` / `exportToLEEF`) for the envelope's
+ * incident behind an RFC 3164 header. When the record is larger than the
+ * configured limit its correlated event list is halved until it fits; the
+ * incident itself (id, severity, status, keys) is always kept.
+ */
+function legacyRecordMessage(
+	envelope: SiemEventEnvelope,
+	payloadFormat: "cef" | "leef",
+	format: { facility?: number; hostname?: string; appName?: string; maxBytes?: number },
+): string {
+	const incident = incidentFromSiemRecord(envelope.incident);
+	if (!incident) throw new SyslogPolicyError("syslog_invalid_incident_record");
+	let keep = incident.events.length;
+	for (;;) {
+		const trimmed = { ...incident, events: incident.events.slice(0, keep) };
+		const line = payloadFormat === "cef" ? exportToCEF([trimmed]) : exportToLEEF([trimmed]);
+		try {
+			return formatSyslogLegacyMessage(
+				{ timestampMs: envelope.observed_at_ms, severity: incident.severity, line },
+				format,
+			);
+		} catch (error) {
+			if (!(error instanceof SyslogMessageTooLargeError) || keep === 0) throw error;
+			keep = Math.floor(keep / 2);
+		}
+	}
+}
+
 export function createSyslogSender(config: SyslogSiemConfig): SyslogSender {
 	const destination = parseSyslogDestination(config);
 	const tls = validateSyslogTls(config);
@@ -497,6 +541,9 @@ export function createSyslogSender(config: SyslogSiemConfig): SyslogSender {
 		structuredDataId: config.structuredDataId,
 		maxBytes: config.maxMessageBytes,
 	};
+	const payloadFormat = config.payloadFormat ?? "json";
+	if (!["json", "cef", "leef"].includes(payloadFormat))
+		throw new TypeError("Syslog payloadFormat must be json, cef or leef");
 	formatSyslogMessage(
 		{
 			timestampMs: 0,
@@ -520,23 +567,28 @@ export function createSyslogSender(config: SyslogSiemConfig): SyslogSender {
 			allowPrivateNetwork: config.allowPrivateNetwork === true,
 			tlsCaSha256: tls.ca ? createHash("sha256").update(tls.ca).digest("hex") : null,
 			tlsPins: [...tls.pins].sort(),
+			// Only a non-default format joins the route fingerprint, so existing JSON state files stay valid.
+			...(payloadFormat !== "json" ? { payloadFormat } : {}),
 		}),
 		async send(envelope, context) {
 			try {
 				const incident = envelope.incident;
-				const message = formatSyslogMessage(
-					{
-						timestampMs: envelope.observed_at_ms,
-						severity: envelopeSeverity(envelope),
-						eventId: envelope.event_id,
-						incidentId: textField(incident.incident_id) ?? envelope.event_id,
-						status: textField(incident.status),
-						connector: textField(incident.connector),
-						agentIid: textField(incident.agent_iid),
-						payload: envelope as unknown as Record<string, unknown>,
-					},
-					format,
-				);
+				const message =
+					payloadFormat === "json"
+						? formatSyslogMessage(
+								{
+									timestampMs: envelope.observed_at_ms,
+									severity: envelopeSeverity(envelope),
+									eventId: envelope.event_id,
+									incidentId: textField(incident.incident_id) ?? envelope.event_id,
+									status: textField(incident.status),
+									connector: textField(incident.connector),
+									agentIid: textField(incident.agent_iid),
+									payload: envelope as unknown as Record<string, unknown>,
+								},
+								format,
+							)
+						: legacyRecordMessage(envelope, payloadFormat, format);
 				const addresses = await resolveAddresses(destination, config, context.lookup);
 				let lastError: unknown;
 				for (const address of addresses) {

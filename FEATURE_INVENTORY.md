@@ -1,6 +1,6 @@
 # AIDR alt özellik envanteri
 
-Otomatik üretim tarihi: **2026-10-11**. 109 alt özellik ve teslimat gereksinimi eşlendi: 66 çalışan kod akışına bağlı, 41 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
+Otomatik üretim tarihi: **2026-10-15**. 110 alt özellik ve teslimat gereksinimi eşlendi: 67 çalışan kod akışına bağlı, 41 kısmi, 0 eksik, 2 dış kanıta bağlı. Bu sayılar üretim kabulü veya tespit başarım oranı değildir. Satış/GA kararı **NO-GO** olarak korunur.
 
 Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tüketen bileşenler ve her satırın kalan işi bu dosyada bulunur. Önceki PRODUCT_SCOPE_AND_FEATURES.md dosyasındaki modül erişilebilirlik sayıları tarihsel bir ara denetime aittir.
 
@@ -133,6 +133,7 @@ Makine kaydı: [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). Kaynaklar, tük
 | OBS-06 | [Retention and deletion](supabase/migrations/20260912140000_tenant_offboarding_retention.sql) | partial | External backups and customer retention/offboarding acceptance remain outside live-data receipts |
 | OBS-07 | [Signed compliance evidence report](supabase/functions/compliance-report/index.ts) | wired | Supports KVKK/GDPR accountability but is not a certification or audit opinion; counts cover only telemetry that reached the control plane within retention; data-flow values marked unknown must be completed per deployment; only the JSON is signed |
 | OBS-08 | [Real-time alert integrations](supabase/functions/notification-channels/index.ts) | wired | Delivery, including agent-offline detection, depends on the deployment running the dispatcher schedule and a mail transport; no live Slack/Teams/customer receiver has been exercised; receivers must deduplicate retries |
+| OBS-09 | [Central SIEM forwarding](supabase/functions/siem-destinations/index.ts) | wired | Not yet exercised against live QRadar, Wazuh, ArcSight, Splunk, Elastic or Sentinel; UDP depends on the Edge runtime offering datagram sockets |
 
 ## Governance
 

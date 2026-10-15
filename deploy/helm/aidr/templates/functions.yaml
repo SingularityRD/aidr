@@ -72,6 +72,37 @@ spec:
               value: "false"
             - name: AIDR_BILLING_PROVIDER
               value: {{ $values.billingProvider | quote }}
+            # AIDR mail (alerts, invitations, digests) reuses the Auth SMTP relay
+            # (auth.smtp); with auth.smtp.host set the SMTP provider is selected.
+            {{- with $values.mail.provider }}
+            - name: AIDR_MAIL_PROVIDER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.auth.smtp.host }}
+            - name: SMTP_HOST
+              value: {{ .Values.auth.smtp.host | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.auth.smtp.port | quote }}
+            - name: SMTP_USER
+              value: {{ .Values.auth.smtp.user | quote }}
+            {{- if .Values.auth.smtp.passwordKey }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "SMTP_PASS" "key" .Values.auth.smtp.passwordKey) | nindent 12 }}
+            {{- end }}
+            - name: SMTP_ADMIN_EMAIL
+              value: {{ .Values.auth.smtp.adminEmail | quote }}
+            - name: SMTP_SENDER_NAME
+              value: {{ .Values.auth.smtp.senderName | quote }}
+            {{- with $values.mail.smtpSecurity }}
+            - name: AIDR_SMTP_SECURITY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if $values.mail.smtpCaSecretKey }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "AIDR_SMTP_CA_PEM_B64" "key" $values.mail.smtpCaSecretKey) | nindent 12 }}
+            {{- end }}
+            {{- end }}
+            # Central SIEM forwarding: RFC 1918 collectors only with this switch.
+            - name: AIDR_SIEM_ALLOW_PRIVATE_NETWORKS
+              value: {{ .Values.siem.allowPrivateNetworks | ternary "true" "false" | quote }}
             - name: HOME
               value: /tmp
             - name: DENO_DIR

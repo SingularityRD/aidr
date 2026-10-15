@@ -131,6 +131,10 @@
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/notification-channels-contract.test.ts", "supabase/functions/__tests__/notification-delivery.test.ts"]
     },
+    "siem-destinations": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/siem-destinations-contract.test.ts", "supabase/functions/__tests__/siem-forwarding.test.ts"]
+    },
     "pilot-status": {
       "owner": "Product Engineering",
       "tests": ["supabase/functions/__tests__/pilot-intake-contract.test.ts"]

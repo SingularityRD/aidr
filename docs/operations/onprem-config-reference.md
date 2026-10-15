@@ -49,12 +49,14 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `S3_PROTOCOL_ACCESS_KEY_SECRET` | always | generated secret | *(secret)* | Storage S3-protocol secret; the doctor rejects the upstream demo value. |
 | `AIDR_METRICS_TOKEN` | always | generated secret | *(secret)* | Bearer token for the dashboard metrics endpoint; required by Compose. |
 | `OPENAI_API_KEY` | always | operator | *(blank)* | Optional Studio SQL assistant key; blank disables it. |
-| `SMTP_HOST` | always | operator | *(blank)* | SMTP relay host for Auth mail (password recovery). |
+| `SMTP_HOST` | always | operator | *(blank)* | SMTP relay host for Auth mail (password recovery). Once set, AIDR alert, invitation and governance digest mail use the same relay: the `SMTP_*` values reach the `functions` service through Compose interpolation and select its `smtp` mail provider. |
 | `SMTP_USER` | always | operator | *(blank)* | SMTP user. |
 | `SMTP_PASS` | always | operator | *(blank)* | SMTP password (secret). |
 | `SMTP_ADMIN_EMAIL` | always | operator | *(blank)* | Sender address for Auth mail. |
 | `SMTP_SENDER_NAME` | always | fixed by preparation | `AIDR` | Display name for Auth mail. |
 | `FUNCTIONS_VERIFY_JWT` | always | fixed by preparation | `false` | Edge Functions verify their own credentials; the gateway does not pre-verify JWTs. |
+| `AIDR_NOTIFICATION_DISPATCH_TOKEN` | self-hosted only | generated secret | *(secret)* | Same value as in `.env.functions`; read only by the Compose `siem-forwarder` scheduler service, which POSTs to the `siem-forwarder` function (central SIEM forwarding). Without it the service reports unhealthy and forwards nothing. |
+| `AIDR_SIEM_FORWARD_INTERVAL_SECONDS` | not written; optional override | operator | `60` | Seconds between central SIEM forwarding runs of the `siem-forwarder` service (15-3600). |
 | `SENTRY_DSN` | not written; optional override | operator | *(blank)* | Optional dashboard error reporting DSN; blank disables it. |
 | `SENTRY_ENVIRONMENT` | not written; optional override | operator | `production` | Sentry environment label (development installations default to `development`). |
 | `SENTRY_TRACES_SAMPLE_RATE` | not written; optional override | operator | `0` | Sentry trace sampling rate. |
@@ -135,9 +137,12 @@ Edge Functions runtime (`functions` service `env_file`). Holds the control-plane
 | `AIDR_NOTIFICATION_ENCRYPTION_KEYS` | always | generated secret | *(secret)* | Alert channel keyring `<key id>:<base64 32-byte key>[,…]`; the first key encrypts channel destinations, every listed key decrypts. |
 | `AIDR_NOTIFICATION_DISPATCH_TOKEN` | always | generated secret | *(secret)* | Bearer token the notification dispatcher timer presents to `notification-dispatch` (at least 32 characters). Each run also enqueues agent-offline and governance alerts. |
 | `AIDR_RUNTIME_CAPABILITIES_BY_TENANT` | always | operator | `{}` | Exact per-tenant runtime capability grants (`runtime_detectors`, `behavioral_learning_v1`) as a JSON map read from the preparing shell; `{}` grants none. `behavioral_learning_v1` requires `runtime_detectors`. |
-| `AIDR_MAIL_PROVIDER` | not written; optional override | operator | *(blank)* | Outbound mail for e-mail alert channels, invitations and the governance digest (`resend`); blank disables e-mail delivery (other channels still work). |
+| `AIDR_MAIL_PROVIDER` | not written; optional override | operator | *(blank)* | Outbound mail for e-mail alert channels, invitations and the governance digest: `smtp` (the organisation's relay from the `SMTP_*` values in `.env`), `resend` or `none`. Blank selects `smtp` when `SMTP_HOST` is set and no Resend key is configured, `resend` when `RESEND_API_KEY` and `AIDR_MAIL_FROM` are set, otherwise no e-mail delivery (other channels still work). |
+| `AIDR_SMTP_SECURITY` | not written; optional override | operator | *(blank)* | SMTP connection security: `starttls` (default; refuses a relay that does not offer STARTTLS), `tls` (implicit TLS, the default for port 465) or `none` (plaintext, only without `SMTP_USER`). Certificates are always verified. |
+| `AIDR_SMTP_CA_PEM_B64` | not written; optional override | operator | *(blank)* | Base64 of a PEM bundle with the internal CA that issued the SMTP relay certificate; it replaces the system roots for that connection. |
+| `AIDR_SIEM_ALLOW_PRIVATE_NETWORKS` | not written; optional override | operator | `false` | `true` lets SIEM destinations opt in to RFC 1918 / ULA / CGNAT collectors (typical on-prem QRadar, Wazuh, Splunk). Loopback, link-local and metadata addresses stay refused. |
 | `RESEND_API_KEY` | not written; optional override | operator | *(blank)* | Resend API key for `AIDR_MAIL_PROVIDER=resend` (secret). |
-| `AIDR_MAIL_FROM` | not written; optional override | operator | *(blank)* | Sender address for AIDR e-mail (alerts, invitations, governance digest). |
+| `AIDR_MAIL_FROM` | not written; optional override | operator | *(blank)* | Sender address for AIDR e-mail (alerts, invitations, governance digest). With SMTP it defaults to `SMTP_SENDER_NAME <SMTP_ADMIN_EMAIL>`. |
 
 ## `.env.readiness`
 

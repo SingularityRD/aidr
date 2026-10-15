@@ -72,7 +72,7 @@ describe("Turkish pages", () => {
 
 	it("renders the SIEM page in Turkish", () => {
 		renderTr(<SiemPage />);
-		expect(screen.getByRole("heading", { level: 1, name: "SIEM syslog hedefi" })).toBeVisible();
+		expect(screen.getByRole("heading", { level: 1, name: "SIEM entegrasyonu" })).toBeVisible();
 		expect(screen.getByText("Aktarım")).toBeInTheDocument();
 	});
 

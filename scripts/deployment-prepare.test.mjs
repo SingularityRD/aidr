@@ -601,7 +601,7 @@ test("on-prem profile applies resource budgets, runtime policy and a versioned d
 		assert.equal(result.status, 0, result.stderr);
 		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
 		const budgets = resourceProfiles.profiles.medium.services;
-		assert.deepEqual(Object.keys(compose.services).sort(), ["api-gw", "auth", "dashboard", "db", "functions", "imgproxy", "meta", "realtime", "rest", "storage", "studio"]);
+		assert.deepEqual(Object.keys(compose.services).sort(), ["api-gw", "auth", "dashboard", "db", "functions", "imgproxy", "meta", "realtime", "rest", "siem-forwarder", "storage", "studio"]);
 		for (const [name, service] of Object.entries(compose.services)) {
 			assertBudget(service, budgets[name], name);
 			assert.equal(service.restart, "unless-stopped", `${name} restart policy`);
@@ -626,6 +626,20 @@ test("on-prem profile applies resource budgets, runtime policy and a versioned d
 		assert.equal(compose.services.dashboard.build, "./dashboard");
 		assert.equal(compose.services.dashboard.healthcheck.retries, 3);
 		assert.match(compose.services.dashboard.healthcheck.test.at(-1), /\/readyz/, "the overlay must not replace the production readiness probe");
+		// AIDR mail reuses the Auth SMTP relay; the central SIEM forwarder sees only its token.
+		for (const name of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_ADMIN_EMAIL", "SMTP_SENDER_NAME"]) {
+			assert.equal(compose.services.functions.environment[name], `\${${name}:-}`, name);
+		}
+		const forwarder = compose.services["siem-forwarder"];
+		assert.equal(forwarder.image, `aidr-dashboard:${dashboardVersion}`);
+		assert.deepEqual(Object.keys(forwarder.environment).sort(), ["AIDR_NOTIFICATION_DISPATCH_TOKEN", "AIDR_SIEM_FORWARDER_URL", "AIDR_SIEM_FORWARD_INTERVAL_SECONDS"]);
+		assert.equal(forwarder.environment.AIDR_SIEM_FORWARDER_URL, "http://functions:9000/siem-forwarder");
+		assert.equal(Object.hasOwn(forwarder, "env_file"), false, "the scheduler never loads the functions keyring");
+		assert.doesNotMatch(forwarder.command.join(" "), /\$/, "no Compose interpolation inside the loop script");
+		const dotEnv = readFileSync(join(output, ".env"), "utf8");
+		const functionsEnv = readFileSync(join(output, ".env.functions"), "utf8");
+		const token = (text) => /^AIDR_NOTIFICATION_DISPATCH_TOKEN=(.+)$/m.exec(text)?.[1];
+		assert.ok(token(dotEnv) && token(dotEnv) === token(functionsEnv));
 		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
 		assert.equal(deployment.resource_profile, "medium");
 		assert.equal(deployment.dashboard_image, `aidr-dashboard:${dashboardVersion}`);

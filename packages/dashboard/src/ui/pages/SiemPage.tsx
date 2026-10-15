@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
+import { useOptionalTeam } from "../../enterprise/team-provider";
 import { useRichT, useT } from "../../i18n/I18nProvider";
 import {
 	buildSyslogAdapter,
 	DEFAULT_SYSLOG_FORM,
 	type SyslogFormValues,
+	type SyslogPayloadChoice,
 	type SyslogTransportChoice,
 } from "../../lib/siem-syslog-config";
+import { SiemDestinations } from "../SiemDestinations";
 
 const PORT_DEFAULTS: Record<SyslogTransportChoice, string> = {
 	tls: "6514",
@@ -16,6 +19,7 @@ const PORT_DEFAULTS: Record<SyslogTransportChoice, string> = {
 export function SiemPage() {
 	const t = useT();
 	const richT = useRichT();
+	const tenantId = useOptionalTeam()?.currentTeam?.id ?? null;
 	const [values, setValues] = useState<SyslogFormValues>(DEFAULT_SYSLOG_FORM);
 	const [touched, setTouched] = useState(false);
 	const result = useMemo(() => buildSyslogAdapter(values, t), [values, t]);
@@ -35,15 +39,32 @@ export function SiemPage() {
 		<div className="stack">
 			<header className="card">
 				<h1>{t("siem.title")}</h1>
+				<p className="muted">{t("siem.pageLead")}</p>
+			</header>
+			{tenantId ? <SiemDestinations key={tenantId} tenantId={tenantId} /> : null}
+			<section className="card" aria-labelledby="siem-host-heading">
+				<h2 id="siem-host-heading">{t("siem.hostTitle")}</h2>
 				<p className="muted">
 					{richT("siem.lead", {
 						adapter: <code>adapter</code>,
 						path: <code>SINGULARITY_AIDR_SIEM_CONFIG_PATH</code>,
 					})}
 				</p>
-			</header>
+			</section>
 			<section className="card" aria-labelledby="siem-syslog-heading">
 				<h2 id="siem-syslog-heading">{t("siem.collector")}</h2>
+				<label className="label" htmlFor="siem-payload-format">
+					{t("siem.payloadFormat")}
+				</label>
+				<select
+					id="siem-payload-format"
+					value={values.payloadFormat ?? "json"}
+					onChange={(event) => update("payloadFormat", event.target.value as SyslogPayloadChoice)}
+				>
+					<option value="json">{t("siem.format.json")}</option>
+					<option value="cef">{t("siem.format.cef")}</option>
+					<option value="leef">{t("siem.format.leef")}</option>
+				</select>
 				<label className="label" htmlFor="siem-transport">
 					{t("siem.transport")}
 				</label>
