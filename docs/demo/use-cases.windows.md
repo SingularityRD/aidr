@@ -221,6 +221,7 @@ Remove-Item Function:\Invoke-AidrDemo, Function:\aidr
 ## What this page does not show
 
 - **Personal data inside file content** is not scanned by the endpoint hook;
-  Browser Guard masks it in prompts typed into AI chat sites.
+  Browser Guard masks it in prompts typed into AI chat sites (verified against
+  fixture copies of the sites, not yet on the live sites).
 - **The server side** (dashboard approvals, SIEM, fleet keys, license import) needs
   a running control plane.

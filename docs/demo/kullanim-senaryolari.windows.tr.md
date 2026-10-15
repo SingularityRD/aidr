@@ -222,6 +222,7 @@ Remove-Item Function:\aidr-dene, Function:\aidr
 ## Bu sayfanın göstermedikleri
 
 - **Dosya içeriğindeki kişisel veri** uç cihaz kancası tarafından taranmaz; yapay
-  zekâ sitelerine yazılan istemlerde Browser Guard maskeler.
+  zekâ sitelerine yazılan istemlerde Browser Guard maskeler (sitelerin kapalı
+  test kopyalarında doğrulandı, canlı sitelerde henüz değil).
 - **Sunucu tarafı** (panelden onay, SIEM, filo anahtarları, lisans içe aktarma)
   çalışan bir kontrol düzlemi gerektirir.
