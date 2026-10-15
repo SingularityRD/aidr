@@ -126,6 +126,24 @@ sensitive_paths:
     secret: true
     pattern: '(?:^|[\\/])\.ssh[\\/](?:id_[a-z0-9_-]+|identity)(?!\.pub)$'
     flags: i
+  # The directory itself, as the source of a copy/upload (scp -r, rsync -a,
+  # tar of the whole folder). Copying the entire folder off-host is
+  # exfiltration even when no single file is named. Trailing slash optional.
+  - label: 'SSH key directory'
+    kind: sensitive_file
+    secret: true
+    pattern: '(?:^|[\\/])\.ssh[\\/]?$'
+    flags: i
+  - label: 'GnuPG key directory'
+    kind: sensitive_file
+    secret: true
+    pattern: '(?:^|[\\/])\.gnupg[\\/]?$'
+    flags: i
+  - label: 'cloud profile directory'
+    kind: sensitive_file
+    secret: true
+    pattern: '(?:^|[\\/])\.aws[\\/]?$'
+    flags: i
   - label: 'cloud credentials'
     kind: sensitive_file
     secret: true

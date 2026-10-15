@@ -159,6 +159,20 @@ function effectiveAction(
 	return config.sensitivity === "paranoid" ? "deny" : "ask";
 }
 
+/**
+ * The action for a finding. A one-shot credential exfiltration (the secret read
+ * and the egress are in the same call) is denied even under the balanced default,
+ * which otherwise asks; an operator who chose `monitor` still only monitors.
+ */
+function findingAction(
+	finding: ToxicFlowFinding,
+	settings: ToxicFlowSettings,
+	config: Partial<Config>,
+): "ask" | "deny" | "monitor" {
+	if (finding.singleCallSecretExfil && settings.action !== "monitor") return "deny";
+	return effectiveAction(settings, config);
+}
+
 // ── State ──────────────────────────────────────────────────────────
 
 interface FlowStep {
@@ -272,6 +286,8 @@ interface ChainMatch {
 	current: string[];
 	currentObservations: FlowObservation[];
 	destructive?: string;
+	/** exfil_chain only: the secret read and the egress are both in this call. */
+	singleCallSecretExfil?: boolean;
 }
 
 interface ToxicFlowFinding {
@@ -282,6 +298,14 @@ interface ToxicFlowFinding {
 	/** Every chain this call matched, strongest first. */
 	chains: ToxicFlowChain[];
 	earlier: FlowStep[];
+	/**
+	 * Set when THIS single call both reads credential-grade material and sends it
+	 * off-host (`cat ~/.ssh/id_rsa | nc …`, `wget --post-file=.env …`,
+	 * `curl -d "$(env)" …`). That is an unambiguous one-shot exfiltration with no
+	 * benign reading, so it is denied outright rather than asked, even under the
+	 * balanced default (see `applyToxicFlow`).
+	 */
+	singleCallSecretExfil?: boolean;
 }
 
 export interface FlowCallInput {
@@ -387,6 +411,9 @@ export function evaluateToxicFlow(
 				earlier: priorSecrets,
 				current: [...callSecrets, ...dataEgress].map((o) => describeObservation(call.tool, o)),
 				currentObservations: [...callSecrets, ...dataEgress],
+				// Both legs present in this one call: the secret is read and sent
+				// off-host together, with no benign intervening use.
+				singleCallSecretExfil: callSecrets.length > 0,
 			});
 		}
 	}
@@ -493,6 +520,9 @@ export function evaluateToxicFlow(
 			reason,
 			chains,
 			earlier,
+			...(chain === "exfil_chain" && detail.singleCallSecretExfil
+				? { singleCallSecretExfil: true }
+				: {}),
 		},
 		observations,
 	};
@@ -1065,7 +1095,7 @@ export async function applyToxicFlow(
 			result = mergeFinding(
 				verdict,
 				evaluation.finding,
-				effectiveAction(settings, config),
+				findingAction(evaluation.finding, settings, config),
 				request,
 			);
 		}

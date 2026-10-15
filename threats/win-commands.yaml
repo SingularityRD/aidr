@@ -814,3 +814,22 @@
   title: "PowerShell GetTypeFromCLSID usage"
   expires_at: null
   revoked: false
+
+# .NET WebClient / HttpClient UPLOAD of a credential-grade file off-host. The
+# download counterpart is CLT-WIN-CMD-005; the upload side (UploadFile/UploadData/
+# UploadString) carrying a key, token or dotenv is a one-shot exfiltration, so it
+# is a hard block. Gated on a sensitive source so ordinary uploads are unaffected.
+- id: "CLT-WIN-CMD-062"
+  category: network_egress
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "(?:Upload(?:File|Data|String|Values)|Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\\b[^\\n]{0,300}(?:\\.ssh[\\\\/]|id_rsa|id_ed25519|\\.aws[\\\\/]|\\.env\\b|\\.npmrc|\\.netrc|\\.pypirc|\\.kube[\\\\/]config|credential|secret|\\.pem\\b|\\.pfx\\b|\\.p12\\b|private[._-]?key)"
+  case_insensitive: true
+  match_on:
+    - command
+    - command_normalized
+  title: "PowerShell upload of a credential file off-host"
+  title_tr: "PowerShell ile kimlik bilgisi dosyasını dışarı yükleme"
+  expires_at: null
+  revoked: false

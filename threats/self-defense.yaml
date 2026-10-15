@@ -207,6 +207,11 @@
   action: block
   pattern: "\\.singularity-aidr"
   case_insensitive: true
+  # Access via a command, a read/written path, or content that will act on the
+  # dir (a script body, an MCP argument). The evaluator's trust-boundary gate
+  # (dropDataNotInstructionMatches) exempts the content hit for an authored write
+  # to a docs/test file (a README naming the folder, a fixture building a
+  # <tmp>/home/<state> path), which is text, not access.
   match_on:
     - command_normalized
     - file_path_normalized
