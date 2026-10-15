@@ -106,7 +106,7 @@ yüzden POC sonunda ya ücretli lisans uygulanır ya da §7 kaldırma yapılır;
       kabul edildi.
 - [ ] Ücretli lisans imzalandı; POC kontrol sunucusu **korunacaksa** yönetici
       `license-verify.mjs` ile doğrulayıp kabul operatörü üzerinden uygular
-      ([yenileme](../operations/licensing.md#renewal)); kurulum yenilenecekse
+      ([yenileme](../operations/licensing.md#renewal-seat-changes-and-importing-a-signed-license)); kurulum yenilenecekse
       üretim kurulumu [on-prem runbook](../operations/onprem-runbook.md) ile
       sıfırdan yapılır ve POC verisi taşınmaz (yalnız politika ve istisnalar
       dışa aktarılıp gözden geçirilerek alınır).

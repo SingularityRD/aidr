@@ -200,7 +200,7 @@ Run and keep the outputs with the installation record:
 | Task | Reference |
 |---|---|
 | Upgrade | [onprem-upgrade.md](onprem-upgrade.md) ([Türkçe](onprem-upgrade.tr.md)) |
-| Licence renewal and seat changes | [licensing.md](licensing.md#renewal) |
+| Licence renewal and seat changes | [licensing.md](licensing.md#renewal-seat-changes-and-importing-a-signed-license) |
 | Leaver or device swap | [offboarding runbook](../runbooks/offboarding-and-device-swap.md) |
 | Retention presets, VERBİS, DPIA | [KVKK guide](kvkk.md) |
 | Support case and support bundle | [support process](../runbooks/support-process.md) |

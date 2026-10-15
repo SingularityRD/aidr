@@ -187,7 +187,7 @@ B yolunun kuralları `<decoded_as>aidr</decoded_as>` ve `aidr.*` alanlarını ku
    satırı (A yolu) ya da gelen bir LEEF satırını (B yolu) yapıştırın; yukarıdaki kurallar
    tetiklenmelidir.
 2. Yöneticiyi yeniden başlatın (`systemctl restart wazuh-manager`), ardından SIEM sayfasında
-   **Deneme gönder** düğmesine basın: Wazuh panelinde 100201 kuralı (A yolu) görünür. Başarısız
+   **Deneme gönder** düğmesine basın: Wazuh panelinde kural 100201 (A yolu) görünür. Başarısız
    bir deneme, toplayıcının verdiği hatayı SIEM sayfasında gösterir.
 
 AIDR istem, komut, dosya yolu ya da adres göndermez; alanların tam listesi sözleşmededir. Her
