@@ -101,8 +101,10 @@ per guarded send, as defined in
 No prompt text, masked text, placeholder values or matched values are sent.
 The server does not rely on the client for this: the ingest projection keeps
 only the fields above, drops unknown entity types and out-of-range counts, and
-discards any other field. Placeholder originals stay in the browser tab's
-memory-only vault. Privacy scans are stored as tenant telemetry
+discards any other field. Placeholder originals stay in the browser: in the
+tab's memory and the browser's memory-backed session storage for that tab
+(removed when the tab closes or after 4 hours idle), never on disk or the
+network. Privacy scans are stored as tenant telemetry
 (`public.events`), so they follow the tenant's telemetry retention policy, legal
 holds and offboarding deletion. Masking works without enrollment; an
 unreachable control plane only delays reporting (the extension keeps a bounded
@@ -221,7 +223,7 @@ patterns.
 
 Masking is lossy (`[EMAIL]`-style labels or `[REDACTED]`); the optional token
 mode is a one-way HMAC and cannot be reversed. Learned PERSON/ADDRESS NER is
-not bundled, so contextual rules are the only name/address signal unless a
+not bundled and not sold in the first release (no model ships), so contextual rules are the only name/address signal unless a
 customer supplies an approved model. Run `pnpm test:privacy` to build the
 package and execute its Node suites; tests needing an unavailable Python,
 libseccomp or OpenSSL prerequisite are reported as named skips.
