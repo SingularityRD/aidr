@@ -657,9 +657,12 @@ published per version and architecture.** The company page's custom actions
 pinned WiX UI extension itself. The wizard bitmaps (`windows/ui/banner.bmp`
 493×58, `dialog.bmp` 493×312) are rendered from `banner.svg` and `dialog.svg`
 by `node deploy/installers/windows/ui/render-bitmaps.mjs`; the build stops if
-they are stale. The licence page is a placeholder
-(`<EULA TEXT — legal review required>`, `windows/ui/eula.*.rtf`) until the
-reviewed text replaces it.
+they are stale. The licence page (`windows/ui/eula.*.rtf`) is rendered from the
+draft EULA in [`docs/legal/eula.en.md`](../legal/eula.en.md) and
+[`eula.tr.md`](../legal/eula.tr.md) by
+`node deploy/installers/windows/ui/render-eula.mjs`; the build stops if the RTF
+is stale. The text is headed as a draft until Legal approves it; approval
+changes only the Markdown source.
 
 `pnpm test:installers` checks the wizard sources structurally on any OS. A
 real Windows machine must still confirm, before a release: the wizard renders

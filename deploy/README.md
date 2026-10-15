@@ -32,7 +32,7 @@ upgrade, backup, uninstall and troubleshooting.
 Build from the repository root on the release machine (skip this step when
 using an already built, independently verified customer kit):
 
-```powershell
+```sh
 pnpm install --frozen-lockfile
 pnpm build
 ```
@@ -107,7 +107,7 @@ chart with `pnpm verify:helm`.
 
 Use an empty destination and keep the stack isolated from customer data:
 
-```powershell
+```sh
 node scripts/deployment-prepare.mjs --development --output .aidr-deploy --region self-hosted --tenant-region self-hosted
 docker compose --project-directory .aidr-deploy -f .aidr-deploy/compose.yml up -d --wait --wait-timeout 180
 node scripts/deployment-migrate.mjs .aidr-deploy
@@ -139,9 +139,9 @@ does not replace the PostgreSQL/Supabase backend or waive the live readiness
 gates below. The standard cloud preparation flow in this section produces a
 containerized dashboard and trusted ingress, not a Cloudflare deployment.
 
-```powershell
+```sh
 pnpm build
-node scripts/deployment-prepare.mjs --mode cloud --output .aidr-cloud --region managed-cloud --tenant-region managed-cloud --dashboard-url https://aidr.example.com --supabase-url https://api.aidr.example.com --device-start-upstream-url https://PROJECT.supabase.co/functions/v1/device-start --artifact-verification-public-key-file C:\secure-delivery\aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry --offline-policy keep_enforcing_local
+node scripts/deployment-prepare.mjs --mode cloud --output .aidr-cloud --region managed-cloud --tenant-region managed-cloud --dashboard-url https://aidr.example.com --supabase-url https://api.aidr.example.com --device-start-upstream-url https://PROJECT.supabase.co/functions/v1/device-start --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry --offline-policy keep_enforcing_local
 ```
 
 Use a provisioned managed Supabase project in the approved region. Declare that
@@ -247,9 +247,12 @@ release verifier, verify the extracted kit, and use the exact approved
 steps. Use a new empty staging directory for every version; do not extract over
 an earlier package.
 
-```powershell
+```sh
 node scripts/endpoint-install.mjs --package-dir packages/claude-code --config .aidr-deploy/agent-config.json
 ```
+
+The command is the same on Windows (PowerShell) with Windows paths; the
+[first-customer guide](FIRST_CUSTOMER.md) has a complete PowerShell example.
 
 The signed package requires `--config` with the independently provisioned
 artifact-verification public key; the deployment-generated file shown above must

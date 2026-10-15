@@ -11,11 +11,11 @@ Include:
 - Affected versions
 - Potential impact
 
-Acknowledgement, update, and remediation targets are not yet approved or staffed. A customer-specific security response commitment must be established in an approved support schedule before sale; see [support operations](docs/runbooks/support-v7.md).
+Acknowledgement, update, and remediation targets are not yet approved or staffed. A customer-specific security response commitment must be established in an approved support schedule before sale; see [support operations](docs/runbooks/support-v7.md). The draft [vulnerability disclosure policy](docs/security/vulnerability-disclosure-policy.md) and [`security.txt` template](docs/security/security.txt.template) describe the external route once it is staffed; they are not in force yet.
 
 ## Supported Versions
 
-Supported and security-only version ranges, maintenance end dates, and notice periods have not yet been approved. Do not infer support from the presence of a release; the versioned policy and customer agreement must specify it.
+Supported and security-only version ranges, maintenance end dates, and notice periods have not yet been approved. Do not infer support from the presence of a release; the versioned policy and customer agreement must specify it. The proposal under review is the [supported versions policy draft](docs/security/supported-versions.md).
 
 ## Scope
 

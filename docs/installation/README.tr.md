@@ -32,6 +32,8 @@ belgeler "(İngilizce)" olarak işaretlidir.
 | [Browser Guard'ı kurumda dağıtma](browser-guard-enterprise.tr.md) | Intune, Google Yönetici Konsolu, GPO, Jamf (macOS) ve Firefox ilkeleriyle zorunlu kurulum ve ayar kilitleme; pilot, dağıtım ve geri alma |
 | [Browser Guard ilke dosyaları](../../deploy/browser-guard/README.md) (İngilizce) | Örnek ilke dosyaları ve tüm yönetilen ayarlar |
 | [Filo betikleri](../../deploy/fleet/windows/README.md) (İngilizce) | Betikle filo kurulumu, güncelleme ve kaldırma (Windows; [Linux](../../deploy/fleet/linux/README.md)) |
+| [VDI, devcontainer, Remote-SSH, WSL, CI](special-environments.tr.md) | Ajan kullanıcının kendi masaüstünde çalışmadığında AIDR'ın nereye kurulacağı |
+| [İşten ayrılma ve makine değişimi](../runbooks/offboarding-and-device-swap.md#türkçe-özet) | Cihaz iptali, yerel denetim kaydının saklanması, makinenin başkasına verilmesi |
 | [Operator approvals](../configuration.md#operator-approvals) (İngilizce) | Bekletilen bir işlemin bir kişi tarafından onaylanması (`aidr pending`, `aidr approve`, paneldeki Onaylar sayfası) |
 | [Configuration](../configuration.md) (İngilizce) | Tüm ayarlar ve dosya yolları |
 | [Support diagnostics](../support-diagnostics.md) (İngilizce) | `aidr support-bundle` ve içeriği |
@@ -45,7 +47,9 @@ belgeler "(İngilizce)" olarak işaretlidir.
 | [Running AIDR on Kubernetes](../operations/kubernetes.md) (İngilizce) | Helm chart: imajlar, kimlik bilgileri, kurulum, güncelleme ve geri alma, yedekleme |
 | [Configuration reference](../operations/onprem-config-reference.md) (İngilizce) | Tüm on-prem ayarları |
 | [Upgrade runbook](../../deploy/UPGRADE.md) (İngilizce) | Kontrol düzlemi güncelleme ve geri alma |
+| [Uçtan uca on-prem runbook'u](../operations/onprem-runbook.md) (İngilizce) | Sırasıyla tüm yol: ön koşullar, NTP, genel ya da iç CA ile TLS, kurulum, uç noktalar, kabul |
 | [Licensing](../operations/licensing.md) (İngilizce) | Çevrim dışı lisans ve süresi dolduğunda ne olduğu |
+| [KVKK rehberi](../operations/kvkk.md) | Bileşen bazında veri envanteri, saklama ön ayarları, VERBİS, yurt dışına aktarım, VKED şablonu |
 | [İlk müşteri kurulum ve kabul kılavuzu](../../deploy/FIRST_CUSTOMER.md) | Kurulum ve kabul denetim listesi |
 
 ## Sürüm ve portal işletmecisi (Singularity tarafı)

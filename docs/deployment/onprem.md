@@ -100,6 +100,9 @@ Functions.
 
 ## Related
 
+- [End-to-end on-prem runbook](../operations/onprem-runbook.md) (prerequisites, NTP, TLS with an internal CA, install, acceptance)
+- [Data residency](data-residency.md) · [KVKK guide](../operations/kvkk.md)
+- [Install recipes for VDI, devcontainers, Remote-SSH, WSL and CI](../installation/special-environments.md)
 - [SaaS deployment](saas.md)
 - [Security FAQ](../sales/security-faq.md)
 - [Upgrade guide](../../deploy/UPGRADE.md)

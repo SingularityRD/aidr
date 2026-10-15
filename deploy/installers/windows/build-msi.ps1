@@ -268,6 +268,8 @@ try {
 
   # The wizard bitmaps must be the ones the committed SVG sources render to.
   Invoke-Checked 'node' @((Join-Path $here 'ui\render-bitmaps.mjs'), '--check')
+  # The licence page must be the RTF rendered from its reviewed Markdown source (docs/legal).
+  Invoke-Checked 'node' @((Join-Path $here 'ui\render-eula.mjs'), '--check')
 
   if ($signing -eq 'signed') {
     $signtool = Find-SignTool

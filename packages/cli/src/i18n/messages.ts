@@ -217,6 +217,17 @@ export const CLI_EN = {
 	"doctor.noVerdict": "No verdict recorded yet; run `aidr verify` to confirm enforcement.",
 	"doctor.lastVerdict": "Last verdict: {verdict} for {tool} at {time}.",
 	"doctor.auditUnreadable": "Audit log unreadable.",
+	"doctor.clockOk": "Clock: within {seconds} s of the control plane.",
+	"doctor.clockDrift":
+		"Clock is {seconds} s {direction} the control plane. Enable time synchronisation (NTP / Windows Time).",
+	"doctor.clockSkewed":
+		"Clock is {seconds} s {direction} the control plane: signed licences, approvals and enrollment tokens can be rejected. Synchronise the clock (NTP / Windows Time) now.",
+	"doctor.clockAhead": "ahead of",
+	"doctor.clockBehind": "behind",
+	"doctor.clockUnchecked":
+		"Clock: not compared; the control plane did not answer with a time ({reason}). This is not a clean result.",
+	"doctor.clockWhy":
+		"Licence expiry and grace, approval tokens, enrollment codes, device sessions and TLS certificates are all checked against this machine's clock. Keep every endpoint and the control-plane host on the same NTP source (docs/operations/onprem-runbook.md#time-synchronisation).",
 	"doctor.footerOk":
 		"No blocking problems found. Confirm that your AI tools really run the hooks with: aidr verify",
 	"doctor.footerFail": "Problems found (✗). Fix them and re-run `aidr doctor`.",
@@ -667,6 +678,17 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 		"Henüz kayıtlı karar yok; korumanın çalıştığını doğrulamak için `aidr verify` çalıştırın.",
 	"doctor.lastVerdict": "Son karar: {tool} için {verdict}, {time}.",
 	"doctor.auditUnreadable": "Denetim kaydı okunamadı.",
+	"doctor.clockOk": "Saat: kontrol sunucusuyla arasındaki fark {seconds} sn içinde.",
+	"doctor.clockDrift":
+		"Saat kontrol sunucusundan {seconds} sn {direction}. Saat eşitlemeyi (NTP / Windows Saati) açın.",
+	"doctor.clockSkewed":
+		"Saat kontrol sunucusundan {seconds} sn {direction}: imzalı lisanslar, onaylar ve kayıt kodları reddedilebilir. Saati hemen eşitleyin (NTP / Windows Saati).",
+	"doctor.clockAhead": "ileride",
+	"doctor.clockBehind": "geride",
+	"doctor.clockUnchecked":
+		"Saat karşılaştırılamadı; kontrol sunucusu saat bilgisi döndürmedi ({reason}). Bu temiz bir sonuç değildir.",
+	"doctor.clockWhy":
+		"Lisans bitişi ve ek süre, onay belirteçleri, kayıt kodları, cihaz oturumları ve TLS sertifikaları bu makinenin saatine göre denetlenir. Tüm uç noktaları ve kontrol sunucusunu aynı NTP kaynağına bağlayın (docs/operations/onprem-runbook.md#time-synchronisation).",
 	"doctor.footerOk":
 		"Engelleyici bir sorun bulunmadı. Yapay zekâ araçlarınızın hook'ları gerçekten çalıştırdığını şununla doğrulayın: aidr verify",
 	"doctor.footerFail": "Sorunlar bulundu (✗). Düzeltip `aidr doctor` komutunu yeniden çalıştırın.",

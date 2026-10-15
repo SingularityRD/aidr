@@ -220,10 +220,13 @@ local `deny` stays a `deny` with its detection reason first.
 `control_plane.remote_policy_required: true` keeps its fail-closed deny when
 the central policy cannot be loaded, including while managed features are off.
 
-> **Deployment requirement:** no control plane is currently deployed, so `managed`
-> cannot complete enrollment. Leave `mode` at its `local` default unless your
-> deployment provides the `/v1/device-start`, `/v1/device-poll`, `/v1/enroll`,
-> `/v1/ingest` and `/v1/revocations` endpoints.
+> **Deployment requirement:** `managed` needs a reachable control plane: your own
+> on-prem installation (the Supabase stack and dashboard from this repository;
+> see the [on-prem runbook](operations/onprem-runbook.md)) or the hosted service
+> once it is accepted for customer use (it is not today; see
+> [SaaS deployment](deployment/saas.md)). Leave `mode` at its `local` default
+> unless your deployment provides the `/v1/device-start`, `/v1/device-poll`,
+> `/v1/enroll`, `/v1/ingest` and `/v1/revocations` endpoints.
 
 ### `auth`
 
@@ -237,7 +240,7 @@ the central policy cannot be loaded, including while managed features are off.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `true` | Allow control-plane integration in managed mode; local mode does not sync. A deployed endpoint is still required. |
-| `endpoint` | empty | Base URL for a deployed control plane; no built-in deployment is provided. |
+| `endpoint` | empty | API origin of your control plane (on-prem or hosted); no default endpoint is built in. |
 | `timeout_seconds` | `0.5` | Request timeout for control plane calls |
 | `send_audit_logs` | `true` | In managed mode with enrollment, send runtime verdict events for the dashboard; local mode does not sync. |
 | `send_clean_verdicts` | `false` | Also send `allow` events (higher volume) |

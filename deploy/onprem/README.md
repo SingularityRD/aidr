@@ -1,8 +1,14 @@
 # AIDR on-prem installation
 
 This is the entry point for running the AIDR control plane on a customer-owned
-Linux host with Docker Compose. It covers one host. It does not provide
-Kubernetes manifests, multi-host high availability or an availability SLA.
+Linux host with Docker Compose. It covers one host; Compose has no multi-host
+high availability. For Kubernetes, use the Helm chart in
+[`deploy/helm/aidr`](../helm/aidr/README.md) as described in
+[Running AIDR on Kubernetes](../../docs/operations/kubernetes.md). Neither path
+comes with an availability SLA. For the whole journey in order (prerequisites,
+NTP, TLS with a public or internal CA, install, first administrator, endpoints,
+backup, monitoring, acceptance) follow the
+[end-to-end on-prem runbook](../../docs/operations/onprem-runbook.md).
 The detailed contracts it builds on are in [the installation guide](../README.md),
 [the first-customer guide](../FIRST_CUSTOMER.md), [the upgrade runbook](../UPGRADE.md)
 and [the backup runbook](../backup/README.md).
@@ -21,6 +27,10 @@ telemetry and the dashboard.
 - The artifact-verification public key from the independent release-signer channel.
 - HTTPS origins for the dashboard and API, a TLS reverse proxy, SMTP settings
   and a backup target, as described in [the installation guide](../README.md).
+  Certificates can come from a public CA (ACME/Certbot) or from the customer's
+  internal CA (`deployment-tls-renew.mjs --mode static`).
+- Time synchronisation (NTP) on the host and on every endpoint; signed
+  licences, approvals and enrollment are time-checked.
 - Optional AI Security Posture scanner: the scanner release data-signing RSA
   public key and its key id, plus the scanner sources in the release checkout.
 

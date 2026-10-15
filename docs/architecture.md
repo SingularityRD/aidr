@@ -2,6 +2,13 @@
 
 Singularity AIDR is a TypeScript monorepo with a shared core library and platform-specific connectors.
 
+**One control plane.** The product control plane, for on-prem and for the
+hosted service alike, is the Supabase stack and the Vite dashboard in this
+repository (`supabase/`, `packages/dashboard`, `deploy/`). The separate
+`aidr-landing` application is the marketing website and SingularityRD's vendor
+`/admin` panel (customer records, licence issuing, installer builds); it is not
+a customer control plane and runs nothing at the customer.
+
 ## Packages
 
 ```

@@ -15,8 +15,9 @@ from this repository, a pull request, a log line or an agent session as the
 support route.
 
 The operating procedure Support will follow once a route exists is in
-[runbooks/support-v7.md](runbooks/support-v7.md). That document is still a
-draft and does not activate a support channel either.
+[runbooks/support-process.md](runbooks/support-process.md) (intake, severity,
+secure bundle upload, on-call) and [runbooks/support-v7.md](runbooks/support-v7.md)
+(security updates, EOL). Both are drafts and do not activate a support channel.
 
 ## 1. Check the endpoint yourself
 
