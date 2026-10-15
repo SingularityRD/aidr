@@ -2,12 +2,12 @@
 // serves the fixture sites through context.route, records every request the
 // pages make, and talks to the extension through its own pages.
 
-import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { extensionIdForPath } from "../../scripts/native-host.mjs";
 import { ANY_PLACEHOLDER } from "./data.mjs";
 import { AssertionError, waitFor } from "./expect.mjs";
 import { KIT_PATH, SITES, siteForUrl, UPLOAD_PATH } from "./sites.mjs";
@@ -228,15 +228,13 @@ async function findWorker(context, timeout, { wakeUrl = null, wakeAfterMs = 5000
 
 /**
  * Id Chromium assigns to an unpacked extension: the first 128 bits of
- * SHA-256(absolute path), hex digits mapped to the letters a-p.
+ * SHA-256(absolute path), hex digits mapped to the letters a-p. On Windows the path
+ * is hashed as UTF-16LE (scripts/native-host.mjs `extensionIdForPath`, unit-tested
+ * against an id Chromium assigned); hashing UTF-8 there gave a wrong id, so the
+ * popup wake-up below opened a page of no extension.
  */
 function unpackedExtensionId(extDir) {
-	const hex = crypto
-		.createHash("sha256")
-		.update(fs.realpathSync(extDir))
-		.digest("hex")
-		.slice(0, 32);
-	return [...hex].map((d) => String.fromCharCode(97 + Number.parseInt(d, 16))).join("");
+	return extensionIdForPath(fs.realpathSync(extDir));
 }
 
 /**
@@ -244,13 +242,14 @@ function unpackedExtensionId(extDir) {
  * full Chromium build in new-headless mode, which supports extensions; the
  * explicit-executable variant is kept as a fallback for older Playwright builds.
  */
-function strategies({ extDir, headed, log }) {
+function strategies({ extDir, headed, log, extraArgs = [] }) {
 	const args = [
 		`--disable-extensions-except=${extDir}`,
 		`--load-extension=${extDir}`,
 		"--lang=en-US",
 		"--no-first-run",
 		"--no-default-browser-check",
+		...extraArgs,
 	];
 	const list = [
 		{
@@ -272,7 +271,13 @@ function strategies({ extDir, headed, log }) {
 	return list;
 }
 
-export async function launch({ extDir, headed = false, log = () => {} }) {
+/**
+ * `recordVideo` ({ dir, size }) is passed to Playwright (WebM per page, used by e2e/demo.mjs);
+ * `viewport` overrides the 1280x800 default; `extraArgs` are added to the browser's command line
+ * (the demo passes `--window-size`: the headless window is narrower than the emulated
+ * viewport, and the video only shows the window).
+ */
+export async function launch({ extDir, headed = false, log = () => {}, recordVideo, viewport, extraArgs }) {
 	const manifestPath = path.join(extDir, "manifest.json");
 	if (!fs.existsSync(manifestPath)) {
 		throw new Error(
@@ -287,13 +292,15 @@ export async function launch({ extDir, headed = false, log = () => {} }) {
 	let profileDir;
 	let used;
 	const errors = [];
-	for (const strategy of strategies({ extDir, headed, log })) {
+	for (const strategy of strategies({ extDir, headed, log, extraArgs })) {
 		profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "bg-e2e-profile-"));
 		try {
 			context = await chromium.launchPersistentContext(profileDir, {
 				...strategy.options,
 				locale: "en-US",
-				viewport: { width: 1280, height: 800 },
+				// null = follow the window size (headed demo); undefined = the suite's default.
+				viewport: viewport === undefined ? { width: 1280, height: 800 } : viewport,
+				...(recordVideo ? { recordVideo } : {}),
 			});
 			worker = await findWorker(context, WORKER_START_TIMEOUT_MS, {
 				wakeUrl: `chrome-extension://${unpackedExtensionId(extDir)}/${manifest.action?.default_popup ?? "popup.html"}`,
@@ -653,7 +660,13 @@ class Harness {
 
 	async close() {
 		await this.context.close().catch(() => {});
-		fs.rmSync(this.profileDir, { recursive: true, force: true });
+		// Windows: Chromium's child processes can hold profile files for a while after close
+		// (seen with a headed browser); a leftover temp profile must not fail the run.
+		try {
+			fs.rmSync(this.profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+		} catch (error) {
+			console.error(`[harness] could not remove the temporary profile ${this.profileDir}: ${error.code ?? error}`);
+		}
 	}
 }
 

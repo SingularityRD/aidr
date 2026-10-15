@@ -94,6 +94,30 @@ regexes = ['''sk-proj-Q7vX2mN9pL4kR8tW1yB6cD3fG5hJ0sAaZe''']
 paths = ['''^packages/browser-guard/e2e/lib/data\.mjs$''']
 
 [[allowlists]]
+description = "Browser Guard customer-demo data: synthetic OpenAI-shaped key in the demo guide"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''sk-proj-Q7vX2mN9pL4kR8tW1yB6cD3fG5hJ0sAaZe''']
+paths = ['''^packages/browser-guard/docs/demo/browser-guard-demo\.tr\.md$''']
+
+[[allowlists]]
+description = "Browser Guard customer-demo data: synthetic GitHub-shaped token typed into the hermetic fixtures and the demo guide"
+targetRules = ["github-pat"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''ghp_R4nd0mF4k3T0k3nF0rDem0Purp0s3s0nly12''']
+paths = ['''^packages/browser-guard/e2e/lib/data\.mjs$''', '''^packages/browser-guard/docs/demo/browser-guard-demo\.tr\.md$''']
+
+[[allowlists]]
+description = "Browser Guard customer-demo data: synthetic AWS-shaped key id typed into the hermetic fixtures and the demo guide"
+targetRules = ["aws-access-token"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''AKIAZ7QX3EXAMPLE4DMO''']
+paths =['''^packages/browser-guard/e2e/lib/data\.mjs$''', '''^packages/browser-guard/docs/demo/browser-guard-demo\.tr\.md$''']
+
+[[allowlists]]
 description = "Documented AWS example-shaped access key IDs in scanner tests"
 targetRules = ["aws-access-token"]
 condition = "AND"

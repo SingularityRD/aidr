@@ -5,7 +5,18 @@
 	"license": "Proprietary",
 	"private": true,
 	"type": "module",
+	"exports": {
+		"./native-host": {
+			"types": "./scripts/native-host.d.mts",
+			"default": "./scripts/native-host.mjs"
+		},
+		"./package.json": "./package.json"
+	},
 	"scripts": {
+		"native-host": "node scripts/native-host.mjs",
+		"demo:package": "node scripts/build.mjs --release --zip && node scripts/demo-bundle.mjs",
+		"demo:record": "node scripts/build.mjs && node e2e/demo.mjs --record",
+		"demo:live": "node scripts/build.mjs && node e2e/demo.mjs --interactive",
 		"build": "node scripts/build.mjs",
 		"build:release": "node scripts/build.mjs --release --zip && node scripts/source-archive.mjs && node scripts/validate-store.mjs",
 		"store:validate": "node scripts/validate-store.mjs",

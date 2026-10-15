@@ -5,10 +5,12 @@ import autoMask from "./auto-mask.mjs";
 import blockedSite from "./blocked-site.mjs";
 import editResend from "./edit-resend.mjs";
 import editing from "./editing.mjs";
+import entities from "./entities.mjs";
 import fileUpload from "./file-upload.mjs";
 import frames from "./frames.mjs";
 import managedAiSites from "./managed-ai-sites.mjs";
 import modes from "./modes.mjs";
+import nativeHost from "./native-host.mjs";
 import paste from "./paste.mjs";
 import popup from "./popup.mjs";
 import preflight from "./preflight.mjs";
@@ -19,6 +21,7 @@ import workAccounts from "./work-accounts.mjs";
 export const SCENARIOS = [
 	...preflight,
 	...autoMask,
+	...entities,
 	...restoreSideChannels,
 	...reloadRestore,
 	...paste,
@@ -31,6 +34,7 @@ export const SCENARIOS = [
 	...frames,
 	...managedAiSites,
 	...workAccounts,
+	...nativeHost,
 ];
 
 /** Selects scenarios by comma-separated ids or id prefixes (`auto` matches `auto-chatgpt`). */

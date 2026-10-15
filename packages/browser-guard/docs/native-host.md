@@ -115,9 +115,85 @@ repeat a span Browser Guard already found locally. Callers merge the two sets. E
 host span has `source: "native-ner"` and a fixed score of `0.9`, because the host
 applies policy decisions and does not export per-span scores.
 
+## Per-user registration (`scripts/native-host.mjs`)
+
+Registration tells Chrome/Edge where the host's manifest is. `scripts/native-host.mjs`
+does it for the **current user only, without administrator rights**, and is meant to be
+called by the desktop app (`packages/desktop`) or an installer after the host launcher is
+in place. It does not build or sign the launcher (see the next section) and cannot grant
+the extension's optional `nativeMessaging` permission (the user does that once, on the
+options page).
+
+| Platform | Where | What |
+|---|---|---|
+| Windows | `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.singularity.aidr_privacy`, `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.singularity.aidr_privacy` (`chromium`: `HKCU\Software\Chromium\...`) | default value = absolute path of the manifest, written to `%LOCALAPPDATA%\SingularityAIDR\NativeMessagingHosts\com.singularity.aidr_privacy.json` unless `manifestDir` is given. Never HKLM. |
+| macOS | `~/Library/Application Support/{Google/Chrome,Microsoft Edge,Chromium}/NativeMessagingHosts/` | the manifest file itself |
+| Linux | `~/.config/{google-chrome,microsoft-edge,chromium}/NativeMessagingHosts/` | the manifest file itself |
+
+The manifest is `{ name: "com.singularity.aidr_privacy", path: <absolute launcher>, type:
+"stdio", allowed_origins: ["chrome-extension://<id>/", ...] }`. The host's own config must
+list the same ids in `allowedExtensionIds` (the host checks the caller too).
+
+**CLI** (`pnpm --filter @singularityrd/aidr-browser-guard native-host <command>`, or
+`node packages/browser-guard/scripts/native-host.mjs <command>`):
+
+```text
+register        --host <abs launcher> --extension-id <id> [--extension-id <id>] [--browser chrome,edge] [--manifest-dir <dir>]
+unregister      [--browser chrome,edge]
+status          [--browser chrome,edge]
+create-launcher --config <abs host config.json> --out <abs dir> [--node <abs node.exe>]   (Windows development/demo only)
+extension-id    <unpacked extension dir>       (the id Chrome/Edge give a "Load unpacked" build)
+--json          one JSON object on stdout: { ok: true, ... } or { ok: false, error: "<CODE>: detail" }
+```
+
+Exit codes: `0` ok, `1` failed (`HOST_NOT_FOUND`, `HOST_PATH_UNSAFE`, `EXTENSION_ID_INVALID`,
+`BROWSER_INVALID`, `REGISTRY_WRITE_FAILED`, `REGISTRY_VERIFY_FAILED`, `REGISTRY_DELETE_FAILED`,
+`REGISTRY_READ_FAILED`, `BUILD_REQUIRED`, ...), `2` usage error.
+
+**Import** (Node 22+, ESM; types in `scripts/native-host.d.mts`):
+
+```js
+import {
+  registerNativeHost, unregisterNativeHost, nativeHostStatus, unpackedExtensionId,
+} from "@singularityrd/aidr-browser-guard/native-host"; // = packages/browser-guard/scripts/native-host.mjs
+
+const { registrations } = registerNativeHost({
+  hostPath: "C:\\Program Files\\Singularity AIDR\\aidr-native-launcher.exe", // absolute, must exist
+  extensionIds: ["<store or self-hosted id>", unpackedExtensionId("C:\\demo\\browser-guard")],
+  browsers: ["chrome", "edge"],          // default
+});
+nativeHostStatus().browsers;            // [{ browser, registered, usable, manifestPath, hostPath, allowedOrigins, problem? }]
+unregisterNativeHost();                 // removes the HKCU keys and the manifest when nothing else uses it
+```
+
+All functions are synchronous and throw `Error("<CODE>: detail")`. On Windows writes go
+through `reg.exe` and reads through PowerShell with UTF-8 output, so a profile path with
+Turkish characters (`C:\Users\Ömer`) is stored and verified exactly; after writing, the key
+is read back and `REGISTRY_VERIFY_FAILED` is raised if it does not hold the manifest path.
+Expect about one second per registry read (PowerShell start-up).
+
+Development/demo launcher: on Windows the privacy package's production launcher is a C#
+executable that must be compiled and signed (below). For a demo machine
+`create-launcher` writes `aidr-native-host.cmd`, which starts
+`packages/privacy/dist/native/host.js` with the current Node and the given config; Chrome and
+Edge run a non-`.exe` host through `cmd.exe`. Paths containing `" % ^ & | < > !` are
+refused. Do not ship the `.cmd` launcher.
+
+Verified on Windows 11 (Chrome for Testing 153): the opt-in E2E scenario
+`native-host-connected` (`BG_E2E_NATIVE_HOST=1`) registers the real host for Chromium in
+HKCU with this module, the worker reports it `connected`, scans go through it, and the
+registration is removed afterwards. Not verified: registration for installed Google Chrome
+and Microsoft Edge (same code path, other key), the signed production launcher, macOS.
+
+**Known limitation:** the privacy host's own policy blocks text containing secrets
+(`SECRET`/`PRIVATE_KEY` are forced to `block` in `packages/privacy/src/native/host.ts`). A
+prompt with an API key therefore gets no host spans: Browser Guard masks it with its rules
+as usual, but the page says names and addresses were checked "with built-in rules only:
+the AIDR Privacy helper app could not be used", although the host is connected.
+
 ## Installing the host (administrators)
 
-Nothing in this package installs or registers the host. Follow the privacy package
+Nothing in the extension installs the host. Follow the privacy package
 deployment material. It is the authority on this, and it lists its own unverified
 acceptance items:
 

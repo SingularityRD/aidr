@@ -164,6 +164,7 @@
 			const text = readEditor(editor, cfg.kind).trim();
 			if (!text) return;
 			state.sends.push(text);
+			demo?.showSent(text);
 			thread.appendChild(cfg.renderUser(text));
 			clearEditor(editor, cfg.kind);
 			const response = await fetch(cfg.endpoint, {
@@ -172,6 +173,8 @@
 				body: JSON.stringify({ site: cfg.site, prompt: text }),
 			});
 			const { reply } = await response.json();
+			// Demo mode: a model "thinks" for a moment, so the audience sees the masked request first.
+			if (demo) await new Promise((resolve) => setTimeout(resolve, 1500));
 			const { root, body } = cfg.renderAssistant();
 			thread.appendChild(root);
 			streamInto(body, reply, () => {
@@ -241,9 +244,55 @@
 			});
 		}
 
+		const demo = demoPanel(cfg.site);
 		syncButton();
 		renderHistory();
 		document.documentElement.setAttribute("data-fixture-ready", cfg.site);
+	}
+
+	/**
+	 * Demo mode (`?demo=1`, used by e2e/demo.mjs only, never by the test scenarios): a banner
+	 * that says the page is a local simulation, and a panel showing the exact text this page
+	 * sent to the (simulated) AI service, i.e. what the service would receive. The panel is
+	 * outside the site's response/user-message selectors, so the extension never restores it.
+	 */
+	function demoPanel(site) {
+		if (new URLSearchParams(location.search).get("demo") !== "1") return null;
+		const style = document.createElement("style");
+		style.textContent = `
+			body { padding-top: 168px; }
+			#fixture-demo-banner { position: fixed; inset: 0 0 auto 0; z-index: 10; height: 20px; padding: 10px 16px;
+				background: #0f172a; color: #f8fafc; font: 600 14px system-ui, sans-serif; }
+			#fixture-demo-banner span { font-weight: 400; color: #cbd5e1; }
+			#fixture-wire { position: fixed; inset: 40px 0 auto 0; z-index: 10; height: 100px; overflow: auto;
+				padding: 10px 16px; background: #0b1220; color: #e2e8f0; border-bottom: 3px solid #3862e8;
+				font: 13px/1.5 ui-monospace, Consolas, monospace; }
+			#fixture-wire b { display: block; font: 600 12px system-ui, sans-serif; letter-spacing: .04em;
+				text-transform: uppercase; color: #93b4ff; margin-bottom: 4px; }
+			#fixture-wire pre { margin: 0; white-space: pre-wrap; word-break: break-word; }`;
+		document.head.appendChild(style);
+		const banner = document.createElement("div");
+		banner.id = "fixture-demo-banner";
+		banner.append(
+			`Demo: ${site} sayfasının yerel simülasyonu `,
+			Object.assign(document.createElement("span"), {
+				textContent: "(gerçek servise bağlanmaz; yanıtları test modeli üretir / local simulation, no real AI service)",
+			}),
+		);
+		const wire = document.createElement("aside");
+		wire.id = "fixture-wire";
+		const title = document.createElement("b");
+		title.textContent = "Yapay zekâ servisine giden metin / sent to the AI service";
+		const pre = document.createElement("pre");
+		pre.textContent = "(henüz gönderilmedi / nothing sent yet)";
+		wire.append(title, pre);
+		document.body.prepend(banner);
+		document.body.append(wire);
+		return {
+			showSent(text) {
+				pre.textContent = text;
+			},
+		};
 	}
 
 	window.FixtureChat = { init, readEditor };
