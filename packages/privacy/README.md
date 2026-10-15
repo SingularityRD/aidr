@@ -39,6 +39,7 @@ code; it does not mean a customer has accepted it in production.
 | Legacy Chrome MV3 extension and native host | `extension/`, `src/native/` | Builds and is tested with mocked Chrome APIs; unsigned; its bundle still carries the 0.5.0-rc.1 build label. Browser Guard is the supported browser product |
 | Document CDR parser | `parsers/` | Linux-only; tests skip explicitly without Python parser packages or libseccomp |
 | Learned PERSON/ADDRESS NER | `ner/` | Not bundled; `defense` profile refuses to release text without it |
+| AIDR Privacy companion (Windows, per user): native host + Windows built-in OCR for Browser Guard | `src/companion/`, `native/windows/`, `vision/windows_ocr.ps1` | Installed and verified on Windows 11 (real launcher, real Chrome-style start, real Chromium E2E); tests in `tests/companion/`. Unsigned launcher; barcode detection needs the VC++ 2013 runtime (see below) |
 
 ## Read first
 

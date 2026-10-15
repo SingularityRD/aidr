@@ -402,6 +402,7 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
 | `useNativeHost` | boolean | `false` (also a user setting unless managed; forced on by `requireNativeNer` or `exactData`) |
+| `uninspectedImages` | `"warn"` \| `"block"`: an uploaded picture that could not be inspected (no AIDR Privacy companion, not enabled or permitted, or the host could not read it): `block` = not uploaded, with install/enable guidance (recorded only in monitor mode); `warn` = uploaded with that guidance. Also a user setting (Options) unless managed; locked under a managed policy unless `allowUserOverrides` | `"block"` under any managed policy, else `"warn"` |
 | `requireNativeNer` | boolean (managed only; the signed dashboard policy can also switch it on, `true` wins): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
 | `workAccounts` | `{ action: warn \| block \| mask-only, unverified?: enforce \| allow, sites: { chatgpt?, claude?, gemini?, copilot?: { workspaceIds?, emailDomains? } } }` (managed only; see [Personal vs company AI accounts](#personal-vs-company-ai-accounts)) | none (no account check) |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
