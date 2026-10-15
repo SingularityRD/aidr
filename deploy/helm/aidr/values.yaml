@@ -75,6 +75,9 @@ dashboard:
   resources: {}
   runAsUser: 1000      # "node" user of node:24-alpine
   authMethods: password
+  # Show the work-email OIDC single sign-on form on the sign-in page
+  # (tenant owners configure the provider in the dashboard; docs/operations/onprem-sso.md).
+  oidcSso: false
   saml:
     providers: ""
     providerId: ""
@@ -158,6 +161,12 @@ auth:
     passwordKey: ""
     adminEmail: ""
     senderName: AIDR
+  # SAML 2.0 single sign-on in GoTrue (docs/operations/onprem-sso.md). The
+  # signing key (RSA-2048, PKCS#1 DER, base64) lives in secrets.existingSecret
+  # under privateKeyKey; generate it on an administrator host, never in values.
+  saml:
+    enabled: false
+    privateKeyKey: ""
   pdb:
     enabled: true
     minAvailable: 1
@@ -247,6 +256,20 @@ functions:
   runAsUser: 1000      # set by images/edge-functions.Dockerfile (upstream runs as root)
   # npm registry mirror for the functions' npm: imports (air-gapped installs).
   npmRegistry: ""
+  # On-prem identity provider (Keycloak, ADFS) for tenant OIDC SSO
+  # (docs/operations/onprem-sso.md).
+  identityProvider:
+    # Internal CA that signed the IdP's TLS certificate: a ConfigMap holding PEM
+    # CA certificates. It is ADDED to the public roots (DENO_TLS_CA_STORE=
+    # mozilla,system with SSL_CERT_FILE), never substituted for them.
+    caBundle:
+      existingConfigMap: ""
+      key: ca.crt
+    # Exact host[:port] names the oidc-sso function may reach on private
+    # (RFC 1918 / CGNAT / ULA) addresses, e.g. ["keycloak.corp.example:8443"].
+    # Empty keeps the public-only egress policy. Also allow the traffic in
+    # networkPolicy.identityProviderEgress.
+    internalHosts: []
   billingProvider: ""
   # Outbound AIDR mail (alert channels, invitations, governance digest).
   # With auth.smtp.host set, the functions reuse that relay (SMTP provider).
@@ -517,6 +540,9 @@ networkPolicy:
   # Extra egress CIDRs (port 443) for the functions runtime, e.g. an npm mirror,
   # identity provider or billing provider. Empty = no Internet egress.
   functionsEgressCIDRs: []
+  # Internal identity provider endpoints for the functions runtime on any port,
+  # e.g. [{cidr: 10.20.30.40/32, port: 8443}] for Keycloak.
+  identityProviderEgress: []
   # Egress CIDRs (auth.smtp.port) for the SMTP relay used by auth e-mails and,
   # when auth.smtp.host is set, by the functions' alert and invitation mail.
   smtpEgressCIDRs: []

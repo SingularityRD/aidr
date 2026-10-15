@@ -158,6 +158,21 @@ apply the prepared `privacy-gateway/egress-firewall.sh` before starting it. See
 [the privacy gateway guide](../privacy-gateway/README.md) for the inputs,
 the start commands and what the gateway does and does not do.
 
+### Optional single sign-on with an internal identity provider
+
+Tenant owners connect Keycloak, ADFS or another OIDC provider in the dashboard;
+users can be created at first sign-in (just-in-time provisioning) without SCIM,
+and Active Directory is connected through Keycloak user federation. When the
+identity provider uses an internal CA or a private address, prepare with
+`--idp-ca-file <pem>` (the CA is added to the public roots of the functions
+runtime and mounted read-only) and `--oidc-internal-idp-hosts host[:port],...`
+(only those exact names may resolve to private addresses). `--with-saml` turns
+on SAML in GoTrue and generates its signing key on this host. Set
+`AIDR_OIDC_SSO=true` in `.env` to show the SSO form on the sign-in page. See
+[the on-prem SSO runbook](../../docs/operations/onprem-sso.md)
+([Türkçe](../../docs/operations/onprem-sso.tr.md)) for the Keycloak, ADFS and
+LDAP steps.
+
 ## Upgrade
 
 Prepare the new release in a new directory (never over `/srv/aidr`), then run one

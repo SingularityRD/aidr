@@ -54,6 +54,8 @@ spec:
               value: {{ $values.authMethods | quote }}
             - name: AIDR_SIGNUP_MODE
               value: closed
+            - name: AIDR_OIDC_SSO
+              value: {{ ternary "true" "false" (eq (toString $values.oidcSso) "true") | quote }}
             - name: AIDR_SAML_PROVIDERS
               value: {{ $values.saml.providers | quote }}
             - name: AIDR_SAML_PROVIDER_ID

@@ -844,3 +844,60 @@ test("rendering refuses a weak privacy gateway configuration", { skip: helmSkip 
 		assert.match(result.stderr, message, sets.join(" "));
 	}
 });
+
+// --- On-prem SSO (docs/operations/onprem-sso.md) ------------------------------------
+
+test("on-prem SSO settings are off by default and the internal IdP CA is added to the public roots", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.dashboard.oidcSso, false);
+	assert.deepEqual(values.auth.saml, { enabled: false, privateKeyKey: "" });
+	assert.deepEqual(values.functions.identityProvider, { caBundle: { existingConfigMap: "", key: "ca.crt" }, internalHosts: [] });
+	assert.deepEqual(values.networkPolicy.identityProviderEgress, []);
+	const functions = readFileSync(join(chartDir, "templates", "functions.yaml"), "utf8");
+	assert.match(functions, /DENO_TLS_CA_STORE\n\s+value: mozilla,system/, "public roots must stay trusted next to the customer CA");
+	assert.match(functions, /SSL_CERT_FILE\n\s+value: \/etc\/aidr\/idp-ca\.pem/);
+	assert.match(functions, /readOnly: true/);
+	assert.match(functions, /AIDR_OIDC_INTERNAL_IDP_HOSTS/);
+	const auth = readFileSync(join(chartDir, "templates", "auth.yaml"), "utf8");
+	assert.match(auth, /GOTRUE_SAML_PRIVATE_KEY" "key" \$values\.saml\.privateKeyKey/, "the SAML key only comes from the platform Secret");
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8"));
+	const hostPattern = new RegExp(schema.properties.functions.properties.identityProvider.properties.internalHosts.items.pattern);
+	for (const host of ["keycloak.corp.example:8443", "adfs.corp.local"]) assert.match(host, hostPattern);
+	for (const host of ["10.0.0.5", "keycloak", "*.corp.example", "https://adfs.corp.local", "Keycloak.corp.example"]) assert.doesNotMatch(host, hostPattern);
+});
+
+test("rendered on-prem SSO values mount the CA read-only, list internal IdP hosts and open only their egress", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const docs = renderOk([base], [
+		"functions.identityProvider.caBundle.existingConfigMap=corp-idp-ca",
+		"functions.identityProvider.internalHosts={keycloak.corp.example:8443,adfs.corp.local}",
+		"networkPolicy.identityProviderEgress[0].cidr=10.20.30.40/32",
+		"networkPolicy.identityProviderEgress[0].port=8443",
+		"dashboard.oidcSso=true",
+		"auth.saml.enabled=true",
+		"auth.saml.privateKeyKey=gotrue-saml-private-key",
+	]);
+	const deployment = (suffix) => docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith(suffix));
+	const functions = deployment("-functions").spec.template.spec;
+	const env = Object.fromEntries(functions.containers[0].env.map((entry) => [entry.name, entry.value ?? entry.valueFrom]));
+	assert.equal(env.DENO_TLS_CA_STORE, "mozilla,system");
+	assert.equal(env.SSL_CERT_FILE, "/etc/aidr/idp-ca.pem");
+	assert.equal(env.AIDR_OIDC_INTERNAL_IDP_HOSTS, "keycloak.corp.example:8443,adfs.corp.local");
+	assert.deepEqual(functions.containers[0].volumeMounts.find((mount) => mount.name === "idp-ca"), { name: "idp-ca", mountPath: "/etc/aidr/idp-ca.pem", subPath: "ca.crt", readOnly: true });
+	assert.equal(functions.volumes.find((volume) => volume.name === "idp-ca").configMap.name, "corp-idp-ca");
+	const policy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith("-functions"));
+	assert.ok(policy.spec.egress.some((rule) => rule.to?.[0]?.ipBlock?.cidr === "10.20.30.40/32" && rule.ports[0].port === 8443));
+	const dashboardEnv = deployment("-dashboard").spec.template.spec.containers[0].env;
+	assert.equal(dashboardEnv.find((entry) => entry.name === "AIDR_OIDC_SSO").value, "true");
+	const authEnv = deployment("-auth").spec.template.spec.containers[0].env;
+	assert.equal(authEnv.find((entry) => entry.name === "GOTRUE_SAML_ENABLED").value, "true");
+	assert.equal(authEnv.find((entry) => entry.name === "GOTRUE_SAML_PRIVATE_KEY").valueFrom.secretKeyRef.key, "gotrue-saml-private-key");
+
+	const plain = renderDocs("default");
+	const plainFunctions = plain.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-functions")).spec.template.spec;
+	assert.equal(plainFunctions.containers[0].env.some((entry) => entry.name === "SSL_CERT_FILE"), false);
+	assert.equal(plainFunctions.volumes.some((volume) => volume.name === "idp-ca"), false);
+	const refused = render([base], ["auth.saml.enabled=true"]);
+	assert.notEqual(refused.status, 0);
+	assert.match(refused.stderr, /auth\.saml\.enabled requires auth\.saml\.privateKeyKey/);
+});

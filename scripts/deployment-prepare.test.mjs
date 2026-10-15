@@ -420,6 +420,11 @@ test("generated self-hosted deployment wires protected monitoring without invent
 			AIDR_PUBLIC_HTTPS_URL: dashboardUrl,
 			AIDR_METRICS_TOKEN: "${AIDR_METRICS_TOKEN:?AIDR_METRICS_TOKEN is required}",
 			AIDR_READINESS_REQUIRED_CHECKS: "database,storage,functions,signing,backup,queue,certificate",
+			// Single sign-on switches stay off unless the operator sets them in .env.
+			AIDR_OIDC_SSO: "${AIDR_OIDC_SSO:-false}",
+			AIDR_SAML_PROVIDERS: "${AIDR_SAML_PROVIDERS:-}",
+			AIDR_SAML_PROVIDER_ID: "${AIDR_SAML_PROVIDER_ID:-}",
+			AIDR_SAML_DOMAIN: "${AIDR_SAML_DOMAIN:-}",
 		});
 		assert.match(dashboard.healthcheck.test.at(-1), /\/readyz/);
 		assert.deepEqual(dashboard.volumes, [{ type: "bind", source: "./health", target: "/run/aidr-health", read_only: true }]);
@@ -1043,4 +1048,63 @@ test("the privacy gateway image definition is hardened and matches the in-image 
 	}
 	assert.match(containerConfig, /config\.secretStore !== 'mounted-files'/);
 	assert.match(containerConfig, /fail\('SERVICE_TLS_CONFIG'\)/);
+});
+
+// --- On-prem SSO (scripts/lib/onprem-sso.mjs, docs/operations/onprem-sso.md) ---------
+
+test("on-prem SSO options wire the IdP CA, internal IdP hosts and GoTrue SAML; the default stays unchanged", { skip: opensslAvailable ? false : "openssl is required to mint throwaway test certificates (set AIDR_OPENSSL)" }, () => {
+	inTemporaryDirectory((directory) => {
+		const baseline = join(directory, "sso-default");
+		const plain = prepare(baseline, "--mode", "self-hosted");
+		assert.equal(plain.status, 0, plain.stderr);
+		const plainCompose = parse(readFileSync(join(baseline, "compose.yml"), "utf8"));
+		assert.equal(plainCompose.services.functions.environment.SSL_CERT_FILE, undefined);
+		assert.equal(plainCompose.services.functions.environment.DENO_TLS_CA_STORE, undefined);
+		assert.equal(plainCompose.services.dashboard.environment.AIDR_OIDC_SSO, "${AIDR_OIDC_SSO:-false}");
+		assert.equal(plainCompose.services.auth.environment.GOTRUE_SAML_ENABLED, "${GOTRUE_SAML_ENABLED:-false}");
+		assert.ok(readFileSync(join(baseline, ".env.functions"), "utf8").split(/\r?\n/).includes("AIDR_OIDC_INTERNAL_IDP_HOSTS="));
+		assert.doesNotMatch(readFileSync(join(baseline, ".env"), "utf8"), /^GOTRUE_SAML_/m);
+		assert.deepEqual(JSON.parse(readFileSync(join(baseline, "deployment.json"), "utf8")).identity, { oidc_internal_idp_hosts: [], idp_ca: null, gotrue_saml: false });
+		assert.equal(existsSync(join(baseline, "functions-trust")), false);
+
+		const ca = opensslCertificate(directory, "corp-root-ca", { ca: true });
+		const output = join(directory, "sso");
+		const result = prepare(output, "--mode", "self-hosted", "--idp-ca-file", ca.cert, "--oidc-internal-idp-hosts", "Keycloak.corp.example:8443,adfs.corp.local", "--with-saml");
+		assert.equal(result.status, 0, result.stderr);
+		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
+		assert.equal(compose.services.functions.environment.DENO_TLS_CA_STORE, "mozilla,system", "public roots stay trusted");
+		assert.equal(compose.services.functions.environment.SSL_CERT_FILE, "/etc/aidr/idp-ca.pem");
+		assert.deepEqual(compose.services.functions.volumes.at(-1), { type: "bind", source: "./functions-trust/idp-ca.pem", target: "/etc/aidr/idp-ca.pem", read_only: true });
+		const mounted = join(output, "functions-trust/idp-ca.pem");
+		assert.equal(readFileSync(mounted, "utf8").trim(), readFileSync(ca.cert, "utf8").trim());
+		if (process.platform !== "win32") assert.equal(statSync(mounted).mode & 0o777, 0o644);
+		assert.ok(readFileSync(join(output, ".env.functions"), "utf8").split(/\r?\n/).includes("AIDR_OIDC_INTERNAL_IDP_HOSTS=keycloak.corp.example:8443,adfs.corp.local"));
+		const envText = readFileSync(join(output, ".env"), "utf8");
+		assert.match(envText, /^GOTRUE_SAML_ENABLED=true$/m);
+		const samlKey = /^GOTRUE_SAML_PRIVATE_KEY=([A-Za-z0-9+/=]+)$/m.exec(envText)?.[1];
+		assert.ok(samlKey, "the SAML signing key is generated on this host");
+		assert.equal(createPrivateKey({ key: Buffer.from(samlKey, "base64"), format: "der", type: "pkcs1" }).asymmetricKeyType, "rsa");
+		assert.equal(readFileSync(join(output, "compose.yml"), "utf8").includes(samlKey.slice(0, 40)), false, "the key stays in .env");
+		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
+		assert.deepEqual(deployment.identity.oidc_internal_idp_hosts, ["keycloak.corp.example:8443", "adfs.corp.local"]);
+		assert.equal(deployment.identity.gotrue_saml, true);
+		assert.equal(deployment.identity.idp_ca.file, "functions-trust/idp-ca.pem");
+		assert.equal(deployment.identity.idp_ca.certificates[0].ca, true);
+		assert.ok(deployment.artifacts.some((artifact) => artifact.path === "functions-trust/idp-ca.pem"));
+
+		const refusals = [
+			["cloud SAML", ["--mode", "cloud", "--with-saml"], /self-hosted stack only/],
+			["cloud CA", ["--mode", "cloud", "--idp-ca-file", ca.cert], /self-hosted stack only/],
+			["missing CA", ["--mode", "self-hosted", "--idp-ca-file", join(directory, "missing.pem")], /missing or unreadable/],
+			["private key as CA", ["--mode", "self-hosted", "--idp-ca-file", ca.key], /private key/],
+			["IP literal host", ["--mode", "self-hosted", "--oidc-internal-idp-hosts", "10.0.0.5"], /--oidc-internal-idp-hosts/],
+		];
+		for (const [index, [label, options, pattern]] of refusals.entries()) {
+			const refused = join(directory, `sso-refused-${index}`);
+			const outcome = prepare(refused, ...options);
+			assert.notEqual(outcome.status, 0, `${label} unexpectedly succeeded`);
+			assert.match(outcome.stderr, pattern, label);
+			assert.equal(existsSync(refused), false, `${label} left a partial installation`);
+		}
+	});
 });

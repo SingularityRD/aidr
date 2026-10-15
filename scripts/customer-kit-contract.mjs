@@ -130,6 +130,7 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"scripts/lib/atomic-write.mjs",
 	"scripts/lib/deployment-credentials.mjs",
 	"scripts/lib/deployment-input-copy.mjs",
+	"scripts/lib/onprem-sso.mjs",
 	"scripts/lib/node-helper-image.mjs",
 	"scripts/lib/node-helper.Dockerfile",
 	"scripts/readiness-evidence-worker.mjs",

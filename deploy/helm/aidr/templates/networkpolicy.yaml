@@ -208,6 +208,14 @@ spec:
     {{- if .Values.auth.smtp.host }}
     {{- include "aidr.np.cidrs" (dict "cidrs" $np.smtpEgressCIDRs "port" .Values.auth.smtp.port) | nindent 4 }}
     {{- end }}
+    {{- range ($np.identityProviderEgress | default (list)) }}
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr }}
+      ports:
+        - port: {{ int .port }}
+          protocol: TCP
+    {{- end }}
     {{- range $np.siemEgress }}
     - to:
         - ipBlock:

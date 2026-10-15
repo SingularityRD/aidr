@@ -9,6 +9,7 @@ import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { cpSync } from "./lib/deployment-input-copy.mjs";
 import { DEFAULT_PUBLIC_KEYS_PATH, loadPublicKeyRegistry } from "./license-verify.mjs";
+import { applySsoCompose, generateSamlSigningKey, IDP_CA_RELATIVE, normalizeInternalIdpHosts, validateIdpCaBundle } from "./lib/onprem-sso.mjs";
 import { isIP } from "node:net";
 import {
 	PRIVACY_GATEWAY_LAYOUT, PRIVACY_GATEWAY_PROFILE, PRIVACY_GATEWAY_SERVICE, PRIVACY_GATEWAY_UID,
@@ -180,6 +181,10 @@ const { values } = parseArgs({ options: {
 	// What enrolled endpoints do when this control plane is unreachable: an
 	// explicit install-time choice (asked on a terminal, required otherwise).
 	"offline-policy": { type: "string" },
+	// Optional on-prem SSO (docs/operations/onprem-sso.md): internal IdP CA for the
+	// functions runtime, internal IdP hosts the OIDC fetches may reach, GoTrue SAML.
+	"idp-ca-file": { type: "string" }, "oidc-internal-idp-hosts": { type: "string" },
+	"with-saml": { type: "boolean", default: false },
 	// Deprecated spellings kept so existing runbooks keep working; not documented.
 	"with-aig": { type: "boolean", default: false },
 	"aig-signing-public-key-file": { type: "string" }, "aig-signing-key-id": { type: "string" },
@@ -330,6 +335,17 @@ for (const name of Object.keys(overlay.services)) {
 }
 const output = resolve(values.output);
 if (existsSync(output)) throw new Error("Output already exists; reuse its secrets and data. Choose a new output for a separate installation.");
+// SSO inputs are validated before anything is written.
+if (values.mode === "cloud" && (values["idp-ca-file"] || values["with-saml"])) {
+	throw new Error("--idp-ca-file and --with-saml apply to the self-hosted stack only; configure the hosted project instead");
+}
+let idpCa = null;
+if (values["idp-ca-file"]) {
+	let text;
+	try { text = readFileSync(resolve(values["idp-ca-file"]), "utf8"); } catch { throw new Error("--idp-ca-file is missing or unreadable"); }
+	idpCa = validateIdpCaBundle(text);
+}
+const internalIdpHosts = normalizeInternalIdpHosts(values["oidc-internal-idp-hosts"]);
 const runtimeCapabilitiesRaw = process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT?.trim() || "{}";
 let runtimeCapabilitiesConfig;
 try {
@@ -583,6 +599,8 @@ const jwt = (role) => {
 	return `${unsigned}.${createHmac("sha256", env.JWT_SECRET).update(unsigned).digest("base64url")}`;
 };
 env.ANON_KEY = values.mode === "cloud" ? "REPLACE_WITH_PROJECT_ANON_KEY" : jwt("anon");
+// Self-hosted GoTrue SAML: the signing key is generated here, on the target host.
+if (values["with-saml"]) Object.assign(env, { GOTRUE_SAML_ENABLED: "true", GOTRUE_SAML_PRIVATE_KEY: generateSamlSigningKey() });
 env.SERVICE_ROLE_KEY = values.mode === "cloud" ? "REPLACE_WITH_PROJECT_SERVICE_ROLE_KEY" : jwt("service_role");
 // The license trust registry shipped with this kit becomes the Edge runtime's
 // trust root for dashboard license imports (supabase/functions/_shared/license.ts).
@@ -596,6 +614,7 @@ const functionEnv = {
 	AIDR_DEVELOPMENT_MODE: String(values.development),
 	AIDR_ENTITLEMENT_SIGNING_KEY_ID: keyId, AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPrivateKeyDer.toString("base64"),
 	AIDR_RUNTIME_CAPABILITIES_BY_TENANT: runtimeCapabilitiesConfig,
+	AIDR_OIDC_INTERNAL_IDP_HOSTS: internalIdpHosts,
 	AIDR_REVOCATION_SIGNING_KEY_ID: keyId, AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPrivateKeyDer.toString("base64"),
 	AIDR_DELEGATION_ISSUER: supabaseUrl, AIDR_DELEGATION_SIGNING_KEY_ID: delegationKeyId,
 	AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64: delegationPrivateKeyDer.toString("base64"),
@@ -798,6 +817,7 @@ if (privacyGateway) {
 		ipam: { config: [{ subnet: privacyGateway.subnet }] },
 	};
 }
+applySsoCompose(compose, { idpCa: idpCa !== null });
 // Apply the on-prem overlay and resource budgets to every generated service.
 for (const [name, service] of Object.entries(compose.services)) {
 	deepMerge(service, overlay["x-aidr-onprem"].defaults);
@@ -856,6 +876,11 @@ if (privacyGateway) {
 	for (const [ref, source] of privacyGateway.secretFiles) secretFile(ref, readFileSync(source));
 	secretFile(PRIVACY_GATEWAY_LAYOUT.tlsKeyRef, privacyGateway.tls.key);
 	writeFileSync(join(base, "egress-firewall.sh"), renderPrivacyGatewayFirewall(privacyGateway), { mode: 0o700, flag: "wx" });
+}
+if (idpCa) {
+	// Public CA certificates: readable by the functions container user.
+	mkdirSync(join(output, dirname(IDP_CA_RELATIVE)), { recursive: true });
+	writeFileSync(join(output, IDP_CA_RELATIVE), idpCa.pem, { mode: 0o644, flag: "wx" });
 }
 const write = (path, content) => writeFileSync(join(output, path), content, { mode: 0o600, flag: "wx" });
 const envText = (items) => Object.entries(items).map(([name, value]) => `${name}=${value}`).join("\n") + "\n";
@@ -925,7 +950,7 @@ function inventory(dir, prefix = "") {
 		return statSync(path).isDirectory() ? inventory(path, relative) : [{ path: relative, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") }];
 	});
 }
-const artifacts = [...(privacyGateway ? ["image", "tls", "trust"].map((path) => `${PRIVACY_GATEWAY_SERVICE}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...(postureScanner ? ["bridge", "egress", "generated"].map((path) => `${postureScannerDir}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...inventory(join(output, "dashboard"), "dashboard"), ...inventory(join(output, "ingress"), "ingress"), ...inventory(join(output, "backup"), "backup"), ...inventory(join(output, "maintenance"), "maintenance"), ...inventory(join(output, "auth-templates"), "auth-templates"), ...inventory(join(output, "volumes/functions"), "volumes/functions")];
+const artifacts = [...(privacyGateway ? ["image", "tls", "trust"].map((path) => `${PRIVACY_GATEWAY_SERVICE}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...(postureScanner ? ["bridge", "egress", "generated"].map((path) => `${postureScannerDir}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...inventory(join(output, "dashboard"), "dashboard"), ...inventory(join(output, "ingress"), "ingress"), ...inventory(join(output, "backup"), "backup"), ...inventory(join(output, "maintenance"), "maintenance"), ...inventory(join(output, "auth-templates"), "auth-templates"), ...inventory(join(output, "volumes/functions"), "volumes/functions"), ...(idpCa ? inventory(join(output, dirname(IDP_CA_RELATIVE)), dirname(IDP_CA_RELATIVE)) : [])];
 const source = existsSync(join(root, "release-source.json")) ? JSON.parse(readFileSync(join(root, "release-source.json"), "utf8")) : { commit: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), dirty: !!execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" }).trim() };
-write("deployment.json", JSON.stringify({ schema_version: 1, project_name: compose.name, mode: values.mode, development: values.development, offline_policy: offlinePolicy, prepared_at: preparedAt.toISOString(), source_commit: source.commit, source_has_changes: source.dirty, upstream_sha: values.mode === "self-hosted" ? upstreamSha : null, dashboard_url: dashboardUrl, supabase_url: supabaseUrl, region: regionId, tenant_region: tenantRegionId, regions, resource_profile: profileName, dashboard_image: compose.services.dashboard.image, compliance_signing: { key_id: complianceKeyId, public_key_pem: compliancePublicKeyPem, public_key_sha256: createHash("sha256").update(complianceSigning.publicKey.export({ type: "spki", format: "der" })).digest("hex") }, posture_scanner: postureScanner ? { enabled: true, source_version: postureScanner.sourceVersion, source_commit: postureScanner.sourceCommit, bundle_id: postureScanner.bundleId, data_manifest_signed: postureScanner.signed, signing_key_id: postureScanner.keyId, signing_public_key_sha256: postureScanner.publicKeySha256, images: Object.fromEntries(postureScannerServices.map((name) => [name, compose.services[name].image])), task_backend: "sqlite", ha_required: false, egress: `aig-egress deny-by-default allowlist (${postureScannerDir}/egress/allowlist.txt)` } : { enabled: false }, privacy_gateway: privacyGateway ? { enabled: true, compose_profile: PRIVACY_GATEWAY_PROFILE, image: compose.services[PRIVACY_GATEWAY_SERVICE].image, interface: "explicit egress API: POST /v1/egress over mutual TLS; not transparent interception", listen: compose.services[PRIVACY_GATEWAY_SERVICE].ports[0], mtls: { required: true, server_certificate_sha256: privacyGateway.tlsSummary.serverFingerprint256, client_ca_sha256: privacyGateway.tlsSummary.clientCaFingerprint256, server_not_after: privacyGateway.tlsSummary.serverNotAfter }, destination: { kind: privacyGateway.config.destination.kind, origin: privacyGateway.config.destination.origin, model: privacyGateway.config.destination.model }, ner_manifest_sha256: privacyGateway.config.ner.manifestSha256, egress: { subnet: privacyGateway.subnet, allowed_cidrs: privacyGateway.egressCidrs, dns_cidrs: privacyGateway.dnsCidrs, enforcement: `prepared, not applied: run ${PRIVACY_GATEWAY_SERVICE}/egress-firewall.sh as root` } } : { enabled: false }, migrations, artifacts, note: "Prepared configuration, not a deployment acceptance record. Region and residency fields are operator declarations, not evidence of provider placement. The readiness, TLS renewal and backup timer units are prepared but not installed or enabled. TLS, authentication, backups and live smoke evidence required." }, null, 2));
+write("deployment.json", JSON.stringify({ schema_version: 1, project_name: compose.name, mode: values.mode, development: values.development, offline_policy: offlinePolicy, prepared_at: preparedAt.toISOString(), source_commit: source.commit, source_has_changes: source.dirty, upstream_sha: values.mode === "self-hosted" ? upstreamSha : null, dashboard_url: dashboardUrl, supabase_url: supabaseUrl, region: regionId, tenant_region: tenantRegionId, regions, resource_profile: profileName, dashboard_image: compose.services.dashboard.image, compliance_signing: { key_id: complianceKeyId, public_key_pem: compliancePublicKeyPem, public_key_sha256: createHash("sha256").update(complianceSigning.publicKey.export({ type: "spki", format: "der" })).digest("hex") }, posture_scanner: postureScanner ? { enabled: true, source_version: postureScanner.sourceVersion, source_commit: postureScanner.sourceCommit, bundle_id: postureScanner.bundleId, data_manifest_signed: postureScanner.signed, signing_key_id: postureScanner.keyId, signing_public_key_sha256: postureScanner.publicKeySha256, images: Object.fromEntries(postureScannerServices.map((name) => [name, compose.services[name].image])), task_backend: "sqlite", ha_required: false, egress: `aig-egress deny-by-default allowlist (${postureScannerDir}/egress/allowlist.txt)` } : { enabled: false }, identity: { oidc_internal_idp_hosts: internalIdpHosts ? internalIdpHosts.split(",") : [], idp_ca: idpCa ? { file: IDP_CA_RELATIVE, ...idpCa.summary } : null, gotrue_saml: values["with-saml"] }, privacy_gateway: privacyGateway ? { enabled: true, compose_profile: PRIVACY_GATEWAY_PROFILE, image: compose.services[PRIVACY_GATEWAY_SERVICE].image, interface: "explicit egress API: POST /v1/egress over mutual TLS; not transparent interception", listen: compose.services[PRIVACY_GATEWAY_SERVICE].ports[0], mtls: { required: true, server_certificate_sha256: privacyGateway.tlsSummary.serverFingerprint256, client_ca_sha256: privacyGateway.tlsSummary.clientCaFingerprint256, server_not_after: privacyGateway.tlsSummary.serverNotAfter }, destination: { kind: privacyGateway.config.destination.kind, origin: privacyGateway.config.destination.origin, model: privacyGateway.config.destination.model }, ner_manifest_sha256: privacyGateway.config.ner.manifestSha256, egress: { subnet: privacyGateway.subnet, allowed_cidrs: privacyGateway.egressCidrs, dns_cidrs: privacyGateway.dnsCidrs, enforcement: `prepared, not applied: run ${PRIVACY_GATEWAY_SERVICE}/egress-firewall.sh as root` } } : { enabled: false }, migrations, artifacts, note: "Prepared configuration, not a deployment acceptance record. Region and residency fields are operator declarations, not evidence of provider placement. The readiness, TLS renewal and backup timer units are prepared but not installed or enabled. TLS, authentication, backups and live smoke evidence required." }, null, 2));
 console.log(`Prepared ${values.mode} installation at ${output}. Secrets written to private .env files; none printed.`);

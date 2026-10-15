@@ -192,10 +192,17 @@ Vault, sealed-secrets) as long as the Secret names match.
 | `networkPolicy.enabled` | `true` | Default-deny plus per-component allows |
 | `networkPolicy.*EgressCIDRs` | `[]` | Opt-in egress: functions (npm mirror/IdP/billing), SMTP, dashboard certificate probe, S3 |
 | `functions.npmRegistry` | `""` | npm mirror for the functions' `npm:` imports |
+| `functions.identityProvider.caBundle.existingConfigMap` | `""` | ConfigMap with the internal CA of an on-prem IdP; added to (never replacing) the public roots |
+| `functions.identityProvider.internalHosts` | `[]` | Exact `host[:port]` IdP names allowed to resolve to private addresses |
+| `networkPolicy.identityProviderEgress` | `[]` | `{cidr, port}` egress for the functions pods to that IdP |
+| `dashboard.oidcSso` | `false` | Show the work-email OIDC SSO form on the sign-in page |
+| `auth.saml.enabled`, `auth.saml.privateKeyKey` | `false`, `""` | SAML in GoTrue; the signing key comes from `secrets.existingSecret` |
 | `postureScanner.enabled` | `false` | AI Security Posture scanner |
 | `privacyGateway.enabled` | `false` | Optional privacy gateway (explicit mTLS egress API) |
 
 `values.schema.json` validates types, enums and patterns at install time.
+Single sign-on with Keycloak, ADFS or Active Directory: see
+[the on-prem SSO runbook](../../../docs/operations/onprem-sso.md).
 
 ## AI Security Posture scanner
 
