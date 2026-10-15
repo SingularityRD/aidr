@@ -107,7 +107,9 @@ const MATRIX: ParityCase[] = [
 	},
 	{
 		id: "read-dotenv",
-		call: { kind: "read", field: "file_path", path: "/srv/app/.env" },
+		// Outside the connectors' working directory (/srv): a project's own
+		// .env inside it is not prompted (docs/project-env-files.md).
+		call: { kind: "read", field: "file_path", path: "/opt/app/.env" },
 		expect: "blocked",
 		threatId: "CLT-FILE-008",
 	},

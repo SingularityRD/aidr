@@ -19,11 +19,11 @@
 
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
 import { getFileContent } from "./file-utils.js";
 import { EMBEDDED_FLOW_CAPABILITIES_YAML } from "./toxic-flow-capabilities.data.js";
 import type { Logger } from "./types.js";
 import { nullLogger } from "./types.js";
+import { parseShippedYaml } from "./yaml-parse-cache.js";
 
 /** Path of the capability file relative to a threats directory. */
 export const FLOW_CAPABILITIES_RELATIVE_PATH = join("flow", "capabilities.yaml");
@@ -235,7 +235,7 @@ function parseFlowCapabilities(raw: unknown): FlowCapabilitiesParseResult {
 export function parseFlowCapabilitiesYaml(text: string): FlowCapabilitiesParseResult {
 	let raw: unknown;
 	try {
-		raw = parseYaml(text);
+		raw = parseShippedYaml(text);
 	} catch (error) {
 		return { patterns: null, errors: [`invalid YAML: ${String(error)}`] };
 	}

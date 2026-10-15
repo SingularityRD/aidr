@@ -18,7 +18,6 @@
 
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
 import { extractUrls } from "./extractors.js";
 import {
 	loadResourceManifestCoverage,
@@ -26,6 +25,7 @@ import {
 } from "./integrity/resource-manifest.js";
 import type { AiSupplyChainConfig, Logger } from "./types.js";
 import { nullLogger } from "./types.js";
+import { parseShippedYaml } from "./yaml-parse-cache.js";
 
 /** Subdirectory of the allowlists directory holding trusted model sources. */
 export const MODEL_SOURCES_SUBDIR = "model-sources";
@@ -142,7 +142,7 @@ export async function loadTrustedModelSources(
 				logger,
 			);
 			if (shipped === null) continue;
-			data = parseYaml(shipped);
+			data = parseShippedYaml(shipped);
 		} catch (error) {
 			logger.warn(`Failed to read trusted model sources from ${file}`, { error: String(error) });
 			continue;

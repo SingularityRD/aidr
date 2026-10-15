@@ -785,6 +785,21 @@ export const CacheConfigSchema = z.object({
 
 export const AllowlistConfigSchema = z.object({
 	path: z.string().default("~/.singularity-aidr/allowlist.json"),
+	/**
+	 * Administrator-declared internal networks (IPv4/IPv6 CIDR, e.g.
+	 * "10.20.0.0/16", "193.140.0.0/16"). A URL whose host is a literal address
+	 * inside one of them is treated like an allowlisted URL: its URL-artifact
+	 * signals are suppressed, while the command text around it is still
+	 * inspected. Entries broader than /8 (IPv4) or /16 (IPv6) are ignored.
+	 */
+	internal_networks: z.array(z.string().max(64)).max(256).optional(),
+	/**
+	 * Administrator-declared internal domain suffixes (e.g. "corp.example.com.tr").
+	 * Matching is dot-bounded: "corp.example.com.tr" covers "git.corp.example.com.tr"
+	 * but not "evilcorp.example.com.tr". Public suffixes ("com.tr", "github.io"…) and
+	 * bare top-level labels are ignored.
+	 */
+	internal_domain_suffixes: z.array(z.string().max(253)).max(256).optional(),
 });
 
 export const LoggingConfigSchema = z.object({
@@ -923,6 +938,16 @@ export const PoisoningProtectionConfigSchema = z.object({
 
 const AmsiCheckConfigSchema = z.object({
 	enabled: z.boolean().default(true),
+	/**
+	 * What an otherwise-allowed call gets when AMSI cannot run on this host at
+	 * all (no koffi backend and PowerShell blocked, e.g. ConstrainedLanguage
+	 * under AppLocker/WDAC). `annotate` (default) follows the failure policy for
+	 * optional signals: the AMSI signal is skipped, logged once per state change
+	 * and named on the verdict as not scanned, never as clean. `ask` holds every
+	 * such call for review. A scan that fails on a working backend is always an
+	 * `ask`, whatever this says.
+	 */
+	unavailable_action: z.enum(["annotate", "ask"]).default("annotate"),
 });
 
 export const PromptProtectionModeSchema = z.enum(["off", "warn", "block"]);
@@ -1154,6 +1179,14 @@ export const ConfigSchema = z.object({
 	secure_code: SecureCodeConfigSchema.default({}),
 	ai_supply_chain: AiSupplyChainConfigSchema.default({}),
 	toxic_flow: ToxicFlowConfigSchema.default({}),
+	/**
+	 * Reads of the project's own `.env` files (inside the working directory)
+	 * into the agent's context: `auto` allows them except under `paranoid`
+	 * sensitivity, `ask` always prompts, `allow` never does. Reads stay tracked
+	 * as secret material for exfiltration chains either way. See
+	 * docs/project-env-files.md.
+	 */
+	project_env_reads: z.enum(["auto", "allow", "ask"]).default("auto"),
 	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
 	nvd_check: NvdConfigSchema.default({}),
 	heuristics_enabled: z.boolean().default(true),
@@ -1254,6 +1287,16 @@ export interface Allowlist {
 	urls: Record<string, AllowlistEntry>;
 	commands: Record<string, AllowlistEntry>;
 	filePaths: Record<string, AllowlistEntry>;
+	/** CIDR ranges from the allowlist file (`internal_networks`); persisted on save. */
+	internalNetworks?: string[];
+	/** Domain suffixes from the allowlist file (`internal_domain_suffixes`); persisted on save. */
+	internalDomainSuffixes?: string[];
+	/**
+	 * Internal networks / domain suffixes from the configuration
+	 * (`allowlist.internal_networks`, `allowlist.internal_domain_suffixes`).
+	 * Applied when matching but never written back to the allowlist file.
+	 */
+	configured?: { internalNetworks: string[]; internalDomainSuffixes: string[] };
 }
 
 // ── Trusted domains ─────────────────────────────────────────────────

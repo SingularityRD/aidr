@@ -4,13 +4,13 @@
 
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
 import {
 	loadResourceManifestCoverage,
 	readShippedResourceText,
 } from "./integrity/resource-manifest.js";
 import type { Logger, TrustedDomain } from "./types.js";
 import { nullLogger } from "./types.js";
+import { parseShippedYaml } from "./yaml-parse-cache.js";
 
 export async function loadTrustedDomains(
 	allowlistsDir: string,
@@ -43,7 +43,7 @@ export async function loadTrustedDomains(
 
 		let data: unknown;
 		try {
-			data = parseYaml(content);
+			data = parseShippedYaml(content);
 		} catch (e) {
 			logger.warn(`Failed to parse ${filename}`, { error: String(e) });
 			continue;

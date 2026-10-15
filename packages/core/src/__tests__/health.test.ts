@@ -268,7 +268,10 @@ describe("health status reporting", () => {
 			"url_endpoint",
 			"disk_space",
 			"local_dlp_policy",
+			"amsi",
 		]);
+		// No AMSI on this platform, disabled, or never probed: inert, not degraded.
+		if (process.platform !== "win32") expect(byName.amsi?.status).toBe("not_configured");
 		expect(byName.remote_policy).toMatchObject({
 			status: "healthy",
 			details: {

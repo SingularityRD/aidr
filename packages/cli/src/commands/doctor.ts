@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import {
 	type AgentEnvironmentReport,
 	type AgentRuntime,
+	amsiSessionStatus,
 	type Config,
 	describeOperatorApprovalKey,
 	inspectLocalAgentProfiles,
@@ -81,6 +82,8 @@ export interface DoctorDeps {
 	machine?: () => readonly MachineHookState[];
 	/** Codex hook trust inspection of the user's Codex home. */
 	codexTrust?: () => CodexTrustReport;
+	/** AMSI host probe (Windows/WSL); injectable for tests. */
+	amsiStatus?: typeof amsiSessionStatus;
 	/** Reads the control plane's clock (its HTTP `Date` header); defaults to a HEAD request. */
 	serverTime?: (endpoint: string) => Promise<ServerTimeSample>;
 }
@@ -731,6 +734,41 @@ async function checkLastVerdict(config: Config): Promise<DoctorCheck> {
 	}
 }
 
+/**
+ * Windows/WSL AMSI: probe once (or read a fresh "unavailable" host record) and
+ * say whether content is AMSI-scanned. Nothing is reported where the leg does
+ * not apply (no AMSI on the platform, or `amsi_check.enabled: false`).
+ */
+async function checkAmsi(config: Config, deps: DoctorDeps): Promise<DoctorCheck | null> {
+	try {
+		const record = await (deps.amsiStatus ?? amsiSessionStatus)(config.amsi_check.enabled);
+		if (!record) return null;
+		if (record.state === "unavailable") {
+			return {
+				id: "amsi",
+				status: "warn",
+				summary: ct("doctor.amsiUnavailable"),
+				notes: [record.reason],
+			};
+		}
+		if (record.backend === "powershell-persistent") {
+			return { id: "amsi", status: "warn", summary: ct("doctor.amsiSlowFallback") };
+		}
+		return {
+			id: "amsi",
+			status: "ok",
+			summary: ct("doctor.amsiAvailable", { backend: record.backend }),
+		};
+	} catch (error) {
+		return {
+			id: "amsi",
+			status: "warn",
+			summary: ct("doctor.amsiUnavailable"),
+			notes: [message(error)],
+		};
+	}
+}
+
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 	const checks: DoctorCheck[] = [
 		{ id: "core_version", status: "ok", summary: ct("doctor.version", { version: VERSION }) },
@@ -753,6 +791,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 	checks.push(await checkAgentProfiles(connectors, deps));
 	checks.push(await checkApprovals(deps, config));
 	checks.push(checkAgentEnvironment(connectors, deps));
+	const amsi = await checkAmsi(config, deps);
+	if (amsi) checks.push(amsi);
 	checks.push(await checkLastVerdict(config));
 	return {
 		schema_version: 1,

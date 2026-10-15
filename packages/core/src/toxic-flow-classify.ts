@@ -25,6 +25,7 @@
  * redactor and bounded before they leave this module.
  */
 
+import { isProjectEnvPathLexical } from "./project-env.js";
 import { redactTelemetryString } from "./telemetry-redaction.js";
 import {
 	DEFAULT_FLOW_CAPABILITIES,
@@ -93,6 +94,8 @@ export interface FlowClassifierOptions {
 	 * the shipped file when omitted.
 	 */
 	patterns?: FlowCapabilityPatterns;
+	/** Absolute working directory of the session; groups the project's `.env` files. */
+	workingDirectory?: string;
 }
 
 export interface FlowToolCall {
@@ -434,16 +437,20 @@ function addSensitivePath(
 	set: ObservationSet,
 	path: string,
 	verb: string,
-	patterns: FlowCapabilityPatterns,
+	options: Pick<ResolvedOptions, "patterns" | "workingDirectory">,
 ): void {
-	const rule = sensitivePathRule(path, patterns);
+	const rule = sensitivePathRule(path, options.patterns);
 	if (!rule) return;
 	const normalized = normalizeFlowPath(path);
+	// All environment files of the session's project are one credential store
+	// for the bulk-access count (docs/project-env-files.md); the read is still
+	// secret-grade material for exfiltration chains.
+	const projectEnv = isProjectEnvPathLexical(path, options.workingDirectory);
 	set.add({
 		cap: "private_data",
 		kind: rule.kind,
-		summary: `${verb} ${normalized} (${rule.label})`,
-		target: `path:${normalized}`,
+		summary: `${verb} ${normalized} (${projectEnv ? "project environment file" : rule.label})`,
+		target: projectEnv ? "project-env" : `path:${normalized}`,
 		secret: rule.secret,
 	});
 }
@@ -692,7 +699,7 @@ function handleCopyClient(ctx: StageContext): boolean {
 	if (isRemoteCopyOperand(last)) {
 		addRemoteUpload(ctx.set, ctx.exe, last, "copies files out");
 		for (const source of operands.slice(0, -1))
-			addSensitivePath(ctx.set, source, ctx.exe, ctx.options.patterns);
+			addSensitivePath(ctx.set, source, ctx.exe, ctx.options);
 	} else if (operands.slice(0, -1).some(isRemoteCopyOperand)) {
 		ctx.downloads.push(last);
 	}
@@ -856,7 +863,7 @@ function classifyShellCommand(
 				for (const piece of word.split(/[=,]/)) {
 					const candidate = piece.replace(/^@/, "");
 					if (candidate.length < 2) continue;
-					addSensitivePath(set, candidate, "shell access to", options.patterns);
+					addSensitivePath(set, candidate, "shell access to", options);
 					if (!transfer && !candidate.startsWith("-")) reads.push(candidate);
 				}
 			});
@@ -987,7 +994,7 @@ export function classifyToolCallFlow(
 		const direct = stringField(toolInput, ["file_path", "path", "notebook_path"]);
 		if (direct) paths.add(direct);
 		for (const path of paths) {
-			addSensitivePath(set, path, toolName, patterns);
+			addSensitivePath(set, path, toolName, options);
 			reads.push(path);
 		}
 	} else if (toolName === "WebFetch") {
@@ -1035,7 +1042,7 @@ export function classifyToolCallFlow(
 		}
 		if (patterns.toolNames.fileRead.test(leaf)) {
 			for (const path of artifactValues(artifacts, "file_path")) {
-				addSensitivePath(set, path, leaf, patterns);
+				addSensitivePath(set, path, leaf, options);
 				reads.push(path);
 			}
 		}

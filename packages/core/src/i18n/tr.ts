@@ -92,6 +92,8 @@ export const tr: Record<MessageKey, string> = {
 		"Singularity AIDR bu araç çağrısını engelledi: kurulu dosyalarının orijinal olduğunu kanıtlayan sürüm anahtarı ayarlanmamış, bu yüzden kendi kurallarına güvenemiyor. Anahtar ayarlanana kadar her araç çağrısı engellenir. Bir kez 'aidr setup' çalıştırın (elle kurulumda 'aidr setup --release-key <dosya.pem>').",
 	"hook.redacted":
 		"🛡️ Singularity AIDR bu araç çağrısı çalışmadan önce içindeki hassas verileri maskeledi. {reason}",
+	"hook.amsiUnavailable":
+		"Singularity AIDR: Bu bilgisayarda AMSI kötü amaçlı yazılım taraması kullanılamıyor ({reason}). Komutlar ve dosya yazmaları yerel tehdit kurallarıyla denetlenmeye devam ediyor, ancak AMSI ile taranmıyor. BT yöneticinizden `aidr doctor` komutunu çalıştırmasını isteyin.",
 	"hook.sessionScanTimeout":
 		"Singularity AIDR kurulu eklentileri taramayı zamanında bitiremedi; eklenti tarama sonucu yok. Araç çağrıları incelenmeye devam ediyor.",
 	"hook.sessionStartFailed": "Singularity AIDR koruması başlatılamadı; oturum korunmuyor.",

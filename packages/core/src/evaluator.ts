@@ -41,6 +41,11 @@ import {
 	inspectToolInputForCanaries,
 } from "./canary/detect.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
+import {
+	freshUnavailableRecord,
+	readAmsiHostRecord,
+	recordAmsiHostState,
+} from "./clients/amsi-availability.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
 import {
@@ -131,6 +136,7 @@ import {
 	maskCommonPiiInToolInput,
 } from "./pii-baseline.js";
 import { evaluatePolicy } from "./policy.js";
+import { dropProjectEnvReads, projectEnvReadsAllowed } from "./project-env.js";
 import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import { signedDetectionExceptionsOf, syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
@@ -1154,6 +1160,7 @@ function applySessionFlow(
 		allowlisted,
 		// The connector's bundled threats directory supplies flow/capabilities.yaml.
 		threatsDir: context.threatsDir || undefined,
+		workingDirectory: reportedWorkingDirectory(context),
 	});
 }
 
@@ -2298,6 +2305,15 @@ async function runEvaluationPipeline(
 		// are advisory and folded in after the decision (see below).
 		codeGuard = inspectCodeLeg(request, loaded, config, logger);
 		heuristicMatches = [...heuristicMatches, ...codeGuard.heuristicMatches];
+		// The developer's own project `.env` (docs/project-env-files.md): a read
+		// is not prompted per call, but stays tracked by the session flow.
+		if (projectEnvReadsAllowed(config)) {
+			heuristicMatches = dropProjectEnvReads(
+				heuristicMatches,
+				reportedWorkingDirectory(context),
+				inspected.artifacts,
+			);
+		}
 		heuristicMatches = await applyDetectionExceptionLeg(
 			request,
 			context,
@@ -2393,9 +2409,10 @@ async function runEvaluationPipeline(
 	// Every failure path here used to end in a bare `catch { /* Fail open */ }`,
 	// so a Windows host with no working AMSI backend produced exactly the same
 	// verdict as a host that scanned the content and found nothing. The leg state
-	// is tracked instead and the post-engine guard below turns it into a blocking
-	// review: `amsi_check` is enabled by default, and an enabled leg that did not
-	// run is not a clean result.
+	// is tracked instead (see runAmsiLeg): a scan that failed on a working
+	// backend becomes a blocking review, and a host where AMSI cannot run at all
+	// is surfaced on the verdict per `amsi_check.unavailable_action`. Neither is
+	// ever a clean result.
 	//
 	// The leg is skipped entirely when the host does not support AMSI at all
 	// (that is not an outage) and when the operator disabled `amsi_check` (an
@@ -2429,48 +2446,16 @@ async function runEvaluationPipeline(
 		}
 	}
 
-	let amsiUnavailable = false;
-	const amsiCheckResults: AmsiCheckResult[] = [];
-	if (
+	const amsi =
 		providerInspectionAllowed &&
 		config.amsi_check.enabled &&
 		isAmsiSupported() &&
 		amsiScans.length > 0
-	) {
-		let amsiClient: AmsiClient | null = null;
-		try {
-			amsiClient = new AmsiClient(logger);
-			await amsiClient.init();
-			if (amsiClient.isAvailable) {
-				for (const scan of amsiScans) {
-					const result = await amsiClient.scanString(scan.content, scan.name);
-					if (result) {
-						amsiCheckResults.push(result);
-					} else {
-						// A scan that returned nothing is not a scan that passed.
-						amsiUnavailable = true;
-						logger.warn("AMSI scan did not complete; content was NOT scanned", {
-							contentName: scan.name,
-						});
-					}
-				}
-			} else {
-				// This host supports AMSI, so no usable backend is an outage of the
-				// leg, not evidence that the content is clean.
-				amsiUnavailable = true;
-				logger.warn("AMSI leg unavailable: no working AMSI backend on this host", {
-					backendKind: amsiClient.backendKind,
-				});
-			}
-		} catch (error) {
-			amsiUnavailable = true;
-			logger.warn("AMSI scan leg did not run", {
-				errorType: error instanceof Error ? error.name : typeof error,
-			});
-		} finally {
-			amsiClient?.close();
-		}
-	}
+			? await runAmsiLeg(amsiScans, logger)
+			: { results: [], unavailable: false, hostUnavailableReason: null };
+	const amsiUnavailable = amsi.unavailable;
+	const amsiHostUnavailableReason = amsi.hostUnavailableReason;
+	const amsiCheckResults = amsi.results;
 
 	const engine = new DecisionEngine(config.sensitivity);
 	let verdict = await engine.decide({
@@ -2515,6 +2500,17 @@ async function runEvaluationPipeline(
 			"amsi_unavailable",
 			"amsi",
 			"AMSI malware scanning is enabled on this host but the scan did not run, so this content was NOT scanned.",
+		);
+	}
+	// AMSI cannot run on this host at all. The documented failure policy for an
+	// optional signal: skip it, log it (once per state, above), and say so on the
+	// verdict. Never a clean result; `amsi_check.unavailable_action: "ask"` holds
+	// such calls for review instead.
+	if (amsiHostUnavailableReason !== null) {
+		verdict = amsiNotAvailableVerdict(
+			verdict,
+			amsiHostUnavailableReason,
+			config.amsi_check.unavailable_action,
 		);
 	}
 
@@ -2661,6 +2657,120 @@ function reputationNotCheckedNote(
 		tr: `Bir itibar hizmetiyle denetlenmedi: ${tr.join(" ve ")}. ${decidedTr}; bu temiz bir itibar sonucu değildir.`,
 	});
 	return note;
+}
+
+/**
+ * The AMSI leg of one call.
+ *
+ * - `results`: what AMSI said about each scanned piece of content.
+ * - `unavailable`: a backend should have scanned but did not (start-up threw,
+ *   a scan returned nothing): an outage of this call's leg, held for review.
+ * - `hostUnavailableReason`: AMSI cannot run on this host at all (no backend
+ *   could be established, now or per a fresh host record): an optional signal
+ *   that is skipped, logged once per state change and named on the verdict.
+ *
+ * Every failure path used to end in a bare fail-open `catch`, which
+ * made a dead backend indistinguishable from a clean scan; none of these
+ * outcomes is ever reported as clean.
+ */
+async function runAmsiLeg(
+	scans: readonly { content: string; name: string }[],
+	logger: Logger,
+): Promise<{
+	results: AmsiCheckResult[];
+	unavailable: boolean;
+	hostUnavailableReason: string | null;
+}> {
+	const results: AmsiCheckResult[] = [];
+	// A fresh host record that says AMSI cannot run here skips the start-up
+	// attempt (a PowerShell start per call) until the record expires.
+	const known = freshUnavailableRecord(await readAmsiHostRecord());
+	if (known) return { results, unavailable: false, hostUnavailableReason: known.reason };
+
+	const client = new AmsiClient(logger);
+	try {
+		await client.init();
+		if (client.isAvailable) {
+			await recordAmsiHostState({ state: "available", backend: client.backendKind }, logger);
+			let unavailable = false;
+			for (const scan of scans) {
+				const result = await client.scanString(scan.content, scan.name);
+				if (result) {
+					results.push(result);
+				} else {
+					// A scan that returned nothing is not a scan that passed.
+					unavailable = true;
+					logger.warn("AMSI scan did not complete; content was NOT scanned", {
+						contentName: scan.name,
+					});
+				}
+			}
+			return { results, unavailable, hostUnavailableReason: null };
+		}
+		const kind = client.unavailableKind;
+		if (kind) {
+			const reason = client.unavailableDetail ?? kind;
+			await recordAmsiHostState({ state: "unavailable", kind, reason }, logger);
+			return { results, unavailable: false, hostUnavailableReason: reason };
+		}
+		// No backend and no stated reason: an outage of this call's leg.
+		logger.warn("AMSI leg unavailable: no working AMSI backend on this host", {
+			backendKind: client.backendKind,
+		});
+		return { results, unavailable: true, hostUnavailableReason: null };
+	} catch (error) {
+		logger.warn("AMSI scan leg did not run", {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
+		return { results, unavailable: true, hostUnavailableReason: null };
+	} finally {
+		client.close();
+	}
+}
+
+/** Category of an allow decided without AMSI because AMSI cannot run on this host. */
+const AMSI_NOT_AVAILABLE_CATEGORY = "amsi_not_available";
+
+function amsiNotAvailableNote(): string {
+	const note =
+		"AMSI malware scanning is not available on this host, so this content was NOT scanned by AMSI; local threat rules still inspected it. This is not a clean AMSI result.";
+	registerReasonDisplay(note, {
+		en: note,
+		tr: "Bu bilgisayarda AMSI kötü amaçlı yazılım taraması kullanılamıyor; bu içerik AMSI ile taranmadı, yerel tehdit kuralları yine de inceledi. Bu temiz bir AMSI sonucu değildir.",
+	});
+	return note;
+}
+
+/**
+ * Surface an AMSI leg that cannot run on this host. `annotate` keeps the
+ * decision and labels a clean allow (so the audit log records it, like
+ * `reputation_not_checked`); `ask` holds an otherwise-allowed call for review.
+ * A deny or ask from another layer is never weakened, only annotated.
+ */
+function amsiNotAvailableVerdict(
+	verdict: Verdict,
+	reason: string,
+	action: "annotate" | "ask",
+): Verdict {
+	if (verdict.decision === "allow" && action === "ask") {
+		return detectorVerdict(
+			"ask",
+			"amsi_unavailable",
+			"amsi",
+			`AMSI malware scanning is enabled but cannot run on this host (${reason}), so this content was NOT scanned.`,
+		);
+	}
+	const note = amsiNotAvailableNote();
+	if (verdict.reasons.includes(note)) return verdict;
+	if (verdict.decision !== "allow" || verdict.category !== "none" || verdict.transformedInput) {
+		return { ...verdict, reasons: [...verdict.reasons, note] };
+	}
+	return {
+		...verdict,
+		category: AMSI_NOT_AVAILABLE_CATEGORY,
+		source: "local_only",
+		reasons: [...verdict.reasons, note],
+	};
 }
 
 /** Category of an allow decided by local detection while a reputation leg is not enabled. */

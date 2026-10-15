@@ -90,6 +90,72 @@ describe("PreToolUse hook cold start on a fresh HOME", () => {
 });
 
 /**
+ * Published budget (docs/performance/hook-latency-budget.md): the p95 of a
+ * session's steady state (one persistent HOME, rotating benign commands) must
+ * stay under `ci_p95_ms` of scripts/benchmarks/hook-latency-budget.json. The
+ * gate is generous on purpose (shared CI runners are loaded); it catches a
+ * regression such as an extra YAML parse or a process spawn per call, not
+ * noise. AIDR_HOOK_LATENCY_P95_BUDGET_MS overrides it on a slow machine.
+ */
+describe("PreToolUse hook p95 on a persistent HOME", () => {
+	const budgetFile = resolve(
+		__dirname,
+		"..",
+		"..",
+		"..",
+		"..",
+		"scripts",
+		"benchmarks",
+		"hook-latency-budget.json",
+	);
+	const P95_SAMPLES = 20;
+	const P95_BUDGET_MS = Number(
+		process.env.AIDR_HOOK_LATENCY_P95_BUDGET_MS ??
+			(JSON.parse(readFileSync(budgetFile, "utf8")) as { ci_p95_ms: number }).ci_p95_ms,
+	);
+
+	it(`keeps p95 of ${P95_SAMPLES} calls under the published CI budget`, () => {
+		const home = mkdtempSync(join(tmpdir(), "aidr-latency-warm-"));
+		const commands = ["ls -la", "pwd", "node -v", "echo ok", "git status", "npm test", "cat x"];
+		try {
+			const env: NodeJS.ProcessEnv = {
+				...process.env,
+				HOME: home,
+				USERPROFILE: home,
+				APPDATA: join(home, "AppData", "Roaming"),
+				LOCALAPPDATA: join(home, "AppData", "Local"),
+			};
+			for (const key of Object.keys(env)) if (key.startsWith("AIDR_")) delete env[key];
+			const call = (index: number) => {
+				const started = performance.now();
+				const result = spawnSync("node", [PRE_TOOL_USE], {
+					input: JSON.stringify({
+						// A new session every 7 calls keeps the runaway guard out of the way.
+						session_id: `latency-${Math.floor(index / commands.length)}`,
+						tool_name: "Bash",
+						tool_input: { command: commands[index % commands.length] },
+					}),
+					env,
+					encoding: "utf8",
+					timeout: 30_000,
+				});
+				expect(result.status).toBe(0);
+				return performance.now() - started;
+			};
+			call(-1); // first call on a fresh HOME creates its state; not the steady state
+			const samples = Array.from({ length: P95_SAMPLES }, (_, i) => call(i)).sort((a, b) => a - b);
+			const p95 = samples[Math.ceil(0.95 * P95_SAMPLES) - 1] as number;
+			console.info(
+				`[latency] pre-tool-use warm p50=${Math.round(samples[P95_SAMPLES / 2] as number)} p95=${Math.round(p95)} ms`,
+			);
+			expect(p95).toBeLessThan(P95_BUDGET_MS);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	}, 180_000);
+});
+
+/**
  * A blocked call writes the audit log, whose directory and file must be private.
  * On Windows that used to start powershell.exe (0.5 s to 2.3 s measured, a new
  * process per tool call) on EVERY blocked call because the in-process

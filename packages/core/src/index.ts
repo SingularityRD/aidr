@@ -328,6 +328,7 @@ export {
 } from "./causal-chain.js";
 // Clients
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
+export { amsiSessionStatus } from "./clients/amsi-availability.js";
 // Control plane client (optional telemetry/licensing)
 export { ControlPlaneClient, type ControlPlaneClientOptions } from "./clients/control-plane.js";
 export {

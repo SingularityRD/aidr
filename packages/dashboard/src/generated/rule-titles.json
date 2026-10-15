@@ -344,7 +344,7 @@
     "CLT-WIN-CMD-025": {"title":"runas with alternate user credentials","category":"tool","severity":"high"},
     "CLT-WIN-CMD-026": {"title":"Disabling PowerShell execution policy","category":"tool","severity":"high"},
     "CLT-WIN-CMD-027": {"title":"fodhelper.exe UAC bypass","category":"tool","severity":"high"},
-    "CLT-WIN-CMD-028": {"title":"PowerShell recursive forced deletion (Remove-Item -Recurse -Force)","category":"tool","severity":"critical"},
+    "CLT-WIN-CMD-028": {"title":"PowerShell recursive forced deletion (Remove-Item -Recurse -Force)","title_tr":"PowerShell ile zorla ve özyinelemeli silme (Remove-Item -Recurse -Force)","category":"tool","severity":"critical"},
     "CLT-WIN-CMD-029": {"title":"PowerShell destructive recycle bin cleanup","category":"tool","severity":"high"},
     "CLT-WIN-CMD-030": {"title":"Reverse shell via ncat -e cmd/powershell","category":"tool","severity":"critical"},
     "CLT-WIN-CMD-031": {"title":"Shadow copy deletion via vssadmin (ransomware indicator)","category":"tool","severity":"critical"},

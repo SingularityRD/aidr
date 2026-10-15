@@ -11,12 +11,14 @@
  */
 
 import {
+	amsiSessionStatus,
 	createHookResponder,
 	discoverPlugins,
 	getLogger,
 	initSentry,
 	integrityFailureMessage,
 	type Logger,
+	loadConfig,
 	resolveHookDeadlineMs,
 	runPluginScan,
 	t,
@@ -67,20 +69,42 @@ async function main(): Promise<void> {
 		plugins = plugins.filter((p) => !p.key.startsWith(prefix));
 	}
 
-	const statusMsg = await runPluginScan(
-		logger,
-		"session",
-		plugins,
-		threatsDir,
-		allowlistsDir,
-		manifest.version,
-		"claude-code",
-	);
+	const [statusMsg, amsiNotice] = await Promise.all([
+		runPluginScan(
+			logger,
+			"session",
+			plugins,
+			threatsDir,
+			allowlistsDir,
+			manifest.version,
+			"claude-code",
+		),
+		amsiStartupNotice(),
+	]);
 	// A replaced or ignored rule directory (AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR)
 	// is reported at session start, not only on each verdict.
 	const overrideNotice = assetOverrideNotice();
-	const systemMessage = overrideNotice ? `${statusMsg}\n${overrideNotice}` : statusMsg;
+	const systemMessage = [statusMsg, amsiNotice, overrideNotice].filter(Boolean).join("\n");
 	responder.answer({ stdout: `${JSON.stringify({ systemMessage })}\n` });
+}
+
+/**
+ * Probe AMSI once per session (Windows/WSL with `amsi_check` enabled) so the
+ * per-call hook finds the host state already recorded, and say once, here,
+ * when AMSI cannot run on this computer. Best effort: a failure only drops the
+ * notice; the per-call path still reports the leg on every verdict.
+ */
+async function amsiStartupNotice(): Promise<string | null> {
+	try {
+		const config = await loadConfig(undefined, logger);
+		const record = await amsiSessionStatus(config.amsi_check.enabled, logger);
+		return record?.state === "unavailable"
+			? t("hook.amsiUnavailable", { reason: record.reason })
+			: null;
+	} catch (error) {
+		logger.debug("AMSI start-up probe skipped", { error: String(error) });
+		return null;
+	}
 }
 
 main().catch((error: unknown) => {

@@ -271,6 +271,63 @@ describe("Windows command threats", () => {
 		);
 	});
 
+	describe("WIN-CMD-028 project-local build directory parity with POSIX rm -rf (D1)", () => {
+		// Assembled at runtime so the file carries no literal destructive command.
+		const verb = ["Remove", "Item"].join("-");
+		const rf = `${verb} -Recurse -Force`;
+
+		it.each([
+			`${rf} .\\node_modules`,
+			`${rf} node_modules`,
+			`${verb} -Force -Recurse ./dist`,
+			`${verb} -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue`,
+			`${verb} -LiteralPath '.\\packages\\core\\dist' -Recurse -Force`,
+			`${rf} node_modules, dist, .next`,
+			`${rf} .\\bin, .\\obj; dotnet build`,
+			`${rf.toLowerCase()} target`,
+			`${rf} -Confirm:$false build\\`,
+			`powershell -NoProfile -Command "${rf} node_modules"`,
+			`if (Test-Path dist) { ${rf} dist }`,
+			`${rf} .\\src\\__pycache__ -ea 0`,
+		])("does not match a build directory inside the working directory: %s", (command) => {
+			expect(matchCommand(engine, command)).not.toContain("CLT-WIN-CMD-028");
+		});
+
+		const userProfileVar = ["$env", "USERPROFILE"].join(":");
+		it.each([
+			`${rf} C:\\Users\\Public`,
+			`${rf} C:\\`,
+			`${rf} \\node_modules`,
+			`${rf} /dist`,
+			`${rf} ..\\node_modules`,
+			`${rf} .\\..\\other\\dist`,
+			`${rf} ~\\dist`,
+			`${rf} $HOME\\project\\dist`,
+			`${rf} ${userProfileVar}`,
+			`${rf} *`,
+			`${rf} .\\*`,
+			`${rf} node_modules\\*`,
+			`${rf} dist*`,
+			`${rf} .\\src`,
+			`${rf} .git`,
+			`${rf} node_modules, C:\\Windows`,
+			`${rf} dist C:\\Windows`,
+			`${rf} D:\\work\\dist`,
+			`${rf} \\\\server\\share\\dist`,
+			`Set-Location C:\\; ${rf} build`,
+			`cd $HOME; ${rf} bin`,
+			`Push-Location C:\\Windows\n${rf} obj`,
+			`${rf} dist; ${rf} C:\\Users`,
+			`Get-ChildItem C:\\ | ${rf}`,
+			`${rf} dist -Include *.js`,
+			`${rf} (Get-Item C:\\x)`,
+			`${rf} $(Resolve-Path dist)`,
+			`${rf.toLowerCase()} c:\\users`,
+		])("still matches root, home, system, wildcard and outside-cwd variants: %s", (command) => {
+			expect(matchCommand(engine, command)).toContain("CLT-WIN-CMD-028");
+		});
+	});
+
 	it("detects Clear-RecycleBin -Force (WIN-CMD-029)", () => {
 		expect(matchCommand(engine, decodeCommand("Q2xlYXItUmVjeWNsZUJpbiAtRm9yY2U="))).toContain("CLT-WIN-CMD-029");
 	});
