@@ -7,6 +7,13 @@
 > them into a quote, contract or status page until this schedule is approved
 > and the on-call rota exists. Turkish version: [sla.tr.md](sla.tr.md).
 > Version: draft 0.1, 14 October 2026.
+>
+> **No SLA is in force.** The 99.9% monthly availability figure in §4 is the
+> commercial decision's draft target; its contract evidence is open (COM-013,
+> CLAIM-014 in the
+> [claim registry](../production-readiness/commercial-go-evidence-registry.json)),
+> and no hosted service is live to measure it against. Sales material may describe
+> it only as a draft target subject to contract.
 
 ## 1. Scope
 
@@ -24,7 +31,7 @@ changes it with a written reason. Severity can change as evidence changes.
 
 | Severity | Definition | Examples |
 |---|---|---|
-| **1 — Critical** | Production protection is lost or the control plane is down for most users, or a security incident involving the product is suspected, and there is no workaround | Every tool call is denied fleet-wide after an update; signed policy cannot be loaded and `remote_policy_required` blocks all agents; suspected compromise of a signing key; tenant data visible to another tenant |
+| **1 — Critical** | Production protection is lost or the control plane is down for most users, or a security incident involving the product is suspected, and there is no workaround | Every tool call is denied fleet-wide after an update; signed policy cannot be loaded and `remote_policy_required` blocks every enrolled agent; suspected compromise of a signing key; tenant data visible to another tenant |
 | **2 — High** | A major function is unavailable or seriously degraded, with a workaround that is hard to sustain | Enrollment fails for new devices; approvals cannot be decided in the dashboard; SIEM delivery stopped |
 | **3 — Medium** | A function behaves incorrectly with a reasonable workaround | A false positive on a common developer command; a dashboard report shows wrong counts |
 | **4 — Low** | Question, documentation issue, feature request | How-to questions; wording in a message |

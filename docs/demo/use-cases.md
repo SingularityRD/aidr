@@ -202,6 +202,7 @@ unset -f aidr_try aidr
   paths and addresses. It does not scan the content an agent writes for personal
   data (for example a Turkish ID number). Browser Guard masks personal data in
   prompts typed into AI chat sites; it is demonstrated in a browser
-  (`pnpm test:e2e:browser-guard`).
+  (`pnpm test:e2e:browser-guard`) against fixture copies of the sites. It has not
+  been verified on the live AI sites.
 - **The server side:** dashboard approvals, SIEM forwarding, fleet enrollment keys
   and license import need a running control plane (Supabase).

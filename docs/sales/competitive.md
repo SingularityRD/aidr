@@ -16,8 +16,9 @@ measured efficacy data and no head-to-head evaluation (see
 AIDR covers two surfaces with one control plane:
 
 1. **AI coding agents at the tool-call boundary.** Connectors inside Claude Code,
-   OpenClaw, OpenCode and Codex CLI, and in Cursor and VS Code as a preview — no real-host acceptance evidence yet,
-   evaluate commands, file writes and URLs before the host acts, plus an MCP Gateway for MCP tool results.
+   OpenClaw and OpenCode, in Cursor and VS Code as a preview — no real-host acceptance evidence yet,
+   and in Codex CLI (preview, outside the first GA scope) evaluate commands, file writes
+   and URLs before the host acts, plus an MCP Gateway for MCP tool results.
 2. **People using AI chat products.** Browser Guard masks personal data and secrets
    before prompts, pastes and files reach ChatGPT, Gemini, Claude, Copilot, Perplexity,
    DeepSeek, Mistral and Grok, and restores them locally in the reply.
@@ -41,13 +42,16 @@ builds itself.
   a `deny` is returned before the host acts, when the host invokes the hook. Name the
   hook boundary for each host; do not claim more.
 - **Reversible masking, restored locally.** The AI provider sees `[IBAN_1]`; the user
-  sees the real value in the reply. The mapping never leaves the page.
+  sees the real value in the reply. The mapping stays in the user's browser (tab
+  memory and the browser's memory-backed session storage, cleared when the tab closes);
+  it is never written to disk storage or sent over the network.
 - **Turkish data depth.** Checksum-validated T.C. kimlik and IBAN (mod-97), Turkish phone
   and address patterns, Turkish and English in-page messages.
 - **Exact data match without sharing the data.** Administrators distribute HMAC
   fingerprints of sensitive records; the plaintext dataset is never shipped to browsers.
-- **Deployment choice.** Free local mode, cloud, on-prem Docker Compose or Helm, and
-  air-gapped with a signed offline license.
+- **Deployment choice.** Free local mode, on-prem Docker Compose or Helm, and
+  air-gapped with a signed offline license; a hosted cloud option is designed but not
+  live yet.
 - **Rules as data.** 519 YAML threat rules the customer can read and extend, each mapped to
   OWASP LLM, OWASP Agentic and MITRE ATLAS with per-item coverage (including what is not
   covered).
@@ -65,7 +69,9 @@ builds itself.
 - **Measured efficacy.** Some vendors publish benchmark or evaluation data. AIDR has not
   measured detection or false-positive rates.
 - **Distribution.** Browser Guard is not yet in the browser stores, and AIDR has no
-  publisher-signed release.
+  publisher-signed release or live hosted service.
+- **Real-site validation.** Browser Guard has been tested against hermetic fixture pages
+  only, not the live AI sites.
 
 ## Handling "why not just use X?"
 

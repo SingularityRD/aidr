@@ -7,8 +7,10 @@ run on-prem; the `aidr-landing` website and vendor `/admin` panel are not part o
 evaluate on the endpoint; the control plane manages policy and receives the
 redacted events they send.
 
-> **Status.** The hosted service is not accepted for customer use today. The selected
-> app hostname does not resolve yet and the cloud path still has to pass the FCR-03
+> **Status.** The hosted service is not live and not accepted for customer use today.
+> The selected app hostname does not resolve yet, the public website's API routes
+> return server errors, no EU, US or APAC region is deployed, and there is no hosted
+> console a customer can sign in to. The cloud path still has to pass the FCR-03
 > installation journey and the commercial gates in
 > [first-customer-ready.md](../production-readiness/first-customer-ready.md). Use this
 > page to plan an evaluation, not as a live-service description.
@@ -60,19 +62,21 @@ redacted events they send.
 
 ## Regions and availability
 
-The commercial decision covers EU, US and APAC regions, recorded in
-[`deploy/regions.manifest.json`](../../deploy/regions.manifest.json) as declarations
-only. A region counts as available when its hosted project, residency terms and
-subprocessor list have been approved (COM-011). A 99.9% monthly availability target has
-been chosen for contract discussion; it is not an SLA until the contract evidence is
-approved. Nothing here is a service-level commitment.
+The commercial decision names EU, US and APAC as the intended regions. None is
+deployed today; [`deploy/regions.manifest.json`](../../deploy/regions.manifest.json)
+holds declarations only and its `managed-cloud` entry is still a placeholder. A region
+counts as available when its hosted project, residency terms and subprocessor list have
+been approved (COM-011). A 99.9% monthly availability target has been chosen for
+contract discussion ([SLA draft](../legal/sla.en.md)); it is not an SLA until the
+contract evidence is approved. Nothing here is a service-level commitment.
 
 ## Billing
 
 Orders currently go through an approved written quote and invoice. Online checkout is
 built but disabled until the payment provider, entitlement reconciliation and Finance
-approval are accepted. Payment never grants admission on its own. Plans and list
-prices are in [pricing.md](../sales/pricing.md) and are subject to COM-001 approval.
+approval are accepted. Payment never grants admission on its own. Editions are in
+[pricing.md](../pricing.md); prices are by written quote only and subject to COM-001
+approval.
 
 ## Data residency
 

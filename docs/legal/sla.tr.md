@@ -7,6 +7,12 @@
 > onaylanmadan ve nöbet listesi kurulmadan teklife, sözleşmeye ya da durum
 > sayfasına kopyalamayın. İngilizce sürüm: [sla.en.md](sla.en.md).
 > Sürüm: taslak 0.1, 14.10.2026.
+>
+> **Yürürlükte bir SLA yoktur.** §4'teki aylık %99,9 erişilebilirlik rakamı
+> ticari kararın taslak hedefidir; sözleşme kanıtı açıktır (COM-013, CLAIM-014,
+> [iddia kaydı](../production-readiness/commercial-go-evidence-registry.json)) ve
+> ölçülecek canlı bir barındırılan hizmet yoktur. Satış metinleri bunu yalnız
+> sözleşmeye bağlı bir taslak hedef olarak anabilir.
 
 ## 1. Kapsam
 
@@ -23,7 +29,7 @@ gerekçeyle onaylar ya da değiştirir. Kanıt değiştikçe derece değişebili
 
 | Derece | Tanım | Örnekler |
 |---|---|---|
-| **1 — Kritik** | Üretimde koruma kaybedildi ya da kontrol sunucusu kullanıcıların çoğu için çalışmıyor, veya ürünle ilgili bir güvenlik olayından şüpheleniliyor; geçici çözüm yok | Bir güncellemeden sonra tüm filoda her araç çağrısı reddediliyor; imzalı politika yüklenemiyor ve `remote_policy_required` tüm ajanları durduruyor; imza anahtarının ele geçirildiği şüphesi; bir kiracının verisi başka kiracıya görünüyor |
+| **1 — Kritik** | Üretimde koruma kaybedildi ya da kontrol sunucusu kullanıcıların çoğu için çalışmıyor, veya ürünle ilgili bir güvenlik olayından şüpheleniliyor; geçici çözüm yok | Bir güncellemeden sonra tüm filoda her araç çağrısı reddediliyor; imzalı politika yüklenemiyor ve `remote_policy_required` kayıtlı her ajanı durduruyor; imza anahtarının ele geçirildiği şüphesi; bir kiracının verisi başka kiracıya görünüyor |
 | **2 — Yüksek** | Önemli bir işlev çalışmıyor ya da ciddi biçimde bozuk; geçici çözüm var ama sürdürmesi zor | Yeni cihazlar kaydolamıyor; onaylar panelde karara bağlanamıyor; SIEM iletimi durdu |
 | **3 — Orta** | Bir işlev yanlış çalışıyor, makul bir geçici çözüm var | Yaygın bir geliştirici komutunda yanlış pozitif; bir panel raporu yanlış sayı gösteriyor |
 | **4 — Düşük** | Soru, belge hatası, özellik isteği | Nasıl yapılır soruları; bir mesajın ifadesi |

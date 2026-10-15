@@ -24,9 +24,11 @@ is the approval template.
 
 Singularity AIDR has four product lines that share one control plane:
 
-- **AIDR for AI coding agents** — connectors for Claude Code, OpenClaw, OpenCode and
-  Codex CLI, Cursor and VS Code as a preview — no real-host acceptance evidence yet, plus the MCP Gateway, SDK and CLI. The local engine evaluates
-  tool calls against 519 YAML threat rules and returns `allow` / `deny` / `ask`.
+- **AIDR for AI coding agents** — connectors for Claude Code, OpenClaw and OpenCode,
+  Cursor and VS Code as a preview — no real-host acceptance evidence yet, and Codex CLI
+  (preview, outside the five-connector first GA scope), plus the MCP Gateway, SDK and
+  CLI. The local engine evaluates tool calls against 519 YAML threat rules in 31 files
+  and returns `allow` / `deny` / `ask`.
 - **AIDR Browser Guard** — Chrome/Edge/Firefox extension that masks TR/EN personal data,
   secrets, custom terms and exact-data-match records before prompts reach AI chat
   products, and restores them locally in responses.
@@ -120,7 +122,10 @@ Everything in Business, plus:
   acceptance closes.
 - Custom terms, data-processing agreement and support schedule.
 
-**Cloud trial:** 14 days, one agent. Paid cloud plans have no trial cap.
+**Cloud trial:** 14 days, one agent. Paid cloud plans have no trial cap. The hosted
+service is not live yet (no hosted region is deployed and the app hostname does not
+resolve), so neither the trial nor the Free cloud dashboard can be offered today; Free
+local mode can.
 
 **Lapsed subscription:** local enforcement keeps working; cloud features stop. Turning
 off detection because an invoice is late would be a safety regression.
@@ -192,7 +197,17 @@ Binding on any quote, deck or email:
 - **Reputation checks are optional** and need a configured endpoint; an unavailable
   check is never "clean".
 - **Compliance wording:** "designed to support KVKK/GDPR obligations", never
-  "certified" or "compliant".
+  "certified" or "compliant" (in Turkish: never "sertifikalı" or "<law or standard>
+  uyumlu").
+- **No SLA in force.** The 99.9% monthly availability figure is a draft target for
+  contract discussion ([SLA draft](../legal/sla.en.md)); do not promise it, or any
+  response time, as a commitment.
+- **No hosted regions today.** EU, US and APAC are the intended regions, not deployed
+  ones. Do not say the service "is available in" any region; data residency today means
+  on-premises.
+- **Connector scope.** Six connectors are built; five (Claude Code, Cursor, VS Code,
+  OpenClaw, OpenCode) are the intended first GA scope and none has completed real-host
+  acceptance across the sold platform matrix. Codex CLI is a preview.
 
 ## 7. What blocks paid selling today
 

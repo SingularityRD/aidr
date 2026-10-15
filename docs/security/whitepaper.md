@@ -12,9 +12,9 @@
 ## 1. What the product does
 
 Singularity AIDR is a detection and response layer for AI agents. It sits at
-the hook boundary of AI coding agents (Claude Code, Codex CLI, OpenCode,
-OpenClaw, and Cursor / VS Code as a preview — no real-host acceptance evidence
-yet) and in the browser (Browser Guard), and decides for each command, file
+the hook boundary of AI coding agents (Claude Code, OpenCode, OpenClaw,
+Cursor / VS Code as a preview — no real-host acceptance evidence yet, and Codex
+CLI as a preview outside the first GA scope) and in the browser (Browser Guard), and decides for each command, file
 access and web request whether to `allow`, `deny` or `ask` (block pending
 out-of-band human approval). An MCP gateway inspects MCP tool results before
 they reach the model.
@@ -59,9 +59,9 @@ flowchart LR
 | Component | Runs where | Trust notes |
 |---|---|---|
 | Connectors + local engine | Endpoint, in the agent host's hook process | Verifies its own release signature before starting (commercial builds); rules are data (YAML), not code |
-| Browser Guard | Browser extension (Chrome, Edge, Firefox) | Placeholder ↔ value map lives only in the tab's memory |
+| Browser Guard | Browser extension (Chrome, Edge, Firefox) | Placeholder ↔ value map stays in the browser: tab memory plus memory-backed `chrome.storage.session` (trusted extension contexts only; removed on tab close or after 4 h idle); never written to disk storage or sent |
 | MCP gateway | Endpoint loopback (HTTP + stdio bridge) | Signed manifests; approval is an operator command, never an MCP tool |
-| Control plane | Customer host (Docker Compose / Helm) or SingularityRD-hosted | Supabase stack (Postgres, Auth, Storage, Edge Functions) + dashboard; services bind to loopback behind the customer's TLS ingress |
+| Control plane | Customer host (Docker Compose / Helm) or SingularityRD-hosted (not live yet) | Supabase stack (Postgres, Auth, Storage, Edge Functions) + dashboard; services bind to loopback behind the customer's TLS ingress |
 | Release and licence signing | SingularityRD, offline | Ed25519; private keys never on endpoints or customer servers |
 
 ## 3. Data flow
@@ -183,9 +183,15 @@ Stated plainly so that a reviewer does not have to find it:
 - No staffed on-call rota or approved SLA ([support process](../runbooks/support-process.md)).
 - No monitored external vulnerability-reporting route yet
   ([disclosure policy draft](vulnerability-disclosure-policy.md)).
-- Hosted region and subprocessors not verified ([data residency](../deployment/data-residency.md)).
+- No hosted service is live: the app hostname does not resolve and no EU, US or
+  APAC region is deployed; hosted region and subprocessors are not verified
+  ([data residency](../deployment/data-residency.md)).
 - Real-host evidence only on Linux x64 for four connectors; none for Cursor /
-  VS Code ([compatibility matrix](../compatibility-matrix.md)).
+  VS Code ([compatibility matrix](../compatibility-matrix.md)). Codex CLI is a
+  preview outside the five-connector first GA scope.
+- Browser Guard is verified against fixture copies of the AI sites only, not the
+  live sites, and is not yet published in the Chrome, Edge or Firefox stores.
+- No AIDR desktop application exists; endpoints run the CLI, hooks and extensions.
 - Windows code-signing certificate and production signing keys are not yet
   held.
 

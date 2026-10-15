@@ -9,7 +9,9 @@ chat products.
   <img src="images/aidr-logo-shaded.png" alt="Singularity AIDR" width="50%">
 </p>
 
-Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [OpenClaw](docs/platform-guides/openclaw.md), [OpenCode](docs/platform-guides/opencode.md), [Codex](docs/platform-guides/codex.md) and [Cursor / VS Code](docs/platform-guides/cursor.md) (preview — no real-host acceptance evidence yet), and checks them against:
+Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes) via hook systems in [Claude Code](docs/platform-guides/claude-code.md), [OpenClaw](docs/platform-guides/openclaw.md), [OpenCode](docs/platform-guides/opencode.md), [Codex](docs/platform-guides/codex.md) and [Cursor / VS Code](docs/platform-guides/cursor.md) (preview — no real-host acceptance evidence yet), and checks them against the rules below. Claude Code, Cursor, VS Code, OpenClaw and OpenCode are the intended first general-availability scope; Codex is a preview outside it. No connector has completed real-host acceptance across the sold platform matrix (see Release status below).
+
+Each tool call is checked against:
 
 - **Local heuristics** — 519 YAML threat rules in 31 files ([`threats/`](threats/)) for
   dangerous commands, credential access, persistence, obfuscation, supply-chain and
@@ -24,8 +26,8 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 
 | Product line | What it does | Start here |
 | --- | --- | --- |
-| **AIDR for AI coding agents** | Connectors for Claude Code, OpenClaw, OpenCode and Codex CLI, plus Cursor and VS Code as a preview, share one local decision engine that returns `allow`, `deny` or `ask`. Tested host versions are in the [compatibility matrix](docs/compatibility-matrix.md). The [MCP Gateway](packages/mcp-gateway/README.md) inspects MCP tool results before they reach a model, the [SDK](packages/sdk/README.md) adds the same checks to your own applications, and the [CLI](packages/cli/) handles setup, status and AI-infrastructure scans. | [Product overview](docs/product/overview.md) |
-| **AIDR Browser Guard** | Chrome, Edge and Firefox extension. Masks Turkish and English personal data (T.C. kimlik numbers, IBANs, phone numbers, email addresses, card numbers), secrets and API keys, custom terms and exact-data-match fingerprints before prompts, pastes and files reach ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral or Grok. Placeholders such as `[EMAIL_1]` are restored locally in the response. Supports administrator-managed policy and counts-only telemetry. | [Browser Guard](packages/browser-guard/README.md) |
+| **AIDR for AI coding agents** | Connectors for Claude Code, OpenClaw and OpenCode, plus Cursor and VS Code as a preview and Codex CLI as a preview outside the first GA scope, share one local decision engine that returns `allow`, `deny` or `ask`. Tested host versions are in the [compatibility matrix](docs/compatibility-matrix.md). The [MCP Gateway](packages/mcp-gateway/README.md) inspects MCP tool results before they reach a model, the [SDK](packages/sdk/README.md) adds the same checks to your own applications, and the [CLI](packages/cli/) handles setup, status and AI-infrastructure scans. | [Product overview](docs/product/overview.md) |
+| **AIDR Browser Guard** | Chrome, Edge and Firefox extension. Masks Turkish and English personal data (T.C. kimlik numbers, IBANs, phone numbers, email addresses, card numbers), secrets and API keys, custom terms and exact-data-match fingerprints before prompts, pastes and files reach ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral or Grok. Placeholders such as `[EMAIL_1]` are restored locally in the response. Supports administrator-managed policy and counts-only telemetry. Tested against hermetic copies of these sites, not yet on the live sites; not yet published in the browser stores. | [Browser Guard](packages/browser-guard/README.md) |
 | **AIDR Privacy engine** | TR/EN detection and masking with checksum validation, used by Browser Guard, and an optional enterprise gateway. The endpoint native host for NER/OCR ships without a model and is not part of the first-release support scope. | [AIDR Privacy](packages/privacy/README.md) |
 | **AI Security Posture** | Finds weak spots in the AI stack around your agents. `aidr scan --target` fingerprints AI services (146 AI component fingerprints) and matches their versions against 2,000+ CVE rules, with severity and CVSS. `aidr discover` inventories local MCP servers and maps them to 14 MCP risk categories. `aidr scan --skill` and the session-start plugin scan check skills and plugins against the T01–T09 taxonomy. Findings can be uploaded to the dashboard's Security posture page as identifiers and digests only; target URLs, file paths and matched text stay on the machine. | [AI Security Posture](docs/ai-security-posture.md) |
 
@@ -34,8 +36,8 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 | Option | Summary | Guide |
 | --- | --- | --- |
 | **Local detection (no account)** | Every connector evaluates every tool call on the device; detection needs no account, enrollment or network. Signed release builds are managed-only and need the release trust key before first start (the Windows/Linux installers set it up; a manual install runs `aidr setup --release-key <file.pem>`), but detect locally before enrollment. Browser Guard masks prompts in the browser. | [Configuration](docs/configuration.md), [Integrity](docs/integrity.md) |
-| **Cloud (SaaS)** | Hosted control plane: dashboard, device enrollment, central policy, audit export, SSO/SCIM. Local enforcement keeps working if the service is unreachable or the entitlement lapses; only managed features stop. | [SaaS deployment](docs/deployment/saas.md) |
-| **On-premises** | Customer-operated control plane on Docker Compose or Kubernetes (Helm), including an air-gapped path with a signed offline license and signed rule/intel packs. A Compose installation upgrades with one command (`pnpm onprem:upgrade --to <new release directory>`: backup, checks, upgrade, health check). | [On-prem deployment](docs/deployment/onprem.md), [Upgrading](docs/operations/onprem-upgrade.md) |
+| **Cloud (SaaS)** | Hosted control plane: dashboard, device enrollment, central policy, audit export, SSO/SCIM. Local enforcement keeps working if the service is unreachable or the entitlement lapses; only managed features stop. **Not live yet:** the app hostname does not resolve, no EU, US or APAC region is deployed, and there is no hosted console to sign in to. | [SaaS deployment](docs/deployment/saas.md) |
+| **On-premises** | Customer-operated control plane on Docker Compose or Kubernetes (Helm; not yet run on a live cluster), including an air-gapped path with a signed offline license and signed rule/intel packs. A Compose installation upgrades with one command (`pnpm onprem:upgrade --to <new release directory>`: backup, checks, upgrade, health check). | [On-prem deployment](docs/deployment/onprem.md), [Upgrading](docs/operations/onprem-upgrade.md) |
 
 ## Plans
 
@@ -52,7 +54,10 @@ or Linux installer from the dashboard **Downloads** page, then `aidr status` and
 `aidr verify`; `aidr update` keeps it current), an office user (Browser Guard from the
 browser stores), the IT admin (silent install, Browser Guard force-install or self-hosted
 updates, approvals with `aidr approve <first 8 characters of the id>`) and on-prem. macOS
-installers are not offered. All guides by role:
+installers are not offered. The quickstart describes the flow once a signed release is
+published: today no signed installer, Downloads page or browser-store listing has been
+published to customers, and there is no hosted dashboard. The installers are command-line
+and hook installers; there is no AIDR desktop application. All guides by role:
 [Installation guides](docs/installation/README.md).
 
 The connector-by-connector path below is for hosts and systems the desktop installers do
@@ -83,7 +88,7 @@ versions, and the [upgrade notes](docs/upgrade-notes.md) when moving between rel
 | **OpenCode** | Install the approved `@singularityrd/aidr-opencode` version from the private registry. [Guide](docs/platform-guides/opencode.md) |
 | **Codex CLI** | Install `@singularityrd/aidr-codex`, register `aidr-codex-hook` as a `PreToolUse` and a `UserPromptSubmit` (prompt protection) hook and trust both with `/hooks`. [Guide](docs/platform-guides/codex.md) |
 | **MCP Gateway** | Run the loopback gateway with a signed configuration and point MCP clients at it. [Gateway README](packages/mcp-gateway/README.md) |
-| **Browser Guard** | Install from the unlisted Chrome Web Store / Edge Add-ons listings (the stores keep it updated) or the Mozilla-signed Firefox XPI, or push it with enterprise browser policy using [`managed_schema.json`](packages/browser-guard/static/managed_schema.json); networks without store access host the signed package and its update feed themselves. [Browser Guard](packages/browser-guard/README.md), [enterprise deployment](docs/installation/browser-guard-enterprise.md) |
+| **Browser Guard** | Not yet published: no Chrome Web Store / Edge Add-ons listing or Mozilla-signed XPI exists today, so evaluations load the built extension unpacked. Once published, install from the unlisted Chrome Web Store / Edge Add-ons listings (the stores keep it updated) or the Mozilla-signed Firefox XPI, or push it with enterprise browser policy using [`managed_schema.json`](packages/browser-guard/static/managed_schema.json); networks without store access host the signed package and its update feed themselves. [Browser Guard](packages/browser-guard/README.md), [enterprise deployment](docs/installation/browser-guard-enterprise.md) |
 | **CLI** | `aidr setup` (detects the installed AI tools and installs or updates their connectors; `--dry-run` to preview; `--release-key <file.pem>` for a manual install; exit code `3` = no AI tool found yet), `aidr status`, `aidr verify` (harmless canary through each hook: PASS / FAIL / SKIP), `aidr doctor` (`--verbose` explains each check), `aidr pending` / `aidr approve [id]` (first 8 characters of the id, or a numbered pick), `aidr update` (installer endpoints; `update.auto`), `aidr uninstall`, `aidr scan --target <url>`. [Package Installation](docs/package-installation.md) |
 
 Private registry credentials and versioned setup are in
@@ -173,7 +178,8 @@ replace signed-candidate or live-host acceptance.
   calls; Codex can fail open when a hook process is unavailable. This is not endpoint
   isolation.
 - Browser Guard works on the listed AI sites through per-site adapters; a site redesign
-  can require an adapter update. Names and addresses without a cue word need the
+  can require an adapter update. The adapters are verified against hermetic fixture
+  copies of the sites in a real browser, not yet against the live sites. Names and addresses without a cue word need the
   optional native NER host, which ships without model weights.
 - Custom user threat definitions are supported via `~/.singularity-aidr/threats/*.yaml`
   (override by `id`).

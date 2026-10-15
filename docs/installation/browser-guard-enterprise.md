@@ -150,7 +150,7 @@ place `policies.json` in `Firefox.app/Contents/Resources/distribution/`.
    a startup script.
 5. `gpupdate /force` on a pilot machine, then check section 8.
 
-## 7. Firefox (`policies.json`, all platforms)
+## 7. Firefox (`policies.json`, Windows, macOS and Linux)
 
 1. Get the Mozilla-signed XPI of the release (signed as an unlisted add-on on
    addons.mozilla.org; the publisher downloads it from the AMO Developer Hub after

@@ -108,7 +108,9 @@ belgesinde tanımlanan bir `privacy_scan` olayı gönderir:
 gönderilmez. Sunucu buna istemciye güvenerek değil kendisi uyar: alım
 projeksiyonu yalnız yukarıdaki alanları tutar, bilinmeyen varlık türlerini ve
 aralık dışı sayıları atar, başka her alanı yok sayar. Yer tutucuların özgün
-değerleri tarayıcı sekmesinin yalnız bellekte tutulan kasasında kalır. Gizlilik
+değerleri tarayıcıda kalır: sekmenin belleğinde ve tarayıcının o sekme için
+bellekte tuttuğu oturum deposunda (sekme kapanınca ya da 4 saat kullanılmayınca
+silinir); diske yazılmaz, ağa gönderilmez. Gizlilik
 taramaları kiracı telemetrisi (`public.events`) olarak saklanır; bu nedenle
 kiracının telemetri saklama politikasına, yasal saklamalarına ve kiracı
 kapatmadaki silmeye tabidir. Maskeleme kayıt olmadan da çalışır; ulaşılamayan
@@ -229,7 +231,8 @@ kalıpları sunar.
 
 Maskeleme geri döndürülemez (`[EMAIL]` biçiminde etiketler ya da
 `[REDACTED]`); isteğe bağlı belirteç modu tek yönlü bir HMAC'tir ve geri
-çevrilemez. Öğrenilmiş PERSON/ADDRESS NER modeli pakette yoktur; müşteri onaylı
+çevrilemez. Öğrenilmiş PERSON/ADDRESS NER modeli pakette yoktur ve
+ilk sürüm kapsamı dışındadır; müşteri onaylı
 bir model sağlamadıkça ad/adres için tek sinyal bağlamsal kurallardır. Paketi
 derleyip Node test takımlarını çalıştırmak için `pnpm test:privacy`; Python,
 libseccomp ya da OpenSSL ön koşulu olmayan testler adıyla atlandı olarak

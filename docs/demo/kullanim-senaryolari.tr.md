@@ -200,7 +200,8 @@ unset -f aidr_dene aidr
 - **Dosya içeriğindeki kişisel veri:** Uç cihaz kancası komutlara, dosya
   yollarına ve adreslere bakar. Ajanın yazdığı içerikteki kişisel veriyi (ör.
   TCKN) taramaz. Yapay zekâ sitelerine yazılan istemlerdeki kişisel veriyi
-  Browser Guard maskeler; onun gösterimi tarayıcıda yapılır
-  (`pnpm test:e2e:browser-guard`).
+  Browser Guard maskeler; onun gösterimi tarayıcıda, sitelerin kapalı test
+  kopyalarına karşı yapılır (`pnpm test:e2e:browser-guard`). Canlı AI
+  sitelerinde henüz doğrulanmamıştır.
 - **Sunucu tarafı:** Panelden onay, SIEM aktarımı, filo kayıt anahtarları ve
   lisans içe aktarma için kontrol düzlemi (Supabase) çalışıyor olmalıdır.

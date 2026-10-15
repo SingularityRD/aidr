@@ -100,9 +100,13 @@ test("an approved pattern authorizes only its exact text on its listed surface",
     const result = run(registryFile, [listed, other]);
     assert.deepEqual(result.registryErrors, []);
     assert.ok(result.roots.includes("packages/dashboard/src/ui/pages/public"));
-    assert.equal(result.hits.length, 3);
+    // Only the fixture files are counted: the registry's own scan roots may carry
+    // unrelated, still-unapproved hits that this approval test must not depend on.
+    const fixtureHits = result.hits.filter((hit) => hit.path.includes("aidr-claim-approval-test-"));
+    assert.equal(fixtureHits.length, 3);
+    assert.equal(fixtureHits.filter((hit) => hit.approved).length, 1);
+    assert.equal(fixtureHits.filter((hit) => !hit.approved).length, 2);
     assert.equal(result.hits.filter((hit) => hit.approved).length, 1);
-    assert.equal(result.unapprovedHits.length, 2);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -130,7 +134,7 @@ test("a Sales Approved flag without matching claim evidence cannot authorize pub
     const result = run(registryFile, [page]);
     assert.ok(result.registryErrors.some(error => error.includes("matching in-repository evidence SHA-256")));
     assert.equal(result.hits.filter((hit) => hit.approved).length, 0);
-    assert.equal(result.unapprovedHits.length, 1);
+    assert.equal(result.unapprovedHits.filter((hit) => hit.path.includes("aidr-claim-evidence-test-")).length, 1);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

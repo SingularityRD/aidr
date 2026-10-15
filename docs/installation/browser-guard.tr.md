@@ -15,6 +15,12 @@ yönetiliyor" olarak görünür. Yöneticiler için:
 
 ## Kurulum
 
+> **Kullanılabilirlik.** Browser Guard henüz Chrome Web Store'da, Edge Add-ons'ta ya
+> da Mozilla imzalı XPI olarak yayımlanmadı; bu yüzden bugün bir kurulum bağlantısı
+> yoktur ve değerlendirmelerde derlenmiş uzantı paketlenmemiş olarak yüklenir. AI
+> sitelerinin kapalı test kopyalarında doğrulandı, canlı sitelerde henüz değil.
+> Aşağıdaki adımlar kayıtlar yayımlandıktan sonra geçerlidir.
+
 Kurulum bağlantısını Singularity irtibat kişinizden veya kurumunuzdan alırsınız.
 Kayıtlar liste dışıdır (unlisted): mağaza aramasında görünmez ama diğer uzantılar gibi
 kurulur.
