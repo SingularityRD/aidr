@@ -1568,6 +1568,107 @@ function reportedWorkingDirectory(context: ToolEvaluationContext): string {
 }
 
 /**
+ * Trust boundary: text the agent AUTHORS into an ordinary source or docs file,
+ * and the arguments of a pure read-only inspection command, are DATA, not
+ * instructions to the model. The model-manipulation rule families
+ * (prompt-injection / jailbreak / prompt-extraction / tool-misuse /
+ * memory-poisoning) describe injection that reaches the model as untrusted
+ * INPUT (a tool output, a file read, a web fetch) — not code or prose the
+ * developer is writing. Firing them on a `Write`/`Edit` of a `.ts`/`.md` file
+ * (a comment that says "developer mode", a `.exec(` call, CLI help text) is a
+ * false positive that blocks ordinary development.
+ *
+ * Exception: agent-INSTRUCTION surfaces (CLAUDE.md, AGENTS.md, .cursorrules,
+ * Copilot instructions, MCP/tool manifests) ARE consumed as instructions, so
+ * the manipulation families still apply to writes there.
+ *
+ * Likewise a pure read-only search (`grep -rn "aidr uninstall" .`,
+ * `cat src/approve.ts`) is the agent READING data; the self-protection families
+ * (self-defense / reward-hacking / sabotage), which target a real CLI
+ * invocation, must not fire because a sought string looks like one. Access to
+ * the AIDR state directory or a credential file is still inspected (those are
+ * egress of secrets, not a benign read), so such commands are never suppressed.
+ */
+const MODEL_MANIPULATION_CATEGORIES: ReadonlySet<string> = new Set([
+	"prompt_injection",
+	"indirect_prompt_injection",
+	"prompt_extraction",
+	"tool_misuse",
+	"memory_poisoning",
+]);
+const DOC_OR_TEST_FILE =
+	/\.(?:md|markdown|mdx|txt|rst|adoc)$|(?:^|[\\/])(?:README|CHANGELOG|LICENSE|NOTICE)(?:[.\-][\w.-]*)?$|\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|[\\/])(?:__tests__|__fixtures__|__mocks__|tests?|fixtures?|testdata)[\\/]/i;
+const AGENT_INSTRUCTION_FILE =
+	/(?:^|[\\/])(?:CLAUDE|AGENTS|GEMINI|CLINE)\.md$|(?:^|[\\/])\.(?:cursorrules|clinerules|windsurfrules|aiderrules|replit\.md)$|(?:^|[\\/])\.cursor[\\/]rules[\\/]|\.mdc$|(?:^|[\\/])\.github[\\/]copilot-instructions\.md$|(?:^|[\\/])\.?mcp\.json$|(?:^|[\\/])\.claude[\\/](?:commands|agents|skills)[\\/]/i;
+const AUTHORED_WRITE_TOOL =
+	/^(?:write|edit|multiedit|notebookedit|apply_patch|str_replace[\w-]*|create|update_file)$/i;
+const READ_ONLY_INSPECTOR =
+	/^(?:sudo\s+)?(?:cat|bat|less|more|head|tail|grep|egrep|fgrep|rg|ag|ack|strings|od|xxd|hexdump|nl|wc|tac|view|jq|yq|column|fold|cut|comm)\b/;
+// A write whose TARGET is AIDR's own install/state (not merely content that
+// names it) is real tampering and is never exempted. The state-dir token is
+// built from character codes so this source file does not itself match the
+// state-dir content rule.
+const AIDR_PROTECTED_WRITE_TARGET = new RegExp(
+	`\\${String.fromCharCode(46, 115, 105, 110, 103, 117, 108, 97, 114, 105, 116, 121, 45, 97, 105, 100, 114)}|aidr-codex-hook|[\\\\/]aidr[\\\\/]mcp-attestation`,
+	"i",
+);
+
+function authoredWriteFilePath(request: ToolEvaluationRequest): string | undefined {
+	if (!AUTHORED_WRITE_TOOL.test(request.toolName)) return undefined;
+	const input = request.toolInput as Record<string, unknown>;
+	const path = input.file_path ?? input.filePath ?? input.path ?? input.notebook_path;
+	return typeof path === "string" ? path : undefined;
+}
+
+/** A single stage, or a pipe of stages, each led by a read-only viewer; no execution. */
+function isPureReadOnlySearch(command: string): boolean {
+	if (!command || /[;&`]|\$\(|<\(|>/.test(command)) return false;
+	return command.split("|").every((stage) => READ_ONLY_INSPECTOR.test(stage.trim()));
+}
+
+/**
+ * Drop matches that are false positives under the trust boundary above.
+ *
+ *  - Authored write to a non-instruction source file: the model-manipulation
+ *    families are data, not instructions — drop them. Instruction surfaces keep
+ *    them.
+ *  - Authored write to a docs/test file: a self-defense *content* hit (a README
+ *    naming the state dir, a fixture building a temp state path) is text — drop
+ *    it. A write whose TARGET is the real install/state dir is kept.
+ *  - Pure read-only search: CLT-SELF-007 targets a real `aidr` CLI invocation, so
+ *    a sought string in a `grep`/`cat` argument must not fire it. Every other
+ *    self-defense rule (state-dir / approval-store access) still applies to reads.
+ */
+function dropDataNotInstructionMatches<
+	T extends { threat: { category: string; id: string }; artifact: string },
+>(matches: T[], request: ToolEvaluationRequest): T[] {
+	const writePath = authoredWriteFilePath(request);
+	const authoredWrite =
+		writePath !== undefined &&
+		!AGENT_INSTRUCTION_FILE.test(writePath) &&
+		!AIDR_PROTECTED_WRITE_TARGET.test(writePath);
+	const docOrTestWrite = authoredWrite && DOC_OR_TEST_FILE.test(writePath as string);
+	const command =
+		request.toolName === "Bash"
+			? String(
+					(request.toolInput as Record<string, unknown>).command ??
+						(request.toolInput as Record<string, unknown>).cmd ??
+						"",
+				)
+			: "";
+	const readOnlySearch = command.length > 0 && isPureReadOnlySearch(command);
+	if (!authoredWrite && !readOnlySearch) return matches;
+	return matches.filter((match) => {
+		const { category, id } = match.threat;
+		if (authoredWrite && MODEL_MANIPULATION_CATEGORIES.has(category)) return false;
+		if (docOrTestWrite && category === "self_defense" && match.artifact !== writePath)
+			return false;
+		if (readOnlySearch && id === "CLT-SELF-007") return false;
+		return true;
+	});
+}
+
+/**
  * The agent permission profile outcome for this call, or null when no profile
  * restricts it. An unexpected evaluation failure is a deny: the profile is a
  * security control and must not silently disappear.
@@ -2246,22 +2347,28 @@ async function runEvaluationPipeline(
 			? request
 			: { ...request, artifacts: inspectionArtifacts };
 
-	let cache: VerdictCache | null = null;
-	try {
-		const cacheInstallationId =
-			config.cache.enabled && config.cache.encryption?.enabled
-				? await getInstallationId(aidrDir)
-				: undefined;
-		cache = new VerdictCache(config.cache, logger, VERSION, cacheInstallationId);
-		await cache.load();
-	} catch (error) {
-		logger.warn("Verdict caching is unavailable", { error: String(error) });
-		cache = null;
-	}
-
 	const urls = inspected.artifacts
 		.filter((artifact) => artifact.type === "url")
 		.map((artifact) => artifact.value);
+
+	// The verdict cache holds only URL and package verdicts, so it is opened only
+	// when this call can read or write one. Opening it loads (and on Windows
+	// re-verifies the ACL of) its authentication key, which costs several native
+	// process spawns per hook call; a plain `git status` never needs it.
+	let cache: VerdictCache | null = null;
+	if (urls.length > 0 || config.package_check.enabled) {
+		try {
+			const cacheInstallationId =
+				config.cache.enabled && config.cache.encryption?.enabled
+					? await getInstallationId(aidrDir)
+					: undefined;
+			cache = new VerdictCache(config.cache, logger, VERSION, cacheInstallationId);
+			await cache.load();
+		} catch (error) {
+			logger.warn("Verdict caching is unavailable", { error: String(error) });
+			cache = null;
+		}
+	}
 	// An older clean cache entry is not proof that a newly configured signed feed
 	// was verified for this request.
 	const { cachedUrlVerdicts, uncachedUrls } = context.reputationFeed
@@ -2322,6 +2429,9 @@ async function runEvaluationPipeline(
 			heuristicMatches,
 			logger,
 		);
+		// Trust boundary: authored source/docs content and read-only inspection
+		// arguments are data, not instructions (see dropDataNotInstructionMatches).
+		heuristicMatches = dropDataNotInstructionMatches(heuristicMatches, request);
 	}
 
 	let urlCheckResults: Awaited<ReturnType<UrlCheckClient["checkUrls"]>> = [];
