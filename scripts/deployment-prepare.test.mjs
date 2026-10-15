@@ -345,10 +345,10 @@ test("development loopback origins publish matching isolated Compose ports", () 
 		assert.equal(result.status, 0, result.stderr);
 		const services = parse(readFileSync(join(output, "compose.yml"), "utf8")).services;
 		assert.equal(services["api-gw"].image, "envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85");
-		assert.equal(services.imgproxy.image, "darthsim/imgproxy:v4.0.17@sha256:db0b4b9cd690c8b3590203dea300fb759a18c4ec2af7b37424f0bdef23ce317d");
+		assert.equal(services.imgproxy.image, "darthsim/imgproxy:v4.0.18@sha256:03aec6708216c3e017d7ad3fb08eba11d6b83be65556262f8d6cd72803fefeb6");
 		assert.equal(services.imgproxy.environment.IMGPROXY_USE_LAST_MODIFIED, "false");
 		const scanGated = {
-			studio: "supabase/studio:2026.10.05-sha-94b8b06@sha256:d878dcd9dba73b66d1c2c19aeaf53d07704e71604d93013225be1d1c51475237",
+			studio: "supabase/studio:2026.10.12-sha-3699278@sha256:948770ec467f00e6ae34c35018ef7cb23d7b30eb806b42c2cc0d7bcfdcf8a7a8",
 			auth: "supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b",
 			storage: "supabase/storage-api:v1.80.2@sha256:95b217a9c59e0ac06c6dcb539df3189a1668a2445fb43dbf29660d6968ffd7d2",
 			meta: "supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd",
