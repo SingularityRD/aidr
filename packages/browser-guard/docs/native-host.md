@@ -72,7 +72,9 @@ and locks `useNativeHost` on. While `PERSON`, `ADDRESS` or `LOCATION` is enabled
 ## How uploads use it (OCR)
 
 With `useNativeHost: true` and a host whose `hello` reports `ocr: true` (a `visual`
-block in the host config, i.e. local Tesseract with the Turkish and English data):
+block in the host config: local Tesseract with the Turkish and English data, or on Windows
+the built-in Windows OCR that the AIDR Privacy companion installer configures, see
+[Installing the companion](#installing-the-companion-windows-per-user)):
 
 - An uploaded PNG, JPEG or WebP image (recognised by content, at most 8 MiB), and the
   PNG/JPEG/WebP pictures inside an uploaded DOCX/XLSX/PPTX or ODT/ODS/ODP (at most 16
@@ -87,8 +89,21 @@ block in the host config, i.e. local Tesseract with the Turkish and English data
   `monitor` mode); the user is told to crop or redact it. Pixels are never masked.
 - An image that was not fully inspected, or any image when the host, its OCR or the
   permission is missing, is reported as not inspected (`IMAGE_NOT_INSPECTED`, or
-  `DOCUMENT_IMAGES_NOT_INSPECTED` for pictures in a document): uploaded with a
-  warning, blocked in `block` mode, never treated as clean.
+  `DOCUMENT_IMAGES_NOT_INSPECTED` for pictures in a document), never treated as clean.
+  A standalone picture follows `uninspectedImages`:
+  - `"block"` (the default under any managed policy; locked unless `allowUserOverrides`):
+    not uploaded (only recorded in `monitor` mode). When no host answered, the bubble says
+    the picture "was not uploaded because the picture could not be inspected" and how to
+    install the companion (Singularity AIDR desktop app or the `install-companion` script)
+    and turn on **Use the AIDR Privacy helper app** in Options. When the host answered but
+    could not read the picture (uncertain OCR, no text, limits), it says that instead.
+  - `"warn"` (the default without a managed policy; a user setting on the options page):
+    uploaded with a warning carrying the same install guidance; still blocked in `block` mode.
+  - An endpoint without a barcode decoder (the companion on a machine without the Visual
+    C++ 2013 runtime pyzbar needs) reports clean text as `IMAGE_BARCODE_NOT_CHECKED`: the
+    text was inspected, so the picture is uploaded with a "QR codes and barcodes cannot be
+    checked on this computer" note under either value (blocked only in `block` mode).
+    Sensitive text is blocked regardless.
 - Images inside PDFs are extracted in the browser (JPEG as is, other raster images
   re-encoded as PNG) and sent the same way, one `image-scan` session per image. A PDF
   with an image that was not read to a verdict, or that could not be extracted, is
@@ -114,6 +129,22 @@ before you depend on it. The host's own rule layer also runs, so a host result c
 repeat a span Browser Guard already found locally. Callers merge the two sets. Every
 host span has `source: "native-ner"` and a fixed score of `0.9`, because the host
 applies policy decisions and does not export per-span scores.
+
+## Installing the companion (Windows, per user)
+
+The **AIDR Privacy companion** is the complete per-user install of the host with OCR:
+`@singularityrd/aidr-privacy/companion` (CLI `aidr-privacy-companion`, wrappers
+`packages/privacy/native/windows/install-companion.ps1` / `uninstall-companion.ps1`). It
+finds the Browser Guard extension ids in the Chrome/Edge profiles (reading Preferences only),
+stages the host under `%LOCALAPPDATA%\SingularityAIDR\PrivacyCompanion`, sets up OCR with the
+Windows built-in recognizer (no OCR model download; Pillow/pyzbar from the hash lock), builds
+the launcher and writes the same HKCU keys as the registration below. Interface, files and
+keys: [`packages/privacy/README.md`](../../privacy/README.md#aidr-privacy-companion-windows).
+`scripts/native-host.mjs` (next section) only registers a launcher you already have.
+
+After installing, each user still turns on **Use the AIDR Privacy helper app** in Browser Guard
+Options and accepts the browser's permission prompt (or the administrator sets
+`useNativeHost: true`; the permission prompt is still the user's).
 
 ## Per-user registration (`scripts/native-host.mjs`)
 
