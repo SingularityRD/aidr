@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { CUSTOMER_ID_PATTERN } from "../license/verify.js";
+import { CUSTOMER_ID_PATTERN } from "../customer-license/verify.js";
 
 const IntelFileKindSchema = z.enum([
 	"url_denylist",

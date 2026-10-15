@@ -6,7 +6,7 @@ import {
 	verifyLicenseRevocations,
 } from "../intel/license-revocations.js";
 import { IntelPackManifestSchema } from "../intel/schema.js";
-import { LicenseVerificationError, verifyLicense } from "../license/verify.js";
+import { LicenseVerificationError, verifyLicense } from "../customer-license/verify.js";
 import {
 	devKey,
 	licensePayload,

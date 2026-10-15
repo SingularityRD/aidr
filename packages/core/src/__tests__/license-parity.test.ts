@@ -10,8 +10,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { verifyCustomerPacket } from "../license/packet.js";
-import { LicenseVerificationError, verifyLicense } from "../license/verify.js";
+import { verifyCustomerPacket } from "../customer-license/packet.js";
+import { LicenseVerificationError, verifyLicense } from "../customer-license/verify.js";
 import {
 	DAY,
 	devKey,

@@ -1123,7 +1123,7 @@ export {
 	type VerifiedLicense,
 	verifyCustomerPacket,
 	verifyLicense,
-} from "./license/index.js";
+} from "./customer-license/index.js";
 // Local-mode (unsigned, operator-written) DLP policy file.
 export {
 	DEFAULT_LOCAL_DLP_POLICY_PATH,

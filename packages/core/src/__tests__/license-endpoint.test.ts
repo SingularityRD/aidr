@@ -6,20 +6,20 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { acceptPack } from "../intel/acceptance.js";
 import { IntelPackManifestSchema } from "../intel/schema.js";
-import { verifyCustomerPacket } from "../license/packet.js";
+import { verifyCustomerPacket } from "../customer-license/packet.js";
 import {
 	customerPacketSearchPaths,
 	discoverCustomerPacket,
 	readCustomerRecord,
 	readInstalledLicense,
 	saveCustomerPacket,
-} from "../license/store.js";
+} from "../customer-license/store.js";
 import {
 	defaultLicenseKeyRegistry,
 	LicenseVerificationError,
 	licenseState,
 	verifyLicense,
-} from "../license/verify.js";
+} from "../customer-license/verify.js";
 import {
 	devKey,
 	licensePayload,

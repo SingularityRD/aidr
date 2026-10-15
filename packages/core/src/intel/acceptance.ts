@@ -20,7 +20,7 @@ import {
 	type LicensePayload,
 	licenseTermEndMs,
 	type VerifiedLicense,
-} from "../license/verify.js";
+} from "../customer-license/verify.js";
 import type { VerifiedLicenseRevocations } from "./license-revocations.js";
 import type { IntelPackManifest } from "./schema.js";
 

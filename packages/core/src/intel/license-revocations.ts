@@ -6,7 +6,7 @@
  * pack that is already installed, and it never affects detection; installed
  * rules keep enforcing (the same rule as for an expired license).
  *
- * Envelope and trust are the license ones (`../license/verify.ts`): the
+ * Envelope and trust are the license ones (`../customer-license/verify.ts`): the
  * signature covers `aidr-license-revocations-v1\n` + canonicalJson(payload) and
  * is made by a key from the `aidr-license-public-keys-v1` registry. The distinct
  * format prefix keeps a license or customer-packet signature from ever verifying
@@ -28,7 +28,7 @@ import {
 	nowMs,
 	resolveRegistry,
 	verifySignedEnvelope,
-} from "../license/verify.js";
+} from "../customer-license/verify.js";
 
 export const LICENSE_REVOCATIONS_FORMAT = "aidr-license-revocations-v1";
 

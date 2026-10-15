@@ -7,7 +7,7 @@
  */
 import { generateKeyPairSync, type KeyObject, sign } from "node:crypto";
 
-import { licenseCanonicalJson } from "../license/verify.js";
+import { licenseCanonicalJson } from "../customer-license/verify.js";
 
 export const DAY = 24 * 60 * 60 * 1000;
 
