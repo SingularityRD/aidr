@@ -855,6 +855,42 @@ describe("DLP policy schema mirror", () => {
 		["a high-risk regular expression", storedDlpPolicy({
 			rules: ruleWith({ matchers: [{ type: "regex", pattern: "(a+)+", flags: "i" }] }),
 		})],
+		["a quantified alternation (ReDoS)", storedDlpPolicy({
+			rules: ruleWith({ matchers: [{ type: "regex", pattern: "(a|aa)+b", flags: "i" }] }),
+		})],
+		["a nested group quantifier (ReDoS)", storedDlpPolicy({
+			rules: ruleWith({ matchers: [{ type: "regex", pattern: "((a+))+", flags: "i" }] }),
+		})],
+		["a repetition bound above 1000", storedDlpPolicy({
+			rules: ruleWith({ matchers: [{ type: "regex", pattern: "x{1,5000}", flags: "i" }] }),
+		})],
+		["too many unbounded quantifiers", storedDlpPolicy({
+			rules: ruleWith({ matchers: [{ type: "regex", pattern: "a+b+c+d+e+", flags: "i" }] }),
+		})],
+		["a custom label regex with a checksum validator", storedDlpPolicy({
+			rules: ruleWith({ matchers: [
+				{ type: "regex", pattern: "\\bPRJ-[A-Z]{2,8}-[0-9]{6}\\b", flags: "" },
+				{ type: "regex", pattern: "\\b[0-9]{4} ?[0-9]{4} ?[0-9]{4} ?[0-9]{4}\\b", flags: "", validator: "luhn" },
+				{ type: "regex", pattern: "(?:[0-9]{4}-){3}[0-9]{4}", flags: "i" },
+			] }),
+		})],
+		["an unknown checksum validator", storedDlpPolicy({
+			rules: ruleWith({ matchers: [{ type: "regex", pattern: "EMP-[0-9]{6}", flags: "i", validator: "eval" }] }),
+		})],
+		["built-in detector matchers", storedDlpPolicy({
+			rules: ruleWith({ matchers: [{ type: "detector", detectors: ["tc_kimlik", "iban"] }] }),
+		})],
+		["duplicate built-in detectors", storedDlpPolicy({
+			rules: ruleWith({ matchers: [{ type: "detector", detectors: ["iban", "iban"] }] }),
+		})],
+		["an unknown built-in detector", storedDlpPolicy({
+			rules: ruleWith({ matchers: [{ type: "detector", detectors: ["dna"] }] }),
+		})],
+		["more regex matchers than the policy cap", storedDlpPolicy({
+			rules: Array.from({ length: 6 }, (_, r) => ({ ...ruleWith({})[0], id: `rule-bulk-${r}`,
+				matchers: Array.from({ length: 50 }, (_, m) => ({ type: "regex", pattern: `R${r}-${m}-[0-9]{4}`, flags: "i" })) })),
+			exceptions: [],
+		})],
 		["regex flags outside i, m, s, u", storedDlpPolicy({
 			rules: ruleWith({ matchers: [{ type: "regex", pattern: "EMP-[0-9]{6}", flags: "g" }] }),
 		})],
@@ -1045,5 +1081,88 @@ describe("DLP policy schema mirror", () => {
 
 		const second = validateDlpPolicyDocument(JSON.parse(serializeDlpPolicy(first.policy)));
 		expect(second).toStrictEqual(first);
+	});
+});
+
+describe("DLP tenant custom labels (T38)", () => {
+	afterEach(cleanup);
+
+	it("accepts custom label regexes with a fixed checksum validator and built-in detector matchers", async () => {
+		const { DlpPolicySchema } = await loadCoreDlpModule();
+		const document = storedDlpPolicy({
+			rules: ruleWith({ matchers: [
+				{ type: "regex", pattern: "\\bPRJ-[A-Z]{2,8}-[0-9]{6}\\b", flags: "", validator: "luhn" },
+				{ type: "detector", detectors: ["tc_kimlik", "iban"] },
+			] }),
+		});
+		const mine = validateDlpPolicyDocument(document);
+		expect(mine.ok).toBe(true);
+		const theirs = DlpPolicySchema.safeParse(document);
+		expect(theirs.success).toBe(true);
+		if (mine.ok) expect(mine.policy).toStrictEqual(theirs.data);
+	});
+
+	it("creates, edits and deletes a custom label and rule, showing validation errors before save", async () => {
+		const mocks = await renderLoadedEditor();
+
+		fireEvent.click(screen.getByRole("button", { name: "Add label" }));
+		expect(screen.getByText("✗ Invalid DLP policy")).toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText("Label 3 id"), { target: { value: "acme-project-code" } });
+		fireEvent.change(screen.getByLabelText("Label 3 name"), { target: { value: "ACME project code" } });
+		fireEvent.change(screen.getByLabelText("Label 3 sensitivity"), { target: { value: "restricted" } });
+		fireEvent.change(screen.getByLabelText("Label 3 redaction token"), { target: { value: "[PROJECT-CODE]" } });
+
+		fireEvent.click(screen.getByRole("button", { name: "Add rule" }));
+		fireEvent.change(screen.getByLabelText("Rule 3 id"), { target: { value: "acme-project-rule" } });
+		fireEvent.change(screen.getByLabelText("Rule 3 name"), { target: { value: "Project code" } });
+		fireEvent.change(screen.getByLabelText("Rule 3 label"), { target: { value: "acme-project-code" } });
+		fireEvent.change(screen.getByLabelText("Rule 3 action"), { target: { value: "block" } });
+		fireEvent.change(screen.getByLabelText("Rule 3 matcher 1 type"), { target: { value: "regex" } });
+
+		// A ReDoS-prone pattern is refused with its path; nothing can be saved.
+		fireEvent.change(screen.getByLabelText("Rule 3 matcher 1 pattern"), { target: { value: "(a|aa)+b" } });
+		expect(screen.getByText("✗ Invalid DLP policy")).toBeInTheDocument();
+		expect(screen.getByRole("alert")).toHaveTextContent(/rules\.2\.matchers\.0\.pattern/);
+		expect(screen.getByRole("alert")).toHaveTextContent(/high-risk regular-expression construct/);
+		expect(screen.getByRole("button", { name: "Save DLP policy" })).toBeDisabled();
+
+		fireEvent.change(screen.getByLabelText("Rule 3 matcher 1 pattern"), {
+			target: { value: "\\bPRJ-[A-Z]{2,8}-[0-9]{6}\\b" },
+		});
+		fireEvent.change(screen.getByLabelText("Rule 3 matcher 1 flags"), { target: { value: "" } });
+		fireEvent.change(screen.getByLabelText("Rule 3 matcher 1 checksum validator"), { target: { value: "luhn" } });
+		expect(
+			JSON.parse((screen.getByLabelText("DLP policy document (JSON)") as HTMLTextAreaElement).value)
+				.rules[2].matchers[0],
+		).toMatchObject({ validator: "luhn" });
+		fireEvent.change(screen.getByLabelText("Rule 3 matcher 1 checksum validator"), { target: { value: "" } });
+		await waitFor(() => expect(screen.getByText("✓ Valid DLP policy")).toBeInTheDocument());
+
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		await waitFor(() => expect(screen.getByText(/DLP policy version 4 saved for this tenant/)).toBeInTheDocument());
+		const saved = publishCalls(mocks)[0]?.[1]?.body.policy;
+		expect(saved.labels[2]).toStrictEqual({
+			id: "acme-project-code", tenantId: TEAM_ID, name: "ACME project code",
+			sensitivity: "restricted", redactionToken: "[PROJECT-CODE]",
+		});
+		expect(saved.rules[2]).toMatchObject({
+			id: "acme-project-rule", labelId: "acme-project-code", action: "block",
+			matchers: [{ type: "regex", pattern: "\\bPRJ-[A-Z]{2,8}-[0-9]{6}\\b", flags: "" }],
+		});
+		expect(saved.rules[2].matchers[0]).not.toHaveProperty("validator");
+		const { DlpPolicySchema } = await loadCoreDlpModule();
+		expect(DlpPolicySchema.safeParse(saved).success).toBe(true);
+
+		// Edit, then delete: a label still referenced by a rule cannot be dropped silently.
+		fireEvent.change(screen.getByLabelText("Label 3 name"), { target: { value: "ACME project identifier" } });
+		fireEvent.click(screen.getByRole("button", { name: "Remove label 3" }));
+		expect(screen.getByRole("alert")).toHaveTextContent(/rules\.2\.labelId/);
+		fireEvent.click(screen.getByRole("button", { name: "Remove rule 3" }));
+		await waitFor(() => expect(screen.getByText("✓ Valid DLP policy")).toBeInTheDocument());
+		fireEvent.click(screen.getByRole("button", { name: "Save DLP policy" }));
+		await waitFor(() => expect(screen.getByText(/DLP policy version 5 saved for this tenant/)).toBeInTheDocument());
+		const after = publishCalls(mocks)[1]?.[1]?.body.policy;
+		expect(after.labels.map((label: { id: string }) => label.id)).toEqual(["label-employee-id", "label-project"]);
+		expect(after.rules.map((rule: { id: string }) => rule.id)).toEqual(["rule-employee-id", "rule-project-codename"]);
 	});
 });

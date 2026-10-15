@@ -14,8 +14,10 @@
  * ## Schema, not a new contract
  *
  * `validateDlpPolicyDocument` mirrors `DlpPolicySchema` exactly — required
- * fields, identifier/MIME/SHA-256 patterns, keyword/regex matcher rules, the
- * unsafe-regex refusal, tenant/id/reference consistency, the expired-exception
+ * fields, identifier/MIME/SHA-256 patterns, keyword/regex/detector matcher
+ * rules, the fixed checksum-validator list, the structural ReDoS refusal
+ * (`regexRiskIssue`), policy-wide regex/keyword caps, tenant/id/reference
+ * consistency, the expired-exception
  * dominance refusal and every zod default — and normalises the draft the same
  * way `DlpPolicySchema.parse` does, so what this editor serialises is what the
  * engine parses. The dashboard deliberately does not depend on
@@ -75,6 +77,34 @@ const RULE_ACTIONS = ["redact", "block", "ask"] as const;
 const UNAVAILABLE_ACTIONS = ["block", "ask"] as const;
 const MATCH_MODES = ["any", "all"] as const;
 const EXCEPTION_SCOPES = ["rule", "content", "match"] as const;
+/** `DlpMatchValidatorSchema`: the fixed checksum list a tenant regex may name. */
+const MATCH_VALIDATORS = ["luhn", "iban_mod97", "tc_kimlik", "tr_vkn", "us_ssn"] as const;
+/** `DlpDetectorSchema`: built-in TR/EN detectors a detector matcher may name. */
+const DETECTORS = [
+	"tc_kimlik",
+	"iban",
+	"phone",
+	"email",
+	"credit_card",
+	"us_ssn",
+	"address",
+	"person",
+	"date_of_birth",
+	"passport",
+	"national_id",
+	"tax_id",
+	"bank_account",
+	"ip_address",
+	"mac_address",
+	"secret",
+	"private_key",
+	"classified",
+] as const;
+/** Policy-wide bounds, as in the core schema. */
+const MAX_REGEX_REPEAT = 1_000;
+const MAX_UNBOUNDED_QUANTIFIERS = 4;
+const MAX_POLICY_REGEX_MATCHERS = 256;
+const MAX_POLICY_KEYWORD_TERMS = 10_000;
 
 /**
  * Machine-readable refusal code shared with the core (`DLP_EXPIRED_EXCEPTION_DOMINANCE`).
@@ -116,9 +146,18 @@ interface DlpRegexMatcherDocument {
 	type: "regex";
 	pattern: string;
 	flags: string;
+	validator?: (typeof MATCH_VALIDATORS)[number];
 }
 
-type DlpMatcherDocument = DlpKeywordMatcherDocument | DlpRegexMatcherDocument;
+interface DlpDetectorMatcherDocument {
+	type: "detector";
+	detectors: (typeof DETECTORS)[number][];
+}
+
+type DlpMatcherDocument =
+	| DlpKeywordMatcherDocument
+	| DlpRegexMatcherDocument
+	| DlpDetectorMatcherDocument;
 
 export interface DlpRuleDocument {
 	id: string;
@@ -186,7 +225,8 @@ const LABEL_KEYS = [
 	"redactionToken",
 ] as const;
 const KEYWORD_MATCHER_KEYS = ["type", "values", "caseSensitive", "wholeWord"] as const;
-const REGEX_MATCHER_KEYS = ["type", "pattern", "flags"] as const;
+const REGEX_MATCHER_KEYS = ["type", "pattern", "flags", "validator"] as const;
+const DETECTOR_MATCHER_KEYS = ["type", "detectors"] as const;
 const RULE_KEYS = [
 	"id",
 	"tenantId",
@@ -317,8 +357,123 @@ function readEnum<T extends string>(
  */
 function isUnsafeRegex(pattern: string): boolean {
 	return (
-		/\\[1-9]/.test(pattern) || /\([^)]*[+*][^)]*\)[+*{]/.test(pattern) || /\.\*.*\.\*/.test(pattern)
+		/\\[1-9]/.test(pattern) ||
+		/\([^)]*[+*][^)]*\)[+*{]/.test(pattern) ||
+		/\.\*.*\.\*/.test(pattern) ||
+		regexRiskIssue(pattern) !== undefined
 	);
+}
+
+interface RegexGroupFrame {
+	quantified: boolean;
+	alternation: boolean;
+}
+
+function readRegexQuantifier(
+	pattern: string,
+	index: number,
+): { length: number; min: number; max: number } | undefined {
+	const character = pattern[index];
+	if (character === "*") return { length: 1, min: 0, max: Number.POSITIVE_INFINITY };
+	if (character === "+") return { length: 1, min: 1, max: Number.POSITIVE_INFINITY };
+	if (character === "?") return { length: 1, min: 0, max: 1 };
+	if (character !== "{") return undefined;
+	const bound = /^\{(\d+)(,(\d*))?\}/.exec(pattern.slice(index, index + 32));
+	if (!bound) return undefined;
+	const min = Number(bound[1]);
+	const max =
+		bound[2] === undefined ? min : bound[3] === "" ? Number.POSITIVE_INFINITY : Number(bound[3]);
+	return { length: bound[0].length, min, max };
+}
+
+/**
+ * `regexRiskIssue` from the core schema (structural ReDoS guard): refuses
+ * back-references, a repeated group whose body is quantified or alternates,
+ * repetition bounds above 1000 and more than four unbounded quantifiers.
+ */
+export function regexRiskIssue(pattern: string): string | undefined {
+	const stack: RegexGroupFrame[] = [{ quantified: false, alternation: false }];
+	let previous: "none" | "atom" | RegexGroupFrame = "none";
+	let unbounded = 0;
+	let index = 0;
+	while (index < pattern.length) {
+		const character = pattern[index];
+		const top = stack[stack.length - 1] as RegexGroupFrame;
+		if (character === "\\") {
+			const next = pattern[index + 1] ?? "";
+			if (/[1-9]/.test(next) || next === "k") return "back-references are not allowed";
+			index += 2;
+			if (/[pPu]/.test(next) && pattern[index] === "{") {
+				const close = pattern.indexOf("}", index);
+				index = close < 0 ? pattern.length : close + 1;
+			}
+			previous = "atom";
+			continue;
+		}
+		if (character === "[") {
+			index++;
+			while (index < pattern.length && pattern[index] !== "]") {
+				index += pattern[index] === "\\" ? 2 : 1;
+			}
+			index++;
+			previous = "atom";
+			continue;
+		}
+		if (character === "(") {
+			stack.push({ quantified: false, alternation: false });
+			index++;
+			if (pattern[index] === "?") {
+				const kind = pattern[index + 1] ?? "";
+				if (kind === "<" && !/[=!]/.test(pattern[index + 2] ?? "")) {
+					const close = pattern.indexOf(">", index);
+					index = close < 0 ? pattern.length : close + 1;
+				} else {
+					index += kind === "<" ? 3 : 2;
+				}
+			}
+			previous = "none";
+			continue;
+		}
+		if (character === ")") {
+			const frame = stack.length > 1 ? (stack.pop() as RegexGroupFrame) : top;
+			const parent = stack[stack.length - 1] as RegexGroupFrame;
+			parent.quantified ||= frame.quantified;
+			parent.alternation ||= frame.alternation;
+			previous = frame;
+			index++;
+			continue;
+		}
+		if (character === "|") {
+			top.alternation = true;
+			previous = "none";
+			index++;
+			continue;
+		}
+		const quantifier = readRegexQuantifier(pattern, index);
+		if (!quantifier || previous === "none") {
+			previous = "atom";
+			index++;
+			continue;
+		}
+		if (
+			quantifier.min > MAX_REGEX_REPEAT ||
+			(quantifier.max !== Number.POSITIVE_INFINITY && quantifier.max > MAX_REGEX_REPEAT)
+		) {
+			return `repetition bounds above ${MAX_REGEX_REPEAT} are not allowed`;
+		}
+		if (quantifier.max === Number.POSITIVE_INFINITY) unbounded++;
+		if (unbounded > MAX_UNBOUNDED_QUANTIFIERS) {
+			return `more than ${MAX_UNBOUNDED_QUANTIFIERS} unbounded quantifiers are not allowed`;
+		}
+		if (previous !== "atom" && quantifier.max > 1 && (previous.quantified || previous.alternation)) {
+			return "a repeated group must not contain a quantifier or an alternation";
+		}
+		if (quantifier.min !== quantifier.max) top.quantified = true;
+		index += quantifier.length;
+		if (pattern[index] === "?") index++;
+		previous = "none";
+	}
+	return undefined;
 }
 
 // i18n-exempt: schema diagnostics name the JSON fields of the DLP document.
@@ -418,11 +573,46 @@ function normalizeMatcher(
 			});
 			return null;
 		}
-		return { type: "regex", pattern: record.pattern, flags };
+		if (record.validator === undefined) return { type: "regex", pattern: record.pattern, flags };
+		const validator = readEnum(
+			record.validator,
+			MATCH_VALIDATORS,
+			[...path, "validator"],
+			issues,
+			"regex validator",
+		);
+		if (!validator) return null;
+		return { type: "regex", pattern: record.pattern, flags, validator };
+	}
+	if (value.type === "detector") {
+		const record = readStrictRecord(value, DETECTOR_MATCHER_KEYS, path, issues, "detector matcher");
+		if (!record) return null;
+		const raw = record.detectors;
+		if (!Array.isArray(raw) || raw.length < 1 || raw.length > DETECTORS.length) {
+			issues.push({
+				path: formatPath([...path, "detectors"]),
+				message: `detectors must list 1-${DETECTORS.length} built-in detectors`,
+			});
+			return null;
+		}
+		const detectors: DlpDetectorMatcherDocument["detectors"] = [];
+		for (const [index, entry] of raw.entries()) {
+			const detector = readEnum(entry, DETECTORS, [...path, "detectors", index], issues, "detector");
+			if (!detector) return null;
+			detectors.push(detector);
+		}
+		if (new Set(detectors).size !== detectors.length) {
+			issues.push({
+				path: formatPath([...path, "detectors"]),
+				message: "detectors must be unique",
+			});
+			return null;
+		}
+		return { type: "detector", detectors };
 	}
 	issues.push({
 		path: formatPath([...path, "type"]),
-		message: 'matcher type must be "keyword" or "regex"',
+		message: 'matcher type must be "keyword", "regex" or "detector"',
 	});
 	return null;
 }
@@ -891,6 +1081,23 @@ function normalizePolicy(input: unknown): {
 
 	const labelIds = readTenantOwnedIds(labels, tenantId, "labels", issues);
 	const ruleIds = readTenantOwnedIds(rules, tenantId, "rules", issues);
+	const matchers = rules.flatMap((rule) => rule.matchers);
+	if (matchers.filter((matcher) => matcher.type === "regex").length > MAX_POLICY_REGEX_MATCHERS) {
+		issues.push({
+			path: "rules",
+			message: `a policy may contain at most ${MAX_POLICY_REGEX_MATCHERS} regex matchers`,
+		});
+	}
+	const keywordTerms = matchers.reduce(
+		(total, matcher) => total + (matcher.type === "keyword" ? matcher.values.length : 0),
+		0,
+	);
+	if (keywordTerms > MAX_POLICY_KEYWORD_TERMS) {
+		issues.push({
+			path: "rules",
+			message: `a policy may contain at most ${MAX_POLICY_KEYWORD_TERMS} keyword terms`,
+		});
+	}
 	for (const [index, rule] of rules.entries()) {
 		if (!labelIds.has(rule.labelId)) {
 			issues.push({
@@ -1892,7 +2099,9 @@ export function DlpPolicyEditor() {
 																					caseSensitive: false,
 																					wholeWord: true,
 																				}
-																			: { type: "regex" as const, pattern: "", flags: "i" }
+																			: type === "detector"
+																				? { type: "detector" as const, detectors: [] }
+																				: { type: "regex" as const, pattern: "", flags: "i" }
 																		: entry,
 																),
 															});
@@ -1900,9 +2109,46 @@ export function DlpPolicyEditor() {
 													>
 														<option value="keyword">{t("dlp.keyword")}</option>
 														<option value="regex">{t("dlp.regex")}</option>
+														<option value="detector">{t("dlp.detector")}</option>
 													</select>
 												</label>
-												{matcher.type === "keyword" ? (
+												{matcher.type === "detector" ? (
+													<label className="label">
+														{t("dlp.detectors")}
+														<select
+															className="input mono"
+															multiple
+															size={6}
+															aria-label={t("dlp.matcherDetectors", {
+																n: index + 1,
+																m: matcherIndex + 1,
+															})}
+															value={matcher.detectors}
+															onChange={(event) =>
+																updateRule(index, {
+																	matchers: rule.matchers.map((entry, position) =>
+																		position === matcherIndex
+																			? {
+																					type: "detector" as const,
+																					detectors: Array.from(
+																						event.target.selectedOptions,
+																						(option) =>
+																							option.value as DlpDetectorMatcherDocument["detectors"][number],
+																					),
+																				}
+																			: entry,
+																	),
+																})
+															}
+														>
+															{DETECTORS.map((detector) => (
+																<option key={detector} value={detector}>
+																	{detector}
+																</option>
+															))}
+														</select>
+													</label>
+												) : matcher.type === "keyword" ? (
 													<>
 														<label className="label">
 															{t("dlp.keywords")}
@@ -1975,7 +2221,7 @@ export function DlpPolicyEditor() {
 														</div>
 													</>
 												) : (
-													<div className="grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
+													<div className="grid" style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
 														<label className="label">
 															{t("dlp.pattern")}
 															<input
@@ -2015,6 +2261,43 @@ export function DlpPolicyEditor() {
 																	})
 																}
 															/>
+														</label>
+														<label className="label">
+															{t("dlp.validator")}
+															<select
+																className="input mono"
+																aria-label={t("dlp.matcherValidator", {
+																	n: index + 1,
+																	m: matcherIndex + 1,
+																})}
+																value={matcher.validator ?? ""}
+																onChange={(event) => {
+																	const chosen = event.target.value;
+																	const next: DlpRegexMatcherDocument = {
+																		type: "regex",
+																		pattern: matcher.pattern,
+																		flags: matcher.flags,
+																		...(chosen === ""
+																			? {}
+																			: {
+																					validator:
+																						chosen as (typeof MATCH_VALIDATORS)[number],
+																				}),
+																	};
+																	updateRule(index, {
+																		matchers: rule.matchers.map((entry, position) =>
+																			position === matcherIndex ? next : entry,
+																		),
+																	});
+																}}
+															>
+																<option value="">{t("dlp.validatorNone")}</option>
+																{MATCH_VALIDATORS.map((validator) => (
+																	<option key={validator} value={validator}>
+																		{validator}
+																	</option>
+																))}
+															</select>
 														</label>
 													</div>
 												)}

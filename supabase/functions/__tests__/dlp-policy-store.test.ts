@@ -239,6 +239,14 @@ const invalidCases: Array<[string, (p: Row) => unknown]> = [
 	["empty matching regex", p => { p.rules[0].matchers = [{ type: "regex", pattern: "a*" }]; return p; }],
 	["unsafe nested regex", p => { p.rules[0].matchers = [{ type: "regex", pattern: "(a+)+" }]; return p; }],
 	["regex backreference", p => { p.rules[0].matchers = [{ type: "regex", pattern: "(a)\\1" }]; return p; }],
+	["quantified alternation regex", p => { p.rules[0].matchers = [{ type: "regex", pattern: "(a|aa)+b" }]; return p; }],
+	["nested group regex", p => { p.rules[0].matchers = [{ type: "regex", pattern: "((a+))+" }]; return p; }],
+	["oversized repeat regex", p => { p.rules[0].matchers = [{ type: "regex", pattern: "x{1,5000}" }]; return p; }],
+	["oversized regex", p => { p.rules[0].matchers = [{ type: "regex", pattern: "A".repeat(513) }]; return p; }],
+	["unknown validator", p => { p.rules[0].matchers = [{ type: "regex", pattern: "PRJ-[0-9]{6}", validator: "eval" }]; return p; }],
+	["unknown label field", p => { p.labels[0].severity = "high"; return p; }],
+	["too many regex matchers", p => ({ ...p, rules: Array.from({ length: 6 }, (_, r) => ({ ...p.rules[0], id: `r${r}`,
+		matchers: Array.from({ length: 50 }, (_, m) => ({ type: "regex", pattern: `R${r}-${m}-[0-9]{4}` })) })) })],
 	["invalid flags", p => { p.rules[0].matchers = [{ type: "regex", pattern: "secret", flags: "gg" }]; return p; }],
 	["invalid expiry", p => ({ ...p, exceptions: [{ ...exception(), expiresAt: "yesterday" }] })],
 	["expiry before creation", p => ({ ...p, exceptions: [{ ...exception(), expiresAt: "2025-01-01T00:00:00Z" }] })],
@@ -279,6 +287,30 @@ describe("engine-schema validation at the server boundary (no browser trust)", (
 		const response = await f.call(publish({ policy: p }));
 		expect(response.status).toBe(200);
 		expect((await response.json()).policy).toEqual(DlpPolicySchema.parse(p));
+	});
+	it("saves tenant custom labels (dictionary, bounded regex, checksum validator) through CAS with an audit row", async () => {
+		const f = await fixture({ role: "admin" });
+		const p = policy();
+		p.labels.push({ id: "acme-project-code", tenantId: TENANT, name: "ACME project code",
+			description: "Synthetic project identifier", sensitivity: "restricted", redactionToken: "[PROJECT-CODE]" });
+		p.rules.push({ id: "acme-project-rule", tenantId: TENANT, labelId: "acme-project-code", name: "Project code",
+			action: "ask", directions: ["input", "output"], matchers: [
+				{ type: "regex", pattern: "\\bPRJ-[A-Z]{2,8}-[0-9]{6}\\b", flags: "" },
+				{ type: "regex", pattern: "\\b[0-9]{4} ?[0-9]{4} ?[0-9]{4} ?[0-9]{4}\\b", flags: "", validator: "luhn" },
+				{ type: "keyword", values: ["Project Nightjar"] },
+			] });
+		const response = await f.call(publish({ policy: p }));
+		expect(response.status).toBe(200);
+		const saved = await response.json();
+		expect(saved.policy).toEqual(DlpPolicySchema.parse(p));
+		expect(saved.policy.rules[1].matchers[1]).toMatchObject({ validator: "luhn" });
+		expect(f.audit).toEqual([{ action: "dlp_policy.save", version: 1 }]);
+		const stale = await f.call(publish({ policy: p }));
+		expect(stale.status).toBe(409);
+		expect(f.revisions).toHaveLength(1);
+		const member = await fixture({ role: "member" });
+		expect((await member.call(publish({ policy: p }))).status).toBe(403);
+		expect(member.writes()).toHaveLength(0);
 	});
 	it("preserves the engine's single-expired-exception allowance", async () => {
 		const f = await fixture();
