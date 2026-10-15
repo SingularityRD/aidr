@@ -38,7 +38,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
   },
   "amsi_check": {
     "enabled": true,
-    "unavailable_action": "annotate",
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -204,7 +204,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
       "enabled": false,
     },
   },
-  "project_env_reads": "auto",
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -307,7 +307,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
   },
   "amsi_check": {
     "enabled": true,
-    "unavailable_action": "annotate",
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -473,7 +473,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
       "enabled": false,
     },
   },
-  "project_env_reads": "auto",
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -576,7 +576,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
   },
   "amsi_check": {
     "enabled": true,
-    "unavailable_action": "annotate",
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -748,7 +748,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
   "privacy": {
     "required": false,
   },
-  "project_env_reads": "auto",
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -851,7 +851,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
   },
   "amsi_check": {
     "enabled": true,
-    "unavailable_action": "annotate",
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -1017,7 +1017,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
       "enabled": false,
     },
   },
-  "project_env_reads": "auto",
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -1120,7 +1120,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
   },
   "amsi_check": {
     "enabled": true,
-    "unavailable_action": "annotate",
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -1286,7 +1286,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
       "enabled": false,
     },
   },
-  "project_env_reads": "auto",
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",

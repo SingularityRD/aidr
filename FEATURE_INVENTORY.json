@@ -1265,7 +1265,7 @@
         "supabase/functions/_shared/siem-config.ts",
         "supabase/functions/_shared/siem-forwarding.ts",
         "supabase/functions/_shared/socket-transport.ts",
-        "supabase/migrations/20261014000100_siem_forwarding.sql",
+        "supabase/migrations/20261014000130_siem_forwarding.sql",
         "packages/dashboard/src/ui/SiemDestinations.tsx",
         "deploy/helm/aidr/templates/siem-forwarder-cronjob.yaml",
         "docs/contracts/siem-forwarding.md",

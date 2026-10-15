@@ -2502,10 +2502,11 @@ async function runEvaluationPipeline(
 			"AMSI malware scanning is enabled on this host but the scan did not run, so this content was NOT scanned.",
 		);
 	}
-	// AMSI cannot run on this host at all. The documented failure policy for an
-	// optional signal: skip it, log it (once per state, above), and say so on the
-	// verdict. Never a clean result; `amsi_check.unavailable_action: "ask"` holds
-	// such calls for review instead.
+	// AMSI cannot run on this host at all. By default
+	// (`amsi_check.unavailable_action: "ask"`) such calls are held for review;
+	// the opt-in "annotate" follows the failure policy for an optional signal:
+	// skip it, log it (once per state, above), and say so on the verdict. Never
+	// a clean result either way.
 	if (amsiHostUnavailableReason !== null) {
 		verdict = amsiNotAvailableVerdict(
 			verdict,

@@ -9,7 +9,7 @@
 // as an idempotency key, and syslog/CEF/LEEF carry for de-duplication.
 //
 // The outbox row already holds an allow-listed projection of sanitised
-// telemetry (migration 20261014000100); `buildForwardedEvent` re-validates
+// telemetry (migration 20261014000130); `buildForwardedEvent` re-validates
 // every field against a fixed allow-list again, so an unexpected key in the
 // database can never reach a collector.
 //

@@ -164,7 +164,7 @@ AIDR does not recompute Codex's trust hash, so a recorded trust is reported as
 "trust recorded", not as proven.
 
 The control plane (`connector-heartbeat` Edge Function, migration
-`20261014000200_connector_heartbeats.sql`) stores the latest state per agent and
+`20261014000205_connector_heartbeats.sql`) stores the latest state per agent and
 connector in `connector_heartbeats`, refreshes the agent's `last_seen`, and queues
 `agent.unprotected` to every alert channel that watches agent health (the
 `agent_offline` filter in Settings → Notifications) when:

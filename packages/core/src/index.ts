@@ -1477,7 +1477,6 @@ export type {
 	ProtectionLockDeps,
 } from "./protection-lock.js";
 export {
-	LINUX_MACHINE_POLICY_PATH,
 	PROTECTION_LOCKED_KEY,
 	protectionEventsPath,
 	readProtectionEvents,

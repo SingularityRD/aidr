@@ -9,7 +9,7 @@ whole workspace, is a different process; see "Retention maintenance" in
 
 When the identity provider deactivates a SCIM user (`active: false`, a PATCH, a
 PUT or a SCIM `DELETE`), the same database transaction
-(migration `20261014000100_scim_deprovision_revokes_device_access.sql`):
+(migration `20261014000120_scim_deprovision_revokes_device_access.sql`):
 
 | Revoked | Effect |
 | --- | --- |

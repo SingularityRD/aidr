@@ -43,8 +43,7 @@ type NoticeConfig = Pick<
 	| "control_plane"
 	| "logging"
 	| "version_check"
-	| "privacy_notice_url"
-	| "support_contact_url"
+	| "organization"
 >;
 
 /** The facts the notice states; a change to any of them shows the notice again. */

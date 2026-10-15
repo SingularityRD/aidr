@@ -1,4 +1,4 @@
-// Central SIEM forwarder: drains the SIEM outbox (migration 20261014000100).
+// Central SIEM forwarder: drains the SIEM outbox (migration 20261014000130).
 //
 // POST with `Authorization: Bearer <AIDR_NOTIFICATION_DISPATCH_TOKEN>` (the
 // deployment's background-delivery token, shared with the alert dispatcher).

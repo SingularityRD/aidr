@@ -23,9 +23,9 @@ import { lstatSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { resolvePath } from "./config.js";
+import { LINUX_MACHINE_POLICY_PATH } from "./machine-policy.js";
 import { defaultRegQuery, WINDOWS_MDM_POLICY_KEY } from "./update/environment.js";
 
-export const LINUX_MACHINE_POLICY_PATH = "/etc/singularity-aidr/managed.json";
 export const PROTECTION_LOCKED_KEY = "protection_locked";
 
 export interface ProtectionLock {

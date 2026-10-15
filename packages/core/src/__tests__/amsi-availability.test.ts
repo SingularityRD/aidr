@@ -88,7 +88,8 @@ function simulateConstrainedLanguageHost() {
 }
 
 describe("AMSI structurally unavailable on the host (D3)", () => {
-	it("annotates the allow instead of turning it into an ask, and never calls it clean", async () => {
+	it("with the opt-in annotate, keeps the allow annotated and never calls it clean", async () => {
+		await writeConfig({ enabled: true, unavailable_action: "annotate" });
 		simulateConstrainedLanguageHost();
 		const verdict = await evaluate();
 		expect(verdict.decision).toBe("allow");
@@ -107,8 +108,8 @@ describe("AMSI structurally unavailable on the host (D3)", () => {
 		expect(record).toMatchObject({ state: "unavailable", kind: "constrained_language" });
 	});
 
-	it("holds the call for review with amsi_check.unavailable_action: ask", async () => {
-		await writeConfig({ enabled: true, unavailable_action: "ask" });
+	it("holds the call for review by default (amsi_check.unavailable_action: ask)", async () => {
+		await writeConfig({ enabled: true });
 		simulateConstrainedLanguageHost();
 		const verdict = await evaluate();
 		expect(verdict).toMatchObject({

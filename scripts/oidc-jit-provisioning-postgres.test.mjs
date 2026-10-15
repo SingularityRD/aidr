@@ -1,5 +1,5 @@
 // Real PostgreSQL regression for just-in-time OIDC provisioning
-// (supabase/migrations/20261014000100_oidc_jit_provisioning.sql).
+// (supabase/migrations/20261014000110_oidc_jit_provisioning.sql).
 //
 // Default: starts an offline supabase/postgres container, applies every
 // canonical migration and runs each scenario in a rolled-back transaction.

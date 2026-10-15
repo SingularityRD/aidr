@@ -941,13 +941,12 @@ const AmsiCheckConfigSchema = z.object({
 	/**
 	 * What an otherwise-allowed call gets when AMSI cannot run on this host at
 	 * all (no koffi backend and PowerShell blocked, e.g. ConstrainedLanguage
-	 * under AppLocker/WDAC). `annotate` (default) follows the failure policy for
-	 * optional signals: the AMSI signal is skipped, logged once per state change
-	 * and named on the verdict as not scanned, never as clean. `ask` holds every
-	 * such call for review. A scan that fails on a working backend is always an
-	 * `ask`, whatever this says.
+	 * under AppLocker/WDAC). `ask` (default) holds every such call for review.
+	 * `annotate` (opt-in) skips the AMSI signal, logs it once per state change
+	 * and names it on the verdict as not scanned, never as clean. A scan that
+	 * fails on a working backend is always an `ask`, whatever this says.
 	 */
-	unavailable_action: z.enum(["annotate", "ask"]).default("annotate"),
+	unavailable_action: z.enum(["annotate", "ask"]).default("ask"),
 });
 
 export const PromptProtectionModeSchema = z.enum(["off", "warn", "block"]);
@@ -1181,12 +1180,12 @@ export const ConfigSchema = z.object({
 	toxic_flow: ToxicFlowConfigSchema.default({}),
 	/**
 	 * Reads of the project's own `.env` files (inside the working directory)
-	 * into the agent's context: `auto` allows them except under `paranoid`
-	 * sensitivity, `ask` always prompts, `allow` never does. Reads stay tracked
-	 * as secret material for exfiltration chains either way. See
-	 * docs/project-env-files.md.
+	 * into the agent's context: `ask` (default) always prompts; `auto` (opt-in)
+	 * allows them except under `paranoid` sensitivity; `allow` never prompts.
+	 * Reads stay tracked as secret material for exfiltration chains either
+	 * way. See docs/project-env-files.md.
 	 */
-	project_env_reads: z.enum(["auto", "allow", "ask"]).default("auto"),
+	project_env_reads: z.enum(["auto", "allow", "ask"]).default("ask"),
 	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
 	nvd_check: NvdConfigSchema.default({}),
 	heuristics_enabled: z.boolean().default(true),

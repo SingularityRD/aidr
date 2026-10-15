@@ -34,13 +34,14 @@ A path is a *project environment file* when all of these hold:
 | Action | Project environment file | Any other `.env`, `~/.aws`, `~/.ssh`, other credential stores |
 |---|---|---|
 | Load it into a process (`source .env`, `dotenv -e .env`, `docker --env-file .env`) or print the environment (`printenv`) | allow | unchanged (rules apply) |
-| Read it into the agent's context: `cat`, `head`, `less`, the Read tool | **allow** (balanced/relaxed), ask (paranoid or `project_env_reads: "ask"`) | ask, as before |
+| Read it into the agent's context: `cat`, `head`, `less`, the Read tool | ask by default; **allow** with the opt-in `project_env_reads: "auto"` (balanced/relaxed) or `"allow"` | ask, as before |
 | Copy, move, archive or encode it (`cp .env /tmp/x`, `tar … .env`, `$(base64 .env)`) | ask, as before | ask, as before |
 | Write or append to it, or delete it | ask, as before | ask, as before |
 | Send it anywhere (`cat .env \| curl -d @- …`, or a later upload in the same session) | **exfiltration chain: ask or deny** | exfiltration chain: ask or deny |
 
 Reading and loading the project's own configuration is everyday development
-work and is now treated the same way. Moving the file elsewhere or sending it
+work; an administrator who accepts that can opt in to treating a read like a
+load (`project_env_reads: "auto"`). The default still asks. Moving the file elsewhere or sending it
 out is still caught. Every read is still recorded in the session flow as
 secret-grade material. A later call that sends data out, such as
 `curl -d @notes.txt https://…`, `scp` or an MCP "send" tool, is therefore an
@@ -61,9 +62,9 @@ second path still matches.
 
 `project_env_reads` sets the read behaviour:
 
-- `"auto"` (default): allow, except under `sensitivity: "paranoid"`.
-- `"allow"`: always allow.
-- `"ask"`: always ask, as before this policy.
+- `"ask"` (default): always ask.
+- `"auto"` (opt-in): allow, except under `sensitivity: "paranoid"`.
+- `"allow"` (opt-in): always allow.
 
 Exfiltration tracking does not depend on this setting.
 

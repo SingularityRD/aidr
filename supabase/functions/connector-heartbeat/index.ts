@@ -7,7 +7,7 @@
 // hook_untrusted / hook_broken). The measurement happens on the device, from
 // outside the hook, because a removed or untrusted hook never runs and so
 // cannot report that it stopped. record_connector_heartbeat
-// (20261014000200) stores the latest state, refreshes agents.last_seen and
+// (20261014000205) stores the latest state, refreshes agents.last_seen and
 // raises `agent.unprotected` when a protected connector stops being
 // protected. The body carries enums and counts only.
 

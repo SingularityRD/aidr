@@ -17,7 +17,7 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 }));
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const migration = readFileSync(join(ROOT, "supabase", "migrations", "20261014000100_siem_forwarding.sql"), "utf8");
+const migration = readFileSync(join(ROOT, "supabase", "migrations", "20261014000130_siem_forwarding.sql"), "utf8");
 const config = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
 
 const TENANT = "22222222-2222-4222-8222-222222222222";
@@ -351,7 +351,7 @@ describe("SIEM forwarding SQL contract", () => {
 	});
 
 	it("applies the restrictive tenant identity barrier to both tables", () => {
-		const report = analyzeIdentityBarrier([{ name: "20261014000100_siem_forwarding.sql", sql: migration }]);
+		const report = analyzeIdentityBarrier([{ name: "20261014000130_siem_forwarding.sql", sql: migration }]);
 		expect(report.missing).toEqual([]);
 		expect(migration.match(/create policy tenant_identity_access_restrict/g)).toHaveLength(2);
 	});

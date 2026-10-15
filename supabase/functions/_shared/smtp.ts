@@ -47,6 +47,16 @@ export interface SmtpMessage {
 	/** Message-ID local part seed; must not contain a secret. */
 	messageIdSeed: string;
 	date?: Date;
+	/** Files sent after the body (already validated by the mailer). */
+	attachments?: readonly SmtpAttachment[];
+}
+
+export interface SmtpAttachment {
+	/** Safe file name ([A-Za-z0-9._-]); the mailer rejects anything else. */
+	filename: string;
+	contentType: string;
+	/** Base64 of the file bytes. */
+	contentBase64: string;
 }
 
 type SmtpStage = "connect" | "greeting" | "ehlo" | "starttls" | "auth" | "mail" | "rcpt" | "data";
@@ -132,7 +142,11 @@ function domainOf(address: string): string {
 	return address.slice(address.lastIndexOf("@") + 1).toLowerCase();
 }
 
-/** RFC 5322 message with a text and an HTML alternative, both base64 UTF-8. */
+/**
+ * RFC 5322 message with a text and an HTML alternative, both base64 UTF-8.
+ * With attachments the alternative is wrapped in multipart/mixed and each
+ * file follows it as a base64 part.
+ */
 export async function buildMimeMessage(
 	settings: Pick<SmtpSettings, "from" | "envelopeFrom">,
 	message: SmtpMessage,
@@ -140,6 +154,7 @@ export async function buildMimeMessage(
 	const digest = hex(await crypto.subtle.digest("SHA-256", encoder.encode(message.messageIdSeed)));
 	const messageId = `<${digest.slice(0, 40)}@${domainOf(settings.envelopeFrom)}>`;
 	const boundary = `aidr-${hex(crypto.getRandomValues(new Uint8Array(12)).buffer)}`;
+	const attachments = message.attachments ?? [];
 	const date = (message.date ?? new Date()).toUTCString().replace("GMT", "+0000");
 	const headers = [
 		`From: ${encodeSender(settings.from)}`,
@@ -149,16 +164,34 @@ export async function buildMimeMessage(
 		`Message-ID: ${messageId}`,
 		"MIME-Version: 1.0",
 		"Auto-Submitted: auto-generated",
-		`Content-Type: multipart/alternative; boundary="${boundary}"`,
 	];
 	const part = (type: string, body: string) =>
 		[`--${boundary}`, `Content-Type: ${type}; charset=UTF-8`, "Content-Transfer-Encoding: base64", "", base64Lines(body)].join("\r\n");
+	const alternative = [part("text/plain", message.text), part("text/html", message.html), `--${boundary}--`];
+	if (attachments.length === 0) {
+		const data = [...headers, `Content-Type: multipart/alternative; boundary="${boundary}"`, "", ...alternative, ""].join("\r\n");
+		return { data, messageId };
+	}
+	const mixed = `${boundary}-mixed`;
+	const file = (item: SmtpAttachment) =>
+		[
+			`--${mixed}`,
+			`Content-Type: ${item.contentType}; name="${item.filename}"`,
+			`Content-Disposition: attachment; filename="${item.filename}"`,
+			"Content-Transfer-Encoding: base64",
+			"",
+			(item.contentBase64.match(/.{1,76}/g) ?? [""]).join("\r\n"),
+		].join("\r\n");
 	const data = [
 		...headers,
+		`Content-Type: multipart/mixed; boundary="${mixed}"`,
 		"",
-		part("text/plain", message.text),
-		part("text/html", message.html),
-		`--${boundary}--`,
+		`--${mixed}`,
+		`Content-Type: multipart/alternative; boundary="${boundary}"`,
+		"",
+		...alternative,
+		...attachments.map(file),
+		`--${mixed}--`,
 		"",
 	].join("\r\n");
 	return { data, messageId };

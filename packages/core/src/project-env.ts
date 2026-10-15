@@ -9,10 +9,10 @@
  *   expansion, or an absolute path under that directory. A working directory
  *   that is the filesystem root or the home directory is not a project, so
  *   nothing qualifies there.
- * - Reading one into the agent's context (`cat .env`, the Read tool) is
- *   treated like loading it (`source .env`, `dotenv`, `printenv`): no per-call
- *   prompt in balanced/relaxed. Paranoid sensitivity, or
- *   `project_env_reads: "ask"`, keeps the prompt.
+ * - Reading one into the agent's context (`cat .env`, the Read tool) asks by
+ *   default (`project_env_reads: "ask"`). An administrator can opt in to
+ *   treating it like loading it (`source .env`, `dotenv`, `printenv`):
+ *   `"auto"` skips the per-call prompt in balanced/relaxed, `"allow"` always.
  * - The read is still recorded as secret-grade private data in the session
  *   flow, so any later (or same-call) egress that carries data is an
  *   `exfil_chain` finding. `.env` files outside the working directory,
@@ -108,7 +108,7 @@ function isProjectEnvFile(path: string, workingDirectory: string | undefined): b
 export function projectEnvReadsAllowed(
 	config: Pick<Config, "sensitivity"> & { project_env_reads?: Config["project_env_reads"] },
 ): boolean {
-	const mode = config.project_env_reads ?? "auto";
+	const mode = config.project_env_reads ?? "ask";
 	if (mode === "auto") return config.sensitivity !== "paranoid";
 	return mode === "allow";
 }

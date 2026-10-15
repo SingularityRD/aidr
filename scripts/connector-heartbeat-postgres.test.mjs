@@ -1,5 +1,5 @@
 // Isolated PostgreSQL regression for C10: per-connector heartbeats and the
-// `agent.unprotected` alert (migration 20261014000200).
+// `agent.unprotected` alert (migration 20261014000205).
 //
 // Fixture tables carry the columns the migration touches; the alert helper is
 // the production app.enqueue_channel_notification (20260928000001), copied
@@ -17,7 +17,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const MIGRATION = readFileSync(resolve(root, "supabase/migrations/20261014000200_connector_heartbeats.sql"), "utf8");
+const MIGRATION = readFileSync(resolve(root, "supabase/migrations/20261014000205_connector_heartbeats.sql"), "utf8");
 const ALERTS = readFileSync(resolve(root, "supabase/migrations/20260928000001_agent_offline_governance_alerts.sql"), "utf8");
 const ENQUEUE = ALERTS.slice(
 	ALERTS.indexOf("create or replace function app.enqueue_channel_notification("),

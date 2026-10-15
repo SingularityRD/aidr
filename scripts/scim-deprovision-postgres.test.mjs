@@ -1,5 +1,5 @@
 // Isolated PostgreSQL regression for D12: a SCIM deprovision revokes the
-// person's device access (migration 20261014000100).
+// person's device access (migration 20261014000120).
 //
 // The migration runs against fixture tables that carry only the columns it
 // touches, so the behaviour is proven in isolation from the full chain.
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MIGRATION = readFileSync(
-	resolve(root, "supabase/migrations/20261014000100_scim_deprovision_revokes_device_access.sql"),
+	resolve(root, "supabase/migrations/20261014000120_scim_deprovision_revokes_device_access.sql"),
 	"utf8",
 );
 

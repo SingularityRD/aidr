@@ -1,5 +1,5 @@
 // Real-PostgreSQL contract for central SIEM forwarding:
-//   supabase/migrations/20261014000100_siem_forwarding.sql
+//   supabase/migrations/20261014000130_siem_forwarding.sql
 // (on top of the alert-integration migrations whose helpers it reuses).
 //
 // Runs against AIDR_POSTGRES_TEST_URL=postgres://user@host:port/db (a
@@ -17,7 +17,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const migrations = [
 	"20260926000020_notification_channels.sql",
 	"20260926000021_notification_outbox.sql",
-	"20261014000100_siem_forwarding.sql",
+	"20261014000130_siem_forwarding.sql",
 ].map((name) => readFileSync(resolve(root, "supabase/migrations", name), "utf8"));
 
 function run(command, args, input = "") {

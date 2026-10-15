@@ -47,10 +47,10 @@ Two different situations are kept apart. Neither is ever reported as a clean sca
 
 | Situation | Example | Verdict of an otherwise-allowed call |
 |---|---|---|
-| **AMSI cannot run on this host at all**: no backend could be established | koffi missing or blocked, and PowerShell in `ConstrainedLanguage` | Default (`amsi_check.unavailable_action: "annotate"`): stays `allow`, category `amsi_not_available`, with the reason "content was NOT scanned by AMSI; local threat rules still inspected it; not a clean AMSI result". With `"ask"`: `ask`, category `amsi_unavailable`. |
+| **AMSI cannot run on this host at all**: no backend could be established | koffi missing or blocked, and PowerShell in `ConstrainedLanguage` | Default (`amsi_check.unavailable_action: "ask"`): `ask`, category `amsi_unavailable`. With the opt-in `"annotate"`: stays `allow`, category `amsi_not_available`, with the reason "content was NOT scanned by AMSI; local threat rules still inspected it; not a clean AMSI result". |
 | **A scan failed on a working backend** | PowerShell process died or timed out mid-scan; start-up threw | Always `ask`, category `amsi_unavailable` (source `amsi`). |
 
-This follows the failure policy for optional detection signals: an unavailable signal is skipped, logged and surfaced, never shown as clean. A `deny` or `ask` from another layer is never weakened; it only gains the note.
+`"annotate"` follows the failure policy for optional detection signals: an unavailable signal is skipped, logged and surfaced, never shown as clean. The default holds the call instead, because a host that cannot run AMSI at all is usually one an administrator locked down on purpose. A `deny` or `ask` from another layer is never weakened; it only gains the note.
 
 **Host state record.** A hook is a new process per tool call. So that a host where AMSI cannot run does not pay a PowerShell start (and a warning) on every call, the outcome of the start-up attempt is kept in `~/.singularity-aidr/amsi-state.json`:
 
@@ -88,7 +88,7 @@ AMSI results are not cached — each tool call triggers a fresh scan.
 ```
 
 - `amsi_check.enabled` - set to `false` to disable AMSI scanning. Default: `true`.
-- `amsi_check.unavailable_action` - `"annotate"` (default) or `"ask"`; see [When AMSI is unavailable](#when-amsi-is-unavailable).
+- `amsi_check.unavailable_action` - `"ask"` (default) or `"annotate"` (opt-in); see [When AMSI is unavailable](#when-amsi-is-unavailable).
 
 AMSI scanning is enabled by default and runs on Windows and WSL. On other platforms the setting has no effect.
 

@@ -319,8 +319,12 @@ function internalScopeOf(allowlist: Allowlist): InternalScope {
  * Whether a URL points at an administrator-declared internal host: a literal
  * IP inside an internal network, or a hostname under an internal domain
  * suffix. URLs carrying credentials (`user@host`) never qualify, since the
- * visible prefix of such a URL is not where it goes.
+ * visible prefix of such a URL is not where it goes. The cloud instance
+ * metadata endpoints never qualify, whatever range is declared: reaching them
+ * is credential theft, not an internal service.
  */
+const METADATA_HOSTS = new Set(["169.254.169.254", "169.254.170.2", "fd00:ec2::254"]);
+
 function isInternalUrl(url: string, scope: InternalScope): boolean {
 	if (!scope.hasNetworks && scope.suffixes.length === 0) return false;
 	let parsed: URL;
@@ -331,7 +335,7 @@ function isInternalUrl(url: string, scope: InternalScope): boolean {
 	}
 	if (parsed.username || parsed.password) return false;
 	const host = parsed.hostname.toLowerCase().replace(/^\[(.*)\]$/, "$1");
-	if (!host) return false;
+	if (!host || METADATA_HOSTS.has(host)) return false;
 	const version = isIP(host);
 	if (version !== 0) {
 		return scope.hasNetworks && scope.networks.check(host, version === 4 ? "ipv4" : "ipv6");

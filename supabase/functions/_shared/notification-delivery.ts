@@ -72,7 +72,7 @@ const DIGEST_COUNT_KEYS = [
 ] as const;
 type DigestCountKey = (typeof DIGEST_COUNT_KEYS)[number];
 
-/** Hook states a connector heartbeat reports (migration 20261014000200). */
+/** Hook states a connector heartbeat reports (migration 20261014000205). */
 const CONNECTOR_STATES = [
 	"hook_missing",
 	"hook_disabled",

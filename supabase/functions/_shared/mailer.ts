@@ -211,6 +211,9 @@ export function createSmtpMailer(settings: SmtpSettings, deps: MailerDeps = {}):
 					html: message.html,
 					// Stable per idempotency key, so a retried alert carries the same Message-ID.
 					messageIdSeed: message.idempotencyKey ?? crypto.randomUUID(),
+					...(message.attachments && message.attachments.length > 0
+						? { attachments: message.attachments }
+						: {}),
 				},
 				transport,
 			);

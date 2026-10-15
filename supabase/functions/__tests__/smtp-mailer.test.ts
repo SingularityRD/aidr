@@ -316,4 +316,45 @@ describe("MIME encoding", () => {
 		);
 		expect(data.split("\r\n\r\n")[0]).not.toMatch(/^Bcc:/m);
 	});
+	it("sends attachments as base64 parts after the text and HTML alternative", async () => {
+		const pdf = btoa("%PDF-1.4 report");
+		const { data } = await buildMimeMessage(
+			{ from: "AIDR <aidr@corp.example>", envelopeFrom: "aidr@corp.example" },
+			{
+				to: "x@y.example",
+				subject: "s",
+				text: "t",
+				html: "h",
+				messageIdSeed: "seed",
+				attachments: [{ filename: "report.pdf", contentType: "application/pdf", contentBase64: pdf }],
+			},
+		);
+		const [head] = data.split("\r\n\r\n");
+		expect(head).toMatch(/^Content-Type: multipart\/mixed; boundary="(aidr-[0-9a-f]+-mixed)"$/m);
+		expect(data).toMatch(/Content-Type: multipart\/alternative; boundary="aidr-[0-9a-f]+"/);
+		expect(data).toContain('Content-Disposition: attachment; filename="report.pdf"');
+		expect(data).toContain(`\r\n${pdf}\r\n`);
+		expect(data.indexOf("text/html")).toBeLessThan(data.indexOf("report.pdf"));
+		expect(data.trimEnd()).toMatch(/--aidr-[0-9a-f]+-mixed--$/);
+	});
+
+	it("passes the mailer's attachments to the relay", async () => {
+		const server = await relay();
+		const transport = nodeSocketTransport(() => ({ host: "127.0.0.1", port: server.port }));
+		const mailer = createMailer(
+			env({
+				SMTP_HOST: "127.0.0.1",
+				SMTP_PORT: String(server.port),
+				SMTP_ADMIN_EMAIL: "aidr@corp.example",
+				AIDR_SMTP_CA_PEM_B64: CA_B64,
+			}),
+			{ transport },
+		);
+		const result = await mailer.send({
+			...MESSAGE,
+			attachments: [{ filename: "report.html", contentType: "text/html", contentBase64: btoa("<p>r</p>") }],
+		});
+		expect(result).toMatchObject({ ok: true, provider: "smtp" });
+		expect(server.sessions[0].data).toContain('filename="report.html"');
+	});
 });

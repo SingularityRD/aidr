@@ -5,7 +5,7 @@ dashboard **SIEM** page (`siem-destinations` Edge Function); a scheduled forward
 (`siem-forwarder`) delivers. Shared code: `supabase/functions/_shared/siem-config.ts`
 (validation, encryption, network policy) and `supabase/functions/_shared/siem-forwarding.ts`
 (envelope, formats, transports, forwarder loop). Schema:
-`supabase/migrations/20261014000100_siem_forwarding.sql`.
+`supabase/migrations/20261014000130_siem_forwarding.sql`.
 
 This is the server-side path. The per-endpoint path (each host forwards its own incidents
 from a durable local queue, `packages/core/src/siem-delivery.ts`, configured with

@@ -45,6 +45,8 @@ describe("project .env policy (D11)", () => {
 				package_check: { enabled: false },
 				cache: { enabled: false },
 				logging: { enabled: false },
+				// The relaxed read policy is opt-in; these tests cover it.
+				project_env_reads: "auto",
 				...extraConfig,
 			}),
 		);
@@ -115,6 +117,13 @@ describe("project .env policy (D11)", () => {
 		expect((await evaluate("Bash", { command: "cat .env.prod" }, "l1")).decision).toBe("ask");
 		expect((await evaluate("Bash", { command: "cat .env.stage" }, "l2")).decision).toBe("ask");
 		expect((await evaluate("Read", { file_path: ".env.prod" }, "l3")).decision).toBe("ask");
+	});
+
+	it("asks by default: the relaxed read policy is an administrator opt-in", async () => {
+		// `undefined` drops the key from the written config, leaving the default.
+		const byDefault = await evaluator({ project_env_reads: undefined });
+		expect((await byDefault("Bash", { command: "cat .env" }, "d1")).decision).toBe("ask");
+		expect((await byDefault("Read", { file_path: ".env" }, "d2")).decision).toBe("ask");
 	});
 
 	it("keeps prompting under paranoid sensitivity or project_env_reads: ask", async () => {

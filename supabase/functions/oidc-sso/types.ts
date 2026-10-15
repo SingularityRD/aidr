@@ -85,7 +85,7 @@ export interface DomainRow {
 export type RateLimitDecision = "allowed" | "limited" | "unavailable";
 
 /**
- * Outcome of public.oidc_jit_provision (migration 20261014000100). The first
+ * Outcome of public.oidc_jit_provision (migration 20261014000110). The first
  * six leave the user with a membership owned by JIT, an administrator or SCIM;
  * every other status means JIT granted nothing and the login is denied.
  */
