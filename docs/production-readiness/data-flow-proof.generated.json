@@ -1,0 +1,700 @@
+{
+	"schema_version": 1,
+	"document_id": "aidr-data-flow-proof",
+	"generated_by": "packages/core/src/__tests__/data-flow-proof.test.ts",
+	"regenerate": "AIDR_UPDATE_DATA_FLOW_PROOF=1 npx vitest run packages/core/src/__tests__/data-flow-proof.test.ts",
+	"statement": "Each flow below is driven through its real client/builder with canary inputs; the test fails if a request carries a body key path outside body_key_paths, a canary outside the declared content_fields, a secret anywhere, a credential other than the Authorization header, or if a disabled feature sends a request.",
+	"canary_classes": [
+		"prompt",
+		"aws_key",
+		"github_token",
+		"private_path",
+		"tckn",
+		"email",
+		"query_token"
+	],
+	"secret_canary_classes": [
+		"aws_key",
+		"github_token",
+		"query_token"
+	],
+	"flows": [
+		{
+			"id": "ingest.runtime_verdict.hash",
+			"method": "POST",
+			"endpoint": "{cp}/v1/ingest",
+			"source": "packages/core/src/evaluator.ts -> packages/core/src/audit-log.ts -> packages/core/src/managed.ts (redactRemoteEvent) -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "mode=managed, control_plane.enabled, control_plane.send_audit_logs (default true), enrolled key; clean verdicts only with send_clean_verdicts; incidents only with sync_incidents; redact_mode=hash (default)",
+			"sends_nothing_when": [
+				"mode != managed",
+				"control_plane.enabled = false",
+				"control_plane.send_audit_logs = false (verdict events)",
+				"no enrolled API key",
+				"tenant sync disabled / degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"agent_runtime",
+				"agent_runtime_version",
+				"aidr_version",
+				"events",
+				"events[incident].artifacts",
+				"events[incident].decision",
+				"events[incident].event_id",
+				"events[incident].incident_id",
+				"events[incident].matched_threat_id",
+				"events[incident].reasons",
+				"events[incident].recommended_actions",
+				"events[incident].session_id",
+				"events[incident].severity",
+				"events[incident].source",
+				"events[incident].status",
+				"events[incident].timestamp",
+				"events[incident].tool_input_summary",
+				"events[incident].tool_name",
+				"events[incident].type",
+				"events[runtime_verdict].artifacts",
+				"events[runtime_verdict].duration_ms",
+				"events[runtime_verdict].event_id",
+				"events[runtime_verdict].matched_threat_id",
+				"events[runtime_verdict].reasons",
+				"events[runtime_verdict].session_id",
+				"events[runtime_verdict].severity",
+				"events[runtime_verdict].source",
+				"events[runtime_verdict].timestamp",
+				"events[runtime_verdict].tool_input_summary",
+				"events[runtime_verdict].tool_name",
+				"events[runtime_verdict].type",
+				"events[runtime_verdict].user_override",
+				"events[runtime_verdict].verdict",
+				"iid"
+			],
+			"hashed_fields": [
+				"events[runtime_verdict].tool_input_summary",
+				"events[runtime_verdict].artifacts[]",
+				"events[incident].tool_input_summary",
+				"events[incident].artifacts[]"
+			],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "ingest.runtime_verdict.full",
+			"method": "POST",
+			"endpoint": "{cp}/v1/ingest",
+			"source": "packages/core/src/evaluator.ts -> packages/core/src/audit-log.ts -> packages/core/src/managed.ts (redactRemoteEvent) -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "as ingest.runtime_verdict.hash, redact_mode=full",
+			"sends_nothing_when": [
+				"mode != managed",
+				"control_plane.enabled = false",
+				"control_plane.send_audit_logs = false (verdict events)",
+				"no enrolled API key",
+				"tenant sync disabled / degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"agent_runtime",
+				"agent_runtime_version",
+				"aidr_version",
+				"events",
+				"events[runtime_verdict].artifacts",
+				"events[runtime_verdict].duration_ms",
+				"events[runtime_verdict].event_id",
+				"events[runtime_verdict].matched_threat_id",
+				"events[runtime_verdict].reasons",
+				"events[runtime_verdict].session_id",
+				"events[runtime_verdict].severity",
+				"events[runtime_verdict].source",
+				"events[runtime_verdict].timestamp",
+				"events[runtime_verdict].tool_input_summary",
+				"events[runtime_verdict].tool_name",
+				"events[runtime_verdict].type",
+				"events[runtime_verdict].user_override",
+				"events[runtime_verdict].verdict",
+				"iid"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "ingest.runtime_verdict.none",
+			"method": "POST",
+			"endpoint": "{cp}/v1/ingest",
+			"source": "packages/core/src/evaluator.ts -> packages/core/src/audit-log.ts -> packages/core/src/managed.ts (redactRemoteEvent) -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "as ingest.runtime_verdict.hash, redact_mode=none (documented as not recommended for production)",
+			"sends_nothing_when": [
+				"mode != managed",
+				"control_plane.enabled = false",
+				"control_plane.send_audit_logs = false (verdict events)",
+				"no enrolled API key",
+				"tenant sync disabled / degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"agent_runtime",
+				"agent_runtime_version",
+				"aidr_version",
+				"events",
+				"events[runtime_verdict].artifacts",
+				"events[runtime_verdict].duration_ms",
+				"events[runtime_verdict].event_id",
+				"events[runtime_verdict].matched_threat_id",
+				"events[runtime_verdict].reasons",
+				"events[runtime_verdict].session_id",
+				"events[runtime_verdict].severity",
+				"events[runtime_verdict].source",
+				"events[runtime_verdict].timestamp",
+				"events[runtime_verdict].tool_input_summary",
+				"events[runtime_verdict].tool_name",
+				"events[runtime_verdict].type",
+				"events[runtime_verdict].user_override",
+				"events[runtime_verdict].verdict",
+				"iid"
+			],
+			"hashed_fields": [],
+			"content_fields": [
+				{
+					"path": "events[runtime_verdict].tool_input_summary",
+					"may_contain": [
+						"prompt",
+						"private_path",
+						"email",
+						"tckn"
+					],
+					"why": "redact_mode=none sends the credential-scrubbed command summary; the ingest server stores [Redacted] instead"
+				},
+				{
+					"path": "events[runtime_verdict].artifacts",
+					"may_contain": [
+						"prompt",
+						"private_path",
+						"email",
+						"tckn"
+					],
+					"why": "redact_mode=none sends credential-scrubbed artifacts; the ingest server stores [Redacted] instead"
+				},
+				{
+					"path": "events[runtime_verdict].reasons",
+					"may_contain": [
+						"prompt",
+						"private_path",
+						"email",
+						"tckn"
+					],
+					"why": "redact_mode=none sends credential-scrubbed reasons; the ingest server stores []"
+				}
+			],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "ingest.heartbeat",
+			"method": "POST",
+			"endpoint": "{cp}/v1/ingest",
+			"source": "packages/core/src/evaluator.ts / packages/core/src/session-start.ts entitlement refresh -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "mode=managed, control_plane.enabled, enrolled key, entitlement missing/stale (refresh)",
+			"sends_nothing_when": [
+				"mode != managed",
+				"control_plane.enabled = false",
+				"no enrolled API key"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"agent_runtime",
+				"agent_runtime_version",
+				"aidr_version",
+				"events",
+				"iid"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "ingest.posture",
+			"method": "POST",
+			"endpoint": "{cp}/v1/ingest",
+			"source": "packages/core/src/posture-events.ts -> packages/core/src/posture-upload.ts -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "explicit `aidr scan --upload` / `aidr discover --upload` with an enrolled key",
+			"sends_nothing_when": [
+				"control_plane.enabled = false",
+				"no control_plane.endpoint",
+				"no enrolled API key",
+				"tenant sync disabled"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"agent_runtime",
+				"agent_runtime_version",
+				"aidr_version",
+				"events",
+				"events[agent_posture_finding].agent_host",
+				"events[agent_posture_finding].artifacts",
+				"events[agent_posture_finding].check_id",
+				"events[agent_posture_finding].event_id",
+				"events[agent_posture_finding].finding_count",
+				"events[agent_posture_finding].finding_kind",
+				"events[agent_posture_finding].finding_severity",
+				"events[agent_posture_finding].reasons",
+				"events[agent_posture_finding].scan_id",
+				"events[agent_posture_finding].severity",
+				"events[agent_posture_finding].timestamp",
+				"events[agent_posture_finding].tool_input_summary",
+				"events[agent_posture_finding].type",
+				"events[mcp_inventory_finding].artifacts",
+				"events[mcp_inventory_finding].attestation_status",
+				"events[mcp_inventory_finding].configuration_digest",
+				"events[mcp_inventory_finding].event_id",
+				"events[mcp_inventory_finding].finding_kind",
+				"events[mcp_inventory_finding].finding_severity",
+				"events[mcp_inventory_finding].mcp_server_name",
+				"events[mcp_inventory_finding].mcp_transport",
+				"events[mcp_inventory_finding].reasons",
+				"events[mcp_inventory_finding].risk_categories",
+				"events[mcp_inventory_finding].scan_id",
+				"events[mcp_inventory_finding].server_digest",
+				"events[mcp_inventory_finding].severity",
+				"events[mcp_inventory_finding].timestamp",
+				"events[mcp_inventory_finding].tool_input_summary",
+				"events[mcp_inventory_finding].type",
+				"events[plugin_scan_finding].artifacts",
+				"events[plugin_scan_finding].event_id",
+				"events[plugin_scan_finding].finding_kind",
+				"events[plugin_scan_finding].finding_severity",
+				"events[plugin_scan_finding].matched_threat_id",
+				"events[plugin_scan_finding].plugin_key",
+				"events[plugin_scan_finding].plugin_version",
+				"events[plugin_scan_finding].reasons",
+				"events[plugin_scan_finding].scan_id",
+				"events[plugin_scan_finding].severity",
+				"events[plugin_scan_finding].skill_risk_type",
+				"events[plugin_scan_finding].source_file_digest",
+				"events[plugin_scan_finding].timestamp",
+				"events[plugin_scan_finding].tool_input_summary",
+				"events[plugin_scan_finding].type",
+				"iid"
+			],
+			"hashed_fields": [
+				"events[mcp_inventory_finding].server_digest",
+				"events[mcp_inventory_finding].configuration_digest",
+				"events[plugin_scan_finding].source_file_digest",
+				"events[agent_posture_finding].tool_input_summary"
+			],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "approval_request.submit",
+			"method": "POST",
+			"endpoint": "{cp}/v1/approval-requests",
+			"source": "packages/core/src/dashboard-approvals.ts (processDashboardApproval)",
+			"enabled_by": "mode=managed, enrolled key, ACTIVE ed25519-verified v2 entitlement; on every `ask` verdict",
+			"sends_nothing_when": [
+				"mode != managed",
+				"control_plane.enabled = false",
+				"no enrolled API key",
+				"no signed entitlement",
+				"tenant sync disabled"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"action_id",
+				"agent_runtime",
+				"artifact_digest",
+				"expires_at",
+				"iid",
+				"summary",
+				"threat_ids",
+				"tool"
+			],
+			"hashed_fields": [
+				"artifact_digest"
+			],
+			"content_fields": [
+				{
+					"path": "summary",
+					"may_contain": [
+						"prompt",
+						"private_path",
+						"email",
+						"tckn"
+					],
+					"why": "the approver must see what is being approved: a credential-scrubbed, control-character-escaped summary of at most 512 characters (docs/configuration.md, dashboard approvals)"
+				}
+			],
+			"matrix_source_lists_this_path": false
+		},
+		{
+			"id": "false_positive_report",
+			"method": "POST",
+			"endpoint": "{cp}/v1/false-positive-reports",
+			"source": "packages/core/src/false-positive-report.ts (submitFalsePositiveReport)",
+			"enabled_by": "explicit `aidr report-fp <actionId>` in managed mode with a signed entitlement",
+			"sends_nothing_when": [
+				"mode != managed",
+				"no enrolled API key",
+				"no signed entitlement"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"action_id",
+				"agent_runtime",
+				"category",
+				"decision",
+				"feedback_id",
+				"iid",
+				"occurred_at",
+				"rationale",
+				"reason_code",
+				"record_hash",
+				"rule_id",
+				"severity",
+				"tool"
+			],
+			"hashed_fields": [],
+			"content_fields": [
+				{
+					"path": "rationale",
+					"may_contain": [
+						"prompt",
+						"email"
+					],
+					"why": "the developer's own typed note: credential-scrubbed and bounded to 500 characters, but free text (PII the user types is not removed)"
+				}
+			],
+			"matrix_source_lists_this_path": false
+		},
+		{
+			"id": "connector_heartbeat",
+			"method": "POST",
+			"endpoint": "{cp}/v1/connector-heartbeat",
+			"source": "packages/cli/src/utils/heartbeat.ts (builder) -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "`aidr heartbeat` in managed mode with an enrolled key",
+			"sends_nothing_when": [
+				"mode != managed",
+				"no enrolled API key",
+				"degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"connectors",
+				"connectors[].connector",
+				"connectors[].disable_attempts",
+				"connectors[].enforcement",
+				"connectors[].protection_locked",
+				"connectors[].state",
+				"iid"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "policy_ack",
+			"method": "POST",
+			"endpoint": "{cp}/v1/policy-ack",
+			"source": "packages/core/src/remote-policy.ts -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "managed remote policy load with an enrolled key",
+			"sends_nothing_when": [
+				"no endpoint",
+				"degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"policy_sha256",
+				"version"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "device_start",
+			"method": "POST",
+			"endpoint": "{cp}/v1/device-start",
+			"source": "packages/core/src/session-start.ts -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "managed-only build without an API key (device-code enrollment)",
+			"sends_nothing_when": [
+				"no endpoint",
+				"degraded safe mode",
+				"already enrolled"
+			],
+			"auth": "none",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"agent_runtime",
+				"agent_runtime_version",
+				"hostname",
+				"iid",
+				"os"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "device_poll",
+			"method": "POST",
+			"endpoint": "{cp}/v1/device-poll",
+			"source": "packages/core/src/session-start.ts -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "pending device-code enrollment",
+			"sends_nothing_when": [
+				"no endpoint",
+				"no device code",
+				"degraded safe mode"
+			],
+			"auth": "device_code",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "enroll",
+			"method": "POST",
+			"endpoint": "{cp}/v1/enroll",
+			"source": "packages/core/src/managed-enrollment.ts -> packages/core/src/clients/control-plane.ts",
+			"enabled_by": "auth.enrollment_token configured and no API key",
+			"sends_nothing_when": [
+				"no endpoint",
+				"no enrollment token",
+				"degraded safe mode"
+			],
+			"auth": "enrollment_token",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"agent_runtime",
+				"agent_runtime_version",
+				"iid"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "get.revocations",
+			"method": "GET",
+			"endpoint": "{cp}/v1/revocations",
+			"source": "packages/core/src/clients/control-plane.ts",
+			"enabled_by": "managed mode, licensing.revocations_enabled",
+			"sends_nothing_when": [
+				"no endpoint",
+				"no enrolled API key",
+				"degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "get.packs-manifest",
+			"method": "GET",
+			"endpoint": "{cp}/v1/packs-manifest",
+			"source": "packages/core/src/clients/control-plane.ts",
+			"enabled_by": "managed premium pack delivery",
+			"sends_nothing_when": [
+				"no endpoint",
+				"no enrolled API key",
+				"degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "get.policy",
+			"method": "GET",
+			"endpoint": "{cp}/v1/policy",
+			"source": "packages/core/src/clients/control-plane.ts",
+			"enabled_by": "control_plane.enabled + an API key (KNOWN GAP: also in local mode, contrary to docs/configuration.md)",
+			"sends_nothing_when": [
+				"no endpoint",
+				"no enrolled API key",
+				"degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "billing_checkout",
+			"method": "POST",
+			"endpoint": "{cp}/v1/billing-checkout",
+			"source": "packages/core/src/clients/control-plane.ts",
+			"enabled_by": "explicit CLI billing command with an enrolled key",
+			"sends_nothing_when": [
+				"no endpoint",
+				"no enrolled API key",
+				"degraded safe mode"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-016",
+			"body_key_paths": [
+				"plan",
+				"request_id",
+				"seats"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": false
+		},
+		{
+			"id": "url_reputation",
+			"method": "POST",
+			"endpoint": "url_check.endpoint (default AIDR reputation gateway)",
+			"source": "packages/core/src/clients/url-check.ts",
+			"enabled_by": "url_check.enabled (default false in source builds)",
+			"sends_nothing_when": [
+				"url_check.enabled = false",
+				"URL carries a query, fragment or credentials (withheld unless include_query_parameters)",
+				"URL matched by the signed reputation feed"
+			],
+			"auth": "optional_service_api_key",
+			"matrix_flow": "DF-005",
+			"body_key_paths": [
+				"client-info",
+				"client-info.product-name",
+				"client-info.product-version",
+				"queries",
+				"queries[].key",
+				"queries[].key.url-like"
+			],
+			"hashed_fields": [],
+			"content_fields": [
+				{
+					"path": "queries",
+					"may_contain": [],
+					"why": "the URL itself (scheme, host, path) is the lookup key; query strings are withheld by default"
+				}
+			],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "file_reputation",
+			"method": "POST",
+			"endpoint": "file_check.endpoint (default AIDR reputation gateway)",
+			"source": "packages/core/src/clients/file-check.ts",
+			"enabled_by": "file_check.enabled (default false in source builds)",
+			"sends_nothing_when": [
+				"file_check.enabled = false",
+				"hash matched by the signed reputation feed"
+			],
+			"auth": "optional_service_api_key",
+			"matrix_flow": "DF-006",
+			"body_key_paths": [
+				"client_info",
+				"client_info.product_name",
+				"client_info.product_version",
+				"requests",
+				"requests[].key",
+				"requests[].key.sha256"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "version_check",
+			"method": "POST",
+			"endpoint": "{cp}/v1/version-check (managed) or the public AIDR gateway",
+			"source": "packages/core/src/version-check.ts",
+			"enabled_by": "version_check.enabled (default false) or a direct checkForUpdate() call",
+			"sends_nothing_when": [
+				"version_check.enabled = false",
+				"AIDR_SKIP_VERSION_CHECK=1",
+				"dev build"
+			],
+			"auth": "tenant_api_key",
+			"matrix_flow": "DF-007",
+			"body_key_paths": [
+				"agent_runtime",
+				"agent_runtime_version",
+				"aidr_version",
+				"arch",
+				"iid",
+				"os",
+				"os_version"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": true
+		},
+		{
+			"id": "federated_share",
+			"method": "POST",
+			"endpoint": "FederatedConfig.coordinatorUrl",
+			"source": "packages/core/src/federated.ts (library API; no runtime caller wires it)",
+			"enabled_by": "an embedding caller sets coordinatorUrl and calls shareWithCoordinator()",
+			"sends_nothing_when": [
+				"no coordinatorUrl"
+			],
+			"auth": "none",
+			"matrix_flow": "DF-002",
+			"body_key_paths": [
+				"nodeId",
+				"patterns",
+				"patterns[].category",
+				"patterns[].count",
+				"patterns[].hash",
+				"patterns[].id",
+				"patterns[].noiseAdded",
+				"patterns[].severity",
+				"timestamp"
+			],
+			"hashed_fields": [],
+			"content_fields": [],
+			"matrix_source_lists_this_path": false
+		}
+	],
+	"not_covered": [
+		{
+			"path": "AIG deep scan / infra scan",
+			"source": "packages/core/src/aig-scan-client.ts; packages/core/src/aig-infra-scan.ts",
+			"reason": "explicit operator action that sends the chosen target to an operator-configured bridge (loopback by default); target text is the payload by design (DF-004)"
+		},
+		{
+			"path": "Quarantine webhook / Slack",
+			"source": "packages/core/src/quarantine.ts",
+			"reason": "operator-configured destination that receives original file paths and hashes by design (DF-010)"
+		},
+		{
+			"path": "Sentry diagnostics",
+			"source": "packages/core/src/sentry.ts",
+			"reason": "off unless SENTRY_ENABLED and a real DSN; scrubbing covered by telemetry-redaction and sentry suites (DF-008)"
+		},
+		{
+			"path": "Fleet response command channel",
+			"source": "packages/core/src/response-command-consumer-v6.ts; packages/core/src/windows-response-worker.ts",
+			"reason": "command/ack channel carrying tenant id, command ids and device attestation only; covered by its own contract suites"
+		},
+		{
+			"path": "Rule / AIG / reputation-feed downloads, URL endpoint health probe",
+			"source": "packages/core/src/rule-sync.ts; packages/core/src/aig-sync.ts; packages/core/src/reputation-feed.ts; packages/core/src/health.ts",
+			"reason": "download-only GET/HEAD requests that carry no endpoint data beyond a timestamp/rule id"
+		},
+		{
+			"path": "Public package registry metadata",
+			"source": "packages/core/src/clients/package-registry.ts",
+			"reason": "public package name/version lookups against public registries (DF-006)"
+		}
+	]
+}
