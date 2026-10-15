@@ -25,7 +25,7 @@ This folder contains a reference **Supabase** schema + edge function for running
 2. Run `pnpm supabase:check`, then apply migrations in `supabase/migrations/`.
 3. Deploy the edge functions you need:
    - Required for telemetry + seats: `supabase/functions/ingest`
-   - Recommended for dashboard UX: `supabase/functions/api-keys`, `supabase/functions/enrollment-tokens`
+   - Recommended for dashboard UX: `supabase/functions/api-keys`, `supabase/functions/enrollment-tokens`, `supabase/functions/fleet-keys` (multi-use fleet enrollment keys; see `docs/installation/fleet-enrollment.md`)
    - Enrollment exchange (agent bootstrap): `supabase/functions/enroll`
    - Device auth (prompt-install bootstrap): `supabase/functions/device-start`, `supabase/functions/device-poll`, `supabase/functions/device-verify`
    - Pilot gate: `supabase/functions/pilot-apply`, `supabase/functions/pilot-status`, `supabase/functions/pilot-admin`
@@ -144,6 +144,7 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
 - `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` (required by `approval-requests`; 32 random bytes, standard base64. Derives the per-tenant key that seals each tenant's Ed25519 dashboard-approval signing key; without it the function answers `server_misconfigured` and asks stay blocked. Changing it makes existing sealed keys unusable until owners rotate them from the Approvals page)
 - `AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_B64` (required by `installer-download` and `installer-update`; base64 Ed25519 public key of the installer-catalog signing key used by `scripts/publish-installers.mjs`. Missing or invalid answers `server_misconfigured`; a catalog that does not verify is never served)
 - `AIDR_INSTALLERS_BUCKET` (default `aidr-installers`) and `AIDR_INSTALLER_URL_TTL_SECONDS` (default `300`; clamped to `30..900`) for `installer-download`
+- `AIDR_ENROLL_FLEET_RL_PER_MIN` (default `600`, range `1..100000`) for `enroll`: per-minute exchange budget of each fleet enrollment key (`aidr_fleet_`); an invalid value answers `503 enrollment_rate_limit_config_invalid`. `AIDR_FLEETKEY_CREATE_RL_PER_MIN` (default `10`) bounds fleet-key creation per admin per minute in `fleet-keys`
 - `AIDR_PUBLIC_API_ORIGIN` (the customer/agent-reachable API origin for pack grant links and installer download URLs; required when `SUPABASE_URL` is an internal HTTP service name; HTTPS except for explicit loopback development)
 
 The canonical migrations also create a private `aidr-installers` bucket, written only by `scripts/publish-installers.mjs` (signed catalog, signed `latest.json`, immutable versioned installers); `installer-download` lists the verified catalog to active members of a tenant with an active admission and returns a short-lived signed URL per file after writing an `installer.download` audit row.

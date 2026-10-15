@@ -5,6 +5,7 @@ import { englishT, type Translate, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { readTenantAdmission, type TenantAdmission } from "../tenant-admission";
+import { FleetEnrollmentKeys } from "./FleetEnrollmentKeys";
 
 type ApiKeyRow = {
 	id: string;
@@ -594,6 +595,8 @@ function TenantApiKeys({
 					</div>
 				) : null}
 			</div>
+
+			{approved && canIssueIngestKey ? <FleetEnrollmentKeys tenantId={tenantId} /> : null}
 
 			<div className="card">
 				<h2>{t("keys.issued")}</h2>

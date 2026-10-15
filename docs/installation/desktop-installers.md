@@ -333,6 +333,18 @@ msiexec /i singularity-aidr-<version>-windows-x64.msi /qn /l*v aidr-install.log
   `C:\Program Files\Singularity AIDR\bundle\bin\aidr.exe`.
 - Verify the signature before upload: `signtool verify /pa /v <msi>`.
 
+### Many machines: fleet enrollment key
+
+To connect a whole fleet without a code or browser approval per machine,
+create a fleet enrollment key (`aidr_fleet_…`, owners/admins, dashboard
+**API keys → Fleet enrollment keys**) and write it with your control plane
+address to machine policy (`enrollment_key` and `control_plane_url` under
+`HKLM\SOFTWARE\Policies\Singularity AIDR`, or
+`/etc/singularity-aidr/managed.json` on Linux) in the same Intune, GPO, SCCM or
+Ansible step that installs the package. The key is multi-use, limited to the
+number of new machines you set, expires, can be revoked, and never needs to be
+on the msiexec command line. See [Fleet enrollment keys](fleet-enrollment.md).
+
 ### Linux: apt / yum / dnf / configuration management
 
 ```sh

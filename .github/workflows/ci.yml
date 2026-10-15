@@ -143,6 +143,7 @@ jobs:
           node scripts/events-seat-admission-postgres.mjs
           node scripts/pilot-approval-seat-postgres.mjs
           node scripts/enrollment-admission-postgres.test.mjs
+          node scripts/fleet-enrollment-keys-postgres.test.mjs
           node scripts/tenant-ga-admission-postgres.test.mjs --installed
           node scripts/tenant-ga-admission-concurrency-postgres.test.mjs
           node scripts/ga-trial-legal-consent-postgres.test.mjs --installed

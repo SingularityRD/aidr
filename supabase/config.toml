@@ -103,6 +103,10 @@ verify_jwt = false
 verify_jwt = true
 [functions.file-check]
 verify_jwt = false
+[functions.fleet-keys]
+# Dashboard: owners/admins issue, list and revoke multi-use fleet enrollment
+# keys (aidr_fleet_*). The handler repeats session, identity barrier and role checks.
+verify_jwt = true
 [functions.ingest]
 verify_jwt = false
 [functions.installer-download]
