@@ -916,8 +916,11 @@ function installClaude(
 
 // ── Claude Code from the standalone (SEA) bundle ─────────────────────
 
-/** Settings with every AIDR-marked hook replaced by the standalone bundle's hooks. */
-function standaloneClaudeSettings(
+/**
+ * Settings with every AIDR-marked hook replaced by the standalone bundle's hooks.
+ * Exported so the desktop app can preview exactly what `aidr setup` will write.
+ */
+export function standaloneClaudeSettings(
 	settings: Record<string, unknown>,
 	root: string,
 ): Record<string, unknown> {
