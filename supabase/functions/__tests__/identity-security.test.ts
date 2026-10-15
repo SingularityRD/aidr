@@ -222,6 +222,18 @@ describe("identity-security server wiring", () => {
 		expect(source).toContain("handleCors(req)");
 	});
 
+	it("audits a break-glass MFA reset before any factor is deleted (SEC-5)", () => {
+		const breakGlass = source.slice(source.indexOf('if (body.action === "break_glass_recover")'));
+		const auditAt = breakGlass.indexOf('action: "identity.break_glass.token_issued"');
+		const failClosedAt = breakGlass.indexOf('if (!logged) return corsJson(req, 503, { error: "recovery_unavailable" });');
+		const listAt = breakGlass.indexOf("auth.admin.mfa.listFactors");
+		const deleteAt = breakGlass.indexOf("auth.admin.mfa.deleteFactor");
+		expect(auditAt).toBeGreaterThan(0);
+		expect(failClosedAt).toBeGreaterThan(auditAt);
+		expect(listAt).toBeGreaterThan(failClosedAt);
+		expect(deleteAt).toBeGreaterThan(listAt);
+	});
+
 	it("keeps reset responses generic and break-glass secrets out of links", () => {
 		expect(source).toContain("auth_provider_if_configured");
 		expect(source).not.toMatch(/user_not_found|email_not_found|account_exists/);

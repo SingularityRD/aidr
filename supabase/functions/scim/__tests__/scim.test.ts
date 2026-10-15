@@ -290,6 +290,21 @@ describe("SCIM v2 request boundary", () => {
 		expect(crossTenant.status).toBe(400);
 	});
 
+	it("keeps Group.externalId byte-exact instead of normalizing a look-alike of a mapped id", async () => {
+		for (const externalId of ["entra-admins ", " entra-admins", "entra-admins\u0000", "entra\nadmins", ""]) {
+			const response = await handle(request("Groups", { method: "POST", body: JSON.stringify({ externalId, displayName: "Admins" }) }));
+			expect(response.status).toBe(400);
+			expect(await body(response)).toMatchObject({ scimType: "invalidValue" });
+		}
+		expect(store.groups.size).toBe(0);
+		// A homoglyph/case variant is accepted as its own, different id; it is
+		// never folded into "entra-admins", so it cannot inherit that mapping.
+		const lookAlike = await body(await handle(request("Groups", { method: "POST", body: JSON.stringify({ externalId: "ENTRA-ADMİNS", displayName: "Admins" }) })));
+		expect(lookAlike.externalId).toBe("ENTRA-ADMİNS");
+		const rename = await handle(request(`Groups/${lookAlike.id}`, { method: "PATCH", body: JSON.stringify({ schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"], Operations: [{ op: "Replace", path: "externalId", value: "entra-admins" }] }) }));
+		expect(rename.status).toBe(409);
+	});
+
 	it("rejects malformed member ids and resource paths as client errors", async () => {
 		const malformedMember = await handle(request("Groups", {
 			method: "POST",

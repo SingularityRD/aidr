@@ -331,6 +331,210 @@ function validGroupId(value: string): boolean {
 	);
 }
 
+type GrantStatus = "granted" | "inactive" | "unbound" | "manual_conflict" | "not_granted";
+type RoleGrantGroup = { external_group_id: string; display_name: string; role: ScimRole };
+type RoleGrant = {
+	scim_user_id: string;
+	user_name: string;
+	status: GrantStatus;
+	effective_role: ScimRole | null;
+	granted_by_external_group_id: string | null;
+	mapped_groups: RoleGrantGroup[];
+	mapped_group_count: number;
+};
+
+const GRANT_STATUS_LABELS: Record<GrantStatus, DashboardMessageKey> = {
+	granted: "scim.grants.status.granted",
+	inactive: "scim.grants.status.inactive",
+	unbound: "scim.grants.status.unbound",
+	manual_conflict: "scim.grants.status.manualConflict",
+	not_granted: "scim.grants.status.notGranted",
+};
+
+function parseGrantGroup(value: unknown): RoleGrantGroup | null {
+	if (
+		!isRecord(value) ||
+		typeof value.external_group_id !== "string" ||
+		!validGroupId(value.external_group_id) ||
+		typeof value.display_name !== "string" ||
+		typeof value.role !== "string" ||
+		!ALLOWED_ROLES.has(value.role as ScimRole)
+	)
+		return null;
+	return {
+		external_group_id: value.external_group_id,
+		display_name: value.display_name,
+		role: value.role as ScimRole,
+	};
+}
+
+function parseRoleGrant(value: unknown): RoleGrant | null {
+	if (
+		!isRecord(value) ||
+		typeof value.scim_user_id !== "string" ||
+		!UUID.test(value.scim_user_id) ||
+		typeof value.user_name !== "string" ||
+		typeof value.status !== "string" ||
+		!Object.hasOwn(GRANT_STATUS_LABELS, value.status) ||
+		!Array.isArray(value.mapped_groups) ||
+		typeof value.mapped_group_count !== "number" ||
+		!Number.isSafeInteger(value.mapped_group_count)
+	)
+		return null;
+	const role = value.effective_role ?? null;
+	if (role !== null && (typeof role !== "string" || !ALLOWED_ROLES.has(role as ScimRole)))
+		return null;
+	const grantedBy = value.granted_by_external_group_id ?? null;
+	if (grantedBy !== null && (typeof grantedBy !== "string" || !validGroupId(grantedBy)))
+		return null;
+	if ((value.status === "granted") !== (role !== null)) return null;
+	const groups = value.mapped_groups.map(parseGrantGroup);
+	if (groups.some((group) => group === null)) return null;
+	return {
+		scim_user_id: value.scim_user_id,
+		user_name: value.user_name,
+		status: value.status as GrantStatus,
+		effective_role: role as ScimRole | null,
+		granted_by_external_group_id: grantedBy as string | null,
+		mapped_groups: groups as RoleGrantGroup[],
+		mapped_group_count: value.mapped_group_count,
+	};
+}
+
+/**
+ * Owner view of which immutable directory group backs each SCIM-managed
+ * member's role. Read-only and loaded on demand; the server decides access.
+ */
+function ScimRoleGrants({ tenantId }: { tenantId: string }) {
+	const t = useT();
+	const [grants, setGrants] = useState<RoleGrant[] | null>(null);
+	const [cursor, setCursor] = useState<string | null>(null);
+	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	async function loadGrants(after: string | null) {
+		setLoading(true);
+		setError(null);
+		try {
+			const params = new URLSearchParams({ view: "role_grants" });
+			if (after) params.set("grant_after_scim_user_id", after);
+			const { data, error: invokeError } = await supabase.functions.invoke<unknown>(
+				`scim-admin?${params.toString()}`,
+				{ method: "GET", headers: { "X-AIDR-Tenant-ID": tenantId } },
+			);
+			if (invokeError)
+				throw new Error(await responseError(invokeError, data, t("scim.grants.loadFailed"), t));
+			if (!isRecord(data) || data.ok !== true || !Array.isArray(data.role_grants))
+				throw new Error(t("scim.err.invalidResponse"));
+			const rows = data.role_grants.map(parseRoleGrant);
+			const next = data.next_grant_cursor ?? null;
+			if (
+				rows.some((row) => row === null) ||
+				(next !== null && (typeof next !== "string" || !UUID.test(next)))
+			)
+				throw new Error(t("scim.err.invalidRecord"));
+			setGrants((previous) =>
+				after && previous
+					? mergeBy(previous, rows as RoleGrant[], (row) => row.scim_user_id)
+					: (rows as RoleGrant[]),
+			);
+			setCursor(next as string | null);
+		} catch (cause) {
+			setError(readErrorMessage(cause, t("scim.grants.loadFailed")));
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	return (
+		<section className="card" aria-labelledby="scim-grants-heading">
+			<h2 id="scim-grants-heading">{t("scim.grants.title")}</h2>
+			<p className="muted">{t("scim.grants.lead")}</p>
+			<div className="row">
+				<button
+					className="button button-secondary"
+					type="button"
+					disabled={loading}
+					onClick={() => void loadGrants(null)}
+				>
+					{grants === null ? t("scim.grants.show") : t("scim.grants.refresh")}
+				</button>
+			</div>
+			{error ? (
+				<p className="error" role="alert">
+					{error}
+				</p>
+			) : null}
+			{loading && grants === null ? <p role="status">{t("common.loading")}</p> : null}
+			{grants !== null && grants.length === 0 ? (
+				<p className="muted">{t("scim.grants.empty")}</p>
+			) : null}
+			{grants !== null && grants.length > 0 ? (
+				<div className="table-wrap" style={{ marginTop: 14 }}>
+					<table className="table">
+						<caption className="sr-only">{t("scim.grants.caption")}</caption>
+						<thead>
+							<tr>
+								<th scope="col">{t("scim.grants.col.user")}</th>
+								<th scope="col">{t("scim.grants.col.access")}</th>
+								<th scope="col">{t("scim.grants.col.grantedBy")}</th>
+								<th scope="col">{t("scim.grants.col.groups")}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{grants.map((grant) => (
+								<tr key={grant.scim_user_id}>
+									<td style={{ overflowWrap: "anywhere" }}>{grant.user_name}</td>
+									<td>
+										{grant.effective_role
+											? t(ROLE_LABELS[grant.effective_role])
+											: t(GRANT_STATUS_LABELS[grant.status])}
+									</td>
+									<td className="mono" style={{ overflowWrap: "anywhere" }}>
+										{grant.granted_by_external_group_id ?? "—"}
+									</td>
+									<td>
+										<ul className="small" style={{ margin: 0, paddingLeft: 16 }}>
+											{grant.mapped_groups.map((group) => (
+												<li key={group.external_group_id}>
+													<span className="mono">{group.external_group_id}</span> →{" "}
+													{t(ROLE_LABELS[group.role])}{" "}
+													<span className="muted">
+														({t("scim.grants.displayName", { name: group.display_name })})
+													</span>
+												</li>
+											))}
+										</ul>
+										{grant.mapped_group_count > grant.mapped_groups.length ? (
+											<span className="small muted">
+												{t("scim.grants.moreGroups", {
+													count: grant.mapped_group_count - grant.mapped_groups.length,
+												})}
+											</span>
+										) : null}
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			) : null}
+			{cursor ? (
+				<div className="row">
+					<button
+						className="button button-secondary"
+						type="button"
+						disabled={loading}
+						onClick={() => void loadGrants(cursor)}
+					>
+						{loading ? t("common.loading") : t("scim.loadMore")}
+					</button>
+				</div>
+			) : null}
+		</section>
+	);
+}
+
 export function ScimPage() {
 	const t = useT();
 	const { currentTeam, currentRole, currentUserId, members } = useTeam();
@@ -965,6 +1169,8 @@ function TenantScimPage({
 					</div>
 				)}
 			</section>
+
+			<ScimRoleGrants tenantId={tenantId} />
 
 			{tokenCursor || mappingCursor ? (
 				<div className="row">

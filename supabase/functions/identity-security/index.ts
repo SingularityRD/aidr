@@ -422,9 +422,20 @@ Deno.serve(async (req) => {
 			if (grantError || issued !== true) {
 				return corsJson(req, 503, { error: "recovery_unavailable" });
 			}
-			// Defer factor removal until token generation and grant persistence have
-			// succeeded. Deletes are idempotent on retry because each attempt lists
-			// only the factors that still exist.
+			// The MFA reset is irreversible and cannot share a transaction with the
+			// audit table, so the audit row is written first: a failed audit write
+			// stops the flow before any factor is removed (SEC-5).
+			const logged = await audit(db, {
+				actor_user_id: null,
+				tenant_id: tenantId,
+				target_user_id: userId,
+				action: "identity.break_glass.token_issued",
+				detail: { request_id: requestId, delivery: "in_app", mfa_factors_reset: true },
+			});
+			if (!logged) return corsJson(req, 503, { error: "recovery_unavailable" });
+			// Defer factor removal until token generation, grant persistence and the
+			// audit row have succeeded. Deletes are idempotent on retry because each
+			// attempt lists only the factors that still exist.
 			const { data: factorData, error: factorError } = await db.auth.admin.mfa.listFactors({ userId });
 			if (factorError || !factorData) return corsJson(req, 503, { error: "factor_reset_failed" });
 			for (const factor of factorData.factors ?? []) {
@@ -432,14 +443,6 @@ Deno.serve(async (req) => {
 				const { error } = await db.auth.admin.mfa.deleteFactor({ userId, id: factor.id });
 				if (error) return corsJson(req, 503, { error: "factor_reset_failed" });
 			}
-			const logged = await audit(db, {
-				actor_user_id: null,
-				tenant_id: tenantId,
-				target_user_id: userId,
-				action: "identity.break_glass.token_issued",
-				detail: { request_id: requestId, delivery: "in_app" },
-			});
-			if (!logged) return corsJson(req, 503, { error: "recovery_unavailable" });
 			const { data: completed, error: completeError } = await db.rpc(
 				"complete_identity_break_glass_recovery",
 				{

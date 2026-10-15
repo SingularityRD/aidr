@@ -7,6 +7,7 @@ import {
 	type DlpException,
 	type DlpLabel,
 	type DlpMatcher,
+	type DlpMatchValidator,
 	type DlpPolicy,
 	DlpPolicySchema,
 	type DlpRule,
@@ -20,6 +21,7 @@ import {
 	privacyDetectorPlaceholder,
 	scanPrivacyDetectors,
 } from "./privacy-detectors.js";
+import { validIban, validLuhn, validSsn, validTckn, validVkn } from "./privacy-rules/validators.js";
 
 export const DlpScanRequestSchema = z
 	.object({
@@ -262,12 +264,23 @@ function regexMatches(
 ): InternalMatch[] {
 	const flags = matcher.flags.includes("g") ? matcher.flags : `${matcher.flags}g`;
 	const expression = new RegExp(matcher.pattern, flags);
-	return Array.from(content.matchAll(expression), (match) => ({
-		start: match.index,
-		end: match.index + match[0].length,
-		value: match[0],
-	}));
+	const validator = matcher.validator ? MATCH_VALIDATORS[matcher.validator] : undefined;
+	const matches: InternalMatch[] = [];
+	for (const match of content.matchAll(expression)) {
+		if (validator && !validator(match[0])) continue;
+		matches.push({ start: match.index, end: match.index + match[0].length, value: match[0] });
+	}
+	return matches;
 }
+
+/** The fixed validator list a tenant regex may name (DlpMatchValidatorSchema). */
+const MATCH_VALIDATORS: Record<DlpMatchValidator, (value: string) => boolean> = {
+	luhn: validLuhn,
+	iban_mod97: validIban,
+	tc_kimlik: validTckn,
+	tr_vkn: (value) => validVkn(value.replace(/[ \t-]/g, "")),
+	us_ssn: validSsn,
+};
 
 function matcherMatches(
 	content: string,

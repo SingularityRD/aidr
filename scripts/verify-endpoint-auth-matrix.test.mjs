@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -89,6 +89,8 @@ test("the repository tree satisfies the matrix", async () => {
 	assert.ok(routes.length >= 30, `expected the Edge routes to be enumerated, saw ${routes.length}`);
 	const report = evaluateAuthMatrix(routes, PUBLIC_ROUTE_ALLOWLIST, {
 		fileExists: (route) => existsSync(path.join(ROOT, route)),
+		mixedRoutes: MIXED_ROUTE_PUBLIC_ACTIONS,
+		readSource: (file) => readFileSync(path.join(ROOT, file), "utf8"),
 	});
 	assert.deepEqual(report.failures, []);
 	assert.equal(report.checked, routes.length);
@@ -215,6 +217,48 @@ test("a mixed declaration needs a guarded route and a readable handler", () => {
 	assert.match(missing.failures.join("\n"), /cannot be read/);
 	const stale = evaluateAuthMatrix([], [], { fileExists: () => true, mixedRoutes: [MIXED], readSource: () => HANDLER_OK });
 	assert.match(stale.failures.join("\n"), /does not match an Edge route/);
+});
+
+// SEC-1: response-playbooks serves `trigger_automation` with a per-grant
+// automation secret and no user session. The route-level guard (operator
+// actions call the identity barrier) hid that public action from the gate.
+test("the response-playbooks automation trigger is a declared, marked public action", () => {
+	const declared = MIXED_ROUTE_PUBLIC_ACTIONS.find((entry) => entry.route === "supabase/functions/response-playbooks/index.ts");
+	assert.ok(declared, "response-playbooks must be declared as a mixed route");
+	assert.deepEqual(declared.actions.map((action) => action.name), ["trigger_automation"]);
+	const source = readFileSync(path.join(ROOT, declared.handler), "utf8");
+	const report = evaluateAuthMatrix([{ route: declared.route, source }], [], {
+		fileExists: () => true,
+		mixedRoutes: [declared],
+		readSource: () => source,
+	});
+	assert.deepEqual(report.failures, []);
+	// Removing the marker (an unreviewed non-session path) fails the gate.
+	const unmarked = source.replace("// public-action: trigger_automation", "// automation");
+	const failures = evaluateAuthMatrix([{ route: declared.route, source: unmarked }], [], {
+		fileExists: () => true,
+		mixedRoutes: [declared],
+		readSource: () => unmarked,
+	}).failures.join("\n");
+	assert.match(failures, /declared public action "trigger_automation" is not marked/);
+});
+
+test("if-dispatched public actions, stray markers and undeclared marked routes fail the gate", () => {
+	const ifHandler = [
+		'import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";',
+		"await checkIdentityBarrier(db, token, userId);",
+		"// public-action: login",
+		'if (request.action === "login") return start();',
+		'if (request.action === "admin") return authorizeOperator(req);',
+	].join("\n");
+	const mixed = { ...MIXED, route: MIXED.route, handler: MIXED.route, authenticatedCall: "authorizeOperator(" };
+	const route = { route: MIXED.route, source: ifHandler };
+	assert.deepEqual(mixedFailures(ifHandler, mixed, route), []);
+	const stray = ifHandler.replace("// public-action: login\n", "") + "\n// public-action: login\nconst x = 1;";
+	assert.match(mixedFailures(stray, mixed, { route: MIXED.route, source: stray }).join("\n"), /not directly above a case\/if dispatch/);
+	assert.match(mixedFailures(ifHandler.replace("authorizeOperator(req)", "ok()"), mixed, route).join("\n"), /never call authorizeOperator\(\)/);
+	const undeclared = evaluateAuthMatrix([route], [], { fileExists: () => true, mixedRoutes: [], readSource: () => ifHandler });
+	assert.match(undeclared.failures.join("\n"), /marks a public action but is not declared/);
 });
 
 test("the OIDC route's declared public actions match its handler", () => {

@@ -358,14 +358,15 @@ Deno.serve(async (req) => {
 		// Snapshot persistence is diagnostic-only; enrollment already succeeded.
 	}
 
-	// Best-effort audit log. A fleet enrollment was already audited inside
-	// exchange_fleet_enrollment_key, in the same transaction as the key.
+	// The enrollment itself is audited inside the exchange RPC, in the same
+	// transaction as the key (enroll.consume_token / fleet_key.enroll). This
+	// best-effort row only adds the reported runtime capabilities.
 	if (!fleet) {
 		try {
 			await supabase.from("admin_audit_logs").insert({
 				actor_user_id: userId,
 				tenant_id: tenantId,
-				action: "enroll.consume_token",
+				action: "enroll.runtime_capabilities",
 				target_user_id: userId,
 				detail: { iid, runtime_capabilities: capabilities },
 			});

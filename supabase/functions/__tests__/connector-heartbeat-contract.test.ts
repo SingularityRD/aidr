@@ -191,6 +191,14 @@ describe("connector-heartbeat handler", () => {
 		expect(known.rpcCalls.find((entry) => entry.name === "record_connector_heartbeat")?.args.p_agent_id).toBe(OTHER_AGENT);
 	});
 
+	it("refuses heartbeats for a retired agent (SEC-6)", async () => {
+		const retired = database({ agentId: null, agent: { id: OTHER_AGENT, iid: "iid-device-1", retired_at: "2026-10-14T00:00:00Z" } as never });
+		const response = await createConnectorHeartbeatHandler({ db: retired.db as never })(post(body()));
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ error: "agent_retired" });
+		expect(retired.rpcCalls.some((entry) => entry.name === "record_connector_heartbeat")).toBe(false);
+	});
+
 	it("fails closed on a revoked key and on storage errors", async () => {
 		const revoked = database({ revoked: true });
 		expect((await createConnectorHeartbeatHandler({ db: revoked.db as never })(post(body()))).status).toBe(401);

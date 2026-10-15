@@ -190,6 +190,18 @@ export const dlpMessages = {
 	"dlp.flags": ["Flags (i, m, s, u)", "Bayraklar (i, m, s, u)"],
 	"dlp.matcherFlags": ["Rule {n} matcher {m} flags", "Kural {n} eşleştirici {m} bayrakları"],
 	"dlp.addMatcher": ["Add matcher to rule {n}", "Kural {n} için eşleştirici ekle"],
+	"dlp.detector": ["built-in detector", "yerleşik algılayıcı"],
+	"dlp.detectors": ["Built-in detectors", "Yerleşik algılayıcılar"],
+	"dlp.matcherDetectors": [
+		"Rule {n} matcher {m} detectors",
+		"Kural {n} eşleştirici {m} algılayıcıları",
+	],
+	"dlp.validator": ["Checksum validator", "Sağlama doğrulayıcısı"],
+	"dlp.validatorNone": ["none", "yok"],
+	"dlp.matcherValidator": [
+		"Rule {n} matcher {m} checksum validator",
+		"Kural {n} eşleştirici {m} sağlama doğrulayıcısı",
+	],
 	"dlp.exceptions": ["Exceptions ({count})", "İstisnalar ({count})"],
 	"dlp.addException": ["Add exception", "İstisna ekle"],
 	"dlp.exceptionsLead": [

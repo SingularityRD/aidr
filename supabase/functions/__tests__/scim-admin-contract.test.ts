@@ -714,3 +714,85 @@ describe("SCIM directory-authoritative membership mode", () => {
 		expect(SOURCE).toMatch(/STEP_UP_ACTIONS\.has\(command\.action\)[\s\S]*?getAuthenticatorAssuranceLevel\(token\)/);
 	});
 });
+
+describe("SCIM role-grant attribution (T19)", () => {
+	const SCIM_USER = "55555555-5555-4555-8555-555555555555";
+	const NEXT = "66666666-6666-4666-8666-666666666666";
+	const grantRow = (overrides: Record<string, unknown> = {}) => ({
+		scim_user_id: SCIM_USER, user_name: "ada@example.com", active: true, bound: true,
+		status: "granted", effective_role: "admin", granted_by_external_group_id: "grp-admins",
+		mapped_groups: [
+			{ external_group_id: "grp-admins", display_name: "Ops", role: "admin" },
+			{ external_group_id: "grp-staff", display_name: "Admins", role: "viewer" },
+		],
+		mapped_group_count: 2,
+		...overrides,
+	});
+	const grantsUrl = (query = "view=role_grants") => `https://project.supabase.co/functions/v1/scim-admin?${query}`;
+	const get = (fixture: ReturnType<typeof fakeDb>, query?: string) =>
+		createScimAdminHandler({ db: fixture.db as never })(request("GET", undefined, { "X-AIDR-Tenant-ID": TENANT }, grantsUrl(query)));
+
+	it("returns which immutable group granted each member's role through the owner-checked RPC", async () => {
+		const fixture = fakeDb({ rpcData: { grants: [grantRow()], next_after_scim_user_id: NEXT } });
+		const response = await get(fixture);
+		expect(response.status).toBe(200);
+		expect(response.headers.get("Cache-Control")).toBe("no-store");
+		expect(await response.json()).toEqual({ ok: true, role_grants: [grantRow()], next_grant_cursor: NEXT });
+		expect(fixture.rpcCalls.find((call) => call.name === "scim_admin_list_role_grants")?.args).toEqual({
+			p_tenant_id: TENANT, p_actor_user_id: USER, p_after_scim_user_id: null, p_limit: 100,
+		});
+		expect(fixture.calls).not.toContain("scim_tokens");
+	});
+
+	it("passes a validated keyset cursor and rejects malformed cursors or views", async () => {
+		const fixture = fakeDb({ rpcData: { grants: [], next_after_scim_user_id: null } });
+		const ok = await get(fixture, `view=role_grants&grant_after_scim_user_id=${NEXT}`);
+		expect(ok.status).toBe(200);
+		expect(fixture.rpcCalls.find((call) => call.name === "scim_admin_list_role_grants")?.args.p_after_scim_user_id).toBe(NEXT);
+		for (const query of ["view=role_grants&grant_after_scim_user_id=bad", `view=role_grants&grant_after_scim_user_id=${NEXT}&grant_after_scim_user_id=${NEXT}`]) {
+			const bad = await get(fixture, query);
+			expect(bad.status).toBe(400);
+			expect(await bad.json()).toEqual({ error: "invalid_pagination" });
+		}
+		for (const query of ["view=members", "view=role_grants&view=role_grants"]) {
+			const bad = await get(fixture, query);
+			expect(bad.status).toBe(400);
+			expect(await bad.json()).toEqual({ error: "invalid_view" });
+		}
+	});
+
+	it("is owner-only: an admin cannot read attribution and the RPC is never called", async () => {
+		const fixture = fakeDb({ role: "admin", rpcData: { grants: [grantRow()], next_after_scim_user_id: null } });
+		const response = await get(fixture);
+		expect(response.status).toBe(403);
+		expect(fixture.rpcCalls.some((call) => call.name === "scim_admin_list_role_grants")).toBe(false);
+	});
+
+	it.each([
+		["a granted role with a non-granted status", { status: "not_granted" }],
+		["an unsupported role", { effective_role: "owner" }],
+		["a deciding group on an ungranted row", { status: "inactive", effective_role: null }],
+		["a padded group id", { granted_by_external_group_id: " grp-admins" }],
+		["a group with an owner role", { mapped_groups: [{ external_group_id: "grp", display_name: "x", role: "owner" }] }],
+		["a count below the returned groups", { mapped_group_count: 1 }],
+	])("fails closed on a malformed attribution row (%s)", async (_label, overrides) => {
+		const response = await get(fakeDb({ rpcData: { grants: [grantRow(overrides)], next_after_scim_user_id: null } }));
+		expect(response.status).toBe(503);
+		expect(await response.json()).toEqual({ error: "scim_management_unavailable" });
+	});
+
+	it("maps a database owner refusal to 403", async () => {
+		const response = await get(fakeDb({ rpcError: { code: "42501", message: "scim_admin_owner_required" } }));
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: "owner_required" });
+	});
+
+	it("keeps the attribution RPC owner-checked, service-role-only and derived from exact external ids", () => {
+		const sql = readFileSync(join(ROOT, "supabase", "migrations", "20261015000200_scim_role_grant_attribution.sql"), "utf8");
+		expect(sql).toMatch(/perform app\.scim_assert_tenant_owner\(p_tenant_id, p_actor_user_id\)/);
+		expect(sql).toMatch(/m\.external_group_id = sg\.external_id/);
+		expect(sql).not.toMatch(/display_name\s*=|raw_user_meta_data|user_metadata/);
+		expect(sql).toMatch(/revoke all on function public\.scim_admin_list_role_grants\(uuid, uuid, uuid, integer\) from public, anon, authenticated/);
+		expect(sql).toMatch(/grant execute on function public\.scim_admin_list_role_grants\(uuid, uuid, uuid, integer\) to service_role/);
+	});
+});

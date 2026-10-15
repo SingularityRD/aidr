@@ -839,7 +839,8 @@ describe("Dashboard integration", () => {
 		);
 
 		await waitFor(() => expect(screen.getByText("future_event")).toBeInTheDocument());
-		expect(screen.getByText("privacy-test-agent")).toBeInTheDocument();
+		// The agent filter lists the name as an <option> too; assert the row link.
+		expect(screen.getByRole("link", { name: "privacy-test-agent" })).toBeInTheDocument();
 		expect(screen.getByText(new Date(createdAt).toLocaleString())).toBeInTheDocument();
 		expect(screen.getByText("Additional event details are not shown.")).toBeInTheDocument();
 		expect(document.body.textContent).not.toContain(nestedSecret);

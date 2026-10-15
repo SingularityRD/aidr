@@ -284,10 +284,16 @@ describe("installer-update download URL (device credential)", () => {
 });
 
 describe("installer-update deployment contract", () => {
-	it("authenticates the API key itself and is listed with this contract test", () => {
+	it("authenticates the API key itself and stays a machine route covered by the root vitest suite", () => {
 		const config = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
 		const manifest = JSON.parse(readFileSync(join(ROOT, "docs", "production-readiness", "edge-function-contract-manifest.json"), "utf8"));
+		const rootVitest = readFileSync(join(ROOT, "vitest.config.ts"), "utf8");
 		expect(config).toMatch(/\[functions\.installer-update\][^[]*verify_jwt = false/);
-		expect(manifest.functions["installer-update"].tests).toContain("supabase/functions/__tests__/installer-update-contract.test.ts");
+		// installer-update is called by endpoint runtimes with an API key, never by
+		// dashboard browser code. The browser contract manifest only lists
+		// browser call sites (scripts/check-supabase-edge-contracts.mjs rejects a
+		// stale entry), so this suite is executed through the root vitest include.
+		expect(manifest.functions["installer-update"]).toBeUndefined();
+		expect(rootVitest).toContain("supabase/functions/**/__tests__/**/*.test.ts");
 	});
 });

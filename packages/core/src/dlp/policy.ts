@@ -59,8 +59,138 @@ function validateReferences<Field extends string>(
 
 function isUnsafeRegex(pattern: string): boolean {
 	return (
-		/\\[1-9]/.test(pattern) || /\([^)]*[+*][^)]*\)[+*{]/.test(pattern) || /\.\*.*\.\*/.test(pattern)
+		/\\[1-9]/.test(pattern) ||
+		/\([^)]*[+*][^)]*\)[+*{]/.test(pattern) ||
+		/\.\*.*\.\*/.test(pattern) ||
+		regexRiskIssue(pattern) !== undefined
 	);
+}
+
+/** Largest `{n,m}` bound a tenant pattern may use. */
+export const DLP_MAX_REGEX_REPEAT = 1_000;
+/** Unbounded quantifiers (`*`, `+`, `{n,}`) allowed in one tenant pattern. */
+export const DLP_MAX_UNBOUNDED_QUANTIFIERS = 4;
+/** Regex matchers across every rule of one tenant policy (each is compiled per scan). */
+export const DLP_MAX_POLICY_REGEX_MATCHERS = 256;
+/** Keyword/dictionary terms across every rule of one tenant policy. */
+export const DLP_MAX_POLICY_KEYWORD_TERMS = 10_000;
+
+interface RegexGroupFrame {
+	quantified: boolean;
+	alternation: boolean;
+}
+
+function readRegexQuantifier(
+	pattern: string,
+	index: number,
+): { length: number; min: number; max: number } | undefined {
+	const character = pattern[index];
+	if (character === "*") return { length: 1, min: 0, max: Number.POSITIVE_INFINITY };
+	if (character === "+") return { length: 1, min: 1, max: Number.POSITIVE_INFINITY };
+	if (character === "?") return { length: 1, min: 0, max: 1 };
+	if (character !== "{") return undefined;
+	const bound = /^\{(\d+)(,(\d*))?\}/.exec(pattern.slice(index, index + 32));
+	if (!bound) return undefined;
+	const min = Number(bound[1]);
+	const max =
+		bound[2] === undefined ? min : bound[3] === "" ? Number.POSITIVE_INFINITY : Number(bound[3]);
+	return { length: bound[0].length, min, max };
+}
+
+/**
+ * Structural ReDoS guard for tenant-authored patterns. It refuses what can
+ * backtrack exponentially or run unbounded inside a synchronous scan:
+ * back-references, a repeated group whose body is itself quantified or has an
+ * alternation (star height above one, overlapping alternatives), repetition
+ * bounds above {@link DLP_MAX_REGEX_REPEAT} and more than
+ * {@link DLP_MAX_UNBOUNDED_QUANTIFIERS} unbounded quantifiers. Returns the
+ * reason, or undefined for an accepted pattern. It is deliberately
+ * conservative: `(a|b)+` must be written `[ab]+`.
+ */
+export function regexRiskIssue(pattern: string): string | undefined {
+	const stack: RegexGroupFrame[] = [{ quantified: false, alternation: false }];
+	let previous: "none" | "atom" | RegexGroupFrame = "none";
+	let unbounded = 0;
+	let index = 0;
+	while (index < pattern.length) {
+		const character = pattern[index];
+		const top = stack[stack.length - 1] as RegexGroupFrame;
+		if (character === "\\") {
+			const next = pattern[index + 1] ?? "";
+			if (/[1-9]/.test(next) || next === "k") return "back-references are not allowed";
+			index += 2;
+			if (/[pPu]/.test(next) && pattern[index] === "{") {
+				const close = pattern.indexOf("}", index);
+				index = close < 0 ? pattern.length : close + 1;
+			}
+			previous = "atom";
+			continue;
+		}
+		if (character === "[") {
+			index++;
+			while (index < pattern.length && pattern[index] !== "]") {
+				index += pattern[index] === "\\" ? 2 : 1;
+			}
+			index++;
+			previous = "atom";
+			continue;
+		}
+		if (character === "(") {
+			stack.push({ quantified: false, alternation: false });
+			index++;
+			if (pattern[index] === "?") {
+				const kind = pattern[index + 1] ?? "";
+				if (kind === "<" && !/[=!]/.test(pattern[index + 2] ?? "")) {
+					const close = pattern.indexOf(">", index);
+					index = close < 0 ? pattern.length : close + 1;
+				} else {
+					index += kind === "<" ? 3 : 2;
+				}
+			}
+			previous = "none";
+			continue;
+		}
+		if (character === ")") {
+			const frame = stack.length > 1 ? (stack.pop() as RegexGroupFrame) : top;
+			const parent = stack[stack.length - 1] as RegexGroupFrame;
+			parent.quantified ||= frame.quantified;
+			parent.alternation ||= frame.alternation;
+			previous = frame;
+			index++;
+			continue;
+		}
+		if (character === "|") {
+			top.alternation = true;
+			previous = "none";
+			index++;
+			continue;
+		}
+		const quantifier = readRegexQuantifier(pattern, index);
+		if (!quantifier || previous === "none") {
+			previous = "atom";
+			index++;
+			continue;
+		}
+		if (
+			quantifier.min > DLP_MAX_REGEX_REPEAT ||
+			(quantifier.max !== Number.POSITIVE_INFINITY && quantifier.max > DLP_MAX_REGEX_REPEAT)
+		) {
+			return `repetition bounds above ${DLP_MAX_REGEX_REPEAT} are not allowed`;
+		}
+		if (quantifier.max === Number.POSITIVE_INFINITY) unbounded++;
+		if (unbounded > DLP_MAX_UNBOUNDED_QUANTIFIERS) {
+			return `more than ${DLP_MAX_UNBOUNDED_QUANTIFIERS} unbounded quantifiers are not allowed`;
+		}
+		if (previous !== "atom" && quantifier.max > 1 && (previous.quantified || previous.alternation)) {
+			return "a repeated group must not contain a quantifier or an alternation";
+		}
+		// An exact count such as {4} adds no ambiguity inside a repeated group.
+		if (quantifier.min !== quantifier.max) top.quantified = true;
+		index += quantifier.length;
+		if (pattern[index] === "?") index++;
+		previous = "none";
+	}
+	return undefined;
 }
 
 export const DlpSensitivitySchema = z.enum(["public", "internal", "confidential", "restricted"]);
@@ -90,6 +220,18 @@ const KeywordMatcherSchema = z
 	})
 	.strict();
 
+/**
+ * Fixed, built-in check-digit validators a tenant regex match must also pass.
+ * Tenants choose from this list only; no tenant code runs on the endpoint.
+ */
+export const DlpMatchValidatorSchema = z.enum([
+	"luhn",
+	"iban_mod97",
+	"tc_kimlik",
+	"tr_vkn",
+	"us_ssn",
+]);
+
 const RegexMatcherSchema = z
 	.object({
 		type: z.literal("regex"),
@@ -98,6 +240,8 @@ const RegexMatcherSchema = z
 			.string()
 			.regex(/^(?!.*(.).*\1)[imsu]*$/, "flags must be unique and limited to i, m, s and u")
 			.default("i"),
+		/** Optional checksum the matched text must pass; failing matches are not findings. */
+		validator: DlpMatchValidatorSchema.optional(),
 	})
 	.strict()
 	.superRefine((matcher, context) => {
@@ -300,6 +444,30 @@ export const DlpPolicySchema = z
 		const labelIds = validateTenantOwnedIds(policy.labels, policy.tenantId, "labels", context);
 		const ruleIds = validateTenantOwnedIds(policy.rules, policy.tenantId, "rules", context);
 		validateReferences(policy.rules, "labelId", labelIds, "rules", "label in this policy", context);
+		// Every regex is compiled and every keyword searched on each scan, so the
+		// policy as a whole is bounded, not only each rule.
+		let regexMatchers = 0;
+		let keywordTerms = 0;
+		for (const rule of policy.rules) {
+			for (const matcher of rule.matchers) {
+				if (matcher.type === "regex") regexMatchers++;
+				if (matcher.type === "keyword") keywordTerms += matcher.values.length;
+			}
+		}
+		if (regexMatchers > DLP_MAX_POLICY_REGEX_MATCHERS) {
+			addPolicyIssue(
+				context,
+				`a policy may contain at most ${DLP_MAX_POLICY_REGEX_MATCHERS} regex matchers`,
+				["rules"],
+			);
+		}
+		if (keywordTerms > DLP_MAX_POLICY_KEYWORD_TERMS) {
+			addPolicyIssue(
+				context,
+				`a policy may contain at most ${DLP_MAX_POLICY_KEYWORD_TERMS} keyword terms`,
+				["rules"],
+			);
+		}
 		validateTenantOwnedIds(policy.exceptions, policy.tenantId, "exceptions", context);
 		validateReferences(
 			policy.exceptions,
@@ -339,6 +507,7 @@ export type DlpRuleAction = z.infer<typeof DlpRuleActionSchema>;
 export type DlpUnavailableAction = z.infer<typeof DlpUnavailableActionSchema>;
 export type DlpLabel = z.infer<typeof DlpLabelSchema>;
 export type DlpDetector = z.infer<typeof DlpDetectorSchema>;
+export type DlpMatchValidator = z.infer<typeof DlpMatchValidatorSchema>;
 export type DlpMatcher = z.infer<typeof DlpMatcherSchema>;
 export type DlpRule = z.infer<typeof DlpRuleSchema>;
 export type DlpExceptionScope = z.infer<typeof DlpExceptionScopeSchema>;

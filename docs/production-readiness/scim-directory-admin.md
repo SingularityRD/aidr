@@ -110,6 +110,12 @@ IDs are preserved byte-for-byte after validation: whitespace, control characters
 
 All successful token operations and mapping changes are recorded in `admin_audit_logs` with the tenant and actor. Mapping changes that reconcile existing groups and their audit events are in the same database transaction.
 
+### Precedence and role attribution (T19)
+
+A SCIM user in several mapped groups receives exactly one role: the highest of `admin` > `member` > `viewer`, independent of group order. The SCIM endpoint keeps `Group.externalId` byte-exact: an ID with surrounding whitespace or control characters is refused with `400 invalidValue` instead of being trimmed into a look-alike of a mapped ID, and `externalId` cannot be changed after creation. Case variants and homoglyphs are different IDs and match no mapping.
+
+Owners can see which group granted each member's role with `GET /functions/v1/scim-admin?view=role_grants` (same owner, tenant-header and session checks as the listing; `grant_after_scim_user_id=<uuid>` continues a page of up to 100). Each row gives the SCIM user, `status` (`granted`, `inactive`, `unbound`, `manual_conflict`, `not_granted`), `effective_role`, `granted_by_external_group_id` (the deciding group; ties between groups with the same role are broken by external ID in byte order), and up to 50 mapped groups with their display name for reference. The dashboard Directory sync page shows this on demand under **Directory role attribution**. The data comes from the owner-checked, service-role-only `scim_admin_list_role_grants` RPC (`20261015000200_scim_role_grant_attribution.sql`). It is a read-only view and never feeds authorization.
+
 ## Directory-authoritative membership (TEN-04)
 
 By default (off) any tenant membership grants access: manual invitations, owner-added members, and memberships provisioned through any directory's credential. An owner can make one directory authoritative (`20261007000050_scim_directory_authoritative.sql`). While on:
@@ -138,4 +144,20 @@ Break-glass: the designated owners keep access through a directory outage or mas
 
 ## Acceptance boundary
 
-Local contract tests cover owner-only access, tenant scoping, MFA/session barriers, exact-ID and role validation, one-time secret handling, hash-only persistence, bounded token expiry, token overlap/revocation, mapping reconciliation conflicts, malformed member references, and resource discovery URLs. They do not prove a live Entra or Okta tenant is configured. Production acceptance still requires an operator to deploy the migrations/function, configure the provider's provisioning application and secret, verify user/group create-update-deactivate and membership removal against the deployed candidate, test expiry and immediate revocation with the provider, rotate legacy indefinite credentials, and retain redacted evidence bound to that candidate.
+Local contract tests cover owner-only access, tenant scoping, MFA/session barriers, exact-ID and role validation, one-time secret handling, hash-only persistence, bounded token expiry, token overlap/revocation, mapping reconciliation conflicts, malformed member references, and resource discovery URLs. They do not prove a live Entra or Okta tenant is configured.
+
+The T19 closing cases run against the full migration chain in `scripts/scim-group-role-mapping-postgres.test.mjs` (own offline `supabase/postgres` container; set `AIDR_SUPABASE_POSTGRES_IMAGE` to the same image by ID if the tag is missing locally). The test covers:
+
+- forged `user_metadata`/`app_metadata` groups, roles and tenant;
+- a group displayed as "Admins" whose ID is unmapped, plus case and homoglyph IDs;
+- deterministic precedence and attribution;
+- removing a user from a group, deleting a group, and removing or changing a mapping;
+- deactivation and directory reactivation;
+- identical and different replays;
+- a stale `If-Match` replay that tries to restore removed access;
+- keyset pagination with no skipped or repeated rows;
+- tenant mixing, including the same external ID mapped differently in another tenant, cross-tenant members, and cross-tenant owners.
+
+In each case, access (`tenant_members` and `app.is_tenant_member`) is removed in the same transaction as the directory change. The membership's API keys are revoked in that transaction as well (`20260923000047`); deactivation also revokes device access (`20261014000120`). Edge contract tests cover the `view=role_grants` boundary, the byte-exact `externalId`, and the fact that the `azure-ad-groups` projection ignores forged session metadata and look-alike display names.
+
+Still external: live Entra and Okta provisioning against the deployed candidate, which needs the user/group create-update-deactivate cycle, group removal, and timing for propagation from the provider's provisioning cycle to access removal. Already-issued Supabase browser sessions still depend on the identity barrier and the RLS membership checks, not on token expiry. Production acceptance still requires an operator to deploy the migrations/function, configure the provider's provisioning application and secret, verify user/group create-update-deactivate and membership removal against the deployed candidate, test expiry and immediate revocation with the provider, rotate legacy indefinite credentials, and retain redacted evidence bound to that candidate.

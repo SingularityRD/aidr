@@ -303,6 +303,7 @@ export function createResponsePlaybooksHandler(deps: ResponsePlaybooksDeps = {})
 
 		try {
 			const db = makeClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY);
+			// public-action: trigger_automation
 			if (request.request.action === "trigger_automation") {
 				// Authenticate the automation secret before touching any quota: an outsider
 				// who knows only a tenant UUID must not be able to drain a bucket that the

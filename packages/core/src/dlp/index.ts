@@ -10,6 +10,7 @@ export type {
 	DlpExceptionScope,
 	DlpLabel,
 	DlpMatcher,
+	DlpMatchValidator,
 	DlpPolicy,
 	DlpRule,
 	DlpRuleAction,
@@ -18,12 +19,17 @@ export type {
 } from "./policy.js";
 export {
 	DLP_EXPIRED_EXCEPTION_DOMINANCE,
+	DLP_MAX_POLICY_KEYWORD_TERMS,
+	DLP_MAX_POLICY_REGEX_MATCHERS,
+	DLP_MAX_REGEX_REPEAT,
+	DLP_MAX_UNBOUNDED_QUANTIFIERS,
 	DlpDetectorSchema,
 	DlpDirectionSchema,
 	DlpExceptionSchema,
 	DlpExceptionScopeSchema,
 	DlpLabelSchema,
 	DlpMatcherSchema,
+	DlpMatchValidatorSchema,
 	DlpPolicySchema,
 	DlpRuleActionSchema,
 	DlpRuleSchema,
@@ -31,6 +37,7 @@ export {
 	DlpUnavailableActionSchema,
 	isDlpExceptionActive,
 	pruneExpiredExceptions,
+	regexRiskIssue,
 } from "./policy.js";
 export type { PrivacyDetectorMatch, PrivacyDetectorScan } from "./privacy-detectors.js";
 export {

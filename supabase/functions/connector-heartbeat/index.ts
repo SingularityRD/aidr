@@ -92,7 +92,7 @@ export interface ConnectorHeartbeatDeps {
 	db?: SupabaseClient;
 }
 
-type AgentRow = { id: string; iid: string };
+type AgentRow = { id: string; iid: string; retired_at?: string | null };
 
 export function createConnectorHeartbeatHandler(deps: ConnectorHeartbeatDeps = {}) {
 	return async function handle(req: Request): Promise<Response> {
@@ -125,12 +125,15 @@ export function createConnectorHeartbeatHandler(deps: ConnectorHeartbeatDeps = {
 			// an agent: enrollment and seat admission stay with ingest/enroll.
 			const bound = typeof auth.agentId === "string" && UUID.test(auth.agentId) ? auth.agentId : null;
 			const lookup = bound
-				? await db.from("agents").select("id,iid").eq("tenant_id", auth.tenantId).eq("id", bound).maybeSingle()
-				: await db.from("agents").select("id,iid").eq("tenant_id", auth.tenantId).eq("iid", heartbeat.iid).maybeSingle();
+				? await db.from("agents").select("id,iid,retired_at").eq("tenant_id", auth.tenantId).eq("id", bound).maybeSingle()
+				: await db.from("agents").select("id,iid,retired_at").eq("tenant_id", auth.tenantId).eq("iid", heartbeat.iid).maybeSingle();
 			if (lookup.error) return json(503, { error: "heartbeat_unavailable" });
 			const agent = lookup.data as AgentRow | null;
 			if (!agent) return json(404, { error: "agent_not_enrolled" });
 			if (agent.iid !== heartbeat.iid) return json(403, { error: "agent_key_mismatch" });
+			// A retired agent is no longer part of the fleet: an unbound tenant key
+			// must not refresh its last_seen or report it as protected (SEC-6).
+			if (agent.retired_at !== undefined && agent.retired_at !== null) return json(409, { error: "agent_retired" });
 
 			const recorded = await db.rpc("record_connector_heartbeat", {
 				p_tenant_id: auth.tenantId,
