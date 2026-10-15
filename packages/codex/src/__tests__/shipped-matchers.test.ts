@@ -66,7 +66,9 @@ describe("Codex shipped matchers", () => {
 	});
 
 	it("aidr setup's connector installer registers the shipped matchers", () => {
-		const text = read("packages/cli/src/utils/connector-install.ts");
+		// The installer and `aidr machine-hooks` share the Codex hook handlers.
+		expect(read("packages/cli/src/utils/connector-install.ts")).toContain('from "./codex-hooks.js"');
+		const text = read("packages/cli/src/utils/codex-hooks.ts");
 		expect(text).toContain(`matcher: "${CODEX_SHIPPED_MATCHERS.PreToolUse}"`);
 		expect(text).toContain(`matcher: "${CODEX_SHIPPED_MATCHERS.PostToolUse}"`);
 		expect(text).not.toContain('"^(Bash|apply_patch)$"');

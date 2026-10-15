@@ -86,6 +86,7 @@ const FULL_PAYLOAD = {
 	items_count: 4,
 	window_days: 14,
 	offline_minutes: 240,
+	connector_state: "hook_disabled",
 	period_from: "2026-10-06T00:00:00.000Z",
 	period_to: "2026-10-13T00:00:00.000Z",
 	digest: { agents_enrolled: 120, decisions_deny: 7, policy_changes_pending: 1 },
@@ -108,7 +109,7 @@ describe("notification schema v1.1", () => {
 	it("covers exactly the events the producer, the outbox and the contract know", () => {
 		const produced = /NOTIFICATION_EVENT_TYPES = \[([\s\S]*?)\] as const/.exec(producer)?.[1].match(/"([a-z_.]+)"/g)?.map((item) => item.slice(1, -1));
 		expect(new Set(produced)).toEqual(new Set(EVENTS));
-		expect(EVENTS).toHaveLength(12);
+		expect(EVENTS).toHaveLength(13);
 		for (const event of EVENTS) expect(contract, event).toContain(`\`${event}\``);
 		// The newest CHECK constraint on notification_deliveries.event_type lists the same events.
 		const migrations = readdirSync(join(ROOT, "supabase", "migrations")).filter((name) => name.endsWith(".sql")).sort();

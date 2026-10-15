@@ -239,7 +239,8 @@ describe("Windows MSI inputs", () => {
 		// Machine policy: one HKLM value per contract key, per-machine only, never dropped by an upgrade.
 		const coreSource = readFileSync(new URL("../../packages/core/src/machine-policy.ts", import.meta.url), "utf8");
 		const schemaBody = /const MachinePolicySchema = z\s*\.object\(\{([\s\S]*?)\n\t\}\)/.exec(coreSource)[1];
-		const contractKeys = [...schemaBody.matchAll(/^\t\t(\w+):/gm)].map((m) => m[1]).sort();
+		// protection_locked is a DWORD written by the ProtectionLocked component (AIDR_PROTECTION_LOCKED).
+		const contractKeys = [...schemaBody.matchAll(/^\t\t(\w+):/gm)].map((m) => m[1]).filter((key) => key !== "protection_locked").sort();
 		const policyValues = [...wxs.matchAll(/<Component Id="AidrPolicy\w+" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND (AIDR_POLICY_\w+)"[^>]*>\s*<RegistryValue Root="HKLM" Key="Software\\Policies\\Singularity AIDR" Name="(\w+)" Type="string" Value="\[(AIDR_POLICY_\w+)\]" KeyPath="yes" \/>/g)];
 		assert.deepEqual(policyValues.map((m) => m[2]).sort(), contractKeys);
 		const hook = readFileSync(new URL("./linux/package-hook.sh", import.meta.url), "utf8");
@@ -257,7 +258,7 @@ describe("Windows MSI inputs", () => {
 		// A SYSTEM install turns its company address (and a fleet key) into the machine policy.
 		assert.match(wxs, /Action="AidrPolicyFromEnrollmentUrl" Value="\[ENROLLMENT_URL\]"[^>]*Condition="ALLUSERS=1 AND UserSID = &quot;S-1-5-18&quot; AND ENROLLMENT_URL AND NOT AIDR_POLICY_CONTROL_PLANE_URL"/);
 		assert.match(wxs, /Action="AidrPolicyFromEnrollmentCode" Value="\[ENROLLMENT_CODE\]"[^>]*ENROLLMENT_CODE &lt;&lt; &quot;aidr_fleet_&quot;/);
-		const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8");
+		const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 		assert.match(ps1, /Pass -SignThumbprint for a release build or -Unsigned for a local build/);
 		assert.match(ps1, /--remanifest/);
 		assert.match(ps1, /'verify', '\/pa', \$msi/);
@@ -275,7 +276,7 @@ describe("Windows MSI inputs", () => {
 		// The script stays after removal and is the signed staged copy.
 		assert.match(wxs, /<Component Id="ProfileCleanupScript" Directory="CLEANUPDIR" Condition="ALLUSERS=1" Permanent="yes"[\s\S]*?Source="\$\(var\.ProfileCleanupScript\)" Name="Remove-AidrUserRegistrations\.ps1"/);
 		assert.match(wxs, /<ComponentRef Id="ProfileCleanupScript" \/>/);
-		const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8");
+		const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 		assert.ok(ps1.indexOf("Invoke-AidrAuthenticodeSign -Signer $Signer -Files @($profileCleanup)") < ps1.indexOf("'-d', \"ProfileCleanupScript=$profileCleanup\""), "signed before it is packaged");
 		// The LocalSystem action writes one HKLM Active Setup key; it never opens a file.
 		const ca = readFileSync(new URL("./windows/ca/ProfileCleanupActions.cs", import.meta.url), "utf8");
@@ -914,7 +915,7 @@ describe("customer packet inputs", () => {
 describe("per-customer Windows installer", () => {
 	const wxs = readFileSync(new URL("./windows/aidr.wxs", import.meta.url), "utf8");
 	const bundle = readFileSync(new URL("./windows/bundle.wxs", import.meta.url), "utf8");
-	const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8");
+	const ps1 = readFileSync(new URL("./windows/build-msi.ps1", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 	test("msi-inputs names the product and files after the customer and keeps the upgrade identity", () => {
 		const base = { seaDir: fakeSeaBundle({ platform: "win32" }), trustKey: releaseKey.path, trustKeyFingerprint: releaseKey.fingerprint, version: "0.6.0" };

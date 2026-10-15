@@ -23,6 +23,7 @@ describe("offline notice at session start (install-time offline policy)", () => 
 	afterEach(async () => {
 		globalThis.fetch = originalFetch;
 		setConfiguredLocale(undefined);
+		vi.unstubAllEnvs();
 		if (prevHome === undefined) delete process.env.HOME;
 		else process.env.HOME = prevHome;
 		await rm(root, { recursive: true, force: true });
@@ -112,7 +113,8 @@ describe("offline notice at session start (install-time offline policy)", () => 
 		expect(formatOfflineNotice(notice, now)).toMatch(
 			/BLOCKED from \d{4}-\d{2}-\d{2} \d{2}:\d{2} \(about 42 min/,
 		);
-		setConfiguredLocale("tr");
+		// vitest.config pins AIDR_LOCALE=en, which outranks the configured locale.
+		vi.stubEnv("AIDR_LOCALE", "tr");
 		expect(formatOfflineNotice(notice, now)).toMatch(
 			/itibarıyla \(yaklaşık 42 dk sonra\) ENGELLENECEK/,
 		);

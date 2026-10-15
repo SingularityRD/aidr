@@ -2,7 +2,7 @@
 
 **Schema revision 1.1** — [`notification.v1.1.schema.json`](notification.v1.1.schema.json)
 (JSON Schema draft 2020-12, `$id` `https://schemas.singularityrd.com/aidr/notification/v1.1.json`)
-is the complete body schema for **all twelve events** the control plane emits. Revision 1.0
+is the complete body schema for **all thirteen events** the control plane emits. Revision 1.0
 (the schema embedded below) listed only the original five events. Nothing changed on the
 wire: the body still says `"schema": "aidr.notification.v1"`, and every body valid under 1.0
 is valid under 1.1. A receiver that validates strictly should switch to the 1.1 file before

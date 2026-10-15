@@ -22,7 +22,8 @@
         "governance.intake_requested",
         "governance.change_pending",
         "governance.exception_expiring",
-        "governance.digest"
+        "governance.digest",
+        "agent.unprotected"
       ]
     },
     "test": { "type": "boolean" },
@@ -53,6 +54,10 @@
         "window_days": { "type": ["integer", "null"], "minimum": 0, "maximum": 90 },
         "offline_minutes": { "type": ["integer", "null"], "minimum": 0, "maximum": 10000000 }
       }
+    },
+    "connector_state": {
+      "description": "agent.unprotected only: the measured hook state of the connector named in `category`.",
+      "enum": ["hook_missing", "hook_disabled", "hook_untrusted", "hook_broken", "disable_attempted", null]
     },
     "period": {
       "type": ["object", "null"],
@@ -129,6 +134,11 @@
     {
       "if": { "properties": { "event": { "not": { "const": "governance.digest" } } } },
       "then": { "properties": { "period": { "const": null }, "digest": { "const": null } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "agent.unprotected" } } },
+      "then": { "required": ["connector_state"] },
+      "else": { "not": { "required": ["connector_state"] } }
     }
   ]
 }

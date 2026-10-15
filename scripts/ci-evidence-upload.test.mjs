@@ -183,6 +183,8 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 		// Image digest manifest, scan summaries and per-image SBOMs (no credentials).
 		["release-images.yml::Upload release image evidence (pinned)", ["release-images/"]],
 		["error-to-insight.yml::Upload Insights Report", ["error-insights-report.md"]],
+		// Signed intel packs and their offline folder (public signatures, no keys).
+		["intel-pack-release.yml::Upload the release and offline folder (pinned)", ["${{ runner.temp }}/release/"]],
 		["release-browser-guard.yml::Upload Browser Guard release bundle (pinned)", ["release-output-browser-guard/"]],
 		// Store draft receipts: store, version, package sha256 and upload state; never a credential.
 		["release-browser-guard.yml::Upload store draft receipts (pinned)", ["store-receipts/"]],

@@ -250,6 +250,7 @@ const docRewrites = {
     ["See the [CLI README](../packages/cli/README.md#setup).", "See the Setup section of the CLI README (`packages/cli/README.md` in the source release, and `aidr setup --help`)."],
   ],
   "CODEX-CONNECTOR.md": [
+    ["[docs/operations/hook-tamper-resistance.md](../../docs/operations/hook-tamper-resistance.md)", "`docs/operations/hook-tamper-resistance.md` in the source release (not shipped in this kit)"],
     ["[Package Installation](../../docs/package-installation.md)", "[Package Installation](PACKAGE-INSTALLATION.md)"],
     // The real-host record is source-tree evidence; it does not ship in the kit.
     ["([`docs/evidence/real-host/codex.json`](../../docs/evidence/real-host/codex.json):", "(`docs/evidence/real-host/codex.json` in the source release, not shipped in this kit:"],
@@ -262,6 +263,9 @@ const docRewrites = {
     ["[Secret custody](secrets-management.md)", "[Secret custody](SECRETS-RUNBOOK.md)"],
   ],
 	"START-HERE.md": [
+		// Source-tree guides that do not ship in the kit: name them without a dead link.
+		["[on-prem runbook'una](../docs/operations/onprem-runbook.md)", "on-prem runbook'una (kaynak sürümde `docs/operations/onprem-runbook.md`; bu kitte yoktur)"],
+		["[masaüstü kurulum kılavuzu](../docs/installation/desktop-installers.md#machine-policy-every-user-of-a-computer)", "masaüstü kurulum kılavuzu (kaynak sürümde `docs/installation/desktop-installers.md`, \"Machine policy\" bölümü; bu kitte yoktur)"],
 		["../docs/production-readiness/retention-holds.md#releasing-a-hold-after-offboarding-starts", "RETENTION-HOLDS.md#releasing-a-hold-after-offboarding-starts"],
 		["[deployment kılavuzuna](README.md)", "[deployment kılavuzuna](INSTALLATION.md)"],
 		["[Supabase dağıtım rehberine](../supabase/README.md)", "[bulut hazırlığına](INSTALLATION.md)"],
@@ -272,6 +276,7 @@ const docRewrites = {
 	],
 	"INSTALLATION.md": [
 		["[the issuance and revocation contract](../supabase/README.md#configuration-is-validated-not-assumed)", "[the issuance and revocation contract](CONTROL-PLANE.md#configuration-is-validated-not-assumed)"],
+		["[first-customer guide](FIRST_CUSTOMER.md)", "[first-customer guide](START-HERE.md)"],
 		["[first-customer guide](FIRST_CUSTOMER.md)", "[first-customer guide](START-HERE.md)"],
 		["[on-prem guide](onprem/README.md)", "[on-prem guide](deploy/onprem/README.md)"],
 		["[on-prem sizing and posture scanner guide](onprem/README.md)", "[on-prem sizing and posture scanner guide](deploy/onprem/README.md)"],

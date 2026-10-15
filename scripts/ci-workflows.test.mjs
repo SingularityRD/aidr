@@ -952,7 +952,8 @@ test("Windows Authenticode signer library: pinned tools, secrets by reference, p
 });
 
 test("Windows Authenticode: MSI, Burn engine and setup EXE all sign through the selected backend", () => {
-	const ps1 = readFileSync(path.join(root, "deploy/installers/windows/build-msi.ps1"), "utf8");
+	// .gitattributes checks *.ps1 out with CRLF; compare with LF.
+	const ps1 = readFileSync(path.join(root, "deploy/installers/windows/build-msi.ps1"), "utf8").replace(/\r\n/g, "\n");
 	assert.match(ps1, /\[string\]\$Signer = ''/u);
 	assert.match(ps1, /\. \(Join-Path \$repo 'scripts\\windows-authenticode-signer\.ps1'\)/u);
 	assert.match(ps1, /if \(\$signing -eq 'signed'\) \{ \$Signer = Resolve-AidrAuthenticodeSigner \$Signer \}/u);

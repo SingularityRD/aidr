@@ -94,10 +94,13 @@ describe("JSON mutation body limits", () => {
 		expectNoBusinessMutation(route, fake.mutations);
 	});
 
+	// operator-admin accepts a signed license file (64 KiB) in its body.
+	const oversized = (route: string) => (route === "operator-admin" ? 128_000 : 20_000);
+
 	it.each(routes)("rejects declared-oversized %s JSON before any business mutation", async (route, handler) => {
 		const fake = database();
 		client.current = fake.db;
-		const response = await handler(post(route, "{}", { "Content-Length": "20000" }));
+		const response = await handler(post(route, "{}", { "Content-Length": String(oversized(route)) }));
 		expect(response.status).toBe(413);
 		expect(await response.json()).toEqual({ error: "request_too_large" });
 		expectNoBusinessMutation(route, fake.mutations);
@@ -108,7 +111,7 @@ describe("JSON mutation body limits", () => {
 		client.current = fake.db;
 		const body = new ReadableStream<Uint8Array>({
 			start(controller) {
-				controller.enqueue(new TextEncoder().encode(JSON.stringify({ payload: "x".repeat(20_000) })));
+				controller.enqueue(new TextEncoder().encode(JSON.stringify({ payload: "x".repeat(oversized(route)) })));
 				controller.close();
 			},
 		});
