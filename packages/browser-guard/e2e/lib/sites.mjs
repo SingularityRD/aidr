@@ -21,6 +21,12 @@ export const SITES = {
 		origin: "https://gemini.google.com",
 		path: "/app",
 		fixture: "gemini.html",
+		// Google multi-login paths (/u/<n>/app), each signed in with another account
+		// (scenarios/work-accounts.mjs).
+		pathFixtures: {
+			"/u/1/app": "gemini-account-workspace.html",
+			"/u/2/app": "gemini-account-personal.html",
+		},
 		kind: "quill",
 		editor: "rich-textarea .ql-editor",
 		send: "button.send-button",
@@ -135,6 +141,9 @@ SITES.m365pane = {
 	origin: "https://copilot.cloud.microsoft",
 	path: "/pane?hostApp=Word",
 	fixture: "m365-copilot-pane.html",
+	// Microsoft 365 Copilot Chat as a top-level page, with the account manager header
+	// (scenarios/work-accounts.mjs).
+	pathFixtures: { "/chat": "m365-copilot-chat.html" },
 	kind: "prosemirror",
 	editor: "#m365-chat-editor-target-element",
 	send: "button.fai-SendButton",

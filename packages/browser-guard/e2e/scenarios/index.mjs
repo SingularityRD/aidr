@@ -14,6 +14,7 @@ import popup from "./popup.mjs";
 import preflight from "./preflight.mjs";
 import reloadRestore from "./reload-restore.mjs";
 import restoreSideChannels from "./restore-side-channels.mjs";
+import workAccounts from "./work-accounts.mjs";
 
 export const SCENARIOS = [
 	...preflight,
@@ -29,6 +30,7 @@ export const SCENARIOS = [
 	...blockedSite,
 	...frames,
 	...managedAiSites,
+	...workAccounts,
 ];
 
 /** Selects scenarios by comma-separated ids or id prefixes (`auto` matches `auto-chatgpt`). */

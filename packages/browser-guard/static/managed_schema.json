@@ -476,6 +476,113 @@
 				"publicKeysPem"
 			]
 		},
+		"workAccounts": {
+			"title": "Personal vs company AI accounts",
+			"description": "Check, on the AI sites listed in sites (chatgpt, claude, gemini, copilot), whether the user is signed in with the organisation's account. A site is confirmed when the page shows one of its workspaceIds (ChatGPT workspace account id, Claude organisation UUID) or an account email in one of its emailDomains (subdomains match); with both lists empty, any recognised work account counts (Microsoft 365 Copilot Chat, a ChatGPT workspace, a non-Gmail Google account). action for every other account: warn (the first send asks to continue), block (sends and uploads refused) or mask-only (sends are always masked; monitor mode, pause and send-original do not apply). unverified: enforce (default; an account the page does not identify gets the action) or allow. Telemetry reports only the account type (company, personal, other, unverified), never an id, email or domain. Desktop apps and Safari are not covered; see the Browser Guard work-accounts documentation.",
+			"type": "object",
+			"properties": {
+				"action": {
+					"type": "string",
+					"enum": [
+						"warn",
+						"block",
+						"mask-only"
+					]
+				},
+				"unverified": {
+					"type": "string",
+					"enum": [
+						"enforce",
+						"allow"
+					]
+				},
+				"sites": {
+					"type": "object",
+					"properties": {
+						"chatgpt": {
+							"type": "object",
+							"properties": {
+								"workspaceIds": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+									}
+								},
+								"emailDomains": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^@?[A-Za-z0-9][A-Za-z0-9.-]{2,252}$"
+									}
+								}
+							}
+						},
+						"claude": {
+							"type": "object",
+							"properties": {
+								"workspaceIds": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+									}
+								},
+								"emailDomains": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^@?[A-Za-z0-9][A-Za-z0-9.-]{2,252}$"
+									}
+								}
+							}
+						},
+						"gemini": {
+							"type": "object",
+							"properties": {
+								"workspaceIds": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+									}
+								},
+								"emailDomains": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^@?[A-Za-z0-9][A-Za-z0-9.-]{2,252}$"
+									}
+								}
+							}
+						},
+						"copilot": {
+							"type": "object",
+							"properties": {
+								"workspaceIds": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+									}
+								},
+								"emailDomains": {
+									"type": "array",
+									"items": {
+										"type": "string",
+										"pattern": "^@?[A-Za-z0-9][A-Za-z0-9.-]{2,252}$"
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"required": [
+				"action",
+				"sites"
+			]
+		},
 		"allowUserOverrides": {
 			"title": "Allow user overrides of protection settings",
 			"description": "When any managed policy is present, the user can no longer change mode, enabled entity types, custom literals, paste masking, response restore or per-site disabling (they stay at the managed or built-in value). Set to true to let users keep changing the ones this policy does not set.",

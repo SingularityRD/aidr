@@ -102,6 +102,11 @@ export interface FileGuardDeps {
 	inspectImage?: InspectImageFn;
 	/** policy.requireNativeNer: the per-upload native gate, or null when NER is not required. */
 	nativeGate?(policy: GuardPolicy): NativeFileGate | null;
+	/**
+	 * policy.workAccounts: the message when uploads are blocked because the signed-in account
+	 * is not the organisation's (an organisation rule, enforced in every mode), else null.
+	 */
+	accountUploadBlock?(): string | null;
 }
 
 export interface FileGuard {
@@ -454,6 +459,8 @@ export function createFileGuard(deps: FileGuardDeps): FileGuard {
 	/** Why an organisation rule blocks these uploads here (in every mode), or null. */
 	const blockedBy = (policy: GuardPolicy, files: readonly File[]): string | null => {
 		if (siteBlocked(policy)) return deps.strings().siteBlocked;
+		const account = deps.accountUploadBlock?.() ?? null;
+		if (account !== null) return account;
 		if (policy.fileHandling === "block") return deps.strings().fileBlockedByPolicy;
 		if (
 			policy.fileHandling === "scan" &&

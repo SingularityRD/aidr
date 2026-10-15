@@ -9,6 +9,7 @@ import { vi } from "vitest";
 import { type ContentGuard, createContentGuard } from "../content/guard";
 import { editorAccess, insertAtSelection, isSyntheticEditorEvent } from "../dom/editor";
 import { createVault } from "../engine/vault";
+import type { AccountProbe } from "../sites/accounts";
 import type {
 	DetectionEngine,
 	FileDecision,
@@ -139,6 +140,8 @@ export interface HarnessOptions {
 	readonly nativeImageTimeoutMs?: number;
 	/** Vault placeholder tag (engine/vault.ts); omitted: untagged placeholders. */
 	readonly vaultTag?: string;
+	/** What the page exposes about the signed-in account (policy.workAccounts). */
+	readonly accountProbe?: () => AccountProbe;
 }
 
 export function setupGuard(options: HarnessOptions = {}): Harness {
@@ -213,6 +216,7 @@ export function setupGuard(options: HarnessOptions = {}): Harness {
 		prescanDelayMs: options.prescanDelayMs ?? 60_000,
 		nativeTimeoutMs: options.nativeTimeoutMs,
 		nativeImageTimeoutMs: options.nativeImageTimeoutMs,
+		...(options.accountProbe ? { accountProbe: options.accountProbe } : {}),
 	});
 	guard.start();
 

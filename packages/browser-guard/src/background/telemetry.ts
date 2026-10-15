@@ -12,6 +12,8 @@
  */
 import { AI_SERVICE_ID_PATTERN, isAiServiceId } from "../sites/catalog.js";
 import {
+	ACCOUNT_TYPES,
+	type AccountType,
 	type AupAcknowledgementEvent,
 	ENTITY_TYPES,
 	type EntityType,
@@ -58,6 +60,7 @@ const EVENT_KEYS = new Set([
 	"native_ner",
 	"reason",
 	"policy_errors",
+	"account_type",
 ]);
 const PRIVACY_REASONS: readonly PrivacyScanReason[] = ["paused"];
 /** Upper bound for `policy_errors` (more keys than the managed schema declares). */
@@ -111,12 +114,17 @@ const isOptionalPolicyId = (raw: unknown): boolean =>
 const isPolicyErrorCount = (raw: unknown): boolean =>
 	Number.isSafeInteger(raw) && (raw as number) >= 1 && (raw as number) <= POLICY_ERRORS_MAX;
 
-/** Optional additive fields: `native_ner`, `reason` and `policy_errors`, when present. */
+/** True for an account check result (the `account_type` enum). */
+export const isAccountType = (raw: unknown): raw is AccountType =>
+	(ACCOUNT_TYPES as readonly unknown[]).includes(raw);
+
+/** Optional additive fields: `native_ner`, `reason`, `policy_errors`, `account_type`, when present. */
 function hasValidOptionalFields(e: Record<string, unknown>): boolean {
 	if (e.native_ner !== undefined && !NATIVE_NER_USES.includes(e.native_ner as NativeNerUse))
 		return false;
 	if (e.reason !== undefined && !PRIVACY_REASONS.includes(e.reason as PrivacyScanReason))
 		return false;
+	if (e.account_type !== undefined && !isAccountType(e.account_type)) return false;
 	return e.policy_errors === undefined || isPolicyErrorCount(e.policy_errors);
 }
 
@@ -146,6 +154,7 @@ export function sanitizeEvent(raw: unknown): PrivacyScanEvent | null {
 		...(e.native_ner !== undefined ? { native_ner: e.native_ner as NativeNerUse } : {}),
 		...(e.reason !== undefined ? { reason: e.reason as PrivacyScanReason } : {}),
 		...(errors !== undefined ? { policy_errors: errors as number } : {}),
+		...(e.account_type !== undefined ? { account_type: e.account_type as AccountType } : {}),
 	};
 	return event;
 }
@@ -216,6 +225,8 @@ export interface RecordInput {
 	readonly paused?: boolean;
 	/** Count of invalid managed policy keys in force (GuardPolicy.policyErrors). */
 	readonly policyErrors?: number;
+	/** Account check result on a site listed in `workAccounts` (enum only). */
+	readonly accountType?: AccountType;
 }
 
 const SHADOW_ACTIONS: readonly ShadowAiUsageEvent["action"][] = ["visited", "blocked"];
@@ -307,6 +318,7 @@ export function buildEvent(input: RecordInput, now: number): PrivacyScanEvent | 
 		...(input.nativeNer ? { native_ner: input.nativeNer } : {}),
 		...(input.paused ? { reason: "paused" } : {}),
 		...(input.policyErrors ? { policy_errors: input.policyErrors } : {}),
+		...(input.accountType ? { account_type: input.accountType } : {}),
 	});
 }
 

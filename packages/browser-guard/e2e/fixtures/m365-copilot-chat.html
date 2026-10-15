@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Microsoft 365 Copilot Chat, work account (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#thread { min-height: 200px; padding: 12px; }
+	.composer { display: flex; gap: 8px; padding: 12px; }
+	#m365-chat-editor-target-element { flex: 1; min-height: 40px; border: 1px solid #999; padding: 8px; }
+	#m365-chat-editor-target-element p { margin: 0; }
+</style>
+</head>
+<body>
+<!--
+	Microsoft 365 Copilot Chat as a top-level page at https://copilot.cloud.microsoft/chat, with
+	the composer markup of m365-copilot-pane.html and the Microsoft 365 header's account manager
+	(account signals `copilot.host` and `m365.me-control`, src/sites/accounts.ts and
+	docs/work-accounts.md): the host serves Entra ID work accounts only, and the account manager
+	shows the signed-in user principal name in #mectrl_currentAccount_secondary.
+	Modelled on the Microsoft 365 header, not on a live tenant (BG-LIVE).
+-->
+<div id="O365_HeaderRightRegion">
+	<button type="button" id="O365_MainLink_Me" aria-label="Account manager for Ada Yilmaz">
+		<div id="mectrl_currentAccount_primary">Ada Yilmaz</div>
+		<div id="mectrl_currentAccount_secondary">ada.yilmaz@acme.example</div>
+	</button>
+</div>
+<div id="thread"></div>
+<div class="composer">
+	<div id="m365-chat-editor-target-element" contenteditable="true" role="textbox"
+		data-lexical-editor="true" aria-label="Message Copilot"><p><br></p></div>
+	<button type="button" class="fai-SendButton" aria-label="Send">Send</button>
+</div>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	FixtureChat.init({
+		site: "copilot",
+		kind: "prosemirror",
+		editor: "#m365-chat-editor-target-element",
+		send: "button.fai-SendButton",
+		thread: "#thread",
+		endpoint: "/m365/api/chat",
+		renderUser(text) {
+			const msg = document.createElement("div");
+			msg.setAttribute("data-testid", "chat-turn-user-message");
+			msg.textContent = text;
+			return msg;
+		},
+		renderAssistant() {
+			const root = document.createElement("div");
+			root.setAttribute("data-testid", "markdown-reply");
+			const body = document.createElement("div");
+			root.appendChild(body);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>
