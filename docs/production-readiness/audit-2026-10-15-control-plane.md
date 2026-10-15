@@ -128,6 +128,23 @@ open for the landing image and the MEDIUM zlib finding.
 
 ## 5. Gates run for this record
 
-See the final section of the session report: `pnpm check`, `pnpm lint`, `pnpm supabase:check` and `pnpm test`.
+| Gate | Result |
+|---|---|
+| `pnpm check` | exit 0 |
+| `pnpm lint` | exit 0 (0 errors; the existing warnings are unchanged in kind) |
+| `pnpm supabase:check` | 99/99 |
+| `node scripts/check-supabase-edge-contracts.mjs` | passed (36 functions, 59/59 config-guarded) |
+| `pnpm test` (Windows 11, serial) | 13,593 passed, 65 failed, 1 expected fail (T37-1), 33 skipped |
+
+None of the 65 failures comes from this branch. All failing files were re-run on a clean worktree of the starting commit
+`43db0581`, and the same tests fail there: CLI `update-command` 18/26, connector bundle suites (prompt protection,
+operator-mode parity, dashboard approval, toxic flow, i18n, agent safety/profile), CLI heartbeat/customer-packet/
+support-bundle/machine-hooks, core health/i18n/project-env/license-endpoint/developer-notices/dist-case-collision,
+OpenCode file-tool coverage, Codex output protection, `build-sea`, and the POSIX-mode assertion at
+`packages/core/src/__tests__/mcp-attestation.test.ts:866`, which cannot hold on Windows. Two tests failed only during
+the full run: `connector-parity` dlp-block-rule (codex "no audit record") and the Claude Code integration latency
+budget. Both passed twice when re-run in isolation, so they are load-sensitive flakes. These pre-existing Windows
+failures belong to the connector/CLI owners and are outside this scope.
+
 `scripts/deployment-prepare.test.mjs` passes 24 of 27 in this worktree. The 3 failures are environmental: the
 `deploy/upstream` submodule is not checked out, and the dashboard and core builds were absent at the time of that run.
