@@ -9,6 +9,8 @@
 //                          account cannot send (nothing reaches the site, a bubble says why);
 //                          the company Workspace account and the company ChatGPT workspace
 //                          send as usual (masked).
+// work-accounts-warn       action "warn": the first send from a personal Gemini account is
+//                          held with Continue / Cancel; after Continue the masked prompt goes.
 // work-accounts-mask-only  action "mask-only" under managed mode "monitor": consumer Copilot
 //                          is masked anyway, while Microsoft 365 Copilot Chat signed in with
 //                          the company domain stays in monitor mode (sent unchanged).
@@ -29,6 +31,14 @@ const BLOCK_POLICY = {
 			gemini: { emailDomains: ["acme.example"] },
 			chatgpt: { workspaceIds: [COMPANY_WORKSPACE] },
 		},
+	},
+};
+
+const WARN_POLICY = {
+	policyId: "e2e-work-accounts-warn",
+	workAccounts: {
+		action: "warn",
+		sites: { gemini: { emailDomains: ["acme.example"] } },
 	},
 };
 
@@ -157,6 +167,54 @@ export default [
 
 				const stats = await m.getStats();
 				checks.check("the refused sends are counted", stats?.blockedSends >= 2, stats);
+			});
+		},
+	},
+	{
+		id: "work-accounts-warn",
+		title: "workAccounts warn: a personal Gemini account is warned once, Continue lets the masked prompt through",
+		skip: skipUnlessProductBuild,
+		async run({ h, checks, data }) {
+			await withManagedBrowser(h, WARN_POLICY, async (m) => {
+				const page = await m.openSite("gemini", { path: "/u/2/app" });
+				const mark = m.recorder.mark();
+				await send(page, "gemini", data.prompt);
+				const bubble = await waitFor(
+					async () => (await m.overlays(page, "gemini")).find((o) => /company account/i.test(o)) ?? null,
+					{ timeout: 4000, message: "the account warning" },
+				).catch(() => null);
+				checks.check("a warning names the company-account rule", bubble, {
+					overlays: await m.overlays(page, "gemini"),
+				});
+				let quiet = true;
+				await staysFalse(() => m.recorder.apiSince(mark, { kind: "prompt" }).length > 0, {
+					window: 1000,
+					message: "a prompt request before the user decides",
+				}).catch(() => {
+					quiet = false;
+				});
+				checks.check("nothing is sent before the user decides", quiet, m.recorder.apiSince(mark));
+				const clicked = await waitFor(() => m.clickOverlayButton(page, /^(continue|devam)$/i), {
+					timeout: 3000,
+					message: '"Continue" button',
+				}).catch(() => false);
+				checks.must('the warning offers "Continue"', clicked, await m.overlays(page, "gemini"));
+				// The prompt stayed in the editor; the user presses send again (as the toast says).
+				await page.locator(SITES.gemini.send).click({ timeout: 3000, force: true });
+				const sent = await waitForPrompt(m, "gemini", mark);
+				expectMasked(checks, data, "after Continue", sent.json?.prompt ?? sent.raw);
+				checks.equal(
+					"exactly one prompt request",
+					m.recorder.apiSince(mark, { kind: "prompt" }).length,
+					1,
+				);
+				assertNoLeaks(
+					checks,
+					m,
+					mark,
+					data.items.map((i) => i.value),
+				);
+				await page.close().catch(() => {});
 			});
 		},
 	},

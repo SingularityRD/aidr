@@ -88,4 +88,14 @@ function autoMask(siteKey) {
 	};
 }
 
-export default ["chatgpt", "gemini", "claude", "copilot", "perplexity", "generic"].map(autoMask);
+export default [
+	"chatgpt",
+	"gemini",
+	"claude",
+	"copilot",
+	"perplexity",
+	"deepseek",
+	"mistral",
+	"grok",
+	"generic",
+].map(autoMask);

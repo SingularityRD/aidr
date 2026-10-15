@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Grok (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#thread { min-height: 200px; padding: 16px; display: flex; flex-direction: column; }
+	.items-end { align-self: flex-end; }
+	.items-start { align-self: flex-start; }
+	form { display: flex; gap: 8px; margin: 16px; }
+	.tiptap { flex: 1; min-height: 40px; border: 1px solid #999; padding: 8px; }
+	.tiptap p { margin: 0; }
+</style>
+</head>
+<body>
+<!-- Mirrors src/sites/grok.ts: a TipTap/ProseMirror composer in a form with a submit
+     button, turns div[id^=response-] aligned items-end (user) / items-start (assistant). -->
+<div id="thread"></div>
+<form id="grok-form">
+	<div contenteditable="true" class="tiptap ProseMirror" role="textbox" translate="no"
+		aria-label="Ask Grok anything"><p><br class="ProseMirror-trailingBreak"></p></div>
+	<button type="submit" aria-label="Submit">Submit</button>
+	<input type="file" id="grok-upload">
+</form>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	let turn = 0;
+	FixtureChat.init({
+		site: "grok",
+		kind: "prosemirror",
+		editor: 'div.tiptap.ProseMirror[contenteditable="true"]',
+		send: 'form button[type="submit"]',
+		form: "#grok-form",
+		thread: "#thread",
+		endpoint: "/rest/app-chat/conversations/new",
+		fileInput: "#grok-upload",
+		renderUser(text) {
+			turn += 1;
+			const root = document.createElement("div");
+			root.id = `response-u${turn}`;
+			root.className = "items-end";
+			const bubble = document.createElement("div");
+			bubble.className = "message-bubble";
+			bubble.textContent = text;
+			root.appendChild(bubble);
+			return root;
+		},
+		renderAssistant() {
+			turn += 1;
+			const root = document.createElement("div");
+			root.id = `response-a${turn}`;
+			root.className = "items-start";
+			const bubble = document.createElement("div");
+			bubble.className = "message-bubble";
+			const body = document.createElement("div");
+			body.className = "response-content-markdown";
+			bubble.appendChild(body);
+			root.appendChild(bubble);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>

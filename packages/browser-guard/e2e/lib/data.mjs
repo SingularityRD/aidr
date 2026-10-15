@@ -87,5 +87,54 @@ export const PROFILES = {
 
 export const CLEAN_PROMPT = "Summarise the plot of Hamlet in three sentences.";
 
+/** Luhn checksum (payment card numbers), spaces ignored. */
+function validLuhn(value) {
+	const digits = value.replace(/\s+/g, "");
+	if (!/^[0-9]{13,19}$/.test(digits)) return false;
+	let sum = 0;
+	for (let i = 0; i < digits.length; i++) {
+		let d = Number(digits[digits.length - 1 - i]);
+		if (i % 2 === 1) {
+			d *= 2;
+			if (d > 9) d -= 9;
+		}
+		sum += d;
+	}
+	return sum % 10 === 0;
+}
+
+// The customer-demo data set (scenarios/entities.mjs, docs/demo/browser-guard-demo.tr.md):
+// every identifier class the demo shows, in the formats people actually type.
+const PHONE = "+90 532 123 45 67";
+const CARD = "4539 1488 0343 6467";
+const IBAN_SPACED = "TR33 0006 1005 1978 6457 8413 26";
+const GITHUB_TOKEN = "ghp_R4nd0mF4k3T0k3nF0rDem0Purp0s3s0nly12";
+const AWS_KEY = "AKIAZ7QX3EXAMPLE4DMO";
+
+if (!validLuhn(CARD)) throw new Error(`test data: ${CARD} fails the Luhn check`);
+if (!validIban(IBAN_SPACED)) throw new Error(`test data: ${IBAN_SPACED} is not a valid IBAN`);
+
+/**
+ * Items of the demo prompt. `restore: false` marks types the default policy never
+ * restores (`neverRestore`: SECRET, PRIVATE_KEY): their placeholders stay in the reply.
+ */
+export const DEMO_ITEMS = [
+	{ ...ITEMS.email, restore: true },
+	{ type: "PHONE", value: PHONE, placeholder: placeholderPattern("PHONE"), restore: true },
+	{ ...ITEMS.tckn, restore: true },
+	{ type: "IBAN", value: IBAN_SPACED, placeholder: placeholderPattern("IBAN"), restore: true },
+	{ type: "CREDIT_CARD", value: CARD, placeholder: placeholderPattern("CARD"), restore: true },
+	{ ...ITEMS.apiKey, restore: false },
+	{ type: "SECRET", value: GITHUB_TOKEN, placeholder: placeholderPattern("SECRET"), restore: false },
+	{ type: "SECRET", value: AWS_KEY, placeholder: placeholderPattern("SECRET"), restore: false },
+];
+
+/** The prompt the demo types (Turkish, as in the demo guide). */
+export const DEMO_PROMPT = [
+	`Müşteri Ayşe Yılmaz için iade yazısı hazırla. E-posta ${EMAIL}, telefon ${PHONE},`,
+	`TCKN ${TCKN}, IBAN ${IBAN_SPACED}, kart ${CARD}.`,
+	`Deploy anahtarları: ${API_KEY} ${GITHUB_TOKEN} ${AWS_KEY}`,
+].join(" ");
+
 /** Matches any vault placeholder, e.g. `[EMAIL_1]`, `[NATIONAL_ID_2]`, `[EMAIL_1_k3f9]` (tagged). */
 export const ANY_PLACEHOLDER = /\[[A-Z][A-Z_]*_\d+(?:_[a-z0-9]{4,8})?\]/g;

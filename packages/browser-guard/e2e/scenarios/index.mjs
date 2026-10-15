@@ -5,6 +5,7 @@ import autoMask from "./auto-mask.mjs";
 import blockedSite from "./blocked-site.mjs";
 import editResend from "./edit-resend.mjs";
 import editing from "./editing.mjs";
+import entities from "./entities.mjs";
 import fileUpload from "./file-upload.mjs";
 import frames from "./frames.mjs";
 import managedAiSites from "./managed-ai-sites.mjs";
@@ -19,6 +20,7 @@ import workAccounts from "./work-accounts.mjs";
 export const SCENARIOS = [
 	...preflight,
 	...autoMask,
+	...entities,
 	...restoreSideChannels,
 	...reloadRestore,
 	...paste,
