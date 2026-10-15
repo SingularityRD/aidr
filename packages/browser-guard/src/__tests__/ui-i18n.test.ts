@@ -194,12 +194,19 @@ describe("extension pages", () => {
 		const css = readFileSync(join(STATIC_DIR, "ui.css"), "utf8");
 		const match = /--logo: url\("data:image\/svg\+xml,([^"]+)"\)/.exec(css);
 		expect(match).not.toBeNull();
+		// The round Singularity mark (branding/singularity-mark.svg), as scripts/icons.mjs writes it:
+		// same geometry, without title/ARIA, currentColor -> black (used as a CSS mask).
 		const embedded = decodeURIComponent(match?.[1] ?? "").replace(/'/g, '"');
 		const source = readFileSync(
-			join(PACKAGE_ROOT, "..", "..", "images", "aidr-logo-shaded.svg"),
+			join(PACKAGE_ROOT, "..", "..", "branding", "singularity-mark.svg"),
 			"utf8",
 		);
-		expect(embedded).toBe(source.trim().split(/\s+/).join(" "));
+		const polygons = (svg: string) =>
+			[...svg.matchAll(/<polygon points="([^"]+)"/g)].map((m) => m[1]);
+		expect(polygons(embedded)).toEqual(polygons(source));
+		expect(polygons(embedded)).toHaveLength(7);
+		expect(embedded).toContain('<circle cx="200" cy="200" r="184"/>');
+		expect(embedded).not.toContain("currentColor");
 		expect(css.replace(/url\("data:[^"]+"\)/g, "")).not.toMatch(/url\(|@import|https?:\/\//);
 		for (const color of ["#3862e8", "#2448bb", "#0a0a0a", "#f8fafc", "#0f172a"]) {
 			expect(css.toLowerCase()).toContain(color);
