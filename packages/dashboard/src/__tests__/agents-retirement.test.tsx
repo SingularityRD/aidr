@@ -21,7 +21,8 @@ const activeAgent = {
 	agent_runtime: "claude-code",
 	agent_runtime_version: "1.0.0",
 	first_seen: "2026-09-23T00:00:00Z",
-	last_seen: "2026-09-23T00:01:00Z",
+	// Recent, so the agent is active rather than stale (STALE_AFTER_MS).
+	last_seen: new Date(Date.now() - 60_000).toISOString(),
 	retired_at: null,
 	retired_reason: null,
 };

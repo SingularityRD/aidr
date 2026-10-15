@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
 import { useRichT, useT } from "../../i18n/I18nProvider";
 import {
 	AUTO_RETIRE_MAX_DAYS,
@@ -12,7 +13,40 @@ import {
 } from "../../lib/agent-lifecycle";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import {
+	AGENT_PAGE_SIZE,
+	AGENT_SORTS,
+	AGENT_STATUS_FILTERS,
+	type AgentFilters,
+	type AgentHealth,
+	agentHealth,
+	agentsCsv,
+	fileStamp,
+	filterAgents,
+	readAgentFilters,
+	saveFile,
+	writeAgentFilters,
+} from "../fleet-view";
 import { RetireAgentControl } from "../RetireAgentControl";
+
+const STATUS_FILTER_LABEL: Record<AgentFilters["status"], DashboardMessageKey> = {
+	all: "agents.filter.statusAll",
+	active: "agents.status.active",
+	stale: "agents.status.stale",
+	retired: "agents.status.retired",
+};
+
+const SORT_LABEL: Record<AgentFilters["sort"], DashboardMessageKey> = {
+	last_seen_desc: "agents.sort.last_seen_desc",
+	last_seen_asc: "agents.sort.last_seen_asc",
+	name: "agents.sort.name",
+};
+
+const HEALTH_BADGE: Record<AgentHealth, string> = {
+	active: "badge-allow",
+	stale: "badge-ask",
+	retired: "badge-neutral",
+};
 
 type AgentRow = {
 	id: string;
@@ -183,6 +217,17 @@ export function AgentsPage() {
 	const [seatUsageError, setSeatUsageError] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loadedTenantId, setLoadedTenantId] = useState<string | null>(null);
+	// Clock of the last load; stale classification is relative to it.
+	const [now, setNow] = useState(() => Date.now());
+	const [searchParams, setSearchParams] = useSearchParams();
+	const filterKey = searchParams.toString();
+	const filters = useMemo(() => readAgentFilters(new URLSearchParams(filterKey)), [filterKey]);
+	const updateFilters = useCallback(
+		(change: Partial<AgentFilters>) => {
+			setSearchParams(writeAgentFilters({ ...filters, page: 1, ...change }), { replace: true });
+		},
+		[filters, setSearchParams],
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -215,6 +260,7 @@ export function AgentsPage() {
 
 				if (cancelled || currentRequest !== requestId) return;
 				setLoadedTenantId(activeTenantId);
+				setNow(Date.now());
 
 				if (
 					agentsRes.error ||
@@ -265,6 +311,26 @@ export function AgentsPage() {
 	const seatUsageForTeam = loadedTenantId === tenantId ? seatUsage : null;
 	const allowed = seatUsageForTeam?.allowed_agents ?? null;
 	const activeAgents = agentsForTeam?.filter((a) => !a.retired_at) ?? null;
+	const staleCount = agentsForTeam?.filter((a) => agentHealth(a, now) === "stale").length ?? 0;
+	const runtimes = useMemo(
+		() =>
+			[
+				...new Set(
+					(agentsForTeam ?? [])
+						.map((a) => a.agent_runtime)
+						.filter((value): value is string => typeof value === "string"),
+				),
+			].sort(),
+		[agentsForTeam],
+	);
+	const matching = useMemo(
+		() => (agentsForTeam ? filterAgents(agentsForTeam, filters, now) : null),
+		[agentsForTeam, filters, now],
+	);
+	const pages = Math.max(1, Math.ceil((matching?.length ?? 0) / AGENT_PAGE_SIZE));
+	const page = Math.min(filters.page, pages);
+	const visible = matching?.slice((page - 1) * AGENT_PAGE_SIZE, page * AGENT_PAGE_SIZE) ?? null;
+	const filtered = Boolean(filters.q.trim() || filters.status !== "all" || filters.runtime);
 
 	return (
 		<div className="stack">
@@ -302,9 +368,106 @@ export function AgentsPage() {
 						{t("agents.seatsWarning")} {seatUsageError}
 					</div>
 				) : null}
+				{staleCount > 0 ? (
+					<div className="notice notice-warning" role="status" data-stale-count={staleCount}>
+						{t("agents.staleCount", { count: staleCount })}
+					</div>
+				) : null}
 			</div>
 
 			<div className="card">
+				<div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+					<label>
+						<span className="small">{t("agents.filter.search")}</span>{" "}
+						<input
+							className="input"
+							type="search"
+							value={filters.q}
+							placeholder={t("agents.filter.searchHint")}
+							onChange={(event) => updateFilters({ q: event.currentTarget.value })}
+						/>
+					</label>
+					<label>
+						<span className="small">{t("agents.status")}</span>{" "}
+						<select
+							className="input"
+							value={filters.status}
+							onChange={(event) =>
+								updateFilters({ status: event.currentTarget.value as AgentFilters["status"] })
+							}
+						>
+							{AGENT_STATUS_FILTERS.map((status) => (
+								<option key={status} value={status}>
+									{t(STATUS_FILTER_LABEL[status])}
+								</option>
+							))}
+						</select>
+					</label>
+					<label>
+						<span className="small">{t("agents.runtime")}</span>{" "}
+						<select
+							className="input"
+							value={filters.runtime}
+							onChange={(event) => updateFilters({ runtime: event.currentTarget.value })}
+						>
+							<option value="">{t("agents.filter.runtimeAll")}</option>
+							{runtimes.map((runtime) => (
+								<option key={runtime} value={runtime}>
+									{runtime}
+								</option>
+							))}
+						</select>
+					</label>
+					<label>
+						<span className="small">{t("agents.filter.sort")}</span>{" "}
+						<select
+							className="input"
+							value={filters.sort}
+							onChange={(event) =>
+								updateFilters({ sort: event.currentTarget.value as AgentFilters["sort"] })
+							}
+						>
+							{AGENT_SORTS.map((sort) => (
+								<option key={sort} value={sort}>
+									{t(SORT_LABEL[sort])}
+								</option>
+							))}
+						</select>
+					</label>
+					{filtered ? (
+						<button
+							className="button button-secondary button-sm"
+							type="button"
+							onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}
+						>
+							{t("agents.filter.clear")}
+						</button>
+					) : null}
+					<button
+						className="button button-secondary button-sm"
+						type="button"
+						disabled={!matching || matching.length === 0}
+						title={t("agents.export.hint")}
+						onClick={() => {
+							if (!matching) return;
+							saveFile(
+								`aidr-agents-${fileStamp(Date.now())}.csv`,
+								agentsCsv(matching, now),
+								"text/csv;charset=utf-8",
+							);
+						}}
+					>
+						{t("agents.export.csv")}
+					</button>
+				</div>
+				{matching ? (
+					<p className="muted small" style={{ marginTop: 8 }} data-agent-count={matching.length}>
+						{t("agents.filter.shown", {
+							shown: matching.length,
+							total: agentsForTeam?.length ?? 0,
+						})}
+					</p>
+				) : null}
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
@@ -319,40 +482,48 @@ export function AgentsPage() {
 							</tr>
 						</thead>
 						<tbody>
-							{agentsForTeam?.map((a) => (
-								<tr key={a.id} data-agent-status={a.retired_at ? "retired" : "active"}>
-									<td>
-										<div className="mono">{a.display_name ?? a.iid.slice(0, 12)}</div>
-										<div className="muted small">iid: {a.iid}</div>
-									</td>
-									<td>
-										<span className="badge badge-neutral badge-plain">
-											{a.agent_runtime ?? t("common.unknown")}
-										</span>
-										{a.agent_runtime_version ? (
-											<span className="muted small"> {a.agent_runtime_version}</span>
-										) : null}
-									</td>
-									<td>
-										<span className={`badge ${a.retired_at ? "badge-neutral" : "badge-allow"}`}>
-											{a.retired_at
-												? a.retired_reason === "offline"
-													? t("agents.status.retiredOffline")
-													: t("agents.status.retired")
-												: t("agents.status.active")}
-										</span>
-									</td>
-									<td className="mono">{new Date(a.last_seen).toLocaleString()}</td>
-									<td className="right">
-										<Link className="button button-secondary button-sm" to={`/agents/${a.id}`}>
-											{t("agents.view")}
-										</Link>{" "}
-										{canManageTeam && tenantId && !a.retired_at ? (
-											<RetireAgentControl tenantId={tenantId} agentId={a.id} onRetired={reload} />
-										) : null}
-									</td>
-								</tr>
-							))}
+							{visible?.map((a) => {
+								const health = agentHealth(a, now);
+								return (
+									<tr key={a.id} data-agent-status={health}>
+										<td>
+											<div className="mono">{a.display_name ?? a.iid.slice(0, 12)}</div>
+											<div className="muted small">iid: {a.iid}</div>
+										</td>
+										<td>
+											<span className="badge badge-neutral badge-plain">
+												{a.agent_runtime ?? t("common.unknown")}
+											</span>
+											{a.agent_runtime_version ? (
+												<span className="muted small"> {a.agent_runtime_version}</span>
+											) : null}
+										</td>
+										<td>
+											<span
+												className={`badge ${HEALTH_BADGE[health]}`}
+												title={health === "stale" ? t("agents.staleHint") : undefined}
+											>
+												{health === "retired"
+													? a.retired_reason === "offline"
+														? t("agents.status.retiredOffline")
+														: t("agents.status.retired")
+													: health === "stale"
+														? t("agents.status.stale")
+														: t("agents.status.active")}
+											</span>
+										</td>
+										<td className="mono">{new Date(a.last_seen).toLocaleString()}</td>
+										<td className="right">
+											<Link className="button button-secondary button-sm" to={`/agents/${a.id}`}>
+												{t("agents.view")}
+											</Link>{" "}
+											{canManageTeam && tenantId && !a.retired_at ? (
+												<RetireAgentControl tenantId={tenantId} agentId={a.id} onRetired={reload} />
+											) : null}
+										</td>
+									</tr>
+								);
+							})}
 							{agentsForTeam === null ? (
 								<tr>
 									<td colSpan={5} className="muted">
@@ -367,10 +538,37 @@ export function AgentsPage() {
 										})}
 									</td>
 								</tr>
+							) : matching && matching.length === 0 ? (
+								<tr>
+									<td colSpan={5} className="muted">
+										{t("agents.filter.none")}
+									</td>
+								</tr>
 							) : null}
 						</tbody>
 					</table>
 				</div>
+				{pages > 1 ? (
+					<div className="row" style={{ gap: 8, marginTop: 10, alignItems: "center" }}>
+						<button
+							className="button button-secondary button-sm"
+							type="button"
+							disabled={page <= 1}
+							onClick={() => updateFilters({ page: page - 1 })}
+						>
+							{t("agents.page.prev")}
+						</button>
+						<span className="small">{t("agents.page", { page, pages })}</span>
+						<button
+							className="button button-secondary button-sm"
+							type="button"
+							disabled={page >= pages}
+							onClick={() => updateFilters({ page: page + 1 })}
+						>
+							{t("agents.page.next")}
+						</button>
+					</div>
+				) : null}
 			</div>
 			{tenantId ? (
 				<AutoRetireSettings key={tenantId} tenantId={tenantId} canManage={canManageTeam} />

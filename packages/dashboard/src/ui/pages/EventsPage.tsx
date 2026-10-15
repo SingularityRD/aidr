@@ -1,10 +1,26 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
 import type { DashboardMessageKey } from "../../i18n/en";
 import { type Translate, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import {
+	applyEventFilters,
+	EVENT_DECISIONS,
+	EVENT_RANGES,
+	EVENT_ROW_LIMIT,
+	EVENT_SEVERITIES,
+	EVENT_TYPES,
+	type EventFilters,
+	eventFiltersActive,
+	eventsCsv,
+	fileStamp,
+	isValidRuleId,
+	readEventFilters,
+	saveFile,
+	writeEventFilters,
+} from "../fleet-view";
 import { FrameworkTags } from "../framework-coverage";
 import { pluginScanSummary } from "../plugin-scan";
 import { privacyEventSummary } from "../privacy-guard";
@@ -38,6 +54,27 @@ const VERDICT_LABEL: Record<string, DashboardMessageKey> = {
 	ask: "verdict.ask",
 };
 
+const RANGE_LABEL: Record<EventFilters["range"], DashboardMessageKey> = {
+	all: "events.range.all",
+	"1h": "events.range.1h",
+	"24h": "events.range.24h",
+	"7d": "events.range.7d",
+	"30d": "events.range.30d",
+};
+
+const DECISION_LABEL: Record<(typeof EVENT_DECISIONS)[number], DashboardMessageKey> = {
+	allow: "verdict.allow",
+	ask: "verdict.ask",
+	deny: "verdict.deny",
+};
+
+const SEVERITY_LABEL: Record<(typeof EVENT_SEVERITIES)[number], DashboardMessageKey> = {
+	info: "common.severity.info",
+	warning: "common.severity.warning",
+	high: "common.severity.high",
+	critical: "common.severity.critical",
+};
+
 function summarize(event: EventRow, t: Translate): string {
 	if (event.type === "runtime_verdict") {
 		const tool =
@@ -69,22 +106,39 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loaded, setLoaded] = useState(false);
+	const [searchParams, setSearchParams] = useSearchParams();
+	const filterKey = writeEventFilters(readEventFilters(searchParams)).toString();
+	const filters = useMemo(() => readEventFilters(new URLSearchParams(filterKey)), [filterKey]);
+	const [ruleDraft, setRuleDraft] = useState(filters.rule);
+	useEffect(() => setRuleDraft(filters.rule), [filters.rule]);
+	const updateFilters = useCallback(
+		(change: Partial<EventFilters>) =>
+			setSearchParams(writeEventFilters({ ...filters, ...change }), { replace: true }),
+		[filters, setSearchParams],
+	);
 
 	useEffect(() => {
 		let cancelled = false;
 		let inFlight = false;
+		// A new filter set must never show the previous filter's rows as its result.
+		setEvents(null);
+		setLoaded(false);
 
 		async function load() {
 			if (inFlight) return;
 			inFlight = true;
 			try {
 				const [eventsRes, agentsRes] = await Promise.all([
-					supabase
-						.from("events")
-						.select("id,type,created_at,agent_id,payload")
-						.eq("tenant_id", tenantId)
+					applyEventFilters(
+						supabase
+							.from("events")
+							.select("id,type,created_at,agent_id,payload")
+							.eq("tenant_id", tenantId),
+						filters,
+						Date.now(),
+					)
 						.order("created_at", { ascending: false })
-						.limit(500),
+						.limit(EVENT_ROW_LIMIT),
 					supabase
 						.from("agents")
 						.select("id,iid,display_name,agent_runtime")
@@ -132,7 +186,7 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 			cancelled = true;
 			clearInterval(timer);
 		};
-	}, [tenantId]);
+	}, [tenantId, filters]);
 
 	const verdictCounts = useMemo(() => {
 		const counts = { allow: 0, ask: 0, deny: 0 };
@@ -183,6 +237,167 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 			</div>
 
 			<div className="card">
+				<div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+					<label>
+						<span className="small">{t("events.filter.range")}</span>{" "}
+						<select
+							className="input"
+							value={filters.range}
+							onChange={(event) =>
+								updateFilters({ range: event.currentTarget.value as EventFilters["range"] })
+							}
+						>
+							{EVENT_RANGES.map((range) => (
+								<option key={range} value={range}>
+									{t(RANGE_LABEL[range])}
+								</option>
+							))}
+						</select>
+					</label>
+					<label>
+						<span className="small">{t("activity.type")}</span>{" "}
+						<select
+							className="input"
+							value={filters.type}
+							onChange={(event) => updateFilters({ type: event.currentTarget.value })}
+						>
+							<option value="">{t("events.filter.typeAll")}</option>
+							{EVENT_TYPES.map((type) => (
+								<option key={type} value={type}>
+									{type}
+								</option>
+							))}
+						</select>
+					</label>
+					<label>
+						<span className="small">{t("activity.verdict")}</span>{" "}
+						<select
+							className="input"
+							value={filters.decision}
+							onChange={(event) => updateFilters({ decision: event.currentTarget.value })}
+						>
+							<option value="">{t("events.filter.decisionAll")}</option>
+							{EVENT_DECISIONS.map((decision) => (
+								<option key={decision} value={decision}>
+									{t(DECISION_LABEL[decision])}
+								</option>
+							))}
+						</select>
+					</label>
+					<label>
+						<span className="small">{t("events.filter.severity")}</span>{" "}
+						<select
+							className="input"
+							value={filters.severity}
+							onChange={(event) => updateFilters({ severity: event.currentTarget.value })}
+						>
+							<option value="">{t("events.filter.severityAll")}</option>
+							{EVENT_SEVERITIES.map((severity) => (
+								<option key={severity} value={severity}>
+									{t(SEVERITY_LABEL[severity])}
+								</option>
+							))}
+						</select>
+					</label>
+					<label>
+						<span className="small">{t("activity.agent")}</span>{" "}
+						<select
+							className="input"
+							value={filters.agent}
+							onChange={(event) => updateFilters({ agent: event.currentTarget.value })}
+						>
+							<option value="">{t("events.filter.agentAll")}</option>
+							{filters.agent && !agents.has(filters.agent) ? (
+								<option value={filters.agent}>{filters.agent}</option>
+							) : null}
+							{[...agents.values()].map((agent) => (
+								<option key={agent.id} value={agent.id}>
+									{agent.display_name ?? agent.iid.slice(0, 12)}
+								</option>
+							))}
+						</select>
+					</label>
+					<form
+						className="row"
+						style={{ gap: 6, alignItems: "flex-end" }}
+						onSubmit={(event) => {
+							event.preventDefault();
+							const rule = ruleDraft.trim();
+							if (isValidRuleId(rule)) updateFilters({ rule });
+						}}
+					>
+						<label>
+							<span className="small">{t("events.filter.rule")}</span>{" "}
+							<input
+								className="input mono"
+								value={ruleDraft}
+								maxLength={128}
+								aria-invalid={!isValidRuleId(ruleDraft.trim())}
+								onChange={(event) => setRuleDraft(event.currentTarget.value)}
+							/>
+						</label>
+						<button
+							className="button button-secondary button-sm"
+							type="submit"
+							disabled={!isValidRuleId(ruleDraft.trim())}
+						>
+							{t("events.filter.apply")}
+						</button>
+					</form>
+					{eventFiltersActive(filters) ? (
+						<button
+							className="button button-secondary button-sm"
+							type="button"
+							onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}
+						>
+							{t("events.filter.clear")}
+						</button>
+					) : null}
+				</div>
+				{!isValidRuleId(ruleDraft.trim()) ? (
+					<div className="muted small" role="status" style={{ marginTop: 6 }}>
+						{t("events.filter.ruleInvalid")}
+					</div>
+				) : null}
+				<div className="row" style={{ gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+					<button
+						className="button button-secondary button-sm"
+						type="button"
+						disabled={!events || events.length === 0}
+						title={t("events.export.hint", { count: events?.length ?? 0 })}
+						onClick={() => {
+							if (!events) return;
+							saveFile(
+								`aidr-events-${fileStamp(Date.now())}.csv`,
+								eventsCsv(events, agents),
+								"text/csv;charset=utf-8",
+							);
+						}}
+					>
+						{t("events.export.csv")}
+					</button>
+					<button
+						className="button button-secondary button-sm"
+						type="button"
+						disabled={!events || events.length === 0}
+						title={t("events.export.hint", { count: events?.length ?? 0 })}
+						onClick={() => {
+							if (!events) return;
+							saveFile(
+								`aidr-events-${fileStamp(Date.now())}.json`,
+								`${JSON.stringify({ filters: writeEventFilters(filters).toString(), events }, null, 2)}\n`,
+								"application/json",
+							);
+						}}
+					>
+						{t("events.export.json")}
+					</button>
+				</div>
+				{events && events.length >= EVENT_ROW_LIMIT ? (
+					<div className="notice notice-warning" role="status" style={{ marginTop: 10 }}>
+						{t("events.capped", { count: EVENT_ROW_LIMIT })}
+					</div>
+				) : null}
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
@@ -250,7 +465,9 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 											? loaded
 												? t("events.unavailable")
 												: t("events.loading")
-											: t("events.empty")}
+											: eventFiltersActive(filters)
+												? t("events.filter.none")
+												: t("events.empty")}
 									</td>
 								</tr>
 							) : null}

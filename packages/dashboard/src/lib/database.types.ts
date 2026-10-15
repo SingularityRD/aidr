@@ -387,6 +387,23 @@ export interface Database {
 					last_seen?: string;
 				};
 			};
+			/** Latest protection state per agent and connector (20261014000205); read-only for members. */
+			connector_heartbeats: {
+				Row: {
+					tenant_id: string;
+					agent_id: string;
+					connector: string;
+					state: "protected" | "hook_missing" | "hook_disabled" | "hook_untrusted" | "hook_broken";
+					enforcement: "machine_policy" | "user_config" | "none";
+					protection_locked: boolean;
+					disable_attempts: number;
+					host_version: string | null;
+					reported_at: string;
+					state_since: string;
+				};
+				Insert: never;
+				Update: never;
+			};
 			events: {
 				Row: {
 					id: number;

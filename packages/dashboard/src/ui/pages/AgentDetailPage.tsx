@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
 import { useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { agentHealth } from "../fleet-view";
 import { RetireAgentControl } from "../RetireAgentControl";
 
 type AgentRow = {
@@ -36,6 +38,159 @@ function isMissingTableError(error: { code?: string; message?: string }, table: 
 		error.code === "PGRST205" ||
 		error.code === "42P01" ||
 		new RegExp(`${table}.*(?:not exist|missing)`, "i").test(error.message ?? "")
+	);
+}
+
+const CONNECTOR_STATES = [
+	"protected",
+	"hook_missing",
+	"hook_disabled",
+	"hook_untrusted",
+	"hook_broken",
+] as const;
+const ENFORCEMENTS = ["machine_policy", "user_config", "none"] as const;
+
+const CONNECTOR_STATE_LABEL: Record<(typeof CONNECTOR_STATES)[number], DashboardMessageKey> = {
+	protected: "agent.connectorState.protected",
+	hook_missing: "agent.connectorState.hook_missing",
+	hook_disabled: "agent.connectorState.hook_disabled",
+	hook_untrusted: "agent.connectorState.hook_untrusted",
+	hook_broken: "agent.connectorState.hook_broken",
+};
+
+const ENFORCEMENT_LABEL: Record<(typeof ENFORCEMENTS)[number], DashboardMessageKey> = {
+	machine_policy: "agent.enforcement.machine_policy",
+	user_config: "agent.enforcement.user_config",
+	none: "agent.enforcement.none",
+};
+
+type ConnectorHeartbeat = {
+	connector: string;
+	state: (typeof CONNECTOR_STATES)[number];
+	enforcement: (typeof ENFORCEMENTS)[number];
+	protection_locked: boolean;
+	host_version: string | null;
+	reported_at: string;
+	state_since: string;
+};
+
+function isConnectorHeartbeat(value: unknown): value is ConnectorHeartbeat {
+	if (typeof value !== "object" || value === null) return false;
+	const row = value as Record<string, unknown>;
+	return (
+		typeof row.connector === "string" &&
+		(CONNECTOR_STATES as readonly unknown[]).includes(row.state) &&
+		(ENFORCEMENTS as readonly unknown[]).includes(row.enforcement) &&
+		typeof row.protection_locked === "boolean" &&
+		(row.host_version === null || typeof row.host_version === "string") &&
+		typeof row.reported_at === "string" &&
+		Number.isFinite(Date.parse(row.reported_at)) &&
+		typeof row.state_since === "string" &&
+		Number.isFinite(Date.parse(row.state_since))
+	);
+}
+
+/**
+ * Latest per-connector protection state (connector_heartbeats, readable by
+ * tenant members under RLS). Fail-closed: an error or malformed row shows
+ * "unavailable", never a guessed state.
+ */
+function ConnectorHealth({ agentId, tenantId }: { agentId: string; tenantId: string }) {
+	const t = useT();
+	const [rows, setRows] = useState<ConnectorHeartbeat[] | null | undefined>(undefined);
+
+	useEffect(() => {
+		let cancelled = false;
+		async function load() {
+			try {
+				const res = await supabase
+					.from("connector_heartbeats")
+					.select(
+						"connector,state,enforcement,protection_locked,host_version,reported_at,state_since",
+					)
+					.eq("tenant_id", tenantId)
+					.eq("agent_id", agentId)
+					.order("connector", { ascending: true });
+				if (cancelled) return;
+				setRows(
+					!res.error && Array.isArray(res.data) && res.data.every(isConnectorHeartbeat)
+						? res.data
+						: null,
+				);
+			} catch {
+				if (!cancelled) setRows(null);
+			}
+		}
+		void load();
+		const timer = setInterval(load, 30000);
+		return () => {
+			cancelled = true;
+			clearInterval(timer);
+		};
+	}, [agentId, tenantId]);
+
+	return (
+		<div
+			className="card"
+			data-connector-health={
+				rows === undefined ? "loading" : rows === null ? "unavailable" : rows.length
+			}
+		>
+			<h2>{t("agent.connectors")}</h2>
+			<p className="muted small">{t("agent.connectors.intro")}</p>
+			{rows === undefined ? (
+				<span className="muted">{t("common.loading")}</span>
+			) : rows === null ? (
+				<div className="notice notice-danger" role="alert">
+					{t("agent.connectors.unavailable")}
+				</div>
+			) : rows.length === 0 ? (
+				<span className="muted">{t("agent.connectors.empty")}</span>
+			) : (
+				<div className="table-wrap">
+					<table className="table">
+						<thead>
+							<tr>
+								<th>{t("agent.connectors.connector")}</th>
+								<th>{t("agent.connectors.state")}</th>
+								<th>{t("agent.connectors.enforcement")}</th>
+								<th>{t("agent.connectors.hostVersion")}</th>
+								<th>{t("agent.connectors.reported")}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{rows.map((row) => (
+								<tr key={row.connector}>
+									<td className="mono">{row.connector}</td>
+									<td>
+										<span
+											className={`badge ${row.state === "protected" ? "badge-allow" : "badge-deny"}`}
+										>
+											{t(CONNECTOR_STATE_LABEL[row.state])}
+										</span>
+										<div className="muted small">
+											{t("agent.connectors.since", {
+												time: new Date(row.state_since).toLocaleString(),
+											})}
+										</div>
+									</td>
+									<td>
+										{t(ENFORCEMENT_LABEL[row.enforcement])}
+										{row.protection_locked ? (
+											<span className="badge badge-neutral" style={{ marginLeft: 6 }}>
+												{t("agent.connectors.locked")}
+											</span>
+										) : null}
+									</td>
+									<td className="mono">{row.host_version ?? t("common.unknown")}</td>
+									<td className="mono">{new Date(row.reported_at).toLocaleString()}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			)}
+		</div>
 	);
 }
 
@@ -250,6 +405,11 @@ function AgentDetailForId({
 								<div className="mono" style={{ fontSize: 15 }}>
 									{new Date(agent.last_seen).toLocaleString()}
 								</div>
+								{agentHealth(agent, Date.now()) === "stale" ? (
+									<span className="badge badge-ask" title={t("agents.staleHint")}>
+										{t("agents.status.stale")}
+									</span>
+								) : null}
 							</div>
 						</div>
 
@@ -262,7 +422,13 @@ function AgentDetailForId({
 											typeof entitlementSnapshot.entitlement.subscription_tier === "string"
 												? String(entitlementSnapshot.entitlement.subscription_tier)
 												: t("common.unknown"),
-										allowed: Number(entitlementSnapshot.entitlement.allowed_agents ?? 0) || 0,
+										// Never print an invented 0 for a missing or malformed limit.
+										allowed:
+											typeof entitlementSnapshot.entitlement.allowed_agents === "number" &&
+											Number.isSafeInteger(entitlementSnapshot.entitlement.allowed_agents) &&
+											entitlementSnapshot.entitlement.allowed_agents >= 0
+												? entitlementSnapshot.entitlement.allowed_agents
+												: t("common.unknown"),
 										expires:
 											typeof entitlementSnapshot.entitlement.expires_at === "string"
 												? new Date(
@@ -295,8 +461,17 @@ function AgentDetailForId({
 				)}
 			</div>
 
+			{agent && tenantId ? <ConnectorHealth agentId={agent.id} tenantId={tenantId} /> : null}
+
 			<div className="card">
-				<h2>{t("agent.recentEvents")}</h2>
+				<div className="row space-between" style={{ alignItems: "baseline" }}>
+					<h2>{t("agent.recentEvents")}</h2>
+					{agent ? (
+						<Link className="small" to={`/events?agent=${encodeURIComponent(agent.id)}`}>
+							{t("agent.viewEvents")}
+						</Link>
+					) : null}
+				</div>
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
