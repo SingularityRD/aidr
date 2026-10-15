@@ -24,6 +24,7 @@ import { makeTmpDir } from "../test-utils.js";
 const TENANT = "tenant-a";
 const PROJECT_CODE = "PRJ-ACME-123456";
 
+// biome-ignore lint/suspicious/noExplicitAny: test fixtures are mutated freely to build invalid policies
 type Row = Record<string, any>;
 
 function customPolicy(action: "redact" | "block" | "ask" = "block"): Row {
