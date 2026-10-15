@@ -17,9 +17,11 @@ describe("dist output has no case-insensitive collisions", () => {
 			} catch {
 				return;
 			}
-			const lower = entries.map((name) => name.replace(/\.(ts|tsx|js|mjs)$/, "").toLowerCase());
-			expect(lower.filter((name) => reserved.has(name))).toEqual([]);
-			expect(new Set(lower).size, "two src entries differ only by letter case").toBe(lower.length);
+			// A source file is emitted with a .js extension (license.ts -> license.js), so only an entry
+			// that keeps its exact name in dist (a directory or an extensionless file) can collide.
+			const emitted = entries.map((name) => name.replace(/\.(ts|tsx|mts|cts)$/, ".js").toLowerCase());
+			expect(emitted.filter((name) => reserved.has(name))).toEqual([]);
+			expect(new Set(emitted).size, "two src entries differ only by letter case").toBe(emitted.length);
 		});
 	}
 });

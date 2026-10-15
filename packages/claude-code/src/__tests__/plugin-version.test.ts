@@ -62,7 +62,9 @@ describe("resolvePluginManifest", () => {
 	it("ignores an unrelated package.json", () => {
 		const root = temp();
 		writeJson(join(root, "package.json"), { name: "some-project", version: "5.5.5" });
-		expect(resolvePluginManifest(root, root).version).toBe("0.0.0");
+		// Falls back to the version core was built with, never to a manifest it does not own.
+		expect(resolvePluginManifest(root, root).version).not.toBe("5.5.5");
+		expect(resolvePluginManifest(root, root).version).toMatch(/^d+.d+.d+/);
 	});
 
 	it("the built session-start hook reports the package version from an endpoint-style layout", () => {

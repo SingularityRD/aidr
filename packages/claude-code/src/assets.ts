@@ -19,6 +19,7 @@ import {
 	ruleDirOverrideNotice,
 	ruleDirOverrides,
 	runningAsSea,
+	VERSION as CORE_VERSION,
 } from "@singularityrd/aidr-core";
 
 type AssetKind = "threats" | "allowlists";
@@ -118,7 +119,9 @@ export function resolvePluginManifest(
 		const version = nonEmptyString(pkg?.version);
 		if (pkg?.name === CONNECTOR_PACKAGE_NAME && version) return { name, version };
 	}
-	return { name, version: "0.0.0" };
+	// Standalone bundles (the desktop app runtime, SEA) ship neither file: report the version the
+	// core build stamped instead of a meaningless 0.0.0.
+	return { name, version: /^d+.d+.d+/.test(CORE_VERSION) ? CORE_VERSION : "0.0.0" };
 }
 
 function isDirectory(candidate: string): boolean {
