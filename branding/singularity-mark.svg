@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Singularity">
+  <title>Singularity</title>
+  <defs><clipPath id="disc"><circle cx="200" cy="200" r="184"/></clipPath></defs>
+  <g clip-path="url(#disc)" fill="currentColor">
+    <polygon points="200,384 -497.3,445.0 -320.2,-84.4"/>
+    <polygon points="200,384 -250.0,-152.2 -181.2,-203.1"/>
+    <polygon points="200,384 -62.2,-265.0 7.1,-288.9"/>
+    <polygon points="200,384 163.4,-315.0 236.6,-315.0"/>
+    <polygon points="200,384 392.9,-288.9 462.2,-265.0"/>
+    <polygon points="200,384 581.2,-203.1 650.0,-152.2"/>
+    <polygon points="200,384 720.2,-84.4 897.3,445.0"/>
+  </g>
+</svg>
