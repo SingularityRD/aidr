@@ -230,6 +230,8 @@ describe("VS Code Local UserPromptSubmit", () => {
 		const run = await runHook("vscode", vscodePrompt("hello"), { AIDR_COMMERCIAL: "1" });
 		expect(run.code).toBe(0);
 		expect(run.response.continue).toBe(false);
-		expect(run.response.stopReason).toContain("hook failed");
+		// A commercial build without release metadata cannot verify itself: the
+		// stop reason says so and names the fix.
+		expect(run.response.stopReason).toContain("cannot verify its own installation");
 	});
 });

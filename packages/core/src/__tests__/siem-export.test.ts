@@ -203,24 +203,28 @@ describe("exportToLEEF", () => {
 		expect(out).toContain("|Singularity|AIDR|");
 	});
 
-	it("includes the severity as an integer in the header", () => {
+	it("uses the LEEF 1.0 header (five fields) and carries severity as the sev attribute", () => {
 		const out = exportToLEEF([criticalIncident]);
-		// Severity field in LEEF header (7th pipe-delimited field)
+		// LEEF:1.0|Vendor|Product|Version|EventID| then tab-separated attributes;
+		// QRadar reads anything after the fifth field as attributes.
 		const parts = out.split("|");
-		expect(parts[6]).toBe("10");
+		expect(parts.slice(0, 3)).toEqual(["LEEF:1.0", "Singularity", "AIDR"]);
+		expect(parts[4]).toBe("AIDR-CRITICAL");
+		const attributes = parts.slice(5).join("|").split("\t");
+		expect(attributes).toEqual(
+			expect.arrayContaining([
+				"cat=incident",
+				"sev=10",
+				`devTime=${criticalIncident.last_seen_ms}`,
+			]),
+		);
+		expect(attributes[0]).toBe("cat=incident");
 	});
 
 	it("separates extension fields with tabs", () => {
 		const out = exportToLEEF([base]);
-		// Everything after the 7th pipe should be tab-separated
-		const headerEnd = out.indexOf(
-			"|",
-			out.indexOf(
-				"|",
-				out.indexOf("|", out.indexOf("|", out.indexOf("|", out.indexOf("|") + 1) + 1) + 1) + 1,
-			) + 1,
-		);
-		const extension = out.slice(headerEnd + 1);
+		// Everything after the 5th pipe is the tab-separated attribute block.
+		const extension = out.split("|").slice(5).join("|");
 
 		expect(extension).toContain("\t");
 		expect(extension).toContain("incident_id=inc_001");

@@ -249,7 +249,10 @@ test("promotion workflow keeps verifier trust, run attestation, durable state an
 	const yank = workflow.slice(workflow.indexOf("  yank:"));
 	assert.ok(yank.indexOf("Setup Node.js (pinned)") < yank.indexOf("npm deprecate"));
 	assert.match(workflow, /softprops\/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3\.0\.3/);
-	assert.match(versionWorkflow, /changesets\/action@d94a5c301145045a0960133674e003b265942a22 # v1\.8\.0/);
+	// Dependabot bumps this pin; assert that it stays pinned to a full commit SHA
+	// rather than freezing a specific release version into the contract (OPS-2).
+	assert.match(versionWorkflow, /uses: changesets\/action@[0-9a-f]{40} # v\d+\.\d+\.\d+\n/);
+	assert.doesNotMatch(versionWorkflow, /uses: [^\s@]+@(?![0-9a-f]{40}\b)[^\s]+/);
 });
 
 test("release promotion verifies pinned GitHub attestations against the exact protected tag commit", async () => {

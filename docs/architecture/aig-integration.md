@@ -2,7 +2,7 @@
 
 > **Status:** First-customer acceptance open — the owned AIG source is committed
 > directly under `vendor/ai-infra-guard` and its data verifies locally, but the
-> committed manifest is unsigned. The pinned source is `v4.6.1-aidr.1`
+> committed manifest is unsigned. The pinned source is `v4.6.1-aidr.2`
 > (`809e23df94ff9a9dfe336e3d120abe9a20ea66bf`).
 > **Owners:** AIDR Core Team, AIG Integration Team
 
@@ -36,7 +36,7 @@ This product includes software developed at Tencent Zhuque Lab. Based on
 ### 1.3 Current source pin and historical task contract
 
 The committed vendor tree, release-sequence registry and generated manifest
-all reference the owned `v4.6.1-aidr.1` source at
+all reference the owned `v4.6.1-aidr.2` source at
 `809e23df94ff9a9dfe336e3d120abe9a20ea66bf`. Local `pnpm aig:verify`
 checks that pin and reports 2,017 generated CVE entries, 146 fingerprints,
 14 local MCP categories and a 4,207-file runtime data tree. These are build
@@ -373,7 +373,7 @@ public process-liveness check.
 ```
 
 This response is historical v4.5.1 evidence, not a current readiness example.
-The v4.6.1-aidr.1 source adds authenticated worker and dataset
+The v4.6.1-aidr.2 source adds authenticated worker and dataset
 attestation; current `/api/v1/readyz` must reject an unsigned manifest,
 missing worker, mismatched runtime tree, or unavailable knowledge API. A
 capability task must also complete before advertising a scan type as ready.
@@ -553,7 +553,7 @@ defined in the local `.env.posture-scanner`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AIG_SOURCE_VERSION` | Pinned owned-source tag | `v4.6.1-aidr.1` |
+| `AIG_SOURCE_VERSION` | Pinned owned-source tag | `v4.6.1-aidr.2` |
 | `AIG_BIND_ADDRESS` | Authenticated bridge host bind | `127.0.0.1` |
 | `AIG_BRIDGE_PORT` | Authenticated bridge host port | `8099` |
 | `AIG_TZ` | Timezone | `Asia/Shanghai` |

@@ -1278,6 +1278,12 @@ select.input {
 		transform var(--transition-fast);
 }
 
+.language-toggle {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+
 .theme-toggle:hover {
 	border-color: var(--border-strong);
 	transform: translateY(-1px);
@@ -1342,6 +1348,34 @@ select.input {
 	margin-left: auto;
 }
 
+/* Grouped console navigation: one column per task area. */
+.nav-sections {
+	display: grid;
+	flex: 1 1 100%;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 8px 12px;
+}
+
+.nav-section {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	min-width: 0;
+}
+
+.nav-section-title {
+	margin: 0 0 2px;
+	padding: 0 11px;
+	color: var(--text-muted, var(--text-secondary));
+	font-size: var(--text-xs);
+	font-weight: 700;
+	letter-spacing: 0.02em;
+}
+
+.navcard .nav-section a {
+	width: 100%;
+}
+
 .navcard a .nav-count {
 	margin-left: 6px;
 	padding: 0 6px;
@@ -1357,6 +1391,15 @@ select.input {
 	font-size: var(--text-sm);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+}
+
+.approval-rules {
+	margin: 0;
+	padding-left: 18px;
+}
+
+.approval-rules li + li {
+	margin-top: 4px;
 }
 
 /* ============================================

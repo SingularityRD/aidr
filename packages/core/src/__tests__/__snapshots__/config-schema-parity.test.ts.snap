@@ -38,6 +38,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
   },
   "amsi_check": {
     "enabled": true,
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -111,6 +112,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -138,9 +142,10 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -148,6 +153,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -198,6 +204,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
       "enabled": false,
     },
   },
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -255,11 +262,17 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses an empty 
     "trusted_mcp_servers": [],
     "window_minutes": 60,
   },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
+  },
   "url_check": {
     "allow_insecure_loopback": false,
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,
@@ -294,6 +307,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
   },
   "amsi_check": {
     "enabled": true,
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -367,6 +381,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -394,9 +411,10 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -404,6 +422,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -454,6 +473,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
       "enabled": false,
     },
   },
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -511,11 +531,17 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses empty nes
     "trusted_mcp_servers": [],
     "window_minutes": 60,
   },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
+  },
   "url_check": {
     "allow_insecure_loopback": false,
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,
@@ -550,6 +576,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
   },
   "amsi_check": {
     "enabled": true,
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -626,6 +653,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -653,9 +683,10 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -663,6 +694,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -716,6 +748,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
   "privacy": {
     "required": false,
   },
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -773,11 +806,17 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses explicit 
     "trusted_mcp_servers": [],
     "window_minutes": 60,
   },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
+  },
   "url_check": {
     "allow_insecure_loopback": false,
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,
@@ -812,6 +851,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
   },
   "amsi_check": {
     "enabled": true,
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -885,6 +925,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -912,9 +955,10 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -922,6 +966,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -972,6 +1017,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
       "enabled": false,
     },
   },
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -1029,11 +1075,17 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses nested ob
     "trusted_mcp_servers": [],
     "window_minutes": 60,
   },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
+  },
   "url_check": {
     "allow_insecure_loopback": false,
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,
@@ -1068,6 +1120,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
   },
   "amsi_check": {
     "enabled": true,
+    "unavailable_action": "ask",
   },
   "audit": {
     "epoch_hours": 24,
@@ -1141,6 +1194,9 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
     "path": "~/.singularity-aidr/audit.jsonl",
   },
   "mode": "local",
+  "network": {
+    "use_os_trust_store": false,
+  },
   "nvd_check": {
     "cache_path": "~/.singularity-aidr/nvd-cache.json",
     "cache_ttl_hours": 6,
@@ -1168,9 +1224,10 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
   "operator_approvals": {
     "dashboard_only": false,
     "exception_trusted_repo_roots": [],
-    "key_storage": "os-vault",
+    "key_storage": "auto",
     "mode": "host_dialog",
   },
+  "organization": {},
   "package_check": {
     "adoption_lookup": true,
     "enabled": false,
@@ -1178,6 +1235,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
     "low_adoption_weekly_downloads": 1000,
     "new_package_days": 30,
     "timeout_seconds": 2,
+    "unchecked_action": "allow",
   },
   "poisoning_protection": {
     "agent_control_files": "ask",
@@ -1228,6 +1286,7 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
       "enabled": false,
     },
   },
+  "project_env_reads": "ask",
   "prompt_protection": {
     "content_safety": {
       "hate_harassment": "warn",
@@ -1285,11 +1344,17 @@ exports[`ConfigSchema runtime defaults (zod migration parity) > parses transform
     "trusted_mcp_servers": [],
     "window_minutes": 60,
   },
+  "update": {
+    "auto": "notify",
+    "catalog_public_keys": [],
+    "check_interval_hours": 24,
+  },
   "url_check": {
     "allow_insecure_loopback": false,
     "enabled": false,
     "include_query_parameters": false,
     "timeout_seconds": 3,
+    "unchecked_action": "allow",
   },
   "version_check": {
     "enabled": false,

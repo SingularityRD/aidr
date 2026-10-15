@@ -17,8 +17,14 @@ cover.
   `node_modules` are not needed at runtime.
 - An Ed25519-signed tool manifest for each upstream server, and an operator
   who can review quarantined manifests.
-- A private state directory (`stateDir`) that only the gateway operator can
-  write.
+- An absolute, private state directory (`stateDir`): owned by the account
+  that runs the gateway and not group- or world-writable. The gateway refuses
+  to start otherwise.
+- An operator approval key pair. Create it on the operator's machine with
+  `aidr-mcp-approve --generate-key <keyFile> <keyId>` (a passphrase-encrypted
+  Ed25519 key) and put the printed public key under `approvalKeys` in the
+  gateway configuration. Keep the key file and its passphrase away from every
+  account an agent runs under.
 
 ## Build and start
 
@@ -31,6 +37,10 @@ node packages/mcp-gateway/dist/aidr-mcp-gateway.mjs /secure/path/gateway.json
 Point the MCP client at `http://127.0.0.1:<port>/mcp/<serverId>` and send
 `Authorization: Bearer <token>` on every request. For a client that launches a
 stdio command, use `dist/aidr-mcp-stdio.mjs` instead (see the package README).
+The stdio bridge runs as the agent's own user, so it is a convenience mode and
+not a credential-isolation or approval boundary; it prints a warning saying so
+on every start. Requests must use a loopback `Host` for the bound port (or an
+entry in `allowedHosts`), and uncompressed UTF-8 JSON bodies.
 
 ## Request path
 
@@ -41,7 +51,22 @@ first one that fails.
    client. The tool must be on that client's allowlist for this tenant and
    server.
 2. **Manifest attestation.** The upstream's signed manifest must be approved
-   by an operator, and the live `tools/list` must match it exactly.
+   by an operator, and the live `tools/list` must match it exactly. An
+   approval counts only when it is signed by a key in `approvalKeys` and has
+   not expired, so a process that can write the state directory cannot create
+   one. Unsigned, altered or expired entries are ignored and reported as
+   `approval_entry_ignored` audit events, and a state file whose integrity
+   seal does not verify is refused (`manifest_rejected`). Only the
+   `aidr-mcp-approve` operator command signs and records approvals. The
+   importable library (`@singularityrd/aidr-mcp-gateway`,
+   `aidr-mcp-library.mjs`) and the serving binaries contain no approval
+   writer, so code that loads the library, even through an import path
+   computed at run time, cannot approve a toolset. Every manifest is
+   also verified at startup: an expired, over-long (default maximum lifetime
+   7 days, `manifestPolicy.maxLifetimeDays`) or otherwise invalid manifest
+   refuses startup with its precise reason, and the HTTP gateway reloads
+   re-signed manifests from its configuration file. See "Signed manifest
+   lifetime and rotation" in the package README.
 3. **Argument schema.** Arguments must validate against the signed input
    schema. Only a bounded, ReDoS-resistant subset of JSON Schema is accepted.
 4. **Threat and DLP evaluation.** The call is normalised to
@@ -50,7 +75,10 @@ first one that fails.
    allowlist, policy, and the server's tenant DLP policy if one is configured.
 5. **Upstream call.** The request goes out over the pinned-DNS transport,
    which rejects redirects and private addresses.
-6. **Result inspection.** Text is scanned. Binary content gets a bounded
+6. **Result inspection.** Text is scanned by pattern-based rules, including
+   consecutive content blocks joined in order and readable base64/hex
+   decodings. Paraphrased instructions are not recognised; add an
+   `outputGuard` for semantic inspection. Binary content gets a bounded
    inspection (see below). Output schemas are enforced.
 
 ### Decisions returned to the client
@@ -186,10 +214,15 @@ AIDR MCP gateway failed: <stage>[:<detail>]
 ```
 
 The stage is one of `integrity_verification_failed`, `config_unreadable`,
-`config_parse_failed`, `config_invalid`, `startup_failed`, `approval_failed`
-or `bridge_stopped`. The detail is a fixed code, for example `enoent`,
-`invalid_json`, `invalid_port`, `unknown_tenant_server`,
-`stdio_client_binding_rejected` or `direct_upstream_bypass_detected`. The
+`config_parse_failed`, `config_invalid`, `startup_failed`,
+`approval_key_unavailable`, `approval_key_generation_failed`, `approval_failed`,
+`stdio_isolation_refused` or `bridge_stopped`. The detail is a fixed code, for
+example `enoent`, `invalid_json`, `invalid_port`, `statedir_must_be_absolute`,
+`state_dir_group_or_world_writable`, `approval_key_passphrase_rejected`,
+`approval_key_not_configured`, `unknown_tenant_server`,
+`stdio_client_binding_rejected`, `stdio_upstream_credential_refused`,
+`manifest_expired`, `manifest_lifetime_too_long` or
+`direct_upstream_bypass_detected`. The
 gateway never prints error text itself, file contents, tokens or tool data.
 
 ## Limits

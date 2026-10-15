@@ -11,7 +11,10 @@
  *           shadowAiUsage (per-day visit/block counts per catalog service id; no URLs),
  *           dashboardPolicy / dashboardPolicyHighWater (last signed dashboard document, re-verified
  *           on every load, and the highest accepted sequence; see ./dashboard-policy.ts)
- *   session guardStats, pausedUntil, `vault:<tabId>:<origin>` (per-tab placeholder vault,
+ *   session guardStats, pausedUntil, contentTabs (tab id -> page origin whose content script
+ *           fetched the policy) and openTabsInjected (see ./open-tabs.ts), contentFrames
+ *           (tab id -> frame id -> site of a subframe guard, see ./content-frames.ts),
+ *           `vault:<tabId>:<origin>` / `vault:<tabId>:frame:<origin>` (per-tab placeholder vault,
  *           see ./vault-store.ts; TRUSTED_CONTEXTS only, so page scripts cannot read it)
  *   managed administrator policy keys (static/managed_schema.json)
  */
@@ -47,6 +50,8 @@ export interface TabInfo {
 	id?: number;
 	url?: string;
 	active?: boolean;
+	/** Unloaded to save memory; it reloads (and gets the static content scripts) when shown. */
+	discarded?: boolean;
 }
 
 type DnrRuleAction = { type: "block" } | { type: "redirect"; redirect: { extensionPath: string } };
@@ -55,7 +60,13 @@ export interface DnrRule {
 	id: number;
 	priority: number;
 	action: DnrRuleAction;
-	condition: { requestDomains: string[]; resourceTypes: string[] };
+	/** `requestDomains` (host and subdomains) or, for path-scoped sites, a RE2 `regexFilter`. */
+	condition: {
+		requestDomains?: string[];
+		initiatorDomains?: string[];
+		regexFilter?: string;
+		resourceTypes: string[];
+	};
 }
 
 export type MessageListener = (
@@ -81,6 +92,7 @@ export interface ChromeApi {
 	};
 	tabs: {
 		query(query: Record<string, unknown>): Promise<TabInfo[]>;
+		get?(tabId: number): Promise<TabInfo>;
 		sendMessage(tabId: number, message: unknown, options?: { frameId?: number }): Promise<unknown>;
 		update?(tabId: number, properties: { url: string }): Promise<unknown>;
 		onRemoved: ChromeEvent<(tabId: number) => void>;
@@ -116,6 +128,8 @@ export interface ChromeApi {
 		registerContentScripts(scripts: RegisteredContentScript[]): Promise<void>;
 		unregisterContentScripts(filter?: { ids?: string[] }): Promise<void>;
 		getRegisteredContentScripts(filter?: { ids?: string[] }): Promise<RegisteredContentScript[]>;
+		/** Injects into a tab that is already open (./open-tabs.ts); needs host access. */
+		executeScript?(injection: ScriptInjection): Promise<unknown[]>;
 	};
 }
 
@@ -123,6 +137,12 @@ export type PermissionsListener = (permissions: {
 	permissions?: string[];
 	origins?: string[];
 }) => void;
+
+export interface ScriptInjection {
+	target: { tabId: number; allFrames?: boolean };
+	files: string[];
+	world?: "ISOLATED" | "MAIN";
+}
 
 export interface RegisteredContentScript {
 	id: string;
@@ -148,6 +168,9 @@ export const STORAGE_KEYS = Object.freeze({
 	telemetryState: "telemetryState",
 	stats: "guardStats",
 	pausedUntil: "pausedUntil",
+	contentTabs: "contentTabs",
+	contentFrames: "contentFrames",
+	openTabsInjected: "openTabsInjected",
 	aupAcknowledged: "aupAcknowledged",
 	shadowAiUsage: "shadowAiUsage",
 });

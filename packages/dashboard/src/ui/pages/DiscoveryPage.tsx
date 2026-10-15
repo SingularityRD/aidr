@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 
@@ -339,12 +341,34 @@ function badgeClass(state: string): string {
 	return state === "unknown" ? "badge badge-neutral" : "badge badge-warning";
 }
 
-function timestamp(value: string | null): string {
-	return value ? new Date(value).toLocaleString() : "never";
+const STATE_LABELS: Record<string, DashboardMessageKey> = {
+	current: "disc.state.current",
+	attention: "disc.state.attention",
+	unknown: "disc.state.unknown",
+	partial: "disc.state.partial",
+	stale: "disc.state.stale",
+	fresh: "disc.state.fresh",
+	never_seen: "disc.state.neverSeen",
+	healthy: "disc.state.healthy",
+	unreachable: "disc.state.unreachable",
+	not_reported: "disc.state.notReported",
+	collection_partial: "disc.state.collectionPartial",
+};
+
+/** A state word in the current language; unknown values are shown as sent. */
+function stateLabel(state: string, t: Translate): string {
+	const key = STATE_LABELS[state];
+	return key ? t(key) : state;
+}
+
+function timestamp(value: string | null, t: Translate): string {
+	return value ? new Date(value).toLocaleString() : t("disc.never");
 }
 
 export function DiscoveryPage() {
 	const { currentTeam } = useTeam();
+	const t = useT();
+	const richT = useRichT();
 	const tenantId = currentTeam?.id ?? null;
 	const [summary, setSummary] = useState<DiscoverySummary | null>(null);
 	const [collectors, setCollectors] = useState<Collector[]>([]);
@@ -391,8 +415,7 @@ export function DiscoveryPage() {
 					}
 				})
 				.catch((error: unknown) => {
-					if (!cancelled)
-						setResourceError(readErrorMessage(error, "Provider resources are unavailable."));
+					if (!cancelled) setResourceError(readErrorMessage(error, t("disc.resourcesUnavailable")));
 				})
 				.finally(() => {
 					if (!cancelled) setResourcesLoading(false);
@@ -425,7 +448,7 @@ export function DiscoveryPage() {
 			}
 		} catch (error) {
 			if (scope === resourceScope.current)
-				setResourceError(readErrorMessage(error, "Provider resources are unavailable."));
+				setResourceError(readErrorMessage(error, t("disc.resourcesUnavailable")));
 		} finally {
 			if (scope === resourceScope.current) setLoadingMoreResources(false);
 		}
@@ -471,7 +494,7 @@ export function DiscoveryPage() {
 				if (!cancelled) {
 					setSummary(null);
 					setCollectors([]);
-					setOverviewError(readErrorMessage(cause, "Discovery data is unavailable."));
+					setOverviewError(readErrorMessage(cause, t("disc.unavailable")));
 				}
 			}
 		}
@@ -503,7 +526,7 @@ export function DiscoveryPage() {
 			.catch((cause: unknown) => {
 				if (!cancelled) {
 					setItems(null);
-					setItemsError(readErrorMessage(cause, "Discovery target details are unavailable."));
+					setItemsError(readErrorMessage(cause, t("disc.targetsUnavailable")));
 				}
 			});
 		return () => {
@@ -520,7 +543,7 @@ export function DiscoveryPage() {
 			setCollectorCursor(page.next_collector);
 			setCollectorsTruncated(page.truncated);
 		} catch (cause) {
-			setOverviewError(readErrorMessage(cause, "More collector data is unavailable."));
+			setOverviewError(readErrorMessage(cause, t("disc.moreCollectors")));
 		} finally {
 			setLoadingMoreCollectors(false);
 		}
@@ -536,7 +559,7 @@ export function DiscoveryPage() {
 			setItemsTruncated(page.truncated);
 			setItemsCheckedAt(new Date().toISOString());
 		} catch (cause) {
-			setItemsError(readErrorMessage(cause, "More target data is unavailable."));
+			setItemsError(readErrorMessage(cause, t("disc.moreTargets")));
 		} finally {
 			setLoadingMoreItems(false);
 		}
@@ -547,23 +570,20 @@ export function DiscoveryPage() {
 			<section className="card">
 				<div className="row space-between" style={{ alignItems: "flex-start", gap: 16 }}>
 					<div>
-						<p className="eyebrow">Tenant inventory</p>
-						<h1>Discovery coverage</h1>
-						<p className="muted">
-							{currentTeam?.name ?? "Select a tenant to view reported discovery data."}
-						</p>
+						<p className="eyebrow">{t("disc.eyebrow")}</p>
+						<h1>{t("nav.discovery")}</h1>
+						<p className="muted">{currentTeam?.name ?? t("disc.noTeam")}</p>
 					</div>
 					<button
 						className="button button-secondary button-sm"
 						type="button"
 						onClick={() => setRefreshVersion((value) => value + 1)}
 					>
-						Refresh
+						{t("common.refresh")}
 					</button>
 				</div>
 				<div className="notice notice-warning" role="note" style={{ marginTop: 12 }}>
-					This view covers reported collectors only. It does not establish complete discovery of
-					your cloud, MDM, or estate.
+					{t("disc.scopeNote")}
 				</div>
 				{overviewError ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
@@ -574,33 +594,35 @@ export function DiscoveryPage() {
 					<>
 						<div className="row" style={{ marginTop: 12 }}>
 							<span className={badgeClass(summary.reported_scope_state)}>
-								{summary.reported_scope_state}
+								{stateLabel(summary.reported_scope_state, t)}
 							</span>
-							<span className="badge badge-neutral">scope: {summary.coverage_scope}</span>
+							<span className="badge badge-neutral">
+								{t("disc.scope", { scope: summary.coverage_scope })}
+							</span>
 						</div>
-						<section className="grid" aria-label="Discovery summary" style={{ marginTop: 12 }}>
+						<section className="grid" aria-label={t("disc.summary")} style={{ marginTop: 12 }}>
 							<div className="card stat-card">
-								<div className="stat-label">Reported collectors</div>
+								<div className="stat-label">{t("disc.collectors")}</div>
 								<div className="stat-value">{summary.collector_count}</div>
 							</div>
 							<div className="card stat-card">
-								<div className="stat-label">Reported targets</div>
+								<div className="stat-label">{t("disc.targets")}</div>
 								<div className="stat-value">{summary.observation_count}</div>
 							</div>
 							<div className="card stat-card">
-								<div className="stat-label">Stale collectors / targets</div>
+								<div className="stat-label">{t("disc.stale")}</div>
 								<div className="stat-value">
 									{summary.stale_collector_count} / {summary.stale_observation_count}
 								</div>
 							</div>
 							<div className="card stat-card">
-								<div className="stat-label">Unreachable / never seen</div>
+								<div className="stat-label">{t("disc.unreachable")}</div>
 								<div className="stat-value">
 									{summary.unreachable_count} / {summary.never_seen_count}
 								</div>
 							</div>
 							<div className="card stat-card">
-								<div className="stat-label">Partial / not reported</div>
+								<div className="stat-label">{t("disc.partial")}</div>
 								<div className="stat-value">
 									{summary.partial_collector_count} / {summary.not_reported_count}
 								</div>
@@ -609,23 +631,23 @@ export function DiscoveryPage() {
 					</>
 				) : (
 					<p className="muted" role="status">
-						{overviewError ? "Discovery summary is unavailable." : "Loading discovery summary…"}
+						{overviewError ? t("disc.summaryUnavailable") : t("disc.summaryLoading")}
 					</p>
 				)}
 			</section>
 
 			<section className="card">
 				<div className="panel-head">
-					<h2>Reported collectors</h2>
+					<h2>{t("disc.collectors")}</h2>
 				</div>
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Collector</th>
-								<th>State</th>
-								<th>Reported</th>
-								<th>Targets</th>
+								<th>{t("disc.col.collector")}</th>
+								<th>{t("disc.col.state")}</th>
+								<th>{t("disc.col.reported")}</th>
+								<th>{t("disc.col.targets")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -642,21 +664,21 @@ export function DiscoveryPage() {
 										</button>
 									</td>
 									<td>
-										<span className={badgeClass(collector.state)}>{collector.state}</span>
+										<span className={badgeClass(collector.state)}>
+											{stateLabel(collector.state, t)}
+										</span>
 									</td>
-									<td className="mono">{timestamp(collector.reported_at)}</td>
+									<td className="mono">{timestamp(collector.reported_at, t)}</td>
 									<td>
 										{collector.observed_targets} / {collector.expected_targets}
-										{collector.complete ? "" : " (partial)"}
+										{collector.complete ? "" : t("disc.partialSuffix")}
 									</td>
 								</tr>
 							))}
 							{collectors.length === 0 ? (
 								<tr>
 									<td colSpan={4} className="muted">
-										{summary
-											? "No collector reports have been received. This does not mean the tenant has no infrastructure."
-											: "Collector data is unavailable."}
+										{summary ? t("disc.noCollectors") : t("disc.collectorsUnavailable")}
 									</td>
 								</tr>
 							) : null}
@@ -670,24 +692,24 @@ export function DiscoveryPage() {
 						onClick={() => void loadMoreCollectors()}
 						disabled={loadingMoreCollectors}
 					>
-						{loadingMoreCollectors ? "Loading…" : "Load more collectors"}
+						{loadingMoreCollectors ? t("common.loading") : t("disc.loadMoreCollectors")}
 					</button>
 				) : null}
 			</section>
 
 			<section className="card">
 				<div className="panel-head">
-					<h2>Target freshness and alerts</h2>
+					<h2>{t("disc.freshness")}</h2>
 					{selectedCollector ? <span className="muted small">{selectedCollector}</span> : null}
 				</div>
 				<p className="muted small">
-					Targets are keyed pseudonyms: addresses stay on the collector. Match an id with the
-					local <code>panel_id</code> printed by <code>aidr collect</code>.
+					{richT("disc.pseudonyms", {
+						field: <code>panel_id</code>,
+						command: <code>aidr collect</code>,
+					})}
 				</p>
 				{itemsCheckedAt ? (
-					<p className="muted small">
-						Checked {timestamp(itemsCheckedAt)}. Refresh to recalculate freshness.
-					</p>
+					<p className="muted small">{t("disc.checked", { time: timestamp(itemsCheckedAt, t) })}</p>
 				) : null}
 				{itemsError ? (
 					<div className="notice notice-danger" role="alert">
@@ -698,11 +720,11 @@ export function DiscoveryPage() {
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Target</th>
-								<th>Reachability</th>
-								<th>Freshness</th>
-								<th>Alert state</th>
-								<th>Last reachable</th>
+								<th>{t("disc.col.target")}</th>
+								<th>{t("disc.col.reachability")}</th>
+								<th>{t("disc.col.freshness")}</th>
+								<th>{t("disc.col.alert")}</th>
+								<th>{t("disc.col.lastReachable")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -710,38 +732,42 @@ export function DiscoveryPage() {
 								<tr key={item.target}>
 									<td className="mono">
 										{isTargetId(item.target) ? (
-											<span title="Keyed pseudonym; the address stays on the collector">
-												{item.target}
-											</span>
+											<span title={t("disc.pseudonymTitle")}>{item.target}</span>
 										) : (
 											<>
 												{item.target}{" "}
-												<span className={badgeClass("stale")}>legacy origin</span>
+												<span className={badgeClass("stale")}>{t("disc.legacy")}</span>
 											</>
 										)}
 									</td>
 									<td>
 										<span className={badgeClass(item.reachable ? "healthy" : "unreachable")}>
-											{item.reachable ? "reachable" : (item.error_code ?? "unreachable")}
+											{item.reachable
+												? t("disc.reachable")
+												: (item.error_code ?? t("disc.state.unreachable"))}
 										</span>
 									</td>
 									<td>
-										<span className={badgeClass(item.freshness)}>{item.freshness}</span>
+										<span className={badgeClass(item.freshness)}>
+											{stateLabel(item.freshness, t)}
+										</span>
 									</td>
 									<td>
-										<span className={badgeClass(item.alert_state)}>{item.alert_state}</span>
+										<span className={badgeClass(item.alert_state)}>
+											{stateLabel(item.alert_state, t)}
+										</span>
 									</td>
-									<td className="mono">{timestamp(item.last_reachable_at)}</td>
+									<td className="mono">{timestamp(item.last_reachable_at, t)}</td>
 								</tr>
 							))}
 							{items === null || items.length === 0 ? (
 								<tr>
 									<td colSpan={5} className="muted">
 										{itemsError
-											? "Target details are unavailable."
+											? t("disc.targetUnavailable")
 											: selectedCollector
-												? "Loading target details or no targets were reported."
-												: "Select a reported collector to inspect target freshness."}
+												? t("disc.targetLoading")
+												: t("disc.selectCollector")}
 									</td>
 								</tr>
 							) : null}
@@ -755,17 +781,19 @@ export function DiscoveryPage() {
 						onClick={() => void loadMoreItems()}
 						disabled={loadingMoreItems}
 					>
-						{loadingMoreItems ? "Loading…" : "Load more targets"}
+						{loadingMoreItems ? t("common.loading") : t("disc.loadMoreTargets")}
 					</button>
 				) : null}
 			</section>
 			{selectedProvider ? (
 				<section className="card">
-					<h2>Provider resource evidence</h2>
+					<h2>{t("disc.provider")}</h2>
 					<p className="muted">
-						{selectedProvider.provider} · {selectedProvider.coverage} · observed{" "}
-						{timestamp(selectedProvider.observed_at)}. Only the configured scope is reported; this
-						is not complete cloud or device coverage.
+						{t("disc.providerLine", {
+							provider: selectedProvider.provider,
+							coverage: selectedProvider.coverage,
+							time: timestamp(selectedProvider.observed_at, t),
+						})}
 					</p>
 					{resourceError ? (
 						<div className="notice notice-danger" role="alert">
@@ -776,11 +804,11 @@ export function DiscoveryPage() {
 						<table className="table">
 							<thead>
 								<tr>
-									<th>Resource</th>
-									<th>Type / scope</th>
-									<th>Region</th>
-									<th>Freshness</th>
-									<th>Alert state</th>
+									<th>{t("disc.col.resource")}</th>
+									<th>{t("disc.col.type")}</th>
+									<th>{t("disc.col.region")}</th>
+									<th>{t("disc.col.freshness")}</th>
+									<th>{t("disc.col.alert")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -794,11 +822,13 @@ export function DiscoveryPage() {
 										</td>
 										<td>{resource.region ?? "—"}</td>
 										<td>
-											<span className={badgeClass(resource.freshness)}>{resource.freshness}</span>
+											<span className={badgeClass(resource.freshness)}>
+												{stateLabel(resource.freshness, t)}
+											</span>
 										</td>
 										<td>
 											<span className={badgeClass(resource.alert_state)}>
-												{resource.alert_state}
+												{stateLabel(resource.alert_state, t)}
 											</span>
 										</td>
 									</tr>
@@ -807,12 +837,12 @@ export function DiscoveryPage() {
 									<tr>
 										<td colSpan={5}>
 											{resourcesLoading
-												? "Loading provider resources…"
+												? t("disc.resourcesLoading")
 												: resourceError
-													? "Resource evidence is unavailable."
+													? t("disc.resourceEvidenceUnavailable")
 													: selectedProvider.complete
-														? "No resources reported within the configured scope."
-														: "Provider collection is partial; absence is not an empty inventory."}
+														? t("disc.noResources")
+														: t("disc.partialProvider")}
 										</td>
 									</tr>
 								) : null}
@@ -826,7 +856,7 @@ export function DiscoveryPage() {
 							disabled={loadingMoreResources}
 							onClick={() => void loadMoreResources()}
 						>
-							{loadingMoreResources ? "Loading…" : "Load more resources"}
+							{loadingMoreResources ? t("common.loading") : t("disc.loadMoreResources")}
 						</button>
 					) : null}
 				</section>

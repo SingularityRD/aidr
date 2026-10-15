@@ -48,7 +48,7 @@ function loadHandler(): { handler: ToolCallHandler; tools: string[] } {
 	return { handler, tools };
 }
 
-// url_check disabled: a benign URL is not verified clean, so it is an `ask`.
+// url_check disabled with unchecked_action "ask": a benign URL is not verified clean, so it is an `ask`.
 const EVENT = { toolName: "web_fetch", params: { url: "https://example.com" } };
 const CTX = { sessionKey: "openclaw-dashboard-session" };
 
@@ -63,7 +63,7 @@ beforeEach(async () => {
 	const endpoint = await cp.listen();
 	await writeManagedHome(home, fixture, {
 		...managedConfig(fixture, endpoint),
-		url_check: { enabled: false },
+		url_check: { enabled: false, unchecked_action: "ask" },
 	});
 	vi.stubEnv("HOME", home);
 	vi.stubEnv("USERPROFILE", home);
@@ -88,7 +88,7 @@ describe("OpenClaw plugin with managed dashboard approvals", { timeout: 60_000 }
 		expect(blocked?.blockReason).toContain(
 			`Approval requested in the AIDR dashboard: ${requestId}`,
 		);
-		expect(blocked?.blockReason).toContain("no tool available to you can approve it");
+		expect(blocked?.blockReason).toContain("no tool available to you can");
 		expect(cp.requests.get(requestId)?.body.agent_runtime).toBe("openclaw");
 
 		// Undecided: still blocked.

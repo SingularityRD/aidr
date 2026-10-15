@@ -76,7 +76,7 @@ describe("content guard: paste", () => {
 		g.editor.dispatchEvent(event);
 		expect(event.defaultPrevented).toBe(true);
 		await expect.poll(() => g.editor.value).toBe("Hi contact [EMAIL_1]");
-		expect(g.toastText()).toContain("Pasted text masked (1 item): 1 EMAIL");
+		expect(g.toastText()).toContain("Pasted text masked: 1 email address.");
 		expect(g.records()).toEqual([
 			{ type: "RECORD", site: "chatgpt", action: "masked", channel: "paste", counts: { EMAIL: 1 } },
 		]);
@@ -183,7 +183,7 @@ describe("content guard: file uploads", () => {
 		expect(input.files?.[0]).not.toBe(original);
 		const call = g.sanitizeFile.mock.calls[0]?.[0] as { bytes: Uint8Array; name: string };
 		expect(new TextDecoder().decode(call.bytes)).toBe(`mail ${EMAIL}`);
-		expect(g.toastText()).toContain("1 file sanitized before upload: 1 EMAIL");
+		expect(g.toastText()).toContain("1 file masked before upload: 1 email address.");
 		expect(g.records()).toEqual([
 			{ type: "RECORD", site: "chatgpt", action: "masked", channel: "file", counts: { EMAIL: 1 } },
 		]);
@@ -201,7 +201,8 @@ describe("content guard: file uploads", () => {
 		await expect
 			.poll(() => g.bubble()?.textContent ?? "")
 			.toContain('"sheet.csv" was not uploaded');
-		expect(g.bubble()?.textContent).toContain("FORMULA_CELL");
+		expect(g.bubble()?.textContent).toContain("could not be safely checked");
+		expect(g.bubble()?.textContent).not.toContain("FORMULA_CELL");
 		expect(pageSaw).toBe(0);
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", channel: "file" });
 	});
@@ -221,7 +222,7 @@ describe("content guard: file uploads", () => {
 		let pageSaw = 0;
 		input.addEventListener("change", () => pageSaw++);
 		input.dispatchEvent(new Event("change", { bubbles: true }));
-		await expect.poll(() => g.toastText()).toContain('"photo.png" could not be scanned');
+		await expect.poll(() => g.toastText()).toContain('"photo.png" could not be checked');
 		expect(pageSaw).toBe(1);
 	});
 
@@ -230,7 +231,9 @@ describe("content guard: file uploads", () => {
 		const input = document.getElementById("file") as HTMLInputElement;
 		makeFilesWritable(input, [new File(["0123456789"], "big.txt")]);
 		input.dispatchEvent(new Event("change", { bubbles: true }));
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("FILE_TOO_LARGE");
+		await expect
+			.poll(() => g.bubble()?.textContent ?? "")
+			.toContain("larger than your organisation allows");
 		expect(g.sanitizeFile).not.toHaveBeenCalled();
 	});
 
@@ -245,7 +248,7 @@ describe("content guard: file uploads", () => {
 		let pageSaw = 0;
 		input.addEventListener("change", () => pageSaw++);
 		input.dispatchEvent(new Event("change", { bubbles: true }));
-		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("could not check the file");
+		await expect.poll(() => g.bubble()?.textContent ?? "").toContain("file could not be checked");
 		expect(pageSaw).toBe(0);
 	});
 

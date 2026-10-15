@@ -19,6 +19,7 @@ import {
 } from "./agent-safety/runaway-guard.js";
 import { loadTrustedModelSources, type TrustedModelSources } from "./ai-supply-chain.js";
 import { allowlistedArtifacts, isAllowlisted, loadAllowlist } from "./allowlist.js";
+import { ApprovalStore } from "./approval-store.js";
 import {
 	buildIncidentEntry,
 	buildRuntimeVerdictEntry,
@@ -40,6 +41,11 @@ import {
 	inspectToolInputForCanaries,
 } from "./canary/detect.js";
 import { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
+import {
+	freshUnavailableRecord,
+	readAmsiHostRecord,
+	recordAmsiHostState,
+} from "./clients/amsi-availability.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
 import { UrlCheckClient } from "./clients/url-check.js";
 import {
@@ -77,6 +83,7 @@ import {
 	MAX_ARTIFACT_SIZE,
 } from "./extractors.js";
 import { HeuristicsEngine } from "./heuristics.js";
+import { registerReasonDisplay } from "./i18n/display.js";
 import {
 	correlateIncidents,
 	normalizeAuditEntriesToSignals,
@@ -119,6 +126,7 @@ import {
 	isPackageManifestPath,
 	type ParsedPackage,
 } from "./package-extractor.js";
+import { findTyposquat } from "./package-typosquat.js";
 import {
 	COMMON_PII_PLACEHOLDER_LABEL,
 	COMMON_PII_TYPES,
@@ -128,10 +136,12 @@ import {
 	maskCommonPiiInToolInput,
 } from "./pii-baseline.js";
 import { evaluatePolicy } from "./policy.js";
+import { dropProjectEnvReads, projectEnvReadsAllowed } from "./project-env.js";
 import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
 import { signedDetectionExceptionsOf, syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { inspectResponseBarrier } from "./response-barrier.js";
+import { modifiedPaths } from "./self-defense-paths.js";
 import { loadThreatsFromDirsWithReport, type ThreatLoadError } from "./threat-loader.js";
 import { normalizeToolEvaluationRequest, readFileEditPayload } from "./tool-normalization.js";
 import { applyToxicFlow } from "./toxic-flow.js";
@@ -1108,6 +1118,7 @@ async function recordEarlyVerdict(
 			verdict,
 			allowlisted,
 			durationMs,
+			ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId),
 		);
 	} catch {
 		// An audit failure cannot erase the detector decision.
@@ -1149,6 +1160,7 @@ function applySessionFlow(
 		allowlisted,
 		// The connector's bundled threats directory supplies flow/capabilities.yaml.
 		threatsDir: context.threatsDir || undefined,
+		workingDirectory: reportedWorkingDirectory(context),
 	});
 }
 
@@ -1613,6 +1625,17 @@ function inputNotFullyInspectedVerdict(limits: InspectionLimit[]): Verdict {
 	};
 }
 
+/** A managed entitlement refresh that cannot be attempted; managed features stay off. */
+class ManagedRefreshSkipped extends Error {}
+
+/**
+ * The status line a verdict carries while managed features are off. It names
+ * the managed state only; the decision itself came from local detection.
+ */
+function managedDisabledNotice(reason: string): string {
+	return `Singularity AIDR managed features are off (${reason}). Local detection is still enforcing on this device.`;
+}
+
 async function runEvaluationPipeline(
 	request: ToolEvaluationRequest,
 	context: ToolEvaluationContext,
@@ -1716,26 +1739,28 @@ async function runEvaluationPipeline(
 	// session (toxic) flow, then the profile restriction, then host promotion.
 	// Only called after `preflight` is computed below.
 	const finalize = async (verdict: Verdict, allowlisted = false): Promise<Verdict> =>
-		hostEffectiveVerdict(
-			mergeAgentProfileVerdict(
-				await applySessionFlow(
-					request,
-					context,
-					config,
-					await applyRuntimeDetectors(
+		withManagedStatus(
+			hostEffectiveVerdict(
+				mergeAgentProfileVerdict(
+					await applySessionFlow(
 						request,
 						context,
 						config,
-						mergeDetectorVerdict(preflight, verdict, preflight),
-						managedState,
-						rewriteSource,
+						await applyRuntimeDetectors(
+							request,
+							context,
+							config,
+							mergeDetectorVerdict(preflight, verdict, preflight),
+							managedState,
+							rewriteSource,
+						),
+						allowlisted,
 					),
-					allowlisted,
+					profileVerdict,
 				),
-				profileVerdict,
+				config,
+				context,
 			),
-			config,
-			context,
 		);
 	const commercial = isCommercialBuild();
 	// Computed once: the same manifest edits decide whether this request has
@@ -1743,31 +1768,30 @@ async function runEvaluationPipeline(
 	// fast path below) and what that leg then checks.
 	const manifestEdits = manifestEditInputs(request);
 
-	// Managed-only commercial behavior: without a valid auth token + signed entitlement (or offline grace),
-	// the runtime does not enforce and becomes inert (allow-only).
-	const disabled = (reason: string): Verdict =>
-		mergeAgentProfileVerdict(disabledVerdict(reason), profileVerdict);
-	const disabledVerdict = (reason: string): Verdict => {
-		if (commercial) {
-			return {
-				decision: "ask",
-				category: "managed_disabled",
-				confidence: 1.0,
-				severity: "warning",
-				source: "managed_disabled",
-				artifacts: [],
-				matchedThreatId: null,
-				reasons: [reason],
-			};
+	// Licensing, revocation and integrity state switch MANAGED features off; they
+	// never switch local detection off (docs/operations/licensing.md). Every
+	// verdict below carries the reasons as a notice, while heuristics, policy and
+	// allowlists decide the call exactly as in local mode.
+	// The only state that adds a hold on top of the local verdict is a commercial
+	// build whose own integrity check failed (degraded safe mode): that is a
+	// fail-closed security control, so it is merged as an `ask`, and a local
+	// `deny` stays a `deny` with its detection reason first.
+	const managedDisabledReasons: string[] = [];
+	const disableManaged = (reason: string): void => {
+		if (managedDisabledReasons.includes(reason)) return;
+		managedDisabledReasons.push(reason);
+		logger.warn(`Managed features disabled; local detection still enforcing: ${reason}`);
+	};
+	let integrityHold: Verdict | null = null;
+	const withManagedStatus = (verdict: Verdict): Verdict => {
+		let result = integrityHold ? mergeVerdictsByPriority(verdict, integrityHold) : verdict;
+		if (managedDisabledReasons.length > 0) {
+			const notice = managedDisabledNotice(managedDisabledReasons.join("; "));
+			if (!result.notices?.includes(notice)) {
+				result = { ...result, notices: [...(result.notices ?? []), notice] };
+			}
 		}
-		return {
-			...allowVerdict("managed_disabled"),
-			// Keep the category consistent with the source. A licensing disable is not a
-			// clean inspection, and a caller that logs only `category` must be able to
-			// tell the two apart.
-			category: "managed_disabled",
-			reasons: [reason],
-		};
+		return result;
 	};
 
 	const managedOnly = commercial || config.mode === "managed";
@@ -1829,9 +1853,20 @@ async function runEvaluationPipeline(
 	}
 	// Required response control precedes licensing, policy, cache and empty-input returns.
 	if (commercial && isDegradedSafeMode()) {
-		return disabled(
-			`AIDR disabled: degraded safe mode (${getDegradedSafeModeReason() ?? "integrity"}).`,
-		);
+		const reason = `degraded safe mode (${getDegradedSafeModeReason() ?? "integrity"})`;
+		disableManaged(reason);
+		integrityHold = {
+			decision: "ask",
+			category: "managed_disabled",
+			confidence: 1.0,
+			severity: "warning",
+			source: "managed_disabled",
+			artifacts: [],
+			matchedThreatId: null,
+			reasons: [
+				`Singularity AIDR integrity check failed: ${reason}. Every call needs review until the connector is reinstalled from a signed release.`,
+			],
+		};
 	}
 	if (managedLoadFailure) throw managedLoadFailure.error;
 	if (managedOnly) {
@@ -1913,10 +1948,10 @@ async function runEvaluationPipeline(
 		) {
 			try {
 				const iid = await getInstallationId(aidrDir).catch(() => undefined);
-				if (!iid) return disabled("AIDR disabled: missing installation id (iid).");
+				if (!iid) throw new ManagedRefreshSkipped("missing installation id (iid)");
 
 				if (!config.control_plane.enabled) {
-					return disabled("AIDR disabled: control_plane.enabled=false (managed-only build).");
+					throw new ManagedRefreshSkipped("control_plane.enabled=false (managed-only build)");
 				}
 				managedState = { ...managedState, last_sync_attempt_at: new Date().toISOString() };
 				await saveManagedState(managedPath, managedState);
@@ -1946,20 +1981,24 @@ async function runEvaluationPipeline(
 					await saveEntitlementKeyringFromState(managedState);
 					token = getEffectiveManagedApiKey(config.auth.api_key, managedState);
 				}
-			} catch {
-				// Ignore.
+			} catch (error) {
+				// A failed refresh leaves the entitlement as it was; the gates below
+				// decide what that means for managed features.
+				if (error instanceof ManagedRefreshSkipped) disableManaged(error.message);
 			}
 		}
 
-		// Require server-signed entitlements when configured and keys are present; otherwise remain inert.
-		// This is a licensing control and applies to any installation holding credentials.
+		// Require server-signed entitlements when configured and keys are present.
+		// This is a licensing control and applies to any installation holding
+		// credentials: without a valid entitlement, managed features are off. Local
+		// detection is not a licensed feature and keeps deciding the call.
 		if (
 			hasCredentials &&
 			config.licensing.require_signed_entitlements &&
 			config.licensing.public_keys_pem.length > 0
 		) {
 			if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
-				return disabled("AIDR disabled: missing or invalid server-signed entitlement (ed25519).");
+				disableManaged("missing or invalid server-signed entitlement (ed25519)");
 			}
 		}
 
@@ -2032,18 +2071,12 @@ async function runEvaluationPipeline(
 			// Fail open.
 		}
 
-		// If revocations disabled sync or invalidated the entitlement, stay inert.
-		//
-		// This is safe for an installation that never enrolled: `loadManagedState`
-		// only returns state whose signature verified against the configured public
-		// keys, and such an installation has no keys and no token to sync with, so it
-		// cannot be handed a forged revocation locally. Do NOT widen this to cover
-		// "credentials present but unverified" - a routine seat-limit backoff sets the
-		// same field, and that 24h backoff is explicitly documented as leaving local
-		// protection running.
+		// If revocations disabled sync or invalidated the entitlement, managed
+		// features are off. A revoked device, a rejected key and a seat-limit backoff
+		// all leave local protection running.
 		if (isSyncDisabled(managedState)) {
-			return disabled(
-				`AIDR disabled: managed sync is disabled (${managedState.sync_disabled_reason ?? "unknown"}).`,
+			disableManaged(
+				`managed sync is disabled (${managedState.sync_disabled_reason ?? "unknown"})`,
 			);
 		}
 		// Both signed-entitlement gates require configured keys. Without a key there is
@@ -2059,9 +2092,16 @@ async function runEvaluationPipeline(
 			config.licensing.public_keys_pem.length > 0
 		) {
 			if (managedState.entitlement_alg !== "ed25519" || !isEntitlementActive(managedState)) {
-				return disabled("AIDR disabled: entitlement revoked or no longer valid (ed25519).");
+				disableManaged("entitlement revoked or no longer valid (ed25519)");
 			}
 		}
+	}
+	if (managedDisabledReasons.length > 0) {
+		// Managed features are off for the rest of this call: no remote policy
+		// fetch (and so no tenant detection exceptions that could relax a local
+		// finding), no telemetry upload, no dashboard approval. An operator who set
+		// `remote_policy_required` still gets the documented fail-closed deny.
+		config = { ...config, control_plane: { ...config.control_plane, enabled: false } };
 	}
 
 	// Exceptions delivered inside the signed runtime policy (empty unless it verified).
@@ -2252,11 +2292,28 @@ async function runEvaluationPipeline(
 			editViewsIncomplete = views.truncated;
 			heuristicMatches.push(...loaded.engine.matchEditViews(views));
 		}
+		// Self-defense: the paths this call removes, moves or overwrites (AIDR's
+		// own install and the host hook configuration that loads it).
+		if (loaded.engine.hasModifiedPathRules) {
+			const paths = modifiedPaths(request.toolName, request.toolInput, {
+				cwd: reportedWorkingDirectory(context),
+			});
+			heuristicMatches.push(...loaded.engine.matchModifiedPaths(paths));
+		}
 		failedRules = [...loaded.engine.unavailableThreats];
 		// Model-loading rules decide like any heuristic; secure-code findings
 		// are advisory and folded in after the decision (see below).
 		codeGuard = inspectCodeLeg(request, loaded, config, logger);
 		heuristicMatches = [...heuristicMatches, ...codeGuard.heuristicMatches];
+		// The developer's own project `.env` (docs/project-env-files.md): a read
+		// is not prompted per call, but stays tracked by the session flow.
+		if (projectEnvReadsAllowed(config)) {
+			heuristicMatches = dropProjectEnvReads(
+				heuristicMatches,
+				reportedWorkingDirectory(context),
+				inspected.artifacts,
+			);
+		}
 		heuristicMatches = await applyDetectionExceptionLeg(
 			request,
 			context,
@@ -2279,10 +2336,18 @@ async function runEvaluationPipeline(
 	const urlsToCheck = cache ? uncachedUrls : urls;
 	// One budget for every remote leg of this call (see LEG_TOTAL_BUDGET_SECONDS).
 	const legDeadline = performance.now() + LEG_TOTAL_BUDGET_SECONDS * 1000;
+	// URLs that were left to local detection because the URL leg is not enabled
+	// and the operator kept `url_check.unchecked_action: allow` (the default).
+	let urlsNotChecked: string[] = [];
 	if (urlsToCheck.length > 0 && providerInspectionAllowed) {
 		if (!config.url_check.enabled) {
-			urlLegUnavailable = true;
-			urlLegUnavailableReason = "disabled to avoid sending URLs to an external reputation provider";
+			if (config.url_check.unchecked_action === "ask") {
+				urlLegUnavailable = true;
+				urlLegUnavailableReason =
+					"disabled to avoid sending URLs to an external reputation provider";
+			} else {
+				urlsNotChecked = [...new Set(urlsToCheck)];
+			}
 		} else {
 			try {
 				const client = new UrlCheckClient(
@@ -2325,7 +2390,7 @@ async function runEvaluationPipeline(
 		}
 	}
 
-	const packageCheckResults = await checkPackages(
+	const { results: packageCheckResults, notChecked: packagesNotChecked } = await checkPackages(
 		request,
 		manifestEdits,
 		config,
@@ -2344,9 +2409,10 @@ async function runEvaluationPipeline(
 	// Every failure path here used to end in a bare `catch { /* Fail open */ }`,
 	// so a Windows host with no working AMSI backend produced exactly the same
 	// verdict as a host that scanned the content and found nothing. The leg state
-	// is tracked instead and the post-engine guard below turns it into a blocking
-	// review: `amsi_check` is enabled by default, and an enabled leg that did not
-	// run is not a clean result.
+	// is tracked instead (see runAmsiLeg): a scan that failed on a working
+	// backend becomes a blocking review, and a host where AMSI cannot run at all
+	// is surfaced on the verdict per `amsi_check.unavailable_action`. Neither is
+	// ever a clean result.
 	//
 	// The leg is skipped entirely when the host does not support AMSI at all
 	// (that is not an outage) and when the operator disabled `amsi_check` (an
@@ -2380,48 +2446,16 @@ async function runEvaluationPipeline(
 		}
 	}
 
-	let amsiUnavailable = false;
-	const amsiCheckResults: AmsiCheckResult[] = [];
-	if (
+	const amsi =
 		providerInspectionAllowed &&
 		config.amsi_check.enabled &&
 		isAmsiSupported() &&
 		amsiScans.length > 0
-	) {
-		let amsiClient: AmsiClient | null = null;
-		try {
-			amsiClient = new AmsiClient(logger);
-			await amsiClient.init();
-			if (amsiClient.isAvailable) {
-				for (const scan of amsiScans) {
-					const result = await amsiClient.scanString(scan.content, scan.name);
-					if (result) {
-						amsiCheckResults.push(result);
-					} else {
-						// A scan that returned nothing is not a scan that passed.
-						amsiUnavailable = true;
-						logger.warn("AMSI scan did not complete; content was NOT scanned", {
-							contentName: scan.name,
-						});
-					}
-				}
-			} else {
-				// This host supports AMSI, so no usable backend is an outage of the
-				// leg, not evidence that the content is clean.
-				amsiUnavailable = true;
-				logger.warn("AMSI leg unavailable: no working AMSI backend on this host", {
-					backendKind: amsiClient.backendKind,
-				});
-			}
-		} catch (error) {
-			amsiUnavailable = true;
-			logger.warn("AMSI scan leg did not run", {
-				errorType: error instanceof Error ? error.name : typeof error,
-			});
-		} finally {
-			amsiClient?.close();
-		}
-	}
+			? await runAmsiLeg(amsiScans, logger)
+			: { results: [], unavailable: false, hostUnavailableReason: null };
+	const amsiUnavailable = amsi.unavailable;
+	const amsiHostUnavailableReason = amsi.hostUnavailableReason;
+	const amsiCheckResults = amsi.results;
 
 	const engine = new DecisionEngine(config.sensitivity);
 	let verdict = await engine.decide({
@@ -2466,6 +2500,18 @@ async function runEvaluationPipeline(
 			"amsi_unavailable",
 			"amsi",
 			"AMSI malware scanning is enabled on this host but the scan did not run, so this content was NOT scanned.",
+		);
+	}
+	// AMSI cannot run on this host at all. By default
+	// (`amsi_check.unavailable_action: "ask"`) such calls are held for review;
+	// the opt-in "annotate" follows the failure policy for an optional signal:
+	// skip it, log it (once per state, above), and say so on the verdict. Never
+	// a clean result either way.
+	if (amsiHostUnavailableReason !== null) {
+		verdict = amsiNotAvailableVerdict(
+			verdict,
+			amsiHostUnavailableReason,
+			config.amsi_check.unavailable_action,
 		);
 	}
 
@@ -2545,6 +2591,15 @@ async function runEvaluationPipeline(
 			`URL reputation lookup was unavailable (${urlLegUnavailableReason}), so the URLs in this call were NOT verified clean and require review.`,
 		);
 	}
+	// A reputation leg that is simply not enabled is coverage information, not a
+	// block: the call was decided by local detection, and the verdict and audit
+	// log say that the URLs/packages were not checked by a reputation service.
+	verdict = reputationNotCheckedVerdict(
+		verdict,
+		urlsNotChecked,
+		packagesNotChecked,
+		config.heuristics_enabled,
+	);
 	// Secure-code guardrails: a notice by default (`warn`), a review with
 	// `secure_code.action: "ask"`. Never a deny on their own.
 	verdict = applySecureCodeWarnings(verdict, codeGuard.warnings, config.secure_code);
@@ -2557,6 +2612,200 @@ async function runEvaluationPipeline(
 	await cacheUrlResults(urlCheckResults, context.reputationFeed ? null : cache);
 	await recordPipelineVerdict(request, context, config, logger, startTime, verdict);
 	return verdict;
+}
+
+/**
+ * The "not checked by a reputation service" note, in plain words. The English
+ * text goes into the verdict and the audit log; the Turkish one is registered
+ * for display.
+ */
+function reputationNotCheckedNote(
+	urlCount: number,
+	packageCount: number,
+	heuristicsEnabled: boolean,
+): string {
+	const en: string[] = [];
+	const tr: string[] = [];
+	if (urlCount > 0) {
+		en.push(`${urlCount} URL${urlCount === 1 ? "" : "s"} (URL reputation is not set up)`);
+		tr.push(`${urlCount} URL (URL itibar denetimi kurulu değil)`);
+	}
+	if (packageCount > 0) {
+		en.push(
+			`${packageCount} package${packageCount === 1 ? "" : "s"} (package reputation is not set up)`,
+		);
+		tr.push(`${packageCount} paket (paket itibar denetimi kurulu değil)`);
+	}
+	const localEn = [
+		heuristicsEnabled ? "local threat rules" : null,
+		packageCount > 0 ? "the offline look-alike package check" : null,
+	].filter((signal): signal is string => signal !== null);
+	const localTr = [
+		heuristicsEnabled ? "yerel tehdit kuralları" : null,
+		packageCount > 0 ? "çevrimdışı benzer ad denetimi" : null,
+	].filter((signal): signal is string => signal !== null);
+	const decidedEn =
+		localEn.length > 0
+			? `Only ${localEn.join(" and ")} looked at ${urlCount + packageCount === 1 ? "it" : "them"} and found nothing`
+			: "Local threat rules are turned off in the configuration";
+	const decidedTr =
+		localTr.length > 0
+			? `Yalnızca ${localTr.join(" ve ")} baktı ve bir şey bulmadı`
+			: "Yerel tehdit kuralları yapılandırmada kapalı";
+	const note = `Not checked by a reputation service: ${en.join(" and ")}. ${decidedEn}; this is not a clean reputation result.`;
+	registerReasonDisplay(note, {
+		en: note,
+		tr: `Bir itibar hizmetiyle denetlenmedi: ${tr.join(" ve ")}. ${decidedTr}; bu temiz bir itibar sonucu değildir.`,
+	});
+	return note;
+}
+
+/**
+ * The AMSI leg of one call.
+ *
+ * - `results`: what AMSI said about each scanned piece of content.
+ * - `unavailable`: a backend should have scanned but did not (start-up threw,
+ *   a scan returned nothing): an outage of this call's leg, held for review.
+ * - `hostUnavailableReason`: AMSI cannot run on this host at all (no backend
+ *   could be established, now or per a fresh host record): an optional signal
+ *   that is skipped, logged once per state change and named on the verdict.
+ *
+ * Every failure path used to end in a bare fail-open `catch`, which
+ * made a dead backend indistinguishable from a clean scan; none of these
+ * outcomes is ever reported as clean.
+ */
+async function runAmsiLeg(
+	scans: readonly { content: string; name: string }[],
+	logger: Logger,
+): Promise<{
+	results: AmsiCheckResult[];
+	unavailable: boolean;
+	hostUnavailableReason: string | null;
+}> {
+	const results: AmsiCheckResult[] = [];
+	// A fresh host record that says AMSI cannot run here skips the start-up
+	// attempt (a PowerShell start per call) until the record expires.
+	const known = freshUnavailableRecord(await readAmsiHostRecord());
+	if (known) return { results, unavailable: false, hostUnavailableReason: known.reason };
+
+	const client = new AmsiClient(logger);
+	try {
+		await client.init();
+		if (client.isAvailable) {
+			await recordAmsiHostState({ state: "available", backend: client.backendKind }, logger);
+			let unavailable = false;
+			for (const scan of scans) {
+				const result = await client.scanString(scan.content, scan.name);
+				if (result) {
+					results.push(result);
+				} else {
+					// A scan that returned nothing is not a scan that passed.
+					unavailable = true;
+					logger.warn("AMSI scan did not complete; content was NOT scanned", {
+						contentName: scan.name,
+					});
+				}
+			}
+			return { results, unavailable, hostUnavailableReason: null };
+		}
+		const kind = client.unavailableKind;
+		if (kind) {
+			const reason = client.unavailableDetail ?? kind;
+			await recordAmsiHostState({ state: "unavailable", kind, reason }, logger);
+			return { results, unavailable: false, hostUnavailableReason: reason };
+		}
+		// No backend and no stated reason: an outage of this call's leg.
+		logger.warn("AMSI leg unavailable: no working AMSI backend on this host", {
+			backendKind: client.backendKind,
+		});
+		return { results, unavailable: true, hostUnavailableReason: null };
+	} catch (error) {
+		logger.warn("AMSI scan leg did not run", {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
+		return { results, unavailable: true, hostUnavailableReason: null };
+	} finally {
+		client.close();
+	}
+}
+
+/** Category of an allow decided without AMSI because AMSI cannot run on this host. */
+const AMSI_NOT_AVAILABLE_CATEGORY = "amsi_not_available";
+
+function amsiNotAvailableNote(): string {
+	const note =
+		"AMSI malware scanning is not available on this host, so this content was NOT scanned by AMSI; local threat rules still inspected it. This is not a clean AMSI result.";
+	registerReasonDisplay(note, {
+		en: note,
+		tr: "Bu bilgisayarda AMSI kötü amaçlı yazılım taraması kullanılamıyor; bu içerik AMSI ile taranmadı, yerel tehdit kuralları yine de inceledi. Bu temiz bir AMSI sonucu değildir.",
+	});
+	return note;
+}
+
+/**
+ * Surface an AMSI leg that cannot run on this host. `annotate` keeps the
+ * decision and labels a clean allow (so the audit log records it, like
+ * `reputation_not_checked`); `ask` holds an otherwise-allowed call for review.
+ * A deny or ask from another layer is never weakened, only annotated.
+ */
+function amsiNotAvailableVerdict(
+	verdict: Verdict,
+	reason: string,
+	action: "annotate" | "ask",
+): Verdict {
+	if (verdict.decision === "allow" && action === "ask") {
+		return detectorVerdict(
+			"ask",
+			"amsi_unavailable",
+			"amsi",
+			`AMSI malware scanning is enabled but cannot run on this host (${reason}), so this content was NOT scanned.`,
+		);
+	}
+	const note = amsiNotAvailableNote();
+	if (verdict.reasons.includes(note)) return verdict;
+	if (verdict.decision !== "allow" || verdict.category !== "none" || verdict.transformedInput) {
+		return { ...verdict, reasons: [...verdict.reasons, note] };
+	}
+	return {
+		...verdict,
+		category: AMSI_NOT_AVAILABLE_CATEGORY,
+		source: "local_only",
+		reasons: [...verdict.reasons, note],
+	};
+}
+
+/** Category of an allow decided by local detection while a reputation leg is not enabled. */
+export const REPUTATION_NOT_CHECKED_CATEGORY = "reputation_not_checked";
+
+/**
+ * Annotate a clean local allow with the URLs and packages no reputation
+ * service looked at. The decision is unchanged; the category makes the audit
+ * log record the call (an unannotated allow is not logged by default) and keeps
+ * it distinguishable from a reputation-checked allow. Any other verdict, and
+ * an allow another layer already labelled, keeps its own category and only
+ * gains the note. Exported so the SDK labels its own not-checked URLs the
+ * same way.
+ */
+export function reputationNotCheckedVerdict(
+	verdict: Verdict,
+	urls: readonly string[],
+	packages: readonly string[],
+	heuristicsEnabled: boolean,
+): Verdict {
+	if (urls.length === 0 && packages.length === 0) return verdict;
+	const note = reputationNotCheckedNote(urls.length, packages.length, heuristicsEnabled);
+	if (verdict.decision !== "allow" || verdict.category !== "none" || verdict.transformedInput) {
+		return verdict.decision === "allow"
+			? { ...verdict, reasons: [...verdict.reasons, note] }
+			: verdict;
+	}
+	return {
+		...verdict,
+		category: REPUTATION_NOT_CHECKED_CATEGORY,
+		source: "local_only",
+		artifacts: [...urls, ...packages],
+		reasons: [...verdict.reasons, note],
+	};
 }
 
 /**
@@ -2601,6 +2850,7 @@ async function recordPipelineVerdict(
 			verdict,
 			false,
 			durationMs,
+			ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId),
 		);
 	} catch {
 		// Fail open.
@@ -2887,6 +3137,95 @@ async function checkPackages(
 	reputationFeed: ReputationFeedLoadOptions | undefined,
 	allowProviderInspection: boolean,
 	legDeadline: number = Number.POSITIVE_INFINITY,
+): Promise<PackageCheckOutcome> {
+	const results = await checkPackageResults(
+		request,
+		manifestEdits,
+		config,
+		cache,
+		logger,
+		apiKey,
+		managedState,
+		revocations,
+		reputationFeed,
+		allowProviderInspection,
+		legDeadline,
+	);
+	if (config.package_check.enabled || config.package_check.unchecked_action === "ask") {
+		return { results, notChecked: [] };
+	}
+	// The leg is not enabled and the operator kept the default: a package the
+	// registry would serve is decided by local signals only (threat rules ran on
+	// the command already; the offline typosquat check runs here). A hit asks;
+	// anything else is recorded as "not checked", never as clean. An install from
+	// a direct URL, Git or local source, or a manifest edit that could not be
+	// reconstructed, bypasses the registry and still asks.
+	const kept: PackageCheckResult[] = [];
+	const notChecked: string[] = [];
+	for (const result of results) {
+		if (result.verdict !== "unknown" || !isRoutineUncheckedPackage(result)) {
+			kept.push(result);
+			continue;
+		}
+		const hit =
+			result.registry === "npm" || result.registry === "pypi"
+				? findTyposquat(result.packageName, result.registry)
+				: null;
+		if (hit) {
+			const details = `Package '${hit.packageName}' looks like a misspelling of the popular ${hit.registry} package '${hit.resembles}' (one character different) and may be a fake look-alike (typosquat). Check the name before installing. No package reputation service is set up, so only local data was used.`;
+			registerReasonDisplay(details, {
+				en: details,
+				tr: `'${hit.packageName}' paketi, yaygın kullanılan ${hit.registry} paketi '${hit.resembles}' adına çok benziyor (tek karakter farklı) ve taklit bir paket (typosquat) olabilir. Kurmadan önce adı kontrol edin. Paket itibar hizmeti kurulu olmadığından yalnızca yerel veriler kullanıldı.`,
+			});
+			kept.push({ ...result, details });
+		} else {
+			notChecked.push(result.packageName);
+		}
+	}
+	return { results: kept, notChecked };
+}
+
+interface PackageCheckOutcome {
+	results: PackageCheckResult[];
+	/** Packages left to local signals because the package leg is not enabled. */
+	notChecked: string[];
+}
+
+const PACKAGE_LEG_DISABLED_REASON =
+	"is disabled to avoid sharing package names with external providers";
+
+/** Reason marker of a package result produced only because the leg is disabled or cannot see the input. */
+const ROUTINE_UNCHECKED_REASONS = [
+	PACKAGE_LEG_DISABLED_REASON,
+	"installs dependencies from a manifest whose contents were not supplied for inspection",
+	"whose package names were not available for inspection",
+	"whose dependency operation is not supported by the package checker",
+	"is an unsupported dependency manifest whose dependency changes were not inspected",
+];
+
+/**
+ * True for an `unknown` package result that only says "the leg did not look":
+ * a registry package with the leg disabled, a lockfile/manifest install, or a
+ * package manager this checker does not support. Results that describe a
+ * source outside the registry (direct URL, Git, local path, `npm exec`) or an
+ * unreadable manifest edit are not routine and keep asking.
+ */
+function isRoutineUncheckedPackage(result: PackageCheckResult): boolean {
+	return ROUTINE_UNCHECKED_REASONS.some((reason) => result.details.includes(reason));
+}
+
+async function checkPackageResults(
+	request: ToolEvaluationRequest,
+	manifestEdits: readonly ManifestEditInput[],
+	config: Config,
+	cache: VerdictCache | null,
+	logger: Logger,
+	apiKey: string,
+	managedState: ManagedState,
+	revocations: RevocationList | null,
+	reputationFeed: ReputationFeedLoadOptions | undefined,
+	allowProviderInspection: boolean,
+	legDeadline: number,
 ): Promise<PackageCheckResult[]> {
 	const results: PackageCheckResult[] = [];
 
@@ -2945,11 +3284,7 @@ async function checkPackages(
 		return [
 			...results,
 			...checkablePackages.map((pkg) =>
-				packageCheckUnavailableResult(
-					pkg.name,
-					pkg.registry,
-					"is disabled to avoid sharing package names with external providers",
-				),
+				packageCheckUnavailableResult(pkg.name, pkg.registry, PACKAGE_LEG_DISABLED_REASON),
 			),
 		];
 	}

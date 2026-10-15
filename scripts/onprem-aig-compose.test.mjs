@@ -106,7 +106,7 @@ test("docker compose accepts the standalone posture scanner stack with the examp
 	// Operator names map onto the variables the scanner containers read.
 	assert.equal(resolved.services["aig-bridge"].environment.AIG_AGENT_SHARED_SECRET, filled.POSTURE_SCANNER_AGENT_SHARED_SECRET);
 	assert.equal(resolved.services["aig-server"].environment.AIG_TRUSTED_SIGNING_KEY_ID, "fixture-key");
-	assert.equal(resolved.services["aig-agent"].environment.AIG_AGENT_VERSION, "v4.6.1-aidr.1");
+	assert.equal(resolved.services["aig-agent"].environment.AIG_AGENT_VERSION, "v4.6.1-aidr.2");
 
 	// Missing trust material still fails closed at configuration time and names the new setting.
 	writeFileSync(envFile, example.replace(/^POSTURE_SCANNER_AGENT_SHARED_SECRET=.*$/m, "POSTURE_SCANNER_AGENT_SHARED_SECRET="));

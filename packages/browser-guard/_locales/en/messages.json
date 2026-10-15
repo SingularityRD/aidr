@@ -41,6 +41,30 @@
 		"message": "Browser Guard works on ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral and Grok.",
 		"description": "Unsupported detail."
 	},
+	"status_inactive": {
+		"message": "Not protected — reload this tab",
+		"description": "Current tab is a protected AI site but Browser Guard is not running in it (open since before the extension started)."
+	},
+	"status_inactive_detail": {
+		"message": "This $SITE$ tab was open before Browser Guard started, so what you send here is not checked. Reload the tab to protect it.",
+		"description": "Inactive detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"policy_error": {
+		"message": "Your organization's policy has $COUNT$ invalid setting(s). The strictest values are in force; contact your administrator.",
+		"description": "Popup and options notice when managed policy values were invalid and fail-safe values were applied.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "2"
+			}
+		}
+	},
 	"status_paused": {
 		"message": "Paused until $TIME$",
 		"description": "Protection paused by the user.",
@@ -52,7 +76,7 @@
 		}
 	},
 	"status_paused_detail": {
-		"message": "Messages to $SITE$ are only monitored until then. Nothing is masked.",
+		"message": "Until then, messages to $SITE$ are only counted. Nothing is masked.",
 		"description": "Paused detail.",
 		"placeholders": {
 			"site": {
@@ -104,7 +128,7 @@
 		}
 	},
 	"status_monitoring": {
-		"message": "Monitoring only",
+		"message": "Counting only (no masking)",
 		"description": "Mode is monitor."
 	},
 	"status_monitoring_detail": {
@@ -126,15 +150,15 @@
 		"description": "Mode: mask automatically."
 	},
 	"mode_auto_help": {
-		"message": "Sensitive data is replaced with placeholders such as [EMAIL_1] before sending.",
+		"message": "Sensitive data is replaced with labels such as [EMAIL_1] before sending.",
 		"description": "Auto mode help."
 	},
 	"mode_confirm": {
-		"message": "Confirm",
+		"message": "Ask me",
 		"description": "Mode: ask before sending."
 	},
 	"mode_confirm_help": {
-		"message": "You review what was found and choose to send it masked or edit your message.",
+		"message": "You see what was found and choose: send it masked or edit your message.",
 		"description": "Confirm mode help."
 	},
 	"mode_block": {
@@ -146,11 +170,11 @@
 		"description": "Block mode help."
 	},
 	"mode_monitor": {
-		"message": "Monitor",
+		"message": "Count only (no masking)",
 		"description": "Mode: count only."
 	},
 	"mode_monitor_help": {
-		"message": "Nothing is changed or blocked; findings are only counted.",
+		"message": "Nothing is masked or blocked; findings are only counted.",
 		"description": "Monitor mode help."
 	},
 	"managed_by_org": {
@@ -198,7 +222,7 @@
 		"description": "Popup toggle."
 	},
 	"restore_visible_help": {
-		"message": "Placeholders in answers are replaced with your original data, only on this device.",
+		"message": "Labels such as [EMAIL_1] in answers are replaced with your original data, only on this device.",
 		"description": "Popup toggle help."
 	},
 	"restore_visible_off": {
@@ -240,8 +264,12 @@
 		"description": "Native host connected."
 	},
 	"native_unavailable": {
-		"message": "Advanced detection is unavailable; built-in rules are active",
+		"message": "Names and addresses are not checked: the AIDR Privacy helper app is not available. Built-in rules are active.",
 		"description": "Native host unavailable."
+	},
+	"native_off": {
+		"message": "Names and addresses are not checked: advanced detection is off. Built-in rules are active.",
+		"description": "Popup: native host (NER) not in use, so names are not checked."
 	},
 	"notice_saved": {
 		"message": "Saved",
@@ -260,7 +288,7 @@
 		"description": "Toast."
 	},
 	"notice_restore_off": {
-		"message": "Responses show placeholders",
+		"message": "Answers show labels such as [EMAIL_1]",
 		"description": "Toast."
 	},
 	"notice_term_added": {
@@ -400,7 +428,7 @@
 		"description": "Toggle."
 	},
 	"restore_responses_help": {
-		"message": "Placeholders in AI answers are replaced with your data on this device only. The AI service never sees the originals.",
+		"message": "Labels such as [EMAIL_1] in AI answers are replaced with your data on this device only. The AI service never sees the originals.",
 		"description": "Toggle help."
 	},
 	"terms_intro": {
@@ -910,7 +938,7 @@
 		"description": "Options: native host switch help."
 	},
 	"native_required": {
-		"message": "Required by your organisation: when the helper app cannot check a prompt, paste or upload for names and addresses (not installed, not responding, no name detection, text too long), it is blocked instead of being checked with the built-in rules only.",
+		"message": "Required by your organisation: when the helper app cannot check a message, paste or upload for names and addresses (not installed, not responding, no name detection, text too long), it is blocked instead of being checked with the built-in rules only.",
 		"description": "Options: managed requireNativeNer is on (native NER is mandatory)."
 	},
 	"native_permission_granted": {
@@ -938,7 +966,7 @@
 		"description": "Notice: nativeMessaging permission granted."
 	},
 	"native_status_disabled": {
-		"message": "Advanced detection is off; built-in rules are active",
+		"message": "Advanced detection is off: names and addresses are not checked; built-in rules are active",
 		"description": "Options: native host not in use."
 	}
 }

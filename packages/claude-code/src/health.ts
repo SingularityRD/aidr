@@ -13,7 +13,7 @@ import {
 	runHealthChecks,
 	VERSION,
 } from "@singularityrd/aidr-core";
-import { resolveAssetDir } from "./assets.js";
+import { assetOverrideNotice, resolveAssetDir } from "./assets.js";
 
 const args = process.argv.slice(2);
 const jsonFlag = args.includes("--json") || args.includes("-j");
@@ -23,12 +23,13 @@ const specificCheck = checkIndex >= 0 && args[checkIndex + 1] ? args[checkIndex 
 
 const VALID_CHECKS = ["core", "cache", "threat_rules", "api"];
 
-// Core health checks use AIDR_THREATS_DIR when supplied. Resolve packaged
-// resources before running them so a clean consumer cwd cannot make a valid
-// install look empty/degraded.
-if (!process.env.AIDR_THREATS_DIR) {
-	process.env.AIDR_THREATS_DIR = resolveAssetDir("threats");
-}
+// Core health checks read AIDR_THREATS_DIR. Point it at the directory the hook
+// actually loads: the packaged resources, or an override only where the build
+// honours one (a commercial build ignores it). A set override is reported on
+// stderr so it cannot go unnoticed in a health check either.
+const overrideNotice = assetOverrideNotice();
+if (overrideNotice) console.error(overrideNotice);
+process.env.AIDR_THREATS_DIR = resolveAssetDir("threats");
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complexity inherent in health check orchestration
 async function main(): Promise<void> {

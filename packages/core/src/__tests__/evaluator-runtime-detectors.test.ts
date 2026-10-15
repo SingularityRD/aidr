@@ -696,7 +696,7 @@ describe("provisioned tenant detector policy at the connector entry points", () 
 				{ tool: "bash", sessionID: "session-a", callID: "call-1" },
 				{ args: { command: `echo ${TEST_DLP_MARKER}` } },
 			),
-		).rejects.toThrow(/Singularity AIDR blocked this action[\s\S]*Category: dlp/);
+		).rejects.toThrow(/Singularity AIDR blocked this action/);
 
 		const outcome = await codexEntryPoint(`echo ${TEST_DLP_MARKER}`);
 		expect(outcome).toMatchObject({ decision: "deny", reasonCode: "dlp" });

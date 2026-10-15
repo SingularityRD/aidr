@@ -47,7 +47,7 @@ import {
 } from "./ai-supply-chain.js";
 import { boundArtifact, extractUrls, MAX_ARTIFACT_SIZE } from "./extractors.js";
 import { normalizeShellText } from "./shell-normalize.js";
-import { extractDomain, isTrustedDomain } from "./trusted-domains.js";
+import { isTrustedUrl } from "./trusted-domains.js";
 import type { Artifact, HeuristicMatch, Threat, TrustedDomain } from "./types.js";
 
 /**
@@ -63,6 +63,12 @@ const MAX_MATCH_INPUT = MAX_ARTIFACT_SIZE;
  * artifact (`command_normalized`, `file_path_normalized`, `content_normalized`).
  */
 const NORMALIZED_SUFFIX = "_normalized";
+
+/**
+ * `match_on` value of the rules run against the canonical paths a call
+ * removes, moves, overwrites or re-permissions (`self-defense-paths.ts`).
+ */
+const MODIFIED_PATH_VIEW = "modified_path";
 
 function countMatchingLines(
 	pattern: RegExp,
@@ -149,9 +155,7 @@ export class HeuristicsEngine {
 		if (urls.length === 0) return false;
 
 		for (const url of urls) {
-			const domain = extractDomain(url);
-			if (!domain) return false;
-			if (!isTrustedDomain(domain, this.trustedDomains)) return false;
+			if (!isTrustedUrl(url, this.trustedDomains)) return false;
 		}
 		return true;
 	}
@@ -254,6 +258,31 @@ export class HeuristicsEngine {
 		for (const filePath of views.deletedTestFiles) {
 			for (const threat of this.threatMap.get(DELETED_TEST_FILE_VIEW) ?? []) {
 				this.runThreat(threat, filePath, matches);
+			}
+		}
+		return matches;
+	}
+
+	/** True when any loaded rule inspects the paths a call changes (`self-defense-paths.ts`). */
+	get hasModifiedPathRules(): boolean {
+		return (this.threatMap.get(MODIFIED_PATH_VIEW)?.length ?? 0) > 0;
+	}
+
+	/**
+	 * Match the canonical paths a call removes, moves, overwrites or
+	 * re-permissions (see `self-defense-paths.ts`) against the rules that declare
+	 * `match_on: modified_path`. Call after {@link match}: regex failures are
+	 * appended to the same skip list.
+	 */
+	matchModifiedPaths(paths: readonly string[]): HeuristicMatch[] {
+		const matches: HeuristicMatch[] = [];
+		const threats = this.threatMap.get(MODIFIED_PATH_VIEW) ?? [];
+		const matched = new Set<string>();
+		for (const path of paths) {
+			for (const threat of threats) {
+				if (!matched.has(threat.id) && this.runThreat(threat, path, matches)) {
+					matched.add(threat.id);
+				}
 			}
 		}
 		return matches;

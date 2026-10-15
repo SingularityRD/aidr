@@ -11,6 +11,8 @@ operators — the people who run an AIDR control plane, not tenant owners or adm
 | `revoke_license` | `revoke …` | `operator_revoke_license` | `revoke_licensed_tenant_admission` |
 | `list_tenants` | `tenants …` | `operator_list_tenants` | — (read, keyset paged) |
 | `tenant_usage` | `usage --tenant ID` | `operator_tenant_usage` | `tenant_admission_capacity` |
+| `list_license_imports` | `license-imports [--limit N]` | `operator_list_license_imports` | — (read: licenses tenant admins staged) |
+| `apply_license` | `license-apply --tenant ID --license-file PATH [--import ID] [--owner ID]` | `operator_apply_license` | `operator_grant_license` -> `grant_licensed_tenant_admission` |
 
 The CLI below and the dashboard Operator console (`/operator`) are the only clients. Browser
 calls must come from an origin in `AIDR_ALLOWED_ORIGINS`; no agent or MCP tool can reach it.
@@ -66,6 +68,7 @@ Each successful action writes one actor-attributed row to `public.admin_audit_lo
 | `operator.license_revoked` | tenant | `status` (`revoked` / `not_active`), `reason` |
 | `operator.tenants_listed` | — | `limit`, `after`, `count` |
 | `operator.tenant_usage_read` | tenant | `{}` |
+| `license.applied` | tenant | `import_id`, `source`, `license_id`, `key_id`, `seats`, `plan_id`, `expires_at`, `grace_ends_at`, `canonical_sha256` |
 
 The underlying RPCs still write their own receipts (`admission.mode_configured`,
 `admission.ga_legal_configured`, `admission.licensed_granted`,
@@ -102,6 +105,14 @@ node scripts/operator-admin.mjs grant --tenant <tenant-uuid> --plan business --s
 node scripts/operator-admin.mjs revoke --tenant <tenant-uuid> --reason "contract ended"
 node scripts/operator-admin.mjs tenants --limit 100 [--after <tenant-uuid>] [--all]
 node scripts/operator-admin.mjs usage --tenant <tenant-uuid>
+
+# Signed licenses (docs/operations/licensing.md): list what workspace admins
+# staged, then apply a vendor-signed file. The CLI verifies the file against
+# deploy/onprem/license-public-keys.json (or --public-keys) before sending it;
+# the function verifies it again against AIDR_LICENSE_PUBLIC_KEYS_B64.
+node scripts/operator-admin.mjs license-imports
+node scripts/operator-admin.mjs license-apply --tenant <tenant-uuid> \
+  --license-file aidr-license.json [--import <import-uuid>]
 ```
 
 Add `--dry-run` to any command to print the request body without sending it.
@@ -129,6 +140,10 @@ contract, not from the plan.
 | 409 | `admission_mode_immutable` | The mode is already fixed to a different value. |
 | 409 | `admission_mode_not_licensed` | Licensed grants need `cloud` or `onprem` mode. |
 | 409 | `owner_not_eligible`, `tenant_closed` | The tenant is not active, or the owner is not a current owner. |
+| 400 | `invalid_license`, `invalid_import` | `apply_license` without a license document object, or a malformed import id. |
+| 422 | `license_rejected` (`reason`: `bad_signature`, `unknown_key`, `revoked_key`, `key_window`, `expired`, `not_yet_valid`, `customer_mismatch`, …) | Signature verification refused the license; nothing changed. |
+| 409 | `license_import_not_pending`, `license_import_mismatch`, `license_bound_to_other_tenant` | The staged import was already handled or differs, or the license id already admits another tenant. |
+| 503 | `license_registry_unavailable`, `license_registry_empty`, `license_registry_invalid` | `AIDR_LICENSE_PUBLIC_KEYS_B64` is unset, holds no keys or is malformed. |
 | 503 | `authorization_unavailable`, `assurance_unavailable`, `operator_action_unavailable` | A dependency failed, or the RPC returned an unexpected result. Retry after checking the logs. |
 
 ## Auth hardening in `supabase/config.toml`

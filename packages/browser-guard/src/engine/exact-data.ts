@@ -13,8 +13,15 @@
  * A value must normalise to 1..16 tokens whose concatenation is at least 3 characters.
  * `fingerprintValue` implements exactly this so that tooling and tests use the same code.
  *
- * Fingerprints are keyed hashes, not encryption: they resist casual reversal but a holder of the
- * key can confirm guesses, so the key must be distributed only through managed policy.
+ * Fingerprints are keyed hashes, not encryption: a holder of the key can confirm guesses, and
+ * enumerate a value space that is small enough. So the key never travels in browser policy
+ * (chrome://policy, the policy registry keys and policies.json are readable by every user).
+ * Each dataset has its own key, derived by the AIDR Privacy native host from a secret kept in
+ * the host's configuration (packages/privacy/src/native/edm.ts); the background worker asks
+ * the host for it and hands it to this matcher as `keyB64`. A dataset whose key has not
+ * arrived cannot be checked: every scan with it is reported incomplete (fail closed).
+ * Datasets of low-entropy values are refused when they are built and by the policy
+ * (`minEntropyBits`, background/policy.ts).
  */
 import { sourceSpan, type TextView } from "../../../privacy/src/normalize.js";
 import { ENTITY_TYPES, type EntityType, type ExactDataSet } from "../types.js";
@@ -168,7 +175,8 @@ export async function fingerprintValue(keyB64: string, value: string): Promise<s
 }
 
 interface KeyGroup {
-	readonly bytes: Uint8Array<ArrayBuffer>;
+	/** null: the dataset key has not been delivered (yet); the group cannot be scanned. */
+	readonly bytes: Uint8Array<ArrayBuffer> | null;
 	readonly datasets: ReadonlyArray<{
 		readonly type: EntityType;
 		readonly fingerprints: ReadonlySet<string>;
@@ -207,8 +215,10 @@ function groupDatasets(sets: readonly ExactDataSet[]): KeyGroup[] {
 		const dataset = parseDataset(set);
 		total += dataset.fingerprints.size;
 		if (total > MAX_FINGERPRINTS) throw new ExactDataConfigError("EXACT_DATA_CAPACITY");
-		const bytes = decodeKey(set.keyB64);
-		const id = set.keyB64.trim();
+		const keyed = set.keyB64 !== undefined;
+		const bytes = keyed ? decodeKey(set.keyB64) : null;
+		// Unkeyed datasets share one group that every scan reports as incomplete.
+		const id = keyed ? `k:${String(set.keyB64).trim()}` : "unkeyed";
 		const group = groups.get(id) ?? { bytes, datasets: [], key: null };
 		group.datasets.push(dataset);
 		groups.set(id, group);
@@ -261,6 +271,7 @@ function collectWindows(
 }
 
 async function groupKey(group: KeyGroup): Promise<CryptoKey | null> {
+	if (!group.bytes) return null;
 	try {
 		group.key ??= importKey(group.bytes);
 		return await group.key;
@@ -300,7 +311,8 @@ async function matchGroup(
 /**
  * Builds a matcher for the configured datasets. Throws `ExactDataConfigError` on malformed
  * configuration (bad key, fingerprint or entity type) so a broken policy is never silently
- * ignored. Datasets sharing a key share their HMAC work.
+ * ignored. Datasets sharing a key share their HMAC work; a dataset without its key makes
+ * every scan incomplete.
  */
 export function createExactDataMatcher(sets: readonly ExactDataSet[]): ExactDataMatcher {
 	const groups = groupDatasets(sets);

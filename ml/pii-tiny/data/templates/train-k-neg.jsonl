@@ -1,0 +1,300 @@
+{"lang": "tr", "domain": "procurement", "text": "{NEG:org} satın alma müdürü {PERSON1}, yeni çerçeve sözleşmeyi {NEG:law} kapsamında tekrar incelememizi istedi. Bunu kısa bir e-postaya dök."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org} ile {NEG:org} arasındaki kredi protokolünü {NEG:law} şartlarına göre maddeler halinde özetler misin?"}
+{"lang": "tr", "domain": "compliance", "text": "Merhaba,\n{NEG:law} denetimi öncesinde {NEG:tech} üzerindeki erişim loglarını {NEG:institution} danışmanlarına göndereceğiz. Eksik kalan kontrolleri listeler misin?"}
+{"lang": "en", "domain": "sales", "text": "Draft a follow-up email to {PERSON1} at {NEG:org} thanking them for the demo of {NEG:tech} and proposing a pilot in Q3."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:place} çıkışlı konteyner {NEG:org} gümrük deposunda bekliyor, {NEG:law} belgeleri tamamlanmadan çıkmayacakmış. Müşteriye nazik bir bilgilendirme yaz."}
+{"lang": "mix", "domain": "hr-policy", "text": "{NEG:org} onboarding policy'sini {NEG:law} ile uyumlu hale getirmemiz lazım, özellikle remote çalışma maddesini revize eder misin?"}
+{"lang": "tr", "domain": "real-estate", "text": "Müşterimiz {PERSON1}, {ADDRESS1.tr} adresindeki daireyi satmak istiyor. {NEG:org} ekspertiz raporu ve {NEG:institution} tapu kayıtlarıyla bir ilan metni hazırla."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} kasko poliçesinde {NEG:brand} marka araçlar için muafiyet oranı nedir, {NEG:law} bu konuda ne diyor?"}
+{"lang": "en", "domain": "compliance", "text": "Summarize the key obligations under {NEG:law} and {NEG:law} for a mid-size payments company using {NEG:tech} as its ledger."}
+{"lang": "tr", "domain": "corporate-comms", "text": "Basın bülteni taslağı: {NEG:org}, {NEG:place} bölgesinde yeni lojistik merkezini açtı. Metni daha kurumsal bir dille yeniden yaz."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org} çeyrek bilançosunda {NEG:org+GEN} payı neden düşmüş olabilir? Analist {PERSON1.first} Bey de toplantıda bunu sordu."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:brand} bayi ağı için kampanya sunumu: hedef {NEG:place} ve {NEG:place}. Slayt başlıklarını öner."}
+{"lang": "mix", "domain": "procurement", "text": "RFQ'yu {NEG:org} ve {NEG:org} tarafına gönderdik, ikisi de {NEG:tech} entegrasyonu istiyor. Comparison table hazırlar mısın?"}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:institution} mezunlarına yönelik staj programımız {NEG:law} kapsamında sigortalanıyor mu? İK'dan {PERSON1} bu soruyu iletti."}
+{"lang": "en", "domain": "logistics", "text": "Our shipment from {NEG:place} to {NEG:place} was delayed at customs. {PERSON1} from the {NEG:org} freight desk says the HS code was wrong. Write a short apology to the client."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} sağlık sigortası {NEG:eponym} teşhisi için ek teminat sunuyor mu? Poliçe maddesini sade Türkçeyle açıkla."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:law} madde 12 ve {NEG:law} arasındaki farkları tablo halinde göster, {NEG:org} örneği üzerinden anlat."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:place} bölgesindeki projemiz için {NEG:org} ile {NEG:org} arasında arsa payı karşılığı inşaat sözleşmesi yapılacak. Riskleri listele."}
+{"lang": "en", "domain": "finance", "text": "{NEG:org} wants to refinance its bond under {NEG:law}. Explain the covenant changes in plain English for {PERSON1.first}, our CFO."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:club} sponsorluk anlaşmasının {NEG:brand} satışlarına etkisini nasıl ölçeriz? Kısa bir analiz çerçevesi öner."}
+{"lang": "mix", "domain": "corporate-comms", "text": "{NEG:org} town hall için deck hazırlıyoruz; {NEG:ai} ile ilk taslağı çıkardık ama tone biraz robotik. Daha samimi yap."}
+{"lang": "tr", "domain": "logistics", "text": "Sevkiyat Notu:\n- Çıkış: {NEG:place}\n- Taşıyıcı: {NEG:org}\n- Teslim alan: {PERSON1}\n- Adres: {ADDRESS1.tr}\nBu notu İngilizceye çevir."}
+{"lang": "tr", "domain": "procurement", "text": "{NEG:tech} lisans yenilemesi için {NEG:org} teklifi pahalı geldi. Pazarlık e-postası yaz, {NEG:org} alternatifini de an."}
+{"lang": "en", "domain": "hr-policy", "text": "Rewrite our parental leave policy so it complies with {NEG:law} and mirrors what {NEG:org} offers its employees."}
+{"lang": "tr", "domain": "insurance", "text": "Hasar dosyası: {PERSON1}, aracını {NEG:org} servisine bırakmış, {NEG:org} eksper raporunu bekliyoruz. Müşteriye durum bildirimi yaz."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org} hisseleri {NEG:org} açıklamasından sonra neden yükseldi? Yatırımcı ilişkileri bülteni için iki paragraf yaz."}
+{"lang": "mix", "domain": "compliance", "text": "{NEG:law} audit checklist'ini {NEG:tech} ticket'larına çevirmem lazım, her madde için bir başlık öner."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} genel müdürü {PERSON1} {NEG:place} fuarında konuşma yapacak. Açılış cümlesi için 3 alternatif yaz."}
+{"lang": "en", "domain": "real-estate", "text": "Write a listing for an office floor near {NEG:place}, walking distance to {NEG:institution}, managed by {NEG:org}."}
+{"lang": "tr", "domain": "sales", "text": "bu ay {NEG:brand} ve {NEG:brand} ürünlerinde kampanya var, bayilere gidecek duyuruyu kısa tut lütfen"}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:org} çalışanlarına {NEG:media} aboneliği yan hak olarak verilebilir mi? Vergi açısından {NEG:law} ne diyor?"}
+{"lang": "en", "domain": "procurement", "text": "Compare {NEG:tech} and {NEG:tech} for our procurement workflow. {PERSON1} in finance prefers the cheaper one."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:org+GEN} {NEG:place} deposundan çıkan paletler hasarlı gelmiş. {PERSON1.first} Hanım fotoğrafları yolladı, tutanak taslağı hazırla."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:law} uyarınca kişisel veri işleme envanteri çıkaracağız; {NEG:tech} ve {NEG:tech} sistemleri dahil. Şablon öner."}
+{"lang": "mix", "domain": "finance", "text": "{NEG:org} Q2 forecast'ı {NEG:tech} üzerinden geldi, variance analizini Türkçe özetle."}
+{"lang": "tr", "domain": "insurance", "text": "Sayın {PERSON1},\n{NEG:org} konut sigortanız {LOCATION1.district} ilçesindeki adresiniz için yenilenmiştir. {NEG:law} kapsamında bilgilendirme metnini ekte bulabilirsiniz.\nBu metni daha sade yaz."}
+{"lang": "en", "domain": "corporate-comms", "text": "{NEG:org} is acquiring {NEG:org}. Draft an internal FAQ for employees, no names, keep it neutral."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:institution} kampüsüne yakın kiralık daire arayan öğrenciler için ilan şablonu yaz, {NEG:brand} beyaz eşyalı olduğunu belirt."}
+{"lang": "tr", "domain": "sales", "text": "Müşteri görüşmesi notu: {PERSON1} ({NEG:org}) {NEG:tech} entegrasyonunu sordu, {NEG:org} rakip teklif vermiş. Takip maili yaz."}
+{"lang": "en", "domain": "finance", "text": "Explain how {NEG:law} affects the way {NEG:org} reports goodwill, with a simple example."}
+{"lang": "tr", "domain": "procurement", "text": "TEKLİF KARŞILAŞTIRMA\n{NEG:org} | 120.000 TL | 30 gün\n{NEG:org} | 98.500 TL | 45 gün\nBu tabloya göre hangi tedarikçiyi önerirsin?"}
+{"lang": "tr", "domain": "hr-policy", "text": "yeni yan haklar listesine {NEG:brand} indirim kartı ve {NEG:club} kombine bileti ekledik, duyuru metni yazar mısın"}
+{"lang": "mix", "domain": "logistics", "text": "{NEG:place} port'unda strike var, {NEG:org} ETA'yı iki hafta erteledi. Customer'a Türkçe update yaz, {PERSON1.first} Bey'i cc'ye ekleyeceğim."}
+{"lang": "en", "domain": "insurance", "text": "A client asks whether their {NEG:org} policy covers treatment for {NEG:eponym}. Draft a careful reply referencing {NEG:law}."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:org} tedarikçilerinden {NEG:law} ve {NEG:law} sertifikalarını istiyoruz. Tedarikçi bilgilendirme yazısı hazırla."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org} ile {NEG:org} birleşmesinde {NEG:institution} raporu ne öneriyor? Üç maddede özetle."}
+{"lang": "en", "domain": "sales", "text": "Our rep {PERSON1} closed a deal with {NEG:org} for {NEG:tech} seats. Write a short win announcement for Slack."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} olarak {NEG:club} ile yeni sponsorluk anlaşmamızı duyuruyoruz. LinkedIn gönderisi yaz, emoji kullanma."}
+{"lang": "mix", "domain": "real-estate", "text": "{NEG:place} tarafında bir rezidans projesi var, {NEG:org} developer. Investor pitch için 5 bullet yaz."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} ferdi kaza poliçesinde {PERSON1} lehtar olarak görünüyor, {LOCATION1.city+LOC} oturuyor. {NEG:law} uyarınca lehtar değişikliği nasıl yapılır?"}
+{"lang": "tr", "domain": "finance", "text": "{NEG:ai} ile hazırladığımız nakit akış tahminini {NEG:tech} verisiyle karşılaştır, sapmaları göster."}
+{"lang": "tr", "domain": "corporate-comms", "text": "Yıl sonu mesajı: \"{NEG:word} dolu bir yıl geçirdik, {NEG:org} ailesi olarak {NEG:place} yatırımımızı tamamladık.\" Daha akıcı yaz."}
+{"lang": "en", "domain": "compliance", "text": "Does using {NEG:ai} to summarize customer tickets violate {NEG:law}? Give a short risk assessment."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:org} fuar standımıza {NEG:media} muhabiri geldi, röportaj sorularına hazırlık notu çıkar."}
+{"lang": "tr", "domain": "hr-policy", "text": "Çalışanlarımızdan {PERSON1}, {NEG:eponym} tanısı aldığını bildirdi. {NEG:law} kapsamında makul düzenleme yükümlülüklerimizi açıkla, ismi gizli tutarak bir yönetici notu yaz."}
+{"lang": "mix", "domain": "procurement", "text": "{NEG:tech} migration için {NEG:org} ve {NEG:org} vendor'larından proposal geldi, scoring matrix kur."}
+{"lang": "tr", "domain": "logistics", "text": "Rota planı: {NEG:place} → {NEG:place} → {NEG:place}. Yakıt maliyetini düşürmek için {NEG:eponym} algoritmasına benzer bir yaklaşım önerir misin?"}
+{"lang": "en", "domain": "real-estate", "text": "{PERSON1} is relocating from {LOCATION1.city} and wants a flat close to {NEG:institution}. {NEG:org} has two listings. Write a comparison note."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} ile {NEG:org} arasındaki reasürans anlaşmasının {NEG:law} açısından değerlendirmesini yap."}
+{"lang": "tr", "domain": "finance", "text": "umarım {NEG:word} faiz kararı sonrası {NEG:org} kredi faizlerini düşürür, müşterilere gidecek bilgilendirmeyi yaz"}
+{"lang": "en", "domain": "sales", "text": "{NEG:brand} wants to bundle our app with their devices. List questions we should ask {NEG:org} before signing."}
+{"lang": "tr", "domain": "compliance", "text": "İç denetçi {PERSON1}, {NEG:tech} yetki matrisinde {NEG:law} ihlali olabileceğini söyledi. Bulguyu rapor formatında yaz."}
+{"lang": "mix", "domain": "corporate-comms", "text": "{NEG:org} brand guideline'ına göre {NEG:media} reklamının metnini kontrol eder misin? Tone of voice uymuyor gibi."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:org} konut projesinde {NEG:word} manzaralı daireler için ilan metni yaz; {NEG:place} ulaşımı 10 dakika."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:org} çalışan el kitabındaki uzaktan çalışma maddesini {NEG:law} değişikliğine göre güncelle."}
+{"lang": "en", "domain": "finance", "text": "Write a memo comparing {NEG:org} and {NEG:org} credit ratings after the {NEG:law} stress test."}
+{"lang": "tr", "domain": "procurement", "text": "Satın alma talebi #4471: 40 adet {NEG:brand} dizüstü, {NEG:tech} lisansı dahil. Onaycı: {PERSON1}. Talebi resmi dille yeniden yaz."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:org} kargo entegrasyonunda {NEG:tech} webhook'u düşüyor, müşteri hizmetlerine durum açıklaması yaz."}
+{"lang": "en", "domain": "insurance", "text": "Explain to a small business owner how {NEG:org} and {NEG:org} differ on cyber insurance exclusions."}
+{"lang": "tr", "domain": "sales", "text": "{PERSON1.first} Hanım, {NEG:org} ile görüşmede {NEG:brand} ürün yelpazesini sordu. {NEG:place} bayisinin stok listesini özetle."}
+{"lang": "mix", "domain": "finance", "text": "{NEG:org} için DCF modelinde WACC'ı {NEG:tech} ile hesapladık, assumption'ları Türkçe açıkla."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:law} kapsamında {NEG:institution} ile paylaşılacak raporda hangi alanlar anonimleştirilmeli?"}
+{"lang": "tr", "domain": "corporate-comms", "text": "İç duyuru: {NEG:org} yemekhane hizmeti {NEG:brand} firmasına geçti. Kısa ve neşeli bir metin yaz."}
+{"lang": "en", "domain": "hr-policy", "text": "{PERSON1} asked whether our {NEG:org} benefits include {NEG:media} subscriptions. Draft an HR reply citing the {NEG:law} tax rules."}
+{"lang": "tr", "domain": "real-estate", "text": "Kiracı {PERSON1}, {ADDRESS1.tr_street} adresindeki dükkanın kira artışına itiraz ediyor. {NEG:law} ve {NEG:institution} kararlarına göre cevap taslağı hazırla."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} DASK poliçesi ile {NEG:org} konut paketi arasındaki farkları tabloya dök."}
+{"lang": "mix", "domain": "sales", "text": "{NEG:club} maçı sırasında {NEG:brand} activation'ı yapacağız, on-site team için brief yaz."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org} temettü politikası {NEG:law} değişikliğinden etkilenir mi? Yatırımcıya kısa cevap."}
+{"lang": "en", "domain": "procurement", "text": "Rewrite this clause so {NEG:org} carries liability for delays caused by {NEG:tech} outages."}
+{"lang": "tr", "domain": "logistics", "text": "Depo sorumlusu {PERSON1} ({PERSON1.first} Bey) {NEG:place} şubesine geçiyor; {NEG:tech} WMS yetkilerinin devri için checklist hazırla."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:institution} ve {NEG:institution} ile yapılan staj protokollerini karşılaştır, hangisi bize daha uygun?"}
+{"lang": "en", "domain": "corporate-comms", "text": "{NEG:org} CEO {PERSON1} will appear on {NEG:media} next week. Prepare five likely questions and short answers."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:ai} kullanımına ilişkin şirket politikası yazacağız. {NEG:law} ve {NEG:law} referans alınsın."}
+{"lang": "mix", "domain": "real-estate", "text": "{NEG:place} lokasyonundaki ofis için {NEG:org} ile lease agreement müzakere ediyoruz, break clause önerisi yaz."}
+{"lang": "tr", "domain": "insurance", "text": "Poliçe sahibi {PERSON1.upper}, {NEG:org} hastanesinde {NEG:eponym} tedavisi görmüş. Provizyon reddine itiraz dilekçesi yaz."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:brand} ve {NEG:brand} kanal satış verilerini karşılaştıran yönetici özeti hazırla."}
+{"lang": "en", "domain": "finance", "text": "Rewrite this for a board deck: {NEG:org} exposure to {NEG:place} real estate is rising under {NEG:law} capital rules."}
+{"lang": "tr", "domain": "procurement", "text": "{NEG:org} yemek kartı ihalesinde {NEG:org} en düşük teklifi verdi. Karar notu yaz."}
+{"lang": "mix", "domain": "hr-policy", "text": "{NEG:org} performance review sürecinde {NEG:tech} kullanıyoruz, calibration meeting'i için agenda hazırla."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:org} ve {NEG:org} arasındaki soğuk zincir sözleşmesinde sıcaklık sapması cezası nasıl yazılır?"}
+{"lang": "en", "domain": "compliance", "text": "{PERSON1} from legal wants a gap analysis between {NEG:law} and {NEG:law} for our {NEG:place} subsidiary."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} sürdürülebilirlik raporuna {NEG:place} güneş santrali bölümü ekle, {NEG:word} enerjisi kelime oyunu yapma."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:org} ekspertiz raporunu müşterimiz {PERSON1+DAT} anlaşılır şekilde özetle; {NEG:law} kapsamındaki imar notunu vurgula."}
+{"lang": "en", "domain": "insurance", "text": "Draft a claim denial letter for {PERSON1} under the {NEG:org} travel policy; the incident happened in {NEG:place}, outside covered dates."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org} ile {NEG:org} arasındaki döviz swap işlemini muhasebe kaydı olarak göster."}
+{"lang": "mix", "domain": "sales", "text": "{NEG:tech} CRM'de {NEG:org} account'u duplicate olmuş, merge etmeden önce kontrol edilecekleri listele."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:org} kara para aklamayla mücadele politikasını {NEG:law} ve {NEG:institution} rehberine göre güncelle."}
+{"lang": "en", "domain": "logistics", "text": "{NEG:org} wants to move its hub from {NEG:place} to {NEG:place}. Summarize the trade-offs in a one-pager."}
+{"lang": "tr", "domain": "hr-policy", "text": "{PERSON1}, {PERSON2} ve ekibi {NEG:org} yeni yetenek programına seçildi. {NEG:institution} eğitimleri için duyuru yaz."}
+{"lang": "tr", "domain": "corporate-comms", "text": "Kriz iletişimi: {NEG:org} ürün geri çağırması {NEG:media} haberinde yer aldı. Kısa açıklama metni yaz."}
+{"lang": "tr", "domain": "finance", "text": "KONU: {NEG:org} - {NEG:law} UYUM RAPORU\nEkteki tabloyu yönetim kurulu için iki paragrafa indir."}
+{"lang": "tr", "domain": "procurement", "text": "Merhaba {PERSON1.first},\n{NEG:org} teklifini aldık, {NEG:org} ise hâlâ cevap vermedi. {NEG:tech} entegrasyon maliyetini ayrıca isteyelim mi?\nSaygılarımla,\n{PERSON2}\nBu e-postayı daha resmi yap."}
+{"lang": "en", "domain": "sales", "text": "| Account | Product | Stage |\n| {NEG:org} | {NEG:tech} | Negotiation |\n| {NEG:org} | {NEG:tech} | Closed won |\nTurn this pipeline table into a short weekly update."}
+{"lang": "tr", "domain": "logistics", "text": "[09:14] {PERSON1.first}: {NEG:org} tırı {NEG:place} gümrüğünde kaldı\n[09:16] {PERSON2.first}: {NEG:law} evrakı eksik mi?\nBu yazışmayı olay raporuna çevir."}
+{"lang": "mix", "domain": "compliance", "text": "{\"vendor\": \"{NEG:org}\", \"framework\": \"{NEG:law}\", \"tool\": \"{NEG:tech}\", \"status\": \"pending\"}\nBu JSON'daki vendor için risk özetini Türkçe yaz."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:org} İK yönetmeliği madde 7: \"Çalışan, {NEG:law} hükümleri saklı kalmak kaydıyla yıllık izinlerini bölebilir.\" Bunu sade dille anlat."}
+{"lang": "en", "domain": "insurance", "text": "Subject: Claim #88213 – {NEG:org} property policy\nHi {PERSON1.first}, the adjuster from {NEG:org} will visit {ADDRESS1.en} on Monday.\nMake this email warmer."}
+{"lang": "tr", "domain": "real-estate", "text": "İLAN: {NEG:place} manzaralı 3+1, {NEG:institution} yürüme mesafesinde. {NEG:org} güvencesiyle. Metni sosyal medya için kısalt."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} ve {NEG:org} ortaklık duyurusu için basın bülteni başlığı öner, 10 kelimeyi geçmesin."}
+{"lang": "mix", "domain": "finance", "text": "vendor,amount,currency\n{NEG:org},45000,EUR\n{NEG:org},12800,USD\n{NEG:org},310000,TRY\nBu CSV'yi TL bazında topla, kur varsayımını belirt."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:org} satış direktörü {PERSON1}, {NEG:place} bölgesinde {NEG:brand} payının düştüğünü söyledi. Bölge müdürlerine motivasyon maili yaz."}
+{"lang": "en", "domain": "hr-policy", "text": "{NEG:org} employees in {NEG:place} are asking about the new {NEG:law} overtime rules. Write a short FAQ."}
+{"lang": "tr", "domain": "compliance", "text": "- {NEG:law} madde 6\n- {NEG:law} ek-2\n- {NEG:law} kontrol 8.12\nBu üç gereksinimi {NEG:tech} üzerindeki loglama ile nasıl karşılarız?"}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} hayat sigortası başvurusunda {NEG:eponym} öyküsü soruluyor. Başvuran {PERSON1}, {LOCATION1.city} doğumlu. Beyan formunu nasıl doldurmalı?"}
+{"lang": "en", "domain": "procurement", "text": "{NEG:tech} vs {NEG:tech} vs {NEG:tech}: build a scoring rubric for our ERP selection, weight cost at 40%."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:org} filo yönetiminde {NEG:brand} kamyonların bakım periyodunu {NEG:tech} ile takip ediyoruz. Raporu özetle."}
+{"lang": "mix", "domain": "corporate-comms", "text": "Slack duyurusu: {NEG:org} office {NEG:place} lokasyonuna taşınıyor, moving day Cuma. Daha friendly yaz."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org+GEN} {NEG:org} hisselerini alması {NEG:institution} onayına tabi mi?"}
+{"lang": "en", "domain": "real-estate", "text": "Hi {PERSON1.first}, thanks for viewing the unit at {ADDRESS1.en_street}. {NEG:org} handles maintenance and the building is {NEG:law} certified. Polish this reply."}
+{"lang": "tr", "domain": "sales", "text": "bayi toplantısı notları: {NEG:brand} stokları bitti, {NEG:brand} fiyat artışı geliyor, {NEG:org} ödeme vadesini uzatmak istiyor. madde madde yaz"}
+{"lang": "tr", "domain": "hr-policy", "text": "Sayın {PERSON1},\n{NEG:org} bünyesinde {NEG:institution} ile ortak yürütülen eğitim programına kabul edildiniz. {NEG:law} gereği aydınlatma metni ektedir.\nBu mektubu İngilizceye çevir."}
+{"lang": "en", "domain": "compliance", "text": "{NEG:org} got fined under {NEG:law}. Write a lessons-learned slide for our {NEG:tech} team."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} ve {NEG:org} sağlık poliçeleri arasında {NEG:eponym} ve {NEG:eponym} kapsamı açısından fark var mı?"}
+{"lang": "mix", "domain": "procurement", "text": "PO {NEG:tech} sisteminden çıkmıyor, {NEG:org} supplier master data'sında VKN eksik. Ticket açıklaması yaz."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:org} ile yaptığımız kat karşılığı sözleşmede {NEG:law} hükümleri nasıl uygulanır? Arsa sahibi {PERSON1} endişeli."}
+{"lang": "en", "domain": "finance", "text": "Draft talking points for {PERSON1} ahead of the {NEG:org} earnings call; focus on {NEG:place} growth and {NEG:law} provisions."}
+{"lang": "tr", "domain": "logistics", "text": "Teslimat adresi: {ADDRESS1.tr}\nAlıcı: {PERSON1}\nTaşıyıcı: {NEG:org}\nNot: {NEG:place} aktarma merkezinden geçecek.\nBu bilgileri müşteriye SMS formatında yaz."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} 50. yıl etkinliğinde {NEG:club} efsaneleri de olacak. Davet metni yaz, kişi ismi verme."}
+{"lang": "en", "domain": "sales", "text": "{NEG:ai} generated this cold email for {NEG:org}. Make it less salesy and mention our {NEG:tech} integration."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:org} çalışanı {PERSON1}, {NEG:tech} üzerinden müşteri listesini dışarı göndermiş. {NEG:law} ihlal bildirimi taslağı hazırla."}
+{"lang": "mix", "domain": "hr-policy", "text": "{NEG:org} wellbeing programına {NEG:brand} spor salonu üyeliği ekliyoruz, internal announcement draft'ı yaz."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org}, {NEG:law} kapsamında finansal raporlarını yeniden düzenleyecek. Etkileri madde madde yaz."}
+{"lang": "tr", "domain": "insurance", "text": "acil: {NEG:org} hasar hattı açmıyor, {NEG:brand} aracımız {NEG:place} yolunda kaldı. müşteriye ne diyelim"}
+{"lang": "en", "domain": "procurement", "text": "{NEG:org} invoice disputes: summarize the email thread between {PERSON1} and {PERSON2} and propose next steps under {NEG:law}."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:place} bölgesinde ticari gayrimenkul getirileri ile {NEG:place} karşılaştırmasını tablo yap."}
+{"lang": "mix", "domain": "logistics", "text": "{NEG:org} last-mile partnerimiz {NEG:org} ile SLA ihlali var, escalation mail'i yaz, {PERSON1.first} Bey'i de ekle."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:org} ve {NEG:org} için ayrı ayrı teklif mektubu yaz, ikisine de {NEG:tech} lisans indirimi öner."}
+{"lang": "en", "domain": "corporate-comms", "text": "{NEG:org} sponsors {NEG:club} and {NEG:club}. Write a balanced press note that doesn't favour either."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:org} işe alım ilanına \"{NEG:tech} ve {NEG:tech} deneyimi\" şartı eklendi. Ayrımcılık içermediğini kontrol et."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:institution} denetim ekibi {NEG:law} kapsamında belge istiyor; irtibat kişisi {PERSON1}, telefon 0212 000 00 00. Belge listesini çıkar."}
+{"lang": "en", "domain": "finance", "text": "Why would {NEG:org} choose {NEG:place} for a new treasury center? Give tax and {NEG:law} considerations."}
+{"lang": "mix", "domain": "insurance", "text": "{NEG:org} claim portal'ı {NEG:tech} ile çalışıyor; upload limit sorunu için müşteriye Türkçe açıklama yaz."}
+{"lang": "tr", "domain": "procurement", "text": "{NEG:org} temizlik hizmeti sözleşmesi bitiyor; {NEG:org} ve {NEG:org} teklif verdi. Değerlendirme kriterlerini öner."}
+{"lang": "tr", "domain": "real-estate", "text": "{PERSON1} ve {PERSON2}, {LOCATION1.district} ilçesinden {NEG:place} yakınına taşınmak istiyor. {NEG:org} portföyünden uygun seçenekleri özetle."}
+{"lang": "en", "domain": "logistics", "text": "{NEG:org} uses {NEG:tech} to track pallets. Write onboarding notes for a new warehouse shift lead."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} genel kurul daveti: toplantı {NEG:place} otelinde yapılacak, {NEG:law} hükümlerine göre gündem ilan edilecek. Metni düzelt."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:word} bir haber: {NEG:org} kredi notu yükseldi. Yatırımcılara gidecek bülteni yaz."}
+{"lang": "en", "domain": "sales", "text": "{PERSON1} from {NEG:org} wants a discount on {NEG:tech}. Reply politely, offer annual billing instead."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:org} çalışanlarına {NEG:eponym} farkındalık eğitimi düzenleyeceğiz, {NEG:institution} uzmanları katılacak. Duyuru yaz."}
+{"lang": "mix", "domain": "compliance", "text": "{NEG:org} SOC report'unda {NEG:law} ile ilgili exception var, management response yazar mısın?"}
+{"lang": "tr", "domain": "finance", "text": "{NEG:word} limanındaki yatırım projesi için {NEG:institution} raporunu okudum, finans müdürü {PERSON1} özet istiyor. Üç cümle yaz."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:brand} kampanyası için {NEG:media} reklam kuşağı aldık. Satış temsilcisi {PERSON1.first} Hanım bütçe tablosunu bekliyor, kısa not yaz."}
+{"lang": "en", "domain": "compliance", "text": "{PERSON1} asked whether storing {NEG:ai} prompts in {NEG:tech} logs is compatible with {NEG:law}. Draft a short answer."}
+{"lang": "mix", "domain": "hr-policy", "text": "{PERSON1.first} Hanım'ın {NEG:org} exit interview notlarını özetle, {NEG:tech} access revoke checklist'ini de ekle."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:club} taraftar derneği için grup ferdi kaza poliçesi istiyoruz. {NEG:org} ve {NEG:org} teklifleri geldi, karşılaştır."}
+{"lang": "tr", "domain": "real-estate", "text": "Sayın {PERSON1},\n{NEG:place} projemizde ayırttığınız {ADDRESS1.tr_street} bağımsız bölümüne ait {NEG:institution} ruhsatı çıkmıştır.\nBu bildirimi daha kısa yaz."}
+{"lang": "en", "domain": "procurement", "text": "{NEG:org} quoted us for {NEG:brand} printers. {PERSON1} in IT says {NEG:brand} is cheaper long term. Summarize both positions."}
+{"lang": "tr", "domain": "logistics", "text": "Şoför {PERSON1}, {NEG:place} yolunda {NEG:word} fırtınası yüzünden durdu. {NEG:org} müşterisine gecikme bildirimi yaz."}
+{"lang": "mix", "domain": "finance", "text": "{NEG:org} audit committee'ye sunulacak {NEG:law} memo'sunu {PERSON1.initial} hazırladı, executive summary yaz."}
+{"lang": "tr", "domain": "corporate-comms", "text": "Genel müdürümüz {PERSON1}, {NEG:institution} mezuniyet töreninde konuşacak. {NEG:org} değerlerini vurgulayan bir konuşma metni hazırla."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:ai} ve {NEG:ai} gibi araçlarla müşteri verisi paylaşımı {NEG:law} kapsamında yasak mı? Çalışanlar için kısa rehber yaz."}
+{"lang": "en", "domain": "real-estate", "text": "{NEG:org} manages the building where {PERSON1} rents a unit at {ADDRESS1.en}. Write a notice about the elevator upgrade required by {NEG:law}."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:org} çalışanı {PERSON1}, {LOCATION1.city} şubesinden {NEG:place} ofisine tayin istedi. {NEG:law} açısından değerlendirme notu yaz."}
+{"lang": "mix", "domain": "sales", "text": "{PERSON1} ile {NEG:org} call'unda {NEG:ai} use case'leri konuşuldu, recap mail'ini hazırla."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} müşterisi {PERSON1}, {NEG:eponym} nedeniyle iş göremezlik tazminatı talep ediyor. Gerekli belgeleri listele."}
+{"lang": "en", "domain": "finance", "text": "{NEG:org} and {NEG:org} are both exposed to {NEG:place} sovereign debt. Write a short risk note for {PERSON1.first}."}
+{"lang": "tr", "domain": "procurement", "text": "{NEG:tech} üzerinden açılan sipariş {NEG:org} tarafından reddedildi. Satın alma uzmanı {PERSON1.first} Bey'e iletmek üzere açıklama yaz."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:org} depo müdürü {PERSON1} ile {NEG:org} arasındaki toplantı notlarını aksiyon listesine çevir."}
+{"lang": "mix", "domain": "corporate-comms", "text": "{NEG:media} röportajında {PERSON1}, {NEG:org} rebranding'inden bahsedecek. Key messages listesini hazırla."}
+{"lang": "en", "domain": "hr-policy", "text": "{PERSON1} ({PERSON1.first}) reports to {PERSON2} and is moving to the {NEG:place} office. Update the org announcement; mention the {NEG:tech} rollout."}
+{"lang": "tr", "domain": "real-estate", "text": "{PERSON1}, {LOCATION1.neighborhood} mahallesindeki evini {NEG:org} aracılığıyla kiraya verdi. Kira sözleşmesinde {NEG:law} maddelerini kontrol et."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:institution} kredi kurulu toplantısında {PERSON1} {NEG:org} firmasının limitini artırmayı önerdi. Kurul kararını yaz."}
+{"lang": "en", "domain": "insurance", "text": "Hi {PERSON1.first}, your {NEG:org} renters policy covers your {NEG:brand} laptop only under the {NEG:law} rider. Rephrase this more clearly."}
+{"lang": "mix", "domain": "compliance", "text": "{PERSON1} whistleblower hattına {NEG:org} ile ilgili bir bildirim yaptı; {NEG:law} kapsamında protection prosedürünü özetle."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:org} ile {NEG:org} arasındaki distribütörlük anlaşmasını {PERSON1} imzalayacak. İmza öncesi kontrol listesi hazırla."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:word} isimli yeni iç iletişim platformumuzu {NEG:tech} üzerine kurduk. Çalışanlara tanıtım metni yaz."}
+{"lang": "en", "domain": "corporate-comms", "text": "{NEG:org} board chair {PERSON1} resigned. Draft a statement thanking {PERSON1.last} and naming the interim lead from {NEG:org}."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:place} limanından gelen {NEG:brand} ürünleri için gümrük müşaviri {PERSON1} beyanname hazırlıyor. {NEG:law} kontrolünü özetle."}
+{"lang": "mix", "domain": "procurement", "text": "Supplier onboarding: {NEG:org}, contact {PERSON1}, {NEG:tech} vendor ID oluşturulacak. Welcome email draft'ı yaz."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} seyahat sigortası {NEG:place} gezisinde {NEG:word} sporlarını kapsıyor mu? Müşteri {PERSON1.first} Bey soruyor."}
+{"lang": "en", "domain": "sales", "text": "Write a LinkedIn message to {PERSON1}, head of procurement at {NEG:org}, referencing their move to {NEG:tech}."}
+{"lang": "tr", "domain": "finance", "text": "{PERSON1}, {NEG:org} hisselerini {NEG:institution} üzerinden satmak istiyor. Vergi etkisini {NEG:law} çerçevesinde açıkla."}
+{"lang": "tr", "domain": "real-estate", "text": "emlak danışmanı {PERSON1.lower} {NEG:place} tarafında {NEG:org} projesinden 2 daire önerdi, artı eksi listesi çıkar"}
+{"lang": "mix", "domain": "hr-policy", "text": "{NEG:org} yeni hybrid policy'si {NEG:law} ile çelişiyor mu? HRBP {PERSON1} sordu."}
+{"lang": "en", "domain": "logistics", "text": "Tracking update for {PERSON1}: parcel left {NEG:place}, now with {NEG:org}, delivery to {ADDRESS1.en_street} expected Friday. Make it friendlier."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:org} uyum sorumlusu {PERSON1}, {NEG:law} eğitim kayıtlarını {NEG:tech} sisteminden çekmemizi istedi. Talimatı adım adım yaz."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} çalışanlarından {PERSON1} ve {PERSON2}, {NEG:club} maratonunda koştu. İç bülten için haber yaz."}
+{"lang": "en", "domain": "procurement", "text": "{NEG:org} wants a 3-year deal for {NEG:ai} seats. Draft a counter-proposal from {PERSON1}, our procurement lead."}
+{"lang": "mix", "domain": "insurance", "text": "{PERSON1.first} Bey'in {NEG:org} hasar dosyası {NEG:tech} portalında stuck. Customer'a Türkçe güncelleme yaz."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org} denetim raporunda {NEG:law} şerhi var. Mali işler müdürü {PERSON1} için kısa bir brifing hazırla."}
+{"lang": "tr", "domain": "sales", "text": "Müşteri {PERSON1}, {LOCATION1.city} merkezli {NEG:org} için {NEG:brand} toplu alım yapmak istiyor. Teklif mektubu yaz."}
+{"lang": "en", "domain": "real-estate", "text": "{PERSON1} wants to buy near {NEG:place}; compare mortgage offers from {NEG:org} and {NEG:org}."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:org} ile anlaştık: {NEG:place} - {NEG:place} hattında haftalık sefer. Operasyon sorumlusu {PERSON1+DAT} bilgilendirme yaz."}
+{"lang": "mix", "domain": "compliance", "text": "{NEG:law} DPIA template'ini {NEG:tech} projesi için doldur, project owner {PERSON1}."}
+{"lang": "tr", "domain": "hr-policy", "text": "{PERSON1} ile yapılan disiplin görüşmesinde {NEG:org} etik kuralları ve {NEG:law} hükümleri hatırlatıldı. Tutanak formatına çevir."}
+{"lang": "en", "domain": "corporate-comms", "text": "Draft a congratulatory note to {PERSON1} for winning the {NEG:org} innovation award with a {NEG:ai}-based tool."}
+{"lang": "tr", "domain": "insurance", "text": "Poliçe No: 7720-11\nSigortalı: {PERSON1}\nAdres: {ADDRESS1.tr}\nSigortacı: {NEG:org}\nTeminat: {NEG:law} zorunlu deprem\nBu bilgileri müşteri mektubuna dönüştür."}
+{"lang": "mix", "domain": "sales", "text": "{NEG:org} demo'sunda {PERSON1} {NEG:tech} pricing'i sordu, follow-up'a FAQ ekle."}
+{"lang": "tr", "domain": "procurement", "text": "{PERSON1}, {NEG:org} sözleşmesini {NEG:law} cezai şartlarıyla birlikte hukuka göndermiş. Hukuk görüşü için soru listesi hazırla."}
+{"lang": "en", "domain": "finance", "text": "{PERSON1} and {PERSON2} disagree on whether {NEG:org} should hedge {NEG:place} exposure. Summarize both views neutrally."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:media} dizisine ürün yerleştirme teklifi geldi, {NEG:brand} için uygun mu? Pazarlama ekibine görüş notu yaz."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:club} ve {NEG:club} maçlarında {NEG:brand} stantları açılacak. Saha ekibine görev dağılımı listesi hazırla."}
+{"lang": "en", "domain": "finance", "text": "{NEG:eponym} distribution assumptions in our {NEG:tech} risk model look off. Explain to the finance team in non-technical terms."}
+{"lang": "mix", "domain": "compliance", "text": "{NEG:ai} output'larının {NEG:law} açısından log'lanması gerekiyor mu? Policy draft'ına bir madde ekle."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:word} ve {NEG:word} temalı iç iletişim kampanyası yapacağız; slogan önerileri yaz, kelimeler isim gibi algılanmasın."}
+{"lang": "en", "domain": "logistics", "text": "{NEG:place} warehouse uses {NEG:eponym} method for route optimisation. Write a one-paragraph explanation for the board."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:place} sahiline yakın, {NEG:word} manzaralı villa projesi için {NEG:media} ilan metni yaz."}
+{"lang": "mix", "domain": "procurement", "text": "{NEG:ai} enterprise license için {NEG:org} ile negotiation yapıyoruz, {NEG:law} DPA eklerini kontrol et."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:eponym} ve {NEG:eponym} gibi kronik hastalıklarda {NEG:org} tamamlayıcı sağlık poliçesinin bekleme süreleri nedir?"}
+{"lang": "en", "domain": "corporate-comms", "text": "Write a tweet announcing the partnership between {NEG:org} and {NEG:club}; mention the {NEG:place} stadium."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:org} yıllık faaliyet raporunda {NEG:media} haberine atıf var mı? Yoksa bir paragraf ekle."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:tech} ve {NEG:ai} entegrasyonu için {NEG:law} ve {NEG:law} kapsamında veri akış diyagramı açıklaması yaz."}
+{"lang": "mix", "domain": "sales", "text": "Q4 target'ımız {NEG:place} bölgesinde {NEG:brand} ve {NEG:brand} sell-out'u artırmak; action plan yaz."}
+{"lang": "en", "domain": "hr-policy", "text": "Our {NEG:institution} graduate scheme and {NEG:institution} internship should follow {NEG:law}. Write a policy summary."}
+{"lang": "tr", "domain": "logistics", "text": "KARGO DURUMU: {NEG:org} - {NEG:place} AKTARMA MERKEZİ - GECİKME\nMüşteriye bu durumu sakin bir dille anlat."}
+{"lang": "tr", "domain": "procurement", "text": "{NEG:brand} ofis mobilyası ile {NEG:brand} arasında fiyat-performans karşılaştırması yap."}
+{"lang": "mix", "domain": "insurance", "text": "{NEG:org} ile {NEG:org} arasındaki bancassurance deal'inin {NEG:law} implication'larını özetle."}
+{"lang": "en", "domain": "real-estate", "text": "Summarize the {NEG:law} implications for a REIT holding assets in {NEG:place} and {NEG:place}."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:ai} ile hazırlanan bülten metinlerinde {NEG:org} logosu yanlış kullanılmış. Düzeltme notu yaz."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:word} enerji yatırımları için {NEG:institution} hibesi alınabilir mi? {NEG:law} şartlarını listele."}
+{"lang": "mix", "domain": "hr-policy", "text": "{NEG:tech} üzerinden yapılan engagement survey sonuçlarını {NEG:org} leadership team'ine sunacağız, insight'ları çıkar."}
+{"lang": "en", "domain": "sales", "text": "{NEG:media} ran a story about {NEG:brand} pricing. Draft a response for our sales reps to use with retailers."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:org} tedarik zincirinde {NEG:place} menşeli ürünler için {NEG:law} yaptırım taraması nasıl yapılır?"}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:place} bölgesindeki fabrika için {NEG:org} yangın poliçesi yenilenecek; {NEG:law} standartlarına göre risk anketi hazırla."}
+{"lang": "en", "domain": "procurement", "text": "{NEG:tech} renewal is due. Prepare a negotiation brief comparing the quote from {NEG:org} with the one from {NEG:org}."}
+{"lang": "mix", "domain": "logistics", "text": "{NEG:org} fleet'inde {NEG:brand} elektrikli araçlara geçiş için TCO analysis'i özetle."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:org} AVM projesinde {NEG:brand} ve {NEG:brand} mağazaları için kira sözleşmesi şablonu öner."}
+{"lang": "en", "domain": "finance", "text": "{NEG:org} shares dropped after {NEG:ai} announcement. Write a neutral market comment."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:org} yemek yardımı ve {NEG:org} ulaşım desteği {NEG:law} vergi istisnasına giriyor mu?"}
+{"lang": "mix", "domain": "corporate-comms", "text": "{NEG:org} employer branding videosu {NEG:media} kanalında yayınlanacak, caption'ı Türkçe ve İngilizce yaz."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:brand} satış temsilcileri için {NEG:tech} mobil uygulama eğitimi notu hazırla."}
+{"lang": "tr", "domain": "finance", "text": "Müşterimiz {PERSON1}, {NEG:org} fonundan {NEG:org} fonuna geçmek istiyor. {NEG:law} uygunluk testinin sonuçlarını açıkla."}
+{"lang": "en", "domain": "compliance", "text": "{PERSON1} on our {NEG:tech} team flagged that {NEG:ai} transcripts include card numbers like 4111 1111 1111 1111. Draft a {NEG:law} incident note."}
+{"lang": "mix", "domain": "real-estate", "text": "{PERSON1} {NEG:place} tarafında yatırım amaçlı daire arıyor, {NEG:org} ve {NEG:org} projelerini kıyasla, yield'leri göster."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:org} kurye {PERSON1}, {ADDRESS1.tr} adresine teslimatı yapamamış. {NEG:place} şubesine yönlendirme notu yaz."}
+{"lang": "en", "domain": "insurance", "text": "{PERSON1} was treated at {NEG:institution} for {NEG:eponym}. Draft a pre-authorisation request to {NEG:org}."}
+{"lang": "tr", "domain": "procurement", "text": "Talep sahibi {PERSON1}, {NEG:brand} kahve makinesi için {NEG:org} teklifini onaylamış. Satın alma formunu doldur."}
+{"lang": "mix", "domain": "sales", "text": "{PERSON1.first+GEN} {NEG:org} account plan'ında {NEG:club} sponsorship fırsatı var, executive summary yaz."}
+{"lang": "tr", "domain": "hr-policy", "text": "{PERSON1}, {NEG:institution} MBA programı için {NEG:org} eğitim bütçesinden destek istiyor. Onay yazısı hazırla."}
+{"lang": "en", "domain": "corporate-comms", "text": "Quote for the press release: \"{NEG:org} is proud to work with {NEG:org},\" said {PERSON1}, CFO. Make the quote sound less stiff."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:law} ihlali şüphesiyle {NEG:org} hakkında {NEG:institution} soruşturma başlattı; iletişim sorumlusu {PERSON1}. Çalışanlara iç duyuru yaz."}
+{"lang": "tr", "domain": "real-estate", "text": "{PERSON1.firstlast2}, {LOCATION1.district} ilçesindeki arsasına {NEG:org} ile ortak proje yapmak istiyor. {NEG:law} kapsamında süreç adımlarını yaz."}
+{"lang": "mix", "domain": "logistics", "text": "{NEG:org} driver {PERSON1} {NEG:place} border'da bekliyor, documents eksik. Customs broker'a Türkçe mail yaz."}
+{"lang": "en", "domain": "finance", "text": "Prepare a one-page note for {PERSON1.initial} on why {NEG:org} chose {NEG:tech} over {NEG:tech} for consolidation."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:org} acentesi {PERSON1}, müşteri {PERSON2} için {NEG:brand} araç kasko teklifini hazırladı. Teklif mektubunu yeniden yaz."}
+{"lang": "mix", "domain": "procurement", "text": "{PERSON1} {NEG:org} contract'ı için approval istiyor; {NEG:law} anti-bribery clause'u eksik. Comment yaz."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:org} bölge müdürü {PERSON1}, {LOCATION1.city} bayisinde {NEG:brand} satışlarının yarıya düştüğünü söyledi. Kök neden analizi taslağı hazırla."}
+{"lang": "en", "domain": "hr-policy", "text": "{PERSON1} requested unpaid leave to care for a parent with {NEG:eponym}. Draft a reply consistent with {NEG:law}."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} kurucusu {PERSON1} için {NEG:institution} onur ödülü konuşması yaz, {NEG:org} tarihçesine değin."}
+{"lang": "mix", "domain": "finance", "text": "{PERSON1}, {NEG:org} loan covenant'larında {NEG:law} reference'larını kontrol etmemi istedi; checklist hazırla."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:media} köşe yazısında {NEG:word} faiz indirimi beklentisi yazılmış; {NEG:institution} ekonomistlerinin görüşüyle karşılaştır."}
+{"lang": "tr", "domain": "hr-policy", "text": "{NEG:eponym} ve {NEG:eponym} gibi nörolojik durumlar için işyeri uyum rehberi hazırlıyoruz. Başlıkları öner."}
+{"lang": "en", "domain": "sales", "text": "{NEG:club} fans love {NEG:brand}. Write three ad headlines for the derby weekend, no player names."}
+{"lang": "mix", "domain": "corporate-comms", "text": "{NEG:ai} ve {NEG:ai} ile yazılmış internal newsletter'lar için disclaimer cümlesi öner."}
+{"lang": "tr", "domain": "real-estate", "text": "{NEG:institution} ile {NEG:institution} arasındaki öğrenci yurdu projesi için fizibilite özetini sadeleştir."}
+{"lang": "en", "domain": "compliance", "text": "{NEG:law} ANNUAL REVIEW – {NEG:tech} ACCESS CONTROLS\nRewrite this heading block as a proper executive summary."}
+{"lang": "mix", "domain": "logistics", "text": "{NEG:word} limanı yerine {NEG:place} üzerinden routing yaparsak lead time ne kadar değişir? Rough estimate ver."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:media} programında {NEG:org} sigorta dolandırıcılığı haberi çıktı. Müşteri temsilcileri için soru-cevap metni yaz."}
+{"lang": "en", "domain": "procurement", "text": "Draft an RFP section asking vendors whether their {NEG:ai} features comply with {NEG:law}."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:club} kulübüyle forma sponsorluğu sona erdi; {NEG:brand} adına teşekkür mesajı yaz."}
+{"lang": "mix", "domain": "hr-policy", "text": "{NEG:media} subscription ve {NEG:brand} voucher'ları flexible benefits paketine eklendi, FAQ hazırla."}
+{"lang": "tr", "domain": "finance", "text": "{NEG:eponym} modeline dayalı opsiyon fiyatlamasını {NEG:tech} raporunda nasıl açıklarız? Yönetim için basit bir anlatım yaz."}
+{"lang": "en", "domain": "real-estate", "text": "Write a short blog post on why investors are watching {NEG:place} and {NEG:place} after the {NEG:law} reform."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:word} serisi ürünlerimiz {NEG:place} pazarında tutmadı; satış ekibine sebepleri ve önerileri yaz."}
+{"lang": "mix", "domain": "compliance", "text": "{NEG:institution} research partnership'inde veri transferi {NEG:law} kapsamına giriyor mu, short answer ver."}
+{"lang": "tr", "domain": "logistics", "text": "{NEG:institution} kampüsüne laboratuvar ekipmanı teslimatı {NEG:brand} kamyonlarıyla yapılacak. Teslimat planı yaz."}
+{"lang": "en", "domain": "insurance", "text": "Does a typical {NEG:org} business-interruption policy cover a {NEG:tech} outage? Answer for a non-expert."}
+{"lang": "mix", "domain": "sales", "text": "{NEG:media} influencer campaign'i için {NEG:brand} brief'ini Türkçeleştir."}
+{"lang": "tr", "domain": "procurement", "text": "{NEG:ai} lisans maliyeti ile {NEG:tech} altyapı maliyetini kıyaslayan bir bütçe tablosu öner."}
+{"lang": "en", "domain": "hr-policy", "text": "Write a respectful policy note on supporting employees with {NEG:eponym}, referencing {NEG:law} and {NEG:institution} guidance."}
+{"lang": "tr", "domain": "compliance", "text": "{NEG:law} ve {NEG:law} çakıştığında hangisi önceliklidir? {NEG:place} şubemiz için açıkla."}
+{"lang": "mix", "domain": "finance", "text": "{NEG:club} share price'ı neden bu kadar volatile? {NEG:institution} borsasındaki performansı özetle."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:word} ve {NEG:word} kelimelerini kullanan bir yeni yıl mesajı yaz, {NEG:org} adına."}
+{"lang": "en", "domain": "logistics", "text": "{NEG:eponym} effect on our radar-based yard sensors is causing false alerts. Explain it to the {NEG:place} ops team simply."}
+{"lang": "mix", "domain": "real-estate", "text": "{NEG:media} dizisinin çekildiği {NEG:place} yalısı satılık, listing description'ı İngilizce yaz."}
+{"lang": "tr", "domain": "insurance", "text": "{NEG:place} bölgesinde yaşanan selden sonra {NEG:org} hasar ihbar sayısı arttı. Basın açıklaması taslağı yaz."}
+{"lang": "en", "domain": "finance", "text": "Explain the {NEG:eponym} ratio and how {NEG:tech} computes it for our portfolio dashboard."}
+{"lang": "tr", "domain": "sales", "text": "Müşteri {PERSON1}, {NEG:media} reklamında gördüğü {NEG:brand} kampanyasını sordu. Kibar bir yanıt yaz."}
+{"lang": "mix", "domain": "hr-policy", "text": "{PERSON1} {NEG:institution} sertifika programını bitirdi, {NEG:tech} üzerinde badge verelim; congratulations mesajı yaz."}
+{"lang": "en", "domain": "real-estate", "text": "{PERSON1} and {PERSON2} want a family home near {NEG:institution}, budget £600k, not far from {NEG:place}. Draft a shortlist email."}
+{"lang": "tr", "domain": "compliance", "text": "{PERSON1}, {NEG:ai} sohbetine müşteri verisi yapıştırmış (müşteri e-postası ayse.k@example.com). {NEG:law} kapsamında ne yapmalıyız?"}
+{"lang": "mix", "domain": "logistics", "text": "{PERSON1.first} Hanım {NEG:place} hub'ında inventory count yapıyor, {NEG:tech} sync hatası var. Kısa troubleshooting adımları yaz."}
+{"lang": "tr", "domain": "insurance", "text": "{PERSON1.upper} - {NEG:org} - {NEG:eponym} TEDAVİ ONAYI BEKLENİYOR\nBu satırı müşteriye gönderilecek bir SMS'e çevir."}
+{"lang": "en", "domain": "corporate-comms", "text": "Draft an internal shout-out for {PERSON1}, who led the {NEG:org} migration to {NEG:tech}."}
+{"lang": "mix", "domain": "procurement", "text": "{PERSON1} {NEG:brand} laptop request'i girmiş ama policy {NEG:brand} diyor. Rejection note yaz, kibar olsun."}
+{"lang": "tr", "domain": "finance", "text": "Muhasebeci {PERSON1}, {NEG:org} faturalarını {NEG:tech} sistemine girerken {NEG:law} uyarısı aldı. Ne anlama geliyor?"}
+{"lang": "en", "domain": "sales", "text": "Write a thank-you email to {PERSON1} after the {NEG:club} hospitality event; mention our {NEG:brand} partnership."}
+{"lang": "tr", "domain": "hr-policy", "text": "{PERSON1}, {LOCATION1.city+ABL} {NEG:place} ofisine haftada iki gün gelecek. {NEG:law} kapsamında yol masrafı politikasını özetle."}
+{"lang": "mix", "domain": "real-estate", "text": "{PERSON1} adlı müşterinin {NEG:place} için verdiği offer {NEG:org} tarafından reddedildi, counter-offer mail'i yaz."}
+{"lang": "tr", "domain": "corporate-comms", "text": "{NEG:org} iletişim direktörü {PERSON1}, {NEG:media} röportajı için brif istiyor. Beş ana mesaj yaz."}
+{"lang": "en", "domain": "insurance", "text": "{PERSON1} lives at {ADDRESS1.en} and filed a flood claim with {NEG:org}. Summarize what {NEG:law} requires us to disclose."}
+{"lang": "mix", "domain": "compliance", "text": "{PERSON1} DPO olarak {NEG:law} DSAR request'ini {NEG:tech} üzerinden takip ediyor, SLA hatırlatma mail'i yaz."}
+{"lang": "tr", "domain": "logistics", "text": "Alıcı {PERSON1}, {LOCATION1.neighborhood} mahallesinde oturuyor; {NEG:org} kurye {NEG:word} sokak yerine yanlış adrese gitmiş. Özür metni yaz."}
+{"lang": "en", "domain": "procurement", "text": "{PERSON1} wants to buy {NEG:ai} licences through {NEG:org}. List the approvals required under our {NEG:law} controls."}
+{"lang": "mix", "domain": "finance", "text": "{PERSON1} ile {NEG:institution} kredi görüşmesi yarın, {NEG:org} financials'ını one-pager'a çevir."}
+{"lang": "tr", "domain": "sales", "text": "{NEG:club} kombine satışlarında {PERSON1} rekor kırdı; {NEG:brand} hediye çeki verilecek. İç duyuru yaz."}
+{"lang": "en", "domain": "hr-policy", "text": "{PERSON1.first} from payroll asks how {NEG:law} changes the {NEG:tech} overtime calculation. Write a clear explanation."}
+{"lang": "mix", "domain": "corporate-comms", "text": "{NEG:org} podcast'inde {PERSON1} konuk olacak, {NEG:ai} transformation konusunu konuşacağız; intro script yaz."}
+{"lang": "tr", "domain": "real-estate", "text": "{PERSON1}, {ADDRESS1.tr} adresindeki dükkanı {NEG:brand} franchise'ına kiralamak istiyor. {NEG:law} açısından dikkat edilecekleri yaz."}
+{"lang": "mix", "domain": "insurance", "text": "{PERSON1.first} Bey {NEG:org} life policy'sinde beneficiary değiştirmek istiyor, {NEG:law} form'larını listele."}

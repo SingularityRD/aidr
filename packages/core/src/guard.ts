@@ -39,15 +39,19 @@ import {
 	logVerdict,
 	toolInputSummaryForAudit,
 } from "./audit-log.js";
+import { type BlockApproval, formatBlockMessage } from "./block-message.js";
 import { isInvalidConfig, loadConfig } from "./config.js";
 import {
 	DASHBOARD_APPROVAL_SOURCE,
 	type DashboardApprovalOptions,
 	type DashboardApprovalOutcome,
+	type DashboardDecisionNotice,
 	processDashboardApproval,
+	resolveDashboardApprovalContext,
 } from "./dashboard-approvals.js";
 import type { ToolEvaluationContext, ToolEvaluationRequest } from "./evaluator.js";
 import { allowVerdict, evaluateToolCall } from "./evaluator.js";
+import { t } from "./i18n/index.js";
 import {
 	consumeOperatorApproval,
 	findOperatorAllowlistGrant,
@@ -64,7 +68,6 @@ import {
 	rollbackPreOperationSnapshot,
 	runPreAllowedResponseActions,
 	runResponseActions,
-	summarizeResponseActions,
 } from "./response-actions.js";
 import {
 	DEFAULT_RESPONSE_AUDIT_CONFIG,
@@ -137,9 +140,42 @@ export interface GuardOptions {
 	dashboardApprovals?: DashboardApprovalOptions | false;
 }
 
-/** Whether `operator_approvals.dashboard_only` is in force (managed mode only). */
+/**
+ * Whether the configuration explicitly makes the dashboard the only approval
+ * channel (managed mode only). The machine-policy
+ * `operator_approvals.approvals_mode` wins over
+ * `operator_approvals.dashboard_only`.
+ */
 function isDashboardOnly(config: Config | undefined): boolean {
-	return config?.mode === "managed" && config.operator_approvals?.dashboard_only === true;
+	if (config?.mode !== "managed") return false;
+	const approvalsMode = config.operator_approvals?.approvals_mode;
+	if (approvalsMode) return approvalsMode === "dashboard_only";
+	return config.operator_approvals?.dashboard_only === true;
+}
+
+/**
+ * Whether only the dashboard may release an `ask` for this call. Besides the
+ * explicit settings ({@link isDashboardOnly}), a managed installation whose
+ * dashboard approval channel is usable (enrolled, signed entitlement, secure
+ * control plane) defaults to it, so the developer cannot approve their own
+ * blocked action with the host's "Yes" or `aidr approve`. `approvals_mode:
+ * host_dialog` and `operator_approvals.mode: operator` opt out of the default;
+ * a managed installation without a usable dashboard keeps the host dialog
+ * rather than leaving an ask that nothing can release. Never throws.
+ */
+async function effectiveDashboardOnly(
+	config: Config | undefined,
+	options: DashboardApprovalOptions | false | undefined,
+): Promise<boolean> {
+	if (!config || config.mode !== "managed") return false;
+	if (isDashboardOnly(config)) return true;
+	if (config.operator_approvals?.approvals_mode === "host_dialog") return false;
+	if (options === false || config.operator_approvals?.mode === "operator") return false;
+	try {
+		return (await resolveDashboardApprovalContext(config, options ?? {})).available;
+	} catch {
+		return false;
+	}
 }
 
 /** The released verdict for an `ask` an approval channel let through. */
@@ -164,6 +200,7 @@ async function dashboardApprovalStep(
 	connector: string | undefined,
 	logger: Logger,
 	options: DashboardApprovalOptions | false | undefined,
+	dashboardOnly: boolean,
 ): Promise<{ outcome: DashboardApprovalOutcome | null; released: Verdict | null }> {
 	if (options === false || config.mode !== "managed") return { outcome: null, released: null };
 	const outcome = await processDashboardApproval(
@@ -180,7 +217,7 @@ async function dashboardApprovalStep(
 		{ logger, ...options },
 	);
 	if (!outcome) return { outcome: null, released: null };
-	if (isDashboardOnly(config)) outcome.dashboardOnly = true;
+	if (dashboardOnly) outcome.dashboardOnly = true;
 	if (outcome.status !== "released") return { outcome, released: null };
 	const released = releasedVerdict(verdict, DASHBOARD_APPROVAL_SOURCE, "dashboard");
 	if (config.logging) {
@@ -231,7 +268,7 @@ export async function resolveAskWithDashboardApproval(
 	try {
 		const config = await loadConfig(context.configPath, logger);
 		if (!config || isInvalidConfig(config)) return unchanged;
-		const dashboardOnly = isDashboardOnly(config);
+		const dashboardOnly = await effectiveDashboardOnly(config, options);
 		const actionId = ApprovalStore.actionId(request.toolName, request.toolInput, request.sessionId);
 		const { outcome, released } = await dashboardApprovalStep(
 			request,
@@ -241,6 +278,7 @@ export async function resolveAskWithDashboardApproval(
 			context.agentRuntime,
 			logger,
 			options,
+			dashboardOnly,
 		);
 		if (released) {
 			return {
@@ -430,6 +468,7 @@ async function resolveLoadedHostAsk(
 		call.connector,
 		call.logger,
 		dashboardOptions,
+		dashboardOnly,
 	);
 	const dashboardApproval = step.outcome ?? undefined;
 	if (step.released) {
@@ -486,16 +525,13 @@ export async function resolveHostAsk(
 			verdict: {
 				...verdict,
 				decision: "deny",
-				reasons: [
-					...verdict.reasons,
-					"Singularity AIDR could not read its configuration, so this action was blocked instead of being offered for approval.",
-				],
+				reasons: [...verdict.reasons, t("block.configUnreadable")],
 			},
 			dashboardOnly: false,
 			mode: "host_dialog",
 		};
 	}
-	const dashboardOnly = isDashboardOnly(config);
+	const dashboardOnly = await effectiveDashboardOnly(config, options.dashboardApprovals);
 	const mode = hostAskMode(config);
 	if (mode === "operator" && config.sensitivity === "paranoid") {
 		// Same rule as the soft-gated connectors: a paranoid ask is a deny that no
@@ -840,8 +876,11 @@ export async function guardToolCall(
 					...options.operatorApprovals,
 				};
 	const approvable = effective.decision === "ask" && loadedConfig && !isInvalidConfig(loadedConfig);
-	// Managed + dashboard_only: the local operator CLI is not an approval channel.
-	const dashboardOnly = isDashboardOnly(config);
+	// Managed + dashboard_only (explicit, or the managed default when the
+	// dashboard channel is usable): the local operator CLI is not an approval channel.
+	const dashboardOnly = approvable
+		? await effectiveDashboardOnly(config, options.dashboardApprovals)
+		: isDashboardOnly(config);
 	let approvedBy: GuardResult["approvedBy"];
 	let dashboardApproval: DashboardApprovalOutcome | undefined;
 	if (approvable && hasApproval) {
@@ -884,6 +923,7 @@ export async function guardToolCall(
 			context.agentRuntime,
 			logger,
 			options.dashboardApprovals,
+			dashboardOnly,
 		);
 		dashboardApproval = step.outcome ?? undefined;
 		if (step.released) {
@@ -947,7 +987,8 @@ export async function guardToolCall(
 		}
 
 		if (effective.decision === "deny") {
-			return { verdict: effective, responseActions, signedChain };
+			// The id lets the user report a false positive (`aidr report-fp`).
+			return { verdict: effective, actionId, responseActions, signedChain };
 		}
 
 		approvalStore.setPending(actionId, {
@@ -1155,7 +1196,7 @@ function truncateValue(value: string): string {
 }
 
 export function summarizeArtifacts(artifacts: Artifact[]): string {
-	if (artifacts.length === 0) return "none";
+	if (artifacts.length === 0) return t("common.none");
 	return artifacts
 		.slice(0, 3)
 		.map((artifact) => `${artifact.type} '${truncateValue(artifact.value)}'`)
@@ -1163,58 +1204,17 @@ export function summarizeArtifacts(artifacts: Artifact[]): string {
 }
 
 /**
- * Line telling the user what the runtime DID, so a response action is visible
- * rather than silent. Returns null only when nothing was attempted or every
- * action was a deliberate skip (not something the user must act on).
+ * The deny message every soft-gated connector (OpenCode, OpenClaw, Codex)
+ * hands its host: what was stopped, why, what the user can do, and one line
+ * for the agent (see `block-message.ts`).
  */
-function responseLine(actions?: ResponseActionRecord[]): string | null {
-	if (!actions || actions.length === 0) return null;
-	const parts: string[] = [];
-
-	const succeeded = summarizeResponseActions(actions);
-	if (succeeded) parts.push(succeeded);
-
-	// A FAILED action must be reported even when nothing succeeded, otherwise the
-	// user is told only that the call was blocked and never learns that the
-	// runtime tried and failed to preserve anything.
-	const failures = actions.filter((a) => a.outcome === "failure");
-	if (failures.length > 0) {
-		parts.push(
-			`response action(s) failed: ${failures
-				.map((f) => `${f.action} (${f.reason ?? "unknown"})`)
-				.join(", ")} - nothing was preserved`,
-		);
-	}
-
-	return parts.length > 0 ? parts.join("; ") : null;
-}
-
-/**
- * The severity line, and the rule line when a rule or policy decided the
- * verdict. The label is the rule's own severity whenever one is known, so a
- * `high` rule is never shown as `warning` next to its id.
- */
-function verdictRuleLines(verdict: Verdict): string[] {
-	const lines = [`Severity: ${verdict.ruleSeverity ?? verdict.severity}`];
-	if (verdict.matchedThreatId) lines.push(`Rule: ${verdict.matchedThreatId}`);
-	return lines;
-}
-
-export function formatDenyMessage(verdict: Verdict, actions?: ResponseActionRecord[]): string {
-	const reasons =
-		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 5).join("; ") : verdict.category;
-
-	const lines = [
-		"Singularity AIDR blocked this action.",
-		...verdictRuleLines(verdict),
-		`Category: ${verdict.category}`,
-		`Reason: ${reasons}`,
-	];
-
-	const responded = responseLine(actions);
-	if (responded) lines.push(`Response: ${responded}`);
-
-	return lines.join("\n");
+export function formatDenyMessage(
+	verdict: Verdict,
+	actions?: ResponseActionRecord[],
+	artifacts?: Artifact[],
+	actionId?: string,
+): string {
+	return formatBlockMessage(verdict, { responseActions: actions, artifacts, actionId });
 }
 
 /**
@@ -1228,32 +1228,49 @@ export function formatDashboardApprovalNotice(
 ): string | null {
 	if (!outcome) return null;
 	const id = outcome.requestId;
+	const reason = outcome.reason ?? t("common.unknown");
 	switch (outcome.status) {
 		case "released":
 			return null;
 		case "requested":
 		case "pending":
-			return [
-				`Approval requested in the AIDR dashboard: ${id}`,
-				"(For the user: an AIDR administrator must approve this request in the dashboard; the",
-				"approval then covers one retry of this exact call.)",
-			].join("\n");
+			return outcome.consoleUrl
+				? `${t("dashboard.requested", { requestId: id })}\n${t("dashboard.link", { url: outcome.consoleUrl })}`
+				: t("dashboard.requested", { requestId: id });
 		case "denied":
-			return `The AIDR dashboard approval request ${id} was denied; the action stays blocked.`;
+			return t("dashboard.denied", { requestId: id });
 		case "expired":
-			return `The AIDR dashboard approval request ${id} expired; the action stays blocked.`;
+			return t("dashboard.expired", { requestId: id });
 		case "rejected":
-			return `The AIDR dashboard approval for request ${id} could not be verified (${outcome.reason ?? "unknown"}); the action stays blocked.`;
+			return t("dashboard.rejected", { requestId: id, reason });
 		case "request_failed":
-			return `The approval request could not be sent to the AIDR dashboard (${outcome.reason ?? "unknown"}); the action stays blocked.`;
+			return t("dashboard.requestFailed", { reason });
 		case "unavailable":
 			// Only worth saying when the dashboard is the sole channel; otherwise the
 			// local operator channel below still applies.
-			return outcome.dashboardOnly
-				? `AIDR dashboard approvals are unavailable (${outcome.reason ?? "unknown"}); the action stays blocked.`
-				: null;
+			return outcome.dashboardOnly ? t("dashboard.unavailable", { reason }) : null;
 	}
 }
+
+/**
+ * One line per dashboard decision that landed since the last notice (see
+ * `checkDashboardDecisions`), or null when there is none. Shown to the
+ * developer on the next prompt or in the editor, so nobody has to poll.
+ */
+export function formatDashboardDecisionNotices(
+	notices: readonly DashboardDecisionNotice[],
+): string | null {
+	if (notices.length === 0) return null;
+	return notices
+		.map((notice) => t(DECISION_NOTICE_KEYS[notice.status], { requestId: notice.requestId }))
+		.join("\n");
+}
+
+const DECISION_NOTICE_KEYS = {
+	approved: "dashboard.decided.approved",
+	denied: "dashboard.decided.denied",
+	expired: "dashboard.decided.expired",
+} as const;
 
 /**
  * The block message for an `ask`. Pass `pendingRecorded` from the
@@ -1261,6 +1278,10 @@ export function formatDashboardApprovalNotice(
  * approval store (approvals disabled, or the store is broken), and the message
  * says so instead of sending the user to `aidr approve`. Pass
  * `dashboardApproval` too, so a managed-mode request id reaches the user.
+ *
+ * The user's step comes first; the agent line says it cannot approve and must
+ * stop. The approval command is for the user's own terminal: the agent running
+ * it is denied (CLT-SELF-007) and it needs a TTY confirmation.
  */
 export function formatAskMessage(
 	actionId: string,
@@ -1270,48 +1291,17 @@ export function formatAskMessage(
 	pendingRecorded?: boolean,
 	dashboardApproval?: DashboardApprovalOutcome,
 ): string {
-	const reasons =
-		verdict.reasons.length > 0 ? verdict.reasons.slice(0, 3).join("; ") : verdict.category;
-
-	const lines = [
-		"Singularity AIDR flagged this action and blocked it pending explicit user approval.",
-		...verdictRuleLines(verdict),
-		`Category: ${verdict.category}`,
-		`Reason: ${reasons}`,
-		`Artifacts: ${summarizeArtifacts(artifacts)}`,
-	];
-
-	const responded = responseLine(actions);
-	if (responded) lines.push(`Response: ${responded}`);
-
-	lines.push(
-		"",
-		`Approval reference: actionId: "${actionId}"`,
-		"You cannot approve this action yourself and no tool available to you can approve it.",
-		"Approval is an out-of-band, human-only action. Report the reference above to the user and",
-		"stop here: do NOT retry this tool call and do NOT try to work around the block. The action",
-		"stays blocked until the user approves it out of band or permanently allowlists the artifact.",
-	);
-	const dashboardNotice = formatDashboardApprovalNotice(dashboardApproval);
-	if (dashboardNotice) lines.push(dashboardNotice);
-	if (dashboardApproval?.dashboardOnly) {
-		// The local CLI is not an approval channel under dashboard_only.
-		if (!dashboardNotice)
-			lines.push("(For the user: only an AIDR dashboard approval can release it.)");
-	} else if (pendingRecorded === false) {
-		lines.push(
-			"(For the user: this ask could NOT be recorded for operator approval — operator approvals",
-			"are disabled or the approval store is unavailable, so `aidr approve` cannot release it.",
-			"Run `aidr doctor` in your own terminal to see why.)",
-		);
-	} else {
-		lines.push(
-			"(For the user: review it with `aidr pending` and approve it with `aidr approve <actionId>`",
-			"in your own terminal; the approval covers one retry of this exact call for 15 minutes.)",
-		);
-	}
-
-	return lines.join("\n");
+	const approval: BlockApproval = dashboardApproval?.dashboardOnly
+		? { kind: "dashboard" }
+		: pendingRecorded === false
+			? { kind: "not_recorded" }
+			: { kind: "cli", actionId };
+	return formatBlockMessage(verdict, {
+		approval,
+		artifacts,
+		responseActions: actions,
+		dashboardNotice: formatDashboardApprovalNotice(dashboardApproval),
+	});
 }
 
 // ── Allowlist tool logic ───────────────────────────────────────────

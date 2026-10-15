@@ -48,6 +48,8 @@ export const ThreatSchema = z.object({
 	pattern: z.string(),
 	match_on: z.union([z.string(), z.array(z.string())]),
 	title: z.string(),
+	/** Turkish title shown instead of `title` when the display locale is Turkish. */
+	title_tr: z.string().optional(),
 	expires_at: z.string().nullable().optional(),
 	revoked: z.boolean().optional().default(false),
 	/** File-edit view rules only (see `agent-safety/edit-views.ts`). */
@@ -90,6 +92,8 @@ export interface Threat {
 	compiledPattern: RegExp;
 	matchOn: Set<string>;
 	title: string;
+	/** Turkish title (`title_tr`); display only, never part of matching or audit records. */
+	titleTr?: string;
 	expiresAt: Date | null;
 	revoked: boolean;
 	/**
@@ -211,6 +215,13 @@ export interface Verdict {
 	 * Titles and locations only — never the matched source text.
 	 */
 	warnings?: VerdictWarning[];
+	/**
+	 * Status lines about the installation, not about this call (for example
+	 * "managed features are off: the entitlement expired"). They never change
+	 * the decision, which local detection made; a connector may show them in
+	 * its notice channel.
+	 */
+	notices?: string[];
 }
 
 /** Which profile rule restricted a call (names only, never tool input). */
@@ -333,6 +344,14 @@ export const AuthConfigSchema = z.object({
 		.optional(),
 });
 
+/** Install-time choice for an unreachable control plane; see `control_plane.offline_policy`. */
+export const OFFLINE_POLICIES = ["keep_enforcing_local", "block_after_grace"] as const;
+export type OfflinePolicy = (typeof OFFLINE_POLICIES)[number];
+
+/** Machine policy `approvals_mode`; see `operator_approvals.approvals_mode`. */
+export const APPROVALS_MODES = ["dashboard_only", "host_dialog"] as const;
+export type ApprovalsMode = (typeof APPROVALS_MODES)[number];
+
 export const ControlPlaneConfigSchema = z.object({
 	/**
 	 * Enables managed control plane features (dashboard telemetry, agent seat enforcement).
@@ -382,6 +401,39 @@ export const ControlPlaneConfigSchema = z.object({
 	response_worker_required: z.boolean().default(false),
 	/** Maximum stale-policy grace after its normal refresh expiry; never renewed offline. */
 	remote_policy_offline_grace_seconds: z.number().int().min(0).max(604800).default(3600),
+	/**
+	 * What an enrolled endpoint does when the control plane stays unreachable,
+	 * chosen explicitly at install time (deployment-prepare, machine policy):
+	 * - `keep_enforcing_local`: local detection keeps deciding every call; central
+	 *   policy changes simply do not arrive until the control plane is back.
+	 * - `block_after_grace`: once the last central policy is older than
+	 *   `remote_policy_offline_grace_seconds`, every tool call is denied.
+	 * When set it decides `remote_policy_required`; unset keeps that field as is.
+	 */
+	offline_policy: z.enum(OFFLINE_POLICIES).optional(),
+});
+
+/**
+ * Outbound network settings for every first-party client (control plane,
+ * reputation, version and update checks). The `HTTPS_PROXY` / `NO_PROXY`
+ * environment variables apply when these are unset. A setting that does not
+ * parse is ignored: connectivity settings never change what is enforced.
+ */
+const NetworkConfigSchema = z.object({
+	/** PEM file with extra CA certificates (an internal CA or a TLS-inspecting proxy). */
+	ca_file: z.string().min(1).optional().catch(undefined),
+	/** Also trust the operating system's certificate store (Windows store, /etc/ssl). */
+	use_os_trust_store: z.boolean().default(false).catch(false),
+	/** `http://host:port` (or https) proxy for outbound HTTPS. */
+	https_proxy: z.string().min(1).optional().catch(undefined),
+	/** Comma-separated hosts / domain suffixes / `*` that bypass the proxy. */
+	no_proxy: z.string().optional().catch(undefined),
+});
+
+/** Organisation contact points shown to end users. Display only. */
+const OrganizationConfigSchema = z.object({
+	support_contact_url: z.string().min(1).optional().catch(undefined),
+	privacy_notice_url: z.string().min(1).optional().catch(undefined),
 });
 
 const PolicyFilesystemSchema = z.object({
@@ -478,8 +530,10 @@ export const IntelPacksConfigSchema = z.object({
 	/** Cache TTL for reloading packs from disk. */
 	cache_ttl_seconds: z.number().default(60),
 	/**
-	 * Allow using an expired but correctly signed pack within this grace window.
-	 * Set to 0 for strict expiry.
+	 * How long after its expires_at an installed, correctly signed pack is still
+	 * reported current. After this window it is reported stale; it is never
+	 * dropped (local detection does not degrade with a clock) - only revocation
+	 * removes an installed pack.
 	 */
 	expired_grace_hours: z.number().default(72),
 });
@@ -707,6 +761,13 @@ export const UrlCheckConfigSchema = z.object({
 	timeout_seconds: legTimeoutSchema(DEFAULT_LEG_TIMEOUT_SECONDS),
 	/** Explicit opt-in; unavailable checks are surfaced for human review. */
 	enabled: z.boolean().default(false),
+	/**
+	 * What a call gets when this leg is NOT enabled and local detection found
+	 * nothing: `allow` (default) records the URLs as "not checked by a
+	 * reputation service" in the verdict and audit log; `ask` holds every such
+	 * call for review. An enabled leg that cannot run always asks.
+	 */
+	unchecked_action: z.enum(["allow", "ask"]).default("allow"),
 });
 
 const EncryptionConfigSchema = z.object({
@@ -724,6 +785,21 @@ export const CacheConfigSchema = z.object({
 
 export const AllowlistConfigSchema = z.object({
 	path: z.string().default("~/.singularity-aidr/allowlist.json"),
+	/**
+	 * Administrator-declared internal networks (IPv4/IPv6 CIDR, e.g.
+	 * "10.20.0.0/16", "193.140.0.0/16"). A URL whose host is a literal address
+	 * inside one of them is treated like an allowlisted URL: its URL-artifact
+	 * signals are suppressed, while the command text around it is still
+	 * inspected. Entries broader than /8 (IPv4) or /16 (IPv6) are ignored.
+	 */
+	internal_networks: z.array(z.string().max(64)).max(256).optional(),
+	/**
+	 * Administrator-declared internal domain suffixes (e.g. "corp.example.com.tr").
+	 * Matching is dot-bounded: "corp.example.com.tr" covers "git.corp.example.com.tr"
+	 * but not "evilcorp.example.com.tr". Public suffixes ("com.tr", "github.io"…) and
+	 * bare top-level labels are ignored.
+	 */
+	internal_domain_suffixes: z.array(z.string().max(253)).max(256).optional(),
 });
 
 export const LoggingConfigSchema = z.object({
@@ -785,9 +861,41 @@ const VersionCheckConfigSchema = z.object({
 	enabled: z.boolean().default(false),
 });
 
+/**
+ * `aidr update` for desktop-installer endpoints (docs/configuration.md,
+ * "update"). Automatic checks contact only the tenant's own control plane (in
+ * managed mode) or the configured `source`; device management (MDM marker)
+ * turns them off regardless of `auto`.
+ */
+const UpdateConfigSchema = z.object({
+	/** off: never check on its own; notify: check daily and show a notice; install: also install it. */
+	auto: z.enum(["off", "notify", "install"]).default("notify"),
+	/**
+	 * A mirror of the download portal tree (directory or https URL holding
+	 * latest.json) for endpoints without a control plane.
+	 */
+	source: z.string().min(1).max(2048).optional(),
+	/**
+	 * Installer-catalog public keys (PEM, or base64 SPKI / raw Ed25519). Used only
+	 * when the installer did not place config/installer-catalog-public.pem.
+	 */
+	catalog_public_keys: z.array(z.string().min(1).max(4096)).max(8).default([]),
+	/** Hours between automatic checks. */
+	check_interval_hours: z.number().int().min(1).max(720).default(24),
+});
+
 export const PackageCheckConfigSchema = z.object({
 	/** Explicit opt-in to sending package names to public registries. */
 	enabled: z.boolean().default(false),
+	/**
+	 * What a registry install gets when this leg is NOT enabled and local
+	 * signals (threat rules, the offline typosquat check) found nothing:
+	 * `allow` (default) records the packages as "not checked by a reputation
+	 * service"; `ask` holds every such install for review. Installs from a
+	 * direct URL, Git or local source, and an enabled leg that cannot run,
+	 * always ask.
+	 */
+	unchecked_action: z.enum(["allow", "ask"]).default("allow"),
 	timeout_seconds: legTimeoutSchema(DEFAULT_LEG_TIMEOUT_SECONDS),
 	/**
 	 * Slopsquatting window: a package first published fewer than this many days
@@ -830,6 +938,15 @@ export const PoisoningProtectionConfigSchema = z.object({
 
 const AmsiCheckConfigSchema = z.object({
 	enabled: z.boolean().default(true),
+	/**
+	 * What an otherwise-allowed call gets when AMSI cannot run on this host at
+	 * all (no koffi backend and PowerShell blocked, e.g. ConstrainedLanguage
+	 * under AppLocker/WDAC). `ask` (default) holds every such call for review.
+	 * `annotate` (opt-in) skips the AMSI signal, logs it once per state change
+	 * and names it on the verdict as not scanned, never as clean. A scan that
+	 * fails on a working backend is always an `ask`, whatever this says.
+	 */
+	unavailable_action: z.enum(["annotate", "ask"]).default("ask"),
 });
 
 export const PromptProtectionModeSchema = z.enum(["off", "warn", "block"]);
@@ -950,13 +1067,15 @@ export const NvdConfigSchema = z.object({
  * The operator approval channel (`aidr pending` / `aidr approve`).
  *
  * `key_storage` is where the approval HMAC key and the single-use ledger live:
- * `os-vault` (default) keeps them in the OS credential vault and DISABLES
- * approvals when there is none; `file` is an explicit opt-in to an owner-only key
- * file that every process of the same user can read. The
- * `AIDR_OPERATOR_APPROVAL_KEY_STORAGE` environment variable overrides it.
+ * `auto` (default) uses the OS credential vault and, on a Linux/POSIX host with
+ * none, the machine-bound encrypted file store; `os-vault` requires the vault
+ * and DISABLES approvals when there is none; `encrypted-file` selects the file
+ * store explicitly; `file` is the legacy explicit opt-in to a plain owner-only
+ * key file. The `AIDR_OPERATOR_APPROVAL_KEY_STORAGE` environment variable
+ * overrides it.
  */
 const OperatorApprovalsConfigSchema = z.object({
-	key_storage: z.enum(["os-vault", "file"]).default("os-vault"),
+	key_storage: z.enum(["auto", "os-vault", "encrypted-file", "file"]).default("auto"),
 	/**
 	 * Managed mode only: an `ask` can be released ONLY by a dashboard approval (an
 	 * authenticated admin in the AIDR dashboard). The local `aidr approve` channel
@@ -974,6 +1093,12 @@ const OperatorApprovalsConfigSchema = z.object({
 	 *   operator store, and released for one retry only after `aidr approve`.
 	 */
 	mode: z.enum(["host_dialog", "operator"]).default("host_dialog"),
+	/**
+	 * Organisation-wide approval channel, normally set by the machine policy:
+	 * `dashboard_only` turns on `dashboard_only` above, `host_dialog` turns it off
+	 * and uses the host dialog. Unset leaves both fields as configured.
+	 */
+	approvals_mode: z.enum(APPROVALS_MODES).optional(),
 	/**
 	 * Directories under which a repository-REMOTE scoped detection exception may
 	 * apply. The origin URL is read from `.git/config`, which the agent itself can
@@ -1028,6 +1153,8 @@ export const ConfigSchema = z.object({
 	mode: OperatingModeSchema.default("local"),
 	auth: AuthConfigSchema.default({}),
 	control_plane: ControlPlaneConfigSchema.default({}),
+	network: NetworkConfigSchema.default({}),
+	organization: OrganizationConfigSchema.default({}),
 	/** Explicit mandatory privacy profile; ordinary tool hooks do not own model transport. */
 	privacy: z
 		.object({ required: z.boolean().default(false) })
@@ -1043,6 +1170,7 @@ export const ConfigSchema = z.object({
 	url_check: UrlCheckConfigSchema.default({}),
 	file_check: FileCheckConfigSchema.default({}),
 	version_check: VersionCheckConfigSchema.default({}),
+	update: UpdateConfigSchema.default({}),
 	package_check: PackageCheckConfigSchema.default({}),
 	poisoning_protection: PoisoningProtectionConfigSchema.default({}),
 	amsi_check: AmsiCheckConfigSchema.default({}),
@@ -1050,6 +1178,14 @@ export const ConfigSchema = z.object({
 	secure_code: SecureCodeConfigSchema.default({}),
 	ai_supply_chain: AiSupplyChainConfigSchema.default({}),
 	toxic_flow: ToxicFlowConfigSchema.default({}),
+	/**
+	 * Reads of the project's own `.env` files (inside the working directory)
+	 * into the agent's context: `ask` (default) always prompts; `auto` (opt-in)
+	 * allows them except under `paranoid` sensitivity; `allow` never prompts.
+	 * Reads stay tracked as secret material for exfiltration chains either
+	 * way. See docs/project-env-files.md.
+	 */
+	project_env_reads: z.enum(["auto", "allow", "ask"]).default("ask"),
 	/** @deprecated Accepted for configuration compatibility; not used at runtime. */
 	nvd_check: NvdConfigSchema.default({}),
 	heuristics_enabled: z.boolean().default(true),
@@ -1058,6 +1194,13 @@ export const ConfigSchema = z.object({
 	logging: LoggingConfigSchema.default({}),
 	audit: AuditConfigSchema.default({}),
 	sensitivity: SensitivitySchema.default("balanced"),
+	/**
+	 * Display language of user-facing messages ("en" or "tr"). Unset follows
+	 * AIDR_LOCALE / LC_ALL / LANG. An unsupported value is ignored rather than
+	 * invalidating the configuration: a display setting must never change
+	 * enforcement.
+	 */
+	locale: z.enum(["en", "tr"]).optional().catch(undefined),
 	disabled_threats: z.array(z.string()).default([]),
 	operator_approvals: OperatorApprovalsConfigSchema.default({}),
 	agent_safety: AgentSafetyConfigSchema.default({}),
@@ -1072,10 +1215,13 @@ type OptionalUrlCheckDefaults<
 	T extends {
 		allow_insecure_loopback: boolean;
 		include_query_parameters: boolean;
+		unchecked_action: "allow" | "ask";
 	},
-> = Omit<T, "allow_insecure_loopback" | "include_query_parameters"> & {
+> = Omit<T, "allow_insecure_loopback" | "include_query_parameters" | "unchecked_action"> & {
 	allow_insecure_loopback?: boolean;
 	include_query_parameters?: boolean;
+	/** Absent means the schema default, `allow`. */
+	unchecked_action?: "allow" | "ask";
 };
 
 export type ControlPlaneConfig = OptionalInsecureLoopback<z.infer<typeof ControlPlaneConfigSchema>>;
@@ -1087,7 +1233,13 @@ type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
 export type ResponseAuditConfig = ResponseConfig["audit"];
 export type UrlCheckConfig = OptionalUrlCheckDefaults<z.infer<typeof UrlCheckConfigSchema>>;
 export type FileCheckConfig = OptionalInsecureLoopback<z.infer<typeof FileCheckConfigSchema>>;
-export type PackageCheckConfig = z.infer<typeof PackageCheckConfigSchema>;
+export type PackageCheckConfig = Omit<
+	z.infer<typeof PackageCheckConfigSchema>,
+	"unchecked_action"
+> & {
+	/** Absent means the schema default, `allow`. */
+	unchecked_action?: "allow" | "ask";
+};
 export type PoisoningProtectionConfig = z.infer<typeof PoisoningProtectionConfigSchema>;
 export type AmsiCheckConfig = z.infer<typeof AmsiCheckConfigSchema>;
 export type PromptProtectionMode = z.infer<typeof PromptProtectionModeSchema>;
@@ -1134,6 +1286,16 @@ export interface Allowlist {
 	urls: Record<string, AllowlistEntry>;
 	commands: Record<string, AllowlistEntry>;
 	filePaths: Record<string, AllowlistEntry>;
+	/** CIDR ranges from the allowlist file (`internal_networks`); persisted on save. */
+	internalNetworks?: string[];
+	/** Domain suffixes from the allowlist file (`internal_domain_suffixes`); persisted on save. */
+	internalDomainSuffixes?: string[];
+	/**
+	 * Internal networks / domain suffixes from the configuration
+	 * (`allowlist.internal_networks`, `allowlist.internal_domain_suffixes`).
+	 * Applied when matching but never written back to the allowlist file.
+	 */
+	configured?: { internalNetworks: string[]; internalDomainSuffixes: string[] };
 }
 
 // ── Trusted domains ─────────────────────────────────────────────────
@@ -1141,6 +1303,11 @@ export interface Allowlist {
 export interface TrustedDomain {
 	domain: string;
 	reason: string;
+	/**
+	 * When set, only these URL paths on exactly `domain` (no subdomains) are trusted. Used for
+	 * hosts that also serve user-published content, e.g. deno.land/x/<anyone's module>.
+	 */
+	paths?: string[];
 }
 
 // ── Plugin scanner ──────────────────────────────────────────────────

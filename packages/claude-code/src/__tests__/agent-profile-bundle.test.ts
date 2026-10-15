@@ -77,8 +77,8 @@ describe("Claude Code bundle enforces agent permission profiles", () => {
 		});
 		const output = hookOutput(response);
 		expect(output.permissionDecision).toBe("deny");
-		expect(output.permissionDecisionReason).toBe(
-			"🛡️ Singularity AIDR: Blocked by agent permission profile",
+		expect(String(output.permissionDecisionReason)).toMatch(
+			/^🛡️ Singularity AIDR blocked this action: Agent permission profile "reviewer"/,
 		);
 		expect(String(response.systemMessage)).toContain('Agent permission profile "reviewer" (local)');
 		expect(String(response.systemMessage)).toContain("commands.unmatched");

@@ -78,7 +78,7 @@ describe("API key customer journey", () => {
 			if (name === "pilot-status")
 				return { error: null, data: { ok: true, admission: activeAdmission } };
 			if (name === "api-keys" && options?.method === "POST") {
-				expect(options.body).toEqual({ action: "renew", id: "key-1" });
+				expect(options.body).toEqual({ action: "renew", id: "key-1", expires_in_days: null });
 				return {
 					error: null,
 					data: { ok: true, api_key: replacement, previous_secret_valid_until: validUntil },
@@ -107,7 +107,7 @@ describe("API key customer journey", () => {
 		expect(invoke).toHaveBeenCalledWith("api-keys", {
 			method: "POST",
 			headers: { "X-AIDR-Tenant-ID": "team-a" },
-			body: { action: "renew", id: "key-1" },
+			body: { action: "renew", id: "key-1", expires_in_days: null },
 		});
 	});
 
@@ -246,6 +246,7 @@ describe("Browser Guard ingest-only keys", () => {
 			{
 				action: "create",
 				label: "managed browsers",
+				expires_in_days: 365,
 				scope: "ingest:browser_guard",
 				install_limit: 250,
 			},
@@ -284,5 +285,89 @@ describe("Browser Guard ingest-only keys", () => {
 		expect(
 			screen.getByText("Ask a workspace owner or admin to create this key."),
 		).toBeInTheDocument();
+	});
+});
+
+describe("API key expiry and label hygiene (CP-8)", () => {
+	const DAY = 86_400_000;
+	function install(
+		keys: Array<Record<string, unknown>>,
+		posts: Array<Record<string, unknown>> = [],
+	) {
+		invoke.mockImplementation(async (name, options) => {
+			if (name === "pilot-status")
+				return { error: null, data: { ok: true, admission: activeAdmission } };
+			if (name === "api-keys" && options?.method === "POST") {
+				posts.push(options.body as Record<string, unknown>);
+				return { error: null, data: { ok: true, api_key: "aidr_live_sample", expires_at: null } };
+			}
+			return {
+				error: null,
+				data: name === "api-keys" ? { ok: true, keys } : { ok: true, tokens: [] },
+			};
+		});
+		return posts;
+	}
+
+	it("issues keys with a one-year default lifetime and warns before a non-expiring one", async () => {
+		const posts = install([]);
+		render(<ApiKeysPage />);
+		await waitFor(() => expect(screen.getByRole("button", { name: "Generate key" })).toBeEnabled());
+		expect(screen.getByLabelText("Expires after")).toHaveValue("365");
+		fireEvent.click(screen.getByRole("button", { name: "Generate key" }));
+		await screen.findByLabelText("New API key");
+		fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+		fireEvent.change(screen.getByLabelText("Expires after"), { target: { value: "never" } });
+		expect(screen.getByText(/stays valid until someone revokes it/)).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Generate key" }));
+		await screen.findByLabelText("New API key");
+		expect(posts).toEqual([
+			{ action: "create", label: null, expires_in_days: 365 },
+			{ action: "create", label: null, expires_in_days: null },
+		]);
+	});
+
+	it("refuses an over-long or control-character label before calling the API", async () => {
+		install([]);
+		render(<ApiKeysPage />);
+		await waitFor(() => expect(screen.getByRole("button", { name: "Generate key" })).toBeEnabled());
+		const input = screen.getByPlaceholderText("work-laptop, build-server, etc.");
+		expect(input).toHaveAttribute("maxLength", "100");
+		fireEvent.change(input, { target: { value: "build\u0007server" } });
+		expect(screen.getByText(/control characters/)).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Generate key" })).toBeDisabled();
+		fireEvent.change(input, { target: { value: "x".repeat(101) } });
+		expect(screen.getByText("Use at most 100 characters.")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Generate key" })).toBeDisabled();
+		fireEvent.change(input, { target: { value: "build server" } });
+		expect(screen.getByRole("button", { name: "Generate key" })).toBeEnabled();
+	});
+
+	it("flags keys that expire soon or have expired, and rotation keeps the key's lifetime", async () => {
+		const now = Date.now();
+		const posts = install([
+			{
+				id: "soon",
+				label: "soon",
+				revoked: false,
+				created_at: new Date(now - 80 * DAY).toISOString(),
+				expires_at: new Date(now + 10 * DAY).toISOString(),
+			},
+			{
+				id: "gone",
+				label: "gone",
+				revoked: false,
+				created_at: new Date(now - 40 * DAY).toISOString(),
+				expires_at: new Date(now - DAY).toISOString(),
+			},
+		]);
+		render(<ApiKeysPage />);
+		expect(await screen.findByText("expires in 10 days")).toBeInTheDocument();
+		expect(screen.getByText("expired")).toBeInTheDocument();
+		const [rotateSoon, rotateGone] = screen.getAllByRole("button", { name: "Rotate" });
+		expect(rotateGone).toBeDisabled();
+		fireEvent.click(rotateSoon as HTMLElement);
+		await screen.findByLabelText("New API key");
+		expect(posts).toEqual([{ action: "renew", id: "soon", expires_in_days: 90 }]);
 	});
 });

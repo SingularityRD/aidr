@@ -148,6 +148,16 @@ describe("background: policy", () => {
 		const t = await setup({ managedError: new Error("boom"), user: { mode: "monitor" } });
 		expect(t.bg.policy().mode).toBe("auto");
 		expect(t.bg.warnings().join("\n")).toContain("user settings suspended");
+		// Unknown admin intent fails safe: no pause, no send-original, reported as an error.
+		expect(t.bg.policy()).toMatchObject({
+			allowUserPause: false,
+			allowSendAnyway: false,
+			policyErrors: ["*"],
+		});
+		expect(await t.send({ type: "PAUSE", minutes: 5 })).toEqual({
+			ok: false,
+			error: "PAUSE_DISABLED",
+		});
 	});
 
 	it("treats a missing managed manifest (Firefox) as no policy", async () => {
@@ -656,6 +666,68 @@ describe("background: NATIVE_SCAN and SET_RESTORE_VISIBLE", () => {
 	});
 });
 
+describe("background: exact-data keys from the native host (BG-8)", () => {
+	const HEX = "b".repeat(64);
+	const DATASET = {
+		datasetId: "crm",
+		keySource: "native-host",
+		minEntropyBits: 70,
+		fingerprints: [HEX],
+		type: "PERSON",
+	};
+	// Assembled at runtime: a 32-byte base64 key, never a literal in the repository.
+	const HOST_KEY = Buffer.alloc(32, 0x5a).toString("base64");
+
+	function keyBridge(answer: () => Promise<Record<string, string> | null>) {
+		const exactDataKeys = vi.fn(async (_ids: readonly string[]) => answer());
+		const bridge: NativeBridge = {
+			status: () => "connected",
+			scanText: async () => null,
+			exactDataKeys,
+		};
+		return { bridge, exactDataKeys };
+	}
+
+	it("gives the host-derived key to content scripts only, never to extension pages or storage", async () => {
+		const { bridge, exactDataKeys } = keyBridge(async () => ({ crm: HOST_KEY }));
+		const t = await setup({ managed: { exactData: [DATASET] }, bridge });
+		expect(t.bg.policy().useNativeHost).toBe(true);
+		await vi.waitFor(() => expect(exactDataKeys).toHaveBeenCalledWith(["crm"]));
+		const fromContent = (await t.send({ type: "GET_POLICY" }, t.content())).policy as GuardPolicy;
+		expect(fromContent.exactData).toEqual([{ ...DATASET, keyB64: HOST_KEY }]);
+		const fromPopup = (await t.send({ type: "GET_POLICY" })).policy as GuardPolicy;
+		expect(fromPopup.exactData).toEqual([DATASET]);
+		expect(JSON.stringify(t.bg.policy())).not.toContain(HOST_KEY);
+		for (const area of [t.fake.local, t.fake.session])
+			expect(JSON.stringify([...area.data.values()])).not.toContain(HOST_KEY);
+		// Open tabs receive the keyed policy once the host answered.
+		await vi.waitFor(() =>
+			expect(t.policyMessages().some((m) => JSON.stringify(m.message).includes(HOST_KEY))).toBe(
+				true,
+			),
+		);
+	});
+
+	it("leaves the dataset keyless (scans incomplete) while the host has no key, and asks again later", async () => {
+		let reply: Record<string, string> | null = null;
+		const { bridge, exactDataKeys } = keyBridge(async () => reply);
+		const t = await setup({ managed: { exactData: [DATASET] }, bridge });
+		await vi.waitFor(() => expect(exactDataKeys).toHaveBeenCalledTimes(1));
+		await vi.waitFor(() => expect(t.logs.some((l) => l.startsWith("exactData:"))).toBe(true));
+		const keyless = (await t.send({ type: "GET_POLICY" }, t.content())).policy as GuardPolicy;
+		expect(keyless.exactData[0]?.keyB64).toBeUndefined();
+		expect(exactDataKeys).toHaveBeenCalledTimes(1);
+		reply = { crm: HOST_KEY };
+		t.advance(30_000);
+		await t.send({ type: "GET_POLICY" }, t.content());
+		await vi.waitFor(() => expect(exactDataKeys).toHaveBeenCalledTimes(2));
+		await vi.waitFor(async () => {
+			const keyed = (await t.send({ type: "GET_POLICY" }, t.content())).policy as GuardPolicy;
+			expect(keyed.exactData[0]?.keyB64).toBe(HOST_KEY);
+		});
+	});
+});
+
 describe("background: per-tab vault persistence (VAULT_SAVE / VAULT_LOAD)", () => {
 	const EMAIL_ENTRY = { placeholder: "[EMAIL_1]", value: "ayse@example.com", type: "EMAIL" };
 	const PHONE_ENTRY = { placeholder: "[PHONE_1]", value: "+90 532 000 00 00", type: "PHONE" };
@@ -700,9 +772,12 @@ describe("background: per-tab vault persistence (VAULT_SAVE / VAULT_LOAD)", () =
 		const save = { type: "VAULT_SAVE", snapshot: snapshot(t.now()), sent: [] };
 		expect(await t.send(save)).toEqual({ ok: false, error: "NOT_ALLOWED" });
 		expect(await t.send({ type: "VAULT_LOAD" })).toEqual({ ok: false, error: "NOT_ALLOWED" });
+		// A ChatGPT sub-frame never runs a content script (top frame only there): refused
+		// outright. Sub-frames are accepted only on the Microsoft 365 Copilot hosts
+		// (background-frames.test.ts).
 		expect(await t.send(save, { ...t.content(), frameId: 3 })).toEqual({
 			ok: false,
-			error: "NOT_ALLOWED",
+			error: "SENDER_DENIED",
 		});
 		const bad = (s: unknown, sent: unknown = []) =>
 			t.send({ type: "VAULT_SAVE", snapshot: s, sent }, t.content());
@@ -811,8 +886,37 @@ describe("background: blocked sites (declarativeNetRequest)", () => {
 	it("covers all eight supported sites with unique rule ids", () => {
 		expect(Object.keys(SITE_HOSTS)).toHaveLength(8);
 		const rules = buildBlockRules(Object.keys(SITE_HOSTS) as never);
-		expect(rules).toHaveLength(16);
-		expect(new Set(rules.map((r) => r.id)).size).toBe(16);
+		// Two per site, plus the path rule for Microsoft 365 Copilot Chat.
+		expect(rules).toHaveLength(17);
+		expect(new Set(rules.map((r) => r.id)).size).toBe(17);
+		expect(new Set(DNR_RULE_IDS)).toEqual(new Set(rules.map((r) => r.id)));
+	});
+
+	it("blocks Copilot on its own hosts and only /chat of the shared Microsoft 365 host (BG-10)", async () => {
+		const rules = buildBlockRules(["copilot"]);
+		expect(rules.flatMap((r) => r.condition.requestDomains ?? [])).not.toContain(
+			"m365.cloud.microsoft",
+		);
+		const filter = new RegExp(
+			rules.find((r) => r.condition.regexFilter)?.condition.regexFilter ?? "^$",
+		);
+		expect(filter.test("https://m365.cloud.microsoft/chat/")).toBe(true);
+		expect(filter.test("https://m365.cloud.microsoft/home")).toBe(false);
+		expect(siteForNavigation("https://m365.cloud.microsoft/chat?auth=2")).toBe("copilot");
+		expect(siteForNavigation("https://copilot.cloud.microsoft/")).toBe("copilot");
+		expect(siteForNavigation("https://m365.cloud.microsoft/apps")).toBeNull();
+		// The content script runs on the whole host, so its messages are accepted there.
+		expect(siteForUrl("https://m365.cloud.microsoft/")).toBe("copilot");
+		const t = await setup({ managed: { blockedSites: ["copilot"] } });
+		const home = "https://m365.cloud.microsoft/home";
+		const chat = "https://m365.cloud.microsoft/chat";
+		t.fake.events.onUpdated.dispatch(4, { url: home }, { id: 4, url: home });
+		t.fake.events.onUpdated.dispatch(4, { url: chat }, { id: 4, url: chat });
+		await vi.waitFor(() =>
+			expect(t.fake.tabUpdates).toEqual([
+				{ tabId: 4, url: `${EXTENSION_BASE}blocked.html?site=copilot` },
+			]),
+		);
 	});
 
 	it("applies managed blockedSites and replaces rules on change", async () => {
@@ -820,7 +924,7 @@ describe("background: blocked sites (declarativeNetRequest)", () => {
 		expect(t.fake.dnrRules.size).toBe(4);
 		await t.fake.managed.adminReplace({ blockedSites: ["gemini"] });
 		await t.bg.reload(false);
-		const domains = [...t.fake.dnrRules.values()].flatMap((r) => r.condition.requestDomains);
+		const domains = [...t.fake.dnrRules.values()].flatMap((r) => r.condition.requestDomains ?? []);
 		expect(new Set(domains)).toEqual(new Set(["gemini.google.com"]));
 		await t.fake.managed.adminReplace({});
 		await t.bg.reload(false);
@@ -843,6 +947,10 @@ describe("background: blocked sites (declarativeNetRequest)", () => {
 
 	it("shows blocked.html in a tab whose navigation the installed rule refused", async () => {
 		const t = await setup({ managed: { blockedSites: ["gemini"] } });
+		// The open Gemini tab was already sent to blocked.html when the block was applied
+		// (background-open-tabs.test.ts); this test is about later navigations.
+		await vi.waitFor(() => expect(t.fake.tabUpdates).toHaveLength(1));
+		t.fake.tabUpdates.length = 0;
 		t.fake.events.onUpdated.dispatch(2, { status: "loading", url: GEMINI }, { id: 2, url: GEMINI });
 		await vi.waitFor(() =>
 			expect(t.fake.tabUpdates).toEqual([

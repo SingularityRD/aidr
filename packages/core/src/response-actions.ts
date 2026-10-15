@@ -44,6 +44,7 @@ import { randomUUID } from "node:crypto";
 import { copyFile, lstat, mkdir, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { resolvePath } from "./config.js";
+import { t } from "./i18n/index.js";
 import type { ResponseAuditor } from "./response-audit.js";
 import { AutoRollback, DEFAULT_SNAPSHOTS_DIR } from "./rollback.js";
 import { readFileEditPayload } from "./tool-normalization.js";
@@ -653,11 +654,17 @@ export function summarizeResponseActions(records: ResponseActionRecord[]): strin
 	return succeeded
 		.map((record) => {
 			if (record.action === "rollback") {
-				return `rollback: restored ${record.target} from snapshot ${record.snapshotId ?? "(unknown)"}`;
+				return t("block.response.rollback", {
+					target: record.target,
+					snapshot: record.snapshotId ?? t("block.response.unknownSnapshot"),
+				});
 			}
 			const where =
-				record.vaultPath ?? (record.snapshotId ? `snapshot ${record.snapshotId}` : "(vault)");
-			return `${record.action}: preserved a copy of ${record.target} at ${where}`;
+				record.vaultPath ??
+				(record.snapshotId
+					? t("block.response.snapshot", { snapshot: record.snapshotId })
+					: t("block.response.vault"));
+			return t("block.response.preserved", { action: record.action, target: record.target, where });
 		})
 		.join("; ");
 }

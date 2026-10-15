@@ -61,8 +61,10 @@ describe("public product facts", () => {
 	});
 
 	// Shared site modules that are not a dedicated adapter for one AI product:
-	// the registry, the generic fallback, the Shadow AI catalog and admin-defined internal sites.
-	const NON_ADAPTER_SITE_FILES = new Set(["index.ts", "generic.ts", "catalog.ts", "custom.ts"]);
+	// the registry, the generic fallback, the Shadow AI catalog, admin-defined internal sites
+	// the frame-host list for adapters that also run in subframes and the
+	// personal/company account detection shared by several adapters.
+	const NON_ADAPTER_SITE_FILES = new Set(["index.ts", "generic.ts", "catalog.ts", "custom.ts", "frames.ts", "accounts.ts"]);
 
 	it("lists exactly the Browser Guard sites that have a dedicated adapter", () => {
 		const adapters = readdirSync(join(repoRoot, "packages/browser-guard/src/sites"))

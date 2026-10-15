@@ -87,6 +87,33 @@ artifact.
 | `Singularity AIDR: Open audit log` | View the verdict audit trail |
 | `Singularity AIDR: Show hook health` | Check hook installation status |
 
+## Updates, uninstall and host versions
+
+- The hook command runs a stable shim that starts a launcher in
+  `~/.singularity-aidr/extension-hooks/<cursor|vscode>/`; neither path contains
+  the extension version, so an update keeps the hooks working. The extension
+  activates on startup to re-point installed hooks at the running version (it
+  never installs hooks on its own).
+- If no hook runner is left (the extension was removed without Disable
+  protection), the hook answers with a deny and exits 0 instead of failing
+  without a verdict. **Show hook health** reports such a hook as `BROKEN`.
+- Uninstalling removes AIDR's managed entries, shims and launcher; other hooks
+  and settings are untouched.
+- VS Code Local hooks live in the Claude settings file (`~/.claude/settings.json`
+  for user scope), which the Claude Code CLI shares. AIDR only adds or removes
+  its own `--managed-by aidr-vscode` entries, keeps a copy of the previous file
+  at `settings.json.aidr-backup`, and does not rewrite an unchanged file.
+- Verified hosts: Cursor 3.19.7 and VS Code 1.137.0. Another major.minor line
+  triggers a one-time "unverified host version" warning; protection stays on.
+
+## Language
+
+Command titles, settings and notifications follow the editor's display language
+(English or Turkish; `package.nls*.json` and `l10n/`). The block and approval
+messages written by the hook follow `AIDR_LOCALE`, the `locale` configuration
+key or the shell locale, as described in
+[configuration](../../docs/configuration.md#locale).
+
 ## Provisioned tenant detector policy
 
 The hooks can also evaluate a tool call against an operator-delivered, signed
@@ -150,7 +177,9 @@ also local and are emitted only when the acceptance runner supplies the complete
 
 ## Links
 
-- [GitHub](https://github.com/singularityrd/aidr)
-- [Configuration docs](https://github.com/singularityrd/aidr/blob/main/docs/configuration.md)
-- [Threat rules](https://github.com/singularityrd/aidr/blob/main/docs/threat-rules.md)
-- [Privacy](https://github.com/singularityrd/aidr/blob/main/docs/privacy.md)
+Singularity AIDR documentation (paths in the AIDR documentation set):
+
+- `docs/configuration.md` — configuration reference
+- `docs/threat-rules.md` — threat rules
+- `docs/privacy.md` — privacy and data flows
+- `docs/platform-guides/cursor.md` — Cursor / VS Code guide

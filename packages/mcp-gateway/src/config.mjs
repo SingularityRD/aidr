@@ -1,5 +1,5 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-import { isAbsolute, resolve } from "node:path";
+import { createHash, createPublicKey, timingSafeEqual } from "node:crypto";
+import { isAbsolute, normalize, resolve } from "node:path";
 import { DlpPolicySchema, validateAgentProfileDocument } from "@singularityrd/aidr-core";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
@@ -374,6 +374,52 @@ function validateBinaryOutput(input, maxBodyBytes) {
 	return { maxDecodedBytes, allowedMimeTypes: [...allowedMimeTypes] };
 }
 
+/** Signed-manifest lifetime policy (`manifestPolicy`), in whole days. */
+const MANIFEST_POLICY_DEFAULTS = Object.freeze({
+	maxLifetimeDays: 7,
+	expiryWarningDays: 2,
+	maxLifetimeDaysCeiling: 90,
+});
+
+function validateManifestPolicy(input) {
+	if (input !== undefined)
+		requireKeys(input, ["maxLifetimeDays", "expiryWarningDays"], "manifest policy");
+	const maxLifetimeDays = input?.maxLifetimeDays ?? MANIFEST_POLICY_DEFAULTS.maxLifetimeDays;
+	if (
+		!Number.isSafeInteger(maxLifetimeDays) ||
+		maxLifetimeDays < 1 ||
+		maxLifetimeDays > MANIFEST_POLICY_DEFAULTS.maxLifetimeDaysCeiling
+	)
+		throw new GatewayConfigError("invalid manifest max lifetime");
+	const expiryWarningDays =
+		input?.expiryWarningDays ??
+		Math.min(MANIFEST_POLICY_DEFAULTS.expiryWarningDays, maxLifetimeDays);
+	if (
+		!Number.isSafeInteger(expiryWarningDays) ||
+		expiryWarningDays < 0 ||
+		expiryWarningDays > maxLifetimeDays
+	)
+		throw new GatewayConfigError("invalid manifest expiry warning window");
+	return { maxLifetimeDays, expiryWarningDays };
+}
+
+const HOST = /^(?:[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?|\[[0-9a-f:.]{2,45}\]):[0-9]{1,5}$/;
+
+/**
+ * Extra `Host` header values (`host:port`, for example an operator reverse
+ * proxy). The loopback names for the bound port are always accepted.
+ */
+function validateAllowedHosts(input) {
+	if (input === undefined) return [];
+	if (
+		!Array.isArray(input) ||
+		input.length > 64 ||
+		input.some((host) => typeof host !== "string" || !HOST.test(host.toLowerCase()))
+	)
+		throw new GatewayConfigError("invalid allowedHosts");
+	return [...new Set(input.map((host) => host.toLowerCase()))];
+}
+
 function validateServerInitiated(input) {
 	const policy = Object.fromEntries(SERVER_INITIATED_CATEGORIES.map((key) => [key, "deny"]));
 	if (input === undefined) return policy;
@@ -403,6 +449,44 @@ function validateScopes(clients, servers) {
 	}
 }
 
+function validateStateDir(value) {
+	if (typeof value !== "string" || !value.trim()) throw new GatewayConfigError("invalid stateDir");
+	// A relative stateDir resolves against each process's working directory, so
+	// the gateway and aidr-mcp-approve could silently use different stores.
+	if (!isAbsolute(value)) throw new GatewayConfigError("stateDir must be absolute");
+	return normalize(value);
+}
+
+const MAX_APPROVAL_KEYS = 16;
+
+/**
+ * Operator approval public keys (key id -> Ed25519 SPKI PEM). An approval in
+ * the state directory is honoured only when one of these keys signed it, so a
+ * gateway without them could never serve a tool: refuse the configuration.
+ */
+function validateApprovalKeys(value) {
+	if (value === undefined) throw new GatewayConfigError("missing approvalKeys");
+	if (!record(value)) throw new GatewayConfigError("invalid approvalKeys");
+	const entries = Object.entries(value);
+	if (entries.length === 0 || entries.length > MAX_APPROVAL_KEYS)
+		throw new GatewayConfigError("invalid approvalKeys");
+	const keys = {};
+	for (const [keyId, pem] of entries) {
+		if (!validId(keyId) || typeof pem !== "string")
+			throw new GatewayConfigError("invalid approvalKeys");
+		let publicKey;
+		try {
+			publicKey = createPublicKey(pem);
+		} catch {
+			throw new GatewayConfigError("invalid approval key");
+		}
+		if (publicKey.type !== "public" || publicKey.asymmetricKeyType !== "ed25519")
+			throw new GatewayConfigError("invalid approval key");
+		keys[keyId] = publicKey.export({ type: "spki", format: "pem" }).toString();
+	}
+	return keys;
+}
+
 export function validateGatewayConfig(input) {
 	// The caller may retain or expose its input object. Validate and retain a
 	// detached immutable snapshot so later mutations cannot widen tenant scope,
@@ -412,6 +496,7 @@ export function validateGatewayConfig(input) {
 		input,
 		[
 			"stateDir",
+			"approvalKeys",
 			"port",
 			"maxBodyBytes",
 			"clients",
@@ -422,13 +507,21 @@ export function validateGatewayConfig(input) {
 			"serverInitiated",
 			"agentProfiles",
 			"tenantQuotas",
+			"manifestPolicy",
+			"allowedHosts",
+			"stdioUpstreamCredentials",
 		],
 		"gateway config",
 	);
+	if (
+		input.stdioUpstreamCredentials !== undefined &&
+		!["warn", "refuse"].includes(input.stdioUpstreamCredentials)
+	)
+		throw new GatewayConfigError("invalid stdioUpstreamCredentials");
 	if (input.routingRequired !== undefined && typeof input.routingRequired !== "boolean")
 		throw new GatewayConfigError("invalid routing requirement");
-	if (typeof input.stateDir !== "string" || !input.stateDir.trim())
-		throw new GatewayConfigError("invalid stateDir");
+	const stateDir = validateStateDir(input.stateDir);
+	const approvalKeys = validateApprovalKeys(input.approvalKeys);
 	const port = input.port ?? 7789;
 	if (!Number.isSafeInteger(port) || port < 0 || port > 65535)
 		throw new GatewayConfigError("invalid port");
@@ -455,7 +548,8 @@ export function validateGatewayConfig(input) {
 		throw new GatewayConfigError("mandatory routing requires client credential negative probes");
 	validateScopes(clients, servers);
 	return freezeTree({
-		stateDir: resolve(input.stateDir),
+		stateDir,
+		approvalKeys,
 		port,
 		maxBodyBytes,
 		clients,
@@ -466,6 +560,9 @@ export function validateGatewayConfig(input) {
 		serverInitiated: validateServerInitiated(input.serverInitiated),
 		agentProfiles: validateAgentProfiles(input.agentProfiles, clients),
 		tenantQuotas: validateTenantQuotas(input.tenantQuotas),
+		manifestPolicy: validateManifestPolicy(input.manifestPolicy),
+		allowedHosts: validateAllowedHosts(input.allowedHosts),
+		stdioUpstreamCredentials: input.stdioUpstreamCredentials ?? "warn",
 	});
 }
 

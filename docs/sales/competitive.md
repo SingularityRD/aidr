@@ -16,8 +16,8 @@ measured efficacy data and no head-to-head evaluation (see
 AIDR covers two surfaces with one control plane:
 
 1. **AI coding agents at the tool-call boundary.** Connectors inside Claude Code,
-   Cursor, VS Code, OpenClaw, OpenCode and Codex CLI evaluate commands, file writes and
-   URLs before the host acts, plus an MCP Gateway for MCP tool results.
+   OpenClaw, OpenCode and Codex CLI, and in Cursor and VS Code as a preview — no real-host acceptance evidence yet,
+   evaluate commands, file writes and URLs before the host acts, plus an MCP Gateway for MCP tool results.
 2. **People using AI chat products.** Browser Guard masks personal data and secrets
    before prompts, pastes and files reach ChatGPT, Gemini, Claude, Copilot, Perplexity,
    DeepSeek, Mistral and Grok, and restores them locally in the reply.
@@ -48,7 +48,7 @@ builds itself.
   fingerprints of sensitive records; the plaintext dataset is never shipped to browsers.
 - **Deployment choice.** Free local mode, cloud, on-prem Docker Compose or Helm, and
   air-gapped with a signed offline license.
-- **Rules as data.** 507 YAML threat rules the customer can read and extend, each mapped to
+- **Rules as data.** 519 YAML threat rules the customer can read and extend, each mapped to
   OWASP LLM, OWASP Agentic and MITRE ATLAS with per-item coverage (including what is not
   covered).
 - **Agent behaviour, not only malware.** Session toxic-flow chains, runaway and sabotage

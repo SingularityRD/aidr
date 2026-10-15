@@ -3,7 +3,9 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+	ApprovalStore,
 	type Artifact,
+	type BlockApproval,
 	canonicalMcpToolName,
 	createHostObservation,
 	describeSecureCodeWarnings,
@@ -17,10 +19,13 @@ import {
 	extractFromWebFetch,
 	extractFromWrite,
 	fallbackMcpServerIdentity,
+	formatAgentBlockReason,
+	formatBlockMessage,
 	formatDashboardApprovalNotice,
 	HOOK_HOST_TIMEOUT_MS,
 	hasMalformedCommandText,
 	inspectUserPrompt,
+	integrityFailureMessage,
 	isValidUtf8,
 	loadKnownMcpServers,
 	loadProvisionedDetectorContext,
@@ -41,6 +46,11 @@ import {
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
+import {
+	internalCursorResponse,
+	internalVsCodeResponse,
+	unansweredBlock as unansweredBlockFor,
+} from "./hook-responses.js";
 import {
 	auditOutputInspection,
 	inspectCachedProvisionedOutput,
@@ -129,7 +139,9 @@ async function maybeVerifyIntegrity(artifactId: string): Promise<void> {
 		await verifyArtifactIntegrityAndLog({ artifactDir: __dirname, artifactId });
 	} catch (error) {
 		integrityChecked = false;
-		throw new Error(`artifact integrity verification failed: ${String(error)}`);
+		// Rethrown as is: the hook's top-level handler turns a release integrity
+		// failure into its own message (cause and the administrator's fix).
+		throw error;
 	}
 }
 
@@ -801,6 +813,10 @@ export interface HookEvaluation {
 	 * terminal releases one retry. Absent in the default `host_dialog` mode.
 	 */
 	operatorHold?: string;
+	/** Extracted artifacts, so the message names what was stopped with its type. */
+	artifacts?: readonly Artifact[];
+	/** The call's action id, for the `aidr report-fp` line. */
+	actionId?: string;
 }
 
 async function evaluateNormalizedCall(
@@ -847,6 +863,8 @@ async function evaluateNormalizedCall(
 		dashboardNotice: formatDashboardApprovalNotice(resolution.dashboardApproval),
 		dashboardOnly: resolution.dashboardOnly,
 		operatorHold: resolution.operatorHold?.message,
+		artifacts: call.artifacts,
+		actionId: ApprovalStore.actionId(call.toolName, call.toolInput, call.sessionId),
 	};
 }
 
@@ -1343,10 +1361,6 @@ function readFilePath(toolInput: Record<string, unknown>): string | undefined {
 	return firstPopulatedString(...EDIT_FILE_PATH_FIELDS.map((field) => toolInput[field]));
 }
 
-function withDashboardNotice(reason: string, evaluation: HookEvaluation): string {
-	return evaluation.dashboardNotice ? `${reason}\n${evaluation.dashboardNotice}` : reason;
-}
-
 /**
  * Cursor events whose response schema supports `permission: "ask"` (a native
  * approval prompt), per Cursor's hook documentation:
@@ -1404,16 +1418,42 @@ export function toCursorResponse(
 		verdict.decision === "ask" && (!CURSOR_ASK_EVENTS.has(eventName) || evaluation.dashboardOnly)
 			? "deny"
 			: verdict.decision;
-	const reason = withDashboardNotice(truncateReason(verdict), evaluation);
-	const agentMessage = `Singularity AIDR ${decision === "deny" ? "blocked" : "flagged"} this action (${verdict.severity}).`;
-
+	const reason = personMessage(evaluation, decision);
 	return {
 		decision,
 		permission: decision,
 		reason,
 		user_message: reason,
-		agent_message: agentMessage,
+		agent_message: formatAgentBlockReason(verdict, decision === "ask"),
 	};
+}
+
+/**
+ * The shared block/ask text (core `block-message.ts`) for the person: Cursor's
+ * `user_message`, VS Code's dialog or deny reason. A native ask names the
+ * host's own dialog as the next step; under `dashboard_only` the dashboard is.
+ * An ask the host cannot show as a dialog is a plain block: in the default
+ * `host_dialog` mode nothing else can release it.
+ */
+function personMessage(
+	evaluation: HookEvaluation,
+	decision: "deny" | "ask",
+	audience: "both" | "user" = "user",
+): string {
+	const { verdict } = evaluation;
+	const approval: BlockApproval =
+		decision === "ask"
+			? { kind: "host_dialog" }
+			: verdict.decision === "ask" && evaluation.dashboardOnly
+				? { kind: "dashboard" }
+				: { kind: "none" };
+	return formatBlockMessage(verdict, {
+		approval,
+		artifacts: evaluation.artifacts,
+		dashboardNotice: evaluation.dashboardNotice,
+		actionId: evaluation.actionId,
+		audience,
+	});
 }
 
 export function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unknown> {
@@ -1437,47 +1477,22 @@ export function toVsCodeResponse(evaluation: HookEvaluation): Record<string, unk
 		};
 	}
 
+	// dashboard_only: a native "ask" would let the local user approve, so block.
+	const decision =
+		verdict.decision === "ask" && evaluation.dashboardOnly ? "deny" : verdict.decision;
 	return {
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
-			// dashboard_only: a native "ask" would let the local user approve, so block.
-			permissionDecision:
-				verdict.decision === "ask" && evaluation.dashboardOnly ? "deny" : verdict.decision,
-			permissionDecisionReason: withDashboardNotice(truncateReason(verdict), evaluation),
+			permissionDecision: decision,
+			// A deny reason also reaches the model, so it carries the agent line;
+			// an ask reason is shown in VS Code's confirmation dialog.
+			permissionDecisionReason: personMessage(
+				evaluation,
+				decision,
+				decision === "deny" ? "both" : "user",
+			),
 		},
 	};
-}
-
-function internalCursorResponse(
-	decision: "allow" | "deny",
-	reason: string,
-): Record<string, unknown> {
-	return {
-		decision,
-		permission: decision,
-		reason,
-		user_message: reason,
-		agent_message:
-			decision === "allow" ? undefined : "Singularity AIDR internal error policy applied.",
-	};
-}
-
-function internalVsCodeResponse(reason: string): Record<string, unknown> {
-	return {
-		hookSpecificOutput: {
-			hookEventName: "PreToolUse",
-			permissionDecision: "deny",
-			permissionDecisionReason: reason,
-		},
-	};
-}
-
-function truncateReason(verdict: Verdict): string {
-	if (verdict.reasons.length === 0) {
-		return `Singularity AIDR flagged this action (${verdict.category}).`;
-	}
-	const joined = verdict.reasons.slice(0, 5).join("; ");
-	return joined.length <= 350 ? joined : `${joined.slice(0, 347)}...`;
 }
 
 export function getBundledDataDirs(): { threatsDir: string; allowlistsDir: string } {
@@ -1664,15 +1679,9 @@ function extensionHookDeadline() {
 	};
 }
 
-/**
- * Block for a run whose event is unknown or unanswered: it denies a tool call
- * and, through the prompt-event stop fields (`continue: false`), also stops a
- * prompt submission.
- */
+/** {@link unansweredBlockFor} in this run's host format. */
 function unansweredBlock(reason: string): Record<string, unknown> {
-	return process.argv[2] === "vscode"
-		? { ...internalVsCodeResponse(reason), continue: false, stopReason: reason }
-		: { ...internalCursorResponse("deny", reason), continue: false };
+	return unansweredBlockFor(process.argv[2], reason);
 }
 
 /**
@@ -1697,11 +1706,16 @@ export function runHookProcess(): void {
 		),
 	);
 	runCli()
-		.catch(() => {
+		.catch((error: unknown) => {
 			// Protocol safety: emit valid JSON and never fail with non-JSON output. The
 			// failure can precede reading the payload (e.g. integrity verification), so
 			// the event is unknown.
-			writeJson(unansweredBlock("Singularity AIDR hook failed; execution was denied."));
+			writeJson(
+				unansweredBlock(
+					integrityFailureMessage(error)?.message ??
+						"Singularity AIDR hook failed; execution was denied.",
+				),
+			);
 		})
 		.finally(() => {
 			clearTimeout(watchdog);

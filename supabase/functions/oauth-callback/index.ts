@@ -12,7 +12,7 @@ const MAX_BODY_BYTES = 16 * 1024;
 
 export interface OAuthCallbackDeps {
 	/** Overrides the service-role client; used by the contract suite. */
-	db?: ReturnType<typeof createClient>;
+	db?: ReturnType<typeof createClient<any, "public">>;
 	/** Overrides the client transport; used by the contract suite. */
 	fetch?: typeof fetch;
 }

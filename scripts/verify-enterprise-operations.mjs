@@ -63,10 +63,11 @@ for(const endpoint of["api-keys","enrollment-tokens"])assert.equal((await reques
 const sponsor=await request("/auth/v1/admin/users",undefined,{email:`sponsor-${randomBytes(8).toString("hex")}@example.test`,password:randomBytes(32).toString("hex"),email_confirm:true});assert.equal(sponsor.status,200);
 assert.equal((await request("/rest/v1/pilot_applications",undefined,{user_id:sponsor.data.id,tenant_id:tenant,status:"approved"})).status,201);
 const device=await request("/functions/v1/device-start",env.ANON_KEY,{});assert.equal(device.status,200);
-assert.equal((await request("/functions/v1/device-verify",other,{user_code:device.data.user_code},"POST",headers)).status,403);
+assert.equal((await request("/functions/v1/device-verify",other,{action:"lookup",user_code:device.data.user_code},"POST",headers)).status,403);
 assert.equal((await request(`/rest/v1/tenant_members?tenant_id=eq.${tenant}&user_id=eq.${user.data.id}`,undefined,{role:"member"},"PATCH")).status,204);
 assert.equal((await request("/functions/v1/pilot-status",other,undefined,"GET",headers)).data.status,"approved");
-assert.equal((await request("/functions/v1/device-verify",other,{user_code:device.data.user_code},"POST",headers)).status,200);
+const deviceLookup=await request("/functions/v1/device-verify",other,{action:"lookup",user_code:device.data.user_code},"POST",headers);assert.equal(deviceLookup.status,200);
+assert.equal((await request("/functions/v1/device-verify",other,{action:"authorize",user_code:device.data.user_code,device_session_id:deviceLookup.data.device.device_session_id,confirmed:true},"POST",headers)).status,200);
 await new Promise(done=>setTimeout(done,(device.data.interval_seconds+1)*1000));
 const exchange=await request("/functions/v1/device-poll",env.ANON_KEY,{device_code:device.data.device_code});assert.equal(exchange.status,200);
 const iid=`member-device-${randomBytes(8).toString("hex")}`;

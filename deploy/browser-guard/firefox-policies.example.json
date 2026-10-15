@@ -1,11 +1,17 @@
 {
   "policies": {
     "ExtensionSettings": {
+      "*": {
+        "installation_mode": "blocked",
+        "blocked_install_message": "Extensions are managed by your organization."
+      },
       "browser-guard@singularityrd.com": {
         "installation_mode": "force_installed",
-        "install_url": "https://downloads.example.com/aidr/aidr-browser-guard-firefox-latest.xpi"
+        "install_url": "https://<FIREFOX_XPI_HOST>/aidr-browser-guard-firefox-latest.xpi"
       }
     },
+    "DisablePrivateBrowsing": true,
+    "DisableDeveloperTools": true,
     "3rdparty": {
       "Extensions": {
         "browser-guard@singularityrd.com": {
@@ -51,7 +57,8 @@
           "exactData": [
             {
               "datasetId": "crm-customers-example",
-              "keyB64": "REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET",
+              "keySource": "native-host",
+              "minEntropyBits": 64,
               "fingerprints": [
                 "REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"
               ],

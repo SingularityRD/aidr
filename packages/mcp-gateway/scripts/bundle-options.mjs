@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { releaseMinifyOptions } from "../../../scripts/lib/release-minify.mjs";
 
 const packageRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repositoryRoot = resolve(packageRoot, "../..");
@@ -29,9 +30,10 @@ export async function readRuleSets(root = repositoryRoot) {
  * esbuild options shared by the release build and the integrity test. The core
  * is bundled from its package export; CommonJS dependencies inside it get a
  * real `require`, and the Windows-only native AMSI addon stays external (it is
- * loaded lazily and falls back to PowerShell when absent).
+ * loaded lazily and falls back to PowerShell when absent). `release` minifies
+ * with function/class names kept (scripts/lib/release-minify.mjs).
  */
-export function gatewayBundleOptions({ ruleSets }) {
+export function gatewayBundleOptions({ ruleSets, release = false }) {
   const embeddedRules = resolve(packageRoot, "src", "embedded-rules.mjs");
   return {
     bundle: true,
@@ -41,6 +43,7 @@ export function gatewayBundleOptions({ ruleSets }) {
     packages: "bundle",
     external: ["koffi"],
     minify: false,
+    ...releaseMinifyOptions(release),
     sourcemap: false,
     legalComments: "none",
     logLevel: "warning",

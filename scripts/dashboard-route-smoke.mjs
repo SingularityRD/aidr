@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
-import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -91,6 +91,7 @@ const protectedRoutes = [
 	"/privacy-guard",
 	"/approvals",
 	"/compliance",
+	"/reports",
 	"/governance",
 	"/governance/register",
 	"/governance/requests",
@@ -171,7 +172,7 @@ export function assertSecurityHeaders(headers, label = "deployment response") {
 }
 
 async function structuralChecks() {
-	const [main, onboarding, apiKeys, agents, autoSecOps, login, billing, landing, commercial, publicLayout, publicInfo, routeError, returnTo, session, scim, vercel, index, packageJson, browserManifest] = await Promise.all([
+	const [main, onboarding, apiKeys, agents, autoSecOps, login, billing, landing, commercial, publicLayout, publicInfo, routeError, returnTo, session, scim, vercel, index, packageJson, browserManifest, enCatalog] = await Promise.all([
 		read("packages/dashboard/src/main.tsx"),
 		read("packages/dashboard/src/ui/pages/OnboardingPage.tsx"),
 		read("packages/dashboard/src/ui/pages/ApiKeysPage.tsx"),
@@ -191,7 +192,16 @@ async function structuralChecks() {
 		read("packages/dashboard/index.html"),
 		read("packages/dashboard/package.json"),
 		read("packages/dashboard/tests/browser-smoke.manifest.json"),
+		read("packages/dashboard/src/i18n/en.ts"),
 	]);
+	// User-facing wording lives in the EN/TR catalogs: en.ts plus the page
+	// message modules, so wording checks read the catalog text.
+	const messageDir = "packages/dashboard/src/i18n/messages";
+	const messageFiles = (await readdir(join(sourceRoot, messageDir))).filter((name) => name.endsWith(".ts"));
+	const catalog = [
+		enCatalog,
+		...(await Promise.all(messageFiles.map((name) => read(`${messageDir}/${name}`)))),
+	].join("\n");
 	const manifest = JSON.parse(browserManifest);
 	if (manifest.version !== 1 || !Array.isArray(manifest.scenarios) || manifest.scenarios.length < 5) {
 		fail("browser smoke manifest is missing required release scenarios");
@@ -237,6 +247,22 @@ async function structuralChecks() {
 	assertIncludes(onboarding, "Date.parse(result.expires_at) <= Date.now()", "authorization expiry validation");
 	assertIncludes(onboarding, 'type={showEnrollmentToken ? "text" : "password"}', "enrollment token masking");
 	assertIncludes(onboarding, "navigator.clipboard.writeText", "enrollment token copy action");
+	assertIncludes(onboarding, "<InstallerDownloads teamId={teamId} />", "onboarding starts with the installer download");
+
+	// The Download page lists installers only from the entitlement-checked,
+	// signature-verified installer-download function, and store links only
+	// from configuration (an unset link is hidden, never guessed).
+	const [downloadsPage, installerClient, browserGuardDownloads] = await Promise.all([
+		read("packages/dashboard/src/ui/pages/DownloadsPage.tsx"),
+		read("packages/dashboard/src/lib/installers.ts"),
+		read("packages/dashboard/src/onboarding/BrowserGuardDownloads.tsx"),
+	]);
+	assertIncludes(downloadsPage, "<InstallerDownloads", "download page installer catalog");
+	assertIncludes(installerClient, 'supabase.functions.invoke("installer-download"', "installer download bridge");
+	assertIncludes(browserGuardDownloads, "safeHttpsUrl(env.VITE_BROWSER_GUARD_CHROME_URL)", "configured Browser Guard store link");
+	if (/https:\/\/(?:chromewebstore\.google\.com|microsoftedge\.microsoft\.com|addons\.mozilla\.org)/.test(browserGuardDownloads)) {
+		fail("Browser Guard store links must come from configuration, not source");
+	}
 
 	// API keys and enrollment tokens are one-time secrets.  The DOM starts in a
 	// password/masked state and clipboard failures remain actionable.
@@ -245,9 +271,10 @@ async function structuralChecks() {
 	assertIncludes(apiKeys, "navigator.clipboard.writeText", "API secret copy action");
 	assertIncludes(apiKeys, "setCreatedKey(null)", "API key clear action");
 	assertIncludes(apiKeys, "setCreatedEnrollToken(null)", "enrollment token clear action");
-	assertIncludes(agents, 'allowed ?? "unavailable"', "agent limit fail-closed rendering");
+	assertIncludes(agents, 'allowed ?? t("common.unavailable")', "agent limit fail-closed rendering");
 	assertIncludes(autoSecOps, 'autosecops-runtime', "AutoSecOps dashboard bridge");
-	assertIncludes(autoSecOps, "No synthetic or cached AutoSecOps data", "AutoSecOps fail-closed rendering");
+	assertIncludes(autoSecOps, 't("aso.noSynthetic")', "AutoSecOps fail-closed rendering");
+	assertIncludes(catalog, "No synthetic or cached AutoSecOps data", "AutoSecOps fail-closed wording");
 	assertIncludes(login, 'id="login-email"', "login email input id");
 	assertIncludes(login, "const captchaReady = !captchaConfigured || Boolean(captchaToken)", "optional CAPTCHA login path");
 	assertIncludes(await read("packages/dashboard/src/ui/pages/public/VerifyPage.tsx"), "signInReturnTo", "verify code survives sign-in redirect");
@@ -257,7 +284,8 @@ async function structuralChecks() {
 	assertIncludes(commercial, "export function safeCommercialLink", "billing URL validation");
 	assertIncludes(commercial, 'VITE_AIDR_COMMERCIAL_MODE ?? "invoice"', "invoice-only commercial default");
 	assertIncludes(billing, "selfServiceCheckoutEnabled", "billing checkout gate");
-	assertIncludes(billing, "Enterprise / manual invoice", "enterprise invoice workflow");
+	assertIncludes(billing, 't("billing.enterprise.title")', "enterprise invoice workflow");
+	assertIncludes(catalog, '"Enterprise / manual invoice"', "enterprise invoice workflow label");
 	assertRegex(
 		scim,
 		/supabase\.functions\.invoke<unknown>\(\s*query\s*\?\s*`scim-admin\?\$\{query\}`\s*:\s*"scim-admin"/,
@@ -268,11 +296,16 @@ async function structuralChecks() {
 
 	// A public page must expose support/legal links and never open a new tab
 	// without an opener policy.
-	assertIncludes(publicLayout, 'aria-label="Support and legal"', "support/legal navigation");
+	// Labels are translated; the English catalog carries the text.
+	assertIncludes(publicLayout, 'aria-label={t("public.footerLabel")}', "support/legal navigation");
+	assertIncludes(enCatalog, '"public.footerLabel": "Support and legal"', "support/legal navigation label");
 	assertRegex(`${publicLayout}\n${publicInfo}`, /target="_blank"[\s\S]{0,80}rel="noreferrer"/, "external link opener policy");
-	assertIncludes(publicInfo, "No live status feed is configured", "status feed fail-closed notice");
-	assertIncludes(publicInfo, "Terms URL is not configured", "terms URL fail-closed notice");
-	assertIncludes(routeError, "Retry", "route error retry action");
+	assertIncludes(publicInfo, 't("pi.noStatus")', "status feed fail-closed notice");
+	assertIncludes(catalog, "No live status feed is configured", "status feed fail-closed wording");
+	assertIncludes(publicInfo, 't("pi.noTerms")', "terms URL fail-closed notice");
+	assertIncludes(catalog, "Terms URL is not configured", "terms URL fail-closed wording");
+	assertIncludes(routeError, 't("error.retry")', "route error retry action");
+	assertIncludes(enCatalog, '"error.retry": "Retry"', "route error retry label");
 
 	const vercelConfig = JSON.parse(vercel);
 	if (!Array.isArray(vercelConfig.rewrites) || vercelConfig.rewrites.length === 0) {

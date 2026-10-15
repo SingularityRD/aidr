@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
+import * as deviceAuth from "../_shared/device-auth.ts";
 
 const source = readFileSync(
 	join(dirname(fileURLToPath(import.meta.url)), "..", "device-verify", "index.ts"),
@@ -21,6 +22,7 @@ function harness(options: { rateLimitError?: boolean; malformedCount?: boolean }
 	let authorizationCalls = 0;
 	const userId = "11111111-1111-4111-8111-111111111111";
 	const tenantId = "22222222-2222-4222-8222-222222222222";
+	const sessionId = "d0000000-0000-4000-8000-000000000001";
 	const db = {
 		auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
 		async rpc(name: string) {
@@ -53,7 +55,7 @@ function harness(options: { rateLimitError?: boolean; malformedCount?: boolean }
 					if (table === "device_sessions") {
 						sessionReads++;
 						return { data: {
-							id: "device-1", authorized_at: null,
+							id: sessionId, user_code: "ABCDEFGH", created_at: new Date().toISOString(), authorized_at: null,
 							expires_at: new Date(Date.now() + 60_000).toISOString(),
 							user_id: null, tenant_id: tenantId,
 						}, error: null };
@@ -68,8 +70,8 @@ function harness(options: { rateLimitError?: boolean; malformedCount?: boolean }
 	};
 	new Function(
 		"Deno", "createClient", "checkIdentityBarrier", "getBearerToken", "configFailure",
-		"loadConfig", "runtimeEnv", "corsJson", "handleCors", "evaluateDeviceVerifyState",
-		"readBoundedJson", "jwtIssuedAtMs", compiled,
+		"loadConfig", "runtimeEnv", "corsJson", "handleCors", "booleanSetting", "deviceSessionDetails",
+		"evaluateDeviceVerifyState", "parseDeviceVerifyCommand", "readBoundedJson", "jwtIssuedAtMs", compiled,
 	)(
 		{ env: { get: () => undefined }, serve: (fn: Handler) => { handler = fn; } },
 		() => db,
@@ -81,10 +83,13 @@ function harness(options: { rateLimitError?: boolean; malformedCount?: boolean }
 		(_request: Request, status: number, body: unknown, headers: Record<string, string> = {}) =>
 			Response.json(body, { status, headers }),
 		() => null,
+		deviceAuth.booleanSetting,
+		deviceAuth.deviceSessionDetails,
 		(input: { nowMs: number; expiresAtIso: string; authorizedAt: string | null; pilotApproved: boolean }) =>
 			input.expiresAtIso > new Date(input.nowMs).toISOString()
 				? { status: "ok", httpStatus: 200 }
 				: { status: "expired", httpStatus: 410, error: "device_code_expired" },
+		deviceAuth.parseDeviceVerifyCommand,
 		async (request: Request) => ({ ok: true as const, value: await request.json(), bytes: 0 }),
 		() => Date.now(),
 	);
@@ -93,7 +98,7 @@ function harness(options: { rateLimitError?: boolean; malformedCount?: boolean }
 		const response = await handler!(new Request("https://test.invalid/device-verify", {
 			method: "POST",
 			headers: { Authorization: "Bearer verified-session" },
-			body: JSON.stringify({ user_code: "ABCDEFGH" }),
+			body: JSON.stringify({ action: "authorize", user_code: "ABCDEFGH", device_session_id: sessionId, confirmed: true }),
 		}));
 		return { status: response.status, body: await response.json() as Record<string, unknown> };
 	};

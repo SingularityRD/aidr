@@ -5,6 +5,9 @@
  *   node scripts/build.mjs                    # development build -> dist/chrome, dist/firefox
  *   node scripts/build.mjs --release          # minified, no source maps
  *   node scripts/build.mjs --release --zip    # + dist/aidr-browser-guard-<target>-<version>.zip, dist/SHA256SUMS
+ *   node scripts/build.mjs --release --zip --update-base-url https://<host>/browser-guard
+ *                                             # + dist/aidr-browser-guard-<target>-selfhosted-<version>.zip
+ *                                             #   (also taken from BROWSER_GUARD_UPDATE_BASE_URL)
  *   node scripts/build.mjs --root <dir> --out <dir>   # alternate package root / output (tests)
  *   node scripts/build.mjs --entries-root <dir>        # resolve src/ entry points under <dir> (tests)
  *
@@ -37,6 +40,8 @@ export const SITE_HOSTS = Object.freeze([
 	"gemini.google.com",
 	"claude.ai",
 	"copilot.microsoft.com",
+	"m365.cloud.microsoft",
+	"copilot.cloud.microsoft",
 	"www.perplexity.ai",
 	"perplexity.ai",
 	"chat.deepseek.com",
@@ -44,6 +49,16 @@ export const SITE_HOSTS = Object.freeze([
 	"grok.com",
 ]);
 export const SITE_MATCHES = Object.freeze(SITE_HOSTS.map((host) => `https://${host}/*`));
+
+/**
+ * Site hosts whose content scripts also run in subframes (`all_frames: true`): the
+ * Microsoft 365 Copilot hosts, whose Copilot pane the Office web apps embed as a
+ * cross-origin iframe. The authoritative list is `FRAME_MATCH_PATTERNS` in
+ * src/sites/index.ts (from src/sites/frames.ts); this copy is the fallback for stub entry
+ * roots and is kept in sync by src/__tests__/build.test.ts. Every other site is top-frame only.
+ */
+export const SITE_FRAME_HOSTS = Object.freeze(["m365.cloud.microsoft", "copilot.cloud.microsoft"]);
+export const SITE_FRAME_MATCHES = Object.freeze(SITE_FRAME_HOSTS.map((host) => `https://${host}/*`));
 
 /** Entry points (see src/types.ts) and the classic scripts they become. */
 export const ENTRIES = Object.freeze([
@@ -136,30 +151,54 @@ export function manifestVersion(packageVersion) {
 }
 
 /**
+ * The content_scripts entries: content.js and the page-world hook content-main.js for the
+ * top frame of every site, and the same two scripts with `all_frames: true` for the
+ * frame-guarded hosts. The two groups have disjoint `matches`, so no frame ever gets a
+ * script twice. Frame-guarded hosts are covered in their top frame by the second group.
+ * @param {readonly string[]} matches
+ * @param {readonly string[]} frameMatches subset of `matches`
+ * @param {boolean} contentCss
+ */
+export function contentScripts(matches, frameMatches, contentCss = false) {
+	const framed = new Set(frameMatches);
+	const topOnly = matches.filter((pattern) => !framed.has(pattern));
+	const allFrames = matches.filter((pattern) => framed.has(pattern));
+	const group = (patterns, all) =>
+		patterns.length === 0
+			? []
+			: [
+					{
+						matches: [...patterns],
+						js: ["content.js"],
+						...(contentCss ? { css: ["content.css"] } : {}),
+						run_at: "document_start",
+						all_frames: all,
+					},
+					// Page-world file-input hook (src/content/file-input-hook.ts): routes detached and
+					// shadow-DOM <input type=file> selections to content.js. No extension APIs, no data.
+					{
+						matches: [...patterns],
+						js: ["content-main.js"],
+						run_at: "document_start",
+						all_frames: all,
+						world: "MAIN",
+					},
+				];
+	return [...group(topOnly, false), ...group(allFrames, true)];
+}
+
+/**
  * Generates manifest.json for one target.
  * @param {"chrome" | "firefox"} target
- * @param {{ version: string; contentCss?: boolean; matches?: readonly string[] }} options
+ * @param {{ version: string; contentCss?: boolean; matches?: readonly string[]; frameMatches?: readonly string[] }} options
  */
-export function createManifest(target, { version, contentCss = false, matches = SITE_MATCHES }) {
+export function createManifest(
+	target,
+	{ version, contentCss = false, matches = SITE_MATCHES, frameMatches = SITE_FRAME_MATCHES },
+) {
 	if (!TARGETS[target]) throw new Error(`BUILD_UNKNOWN_TARGET: ${target}`);
 	const { version: numeric, versionName } = manifestVersion(version);
 	const icons = Object.fromEntries(ICON_SIZES.map((size) => [String(size), `icons/icon-${size}.png`]));
-	const contentScript = {
-		matches: [...matches],
-		js: ["content.js"],
-		...(contentCss ? { css: ["content.css"] } : {}),
-		run_at: "document_start",
-		all_frames: false,
-	};
-	// Page-world file-input hook (src/content/file-input-hook.ts): routes detached and
-	// shadow-DOM <input type=file> selections to content.js. No extension APIs, no data.
-	const mainWorldScript = {
-		matches: [...matches],
-		js: ["content-main.js"],
-		run_at: "document_start",
-		all_frames: false,
-		world: "MAIN",
-	};
 	const manifest = {
 		manifest_version: 3,
 		name: "__MSG_extName__",
@@ -171,7 +210,7 @@ export function createManifest(target, { version, contentCss = false, matches = 
 		optional_permissions: [...OPTIONAL_PERMISSIONS],
 		host_permissions: [...matches],
 		optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
-		content_scripts: [contentScript, mainWorldScript],
+		content_scripts: contentScripts(matches, frameMatches, contentCss),
 		action: {
 			default_title: "__MSG_extName__",
 			default_popup: "popup.html",
@@ -206,6 +245,52 @@ export function createManifest(target, { version, contentCss = false, matches = 
 		};
 	}
 	return manifest;
+}
+
+/**
+ * Self-hosted channel (outside the stores). The store packages never carry an update URL
+ * (the store updates them); the self-hosted packages are the same files with exactly one
+ * manifest difference each, so the browser updates them from the organisation's or the
+ * publisher's own HTTPS feed (scripts/update-feed.mjs):
+ *   Chrome/Edge: `update_url` -> <base>/update.xml (gupdate XML, CRX3 signed with the owner key)
+ *   Firefox:     `browser_specific_settings.gecko.update_url` -> <base>/updates.json
+ *                (the XPI itself is signed by Mozilla through the AMO unlisted channel)
+ */
+export const UPDATE_BASE_URL_ENV = "BROWSER_GUARD_UPDATE_BASE_URL";
+export const SELF_HOSTED_FEED_FILES = Object.freeze({ chrome: "update.xml", firefox: "updates.json" });
+
+/** Validates an update base URL: https only, no credentials, query or fragment. Trailing slashes are dropped. */
+export function normalizeUpdateBaseUrl(value) {
+	let url;
+	try {
+		url = new URL(String(value ?? "").trim());
+	} catch {
+		throw new Error(`BUILD_BAD_UPDATE_URL: ${JSON.stringify(value)} is not a URL`);
+	}
+	if (url.protocol !== "https:") throw new Error(`BUILD_BAD_UPDATE_URL: ${url.href} must use https://`);
+	if (url.username || url.password || url.search || url.hash) {
+		throw new Error(`BUILD_BAD_UPDATE_URL: ${url.href} must not carry credentials, a query or a fragment`);
+	}
+	return url.href.replace(/\/+$/, "");
+}
+
+/** The update manifest URL each browser reads for a feed at `baseUrl`. */
+export function selfHostedUpdateUrl(target, baseUrl) {
+	if (!SELF_HOSTED_FEED_FILES[target]) throw new Error(`BUILD_UNKNOWN_TARGET: ${target}`);
+	return `${normalizeUpdateBaseUrl(baseUrl)}/${SELF_HOSTED_FEED_FILES[target]}`;
+}
+
+/** The self-hosted manifest: the store manifest plus the channel's update URL, nothing else. */
+export function selfHostedManifest(target, manifest, baseUrl) {
+	const copy = structuredClone(manifest);
+	const updateUrl = selfHostedUpdateUrl(target, baseUrl);
+	if (target === "chrome") copy.update_url = updateUrl;
+	else copy.browser_specific_settings.gecko.update_url = updateUrl;
+	return copy;
+}
+
+export function selfHostedArchiveName(target, version) {
+	return `aidr-browser-guard-${target}-selfhosted-${version}.zip`;
 }
 
 /** Patterns that must never appear in shipped JavaScript. */
@@ -444,16 +529,24 @@ function collectInputs(root, entriesRoot) {
 const MATCH_PATTERN_SHAPE = /^https:\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)+)\/\*$/;
 
 /**
- * Loads `MATCH_PATTERNS` from src/sites/index.ts (bundled in memory and imported
- * as a data: URL module) so the manifest can never drift from the adapters.
- * Falls back to {@link SITE_MATCHES} only when the module does not exist.
- * @returns {Promise<{ matches: string[]; source: string }>}
+ * Loads `MATCH_PATTERNS` and `FRAME_MATCH_PATTERNS` from src/sites/index.ts (bundled in
+ * memory and imported as a data: URL module) so the manifest can never drift from the
+ * adapters. Falls back to {@link SITE_MATCHES} / {@link SITE_FRAME_MATCHES} only when the
+ * module does not exist. A module without `FRAME_MATCH_PATTERNS` has no frame-guarded host.
+ * @returns {Promise<{ matches: string[]; frameMatches: string[]; source: string }>}
  */
 export async function loadSiteMatches(entriesRoot) {
 	const sitesModule = join(entriesRoot, "src", "sites", "index.ts");
-	if (!existsSync(sitesModule)) return { matches: [...SITE_MATCHES], source: "scripts/build.mjs SITE_HOSTS" };
+	if (!existsSync(sitesModule)) {
+		return {
+			matches: [...SITE_MATCHES],
+			frameMatches: [...SITE_FRAME_MATCHES],
+			source: "scripts/build.mjs SITE_HOSTS",
+		};
+	}
 	const esbuild = await import("esbuild");
 	let patterns;
+	let framePatterns;
 	try {
 		const result = await esbuild.build({
 			entryPoints: [sitesModule],
@@ -464,7 +557,9 @@ export async function loadSiteMatches(entriesRoot) {
 			logLevel: "silent",
 		});
 		const url = `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`;
-		patterns = (await import(url)).MATCH_PATTERNS;
+		const sites = await import(url);
+		patterns = sites.MATCH_PATTERNS;
+		framePatterns = sites.FRAME_MATCH_PATTERNS ?? [];
 	} catch (error) {
 		fail(`could not load MATCH_PATTERNS from src/sites/index.ts: ${error.message}`);
 	}
@@ -474,7 +569,19 @@ export async function loadSiteMatches(entriesRoot) {
 			fail(`src/sites/index.ts MATCH_PATTERNS entry ${JSON.stringify(pattern)} is not an exact https://<host>/* pattern`);
 		}
 	}
-	return { matches: [...new Set(patterns)], source: "src/sites/index.ts MATCH_PATTERNS" };
+	if (!Array.isArray(framePatterns)) fail("src/sites/index.ts FRAME_MATCH_PATTERNS is not an array");
+	for (const pattern of framePatterns) {
+		// Only exact hosts that are also protected sites may run in subframes: never a
+		// wildcard, never a host the extension has no business in.
+		if (typeof pattern !== "string" || !patterns.includes(pattern)) {
+			fail(`src/sites/index.ts FRAME_MATCH_PATTERNS entry ${JSON.stringify(pattern)} is not one of MATCH_PATTERNS`);
+		}
+	}
+	return {
+		matches: [...new Set(patterns)],
+		frameMatches: [...new Set(framePatterns)],
+		source: "src/sites/index.ts MATCH_PATTERNS",
+	};
 }
 
 async function bundleEntries({ entriesRoot, outDir, target, release, version }) {
@@ -528,7 +635,8 @@ function sha256(data) {
  * Builds both targets.
  * `root` holds package.json, static/ and _locales/; `entriesRoot` (default: `root`)
  * holds the src/ entry points.
- * @param {{ root?: string; entriesRoot?: string; outDir?: string; release?: boolean; zip?: boolean; log?: (line: string) => void }} options
+ * With `zip` and `updateBaseUrl`, the self-hosted packages are written next to the store ones.
+ * @param {{ root?: string; entriesRoot?: string; outDir?: string; release?: boolean; zip?: boolean; updateBaseUrl?: string; log?: (line: string) => void }} options
  */
 export async function buildExtension(options = {}) {
 	const root = resolve(options.root ?? PACKAGE_ROOT);
@@ -536,14 +644,16 @@ export async function buildExtension(options = {}) {
 	const outDir = resolve(options.outDir ?? join(root, "dist"));
 	const release = options.release === true;
 	const log = options.log ?? ((line) => console.log(line));
+	const updateBaseUrl = options.updateBaseUrl ? normalizeUpdateBaseUrl(options.updateBaseUrl) : null;
+	if (updateBaseUrl && !options.zip) fail("--update-base-url needs --zip (it only changes the self-hosted packages)");
 	const inputs = collectInputs(root, entriesRoot);
 	const { version } = manifestVersion(inputs.version);
 	const contentCss = existsSync(join(root, "static", "content.css"));
-	const { matches } = await loadSiteMatches(entriesRoot);
+	const { matches, frameMatches } = await loadSiteMatches(entriesRoot);
 	const siteHosts = matches.map((pattern) => MATCH_PATTERN_SHAPE.exec(pattern)[1]);
 
 	rmSync(outDir, { recursive: true, force: true });
-	const result = { version, outDir, targets: {}, archives: [] };
+	const result = { version, outDir, targets: {}, archives: [], selfHostedArchives: [] };
 
 	for (const target of Object.keys(TARGETS)) {
 		const targetDir = join(outDir, target);
@@ -569,6 +679,7 @@ export async function buildExtension(options = {}) {
 			version: inputs.version,
 			contentCss,
 			matches,
+			frameMatches,
 		});
 		writeFile(join(targetDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
@@ -581,7 +692,7 @@ export async function buildExtension(options = {}) {
 		if (problems.length > 0) {
 			fail(`output rejected by the security scan:\n  - ${problems.join("\n  - ")}`);
 		}
-		result.targets[target] = { dir: targetDir, files: [...files].sort() };
+		result.targets[target] = { dir: targetDir, files: [...files].sort(), manifest };
 		log(`[browser-guard] built ${target} ${version}${release ? " (release)" : ""} -> ${displayPath(targetDir)}`);
 	}
 
@@ -595,6 +706,21 @@ export async function buildExtension(options = {}) {
 			sums.push(`${sha256(archive)}  ${name}`);
 			result.archives.push(join(outDir, name));
 			log(`[browser-guard] packaged ${name} (${statSync(join(outDir, name)).size} bytes)`);
+			if (updateBaseUrl) {
+				// Same files, only manifest.json differs (validate-store.mjs checks exactly that).
+				const manifest = `${JSON.stringify(selfHostedManifest(target, result.targets[target].manifest, updateBaseUrl), null, 2)}\n`;
+				const selfHosted = createZip(
+					files.map((file) => ({
+						name: file,
+						data: file === "manifest.json" ? Buffer.from(manifest) : readFileSync(join(dir, file)),
+					})),
+				);
+				const selfHostedName = selfHostedArchiveName(target, version);
+				writeFileSync(join(outDir, selfHostedName), selfHosted);
+				sums.push(`${sha256(selfHosted)}  ${selfHostedName}`);
+				result.selfHostedArchives.push(join(outDir, selfHostedName));
+				log(`[browser-guard] packaged ${selfHostedName} (updates from ${selfHostedUpdateUrl(target, updateBaseUrl)})`);
+			}
 		}
 		writeFileSync(join(outDir, "SHA256SUMS"), `${sums.sort().join("\n")}\n`);
 	}
@@ -607,12 +733,20 @@ function parseArgs(argv) {
 		const arg = argv[i];
 		if (arg === "--release") options.release = true;
 		else if (arg === "--zip") options.zip = true;
+		else if (arg === "--update-base-url") {
+			const value = argv[++i];
+			if (!value) fail("--update-base-url needs an https:// URL");
+			options.updateBaseUrl = value;
+		}
 		else if (arg === "--root" || arg === "--out" || arg === "--entries-root") {
 			const value = argv[++i];
 			if (!value) fail(`${arg} needs a directory`);
 			options[{ "--root": "root", "--out": "outDir", "--entries-root": "entriesRoot" }[arg]] = value;
 		} else fail(`unknown argument ${arg}`);
 	}
+	// The environment variable applies to packaging only, so a development build ignores it.
+	const fromEnv = process.env[UPDATE_BASE_URL_ENV]?.trim();
+	if (options.zip && !options.updateBaseUrl && fromEnv) options.updateBaseUrl = fromEnv;
 	return options;
 }
 

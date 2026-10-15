@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { type Translate, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { FrameworkTags } from "../framework-coverage";
@@ -30,10 +32,18 @@ function verdictBadgeClass(verdict: string): string {
 	return "badge badge-neutral";
 }
 
-function summarize(event: EventRow): string {
+const VERDICT_LABEL: Record<string, DashboardMessageKey> = {
+	allow: "verdict.allow",
+	deny: "verdict.deny",
+	ask: "verdict.ask",
+};
+
+function summarize(event: EventRow, t: Translate): string {
 	if (event.type === "runtime_verdict") {
 		const tool =
-			typeof event.payload?.tool_name === "string" ? String(event.payload.tool_name) : "tool";
+			typeof event.payload?.tool_name === "string"
+				? String(event.payload.tool_name)
+				: t("activity.tool");
 		const severity =
 			typeof event.payload?.severity === "string" ? String(event.payload.severity) : "";
 		return `${tool}${severity ? ` (${severity})` : ""}`;
@@ -41,17 +51,19 @@ function summarize(event: EventRow): string {
 	if (event.type === "plugin_scan") return pluginScanSummary(event.payload);
 	if (event.type === "privacy_scan") return privacyEventSummary(event.payload);
 	if (event.type === "shadow_ai_usage") return shadowAiEventSummary(event.payload);
-	return "Additional event details are not shown.";
+	return t("events.noDetails");
 }
 
 export function EventsPage() {
 	const { currentTeam, isLoading } = useTeam();
-	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
-	if (!currentTeam) return <div role="alert">Select a team to view events.</div>;
+	const t = useT();
+	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
+	if (!currentTeam) return <div role="alert">{t("events.noTeam")}</div>;
 	return <TenantEventsPage key={currentTeam.id} tenantId={currentTeam.id} />;
 }
 
 function TenantEventsPage({ tenantId }: { tenantId: string }) {
+	const t = useT();
 	const [agents, setAgents] = useState<Map<string, AgentRow>>(new Map());
 	// null = not loaded / unavailable (fail-closed); [] = a real, empty feed.
 	const [events, setEvents] = useState<EventRow[] | null>(null);
@@ -84,14 +96,14 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 
 				const problems: string[] = [];
 				if (eventsRes.error || !Array.isArray(eventsRes.data)) {
-					problems.push(readErrorMessage(eventsRes.error, "Failed to load events"));
+					problems.push(readErrorMessage(eventsRes.error, t("events.loadFailed")));
 					setEvents(null);
 				} else {
 					setEvents(eventsRes.data as EventRow[]);
 				}
 
 				if (agentsRes.error || !Array.isArray(agentsRes.data)) {
-					problems.push(readErrorMessage(agentsRes.error, "Failed to load agents"));
+					problems.push(readErrorMessage(agentsRes.error, t("agents.loadFailed")));
 					setAgents(new Map());
 				} else {
 					const map = new Map<string, AgentRow>();
@@ -107,7 +119,7 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 				if (cancelled) return;
 				setEvents(null);
 				setAgents(new Map());
-				setError("Failed to load events");
+				setError(t("events.loadFailed"));
 			} finally {
 				inFlight = false;
 				if (!cancelled) setLoaded(true);
@@ -115,10 +127,10 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 		}
 
 		load();
-		const t = setInterval(load, 6000);
+		const timer = setInterval(load, 6000);
 		return () => {
 			cancelled = true;
-			clearInterval(t);
+			clearInterval(timer);
 		};
 	}, [tenantId]);
 
@@ -139,25 +151,28 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 			<div className="card">
 				<div className="row space-between" style={{ alignItems: "flex-start" }}>
 					<div>
-						<h1>Events</h1>
-						<p className="muted">
-							The latest 500 events received from this team's agents. With default reporting, ask
-							and deny verdicts are uploaded; allow verdicts require clean-verdict reporting.
-						</p>
+						<h1>{t("nav.events")}</h1>
+						<p className="muted">{t("events.intro")}</p>
 					</div>
 					<button
 						className="button button-secondary button-sm"
 						type="button"
 						onClick={() => location.reload()}
 					>
-						Refresh
+						{t("common.refresh")}
 					</button>
 				</div>
 				{events !== null ? (
 					<div className="row" style={{ marginTop: 12 }}>
-						<span className="badge badge-deny">{verdictCounts.deny} deny</span>
-						<span className="badge badge-ask">{verdictCounts.ask} ask</span>
-						<span className="badge badge-allow">{verdictCounts.allow} allow</span>
+						<span className="badge badge-deny">
+							{t("events.count.deny", { count: verdictCounts.deny })}
+						</span>
+						<span className="badge badge-ask">
+							{t("events.count.ask", { count: verdictCounts.ask })}
+						</span>
+						<span className="badge badge-allow">
+							{t("events.count.allow", { count: verdictCounts.allow })}
+						</span>
 					</div>
 				) : null}
 				{error ? (
@@ -172,11 +187,11 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Time</th>
-								<th>Agent</th>
-								<th>Type</th>
-								<th>Verdict</th>
-								<th>Summary</th>
+								<th>{t("activity.time")}</th>
+								<th>{t("activity.agent")}</th>
+								<th>{t("activity.type")}</th>
+								<th>{t("activity.verdict")}</th>
+								<th>{t("activity.summary")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -212,13 +227,15 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 										</td>
 										<td>
 											{verdict ? (
-												<span className={verdictBadgeClass(verdict)}>{verdict}</span>
+												<span className={verdictBadgeClass(verdict)}>
+													{VERDICT_LABEL[verdict] ? t(VERDICT_LABEL[verdict]) : verdict}
+												</span>
 											) : (
 												<span className="muted small">—</span>
 											)}
 										</td>
 										<td className="mono">
-											{summarize(event)}
+											{summarize(event, t)}
 											{event.type === "runtime_verdict" ? (
 												<FrameworkTags ruleId={event.payload?.matched_threat_id} />
 											) : null}
@@ -231,9 +248,9 @@ function TenantEventsPage({ tenantId }: { tenantId: string }) {
 									<td colSpan={5} className="muted">
 										{events === null
 											? loaded
-												? "Event data is unavailable right now."
-												: "Loading events…"
-											: "No events received yet. Check agent enrollment and telemetry delivery."}
+												? t("events.unavailable")
+												: t("events.loading")
+											: t("events.empty")}
 									</td>
 								</tr>
 							) : null}

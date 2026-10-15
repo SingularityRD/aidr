@@ -17,7 +17,9 @@ import type { Artifact } from "./types.js";
  * `apply_patch` maps to `Edit` because connectors emit it as their file-editing
  * tool. Its patch body may arrive in `command`, `input`, `patch`, or
  * `patchText`; normalize those host shapes before package, policy, AMSI, and
- * filesystem inspection.
+ * filesystem inspection. OpenCode exposes the same patchText tool as `patch`
+ * in some builds and a batched `multiedit` (`filePath` + `edits[]`); both are
+ * file edits and must reach the same filesystem legs.
  */
 export const CANONICAL_TOOL_NAMES: ReadonlyMap<string, string> = new Map<string, string>([
 	["bash", "Bash"],
@@ -27,6 +29,9 @@ export const CANONICAL_TOOL_NAMES: ReadonlyMap<string, string> = new Map<string,
 	["execute", "Bash"],
 	["run_command", "Bash"],
 	["run_terminal_cmd", "Bash"],
+	// Claude Code's PowerShell tool (the default shell on Windows without Git
+	// Bash) sends the command in `command`, exactly like Bash.
+	["powershell", "Bash"],
 	["write", "Write"],
 	["write_file", "Write"],
 	["create_file", "Write"],
@@ -34,6 +39,8 @@ export const CANONICAL_TOOL_NAMES: ReadonlyMap<string, string> = new Map<string,
 	["edit_file", "Edit"],
 	["update_file", "Edit"],
 	["apply_patch", "Edit"],
+	["patch", "Edit"],
+	["multiedit", "Edit"],
 	["read", "Read"],
 	["read_file", "Read"],
 	["delete", "Delete"],
@@ -44,6 +51,9 @@ export const CANONICAL_TOOL_NAMES: ReadonlyMap<string, string> = new Map<string,
 	["fetch_url", "WebFetch"],
 	["mcp", "MCP"],
 ]);
+
+/** Edit aliases whose payload is a patch body rather than discrete edit fields. */
+const PATCH_TOOL_NAMES: ReadonlySet<string> = new Set(["apply_patch", "patch"]);
 
 export function canonicalToolName(toolName: string): string {
 	const trimmed = toolName.trim();
@@ -513,6 +523,25 @@ function setPatchFields(toolInput: Record<string, unknown>): boolean {
 function applyEditFields(toolInput: Record<string, unknown>): void {
 	if (setPatchFields(toolInput)) return;
 
+	// A batched edit (`multiedit`: `edits[]` of {oldString, newString}) applies
+	// every replacement, so every replacement is the content to inspect. An
+	// entry whose replacement is not a string cannot be judged.
+	if (
+		firstString(toolInput, EDIT_CONTENT_ALIASES) === undefined &&
+		Array.isArray(toolInput.edits)
+	) {
+		const replacements = toolInput.edits.map((edit: unknown) => {
+			if (!edit || typeof edit !== "object") return undefined;
+			const record = edit as Record<string, unknown>;
+			return firstString(record, ["newString", "new_string"]);
+		});
+		if (replacements.some((replacement) => replacement === undefined)) {
+			toolInput.__aidr_input_normalization_failed = true;
+		}
+		const joined = replacements.filter((r): r is string => r !== undefined).join("\n");
+		if (joined !== "") toolInput.new_string = joined;
+	}
+
 	setCanonicalField(toolInput, "file_path", FILE_PATH_ALIASES);
 	setCanonicalField(toolInput, "old_string", ["oldString", "oldText"]);
 	setCanonicalField(
@@ -532,7 +561,9 @@ export function normalizeToolEvaluationRequest(
 ): ToolEvaluationRequest {
 	const toolName = canonicalToolName(request.toolName);
 	const toolInput = { ...request.toolInput };
-	const isApplyPatch = request.toolName.trim().toLowerCase() === "apply_patch";
+	// A patch tool carries its targets only inside the patch body; without one
+	// the edited files are unknowable.
+	const isApplyPatch = PATCH_TOOL_NAMES.has(request.toolName.trim().toLowerCase());
 
 	switch (toolName) {
 		case "Bash":

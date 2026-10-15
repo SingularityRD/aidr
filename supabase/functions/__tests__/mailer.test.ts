@@ -46,7 +46,9 @@ describe("mailer configuration", () => {
 			[{ RESEND_API_KEY: KEY }, "AIDR_MAIL_FROM"],
 			[{ AIDR_MAIL_FROM: "a@b.example" }, "RESEND_API_KEY"],
 			[{ AIDR_MAIL_PROVIDER: "resend" }, "RESEND_API_KEY"],
-			[{ AIDR_MAIL_PROVIDER: "smtp", RESEND_API_KEY: KEY, AIDR_MAIL_FROM: "a@b.example" }, "AIDR_MAIL_PROVIDER"],
+			[{ AIDR_MAIL_PROVIDER: "sendmail", RESEND_API_KEY: KEY, AIDR_MAIL_FROM: "a@b.example" }, "AIDR_MAIL_PROVIDER"],
+			// An explicit SMTP choice never falls back to Resend when the relay is not configured.
+			[{ AIDR_MAIL_PROVIDER: "smtp", RESEND_API_KEY: KEY, AIDR_MAIL_FROM: "a@b.example" }, "SMTP_HOST"],
 			[{ RESEND_API_KEY: KEY, AIDR_MAIL_FROM: "Evil\r\nBcc: x@y.example <a@b.example>" }, "AIDR_MAIL_FROM"],
 		];
 		for (const [values, variable] of cases) {
@@ -102,6 +104,42 @@ describe("Resend transport", () => {
 			text: "Hi",
 		});
 		expect(init.signal).toBeInstanceOf(AbortSignal);
+	});
+
+	it("sends attachments as base64 with their file name and type", async () => {
+		const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "msg_43" }), { status: 200 }));
+		const mailer = createResendMailer(KEY, "no-reply@aidr.example", { fetch: fetchMock as unknown as typeof fetch });
+		const content = Buffer.from("<!doctype html><p>Rapor</p>", "utf8").toString("base64");
+		const result = await mailer.send({
+			to: "person@example.com",
+			subject: "Report",
+			html: "<p>Hi</p>",
+			text: "Hi",
+			attachments: [{ filename: "aidr-executive-report-2026-10-14.html", contentType: "text/html", contentBase64: content }],
+		});
+		expect(result).toEqual({ ok: true, provider: "resend", messageId: "msg_43" });
+		const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+		expect(JSON.parse(String(init.body)).attachments).toEqual([
+			{ filename: "aidr-executive-report-2026-10-14.html", content: content, content_type: "text/html" },
+		]);
+	});
+
+	it("refuses unsafe attachments without a network call", async () => {
+		const fetchMock = vi.fn();
+		const mailer = createResendMailer(KEY, "no-reply@aidr.example", { fetch: fetchMock as unknown as typeof fetch });
+		const base = { to: "a@b.example", subject: "s", html: "h", text: "t" };
+		const ok = { filename: "report.html", contentType: "text/html" as const, contentBase64: "PGgxPg==" };
+		for (const attachments of [
+			[{ ...ok, filename: "../etc/passwd" }],
+			[{ ...ok, filename: "report.html\r\nX-Header: y" }],
+			[{ ...ok, contentType: "application/x-msdownload" }],
+			[{ ...ok, contentBase64: "not base64!" }],
+			[{ ...ok, contentBase64: "A".repeat(2_800_004) }],
+			[ok, ok, ok, ok],
+		]) {
+			expect(await mailer.send({ ...base, attachments } as never)).toEqual({ ok: false, reason: "invalid_message" });
+		}
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it("refuses malformed messages without a network call", async () => {

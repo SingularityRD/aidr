@@ -67,6 +67,17 @@ test("Prometheus scrape template loads the colocated canonical alert file", asyn
 	assert.match(config, /credentials_file:\s*\/run\/secrets\/aidr_metrics_token/);
 });
 
+test("Prometheus scrape template scrapes the posture scanner bridge with its own bearer token", async () => {
+	const config = await readFile(resolve("deploy", "monitoring", "prometheus-scrape.yml.example"), "utf8");
+	const job = config.split(/^  - job_name: /m).find((block) => block.startsWith("aidr-posture-scanner-bridge"));
+	assert.ok(job, "bridge scrape job is missing");
+	assert.match(job, /metrics_path: \/metrics/);
+	assert.match(job, /type: Bearer\s+credentials_file: \/run\/secrets\/aidr_bridge_metrics_token/);
+	assert.match(job, /- aig-bridge:8099/);
+	const compose = await readFile(resolve("docker-compose.posture-scanner.yml"), "utf8");
+	assert.match(compose, /- BRIDGE_METRICS_TOKEN=\$\{BRIDGE_METRICS_TOKEN:-\}/);
+});
+
 test("request metrics expose bounded RED counters and a cumulative duration histogram", () => {
 	const metrics = createHttpRequestMetrics();
 	metrics.observe(200, 0.25);
@@ -302,4 +313,55 @@ test("server wires liveness, fail-closed readiness, and safe metrics", async (t)
 	assert.match(metricsBody, /aidr_dashboard_http_requests_total\{status_class="2xx"\} 1/);
 	assert.match(metricsBody, /aidr_dashboard_http_request_duration_seconds_count 1/);
 	assert.equal(metricsBody.includes(privateMarker), false);
+});
+
+test("license expiry evidence becomes license gauges and never affects readiness", async (t) => {
+	const { dir } = await fixture(t);
+	const licenseFile = join(dir, "license.json");
+	const { config } = await fixture(t, { AIDR_LICENSE_HEALTH_FILE: licenseFile });
+	const monitor = (now = NOW) => createReadinessMonitor(config, { ...healthyOverrides(), now: () => now });
+
+	// Unreadable evidence: explicit 0, no remaining-time gauges, still ready.
+	let metrics = await monitor().metrics();
+	assert.match(metrics, /aidr_readiness 1/);
+	assert.match(metrics, /aidr_license_evidence_ok 0/);
+	assert.doesNotMatch(metrics, /aidr_license_remaining_seconds/);
+
+	await writeFile(licenseFile, JSON.stringify({ schema_version: 1, status: "ok", checked_at: "2026-09-12T11:00:00Z",
+		license_expires_at: "2026-10-12T12:00:00Z", grace_ends_at: "2026-10-26T12:00:00Z", signed: true }));
+	metrics = await monitor().metrics();
+	assert.match(metrics, /aidr_license_evidence_ok 1/);
+	assert.match(metrics, /aidr_license_present 1/);
+	assert.match(metrics, /aidr_license_status_age_seconds 3600/);
+	assert.match(metrics, /aidr_license_remaining_seconds 2592000/);
+	assert.match(metrics, /aidr_license_grace_remaining_seconds 3801600/);
+	assert.equal(metrics.includes(licenseFile), false);
+
+	// In grace: remaining 0, grace remaining positive; past grace: both 0.
+	metrics = await monitor(Date.parse("2026-10-20T12:00:00Z")).metrics();
+	assert.match(metrics, /aidr_license_remaining_seconds 0/);
+	assert.match(metrics, /aidr_license_grace_remaining_seconds 518400/);
+
+	await writeFile(licenseFile, JSON.stringify({ schema_version: 1, status: "unlicensed", checked_at: "2026-09-12T11:00:00Z" }));
+	metrics = await monitor().metrics();
+	assert.match(metrics, /aidr_license_present 0/);
+	assert.doesNotMatch(metrics, /aidr_license_remaining_seconds/);
+
+	for (const document of [
+		{ schema_version: 1, status: "failed", checked_at: "2026-09-12T11:00:00Z" },
+		{ schema_version: 1, status: "ok", checked_at: "2026-09-12T11:00:00Z", license_expires_at: "2026-10-12T12:00:00Z", grace_ends_at: "2026-10-01T12:00:00Z", signed: true },
+		{ schema_version: 1, status: "ok", checked_at: "2026-09-13T11:00:00Z", license_expires_at: "2026-10-12T12:00:00Z", grace_ends_at: "2026-10-26T12:00:00Z", signed: true },
+	]) {
+		await writeFile(licenseFile, JSON.stringify(document));
+		metrics = await monitor().metrics();
+		assert.match(metrics, /aidr_license_evidence_ok 0/, JSON.stringify(document));
+		assert.doesNotMatch(metrics, /aidr_license_remaining_seconds/);
+		assert.match(metrics, /aidr_readiness 1/);
+	}
+});
+
+test("without AIDR_LICENSE_HEALTH_FILE no license gauges are published", async (t) => {
+	const { config } = await fixture(t);
+	const metrics = await createReadinessMonitor(config, healthyOverrides()).metrics();
+	assert.doesNotMatch(metrics, /aidr_license_/);
 });

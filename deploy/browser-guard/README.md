@@ -13,28 +13,50 @@ extension's UI.
 | [`edge-intune.example.json`](edge-intune.example.json) | Edge on Windows through Microsoft Intune |
 | [`firefox-policies.example.json`](firefox-policies.example.json) | Firefox `policies.json` (Windows, macOS, Linux) |
 | [`macos-jamf.example.mobileconfig`](macos-jamf.example.mobileconfig) | Chrome and Edge on macOS through Jamf Pro (or any MDM) |
+| [`chrome-self-hosted-policy.example.json`](chrome-self-hosted-policy.example.json) | Self-hosted package, Chrome (and Edge) on Linux: installs and updates from your own `update.xml` |
+| [`windows-self-hosted-registry.example.reg`](windows-self-hosted-registry.example.reg) | Self-hosted package, Chrome and Edge on Windows |
 
-All five files carry the **same** managed values; the automated test
-`packages/browser-guard/src/__tests__/build-tools.test.ts` fails if they drift
-apart or use a key the extension does not accept.
+All seven files carry the **same** managed values and the same browser
+hardening policies (see [Hardening the browser](#hardening-the-browser)); the
+automated test `packages/browser-guard/src/__tests__/build-tools.test.ts` fails
+if they drift apart, drop a hardening policy, or use a key the extension does not
+accept. The store files use only the store IDs and update URLs, the self-hosted
+files only `<SELF_HOSTED_EXTENSION_ID>` and your internal update URL.
 
 ## Before you start
 
-1. **Get the extension IDs.** Replace every `REPLACE_WITH_CHROME_EXTENSION_ID`
-   and `REPLACE_WITH_EDGE_EXTENSION_ID` placeholder:
-   - Chrome Web Store / Edge Add-ons: the ID shown on the listing (32 letters
-     `a`-`p`). The store update URLs are already in the examples.
-   - Self-hosted Chromium build: pack `dist/chrome` with your own key
-     (`chrome --pack-extension=dist/chrome --pack-extension-key=browser-guard.pem`),
-     host the `.crx` with an `update.xml`, and use that URL instead of the store
-     URL. The ID is derived from the key. Chrome and Edge only install off-store
-     extensions when they are force-installed by policy on managed machines.
-   - Firefox always uses `browser-guard@singularityrd.com`. The XPI must be
-     signed by Mozilla (listed on addons.mozilla.org, or signed as unlisted and
-     self-hosted); replace the example `install_url`.
+1. **Put in the store IDs.** The examples install Browser Guard from the stores by
+   store ID. Replace every placeholder (search for the angle brackets; in the
+   `.mobileconfig` they are written `&lt;...&gt;`):
+   - `<CHROME_WEB_STORE_ID>`: the 32-letter (`a`-`p`) ID of the Chrome Web Store
+     listing, the last part of its URL. Update URL
+     `https://clients2.google.com/service/update2/crx` (already in the examples).
+   - `<EDGE_ADDONS_ID>`: the ID of the Microsoft Edge Add-ons listing (it differs
+     from the Chrome Web Store ID). Update URL
+     `https://edge.microsoft.com/extensionwebstorebase/v1/crx`. Edge can also
+     force-install the Chrome Web Store item (`<CHROME_WEB_STORE_ID>` with the Google
+     update URL); then put that ID in the Edge `3rdparty` policy key as well, because
+     managed configuration is looked up by the installed extension's ID.
+   - Firefox: the add-on ID is always `browser-guard@singularityrd.com` (the
+     addons.mozilla.org ID). Replace `<FIREFOX_XPI_HOST>` in `install_url` with
+     the HTTPS location of the Mozilla-signed XPI (unlisted, self-distributed), or
+     use `https://addons.mozilla.org/firefox/downloads/latest/<AMO_SLUG>/latest.xpi`
+     if the add-on is listed on addons.mozilla.org.
+   - Self-hosted package instead of the stores (isolated networks, updates from your
+     own server): use the `*-self-hosted-*` files. `<SELF_HOSTED_EXTENSION_ID>` is the
+     ID of the Singularity-signed CRX (it differs from the store IDs; your contact
+     gives it), and `<INTERNAL_HOST>` the HTTPS server that hosts the feed built by
+     `packages/browser-guard/scripts/update-feed.mjs`. `"override_update_url": true`
+     makes the browser take updates from that server. Chrome and Edge only install
+     off-store extensions when they are force-installed by policy on managed
+     machines. See ["Hosting Browser Guard updates internally"](../../docs/installation/browser-guard-enterprise.md#10-hosting-browser-guard-updates-internally).
+
+   Step-by-step guides for Intune, the Google Admin console, Jamf, Group Policy and
+   Firefox, with verification and rollback, are in
+   [`docs/installation/browser-guard-enterprise.md`](../../docs/installation/browser-guard-enterprise.md).
 2. **Replace the example values.** `policyId`, `literals`, the example
-   `exactData` set (its `keyB64` and `fingerprints` are `REPLACE_WITH_...`
-   placeholders: build the real dataset with `fingerprint-dataset.mjs`, see
+   `exactData` set (its `fingerprints` are a `REPLACE_WITH_...` placeholder and it
+   carries no key: build the real dataset with `fingerprint-dataset.mjs`, see
    [Exact data sets](#exact-data-sets). The extension refuses a policy that still
    carries the placeholder and reports it in its policy warnings), `telemetry.controlPlaneUrl` and `telemetry.apiKey`. Remove
    `telemetry` entirely if you do not want counts sent to your control plane.
@@ -64,15 +86,16 @@ apart or use a key the extension does not accept.
 | `enabledEntities` | array of entity types | e.g. `EMAIL`, `PHONE`, `TC_KIMLIK`, `IBAN`, `CREDIT_CARD`, `SECRET`, `PRIVATE_KEY` |
 | `neverRestore` | array of entity types | masked in prompts and kept masked in responses |
 | `literals` | array of `{ "value", "type" }` | organisation terms; up to 1024, each 2-256 characters |
-| `exactData` | array of `{ "datasetId", "keyB64", "fingerprints", "type" }` | up to 16 datasets, 100 000 fingerprints in total; build with `fingerprint-dataset.mjs` |
+| `exactData` | array of `{ "datasetId", "keySource": "native-host", "minEntropyBits", "fingerprints", "type" }` | up to 16 datasets, 100 000 fingerprints in total; build with `fingerprint-dataset.mjs`; no key in policy (the native host derives it); `minEntropyBits` at least 64 |
 | `detectSignals` | boolean | prompt-injection and source-code signals |
 | `signalAction` | string | `off`, `warn`, `block` |
 | `blockedSites` | array of site ids | the page is blocked from loading; `chatgpt`, `gemini`, `claude`, `copilot`, `perplexity`, `deepseek`, `mistral`, `grok` |
 | `disabledSites` | array of site ids | the guard only monitors on these sites (`custom` = every configured internal site) |
 | `customSites` | array of `{ "id", "label", "hosts", "editorSelectors", "sendButtonSelectors", "responseSelectors" }` | company-internal AI portals to protect; up to 20 sites, 1-10 exact HTTPS hosts each (no port, path, wildcard, IP or built-in AI host), up to 20 CSS selectors per list. Each user allows access to the hosts once on the options page (**AI services** > **Allow access**); only then is the content script registered there |
 | `shadowAi` | `{ "mode", "sanctioned", "blocked" }` | Shadow AI discovery and control: `mode` `off` (default), `monitor` (count visits per catalogued AI service and day) or `block-unsanctioned` (also block every catalogued service not in `sanctioned`); ids in `blocked` are blocked in every mode. Ids are the catalog ids in `src/sites/catalog.ts`. Blocking applies without any user grant. Counting visits, and showing the Browser Guard blocked page instead of the browser's own, need each user's one-time **Allow access** on the options page; until then the page reports access as missing |
-| `allowUserPause` | boolean | users may pause protection for up to 60 minutes |
-| `allowSendAnyway` | boolean | users may send unmasked after a warning |
+| `workAccounts` | `{ "action", "unverified", "sites" }` | personal vs company AI accounts on `chatgpt`, `claude`, `gemini`, `copilot`: an account whose workspace id (`workspaceIds`) or email domain (`emailDomains`) is not listed gets `action` `warn`, `block` or `mask-only`; `unverified` `enforce` (default) treats an account the page does not identify the same way. Signals, limits (desktop apps, Safari) and the proxy/identity-provider controls to pair it with: [`packages/browser-guard/docs/work-accounts.md`](../../packages/browser-guard/docs/work-accounts.md) |
+| `allowUserPause` | boolean | users may pause protection for up to 60 minutes. **`false` under any managed policy unless you set it to `true`** (the built-in `true` applies only to unmanaged installs). Sends during a pause are reported with `reason: "paused"` |
+| `allowSendAnyway` | boolean | users may send the original (unmasked) text after a warning. **`false` under any managed policy unless you set it to `true`** |
 | `maskPaste` | boolean | mask sensitive data as it is pasted |
 | `fileHandling` | string | `scan`, `block`, `allow` |
 | `documentHandling` | string | `mask` (default), `block`, `allow`: Office/PDF uploads when `fileHandling` is `scan`; optional, not set in the examples below |
@@ -98,6 +121,33 @@ read-only). A managed policy that fails validation still locks them. Set
 `allowUserOverrides: true` to let users keep changing the protection keys you
 do not set (a managed `mode` then still locks `disabledSites`). `language` and a
 user's own `telemetry` target are never locked unless you set them.
+`allowUserPause` and `allowSendAnyway` are not user settings: under any managed
+policy (and when the browser cannot read the managed policy at all) both are
+`false` unless you set them, whatever `allowUserOverrides` says.
+
+**Invalid values fail safe.** A managed value of the wrong type or with an unknown
+entry (a typo in a site id, `"false"` as a `REG_SZ` where a `REG_DWORD` is
+expected, `"Block"` instead of `"block"`) never falls back to the permissive
+built-in default:
+
+- a list keeps its valid entries and drops only the bad ones (`blockedSites`,
+  `disabledSites`, `literals`, `exactData`, `customSites`, the `shadowAi` id lists);
+  `enabledEntities` and `neverRestore` become every entity type;
+- any other protection key takes its strictest value: `mode` `block`,
+  `allowUserPause`/`allowSendAnyway` `false`, `requireNativeNer` `true`,
+  `maskPaste`/`detectSignals` `true`, `restoreResponses` `false`, `fileHandling`
+  and `documentHandling` `block`, `signalAction` `block`, `useNativeHost` `true`,
+  an unknown `shadowAi.mode` `block-unsanctioned`;
+- `telemetry`, `language`, `policyId`, `maxFileBytes`, `acceptableUse` and
+  `dashboardPolicy` have no safe value to invent and keep the built-in one.
+
+Each such key is locked and reported: the popup and the options page show "Your
+organization's policy has N invalid setting(s)", and every `privacy_scan` event
+carries `policy_errors: N`. Chrome and Edge also validate against the schema
+themselves and drop a value that does not match before the extension sees it
+(shown as an error at `chrome://policy` / `edge://policy`); the extension then
+treats the key as unset, which under a managed policy is still the locked
+built-in value (and `false` for pause and send-original).
 
 ## Requiring native NER
 
@@ -125,7 +175,7 @@ into a requirement. While `PERSON`, `ADDRESS` or `LOCATION` is in `enabledEntiti
   noticeably longer than with rules only, and one failed window blocks the whole
   upload. Measure on your target hardware with your largest typical files.
 
-The same requirement can be switched on from the dashboard (Browser Privacy Guard →
+The same requirement can be switched on from the dashboard (Browser Guard →
 **Require native NER**, owners and administrators, multi-factor verification,
 audited). It reaches browsers in the signed dashboard policy, so they also need
 `telemetry` and the managed `dashboardPolicy` trust anchor (see "Allow / block from
@@ -135,6 +185,26 @@ dashboard can switch the requirement on, but never off where this managed key is
 `true`. While four-eyes change control is on, switching it off in the dashboard is
 refused until four-eyes is turned off (which a second owner or administrator must
 approve).
+
+## Hardening the browser
+
+Browser Guard protects the browser profiles it runs in. Every example also sets
+the browser policies that close the obvious ways around it. They affect the whole
+browser, not only AI sites, so review each one before you roll it out:
+
+| Policy | Value | Why | Trade-off |
+|---|---|---|---|
+| Chrome `IncognitoModeAvailability` | `1` (disabled) | the extension is `incognito: "not_allowed"`: a private window has no protection | users lose private windows |
+| Edge `InPrivateModeAvailability` | `1` (disabled) | same for InPrivate | users lose InPrivate |
+| Firefox `DisablePrivateBrowsing` | `true` | same for private windows | users lose private windows |
+| Chrome/Edge `BrowserGuestModeEnabled` | `false` | a Guest profile runs without force-installed extensions | no Guest browsing |
+| Chrome/Edge `DeveloperToolsAvailability` | `2` (blocked everywhere) | the page console can call the AI site's API directly, past the guard; DevTools on the extension can also change its local state | developers lose DevTools; for developer groups use `1` (blocked only on policy-installed extensions) and accept the console path |
+| Firefox `DisableDeveloperTools` | `true` | same | same |
+| Chrome/Edge `ExtensionInstallBlocklist` `["*"]` + `ExtensionInstallAllowlist` | the Browser Guard id | another extension can read the page or call the AI API with the user's session | add every extension your organization approves to the allowlist (force-installed ones are always allowed) |
+| Firefox `ExtensionSettings["*"]` | `installation_mode: "blocked"` | same | list approved add-ons in `ExtensionSettings` as `allowed` or `force_installed` |
+
+Two gaps are outside any browser policy: other browsers on the machine (block or
+manage them with your endpoint tooling) and other operating-system user profiles.
 
 ## Chrome and Edge on Windows (Group Policy)
 
@@ -199,7 +269,10 @@ Linux: `/etc/firefox/policies/` or the install directory's `distribution/`).
 On Windows you can use the Firefox ADMX templates instead; on macOS, the
 `org.mozilla.firefox` preference domain with `EnterprisePoliciesEnabled`.
 
-- `ExtensionSettings` force-installs the add-on from `install_url`.
+- `ExtensionSettings` force-installs the add-on from `install_url` and blocks
+  every other add-on (`"*": { "installation_mode": "blocked" }`).
+- `DisablePrivateBrowsing` and `DisableDeveloperTools` close private windows and
+  the page console (see [Hardening the browser](#hardening-the-browser)).
 - `3rdparty.Extensions["browser-guard@singularityrd.com"]` holds the managed
   values as plain JSON.
 
@@ -213,9 +286,9 @@ Upload `macos-jamf.example.mobileconfig` as a configuration profile
 
 | Preference domain | Content |
 |---|---|
-| `com.google.Chrome` | `ExtensionInstallForcelist`, `ExtensionSettings` |
+| `com.google.Chrome` | `ExtensionInstallForcelist`, `ExtensionSettings`, and the hardening keys `IncognitoModeAvailability`, `BrowserGuestModeEnabled`, `DeveloperToolsAvailability`, `ExtensionInstallBlocklist`, `ExtensionInstallAllowlist` |
 | `com.google.Chrome.extensions.<id>` | the managed values |
-| `com.microsoft.Edge` | `ExtensionInstallForcelist` |
+| `com.microsoft.Edge` | `ExtensionInstallForcelist`, and the hardening keys `InPrivateModeAvailability`, `BrowserGuestModeEnabled`, `DeveloperToolsAvailability`, `ExtensionInstallBlocklist`, `ExtensionInstallAllowlist` |
 | `com.microsoft.Edge.extensions.<id>` | the managed values |
 
 Arrays and dictionaries are native plist types here (no JSON strings). Scope
@@ -233,40 +306,50 @@ Copy `chrome-managed-policy.example.json` to
 ## Exact data sets
 
 ```bash
+node packages/browser-guard/scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
 node packages/browser-guard/scripts/fingerprint-dataset.mjs \
-  --in customers.csv --header --columns full_name \
+  --in customers.csv --header --columns full_name,account_no --composite \
   --dataset-id crm-customers --type PERSON \
-  --key-file crm.key.b64 --out crm-customers.json
+  --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
-Put the JSON object into the `exactData` array, replacing the example entry
-whose `keyB64` is `REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET`. While any
+Managed policy is readable by every user of the endpoint (`chrome://policy`, the
+registry, `policies.json`), so a dataset carries no key. Install `edm-secret.b64` with
+the AIDR Privacy native host (`"exactData": {"secretFile": ...}` in its config; see
+`packages/browser-guard/docs/native-host.md`); the host derives each dataset's key from
+it. Datasets need the native host: without it (or on Firefox) their scans are reported
+incomplete. The tool refuses datasets whose values could be enumerated (below 64 bits
+of estimated entropy, for example names or customer numbers on their own): combine
+columns with `--composite`. Older datasets that carry `keyB64` are refused with a
+warning; rebuild them.
+
+Put the JSON object into the `exactData` array, replacing the example entry whose
+fingerprints are `REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET`. While any
 dataset still carries a `REPLACE_WITH_` placeholder, the extension ignores the
 whole managed `exactData` value and warns
 (`managed: "exactData" still holds the example placeholder key`). Earlier
 versions of these examples shipped a real 32-byte example key; it was retired as
 compromised (see `docs/production-readiness/secret-history-triage-2026-10-11.md`).
-Never reuse a key from an example or from this repository's history. Keep `crm.key.b64` (or let the
-tool generate a key on first run and save `keyB64` from the output) so later
-regenerations keep the same fingerprints. The dataset contains the HMAC key, so
-anyone with the dataset can test guessed values against it: deliver it only
-through managed policy and restrict who can read the policy files. The
-normalisation and fingerprint algorithm are documented in
-`packages/browser-guard/README.md`.
+Keep `edm-secret.b64` outside the repository and restrict who can read it; the same
+secret and dataset id reproduce the same fingerprints. The normalisation and
+fingerprint algorithm are documented in `packages/browser-guard/README.md`.
 
 ## Verifying a rollout
 
 1. `chrome://policy` / `edge://policy` / `about:policies` shows the extension
    policy with status OK.
 2. The extension popup shows the mode with a lock icon and "Managed by your
-   organization".
+   organization", and no "invalid setting(s)" policy error. AI tabs that were
+   open when the extension was installed are protected without a reload (the
+   extension injects into them); a tab it could not reach shows **Not
+   protected — reload this tab**.
 3. On a supported AI site, type a test value such as an example email address
    (`jane.doe@example.com`) and send it: in `auto` mode the site receives
    `[EMAIL_1]`.
 4. With telemetry configured, `privacy_scan` counts appear in the control plane
    within about a minute.
 5. With `customSites` or `shadowAi` set, the options page has an **AI services**
-   section. After **Allow access**, a custom site shows **Protected** (reload tabs
-   that were already open) and Shadow AI shows "Access granted"; opening an
+   section. After **Allow access**, a custom site shows **Protected** (tabs that
+   were already open are injected at once) and Shadow AI shows "Access granted"; opening an
    unsanctioned catalogued service (in `block-unsanctioned` mode) shows the blocked
    page, and `shadow_ai_usage` counts reach the dashboard's **Shadow AI** panel.

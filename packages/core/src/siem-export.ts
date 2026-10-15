@@ -1,5 +1,5 @@
 import { frameworkRefLabels, frameworkRefsFromJson } from "./framework-mappings.js";
-import type { Incident, IncidentSeverity } from "./incidents/types.js";
+import type { Incident, IncidentEventRef, IncidentSeverity } from "./incidents/types.js";
 import type { FrameworkRefs, FrameworkRefsJson } from "./types.js";
 import { VERSION } from "./version.js";
 
@@ -113,6 +113,10 @@ function cefKv(key: string, value: string | number | boolean | undefined | null)
 function buildCefExtension(incident: Incident): string {
 	const parts: string[] = [];
 
+	// ArcSight standard keys first (receipt time in epoch ms, external id).
+	parts.push(cefKv("rt", incident.last_seen_ms));
+	parts.push(cefKv("externalId", incident.incident_id));
+	parts.push(cefKv("cat", "incident"));
 	parts.push(cefKv("incident_id", incident.incident_id));
 	parts.push(cefKv("opened_at_ms", incident.opened_at_ms));
 	parts.push(cefKv("last_seen_ms", incident.last_seen_ms));
@@ -206,6 +210,12 @@ function leefKv(key: string, value: string | number | boolean | undefined | null
 function buildLeefExtension(incident: Incident): string {
 	const pairs: string[] = [];
 
+	// LEEF predefined keys (QRadar maps these without a custom property).
+	pairs.push(leefKv("cat", "incident"));
+	pairs.push(leefKv("sev", CEF_SEVERITY[incident.severity]));
+	pairs.push(leefKv("devTime", incident.last_seen_ms));
+	pairs.push(leefKv("externalId", incident.incident_id));
+	pairs.push(leefKv("name", leefName(incident)));
 	pairs.push(leefKv("incident_id", incident.incident_id));
 	pairs.push(leefKv("opened_at_ms", incident.opened_at_ms));
 	pairs.push(leefKv("last_seen_ms", incident.last_seen_ms));
@@ -364,11 +374,12 @@ export function exportToLEEF(incidents: Incident[], filter?: SiemExportFilter): 
 
 	return matched
 		.map((inc) => {
-			const name = escapeLeefHeader(leefName(inc));
+			// LEEF 1.0: exactly five pipe-delimited header fields, then the
+			// tab-delimited attributes (name and sev are attributes, not header fields).
 			const eventId = escapeLeefHeader(leefEventId(inc));
 			const ext = buildLeefExtension(inc);
 
-			return `LEEF:1.0|${VENDOR}|${PRODUCT}|${VERSION}|${eventId}|${name}|${CEF_SEVERITY[inc.severity]}|${ext}`;
+			return `LEEF:1.0|${VENDOR}|${PRODUCT}|${VERSION}|${eventId}|${ext}`;
 		})
 		.join("\n");
 }
@@ -547,6 +558,126 @@ export function formatSyslogMessage(
 		if (remaining === 0) throw new SyslogMessageTooLargeError();
 		remaining = Math.floor(remaining / 2);
 	}
+}
+
+const SEVERITY_VALUES: readonly IncidentSeverity[] = ["info", "warning", "high", "critical"];
+const STATUS_VALUES: readonly Incident["status"][] = [
+	"open",
+	"acknowledged",
+	"contained",
+	"resolved",
+	"suppressed",
+];
+const SIGNAL_TYPES: readonly IncidentEventRef["signal_type"][] = [
+	"runtime_verdict",
+	"plugin_scan_finding",
+	"explicit_incident",
+	"unknown",
+];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function optionalText(value: unknown): string | undefined {
+	return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+function eventRefFromRecord(item: unknown): IncidentEventRef | null {
+	if (!item || typeof item !== "object") return null;
+	const event = item as Record<string, unknown>;
+	const severity = event.severity as IncidentSeverity;
+	const signalType = event.signal_type as IncidentEventRef["signal_type"];
+	if (
+		typeof event.signal_id !== "string" ||
+		!Number.isSafeInteger(event.timestamp_ms) ||
+		!SEVERITY_VALUES.includes(severity) ||
+		typeof event.summary !== "string"
+	)
+		return null;
+	return {
+		signal_id: event.signal_id,
+		timestamp_ms: event.timestamp_ms as number,
+		signal_type: SIGNAL_TYPES.includes(signalType) ? signalType : "unknown",
+		severity,
+		summary: event.summary,
+		...(event.frameworks && typeof event.frameworks === "object"
+			? { frameworks: event.frameworks as FrameworkRefsJson }
+			: {}),
+	};
+}
+
+/**
+ * Rebuild an {@link Incident} from its JSON SIEM record
+ * ({@link incidentToSiemRecord}), so a queued delivery can be rendered as CEF
+ * or LEEF with {@link exportToCEF} / {@link exportToLEEF}. Returns null when
+ * the record is not a well-formed incident record.
+ */
+export function incidentFromSiemRecord(record: Record<string, unknown>): Incident | null {
+	const severity = record.severity as IncidentSeverity;
+	const status = record.status as Incident["status"];
+	if (
+		typeof record.incident_id !== "string" ||
+		!Number.isSafeInteger(record.opened_at_ms) ||
+		!Number.isSafeInteger(record.last_seen_ms) ||
+		!SEVERITY_VALUES.includes(severity) ||
+		!STATUS_VALUES.includes(status) ||
+		!Array.isArray(record.events)
+	)
+		return null;
+	const events = record.events.map(eventRefFromRecord);
+	if (!events.every((event): event is IncidentEventRef => event !== null)) return null;
+	const incident: Incident = {
+		incident_id: record.incident_id,
+		opened_at_ms: record.opened_at_ms as number,
+		last_seen_ms: record.last_seen_ms as number,
+		severity,
+		status,
+		events,
+	};
+	for (const key of [
+		"session_id",
+		"agent_iid",
+		"connector",
+		"plugin_key",
+		"package_name",
+		"domain",
+		"file_path",
+	] as const) {
+		const value = optionalText(record[key]);
+		if (value) incident[key] = value;
+	}
+	return incident;
+}
+
+/**
+ * One BSD-style (RFC 3164) syslog line, `<PRI>Mmm dd hh:mm:ss HOST APP: MSG`,
+ * the framing QRadar, ArcSight and Wazuh expect in front of a CEF or LEEF
+ * record. Control characters in `line` are replaced so a value can never start
+ * a second record.
+ */
+export function formatSyslogLegacyMessage(
+	input: { timestampMs: number; severity: IncidentSeverity; line: string },
+	options: SyslogFormatOptions = {},
+): string {
+	const facility = options.facility ?? DEFAULT_SYSLOG_FACILITY;
+	if (!Number.isInteger(facility) || facility < 0 || facility > 23)
+		throw new RangeError("Syslog facility must be an integer from 0 to 23");
+	const maxBytes = options.maxBytes ?? DEFAULT_SYSLOG_MAX_BYTES;
+	if (!Number.isSafeInteger(maxBytes) || maxBytes < 480)
+		throw new RangeError("Syslog maxBytes must be at least 480");
+	if (!Number.isSafeInteger(input.timestampMs) || input.timestampMs < 0)
+		throw new RangeError("Syslog timestamp must be a non-negative safe integer");
+	const when = new Date(input.timestampMs);
+	const stamp = `${MONTHS[when.getUTCMonth()]} ${String(when.getUTCDate()).padStart(2, " ")} ${when
+		.toISOString()
+		.slice(11, 19)}`;
+	const message = `<${facility * 8 + SYSLOG_SEVERITY[input.severity]}>${stamp} ${syslogHeaderField(
+		options.hostname ?? "aidr",
+		255,
+	)} ${syslogHeaderField(options.appName ?? DEFAULT_SYSLOG_APP_NAME, 48)}: ${input.line.replace(
+		/[\x00-\x08\x0a-\x1f\x7f-\x9f\p{Zl}\p{Zp}]/gu,
+		" ",
+	)}`;
+	if (Buffer.byteLength(message, "utf8") > maxBytes) throw new SyslogMessageTooLargeError();
+	return message;
 }
 
 /**

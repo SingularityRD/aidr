@@ -1,3 +1,5 @@
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import { supabase } from "./supabase";
 
 /**
@@ -15,10 +17,11 @@ export const DETECTION_EXCEPTION_MAX_DAYS = 30;
 export const SUBJECT_KINDS = ["user", "agent", "repo"] as const;
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];
 
-export const SUBJECT_LABEL: Readonly<Record<SubjectKind, string>> = {
-	user: "Member",
-	agent: "Agent",
-	repo: "Repository",
+/** Catalog keys: render with `t(SUBJECT_LABEL[kind])`. */
+export const SUBJECT_LABEL: Readonly<Record<SubjectKind, DashboardMessageKey>> = {
+	user: "dex.subject.user",
+	agent: "dex.subject.agent",
+	repo: "dex.subject.repo",
 };
 
 export interface DetectionExceptionRow {
@@ -152,29 +155,53 @@ export interface ExceptionDraft {
 	artifactSha256: string;
 }
 
+/**
+ * A draft pre-filled from the page's query string (the Security incidents page
+ * links here after a false-positive decision). Only well-formed values are
+ * taken; nothing is submitted until an owner/admin reviews and sends the form,
+ * and the server checks everything again. Defaults to a 7-day end date.
+ */
+export function draftFromQuery(search: string, nowMs: number): ExceptionDraft {
+	const params = new URLSearchParams(search);
+	const rule = (params.get("rule") ?? "").trim();
+	const kind = params.get("subject_kind");
+	const subjectKind: SubjectKind =
+		kind === "agent" || kind === "repo" || kind === "user" ? kind : "user";
+	const subject = (params.get("subject") ?? "").trim();
+	const subjectOk = subjectKind === "repo" ? subject.length <= 512 : UUID.test(subject);
+	return {
+		ruleId: RULE_ID.test(rule) && !isProtectedRule(rule) ? rule : "",
+		subjectKind,
+		subject: subjectOk ? subject : "",
+		endDate: new Date(nowMs + 7 * 86_400_000).toISOString().slice(0, 10),
+		reason: (params.get("reason") ?? "").replace(/\s+/g, " ").trim().slice(0, 500),
+		artifactSha256: "",
+	};
+}
+
 /** A user-facing problem with the draft, or null when it can be sent. */
-export function draftProblem(draft: ExceptionDraft, nowMs: number): string | null {
+export function draftProblem(
+	draft: ExceptionDraft,
+	nowMs: number,
+	t: Translate = englishT,
+): string | null {
 	const ruleId = draft.ruleId.trim();
-	if (!RULE_ID.test(ruleId)) return "Enter a rule id such as CLT-CMD-011.";
-	if (isProtectedRule(ruleId)) return "Self-defense rules cannot be excepted.";
+	if (!RULE_ID.test(ruleId)) return t("dex.problem.rule");
+	if (isProtectedRule(ruleId)) return t("dex.problem.protected");
 	const subject = draft.subject.trim();
 	if (draft.subjectKind === "repo") {
-		if (!subject || subject.length > 512)
-			return "Enter the repository (origin remote such as github.com/acme/app).";
+		if (!subject || subject.length > 512) return t("dex.problem.repo");
 	} else if (!UUID.test(subject)) {
-		return draft.subjectKind === "user" ? "Choose a workspace member." : "Enter the agent id.";
+		return draft.subjectKind === "user" ? t("dex.problem.member") : t("dex.problem.agent");
 	}
 	const end = Date.parse(`${draft.endDate}T00:00:00.000Z`);
-	if (!Number.isFinite(end) || end <= nowMs + 5 * 60_000)
-		return "The end date must be in the future.";
+	if (!Number.isFinite(end) || end <= nowMs + 5 * 60_000) return t("dex.problem.future");
 	if (end > nowMs + DETECTION_EXCEPTION_MAX_DAYS * 86_400_000) {
-		return `An exception can last at most ${DETECTION_EXCEPTION_MAX_DAYS} days.`;
+		return t("dex.problem.maxDays", { days: DETECTION_EXCEPTION_MAX_DAYS });
 	}
-	if (!draft.reason.trim() || draft.reason.trim().length > 500)
-		return "A reason (up to 500 characters) is required.";
+	if (!draft.reason.trim() || draft.reason.trim().length > 500) return t("dex.problem.reason");
 	const digest = draft.artifactSha256.trim().toLowerCase();
-	if (digest && !DIGEST.test(digest))
-		return "The artifact digest must be a 64-character SHA-256 hex value.";
+	if (digest && !DIGEST.test(digest)) return t("dex.problem.digest");
 	return null;
 }
 
@@ -205,36 +232,36 @@ export async function revokeDetectionException(
 	});
 }
 
-export function exceptionErrorMessage(code: string): string {
+export function exceptionErrorMessage(code: string, t: Translate = englishT): string {
 	switch (code) {
 		case "mfa_required":
-			return "Multi-factor verification (AAL2) is required. Verify with your authenticator, then try again.";
+			return t("dex.err.mfa");
 		case "sso_required":
-			return "This workspace requires single sign-on. Sign in with your identity provider, then try again.";
+			return t("gov.err.sso");
 		case "detection_exception_role_insufficient":
 		case "detection_exception_forbidden":
-			return "Only workspace owners and admins can manage detection exceptions.";
+			return t("dex.err.forbidden");
 		case "workspace_forbidden":
-			return "You are not an active member of this workspace.";
+			return t("gov.err.notMember");
 		case "protected_rule":
 		case "detection_exception_protected_rule":
-			return "Self-defense rules cannot be excepted.";
+			return t("dex.problem.protected");
 		case "detection_exception_subject_unknown":
-			return "That member or agent does not belong to this workspace.";
+			return t("dex.err.subjectUnknown");
 		case "detection_exception_quota":
-			return "At most 500 detection exceptions can be active at once.";
+			return t("dex.err.quota");
 		case "detection_exception_not_active":
-			return "This exception is no longer active.";
+			return t("gov.err.exceptionInactive");
 		case "detection_exception_not_found":
-			return "This exception no longer exists.";
+			return t("dex.err.notFound");
 		case "invalid_expires_at":
-			return `The end date must be between 5 minutes and ${DETECTION_EXCEPTION_MAX_DAYS} days from now.`;
+			return t("dex.err.expires", { days: DETECTION_EXCEPTION_MAX_DAYS });
 		case "rate_limited":
-			return "Too many requests. Wait a minute and try again.";
+			return t("gov.err.rateLimited");
 		case "invalid_access_token":
 		case "session_revoked":
-			return "Your session is no longer valid. Sign in again.";
+			return t("common.sessionInvalid");
 		default:
-			return "The detection exception service did not confirm the request. Nothing changed.";
+			return t("dex.err.generic");
 	}
 }

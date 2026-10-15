@@ -47,10 +47,12 @@ const { values, positionals } = parseArgs({
 	},
 });
 const action = positionals[0];
-if (!["preflight", "apply", "resume", "rollback-plan", "recover"].includes(action)) {
-	throw new Error("Use preflight|apply|resume|rollback-plan|recover with --current, --target, --backup, --key-file and --contract; recover also requires --recovery-runtime");
+if (!["check", "preflight", "apply", "resume", "rollback-plan", "recover"].includes(action)) {
+	throw new Error("Use check with --current, --target and --contract, or preflight|apply|resume|rollback-plan|recover with --current, --target, --backup, --key-file and --contract; recover also requires --recovery-runtime");
 }
-for (const name of ["current", "target", "backup", "key-file", "contract"]) {
+// `check` is the read-only compatibility gate run before a backup exists: it
+// needs no backup, takes no lock and writes nothing.
+for (const name of action === "check" ? ["current", "target", "contract"] : ["current", "target", "backup", "key-file", "contract"]) {
 	if (!values[name]) throw new Error(`--${name} is required`);
 }
 if (["apply", "resume", "recover"].includes(action) && !values.maintenance) {
@@ -62,8 +64,8 @@ if (action === "recover" && !values["recovery-runtime"]) {
 
 const current = resolve(values.current);
 const target = resolve(values.target);
-const backup = resolve(values.backup);
-const keyFile = resolve(values["key-file"]);
+const backup = values.backup ? resolve(values.backup) : null;
+const keyFile = values["key-file"] ? resolve(values["key-file"]) : null;
 const contractPath = resolve(values.contract);
 const stateDir = join(current, ".aidr-upgrade");
 const statePath = join(stateDir, "state.json");
@@ -78,7 +80,7 @@ if (!Number.isFinite(maxBackupAgeHours) || maxBackupAgeHours <= 0 || maxBackupAg
 if (current === target || target.startsWith(`${current}${sep}`) || current.startsWith(`${target}${sep}`)) {
 	throw new Error("Current and target installations must be separate, non-nested directories");
 }
-if ([current, target, backup].some((path) => recoveryOutput === path || recoveryOutput.startsWith(`${path}${sep}`))) {
+if ([current, target, backup].filter(Boolean).some((path) => recoveryOutput === path || recoveryOutput.startsWith(`${path}${sep}`))) {
 	throw new Error("Recovery output must be outside the current, target and backup directories");
 }
 if (recoveryRuntime && [current, target, backup, recoveryOutput].some((path) => recoveryRuntime === path || recoveryRuntime.startsWith(`${path}${sep}`) || path.startsWith(`${recoveryRuntime}${sep}`))) {
@@ -858,8 +860,37 @@ async function runUpgrade(state) {
 	return state;
 }
 
+// Read-only compatibility gate: the same manifest, append-only history, contract
+// and signing-continuity checks preflight runs, without a backup, lock or state.
+// Prints one JSON summary line for scripts/onprem-upgrade.mjs.
+function check() {
+	const currentInfo = validateManifest(current, "Current installation");
+	const targetInfo = validateManifest(target, "Target candidate");
+	validateUpgradePath(currentInfo, targetInfo);
+	validateContract(json(contractPath), currentInfo, targetInfo);
+	validateSigningContinuity(join(current, "agent-config.json"));
+	validateSigningContinuity(join(target, "agent-config.json"));
+	const summary = (info) => ({
+		manifest_sha256: info.sha256,
+		source_commit: info.manifest.source_commit,
+		dashboard_image: info.manifest.dashboard_image ?? null,
+		migrations: info.manifest.migrations.length,
+	});
+	const existing = existsSync(statePath) ? json(statePath) : null;
+	return {
+		schema_version: 1,
+		compatible: true,
+		current: summary(currentInfo),
+		target: summary(targetInfo),
+		new_migrations: targetInfo.manifest.migrations.slice(currentInfo.manifest.migrations.length).map((entry) => entry.name),
+		upgrade_state: existing ? { status: existing.status ?? null, last_completed_phase: existing.last_completed_phase ?? null, target: existing.paths?.target ?? null } : null,
+	};
+}
+
 async function main() {
-	if (action === "preflight") {
+	if (action === "check") {
+		console.log(JSON.stringify(check()));
+	} else if (action === "preflight") {
 		if (existsSync(statePath)) throw new Error("An upgrade state already exists; use resume, or archive the reviewed state before a different upgrade");
 		const state = await preflight();
 		console.log(`Upgrade preflight passed. Exact target ${state.target_manifest_sha256}; no application or schema change was committed.`);
@@ -914,12 +945,13 @@ async function main() {
 	}
 }
 
-acquireLock();
+const readOnly = action === "check";
+if (!readOnly) acquireLock();
 try {
 	await main();
 } catch (error) {
 	console.error(error);
 	process.exitCode = signalExitCodes[pendingSignal] ?? 1;
 } finally {
-	releaseLock();
+	if (!readOnly) releaseLock();
 }

@@ -41,6 +41,30 @@
 		"message": "Browser Guard; ChatGPT, Gemini, Claude, Copilot, Perplexity, DeepSeek, Mistral ve Grok üzerinde çalışır.",
 		"description": "Unsupported detail."
 	},
+	"status_inactive": {
+		"message": "Korunmuyor — bu sekmeyi yenileyin",
+		"description": "Current tab is a protected AI site but Browser Guard is not running in it (open since before the extension started)."
+	},
+	"status_inactive_detail": {
+		"message": "Bu $SITE$ sekmesi Browser Guard başlamadan önce açılmıştı; burada gönderdikleriniz denetlenmiyor. Korumak için sekmeyi yenileyin.",
+		"description": "Inactive detail.",
+		"placeholders": {
+			"site": {
+				"content": "$1",
+				"example": "ChatGPT"
+			}
+		}
+	},
+	"policy_error": {
+		"message": "Kuruluşunuzun politikasında $COUNT$ geçersiz ayar var. En sıkı değerler uygulanıyor; yöneticinize başvurun.",
+		"description": "Popup and options notice when managed policy values were invalid and fail-safe values were applied.",
+		"placeholders": {
+			"count": {
+				"content": "$1",
+				"example": "2"
+			}
+		}
+	},
 	"status_paused": {
 		"message": "$TIME$ saatine kadar duraklatıldı",
 		"description": "Protection paused by the user.",
@@ -52,7 +76,7 @@
 		}
 	},
 	"status_paused_detail": {
-		"message": "O saate kadar $SITE$ hizmetine giden mesajlar yalnızca izlenir, hiçbir veri maskelenmez.",
+		"message": "O saate kadar $SITE$ hizmetine giden mesajlar yalnızca sayılır, hiçbir veri maskelenmez.",
 		"description": "Paused detail.",
 		"placeholders": {
 			"site": {
@@ -104,7 +128,7 @@
 		}
 	},
 	"status_monitoring": {
-		"message": "Yalnızca izleniyor",
+		"message": "Yalnızca sayılıyor (maskeleme yok)",
 		"description": "Mode is monitor."
 	},
 	"status_monitoring_detail": {
@@ -126,11 +150,11 @@
 		"description": "Mode: mask automatically."
 	},
 	"mode_auto_help": {
-		"message": "Hassas veriler gönderilmeden önce [EMAIL_1] gibi yer tutucularla değiştirilir.",
+		"message": "Hassas veriler gönderilmeden önce [EMAIL_1] gibi etiketlerle değiştirilir.",
 		"description": "Auto mode help."
 	},
 	"mode_confirm": {
-		"message": "Onayla",
+		"message": "Bana sor",
 		"description": "Mode: ask before sending."
 	},
 	"mode_confirm_help": {
@@ -146,7 +170,7 @@
 		"description": "Block mode help."
 	},
 	"mode_monitor": {
-		"message": "İzle",
+		"message": "Yalnızca say (maskeleme yok)",
 		"description": "Mode: count only."
 	},
 	"mode_monitor_help": {
@@ -198,7 +222,7 @@
 		"description": "Popup toggle."
 	},
 	"restore_visible_help": {
-		"message": "Yanıtlardaki yer tutucular yalnızca bu cihazda orijinal verilerinizle değiştirilir.",
+		"message": "Yanıtlardaki [EMAIL_1] gibi etiketler yalnızca bu cihazda orijinal verilerinizle değiştirilir.",
 		"description": "Popup toggle help."
 	},
 	"restore_visible_off": {
@@ -240,8 +264,12 @@
 		"description": "Native host connected."
 	},
 	"native_unavailable": {
-		"message": "Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin",
+		"message": "Kişi adları ve adresler denetlenmiyor: AIDR Privacy yardımcı uygulaması kullanılamıyor. Yerleşik kurallar etkin.",
 		"description": "Native host unavailable."
+	},
+	"native_off": {
+		"message": "Kişi adları ve adresler denetlenmiyor: gelişmiş algılama kapalı. Yerleşik kurallar etkin.",
+		"description": "Popup: native host (NER) not in use, so names are not checked."
 	},
 	"notice_saved": {
 		"message": "Kaydedildi",
@@ -260,7 +288,7 @@
 		"description": "Toast."
 	},
 	"notice_restore_off": {
-		"message": "Yanıtlarda yer tutucular gösteriliyor",
+		"message": "Yanıtlarda [EMAIL_1] gibi etiketler gösteriliyor",
 		"description": "Toast."
 	},
 	"notice_term_added": {
@@ -400,7 +428,7 @@
 		"description": "Toggle."
 	},
 	"restore_responses_help": {
-		"message": "Yapay zekâ yanıtlarındaki yer tutucular yalnızca bu cihazda verilerinizle değiştirilir. Yapay zekâ hizmeti orijinalleri hiçbir zaman görmez.",
+		"message": "Yapay zekâ yanıtlarındaki [EMAIL_1] gibi etiketler yalnızca bu cihazda verilerinizle değiştirilir. Yapay zekâ hizmeti orijinalleri hiçbir zaman görmez.",
 		"description": "Toggle help."
 	},
 	"terms_intro": {
@@ -910,7 +938,7 @@
 		"description": "Options: native host switch help."
 	},
 	"native_required": {
-		"message": "Kurumunuz tarafından zorunlu tutuluyor: yardımcı uygulama bir istemi, yapıştırmayı veya yüklemeyi ad ve adres açısından denetleyemezse (kurulu değil, yanıt vermiyor, ad algılaması yok, metin çok uzun) yalnızca yerleşik kurallarla denetlenmek yerine engellenir.",
+		"message": "Kurumunuz tarafından zorunlu tutuluyor: yardımcı uygulama bir mesajı, yapıştırmayı veya yüklemeyi ad ve adres açısından denetleyemezse (kurulu değil, yanıt vermiyor, ad algılaması yok, metin çok uzun) yalnızca yerleşik kurallarla denetlenmek yerine engellenir.",
 		"description": "Options: managed requireNativeNer is on (native NER is mandatory)."
 	},
 	"native_permission_granted": {
@@ -938,7 +966,7 @@
 		"description": "Notice: nativeMessaging permission granted."
 	},
 	"native_status_disabled": {
-		"message": "Gelişmiş algılama kapalı; yerleşik kurallar etkin",
+		"message": "Gelişmiş algılama kapalı: kişi adları ve adresler denetlenmiyor; yerleşik kurallar etkin",
 		"description": "Options: native host not in use."
 	}
 }

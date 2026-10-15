@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Singularity AIDR desktop installer (WiX Toolset 5). Built by build-msi.ps1;
+  every $(var.*) value comes from msi-inputs.mjs, which verified the SEA bundle
+  and the release trust key first.
+
+  Layout (per-machine: Program Files; per-user, MSIINSTALLPERUSER=1:
+  %LOCALAPPDATA%\Programs):
+    Singularity AIDR\bundle\...                  the SEA directory, unchanged
+    Singularity AIDR\config\release-public.pem   release trust key
+  bundle\bin is appended to PATH (machine or user).
+
+  `aidr setup` runs for the interactive user only, never as LocalSystem:
+    * at install time as a deferred, impersonated (non-elevated) action when the
+      installing account is not SYSTEM (UserSID <> S-1-5-18);
+    * for every other user of a per-machine install, through Active Setup at that
+      user's next logon (this is also how an Intune/SCCM/GPO install in the
+      system context reaches the users).
+  Machine policy (per-machine): AIDR_POLICY_CONTROL_PLANE_URL, AIDR_POLICY_ENROLLMENT_KEY
+  (fleet key, Hidden), AIDR_POLICY_LICENSING_PUBLIC_KEYS, AIDR_POLICY_CA_FILE,
+  AIDR_POLICY_USE_OS_TRUST_STORE, AIDR_POLICY_HTTPS_PROXY, AIDR_POLICY_NO_PROXY,
+  AIDR_POLICY_SUPPORT_CONTACT_URL, AIDR_POLICY_PRIVACY_NOTICE_URL,
+  AIDR_POLICY_APPROVALS_MODE and AIDR_POLICY_OFFLINE_POLICY are written to
+  HKLM\SOFTWARE\Policies\Singularity AIDR; Active Setup's plain `aidr setup`
+  then connects every user without a prompt.
+  AIDR_SKIP_SETUP=1 installs files only. AIDR_MDM_MANAGED=1 (per-machine) marks the
+  install as owned by device management (HKLM\SOFTWARE\Policies\Singularity AIDR,
+  MdmManaged=1): `aidr update` and automatic updates then leave updates to the
+  MDM. On removal the installing user's
+  connectors are removed with `aidr uninstall` (yes, keep-data;
+  AIDR_OPERATOR_NONINTERACTIVE=1) before the bundle is deleted. For every other
+  profile of a per-machine install, the final removal registers the permanently
+  installed cleanup\Remove-AidrUserRegistrations.ps1 as an Active Setup
+  component (ca/ProfileCleanupActions.cs): it runs once per user at the next
+  sign-in, as that user, and removes the AIDR hook entries left in that profile.
+  No privileged process edits a user's files. Installing again removes that
+  registration first. (No double hyphen in XML comments: WiX's XML reader
+  rejects it.)
+
+  Wizard (ui/AidrUI.wxs, strings in ui/aidr.<culture>.wxl): welcome, licence,
+  scope (per-user / per-machine), optional company connection, ready, finish.
+  A silent install (/qn) shows none of it and needs no new property. The
+  optional company connection, ENROLLMENT_URL and ENROLLMENT_CODE (Hidden: never
+  logged), is handed to `aidr setup` through a file only the installing user
+  can open (ca/EnrollmentActions.cs); setup applies it and deletes the file.
+
+  Per-customer build (build-msi.ps1 -CustomerPacket, HasCustomerPacket=1): the
+  vendor-signed customer packet is installed as config\customer-packet.json and,
+  for a per-machine install, as a permanent machine copy
+  %ProgramData%\Singularity AIDR\customer-packet.json that removing this MSI
+  (and so a generic `aidr update` upgrade) leaves in place. `aidr setup` verifies
+  the packet's signature before using it. The product is named
+  "Singularity AIDR (CUSTOMER)"; the UpgradeCode is the generic one, so generic
+  and customer MSIs upgrade each other.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!-- ProductCode is new for every build (as before) but shared by both culture builds, so the Turkish one is a language transform of the English one. -->
+  <Package Name="$(var.ProductName)"
+           Manufacturer="Singularity R&amp;D"
+           Version="$(var.ProductVersion)"
+           ProductCode="$(var.ProductCode)"
+           UpgradeCode="$(var.UpgradeCode)"
+           Scope="perUserOrMachine"
+           Compressed="yes"
+           Language="!(loc.AidrPackageLanguage)">
+    <SummaryInformation Description="Singularity AIDR - AI agent detection and response" />
+    <!-- IgnoreLanguage: an install made with the Turkish wizard (ProductLanguage 1055)
+         and one made in English (1033) upgrade each other. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  IgnoreLanguage="yes"
+                  DowngradeErrorMessage="!(loc.AidrDowngradeError)" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://singularityrd.com" />
+    <Property Id="AIDR_SKIP_SETUP" Secure="yes" />
+    <Property Id="AIDR_MDM_MANAGED" Secure="yes" />
+    <!-- C10, per-machine only: deploy the hooks through each AI tool's system-wide
+         policy (Claude Code managed-settings.d, Codex %ProgramData% config) and the
+         hourly heartbeat task; AIDR_MACHINE_HOOKS=0 turns it off. AIDR_LOCK_OTHER_HOOKS=1
+         also makes the hosts run only managed hooks. AIDR_PROTECTION_LOCKED=1 writes the
+         machine-policy value that stops the editor extension's Disable protection. -->
+    <Property Id="AIDR_MACHINE_HOOKS" Value="1" Secure="yes" />
+    <Property Id="AIDR_LOCK_OTHER_HOOKS" Secure="yes" />
+    <Property Id="AIDR_PROTECTION_LOCKED" Secure="yes" />
+    <!-- Optional company connection (wizard page 4, or the command line). -->
+    <Property Id="ENROLLMENT_URL" Secure="yes" />
+    <Property Id="ENROLLMENT_CODE" Secure="yes" Hidden="yes" />
+    <Property Id="AidrWriteEnrollmentHandoff" Hidden="yes" />
+    <!--
+      Machine policy (per-machine installs only): each AIDR_POLICY_* property
+      becomes a value of HKLM\SOFTWARE\Policies\Singularity AIDR, which every
+      user's `aidr setup` (Active Setup at logon) and every hook read
+      (packages/core/src/machine-policy.ts). A value the command line does not
+      pass keeps what the machine already has (read by AppSearch), so a
+      plain upgrade or `aidr update` does not drop the policy. Only
+      administrators can write the key.
+    -->
+    <Property Id="AIDR_POLICY_CONTROL_PLANE_URL" Secure="yes" />
+    <Property Id="AIDR_POLICY_CONTROL_PLANE_URL_SAVED">
+      <RegistrySearch Id="AidrPolicySavedControlPlaneUrl" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="control_plane_url" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_ENROLLMENT_KEY" Secure="yes" Hidden="yes" />
+    <Property Id="AIDR_POLICY_ENROLLMENT_KEY_SAVED" Hidden="yes">
+      <RegistrySearch Id="AidrPolicySavedEnrollmentKey" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="enrollment_key" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_LICENSING_PUBLIC_KEYS" Secure="yes" />
+    <Property Id="AIDR_POLICY_LICENSING_PUBLIC_KEYS_SAVED">
+      <RegistrySearch Id="AidrPolicySavedLicensingPublicKeys" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="licensing_public_keys_pem" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_CA_FILE" Secure="yes" />
+    <Property Id="AIDR_POLICY_CA_FILE_SAVED">
+      <RegistrySearch Id="AidrPolicySavedCaFile" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="ca_file" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_USE_OS_TRUST_STORE" Secure="yes" />
+    <Property Id="AIDR_POLICY_USE_OS_TRUST_STORE_SAVED">
+      <RegistrySearch Id="AidrPolicySavedUseOsTrustStore" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="use_os_trust_store" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_HTTPS_PROXY" Secure="yes" />
+    <Property Id="AIDR_POLICY_HTTPS_PROXY_SAVED">
+      <RegistrySearch Id="AidrPolicySavedHttpsProxy" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="https_proxy" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_NO_PROXY" Secure="yes" />
+    <Property Id="AIDR_POLICY_NO_PROXY_SAVED">
+      <RegistrySearch Id="AidrPolicySavedNoProxy" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="no_proxy" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_SUPPORT_CONTACT_URL" Secure="yes" />
+    <Property Id="AIDR_POLICY_SUPPORT_CONTACT_URL_SAVED">
+      <RegistrySearch Id="AidrPolicySavedSupportContactUrl" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="support_contact_url" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_PRIVACY_NOTICE_URL" Secure="yes" />
+    <Property Id="AIDR_POLICY_PRIVACY_NOTICE_URL_SAVED">
+      <RegistrySearch Id="AidrPolicySavedPrivacyNoticeUrl" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="privacy_notice_url" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_APPROVALS_MODE" Secure="yes" />
+    <Property Id="AIDR_POLICY_APPROVALS_MODE_SAVED">
+      <RegistrySearch Id="AidrPolicySavedApprovalsMode" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="approvals_mode" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="AIDR_POLICY_OFFLINE_POLICY" Secure="yes" />
+    <Property Id="AIDR_POLICY_OFFLINE_POLICY_SAVED">
+      <RegistrySearch Id="AidrPolicySavedOfflinePolicy" Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="offline_policy" Type="raw" Bitness="always64" />
+    </Property>
+
+    <SetProperty Id="AIDR_POLICY_CONTROL_PLANE_URL" Value="[AIDR_POLICY_CONTROL_PLANE_URL_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_CONTROL_PLANE_URL AND AIDR_POLICY_CONTROL_PLANE_URL_SAVED" />
+    <SetProperty Id="AIDR_POLICY_ENROLLMENT_KEY" Value="[AIDR_POLICY_ENROLLMENT_KEY_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_ENROLLMENT_KEY AND AIDR_POLICY_ENROLLMENT_KEY_SAVED" />
+    <SetProperty Id="AIDR_POLICY_LICENSING_PUBLIC_KEYS" Value="[AIDR_POLICY_LICENSING_PUBLIC_KEYS_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_LICENSING_PUBLIC_KEYS AND AIDR_POLICY_LICENSING_PUBLIC_KEYS_SAVED" />
+    <SetProperty Id="AIDR_POLICY_CA_FILE" Value="[AIDR_POLICY_CA_FILE_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_CA_FILE AND AIDR_POLICY_CA_FILE_SAVED" />
+    <SetProperty Id="AIDR_POLICY_USE_OS_TRUST_STORE" Value="[AIDR_POLICY_USE_OS_TRUST_STORE_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_USE_OS_TRUST_STORE AND AIDR_POLICY_USE_OS_TRUST_STORE_SAVED" />
+    <SetProperty Id="AIDR_POLICY_HTTPS_PROXY" Value="[AIDR_POLICY_HTTPS_PROXY_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_HTTPS_PROXY AND AIDR_POLICY_HTTPS_PROXY_SAVED" />
+    <SetProperty Id="AIDR_POLICY_NO_PROXY" Value="[AIDR_POLICY_NO_PROXY_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_NO_PROXY AND AIDR_POLICY_NO_PROXY_SAVED" />
+    <SetProperty Id="AIDR_POLICY_SUPPORT_CONTACT_URL" Value="[AIDR_POLICY_SUPPORT_CONTACT_URL_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_SUPPORT_CONTACT_URL AND AIDR_POLICY_SUPPORT_CONTACT_URL_SAVED" />
+    <SetProperty Id="AIDR_POLICY_PRIVACY_NOTICE_URL" Value="[AIDR_POLICY_PRIVACY_NOTICE_URL_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_PRIVACY_NOTICE_URL AND AIDR_POLICY_PRIVACY_NOTICE_URL_SAVED" />
+    <SetProperty Id="AIDR_POLICY_APPROVALS_MODE" Value="[AIDR_POLICY_APPROVALS_MODE_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_APPROVALS_MODE AND AIDR_POLICY_APPROVALS_MODE_SAVED" />
+    <SetProperty Id="AIDR_POLICY_OFFLINE_POLICY" Value="[AIDR_POLICY_OFFLINE_POLICY_SAVED]" After="AppSearch" Sequence="both"
+                 Condition="NOT AIDR_POLICY_OFFLINE_POLICY AND AIDR_POLICY_OFFLINE_POLICY_SAVED" />
+
+    <!-- A SYSTEM-context install (Intune/SCCM/GPO) has no user to hand the company
+         connection to: ENROLLMENT_URL (and a fleet key given as ENROLLMENT_CODE)
+         become the machine policy instead of being ignored. A one-time code cannot
+         serve every user and stays unused. -->
+    <SetProperty Id="AIDR_POLICY_CONTROL_PLANE_URL" Action="AidrPolicyFromEnrollmentUrl" Value="[ENROLLMENT_URL]" Before="CostInitialize" Sequence="execute"
+                 Condition="ALLUSERS=1 AND UserSID = &quot;S-1-5-18&quot; AND ENROLLMENT_URL AND NOT AIDR_POLICY_CONTROL_PLANE_URL" />
+    <SetProperty Id="AIDR_POLICY_ENROLLMENT_KEY" Action="AidrPolicyFromEnrollmentCode" Value="[ENROLLMENT_CODE]" Before="CostInitialize" Sequence="execute"
+                 Condition="ALLUSERS=1 AND UserSID = &quot;S-1-5-18&quot; AND ENROLLMENT_CODE &lt;&lt; &quot;aidr_fleet_&quot; AND NOT AIDR_POLICY_ENROLLMENT_KEY" />
+
+    <UIRef Id="AidrUI" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(sys.SOURCEFILEDIR)ui\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(sys.SOURCEFILEDIR)ui\dialog.bmp" />
+    <Binary Id="AidrInstallerActions" SourceFile="$(var.InstallerActionsDll)" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Singularity AIDR">
+        <Directory Id="BUNDLEDIR" Name="bundle">
+          <Directory Id="BINDIR" Name="bin" />
+        </Directory>
+        <Directory Id="CONFIGDIR" Name="config" />
+        <Directory Id="DOCSDIR" Name="docs" />
+        <Directory Id="CLEANUPDIR" Name="cleanup" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="SeaBundle" Directory="BUNDLEDIR">
+      <Files Include="$(var.BundleDir)\**">
+        <Exclude Files="$(var.BundleDir)\bin\aidr.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <Component Id="AidrCli" Directory="BINDIR">
+      <File Id="AidrExe" Source="$(var.BundleDir)\bin\aidr.exe" KeyPath="yes" />
+    </Component>
+
+    <!-- Offline quick start (both languages: the payload is the same in every culture) and the third-party notices the licence page points to. -->
+    <ComponentGroup Id="AidrDocs" Directory="DOCSDIR">
+      <Component>
+        <File Id="AidrQuickStartEn" Source="$(sys.SOURCEFILEDIR)ui\quick-start.en-US.html" Name="quick-start.en-US.html" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Id="AidrQuickStartTr" Source="$(sys.SOURCEFILEDIR)ui\quick-start.tr-TR.html" Name="quick-start.tr-TR.html" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Id="AidrThirdPartyNotices" Source="$(sys.SOURCEFILEDIR)..\..\..\THIRD_PARTY_NOTICES" Name="THIRD_PARTY_NOTICES.txt" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Component Id="TrustKey" Directory="CONFIGDIR">
+      <File Id="ReleasePublicKey" Source="$(var.TrustKey)" Name="release-public.pem" KeyPath="yes" />
+    </Component>
+
+    <?if $(var.HasCatalogKey) = 1 ?>
+    <!-- `aidr update` verifies the signed installer catalog with this key (packages/core/src/update/environment.ts). -->
+    <Component Id="CatalogKey" Directory="CONFIGDIR" Guid="9F2C6A1E-4B7D-4E35-8C90-1A5E3D7B2F48">
+      <File Id="InstallerCatalogPublicKey" Source="$(var.CatalogKey)" Name="installer-catalog-public.pem" KeyPath="yes" />
+    </Component>
+    <?endif?>
+
+    <?if $(var.HasCustomerPacket) = 1 ?>
+    <!-- Vendor-signed customer packet: first in the discovery order (install prefix). -->
+    <Component Id="CustomerPacket" Directory="CONFIGDIR" Guid="7C4E2B9A-1D63-4F58-A0B7-3E9D5C1F8A24">
+      <File Id="CustomerPacketFile" Source="$(var.CustomerPacket)" Name="customer-packet.json" KeyPath="yes" />
+    </Component>
+    <!-- The machine copy survives removal and a generic upgrade; per-machine only (ProgramData needs elevation). -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="AIDRMACHINEDATA" Name="Singularity AIDR" />
+    </StandardDirectory>
+    <Component Id="CustomerPacketMachine" Directory="AIDRMACHINEDATA" Condition="ALLUSERS=1" Permanent="yes"
+               Guid="B2F6A8D1-4C3E-4A97-8E52-6D1B0F9C7E35">
+      <File Id="CustomerPacketMachineFile" Source="$(var.CustomerPacket)" Name="customer-packet.json" KeyPath="yes" />
+    </Component>
+    <?endif?>
+
+    <!-- Kept after removal (Permanent): the per-user cleanup Active Setup runs at each user's next sign-in. -->
+    <Component Id="ProfileCleanupScript" Directory="CLEANUPDIR" Condition="ALLUSERS=1" Permanent="yes"
+               Guid="3B8E1F6C-7A42-4D95-B1C3-5F0E9A2D6C81">
+      <File Id="ProfileCleanupScriptFile" Source="$(var.ProfileCleanupScript)" Name="Remove-AidrUserRegistrations.ps1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="PathMachine" Directory="INSTALLFOLDER" Condition="ALLUSERS=1"
+               Guid="5E2A9C41-0B7D-4F6A-8C13-9D4E2B7A1F05">
+      <Environment Id="AidrPathMachine" Name="PATH" Value="[BINDIR]" Part="last" Action="set" System="yes" Permanent="no" />
+      <CreateFolder />
+    </Component>
+    <Component Id="PathUser" Directory="INSTALLFOLDER" Condition="NOT (ALLUSERS=1)"
+               Guid="A7C3E1D2-6F48-4B9E-9A20-3E5D8C1B7F64">
+      <Environment Id="AidrPathUser" Name="PATH" Value="[BINDIR]" Part="last" Action="set" System="no" Permanent="no" />
+      <CreateFolder />
+    </Component>
+
+    <!-- Active Setup: each user of a per-machine install runs `aidr setup` once at logon. -->
+    <Component Id="ActiveSetup" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND NOT AIDR_SKIP_SETUP"
+               Guid="C4F81B6A-2D93-4E07-B5A8-7E1C0D9F3A26">
+      <RegistryKey Root="HKLM" Key="Software\Microsoft\Active Setup\Installed Components\$(var.ActiveSetupId)">
+        <RegistryValue Type="string" Value="Singularity AIDR" KeyPath="yes" />
+        <RegistryValue Name="StubPath" Type="string" Value="&quot;[#AidrExe]&quot; setup" />
+        <RegistryValue Name="Version" Type="string" Value="$(var.ActiveSetupVersion)" />
+        <RegistryValue Name="IsInstalled" Type="integer" Value="1" />
+      </RegistryKey>
+    </Component>
+
+    <!-- Device-managed install: `aidr update` defers to the MDM (packages/core/src/update/environment.ts). -->
+    <Component Id="MdmManagedMarker" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_MDM_MANAGED=1"
+               Guid="E1B7C2A4-3D58-4F96-8A0E-6C2D9B4F7A13">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="MdmManaged" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- Machine policy values (see the AIDR_POLICY_* properties above). -->
+    <Component Id="AidrPolicyControlPlaneUrl" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_CONTROL_PLANE_URL" Guid="3B7E1C52-8A04-4D6F-9E21-5C8A7F0B3D61">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="control_plane_url" Type="string" Value="[AIDR_POLICY_CONTROL_PLANE_URL]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyEnrollmentKey" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_ENROLLMENT_KEY" Guid="8D2F4A16-C3E9-4B70-A5D8-1E6B9C2F7A43">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="enrollment_key" Type="string" Value="[AIDR_POLICY_ENROLLMENT_KEY]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyLicensingPublicKeys" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_LICENSING_PUBLIC_KEYS" Guid="F14C9E27-6B38-4A05-8D72-3A9E5B1C0D86">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="licensing_public_keys_pem" Type="string" Value="[AIDR_POLICY_LICENSING_PUBLIC_KEYS]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyCaFile" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_CA_FILE" Guid="26A8D3F1-9C47-4E5B-B0A2-7F1D4C6E8B39">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="ca_file" Type="string" Value="[AIDR_POLICY_CA_FILE]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyUseOsTrustStore" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_USE_OS_TRUST_STORE" Guid="C9E05B74-2D16-4F83-A7C9-4B2E8D0F1A65">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="use_os_trust_store" Type="string" Value="[AIDR_POLICY_USE_OS_TRUST_STORE]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyHttpsProxy" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_HTTPS_PROXY" Guid="5F3A1D88-E7B2-4C69-9D04-2A6C8E1B7F30">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="https_proxy" Type="string" Value="[AIDR_POLICY_HTTPS_PROXY]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyNoProxy" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_NO_PROXY" Guid="A0D7C4E2-5B19-4F36-8E7A-9C3B1D5F2E84">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="no_proxy" Type="string" Value="[AIDR_POLICY_NO_PROXY]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicySupportContactUrl" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_SUPPORT_CONTACT_URL" Guid="7E4B2F91-0A6C-4D58-B3E1-6F9A2C8D4B17">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="support_contact_url" Type="string" Value="[AIDR_POLICY_SUPPORT_CONTACT_URL]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyPrivacyNoticeUrl" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_PRIVACY_NOTICE_URL" Guid="1C6F8A3D-4E72-4B9A-9F05-8D2E7B3C6A58">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="privacy_notice_url" Type="string" Value="[AIDR_POLICY_PRIVACY_NOTICE_URL]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyApprovalsMode" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_APPROVALS_MODE" Guid="E8B3D7A4-1F59-4C26-A0E8-5B7C9D2F3E41">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="approvals_mode" Type="string" Value="[AIDR_POLICY_APPROVALS_MODE]" KeyPath="yes" />
+    </Component>
+    <Component Id="AidrPolicyOfflinePolicy" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_POLICY_OFFLINE_POLICY" Guid="4D9A6E1B-7C83-4F02-B5D6-0E3F8A9C1B72">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="offline_policy" Type="string" Value="[AIDR_POLICY_OFFLINE_POLICY]" KeyPath="yes" />
+    </Component>
+    <!-- Machine policy (W1 contract key): the editor extension refuses Disable protection and restores removed hooks (packages/core/src/protection-lock.ts). -->
+    <Component Id="ProtectionLocked" Directory="INSTALLFOLDER" Condition="ALLUSERS=1 AND AIDR_PROTECTION_LOCKED=1"
+               Guid="3B8D5E21-7A46-4C9F-B1E0-5D2A8C6F9E47">
+      <RegistryValue Root="HKLM" Key="Software\Policies\Singularity AIDR" Name="protection_locked" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="Main" Title="Singularity AIDR" Level="1">
+      <ComponentGroupRef Id="SeaBundle" />
+      <ComponentRef Id="AidrCli" />
+      <ComponentRef Id="TrustKey" />
+      <ComponentGroupRef Id="AidrDocs" />
+      <?if $(var.HasCatalogKey) = 1 ?>
+      <ComponentRef Id="CatalogKey" />
+      <?endif?>
+      <?if $(var.HasCustomerPacket) = 1 ?>
+      <ComponentRef Id="CustomerPacket" />
+      <ComponentRef Id="CustomerPacketMachine" />
+      <?endif?>
+      <ComponentRef Id="PathMachine" />
+      <ComponentRef Id="PathUser" />
+      <ComponentRef Id="ActiveSetup" />
+      <ComponentRef Id="MdmManagedMarker" />
+      <ComponentRef Id="AidrPolicyControlPlaneUrl" />
+      <ComponentRef Id="AidrPolicyEnrollmentKey" />
+      <ComponentRef Id="AidrPolicyLicensingPublicKeys" />
+      <ComponentRef Id="AidrPolicyCaFile" />
+      <ComponentRef Id="AidrPolicyUseOsTrustStore" />
+      <ComponentRef Id="AidrPolicyHttpsProxy" />
+      <ComponentRef Id="AidrPolicyNoProxy" />
+      <ComponentRef Id="AidrPolicySupportContactUrl" />
+      <ComponentRef Id="AidrPolicyPrivacyNoticeUrl" />
+      <ComponentRef Id="AidrPolicyApprovalsMode" />
+      <ComponentRef Id="AidrPolicyOfflinePolicy" />
+      <ComponentRef Id="ProtectionLocked" />
+      <ComponentRef Id="ProfileCleanupScript" />
+    </Feature>
+
+    <!-- System-wide hooks and heartbeat task: elevated (not impersonated), per-machine only; a failure is logged and never fails the install. -->
+    <CustomAction Id="AidrMachineHooksInstall"
+                  FileRef="AidrExe"
+                  ExeCommand="machine-hooks install --heartbeat"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="AidrMachineHooksInstallLocked"
+                  FileRef="AidrExe"
+                  ExeCommand="machine-hooks install --heartbeat --lock-other-hooks"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="AidrMachineHooksRemove"
+                  FileRef="AidrExe"
+                  ExeCommand="machine-hooks remove --heartbeat"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Interactive install: configure the installing user (not elevated, not SYSTEM). -->
+    <CustomAction Id="AidrSetupForUser"
+                  FileRef="AidrExe"
+                  ExeCommand="setup"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+    <!-- Removal: the installing user's connectors go first; local data is kept. -->
+    <CustomAction Id="AidrUninstallForUser"
+                  Directory="BINDIR"
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /d /s /c &quot;set AIDR_OPERATOR_NONINTERACTIVE=1&amp;&amp; &quot;[#AidrExe]&quot; uninstall --yes --keep-data&quot;"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <!-- Removal, every other profile: register the per-user cleanup (as LocalSystem, HKLM only). -->
+    <CustomAction Id="AidrPrepareProfileCleanup"
+                  Property="AidrRegisterProfileCleanup"
+                  Value="install=[INSTALLFOLDER];system=[System64Folder]"
+                  Execute="immediate" />
+    <CustomAction Id="AidrRegisterProfileCleanup"
+                  BinaryRef="AidrInstallerActions"
+                  DllEntry="RegisterProfileCleanup"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <!-- Install: a reinstalled product owns the registrations again. -->
+    <CustomAction Id="AidrUnregisterProfileCleanup"
+                  BinaryRef="AidrInstallerActions"
+                  DllEntry="UnregisterProfileCleanup"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      Company connection (only when ENROLLMENT_URL or ENROLLMENT_CODE is set, for
+      an interactive user): the hidden values reach the deferred action as hidden
+      CustomActionData (HideTarget), which writes the user-only handoff file;
+      a rollback removes it. Setup then runs with operator confirmation so it
+      applies the connection the person at the wizard entered.
+    -->
+    <CustomAction Id="AidrPrepareEnrollmentHandoff"
+                  Property="AidrWriteEnrollmentHandoff"
+                  Value="url=[ENROLLMENT_URL];code=[ENROLLMENT_CODE]"
+                  HideTarget="yes"
+                  Execute="immediate" />
+    <CustomAction Id="AidrRollbackEnrollmentHandoff"
+                  BinaryRef="AidrInstallerActions"
+                  DllEntry="RemoveEnrollmentHandoff"
+                  Execute="rollback"
+                  Impersonate="yes"
+                  Return="ignore" />
+    <CustomAction Id="AidrWriteEnrollmentHandoff"
+                  BinaryRef="AidrInstallerActions"
+                  DllEntry="WriteEnrollmentHandoff"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  HideTarget="yes"
+                  Return="check" />
+    <CustomAction Id="AidrSetupForUserConnect"
+                  Directory="BINDIR"
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /d /s /c &quot;set AIDR_OPERATOR_NONINTERACTIVE=1&amp;&amp; &quot;[#AidrExe]&quot; setup --yes&quot;"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="AidrUninstallForUser" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+      <Custom Action="AidrMachineHooksRemove" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND ALLUSERS=1" />
+      <Custom Action="AidrMachineHooksInstall" Before="InstallFinalize"
+              Condition="NOT REMOVE AND ALLUSERS=1 AND AIDR_MACHINE_HOOKS &lt;&gt; &quot;0&quot; AND AIDR_LOCK_OTHER_HOOKS &lt;&gt; &quot;1&quot;" />
+      <Custom Action="AidrMachineHooksInstallLocked" Before="InstallFinalize"
+              Condition="NOT REMOVE AND ALLUSERS=1 AND AIDR_MACHINE_HOOKS &lt;&gt; &quot;0&quot; AND AIDR_LOCK_OTHER_HOOKS = &quot;1&quot;" />
+      <Custom Action="AidrPrepareProfileCleanup" Before="AidrRegisterProfileCleanup"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND ALLUSERS=1" />
+      <Custom Action="AidrRegisterProfileCleanup" After="AidrUninstallForUser"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND ALLUSERS=1" />
+      <Custom Action="AidrUnregisterProfileCleanup" After="InstallInitialize"
+              Condition="NOT REMOVE AND ALLUSERS=1" />
+      <Custom Action="AidrPrepareEnrollmentHandoff" Before="AidrRollbackEnrollmentHandoff"
+              Condition="NOT REMOVE AND (ENROLLMENT_URL OR ENROLLMENT_CODE) AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+      <Custom Action="AidrRollbackEnrollmentHandoff" Before="AidrWriteEnrollmentHandoff"
+              Condition="NOT REMOVE AND (ENROLLMENT_URL OR ENROLLMENT_CODE) AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+      <Custom Action="AidrWriteEnrollmentHandoff" Before="AidrSetupForUserConnect"
+              Condition="NOT REMOVE AND (ENROLLMENT_URL OR ENROLLMENT_CODE) AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+      <Custom Action="AidrSetupForUserConnect" Before="InstallFinalize"
+              Condition="NOT REMOVE AND NOT AIDR_SKIP_SETUP AND UserSID &lt;&gt; &quot;S-1-5-18&quot; AND (ENROLLMENT_URL OR ENROLLMENT_CODE)" />
+      <Custom Action="AidrSetupForUser" Before="InstallFinalize"
+              Condition="NOT REMOVE AND NOT AIDR_SKIP_SETUP AND UserSID &lt;&gt; &quot;S-1-5-18&quot; AND NOT ENROLLMENT_URL AND NOT ENROLLMENT_CODE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

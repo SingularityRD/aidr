@@ -115,7 +115,6 @@
  * masked copy). The mode-dependent rules here are binary handling (step 4) and document
  * refusals / PDF findings, which monitor mode records instead of blocking (step 2b).
  */
-import { keyType } from "../../../privacy/src/detectors.js";
 import type {
 	DetectionEngine,
 	EntityType,
@@ -128,6 +127,7 @@ import type {
 } from "../types.js";
 import { decodeSingleByte } from "./codepages.js";
 import { type Counts, countFindings, mergeCounts } from "./counts.js";
+import { sensitiveKeyType } from "./keys.js";
 import { extractLegacyOffice, type LegacyExtraction } from "./legacy/extract.js";
 import { MAX_OCR_IMAGE_BYTES, MAX_OCR_IMAGES, OCR_BUDGET_MS, ocrFormat } from "./office/images.js";
 import { isOdfListing, ODF_EXTENSIONS, ODF_MIME, sanitizeOdf, sniffOdf } from "./office/odf.js";
@@ -145,6 +145,8 @@ import type { DocScanner } from "./office/scanner.js";
 import { centralDirectoryNames, looksLikeZip, zipDirectory } from "./office/zip.js";
 import { extractPdfText, type PdfExtraction, PdfUnreadable } from "./pdf/extract.js";
 import type { PdfImage } from "./pdf/images.js";
+
+export { sensitiveKeyType };
 
 export interface GuardFile {
 	readonly name: string;
@@ -311,70 +313,6 @@ const CHUNK_SIZES = [16384, 4096, 1024] as const;
 const SEGMENT_SEPARATOR = "\n\n";
 const PLACEHOLDER_ONLY = /^\[[A-Z_]+_\d+\]$/;
 const UTF8_BOM = new Uint8Array([0xef, 0xbb, 0xbf]);
-
-/**
- * Sensitive field names beyond the privacy layer's `keyType` dictionary (normalised: lower-case
- * ASCII letters/digits only). Suffix matches catch `db_password`, `github_token`, ...
- */
-const EXTRA_SENSITIVE_KEYS: Readonly<Record<string, EntityType>> = {
-	token: "SECRET",
-	authtoken: "SECRET",
-	bearertoken: "SECRET",
-	idtoken: "SECRET",
-	sessiontoken: "SECRET",
-	sessionid: "SECRET",
-	csrftoken: "SECRET",
-	apisecret: "SECRET",
-	secretkey: "SECRET",
-	accesskey: "SECRET",
-	accesskeyid: "SECRET",
-	secretaccesskey: "SECRET",
-	passphrase: "SECRET",
-	credential: "SECRET",
-	credentials: "SECRET",
-	connectionstring: "SECRET",
-	cvv: "SECRET",
-	cvc: "SECRET",
-	pin: "SECRET",
-	otp: "SECRET",
-	tckimliknumarasi: "TC_KIMLIK",
-	ibanno: "IBAN",
-};
-const SENSITIVE_KEY_SUFFIXES: ReadonlyArray<readonly [string, EntityType]> = [
-	["password", "SECRET"],
-	["passwd", "SECRET"],
-	["secret", "SECRET"],
-	["secretkey", "SECRET"],
-	["token", "SECRET"],
-	["apikey", "SECRET"],
-	["accesskey", "SECRET"],
-	["privatekey", "PRIVATE_KEY"],
-];
-/** Field names too generic to force-mask in JSON (`"name": "my-package"`); CSV columns still use them. */
-const AMBIGUOUS_JSON_KEYS: ReadonlySet<string> = new Set(["name", "ad", "tc"]);
-
-function normaliseKey(key: string): string {
-	return key
-		.normalize("NFKD")
-		.replace(/\p{M}/gu, "")
-		.replace(/[ıİ]/g, "i")
-		.toLowerCase()
-		.replace(/[^a-z0-9]/g, "");
-}
-
-/**
- * Entity type implied by a field name (JSON key / CSV header), or undefined.
- * Reuses the AIDR Privacy dictionary and adds credential-style keys and suffixes.
- */
-export function sensitiveKeyType(key: string, ambiguousAllowed = true): EntityType | undefined {
-	const k = normaliseKey(key);
-	if (!k || k.length > 64) return undefined;
-	if (!ambiguousAllowed && AMBIGUOUS_JSON_KEYS.has(k)) return undefined;
-	const direct = keyType(key) ?? EXTRA_SENSITIVE_KEYS[k];
-	if (direct) return direct;
-	for (const [suffix, type] of SENSITIVE_KEY_SUFFIXES) if (k.endsWith(suffix)) return type;
-	return undefined;
-}
 
 // ---------------------------------------------------------------------------------------------
 // Classification and decoding
@@ -1504,7 +1442,7 @@ export function isDocumentContent(file: GuardFile): boolean {
 }
 
 /** Bytes read from the start of a file too large to read whole (PDF / OLE / ZIP signatures). */
-export const SNIFF_HEAD_BYTES = 4096;
+const SNIFF_HEAD_BYTES = 4096;
 /** Bytes read from its end: the ZIP end-of-central-directory record plus the longest comment. */
 const SNIFF_TAIL_BYTES = 0xffff + 22;
 /** Largest central directory read to list a large ZIP's entries (bigger: fail closed). */

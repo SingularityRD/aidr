@@ -49,19 +49,27 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `S3_PROTOCOL_ACCESS_KEY_SECRET` | always | generated secret | *(secret)* | Storage S3-protocol secret; the doctor rejects the upstream demo value. |
 | `AIDR_METRICS_TOKEN` | always | generated secret | *(secret)* | Bearer token for the dashboard metrics endpoint; required by Compose. |
 | `OPENAI_API_KEY` | always | operator | *(blank)* | Optional Studio SQL assistant key; blank disables it. |
-| `SMTP_HOST` | always | operator | *(blank)* | SMTP relay host for Auth mail (password recovery). |
+| `SMTP_HOST` | always | operator | *(blank)* | SMTP relay host for Auth mail (password recovery). Once set, AIDR alert, invitation and governance digest mail use the same relay: the `SMTP_*` values reach the `functions` service through Compose interpolation and select its `smtp` mail provider. |
 | `SMTP_USER` | always | operator | *(blank)* | SMTP user. |
 | `SMTP_PASS` | always | operator | *(blank)* | SMTP password (secret). |
 | `SMTP_ADMIN_EMAIL` | always | operator | *(blank)* | Sender address for Auth mail. |
 | `SMTP_SENDER_NAME` | always | fixed by preparation | `AIDR` | Display name for Auth mail. |
 | `FUNCTIONS_VERIFY_JWT` | always | fixed by preparation | `false` | Edge Functions verify their own credentials; the gateway does not pre-verify JWTs. |
+| `AIDR_NOTIFICATION_DISPATCH_TOKEN` | self-hosted only | generated secret | *(secret)* | Same value as in `.env.functions`; read only by the Compose `siem-forwarder` scheduler service, which POSTs to the `siem-forwarder` function (central SIEM forwarding). Without it the service reports unhealthy and forwards nothing. |
+| `AIDR_SIEM_FORWARD_INTERVAL_SECONDS` | not written; optional override | operator | `60` | Seconds between central SIEM forwarding runs of the `siem-forwarder` service (15-3600). |
 | `SENTRY_DSN` | not written; optional override | operator | *(blank)* | Optional dashboard error reporting DSN; blank disables it. |
 | `SENTRY_ENVIRONMENT` | not written; optional override | operator | `production` | Sentry environment label (development installations default to `development`). |
 | `SENTRY_TRACES_SAMPLE_RATE` | not written; optional override | operator | `0` | Sentry trace sampling rate. |
 | `AIDR_AUTH_METHODS` | not written; optional override | operator | `password` | Dashboard sign-in methods offered to users. |
+| `AIDR_OIDC_SSO` | not written; optional override | operator | `false` | `true` shows the work-email OIDC single sign-on form on the dashboard sign-in page (docs/operations/onprem-sso.md). |
+| `AIDR_SAML_PROVIDERS` | not written; optional override | operator | *(blank)* | Dashboard SAML buttons: JSON array of `{"providerId","label"}` for GoTrue SAML providers registered with --with-saml. Configure only one of the three AIDR_SAML_* settings. |
+| `AIDR_SAML_PROVIDER_ID` | not written; optional override | operator | *(blank)* | Single GoTrue SAML provider id offered on the sign-in page. |
+| `AIDR_SAML_DOMAIN` | not written; optional override | operator | *(blank)* | Email domain whose GoTrue SAML provider the sign-in page uses. |
+| `GOTRUE_SAML_ENABLED` | `--with-saml` only | fixed by preparation | `true` | Turns on SAML 2.0 single sign-on in the self-hosted GoTrue (`auth` service). |
+| `GOTRUE_SAML_PRIVATE_KEY` | `--with-saml` only | generated secret | *(secret)* | RSA-2048 SAML signing key (PKCS#1 DER, base64) generated on the preparing host; GoTrue publishes its certificate in the SP metadata. |
 | `AIDR_POSTGREST_DB_URI_PARAMS` | not written; optional override | operator | `keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000` | Self-hosted only: libpq parameters appended to PostgREST's database URI. The default detects pooled connections on a dead network path (TCP keepalives for idle connections; `tcp_user_timeout` in ms for unacknowledged sends) without limiting query or request duration; see the 2026-10-11 load-soak drill addendum. |
 | `COMPOSE_PROFILES` | `--with-posture-scanner` only | fixed by preparation | `posture-scanner` | Starts the posture scanner services with the stack; remove `posture-scanner` to keep them stopped. |
-| `POSTURE_SCANNER_SOURCE_VERSION` | `--with-posture-scanner` only | derived from options | `v4.6.1-aidr.1` | Pinned scanner source tag; also the scanner server and worker image tag. |
+| `POSTURE_SCANNER_SOURCE_VERSION` | `--with-posture-scanner` only | derived from options | `v4.6.1-aidr.2` | Pinned scanner source tag; also the scanner server and worker image tag. |
 | `POSTURE_SCANNER_TZ` | `--with-posture-scanner` only | fixed by preparation | `UTC` | Time zone inside the posture scanner containers. |
 | `POSTURE_SCANNER_AGENT_SHARED_SECRET` | `--with-posture-scanner` only | generated secret | *(secret)* | Authenticates worker registration and the internal scanner readiness route. |
 | `POSTURE_SCANNER_TRUSTED_SIGNING_KEY_ID` | `--with-posture-scanner` only | operator | `--posture-scanner-signing-key-id` | Key id of the posture scanner release data-signing key. |
@@ -70,6 +78,7 @@ Compose interpolation for the whole stack (Supabase, dashboard and, with --with-
 | `POSTURE_SCANNER_EXPECTED_SOURCE_COMMIT` | `--with-posture-scanner` only | derived from options | `aig-data-manifest.json source.commit` | Scanner source commit the runtime must attest. |
 | `BRIDGE_AUTH_MODE` | `--with-posture-scanner` only | fixed by preparation | `api_key` | Bridge authentication: `api_key` (isolated local sidecar) or `broker` (JWT). |
 | `BRIDGE_API_KEY` | `--with-posture-scanner` only | generated secret | *(secret)* | Bearer key for bridge callers in `api_key` mode. |
+| `BRIDGE_METRICS_TOKEN` | not written; optional override | operator | *(blank)* | Optional bearer token for the bridge `GET /metrics` Prometheus scrape (secret); empty keeps it disabled, and a value equal to `BRIDGE_API_KEY` is refused. |
 | `BRIDGE_TASK_BACKEND` | `--with-posture-scanner` only | fixed by preparation | `sqlite` | Task registry: `sqlite` (single host) or `postgres` (HA). |
 | `BRIDGE_HA_REQUIRED` | `--with-posture-scanner` only | fixed by preparation | `false` | `true` makes readiness refuse SQLite; set with the PostgreSQL backend. |
 | `BRIDGE_EGRESS_PROXY_URL` | `--with-posture-scanner` only | fixed by preparation | `http://aig-egress:3128` | Deny-by-default egress gateway for remote scan traffic. |
@@ -120,20 +129,28 @@ Edge Functions runtime (`functions` service `env_file`). Holds the control-plane
 | `AIDR_DELEGATION_SIGNING_KEY_ID` | always | generated | `aidr-delegation-<random>` | Delegated credential signing key id. |
 | `AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64` | always | generated secret | *(secret)* | Ed25519 delegated credential signing key. |
 | `AIDR_DELEGATION_SIGNING_PUBLIC_KEY_SPKI_B64` | always | generated | *(blank)* | Matching delegated credential verification key (public). |
-| `AIDR_PACK_MASTER_KEY_B64` | always | generated secret | *(secret)* | Master key that encrypts policy/intel packs at rest. |
+| `AIDR_PACK_MASTER_KEY_B64` | always | generated secret | *(secret)* | Master key from which each tenant's premium intel pack key is derived (HKDF-SHA256, key id `aidr-tenant-pack-v2.<tenant>.<fingerprint>`) and delivered in the signed entitlement; it encrypts nothing at rest itself. Encrypt tenant packs with `scripts/intel-pack-keys.mjs encrypt-pack --tenant-id`. Rotating it changes every tenant key id: re-encrypt tenant packs. |
+| `AIDR_SHARED_PACK_KEYS` | not written; optional override | operator | *(blank)* | Keys of shared/vendor premium intel packs, `aidr-shared-pack-<label>=<base64 32-byte key>[,…]`, delivered to every premium_intel tenant (secret). The vendor supplies the key of a vendor-encrypted pack with the premium licence; `scripts/intel-pack-keys.mjs new-shared-key` creates one for operator-published packs. A malformed value delivers no shared key. |
 | `AIDR_ENABLE_LEGACY_SELF_SERVICE_BILLING` | always | fixed by preparation | `false` | Legacy self-service billing stays disabled. |
 | `AIDR_PACK_DOWNLOAD_GRANT_SECRET` | always | generated secret | *(secret)* | HMAC secret for short-lived pack download grants. |
 | `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` | always | generated secret | *(secret)* | Wraps the per-tenant dashboard approval signing keys (32 bytes, base64); without it dashboard approvals fail closed. |
 | `AIDR_COMPLIANCE_SIGNING_KEY_ID` | always | generated | `aidr-compliance-<random>` | Key id stamped into signed compliance evidence packs. |
 | `AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64` | always | generated secret | *(secret)* | Ed25519 compliance report signing key (PKCS#8, base64), separate from the entitlement key; the public half is recorded for auditors in `deployment.json` (`compliance_signing.public_key_pem`; Helm: `compliance-signing-public.pem`). Without it reports carry a sha256 digest only. |
 | `AIDR_BILLING_PROVIDER` | always | operator | *(blank)* | Billing provider; blank for invoice/sales-led on-prem contracts. |
+| `AIDR_LICENSE_PUBLIC_KEYS_B64` | always | derived from options | `base64 of deploy/onprem/license-public-keys.json` | Trust root for signed license imports in the dashboard and Operator console (`aidr-license-public-keys-v1`, base64). Install the vendor-published registry before preparing; an empty registry refuses every import. Replacing it lets whoever writes it sign any seat count. |
+| `AIDR_LICENSE_CUSTOMER_ID` | not written; optional override | operator | *(blank)* | Optional: refuse a license whose signed `customer_id` differs (2..32 characters of [a-z0-9-]). |
 | `AIDR_DEVICE_START_INGRESS_SECRET` | always | generated secret | *(secret)* | Shared with `.env.ingress`; authenticates the device-start signer. |
 | `AIDR_NOTIFICATION_ENCRYPTION_KEYS` | always | generated secret | *(secret)* | Alert channel keyring `<key id>:<base64 32-byte key>[,…]`; the first key encrypts channel destinations, every listed key decrypts. |
 | `AIDR_NOTIFICATION_DISPATCH_TOKEN` | always | generated secret | *(secret)* | Bearer token the notification dispatcher timer presents to `notification-dispatch` (at least 32 characters). Each run also enqueues agent-offline and governance alerts. |
 | `AIDR_RUNTIME_CAPABILITIES_BY_TENANT` | always | operator | `{}` | Exact per-tenant runtime capability grants (`runtime_detectors`, `behavioral_learning_v1`) as a JSON map read from the preparing shell; `{}` grants none. `behavioral_learning_v1` requires `runtime_detectors`. |
-| `AIDR_MAIL_PROVIDER` | not written; optional override | operator | *(blank)* | Outbound mail for e-mail alert channels, invitations and the governance digest (`resend`); blank disables e-mail delivery (other channels still work). |
+| `AIDR_OIDC_INTERNAL_IDP_HOSTS` | always | operator | `--oidc-internal-idp-hosts` | Exact `host[:port]` list (fully qualified names, comma separated) of internal identity providers the `oidc-sso` function may reach on private addresses (RFC 1918, CGNAT, IPv6 ULA). Blank keeps the public-only egress policy; a malformed value makes `oidc-sso` refuse every request. |
+| `AIDR_OIDC_CLIENT_SECRET_BINDINGS` | not written; optional override | operator | *(blank)* | JSON binding of each OIDC client secret reference to one tenant and issuer (docs/production-readiness/oidc-sso-admin.md); the secret itself goes in `AIDR_OIDC_CLIENT_SECRET_<REF>`. |
+| `AIDR_MAIL_PROVIDER` | not written; optional override | operator | *(blank)* | Outbound mail for e-mail alert channels, invitations and the governance digest: `smtp` (the organisation's relay from the `SMTP_*` values in `.env`), `resend` or `none`. Blank selects `smtp` when `SMTP_HOST` is set and no Resend key is configured, `resend` when `RESEND_API_KEY` and `AIDR_MAIL_FROM` are set, otherwise no e-mail delivery (other channels still work). |
+| `AIDR_SMTP_SECURITY` | not written; optional override | operator | *(blank)* | SMTP connection security: `starttls` (default; refuses a relay that does not offer STARTTLS), `tls` (implicit TLS, the default for port 465) or `none` (plaintext, only without `SMTP_USER`). Certificates are always verified. |
+| `AIDR_SMTP_CA_PEM_B64` | not written; optional override | operator | *(blank)* | Base64 of a PEM bundle with the internal CA that issued the SMTP relay certificate; it replaces the system roots for that connection. |
+| `AIDR_SIEM_ALLOW_PRIVATE_NETWORKS` | not written; optional override | operator | `false` | `true` lets SIEM destinations opt in to RFC 1918 / ULA / CGNAT collectors (typical on-prem QRadar, Wazuh, Splunk). Loopback, link-local and metadata addresses stay refused. |
 | `RESEND_API_KEY` | not written; optional override | operator | *(blank)* | Resend API key for `AIDR_MAIL_PROVIDER=resend` (secret). |
-| `AIDR_MAIL_FROM` | not written; optional override | operator | *(blank)* | Sender address for AIDR e-mail (alerts, invitations, governance digest). |
+| `AIDR_MAIL_FROM` | not written; optional override | operator | *(blank)* | Sender address for AIDR e-mail (alerts, invitations, governance digest). With SMTP it defaults to `SMTP_SENDER_NAME <SMTP_ADMIN_EMAIL>`. |
 
 ## `.env.readiness`
 

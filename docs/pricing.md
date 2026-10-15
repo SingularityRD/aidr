@@ -47,7 +47,7 @@ ledger row.
 Catalog features (each plan includes the ones above it):
 
 - **Free** — local detection engine and the control-plane dashboard for one agent.
-- **Team** — adds Browser Privacy Guard and Microsoft Entra ID single sign-on.
+- **Team** — adds Browser Guard and Microsoft Entra ID single sign-on.
 - **Business** — adds SIEM export, SCIM provisioning and AI security posture.
 - **Enterprise** — adds air-gapped deployment and dedicated support.
 

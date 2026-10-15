@@ -191,7 +191,24 @@ describe("compliance-report issuance", () => {
 		expect(Object.keys(report.sections)).toEqual([
 			"tenant_profile", "protection_coverage", "data_protection_activity", "policy_inventory",
 			"access_identity", "incidents", "ai_security_posture", "data_flows", "retention_deletion",
+			"control_mappings",
 		]);
+		const mappings = report.sections.control_mappings;
+		expect(mappings.kind).toBe("vendor_mapping");
+		expect(mappings.statement).toMatch(/not a certification, a regulatory approval or an audit result/);
+		expect(mappings.frameworks.map((framework: { id: string }) => framework.id)).toEqual(
+			expect.arrayContaining(["kvkk-gdpr", "iso-iec-27001", "bddk-bsebh", "cbddo-big"]),
+		);
+		const iso = mappings.frameworks.find((framework: { id: string }) => framework.id === "iso-iec-27001");
+		expect(iso.controls.map((control: { id: string }) => control.id)).toEqual(
+			expect.arrayContaining(["A.5.15", "A.5.25", "A.8.11", "A.8.12", "A.8.15"]),
+		);
+		for (const framework of mappings.frameworks) {
+			for (const control of framework.controls) {
+				expect(["full", "partial", "customer-responsibility"]).toContain(control.coverage);
+				expect(control.note.length).toBeGreaterThan(40);
+			}
+		}
 		expect(report.sections.policy_inventory.approval_settings).toEqual({
 			model: "out_of_band_human_approval",
 			agent_callable_approval: false,
@@ -407,6 +424,12 @@ describe("compliance-report output schema", () => {
 		"sections.data_flows.deployment_scope",
 		"sections.data_flows.subprocessors[]",
 		"sections.data_flows.limitations[]",
+		// Control mappings: the product's own vendor mapping (governance/frameworks).
+		...["statement", "source", "frameworks[].name", "frameworks[].version", "frameworks[].scope",
+			"frameworks[].controls[].id", "frameworks[].controls[].group", "frameworks[].controls[].title",
+			"frameworks[].controls[].capabilities[]", "frameworks[].controls[].note"].map(
+			(field) => `sections.control_mappings.${field}`,
+		),
 		...["data_class", "fields[]", "purpose", "trigger", "destination", "destination_domain", "region",
 			"subprocessor", "lawful_basis", "retention", "deletion", "access", "transfer_mechanism", "status",
 			"unknowns[]"].map((field) => `sections.data_flows.flows[].${field}`),

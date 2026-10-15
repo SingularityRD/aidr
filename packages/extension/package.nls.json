@@ -1,0 +1,11 @@
+{
+  "extension.description": "Singularity AIDR — protects AI agent tool calls against dangerous commands, malicious URLs, and harmful file writes.",
+  "command.enableProtection.title": "Singularity AIDR: Enable protection",
+  "command.disableProtection.title": "Singularity AIDR: Disable protection",
+  "command.openConfig.title": "Singularity AIDR: Open config",
+  "command.openAuditLog.title": "Singularity AIDR: Open audit log",
+  "command.showHookHealth.title": "Singularity AIDR: Show hook health",
+  "config.cursorScope.description": "Where Singularity AIDR installs Cursor hooks.",
+  "config.vscodeScope.description": "Where Singularity AIDR installs VS Code hooks.",
+  "config.hookRunnerPath.description": "Optional absolute path to an aidr-hook runner script."
+}

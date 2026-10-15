@@ -37,7 +37,14 @@ vi.mock("../enterprise/team-provider", () => ({
 	}),
 }));
 
-import { completeOidcFlow, isSafeIdpUrl, redirectToIdp, startOidcFlow } from "../auth/oidc-sso";
+import {
+	completeOidcFlow,
+	formatJitMappingLines,
+	isSafeIdpUrl,
+	parseJitMappingLines,
+	redirectToIdp,
+	startOidcFlow,
+} from "../auth/oidc-sso";
 import { LoginPage } from "../ui/pages/LoginPage";
 import { OidcBreakGlassPage } from "../ui/pages/OidcBreakGlassPage";
 import { OidcCallbackPage } from "../ui/pages/OidcCallbackPage";
@@ -458,6 +465,140 @@ describe("owner SSO administration page", () => {
 		)?.[1].body;
 		expect(body).toMatchObject({ client_secret_ref: "CONTOSO", kind: "entra" });
 		expect(JSON.stringify(body)).not.toMatch(/client_secret"|password/);
+	});
+
+	describe("just-in-time provisioning", () => {
+		const jit = (overrides: Record<string, unknown> = {}) => ({
+			enabled: false,
+			issuer_matches: true,
+			allowed_domains: [],
+			default_role: null,
+			mappings: [],
+			directory_authoritative: false,
+			active_members: 0,
+			removed_members: [],
+			...overrides,
+		});
+		const respond = (
+			jitView: Record<string, unknown>,
+			other: unknown = { data: { ok: true }, error: null },
+		) =>
+			fixture.invoke.mockImplementation(
+				async (_n: string, options: { body: Record<string, unknown> }) =>
+					options.body.action === "get_config"
+						? { data: snapshot({ jit: jitView }), error: null }
+						: other,
+			);
+
+		it("is hidden when the server does not report JIT support", async () => {
+			render(<OidcSsoPage />);
+			await screen.findByLabelText("Issuer");
+			expect(screen.queryByText("Just-in-time provisioning")).toBeNull();
+		});
+
+		it("saves domains, default role and LDAP-style group mappings", async () => {
+			respond(jit());
+			render(<OidcSsoPage />);
+			fireEvent.click(await screen.findByLabelText("Create members at sign-in"));
+			fireEvent.change(screen.getByLabelText("Allowed email domains"), {
+				target: { value: "A-Corp.test, " },
+			});
+			fireEvent.change(screen.getByLabelText("Role when no group matches"), {
+				target: { value: "viewer" },
+			});
+			fireEvent.change(screen.getByLabelText("Group to role mapping"), {
+				target: {
+					value: "cn=aidr-admins,ou=groups,dc=corp,dc=example=admin\n\n/aidr/users = Member",
+				},
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Save provisioning" }));
+			await waitFor(() =>
+				expect(
+					fixture.invoke.mock.calls.find((call) => call[1].body.action === "put_jit_policy")?.[1]
+						.body,
+				).toEqual({
+					action: "put_jit_policy",
+					tenant_id: "11111111-1111-4111-8111-111111111111",
+					enabled: true,
+					allowed_domains: ["a-corp.test"],
+					default_role: "viewer",
+					mappings: [
+						{ group: "cn=aidr-admins,ou=groups,dc=corp,dc=example", role: "admin" },
+						{ group: "/aidr/users", role: "member" },
+					],
+				}),
+			);
+			expect(await screen.findByRole("status")).toHaveTextContent(
+				"Just-in-time provisioning saved.",
+			);
+		});
+
+		it("rejects an owner mapping locally and never sends it", async () => {
+			respond(jit());
+			render(<OidcSsoPage />);
+			fireEvent.change(await screen.findByLabelText("Group to role mapping"), {
+				target: { value: "/aidr/users=member\n/aidr/root=owner" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Save provisioning" }));
+			expect(await screen.findByRole("alert")).toHaveTextContent("Line 2 is not value=role");
+			expect(
+				fixture.invoke.mock.calls.some((call) => call[1].body.action === "put_jit_policy"),
+			).toBe(false);
+		});
+
+		it("explains refusals with fixed messages and warns about issuer drift and directory authority", async () => {
+			respond(jit({ enabled: true, issuer_matches: false, directory_authoritative: true }), {
+				data: { error: "jit_domain_not_verified" },
+				error: { message: "constraint x" },
+			});
+			render(<OidcSsoPage />);
+			expect(await screen.findByText(/issuer changed since this was saved/)).toBeInTheDocument();
+			expect(screen.getByText(/only SCIM can grant access\. Turn it off/)).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Save provisioning" }));
+			const alert = await screen.findByRole("alert");
+			expect(alert).toHaveTextContent("Each allowed domain must be a verified domain");
+			expect(alert.textContent).not.toMatch(/constraint/);
+		});
+
+		it("lists users an administrator removed and re-admits one explicitly", async () => {
+			respond(
+				jit({
+					enabled: true,
+					active_members: 3,
+					removed_members: [
+						{
+							user_id: "33333333-3333-4333-8333-333333333333",
+							email: "ayse@a-corp.test",
+							removed_at: "2026-10-10T10:00:00Z",
+						},
+					],
+				}),
+			);
+			render(<OidcSsoPage />);
+			expect(await screen.findByText("Members created at sign-in: 3")).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Re-admit ayse@a-corp.test" }));
+			await waitFor(() =>
+				expect(
+					fixture.invoke.mock.calls.find((call) => call[1].body.action === "jit_readmit")?.[1].body,
+				).toMatchObject({ user_id: "33333333-3333-4333-8333-333333333333" }),
+			);
+		});
+	});
+});
+
+describe("parseJitMappingLines", () => {
+	it("splits on the last '=' and reports the first bad line", () => {
+		expect(parseJitMappingLines("cn=a,dc=x=admin\n\n g = viewer ")).toEqual({
+			ok: true,
+			mappings: [
+				{ group: "cn=a,dc=x", role: "admin" },
+				{ group: "g", role: "viewer" },
+			],
+		});
+		expect(parseJitMappingLines("ok=member\nno-role")).toEqual({ ok: false, line: 2 });
+		expect(parseJitMappingLines("=admin")).toEqual({ ok: false, line: 1 });
+		expect(parseJitMappingLines("g=owner")).toEqual({ ok: false, line: 1 });
+		expect(formatJitMappingLines([{ group: "cn=a,dc=x", role: "admin" }])).toBe("cn=a,dc=x=admin");
 	});
 });
 

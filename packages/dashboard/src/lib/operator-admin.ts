@@ -1,3 +1,5 @@
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import { supabase } from "./supabase";
 
 /**
@@ -51,7 +53,7 @@ export interface TenantUsage {
 
 export type OperatorCall<T> =
 	| { ok: true; result: T }
-	| { ok: false; status: number | null; code: string | null };
+	| { ok: false; status: number | null; code: string | null; reason?: string | null };
 
 export type GrantLicenseInput = {
 	tenant_id: string;
@@ -63,38 +65,47 @@ export type GrantLicenseInput = {
 };
 
 /** Caller-safe text for each documented error code. Unknown codes use a fixed fallback. */
-const OPERATOR_ERRORS: Record<string, string> = {
-	invalid_tenant: "That tenant id is not valid.",
-	invalid_plan: "That plan id is not an active plan.",
-	invalid_seats: `Seats must be a whole number from 1 to ${MAX_SEATS.toLocaleString("en-US")}.`,
-	invalid_expiry: "The expiry must be a future date and time.",
-	invalid_reference: "Enter a single-line reference of up to 200 characters.",
-	invalid_owner: "The owner must be a user id (UUID).",
-	invalid_reason: "Enter a single-line reason of up to 200 characters.",
-	invalid_page: "The page cursor was rejected. Reload the tenant list.",
-	invalid_grant: "The licence grant was rejected. Check each field.",
-	owner_required:
-		"This tenant has more than one owner (or none). Enter the owner user id to grant the licence to.",
-	owner_not_eligible: "That user is not a current owner of an active tenant.",
-	tenant_closed: "The tenant is not active, so it cannot be licensed.",
-	tenant_not_found: "No tenant has that id.",
-	admission_operator_required:
-		"You are not an admission operator for this tenant (or you are a member of it). Licences need a separate, unexpired admission-operator grant.",
-	admission_mode_not_licensed:
-		"Licensed grants need the deployment admission mode set to cloud or onprem.",
-	operator_action_unavailable:
-		"The operator service did not confirm this action. Nothing is shown as done; check the logs and retry.",
-	authorization_unavailable: "Operator authorization could not be checked. Retry shortly.",
-	assurance_unavailable: "The session assurance level could not be checked. Retry shortly.",
-	payload_too_large: "The request was too large.",
-	invalid_json: "The request was rejected.",
-	invalid_action: "The request was rejected.",
-	origin_not_allowed:
-		"This dashboard origin is not allowed to call the operator service (AIDR_ALLOWED_ORIGINS).",
+const OPERATOR_ERRORS: Record<string, DashboardMessageKey> = {
+	invalid_tenant: "op.err.tenant",
+	invalid_plan: "op.err.plan",
+	invalid_seats: "op.err.seats",
+	invalid_expiry: "op.err.expiry",
+	invalid_reference: "op.err.reference",
+	invalid_owner: "op.err.owner",
+	invalid_reason: "op.err.reason",
+	invalid_page: "op.err.page",
+	invalid_grant: "op.err.grant",
+	owner_required: "op.err.ownerRequired",
+	owner_not_eligible: "op.err.ownerNotEligible",
+	tenant_closed: "op.err.closed",
+	tenant_not_found: "op.err.notFound",
+	admission_operator_required: "op.err.admissionOperator",
+	admission_mode_not_licensed: "op.err.admissionMode",
+	operator_action_unavailable: "op.err.unavailable",
+	authorization_unavailable: "op.err.authorization",
+	assurance_unavailable: "op.err.assurance",
+	payload_too_large: "op.err.tooLarge",
+	invalid_json: "op.err.rejected",
+	invalid_action: "op.err.rejected",
+	origin_not_allowed: "op.err.origin",
+	invalid_license: "op.err.license",
+	license_expired: "op.err.licenseExpired",
+	license_not_yet_valid: "op.err.licenseNotYetValid",
+	license_import_not_pending: "op.err.licenseNotPending",
+	license_import_mismatch: "op.err.licenseMismatch",
+	license_bound_to_other_tenant: "op.err.licenseOtherTenant",
+	license_registry_unavailable: "op.err.licenseRegistry",
+	license_registry_empty: "op.err.licenseRegistry",
+	license_registry_invalid: "op.err.licenseRegistry",
 };
 
-export function operatorErrorMessage(code: string | null, fallback: string): string {
-	return (code && OPERATOR_ERRORS[code]) ?? fallback;
+export function operatorErrorMessage(
+	code: string | null,
+	fallback: string,
+	t: Translate = englishT,
+): string {
+	const key = code && Object.hasOwn(OPERATOR_ERRORS, code) ? OPERATOR_ERRORS[code] : undefined;
+	return key ? t(key, { max: MAX_SEATS.toLocaleString("en-US") }) : fallback;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -192,12 +203,18 @@ export function parseTenantUsage(value: unknown, tenantId: string): TenantUsage 
 	};
 }
 
-async function errorBody(error: unknown): Promise<{ status: number | null; code: string | null }> {
+async function errorBody(
+	error: unknown,
+): Promise<{ status: number | null; code: string | null; reason?: string | null }> {
 	if (isRecord(error) && error.context instanceof Response) {
 		const status = error.context.status;
 		try {
 			const body: unknown = await error.context.clone().json();
-			return { status, code: isRecord(body) && typeof body.error === "string" ? body.error : null };
+			return {
+				status,
+				code: isRecord(body) && typeof body.error === "string" ? body.error : null,
+				...(isRecord(body) && typeof body.reason === "string" ? { reason: body.reason } : {}),
+			};
 		} catch {
 			return { status, code: null };
 		}
@@ -238,4 +255,68 @@ export async function callOperatorAdmin(
 	} catch {
 		return { ok: false, status: null, code: null };
 	}
+}
+
+/** A licence a workspace admin verified and staged; the operator applies it. */
+export interface PendingLicenseImport {
+	id: string;
+	tenantId: string;
+	licenseId: string;
+	seats: number;
+	planId: string;
+	expiresAt: string;
+	graceEndsAt: string;
+	submittedAt: string;
+	/** The signed document, sent back unchanged so operator-admin re-verifies it. */
+	document: Record<string, unknown>;
+}
+
+export function parseLicenseImports(value: unknown): PendingLicenseImport[] | null {
+	if (!isRecord(value) || !Array.isArray(value.imports)) return null;
+	const rows: PendingLicenseImport[] = [];
+	for (const row of value.imports) {
+		if (
+			!isRecord(row) ||
+			typeof row.id !== "string" ||
+			!UUID.test(row.id) ||
+			typeof row.tenant_id !== "string" ||
+			!UUID.test(row.tenant_id) ||
+			typeof row.license_id !== "string" ||
+			!count(row.seats) ||
+			typeof row.plan_id !== "string" ||
+			!isDate(row.expires_at) ||
+			!isDate(row.grace_ends_at) ||
+			!isDate(row.submitted_at) ||
+			!isRecord(row.document)
+		)
+			return null;
+		rows.push({
+			id: row.id.toLowerCase(),
+			tenantId: row.tenant_id.toLowerCase(),
+			licenseId: row.license_id,
+			seats: row.seats,
+			planId: row.plan_id,
+			expiresAt: row.expires_at,
+			graceEndsAt: row.grace_ends_at,
+			submittedAt: row.submitted_at,
+			document: row.document,
+		});
+	}
+	return rows;
+}
+
+/** The applied import an `apply_license` result must carry. */
+export function appliedLicense(
+	value: unknown,
+): { licenseId: string; seats: number; graceEndsAt: string } | null {
+	if (!isRecord(value) || value.status !== "granted" || !isRecord(value.import)) return null;
+	const row = value.import;
+	if (
+		row.status !== "applied" ||
+		typeof row.license_id !== "string" ||
+		!count(row.seats) ||
+		!isDate(row.grace_ends_at)
+	)
+		return null;
+	return { licenseId: row.license_id, seats: row.seats, graceEndsAt: row.grace_ends_at };
 }

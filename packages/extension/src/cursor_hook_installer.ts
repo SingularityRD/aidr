@@ -1,10 +1,12 @@
-import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { atomicWriteJson } from "@singularityrd/aidr-core";
 
 import * as vscode from "vscode";
 
+import { forgetConfigPath, removeHookShims } from "./hook-runtime.js";
+import { describeManagedHooks, prepareManagedHookCommand } from "./installer_common.js";
 import {
 	inRegistrationOrder,
 	type ManagedHookHealth,
@@ -13,7 +15,6 @@ import {
 } from "./managedHooks.js";
 
 const MANAGED_MARKER = "--managed-by aidr-cursor";
-const UNSAFE_SHIM_PATH_PATTERN = /["`$;&|<>\r\n\0%!]/;
 
 type HookEntry = Record<string, unknown> & { command?: string };
 type HookMap = Record<string, HookEntry[]>;
@@ -27,30 +28,36 @@ export async function installManagedHooks(
 	options: ManagedHookInstallOptions,
 ): Promise<ManagedHookHealth> {
 	const configPath = await resolveHooksPath(options.scope);
-	await mkdir(path.dirname(configPath), { recursive: true });
-
-	const runnerPath = await resolveRunnerPath(options.context);
-	const nodePath = resolveNodeRuntimePath();
 	const hooksFile = await readHooksFile(configPath);
-	const command = await buildHookCommand(configPath, nodePath, runnerPath);
+	const { command } = await prepareManagedHookCommand(
+		options.context,
+		"cursor",
+		configPath,
+		MANAGED_MARKER,
+	);
 
 	const updated = upsertManagedHooks(hooksFile, command);
 	await writeHooksFile(configPath, updated);
-
-	return {
-		configPath,
-		runnerPath,
-		installedEvents: collectInstalledEvents(updated.hooks),
-		managedCommands: collectManagedCommands(updated.hooks),
-	};
+	return healthOf(configPath, updated.hooks);
 }
 
 export async function removeManagedHooks(scope: ManagedHookScope): Promise<string> {
 	const configPath = await resolveHooksPath(scope);
-	const hooksFile = await readHooksFile(configPath);
-	const updated = removeManagedEntries(hooksFile);
-	await writeHooksFile(configPath, updated);
+	await removeManagedHooksFromFile(configPath);
 	return configPath;
+}
+
+/**
+ * Remove only this extension's entries (and its shims) from a Cursor hooks
+ * file. vscode-free: the uninstall script calls it too.
+ */
+export async function removeManagedHooksFromFile(configPath: string): Promise<void> {
+	const hooksFile = await readHooksFile(configPath);
+	if (collectManagedCommands(hooksFile.hooks).length > 0) {
+		await writeHooksFile(configPath, removeManagedEntries(hooksFile));
+	}
+	await removeHookShims(path.join(path.dirname(configPath), "hooks"));
+	await forgetConfigPath("cursor", configPath);
 }
 
 export async function getHookHealth(
@@ -58,14 +65,51 @@ export async function getHookHealth(
 ): Promise<ManagedHookHealth> {
 	const configPath = await resolveHooksPath(options.scope);
 	const hooksFile = await readHooksFile(configPath);
-	const runnerPath = await resolveRunnerPath(options.context).catch(() => undefined);
+	return healthOf(configPath, hooksFile.hooks);
+}
 
-	return {
+/**
+ * Re-point every installed managed hook at this extension version (run on
+ * activation). Scopes without managed entries are left untouched, so this
+ * never enables protection on its own.
+ */
+export async function repairManagedHooks(
+	context: vscode.ExtensionContext,
+): Promise<ManagedHookHealth[]> {
+	const results: ManagedHookHealth[] = [];
+	const seen = new Set<string>();
+	for (const scope of ["user", "workspace"] as const) {
+		const configPath = await resolveHooksPath(scope).catch(() => undefined);
+		if (!configPath || seen.has(configPath)) continue;
+		seen.add(configPath);
+		const hooksFile = await readHooksFile(configPath).catch(() => undefined);
+		if (!hooksFile) continue;
+		const managed = collectManagedCommands(hooksFile.hooks);
+		if (managed.length === 0) continue;
+		const { command } = await prepareManagedHookCommand(
+			context,
+			"cursor",
+			configPath,
+			MANAGED_MARKER,
+		);
+		let hooks = hooksFile.hooks;
+		if (managed.some((existing) => existing !== command)) {
+			const updated = upsertManagedHooks(hooksFile, command);
+			await writeHooksFile(configPath, updated);
+			hooks = updated.hooks;
+		}
+		results.push(await healthOf(configPath, hooks));
+	}
+	return results;
+}
+
+function healthOf(configPath: string, hooks: HookMap): Promise<ManagedHookHealth> {
+	return describeManagedHooks(
+		"cursor",
 		configPath,
-		runnerPath,
-		installedEvents: collectInstalledEvents(hooksFile.hooks),
-		managedCommands: collectManagedCommands(hooksFile.hooks),
-	};
+		collectInstalledEvents(hooks),
+		collectManagedCommands(hooks),
+	);
 }
 
 async function resolveHooksPath(scope: ManagedHookScope): Promise<string> {
@@ -78,88 +122,6 @@ async function resolveHooksPath(scope: ManagedHookScope): Promise<string> {
 		throw new Error("Open a workspace folder to install workspace hooks.");
 	}
 	return path.join(workspace, ".cursor", "hooks.json");
-}
-
-async function resolveRunnerPath(context: vscode.ExtensionContext): Promise<string> {
-	const configured =
-		vscode.workspace.getConfiguration().get<string>("aidr.hookRunnerPath")?.trim() ?? "";
-	if (configured) {
-		await access(configured);
-		return configured;
-	}
-
-	const candidates = [
-		context.asAbsolutePath(path.join("dist", "aidr-hook.cjs")),
-		context.asAbsolutePath(path.join("resources", "aidr-hook.cjs")),
-	];
-
-	for (const candidate of candidates) {
-		try {
-			await access(candidate);
-			return candidate;
-		} catch {
-			// Try next candidate.
-		}
-	}
-
-	throw new Error(
-		"Unable to locate aidr-hook runner. Build packages/extension or set aidr.hookRunnerPath.",
-	);
-}
-
-function resolveNodeRuntimePath(): string {
-	return process.env.VSCODE_NODE_EXEC_PATH?.trim() || process.execPath;
-}
-
-async function buildHookCommand(
-	configPath: string,
-	nodePath: string,
-	runnerPath: string,
-): Promise<string> {
-	const cursorConfigDir = path.dirname(configPath);
-	const shimPath = await createHookShim(cursorConfigDir, nodePath, runnerPath);
-	if (process.platform === "win32") {
-		return `& ${quote(shimPath)} cursor ${MANAGED_MARKER}`;
-	}
-	return `${quote(shimPath)} cursor ${MANAGED_MARKER}`;
-}
-
-async function createHookShim(
-	cursorConfigDir: string,
-	nodePath: string,
-	runnerPath: string,
-): Promise<string> {
-	assertSafePathForShim(nodePath, "Node runtime");
-	assertSafePathForShim(runnerPath, "Hook runner");
-
-	const hooksDir = path.join(cursorConfigDir, "hooks");
-	const posixShim = path.join(hooksDir, "aidr-hook");
-	const windowsShim = path.join(hooksDir, "aidr-hook.cmd");
-
-	await mkdir(hooksDir, { recursive: true });
-	await writeFile(
-		posixShim,
-		`#!/usr/bin/env sh\nexport ELECTRON_RUN_AS_NODE=1\n"${nodePath}" "${runnerPath}" "$@"\n`,
-		"utf8",
-	);
-	await chmod(posixShim, 0o755);
-
-	await writeFile(
-		windowsShim,
-		`@echo off\r\nsetlocal\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${nodePath}" "${runnerPath}" %*\r\n`,
-		"utf8",
-	);
-
-	return process.platform === "win32" ? windowsShim : posixShim;
-}
-
-function assertSafePathForShim(pathValue: string, label: string): void {
-	if (!pathValue) {
-		throw new Error(`${label} path is empty.`);
-	}
-	if (UNSAFE_SHIM_PATH_PATTERN.test(pathValue)) {
-		throw new Error(`${label} path contains unsupported characters for generated hook shims.`);
-	}
 }
 
 /**
@@ -274,8 +236,4 @@ async function readHooksFile(filePath: string): Promise<CursorHooksFile> {
 
 async function writeHooksFile(filePath: string, data: CursorHooksFile): Promise<void> {
 	await atomicWriteJson(filePath, data);
-}
-
-function quote(value: string): string {
-	return `"${value.replace(/"/g, '\\"')}"`;
 }

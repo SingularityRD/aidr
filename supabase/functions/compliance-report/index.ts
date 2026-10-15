@@ -6,8 +6,11 @@
 // accountability work: tenant profile, protection coverage, data-protection
 // activity (counts only), policy inventory (versions and digests), access and
 // identity, incidents, AI security posture, data flows and subprocessors, and
-// retention/deletion evidence. It is never a certification or a statement of
-// legal compliance.
+// retention/deletion evidence, plus the vendor control mappings (ISO/IEC
+// 27001:2022 Annex A, BDDK information systems regulation, the Presidency's
+// Information and Communication Security Guide and the other frameworks in
+// governance/frameworks). It is never a certification, a regulatory approval
+// or a statement of legal compliance.
 //
 // Integrity: the response carries the SHA-256 of the canonical JSON of the
 // report (everything except `integrity`) and, when a signing key is
@@ -57,10 +60,10 @@ const readRuntimeEnv: EnvReader = (name) => {
 	} catch {
 		// Node contract tests use process.env when Deno is unavailable.
 	}
-	return globalThis.process?.env?.[name];
+	return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
 };
 
-type DatabaseClient = ReturnType<typeof createClient>;
+type DatabaseClient = ReturnType<typeof createClient<any, "public">>;
 
 export interface ComplianceReportDeps {
 	env?: EnvReader;

@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider, redirect } from "react-router-dom";
+import { I18nProvider, useT } from "./i18n/I18nProvider";
 import { supabaseEnvError } from "./lib/supabase";
 import { initSentry } from "./sentry";
 import { NotFoundPage } from "./ui/NotFoundPage";
@@ -363,6 +364,20 @@ const router = createBrowserRouter([
 		],
 	},
 	{
+		path: "/reports",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/ReportsPage")).ReportsPage,
+				}),
+			},
+		],
+	},
+	{
 		path: "/governance",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,
@@ -500,6 +515,7 @@ installInactivityTimeout((status) => {
 });
 
 function DashboardConfigurationError() {
+	const t = useT();
 	return (
 		<main className="main">
 			<div
@@ -508,12 +524,9 @@ function DashboardConfigurationError() {
 				aria-live="assertive"
 				style={{ maxWidth: 620, margin: "48px auto" }}
 			>
-				<p className="eyebrow">Configuration required</p>
-				<h1>Dashboard configuration is incomplete</h1>
-				<p className="muted">
-					This production deployment is not connected to Supabase. Configure the required public
-					environment variables and redeploy before inviting customers.
-				</p>
+				<p className="eyebrow">{t("config.eyebrow")}</p>
+				<h1>{t("config.title")}</h1>
+				<p className="muted">{t("config.body")}</p>
 				<div className="notice notice-danger" style={{ marginTop: 16 }}>
 					{supabaseEnvError}
 				</div>
@@ -527,12 +540,14 @@ const productionConfigMissing = Boolean(supabaseEnvError) && import.meta.env.PRO
 
 ReactDOM.createRoot(rootEl).render(
 	<React.StrictMode>
-		<ThemeProvider>
-			{productionConfigMissing ? (
-				<DashboardConfigurationError />
-			) : (
-				<RouterProvider router={router} />
-			)}
-		</ThemeProvider>
+		<I18nProvider>
+			<ThemeProvider>
+				{productionConfigMissing ? (
+					<DashboardConfigurationError />
+				) : (
+					<RouterProvider router={router} />
+				)}
+			</ThemeProvider>
+		</I18nProvider>
 	</React.StrictMode>,
 );

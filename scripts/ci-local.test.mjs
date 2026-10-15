@@ -31,6 +31,7 @@ import {
 	buildReport,
 	ciRunTokens,
 	computeDrift,
+	computeReleaseDrift,
 	evaluateRequirements,
 	expandScriptChain,
 	findCiStep,
@@ -38,6 +39,7 @@ import {
 	formatSummary,
 	parseArgs,
 	parsePinnedTarball,
+	RELEASE_WORKFLOW_PATH,
 	referencedSecrets,
 	resolveCiStep,
 	selectExtraSuites,
@@ -50,6 +52,7 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const { parse } = createRequire(path.join(root, "packages/core/package.json"))("yaml");
 const workflow = parse(readFileSync(path.join(root, CI_WORKFLOW_PATH), "utf8"));
+const releaseWorkflow = parse(readFileSync(path.join(root, RELEASE_WORKFLOW_PATH), "utf8"));
 const rootPackage = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const rootScripts = rootPackage.scripts;
 const clone = (value) => structuredClone(value);
@@ -59,6 +62,45 @@ const ids = (list) => list.map((entry) => entry.id);
 
 test("the local plan represents every ci.yml job and run: step (no drift)", () => {
 	assert.deepEqual(computeDrift(workflow, STEPS, { rootScripts }), []);
+});
+
+test("every root script release-rc.yml runs is also run by a ci:local step (OPS-2)", () => {
+	assert.deepEqual(computeReleaseDrift(releaseWorkflow, workflow, STEPS, { rootScripts }), []);
+});
+
+test("release drift: a release-only contract with no local step is reported", () => {
+	const withoutContracts = STEPS.filter((entry) => entry.id !== "release-contracts");
+	const problems = computeReleaseDrift(releaseWorkflow, workflow, withoutContracts, { rootScripts });
+	assert.ok(problems.some((problem) => problem.includes('runs "pnpm verify:release-signing"')), problems.join("\n"));
+	assert.ok(problems.some((problem) => problem.includes('runs "pnpm verify:provenance"')), problems.join("\n"));
+	const changed = clone(releaseWorkflow);
+	changed.jobs["build-rc"].steps.push({ name: "New release gate", run: "pnpm verify:sbom-new" });
+	const withScript = { ...rootScripts, "verify:sbom-new": "node scripts/x.mjs" };
+	assert.match(computeReleaseDrift(changed, workflow, STEPS, { rootScripts: withScript }).join("\n"), /"build-rc \/ New release gate" runs "pnpm verify:sbom-new"/u);
+	assert.deepEqual(computeReleaseDrift(changed, workflow, STEPS, { rootScripts: withScript, releaseOnly: [{ script: "verify:sbom-new", reason: "needs the hosted runner" }] }), []);
+	assert.match(computeReleaseDrift(changed, workflow, STEPS, { rootScripts: withScript, releaseOnly: [{ script: "verify:sbom-new", reason: "" }] }).join("\n"), /needs a reason/u);
+});
+
+test("release drift: quality:* chains are expanded on both sides", () => {
+	const changed = clone(releaseWorkflow);
+	changed.jobs["build-rc"].steps.push({ name: "Chain", run: "pnpm quality:static" });
+	assert.deepEqual(computeReleaseDrift(changed, workflow, STEPS, { rootScripts }), []);
+	const grown = { ...rootScripts, "quality:static": `${rootScripts["quality:static"]} && pnpm verify:brand-new`, "verify:brand-new": "node x.mjs" };
+	assert.match(computeReleaseDrift(changed, workflow, STEPS.filter((entry) => !String(entry.run).includes("verify:brand-new")), { rootScripts: grown }).join("\n"), /runs "pnpm verify:brand-new"/u);
+});
+
+test("the built-artifact enforcement checks are wired into ci.yml, ci:local and release-rc.yml (OPS-7)", () => {
+	const enforcement = STEPS.find((entry) => entry.id === "enforcement");
+	assert.deepEqual(enforcement.after, ["build-release"]);
+	const run = resolveCiStep(workflow, enforcement.ci).run;
+	assert.match(run, /pnpm verify:enforcement/u);
+	assert.match(run, /pnpm verify:codex/u);
+	const build = releaseWorkflow.jobs["build-rc"].steps;
+	const index = (pattern) => build.findIndex((candidate) => pattern.test(candidate.run ?? ""));
+	assert.ok(index(/pnpm verify:enforcement/u) > 0, "release-rc build-rc must run verify:enforcement");
+	assert.ok(index(/pnpm verify:codex/u) > index(/^pnpm build:release$/mu), "verify:codex must check the deterministic release build");
+	const archive = build.findIndex((candidate) => candidate.name === "Archive unsigned release inputs");
+	assert.ok(index(/pnpm verify:enforcement/u) < index(/^pnpm build:release$/mu) && index(/pnpm verify:codex/u) < archive, "enforcement must run before the candidate inputs are archived");
 });
 
 test("every literal ci.yml step and cleanup resolves without unsupported expressions", () => {
@@ -195,8 +237,8 @@ test("default selection runs everything except opt-in steps, guards first and la
 	assert.equal(selected[0].id, "guard-home-record");
 	assert.deepEqual(ids(selected.slice(-2)), ["guard-home-verify", "guard-tree-unchanged"]);
 	assert.ok(!selected.some((entry) => entry.optIn));
-	assert.deepEqual(notSelected.map((entry) => entry.id).sort(), ["real-e2e", "real-e2e-deps", "real-e2e-evidence", "real-host-mock-model"]);
-	assert.ok(notSelected.every((entry) => entry.reason.startsWith("opt-in")));
+	assert.deepEqual(notSelected.map((entry) => entry.id).sort(), ["real-e2e", "real-e2e-deps", "real-e2e-evidence", "real-host-mock-model", "secret-scan-history"]);
+	assert.ok(notSelected.every((entry) => entry.reason.startsWith("opt-in") || entry.reason.startsWith("release profile only")));
 	assert.equal(selected.length + notSelected.length, STEPS.length);
 });
 
@@ -291,6 +333,33 @@ test("--fetch-tools reads every tool pin (url, sha256, archive member) from ci.y
 // ─── results ──────────────────────────────────────────────────────────────
 
 const result = (id, status, extra = {}) => ({ id, group: "g", name: id, status, required: true, durationMs: 1200, ...extra });
+
+test("--release: implies --strict, refuses narrowing flags, and only passes when every step passed", () => {
+	const options = parseArgs(["--release", "--keep-going"]);
+	assert.equal(options.release, true);
+	assert.equal(options.strict, true);
+	for (const narrowing of [["--quick"], ["--only", "lint"], ["--skip", "coverage"], ["--allow-dirty"]]) {
+		assert.throws(() => parseArgs(["--release", ...narrowing]), /--release cannot be combined with/u, narrowing.join(" "));
+	}
+	assert.equal(summarize([result("a", STATUS.PASS), result("b", STATUS.SKIPPED)], { strict: true, release: true }).exitCode, 1);
+	assert.equal(summarize([result("a", STATUS.PASS), result("b", STATUS.NOT_RUN)], { strict: true, release: true }).exitCode, 1);
+	assert.equal(summarize([result("a", STATUS.PASS), result("b", STATUS.FAIL, { required: false })], { strict: true, release: true }).exitCode, 1);
+	assert.equal(summarize([result("a", STATUS.PASS)], { strict: true, release: true }).exitCode, 0);
+	assert.match(formatSummary([result("a", STATUS.PASS), result("b", STATUS.SKIPPED, { reason: "x" })], { strict: true, release: true }), /RESULT: FAIL \(exit 1\) - --release and steps were skipped$/u);
+	assert.equal(rootScripts["ci:local:release"], "node scripts/ci-local.mjs --release");
+});
+
+test("--release selects every non-opt-in step plus the release-only ones", () => {
+	const { selected, notSelected } = selectSteps(STEPS, { release: true });
+	for (const id of ["secret-scan-history", "build-release", "enforcement", "release-contracts", "clean-checkout"]) assert.ok(ids(selected).includes(id), `${id} must run under --release`);
+	for (const entry of notSelected) {
+		const step = STEPS.find((candidate) => candidate.id === entry.id);
+		assert.ok(step.optIn || step.notInRelease, `${entry.id} left out of --release without a declared reason`);
+	}
+	const blocked = spawnSync(process.execPath, [path.join(root, "scripts/ci-local.mjs"), "--release", "--skip", "coverage"], { cwd: root, encoding: "utf8" });
+	assert.equal(blocked.status, 2);
+	assert.match(blocked.stderr, /--release cannot be combined with --skip/u);
+});
 
 test("exit code: 0 when everything passes or is skipped, 1 on a required failure only", () => {
 	assert.equal(summarize([result("a", STATUS.PASS), result("b", STATUS.SKIPPED)]).exitCode, 0);
@@ -395,6 +464,7 @@ test("parseArgs understands every documented flag", () => {
 		fetchTools: true,
 		allowDirty: true,
 		strict: true,
+		release: false,
 		json: "out.json",
 	});
 	assert.equal(parseArgs(["--json"]).json, ".ci-local/report.json");
@@ -405,11 +475,14 @@ test("parseArgs understands every documented flag", () => {
 });
 
 test("selectExtraSuites adds uncovered on-prem suites and never Postgres or duplicates", () => {
-	const files = ["deployment-doctor.test.mjs", "deployment-smoke.test.mjs", "license.test.mjs", "onprem-licensed-bootstrap-postgres.test.mjs", "onprem-aig-compose.test.mjs", "deployment-doctor.mjs", "unrelated.test.mjs"];
+	const files = ["customer-packet.test.mjs", "deployment-doctor.test.mjs", "intel-pack-release.test.mjs", "sign-intel-pack-manifest.test.mjs", "intel-pack-release.mjs", "deployment-smoke.test.mjs", "license.test.mjs", "onprem-licensed-bootstrap-postgres.test.mjs", "onprem-aig-compose.test.mjs", "deployment-doctor.mjs", "unrelated.test.mjs"];
 	assert.deepEqual(selectExtraSuites(files, ONPREM_EXTRA_SUITE_PATTERNS, "node --test scripts/deployment-doctor.test.mjs"), [
+		"scripts/customer-packet.test.mjs",
 		"scripts/deployment-smoke.test.mjs",
+		"scripts/intel-pack-release.test.mjs",
 		"scripts/license.test.mjs",
 		"scripts/onprem-aig-compose.test.mjs",
+		"scripts/sign-intel-pack-manifest.test.mjs",
 	]);
 });
 

@@ -20,6 +20,7 @@ vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
 		),
 	};
 });
+
 import { OUTPUT_INSPECTION_MAX_CHARS } from "../output-inspection.js";
 import {
 	OpenClawOutputProtection,
@@ -319,7 +320,7 @@ describe("OpenClaw pre-model middleware registration", () => {
 			{ runtime: "openclaw" },
 		)) as ToolResultMiddlewareResult;
 		expect(replacement.result.content[0]?.text).toContain(
-			"Singularity AIDR quarantined this tool output before it reached the model: AIDR failed to initialise",
+			"Singularity AIDR quarantined this tool output before it reached the model: Singularity AIDR",
 		);
 		expect(replacement.result.details.aidr.decision).toBe("quarantine_on_init_failure");
 	});

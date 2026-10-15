@@ -16,7 +16,7 @@ function run(script, args, success = true) {
 }
 function read(path) { return JSON.parse(readFileSync(path, "utf8")); }
 const cloud = join(root, "cloud");
-run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", cloud, "--dashboard-url", "https://aidr.example.test", "--supabase-url", "https://project.supabase.co", "--artifact-verification-public-key-file", artifactPublicKey, "--telemetry-queue-root", "/var/lib/aidr-telemetry"]);
+run("scripts/deployment-prepare.mjs", ["--mode", "cloud", "--output", cloud, "--dashboard-url", "https://aidr.example.test", "--supabase-url", "https://project.supabase.co", "--artifact-verification-public-key-file", artifactPublicKey, "--telemetry-queue-root", "/var/lib/aidr-telemetry", "--offline-policy", "keep_enforcing_local"]);
 const deployment = read(join(cloud, "deployment.json"));
 assert.equal(deployment.mode, "cloud");
 assert.ok(deployment.artifacts.length > 20);

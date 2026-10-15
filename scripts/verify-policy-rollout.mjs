@@ -26,7 +26,8 @@ assert.ok(Number.isSafeInteger(latestRevision) && latestRevision >= baseline.ver
 async function agent() {
   const iid = `rollout-${randomBytes(8).toString("hex")}`;
   const device = (await request("/functions/v1/device-start", env.ANON_KEY, {})).data;
-  assert.equal((await request("/functions/v1/device-verify", jwt, { user_code: device.user_code })).status,200);
+  const lookup = await request("/functions/v1/device-verify", jwt, { action: "lookup", user_code: device.user_code }); assert.equal(lookup.status,200);
+  assert.equal((await request("/functions/v1/device-verify", jwt, { action: "authorize", user_code: device.user_code, device_session_id: lookup.data.device.device_session_id, confirmed: true })).status,200);
   await new Promise((done) => setTimeout(done,(device.interval_seconds+1)*1000));
   const exchange = (await request("/functions/v1/device-poll", jwt,{device_code:device.device_code})).data;
   const enrolled = await request("/functions/v1/enroll",exchange.enrollment_token,{iid,agent_runtime:"claude-code"}); assert.equal(enrolled.status,200);

@@ -1,0 +1,11 @@
+{
+  "extension.description": "Singularity AIDR — yapay zekâ ajanlarının araç çağrılarını tehlikeli komutlara, zararlı URL'lere ve zarar verici dosya yazımlarına karşı korur.",
+  "command.enableProtection.title": "Singularity AIDR: Korumayı etkinleştir",
+  "command.disableProtection.title": "Singularity AIDR: Korumayı devre dışı bırak",
+  "command.openConfig.title": "Singularity AIDR: Yapılandırmayı aç",
+  "command.openAuditLog.title": "Singularity AIDR: Denetim kaydını aç",
+  "command.showHookHealth.title": "Singularity AIDR: Hook durumunu göster",
+  "config.cursorScope.description": "Singularity AIDR'nin Cursor hook'larını kuracağı yer.",
+  "config.vscodeScope.description": "Singularity AIDR'nin VS Code hook'larını kuracağı yer.",
+  "config.hookRunnerPath.description": "İsteğe bağlı: bir aidr-hook çalıştırıcı betiğinin mutlak yolu."
+}

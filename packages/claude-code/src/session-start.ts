@@ -11,17 +11,26 @@
  */
 
 import {
+	amsiSessionStatus,
 	createHookResponder,
 	discoverPlugins,
 	getLogger,
 	initSentry,
+	integrityFailureMessage,
 	type Logger,
+	loadConfig,
 	resolveHookDeadlineMs,
 	runPluginScan,
+	t,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import { pruneStaleSessionFiles } from "./approval-tracker.js";
-import { resolveAssetDir, resolvePluginManifest, resolvePluginRoot } from "./assets.js";
+import {
+	assetOverrideNotice,
+	resolveAssetDir,
+	resolvePluginManifest,
+	resolvePluginRoot,
+} from "./assets.js";
 
 // Initialize Sentry
 initSentry({ name: "aidr-claude-code-session-start" });
@@ -35,8 +44,7 @@ const responder = createHookResponder({
 	),
 	onDeadline: () => ({
 		stdout: `${JSON.stringify({
-			systemMessage:
-				"Singularity AIDR could not finish scanning installed plugins in time; the plugin scan result is unavailable. Tool calls are still inspected.",
+			systemMessage: t("hook.sessionScanTimeout"),
 		})}\n`,
 	}),
 });
@@ -61,21 +69,51 @@ async function main(): Promise<void> {
 		plugins = plugins.filter((p) => !p.key.startsWith(prefix));
 	}
 
-	const statusMsg = await runPluginScan(
-		logger,
-		"session",
-		plugins,
-		threatsDir,
-		allowlistsDir,
-		manifest.version,
-		"claude-code",
-	);
-	responder.answer({ stdout: `${JSON.stringify({ systemMessage: statusMsg })}\n` });
+	const [statusMsg, amsiNotice] = await Promise.all([
+		runPluginScan(
+			logger,
+			"session",
+			plugins,
+			threatsDir,
+			allowlistsDir,
+			manifest.version,
+			"claude-code",
+		),
+		amsiStartupNotice(),
+	]);
+	// A replaced or ignored rule directory (AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR)
+	// is reported at session start, not only on each verdict.
+	const overrideNotice = assetOverrideNotice();
+	const systemMessage = [statusMsg, amsiNotice, overrideNotice].filter(Boolean).join("\n");
+	responder.answer({ stdout: `${JSON.stringify({ systemMessage })}\n` });
 }
 
-main().catch(() => {
+/**
+ * Probe AMSI once per session (Windows/WSL with `amsi_check` enabled) so the
+ * per-call hook finds the host state already recorded, and say once, here,
+ * when AMSI cannot run on this computer. Best effort: a failure only drops the
+ * notice; the per-call path still reports the leg on every verdict.
+ */
+async function amsiStartupNotice(): Promise<string | null> {
+	try {
+		const config = await loadConfig(undefined, logger);
+		const record = await amsiSessionStatus(config.amsi_check.enabled, logger);
+		return record?.state === "unavailable"
+			? t("hook.amsiUnavailable", { reason: record.reason })
+			: null;
+	} catch (error) {
+		logger.debug("AMSI start-up probe skipped", { error: String(error) });
+		return null;
+	}
+}
+
+main().catch((error: unknown) => {
+	// A failed release integrity check does not leave the session unprotected:
+	// the PreToolUse hook denies every call. The banner says so, with the fix.
+	const systemMessage =
+		integrityFailureMessage(error)?.sessionStart ?? t("hook.sessionStartFailed");
 	responder.answer({
-		stdout: `${JSON.stringify({ systemMessage: "Singularity AIDR protection failed to start; the session is not protected." })}\n`,
+		stdout: `${JSON.stringify({ systemMessage })}\n`,
 		exitCode: 1,
 	});
 });

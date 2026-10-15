@@ -1,0 +1,300 @@
+{"lang": "tr", "domain": "shopping", "text": "{NEG:brand+DAT} mı yoksa {NEG:brand+DAT} mı güvenmeliyim? Bu yaz {NEG:word} kenarında giymek için rahat bir sandalet arıyorum."}
+{"lang": "tr", "domain": "shopping", "text": "{NEG:brand} indirimde, {NEG:word} rengi tişört 199 TL. Sence kargo ücretiyle birlikte {NEG:brand+ABL} almak daha mı mantıklı?"}
+{"lang": "tr", "domain": "shopping", "text": "Arkadaşım {PERSON1.first} bana {NEG:brand} kulaklık önerdi ama yorumlarda {NEG:word} gibi bir ses var diyorlar. Alayım mı?"}
+{"lang": "tr", "domain": "shopping", "text": "Annem için doğum günü hediyesi lazım, {NEG:brand+ABL} bir şal ya da {NEG:brand+ABL} parfüm düşünüyorum. 1500 TL bütçem var, liste yap."}
+{"lang": "tr", "domain": "shopping", "text": "sepetimde {NEG:brand} ayakkabi var ama {NEG:word} indirim kodu calismiyor, {NEG:org} musteri hizmetlerine ne yazayim?"}
+{"lang": "en", "domain": "shopping", "text": "Is the {NEG:brand} air fryer worth it compared to the {NEG:brand} one? I {NEG:word} cook for two people most nights."}
+{"lang": "en", "domain": "shopping", "text": "My sister {PERSON1.first} wants a {NEG:brand} hoodie for her birthday. Which size runs larger, {NEG:brand} or the other one?"}
+{"lang": "mix", "domain": "shopping", "text": "{NEG:brand} sale'de 3 al 2 öde var, {NEG:brand} ise free shipping veriyor. Hangisi daha iyi deal?"}
+{"lang": "tr", "domain": "shopping", "text": "{PERSON1.first} Hanım'ın tavsiyesiyle {NEG:brand+ABL} çaydanlık aldım, {NEG:word} gibi parlıyor ama kapağı sıkışıyor. İade dilekçesi yazar mısın?"}
+{"lang": "tr", "domain": "shopping", "text": "{NEG:media+DAT} göre {NEG:brand} kahve makinesinin {NEG:word} modeli en çok satan. Gerçekten iyi mi?"}
+{"lang": "tr", "domain": "cooking", "text": "Akşama {NEG:word} balığı yapacağım, yanına {NEG:brand} makarna mı yoksa pilav mı gider?"}
+{"lang": "tr", "domain": "cooking", "text": "{NEG:place+GEN} meşhur tatlısının tarifini verir misin? Şeker yerine {NEG:word} balı kullanabilir miyim?"}
+{"lang": "tr", "domain": "cooking", "text": "Kayınvalidem {PERSON1.first} Hanım hafta sonu geliyor, ona {NEG:place} usulü mantı yapmak istiyorum. {NEG:brand} hazır yufka olur mu?"}
+{"lang": "tr", "domain": "cooking", "text": "{NEG:word} bir akşam yemeği için menü öner: başlangıç, ana yemek, tatlı. {NEG:brand} krema kullanmak istiyorum."}
+{"lang": "en", "domain": "cooking", "text": "Can you give me a {NEG:place} style pasta recipe? I only have {NEG:brand} tomato sauce and some {NEG:word} herbs from the garden."}
+{"lang": "en", "domain": "cooking", "text": "My neighbour {PERSON1.first} brought us a cake from {NEG:brand}. How do I store it so it stays fresh until {NEG:word}?"}
+{"lang": "mix", "domain": "cooking", "text": "{NEG:media} dizisinde gördüğüm {NEG:place} yemeğinin recipe'si lazım, step by step yazar mısın?"}
+{"lang": "tr", "domain": "cooking", "text": "{PERSON1.first} ile {NEG:word} kenarında piknik yapacağız. {NEG:brand} termos ile soğuk çay nasıl hazırlanır?"}
+{"lang": "tr", "domain": "cooking", "text": "ekmek mayasi {NEG:brand} mi yoksa {NEG:brand} mi daha iyi kabarir? {NEG:word} gibi yumusak olsun istiyorum"}
+{"lang": "tr", "domain": "cooking", "text": "Fırında {NEG:word} tavuk tarifim var ama {NEG:brand} fırınım 200 dereceyi geçmiyor, süreyi nasıl ayarlarım?"}
+{"lang": "tr", "domain": "pets", "text": "Kedimin adı Pamuk, {NEG:brand} mama yemiyor. {NEG:brand} yaş mamaya geçsem midesini bozar mı?"}
+{"lang": "tr", "domain": "pets", "text": "Köpeğimiz Karabaş her akşam {NEG:word} kenarında yürüyüşe çıkıyor. {NEG:brand} tasma sağlam mı sence?"}
+{"lang": "tr", "domain": "pets", "text": "Veteriner {PERSON1} kedim Boncuk için {NEG:brand} vitamin önerdi. {NEG:media+DAT} göre zararlı diyorlar, doğru mu?"}
+{"lang": "en", "domain": "pets", "text": "My dog Max keeps chewing the {NEG:brand} toys. Are {NEG:brand} ones more durable for a big retriever?"}
+{"lang": "en", "domain": "pets", "text": "Our cat Luna hates the {NEG:brand} litter. My roommate {PERSON1.first} says {NEG:brand} clumps better. Thoughts?"}
+{"lang": "mix", "domain": "pets", "text": "Muhabbet kuşum Limon için {NEG:brand} kafes aldım, ama {NEG:word} sesi gibi bir ses çıkarıyor. Normal mi bu behavior?"}
+{"lang": "tr", "domain": "pets", "text": "Balık akvaryumu için {NEG:brand} filtre mi {NEG:brand} filtre mi? Japon balıklarımın adı Çıtır ve Pıtır."}
+{"lang": "tr", "domain": "pets", "text": "{PERSON1.first} komşum köpeği Zeytin'i bana bırakacak, {NEG:place} yolculuğunda {NEG:brand} taşıma çantası yeterli olur mu?"}
+{"lang": "tr", "domain": "pets", "text": "Kedim Tarçın {NEG:word} gibi sarı, {NEG:brand} tüy bakım fırçası işe yarar mı?"}
+{"lang": "en", "domain": "pets", "text": "Write a cute Instagram caption for my puppy Biscuit's first trip to {NEG:place}. Mention {NEG:brand} because they sponsored the leash."}
+{"lang": "tr", "domain": "shopping", "text": "{NEG:org} kartımla {NEG:brand} mağazasından taksitli alışveriş yaptım, {NEG:word} faiz çıktı. Bu yasal mı?"}
+{"lang": "tr", "domain": "shopping", "text": "ALIŞVERİŞ LİSTESİ\n- {NEG:brand} süt\n- {NEG:brand} yoğurt\n- {NEG:word} tuzu\n- kedi Fıstık için mama\nBunu kategorilere ayır."}
+{"lang": "en", "domain": "shopping", "text": "SHOPPING LIST\n- {NEG:brand} coffee\n- {NEG:brand} oat milk\n- birthday card for {PERSON1.first}\nSort this by aisle please."}
+{"lang": "mix", "domain": "shopping", "text": "{PERSON1.first} bana {NEG:brand} gift card verdi, {NEG:brand} online store'da kullanabiliyor muyum?"}
+{"lang": "tr", "domain": "cooking", "text": "Bayram için {NEG:place} baklavası mı alayım yoksa {NEG:brand} hazır baklava mı? Misafirlerim {PERSON1.first} ve {PERSON2.first} tatlıya çok düşkün."}
+{"lang": "tr", "domain": "cooking", "text": "{NEG:word} tadında bir çorba istiyorum, {NEG:brand} bulyon kullanmadan nasıl lezzetli olur?"}
+{"lang": "en", "domain": "cooking", "text": "I {NEG:word} never bake, but I want to try a {NEG:place} cheesecake. Is {NEG:brand} cream cheese okay?"}
+{"lang": "tr", "domain": "shopping", "text": "{NEG:media} reklamında gördüğüm {NEG:brand} süpürgesi gerçekten {NEG:word} kadar sessiz mi?"}
+{"lang": "tr", "domain": "pets", "text": "Hamsterım Fındık {NEG:brand} talaşından alerji yaptı. {NEG:place} tarafında egzotik hayvan veterineri var mı?"}
+{"lang": "mix", "domain": "pets", "text": "{NEG:brand} kedi maması review'larını özetler misin? Kedim Duman çok picky, {NEG:word} gibi naz yapıyor."}
+{"lang": "tr", "domain": "cooking", "text": "{PERSON1.first} Bey'in restoranında yediğim {NEG:place} kebabını evde yapmak istiyorum, {NEG:word} közü şart mı?"}
+{"lang": "tr", "domain": "shopping", "text": "Kardeşim {PERSON1.first} {NEG:brand} telefonu kırdı, {NEG:org} sigortası ekran değişimini karşılar mı?"}
+{"lang": "en", "domain": "cooking", "text": "Suggest a menu for a {NEG:word} themed dinner party. One guest, {PERSON1.first}, is vegan; I'll buy everything at {NEG:brand}."}
+{"lang": "tr", "domain": "pets", "text": "papagan Karamel {NEG:word} diye bagiriyor, {NEG:media} videosunda gordum bunu nasil ogretmisler"}
+{"lang": "tr", "domain": "shopping", "text": "{NEG:brand} ile {NEG:brand} buzdolabı karşılaştırması yap: enerji sınıfı, hacim, fiyat. Tablo halinde."}
+{"lang": "en", "domain": "pets", "text": "Our hamster Peanut escaped behind the {NEG:brand} fridge. How do I lure him out? My son {PERSON1.first} is in tears and I {NEG:word} need a plan fast."}
+{"lang": "mix", "domain": "cooking", "text": "{NEG:brand} blender ile smoothie yapıyorum, {NEG:word} ve muz koyunca çok koyu oluyor. Any tips?"}
+{"lang": "tr", "domain": "cooking", "text": "Bu tarifi {NEG:place} ağzıyla yeniden yaz: \"{NEG:word} gibi bir sofra kurduk, {PERSON1.first} teyze dolmaları sardı.\""}
+{"lang": "tr", "domain": "shopping", "text": "{NEG:club} formasını {NEG:brand+ABL} mı almalıyım resmi mağazadan mı? Oğlum {PERSON1.first} için 10 yaş beden."}
+{"lang": "en", "domain": "shopping", "text": "Compare {NEG:brand} and {NEG:brand} running shoes for flat feet. I {NEG:word} run 5k three times a week."}
+{"lang": "tr", "domain": "home", "text": "Balkonda {NEG:word} manzarası var ama nem yüzünden duvar küf yaptı. {NEG:brand} küf spreyi işe yarar mı?"}
+{"lang": "tr", "domain": "home", "text": "Ev arkadaşım {PERSON1.first} ile {NEG:word} ışığı alan odayı paylaşıyoruz, {NEG:brand+ABL} perde önerir misin?"}
+{"lang": "tr", "domain": "home", "text": "{NEG:brand} kombi arıza veriyor, ekranda E04 yazıyor. {NEG:org} servisini aramadan önce ne denemeliyim?"}
+{"lang": "tr", "domain": "home", "text": "Kiracıyım, ev sahibi {NEG:word} zammı istiyor. {NEG:law+GEN} kira artış sınırı şu an ne kadar?"}
+{"lang": "tr", "domain": "home", "text": "salonu {NEG:word} temasiyla dosemek istiyorum, {NEG:brand} ve {NEG:brand} kanepelerden hangisi uyar"}
+{"lang": "en", "domain": "home", "text": "How do I get rid of mold in a {NEG:word} facing bathroom? I tried {NEG:brand} spray already."}
+{"lang": "en", "domain": "home", "text": "Our landlord {PERSON1.first} says the {NEG:brand} heater is fine, but it {NEG:word} shuts off at night. What should I write to him?"}
+{"lang": "mix", "domain": "home", "text": "{NEG:brand} robot süpürge mi {NEG:brand} mi? Evde iki kedi var, Mırmır ve Paşa, tüy problemi büyük. Pros/cons listesi yap."}
+{"lang": "tr", "domain": "home", "text": "{NEG:org} faturam bu ay iki katına çıktı, {NEG:institution} şikayet hattına ne yazmalıyım?"}
+{"lang": "tr", "domain": "home", "text": "Bahçeye {NEG:word} ağacı dikmek istiyorum, {NEG:place} ikliminde yetişir mi?"}
+{"lang": "tr", "domain": "home", "text": "{PERSON1.first} Usta yarın {NEG:brand} şofbeni takmaya gelecek, ona sormam gereken soruları listeler misin? {NEG:word} gibi kireçli suyumuz var."}
+{"lang": "tr", "domain": "home", "text": "EV TAŞIMA KONTROL LİSTESİ\n- {NEG:org} aboneliğini kapat\n- {NEG:org} interneti taşı\n- {NEG:word} kenarındaki depoyu boşalt\nEksik ne var?"}
+{"lang": "en", "domain": "home", "text": "Draft a polite note to my neighbour {PERSON1.first} about the {NEG:word} tree dropping leaves into our gutter. Mention I bought {NEG:brand} gutter guards."}
+{"lang": "tr", "domain": "cars", "text": "{NEG:brand} mi {NEG:brand} mı? Şehir içi için hibrit bir araç arıyorum, {NEG:word} bir aile arabası olsun."}
+{"lang": "tr", "domain": "cars", "text": "Arabamın {NEG:brand} lastikleri {NEG:word} yolunda patladı, {NEG:org} kasko bunu karşılar mı?"}
+{"lang": "tr", "domain": "cars", "text": "Babam {PERSON1.first} Bey {NEG:brand} aracını satmak istiyor. {NEG:institution} üzerinden noter satışı nasıl yapılır?"}
+{"lang": "tr", "domain": "cars", "text": "{NEG:place} yolculuğu için araç kiralayacağız, {NEG:org} mı {NEG:org} mı daha uygun?"}
+{"lang": "en", "domain": "cars", "text": "My {NEG:brand} makes a {NEG:word} grinding noise when braking. Is it the pads or the rotors?"}
+{"lang": "en", "domain": "cars", "text": "Help me write a Facebook Marketplace ad for my 2017 {NEG:brand}. Pick-up near {NEG:place}, ask for {PERSON1.first}."}
+{"lang": "mix", "domain": "cars", "text": "{NEG:brand} servisinden gelen quote çok yüksek, {NEG:org} independent garage daha ucuz. Negotiation için ne söyleyeyim?"}
+{"lang": "tr", "domain": "cars", "text": "araba muayenesi {NEG:org} randevusu nasil alinir, {NEG:institution} sitesinde bulamadim"}
+{"lang": "tr", "domain": "cars", "text": "{PERSON1.first} ile {NEG:word} kıyısına gideceğiz, {NEG:brand} elektrikli araçla şarj istasyonu bulmak kolay mı?"}
+{"lang": "tr", "domain": "cars", "text": "Trafik cezası geldi, {NEG:law} kapsamında itiraz süresi kaç gün? {NEG:institution} üzerinden yapılabiliyor mu?"}
+{"lang": "en", "domain": "cars", "text": "Explain {NEG:brand} vs {NEG:brand} warranty terms in plain English. I {NEG:word} drive about 20,000 km a year."}
+{"lang": "tr", "domain": "phones", "text": "{NEG:brand} telefonumda {NEG:ai} sürekli kendiliğinden açılıyor, nasıl kapatırım?"}
+{"lang": "tr", "domain": "phones", "text": "{NEG:org} hattımı {NEG:org+DAT} taşımak istiyorum, numaram 0555 000 11 22. Süreç kaç gün sürer?"}
+{"lang": "tr", "domain": "phones", "text": "Kızım {PERSON1.first} için ilk telefonu alacağım, {NEG:brand} mı {NEG:brand} mı daha güvenli? Ebeveyn kontrolü önemli."}
+{"lang": "tr", "domain": "phones", "text": "Telefonumun ekranına {NEG:word} gibi bir çizgi geldi, {NEG:brand} yetkili servisi garantiden karşılar mı?"}
+{"lang": "en", "domain": "phones", "text": "How do I move my WhatsApp chats from {NEG:brand} to {NEG:brand} without losing photos?"}
+{"lang": "en", "domain": "phones", "text": "My {NEG:brand} battery drains by noon. I {NEG:word} use {NEG:media} for maybe an hour. What's eating it?"}
+{"lang": "mix", "domain": "phones", "text": "{NEG:ai} ile {NEG:ai} arasında hangisi Türkçe voice command'ları daha iyi anlıyor? Annem {PERSON1.first} kullanacak."}
+{"lang": "tr", "domain": "phones", "text": "yeni {NEG:brand} telefonda {NEG:media} uygulamasi acilmiyor, {NEG:word} ekran kaliyor"}
+{"lang": "tr", "domain": "phones", "text": "{PERSON1.first} adlı kişi beni 0212 000 00 00'dan aradı, {NEG:org} adına kampanya dedi. Dolandırıcılık olabilir mi? {NEG:institution+DAT} nasıl bildiririm?"}
+{"lang": "tr", "domain": "home", "text": "Kedim Minnoş {NEG:brand} koltuğu tırmalıyor, {NEG:word} kokusu kedileri uzaklaştırır mı?"}
+{"lang": "en", "domain": "home", "text": "Write a {NEG:brand} product review for a cordless vacuum. Keep it honest: great suction, {NEG:word} loud motor."}
+{"lang": "tr", "domain": "home", "text": "Annem {PERSON1.first} Hanım {NEG:word} sabahları erkenden çamaşır makinesini çalıştırıyor. {NEG:org} elektrik tarifesinde gece saatleri daha ucuz mu?"}
+{"lang": "tr", "domain": "home", "text": "{NEG:place} tarafında yazlık kiraladık, {NEG:word} sesiyle uyuyoruz ama klima {NEG:brand} ve çok gürültülü."}
+{"lang": "mix", "domain": "home", "text": "Smart home kurmak istiyorum: {NEG:ai} uyumlu {NEG:brand} ampuller ve priz. Budget 5000 TL."}
+{"lang": "tr", "domain": "cars", "text": "Komşum {PERSON1.first} {NEG:word} park yerime arabasını bırakıyor, site yönetimine kibar bir dilekçe yaz. {NEG:law} hükümlerine de değin."}
+{"lang": "en", "domain": "cars", "text": "Is it safe to drive from {NEG:place} to {NEG:place} in winter with all-season {NEG:brand} tyres?"}
+{"lang": "tr", "domain": "cars", "text": "{NEG:brand} aracım için {NEG:org} ve {NEG:org} sigorta tekliflerini karşılaştır, teminatları tabloya dök."}
+{"lang": "tr", "domain": "phones", "text": "{NEG:media} hesabım çalındı, {NEG:brand} telefonumda iki adımlı doğrulama nasıl açılır?"}
+{"lang": "en", "domain": "phones", "text": "My grandfather {PERSON1.first} can't hear calls on his {NEG:brand}. Which {NEG:brand} hearing-aid compatible phone would you suggest?"}
+{"lang": "mix", "domain": "phones", "text": "{NEG:brand} Watch ile {NEG:brand} band karşılaştırması: sleep tracking, battery, price. Tablo yap."}
+{"lang": "tr", "domain": "home", "text": "Duvar rengi için {NEG:word} mavisi mi {NEG:word} beyazı mı? {NEG:brand} boya kataloğundaki kodları öner."}
+{"lang": "tr", "domain": "home", "text": "{PERSON1.first}, {PERSON2.first} ve ben ev temizlik nöbeti yapıyoruz, {NEG:brand} uygulamasında görev paylaşımı nasıl kurulur? {NEG:word} bir sistem olsun."}
+{"lang": "en", "domain": "home", "text": "Can you translate this ad: \"{NEG:word} view apartment near {NEG:place}, call {PERSON1.first} on 0532 000 00 00\" into Turkish?"}
+{"lang": "tr", "domain": "cars", "text": "{NEG:word} demir yolu geçidinde arabam stop etti, {NEG:brand} yol yardım hattı ne kadar sürede gelir?"}
+{"lang": "tr", "domain": "phones", "text": "{NEG:org} faturamda {NEG:media} aboneliği görünüyor ama ben açmadım. İtiraz metni yaz."}
+{"lang": "en", "domain": "phones", "text": "Set up parental controls on a {NEG:brand} tablet so my kid can only use {NEG:media} for an hour a day. He {NEG:word} sneaks it at night."}
+{"lang": "tr", "domain": "social-media", "text": "{NEG:media} için kısa bir paylaşım yaz: \"{NEG:word} kenarında gün batımı, yanımda {NEG:brand} kahvem.\" Emoji kullanma."}
+{"lang": "tr", "domain": "social-media", "text": "Instagram'a {NEG:place} tatil fotoğrafı koyacağım, {NEG:word} temalı 5 açıklama öner."}
+{"lang": "tr", "domain": "social-media", "text": "Arkadaşım {PERSON1.first} doğum gününde {NEG:word} gibi parladı, ona {NEG:media} hikayesi için samimi bir kutlama yaz."}
+{"lang": "tr", "domain": "social-media", "text": "{NEG:club} maçı sonrası {NEG:media} paylaşımı: \"{NEG:word} hiç bitmesin!\" cümlesini daha esprili yap."}
+{"lang": "tr", "domain": "social-media", "text": "linkedin postu yaz: {NEG:org} ile {NEG:word} dolu bir staj donemini bitirdim, ekibe tesekkur"}
+{"lang": "en", "domain": "social-media", "text": "Write a tweet about our trip to {NEG:place}. Tone: {NEG:word} and cheerful. Tag {NEG:brand} because we stayed at their hotel."}
+{"lang": "en", "domain": "social-media", "text": "Rewrite this caption: \"Me and {PERSON1.first} by the {NEG:word} lake, sponsored by {NEG:brand}.\" Make it less cringe."}
+{"lang": "mix", "domain": "social-media", "text": "{NEG:media} reels için hook lazım, konu {NEG:brand} skincare routine. {NEG:word} vibe olsun, max 10 kelime."}
+{"lang": "tr", "domain": "social-media", "text": "{PERSON1.first} ve {PERSON2.first} nişanlandı, {NEG:media} gönderisine \"{NEG:word} sizinle olsun\" tadında bir yorum yaz."}
+{"lang": "tr", "domain": "social-media", "text": "{NEG:media} hesabımda {NEG:brand} iş birliği yapacağım, reklam etiketi {NEG:law+DAT} göre nasıl yazılmalı?"}
+{"lang": "en", "domain": "social-media", "text": "Give me 5 hashtags for a post about {NEG:word} season at {NEG:place}. No brand names."}
+{"lang": "tr", "domain": "marketing", "text": "{NEG:brand} için yaz kampanyası sloganı: \"{NEG:word} gibi ferah\" fikrini geliştir, 10 alternatif yaz."}
+{"lang": "tr", "domain": "marketing", "text": "Kafemizin adı {NEG:word} Kahve, {NEG:place} sahilinde. {NEG:media} reklamı için 30 saniyelik metin yaz."}
+{"lang": "tr", "domain": "marketing", "text": "{NEG:org} bayram kampanyası e-postası: müşteriye {NEG:word} dolu bir bayram dilensin, {NEG:brand} indirimi duyurulsun."}
+{"lang": "tr", "domain": "marketing", "text": "Pazarlama müdürümüz {PERSON1} yeni {NEG:brand} serisi için {NEG:word} kelimesini slogan yapmak istiyor. Yaratıcı mı, klişe mi?"}
+{"lang": "en", "domain": "marketing", "text": "Write landing page copy for a {NEG:word} scented candle line. Compare subtly with {NEG:brand} without naming them directly... actually name {NEG:brand} once."}
+{"lang": "en", "domain": "marketing", "text": "Our agency lead {PERSON1.first} wants a tagline for {NEG:org}'s new eco campaign. Something with the word {NEG:word}."}
+{"lang": "mix", "domain": "marketing", "text": "{NEG:brand} için Black Friday copy yaz, CTA \"{NEG:word} now\" olsun, Türkçe-İngilizce karışık hedef kitle."}
+{"lang": "tr", "domain": "marketing", "text": "ÜRÜN AÇIKLAMASI\n{NEG:brand} {NEG:word} serisi el kremi, {NEG:place} lavantasıyla.\nBunu e-ticaret sitesi için 80 kelimeye genişlet."}
+{"lang": "tr", "domain": "marketing", "text": "emlak ilani yaz: {NEG:word} manzarali 3+1, {NEG:place} merkezde, {NEG:brand} beyaz esya dahil"}
+{"lang": "en", "domain": "marketing", "text": "Create three subject lines for a {NEG:brand} newsletter about {NEG:word} deals. Sender name is {PERSON1.first} from customer care."}
+{"lang": "tr", "domain": "writing", "text": "Şu cümleyi daha edebi yap: \"{NEG:word} batarken {NEG:place} sokaklarında yürüdük.\""}
+{"lang": "tr", "domain": "writing", "text": "Öğretmenim {PERSON1.first} Hanım'a teşekkür mektubu yaz, {NEG:institution} mezuniyetinde {NEG:word} gibi destek oldu."}
+{"lang": "tr", "domain": "writing", "text": "{NEG:word} ve {NEG:word} kelimelerini kullanarak çocuklar için 4 dizelik bir şiir yaz."}
+{"lang": "tr", "domain": "writing", "text": "Kompozisyon ödevi: \"{NEG:word} insanın içindedir.\" Giriş paragrafını yaz, {NEG:media} dizisine atıf yapma."}
+{"lang": "en", "domain": "writing", "text": "Proofread: \"I {NEG:word} visit {NEG:place} next summer with {PERSON1.first}, if the flights on {NEG:brand} are cheap.\""}
+{"lang": "en", "domain": "writing", "text": "Write a short story opening where a girl named {PERSON1.first} finds a {NEG:word} shell on the beach near {NEG:place}."}
+{"lang": "en", "domain": "writing", "text": "Is it correct to capitalise \"{NEG:word}\" when it starts a sentence like \"{NEG:word} is all we have\"?"}
+{"lang": "mix", "domain": "writing", "text": "Essay'imi düzelt: \"{NEG:word} is a powerful thing\" diye başlıyor, {NEG:ai} çok generic buldu."}
+{"lang": "tr", "domain": "writing", "text": "Düğün davetiyesi metni: {PERSON1.first} & {PERSON2.first}, {NEG:place+LOC} {NEG:word} kenarında. Sade ve zarif olsun."}
+{"lang": "tr", "domain": "writing", "text": "bu metni resmi dile cevir: \"{NEG:org} toplantisinda {NEG:word} konusu konusuldu, herkes memnun\""}
+{"lang": "tr", "domain": "writing", "text": "{NEG:word} kelimesi bu cümlede isim mi sıfat mı: \"{NEG:word} bir gelecek için çalışıyoruz.\""}
+{"lang": "en", "domain": "writing", "text": "Help me write a toast for my brother {PERSON1.first}'s wedding. He met his wife at {NEG:org} and they {NEG:word} argue about {NEG:club}."}
+{"lang": "tr", "domain": "social-media", "text": "{NEG:media} yorumlarında {NEG:brand} hakkında olumsuz bir şey yazdım, şirket {NEG:law} kapsamında dava açabilir mi?"}
+{"lang": "mix", "domain": "social-media", "text": "{PERSON1.first} ile ortak {NEG:media} channel açıyoruz, ismi \"{NEG:word} Kitchen\" olsun mu? Başka öneri var mı, {NEG:place} temalı?"}
+{"lang": "tr", "domain": "marketing", "text": "{NEG:brand} ve {NEG:brand} reklamlarını kıyasla: hangisi {NEG:word} duygusunu daha iyi veriyor?"}
+{"lang": "tr", "domain": "marketing", "text": "{NEG:word} Pastanesi için tabela yazısı ve {NEG:media} biyografisi öner. Sahibi {PERSON1.first} Usta 30 yıllık pastacı."}
+{"lang": "en", "domain": "marketing", "text": "Draft a radio ad for {NEG:org}. The voice actor reads: \"{NEG:word} starts at home.\" Keep it under 20 seconds."}
+{"lang": "tr", "domain": "writing", "text": "Ödevimde {NEG:eponym} hakkında yazdım, {NEG:word} kelimesini çok tekrarladım. Eş anlamlılarını öner."}
+{"lang": "tr", "domain": "writing", "text": "\"{NEG:word} sabahı {NEG:place} trenine bindik\" cümlesini geçmiş zamanın hikayesiyle yeniden yaz."}
+{"lang": "en", "domain": "writing", "text": "Translate the idiom \"{NEG:word} springs eternal\" for a {NEG:media} subtitle file."}
+{"lang": "mix", "domain": "writing", "text": "Cover letter'ımda {NEG:org} için \"{NEG:word} driven\" ifadesi doğru mu? Recruiter {PERSON1} okuyacak."}
+{"lang": "tr", "domain": "social-media", "text": "GÜNÜN PAYLAŞIMI\n{NEG:word} gibi bir pazar, {NEG:brand} çayı, {NEG:media} dizisi.\nBuna uygun 3 hashtag öner."}
+{"lang": "tr", "domain": "social-media", "text": "Kuzenim {PERSON1.first+GEN} {NEG:media} videosu viral oldu, {NEG:org} yorum yaptı. Tebrik mesajı yaz."}
+{"lang": "en", "domain": "social-media", "text": "My cat Mochi has a {NEG:media} page. Write a bio that mentions she loves {NEG:brand} treats and {NEG:word} sunbeams."}
+{"lang": "tr", "domain": "marketing", "text": "{NEG:place} turizm broşürü için başlık: \"{NEG:word} Burada Doğar\". Alt metin 50 kelime."}
+{"lang": "en", "domain": "writing", "text": "Write a haiku about {NEG:word}, {NEG:place} and an old {NEG:brand} bicycle."}
+{"lang": "tr", "domain": "writing", "text": "Yaşlı komşum {PERSON1.first} Amca için {NEG:word} temalı bir anı yazısı yaz; {NEG:club} sevgisini de ekle."}
+{"lang": "mix", "domain": "marketing", "text": "{NEG:brand} launch event invitation yaz, venue {NEG:place}, theme \"{NEG:word} & light\". Türkçe ve İngilizce iki versiyon."}
+{"lang": "tr", "domain": "writing", "text": "{NEG:word}, {NEG:word} ve {NEG:word}: bu üç kelimeyle bir çocuk masalı başlat. Kahramanın adı {PERSON1.first} olsun."}
+{"lang": "tr", "domain": "translation", "text": "İngilizceye çevir: \"{NEG:word} kenarında küçük bir ev, {NEG:brand} sobası ve bir kedi, adı Fındık.\""}
+{"lang": "tr", "domain": "translation", "text": "Bu cümleyi çevir: \"{NEG:org} çalışanları {NEG:word} için bağış topladı.\""}
+{"lang": "tr", "domain": "translation", "text": "\"{NEG:word} ediyorum ki yarın {NEG:place} uçağı rötar yapmaz\" cümlesini İngilizceye çevir."}
+{"lang": "tr", "domain": "translation", "text": "{PERSON1.first+GEN} gönderdiği şu mesajı Almancaya çevir: \"{NEG:word} gibi bir hafta, {NEG:place} çok güzeldi.\""}
+{"lang": "en", "domain": "translation", "text": "Translate into Turkish: \"I {NEG:word} meet you at the {NEG:brand} store near {NEG:place}.\""}
+{"lang": "en", "domain": "translation", "text": "How do you say \"{NEG:word} and peace\" in Turkish for a {NEG:brand} gift card message?"}
+{"lang": "en", "domain": "translation", "text": "Translate this note from {PERSON1.first} to Turkish: \"The {NEG:word} was calm, we saw dolphins near {NEG:place}.\""}
+{"lang": "mix", "domain": "translation", "text": "\"{NEG:word} her zaman var\" cümlesinin English karşılığı ne olur? {NEG:media} altyazısı için."}
+{"lang": "mix", "domain": "translation", "text": "Şu menüyü translate et: \"{NEG:place} usulü kebap, {NEG:word} salatası, {NEG:brand} ayran\"."}
+{"lang": "tr", "domain": "translation", "text": "{NEG:media} dizisinden bu repliği çevir: \"{NEG:word} bizim tek silahımız.\" Karakter adı yok, sadece replik."}
+{"lang": "tr", "domain": "translation", "text": "çevir lutfen: \"{NEG:word} yolu calismasi yuzunden {NEG:place} seferleri iptal\""}
+{"lang": "en", "domain": "translation", "text": "Translate the sign \"{NEG:word} Sokak, {NEG:org} Şubesi\" for tourists. Keep the street name as is."}
+{"lang": "tr", "domain": "translation", "text": "Nişanlım {PERSON1.first} İtalyan, ona \"{NEG:word} gibi gözlerin var\" demek istiyorum, İtalyancası ne? {NEG:place} gezisinde söyleyeceğim."}
+{"lang": "tr", "domain": "translation", "text": "{NEG:org} ürün kılavuzundaki bu paragrafı Türkçeye çevir: \"Do not place the {NEG:brand} device near {NEG:word} sources.\""}
+{"lang": "tr", "domain": "news", "text": "Bu haberi 3 maddede özetle: {NEG:institution} {NEG:place+LOC} yeni kampüs açtı, {NEG:word} enerjisiyle çalışacak."}
+{"lang": "tr", "domain": "news", "text": "{NEG:media} haberine göre {NEG:org} {NEG:word} projesine yatırım yapıyor. Haberin ana fikri ne?"}
+{"lang": "tr", "domain": "news", "text": "Belediye Başkanı {PERSON1} {NEG:place+LOC} yeni {NEG:word} parkını açtı. Bu haberi çocuklar için basit dille anlat."}
+{"lang": "tr", "domain": "news", "text": "{NEG:club} ile {NEG:club} arasındaki derbi haberini 50 kelimeye indir. {NEG:word} skandalı kısmını çıkar."}
+{"lang": "tr", "domain": "news", "text": "GÜNDEM ÖZETİ\n- {NEG:org} hisseleri yükseldi\n- {NEG:place} sel uyarısı\n- {NEG:word} fiyatları arttı\nBunları tek paragraf yap."}
+{"lang": "en", "domain": "news", "text": "Summarise this article: {NEG:org} announced a {NEG:word} energy plant near {NEG:place}. Who benefits?"}
+{"lang": "en", "domain": "news", "text": "Explain in simple terms what {NEG:law} changes for small online shops. Article from {NEG:media}."}
+{"lang": "en", "domain": "news", "text": "Reporter {PERSON1} wrote that {NEG:org} will cut prices in {NEG:place}. Is that confirmed by any other source?"}
+{"lang": "mix", "domain": "news", "text": "{NEG:media} makalesini summarize et: {NEG:ai} ve {NEG:ai} Türkiye'de yeni özellik çıkardı."}
+{"lang": "tr", "domain": "news", "text": "haberi ozetle: {NEG:word} firtinasi {NEG:place} sahilini vurdu, {NEG:institution} uyari yapti"}
+{"lang": "tr", "domain": "news", "text": "Bakan {PERSON1} {NEG:law} değişikliğini açıkladı. {NEG:media} ve {NEG:media} haberlerini karşılaştır, farkları neler?"}
+{"lang": "tr", "domain": "news", "text": "{NEG:place+LOC} {NEG:word} festivali başlıyor. Haberi etkinlik takvimi gibi düzenle."}
+{"lang": "en", "domain": "news", "text": "Give me a neutral summary of the {NEG:club} transfer rumours from {NEG:media}. Skip the gossip about {PERSON1}."}
+{"lang": "tr", "domain": "news", "text": "{NEG:org} ile {NEG:org} birleşme haberi tüketiciyi nasıl etkiler? Kısa ve tarafsız anlat."}
+{"lang": "mix", "domain": "news", "text": "Bu breaking news'i Türkçe özetle: \"{NEG:word} levels rising at {NEG:place}, {NEG:institution} issues warning.\""}
+{"lang": "tr", "domain": "news", "text": "{NEG:media} köşe yazısında {PERSON1.last} {NEG:word} kavramını eleştiriyor. Argümanlarını madde madde çıkar."}
+{"lang": "tr", "domain": "translation", "text": "{PERSON1.first} Bey'e gidecek şu e-postayı İngilizceye çevir: \"{NEG:org} siparişiniz {NEG:word} sabahı kargoya verildi.\""}
+{"lang": "en", "domain": "translation", "text": "What's the difference between \"{NEG:word}\" and \"umut\" in Turkish? My teacher {PERSON1.first} said they overlap. Example with {NEG:place}."}
+{"lang": "tr", "domain": "translation", "text": "Bu tabelayı çevir: \"{NEG:brand} Market - {NEG:word} Mahallesi Şubesi\". Mahalle adını çevirme."}
+{"lang": "mix", "domain": "translation", "text": "{NEG:media} episode title'ını çevir: \"{NEG:word} Falls in {NEG:place}\". Literal mi yoksa adapte mi?"}
+{"lang": "tr", "domain": "news", "text": "{NEG:institution} raporuna göre {NEG:place+LOC} {NEG:word} ağaçları kuruyor. Haberi 2 cümleyle özetle."}
+{"lang": "en", "domain": "news", "text": "TL;DR this: {NEG:org} recalls {NEG:brand} kettles after reports of {NEG:word} damage."}
+{"lang": "tr", "domain": "news", "text": "Spikerin dediği gibi \"{NEG:word} her sabah {NEG:place+DAT} geri dönüyor\". Bu cümle ne anlatıyor, mecaz mı?"}
+{"lang": "tr", "domain": "translation", "text": "Japonca bilmiyorum, {NEG:brand} ürün kutusunda yazan şu notu çevir ve {NEG:word} kelimesinin anlamını açıkla."}
+{"lang": "en", "domain": "news", "text": "Write a three-bullet summary of the {NEG:law} vote. Mention Senator {PERSON1.last} only once. Source: {NEG:media}."}
+{"lang": "tr", "domain": "news", "text": "{PERSON1.first} adlı muhabirin {NEG:media} haberinde {NEG:word} köprüsü yıkılmış deniyor. Doğrulanmış mı?"}
+{"lang": "mix", "domain": "translation", "text": "{NEG:org} HR'ından gelen mail: \"Please {NEG:word} confirm your attendance at {NEG:place}.\" Bunu Türkçeye çevir, kibar olsun."}
+{"lang": "tr", "domain": "translation", "text": "\"{NEG:word} dağı\" ve \"{NEG:word} köyü\" yer adı mı, normal kelime mi? İngilizceye nasıl çevrilir?"}
+{"lang": "en", "domain": "translation", "text": "Translate this recipe header to Turkish: \"Grandma {PERSON1.first}'s {NEG:place} soup with {NEG:word} and lemon.\""}
+{"lang": "tr", "domain": "news", "text": "{NEG:ai} {NEG:media+DAT} göre artık Türkçe destekliyor. Bu haber {NEG:law} açısından ne anlama gelir?"}
+{"lang": "tr", "domain": "news", "text": "son dakika: {NEG:org} grevi {NEG:word} hattini durdurdu. bu haberi tarafsiz sekilde yeniden yaz"}
+{"lang": "en", "domain": "translation", "text": "Is \"{NEG:word}\" a name or a word in this sentence: \"{NEG:word} fell softly on {NEG:place}\"? Translate it to Turkish."}
+{"lang": "tr", "domain": "translation", "text": "Rusça şu cümleyi çevir: turist rehberimiz {PERSON1.first} \"{NEG:place} {NEG:word} manzarası\" dedi."}
+{"lang": "mix", "domain": "news", "text": "{NEG:media} podcast transcript'ini özetle; konuk {PERSON1} {NEG:org} içindeki {NEG:word} kültürünü anlatıyor."}
+{"lang": "tr", "domain": "news", "text": "{NEG:club} kongresi haberi: {NEG:word} oylaması yapıldı. Ana maddeleri listele."}
+{"lang": "en", "domain": "news", "text": "Summarise the {NEG:institution} report on {NEG:word} pollution in {NEG:place} for a school newsletter."}
+{"lang": "tr", "domain": "e-devlet", "text": "e-Devlet'ten {NEG:institution} kayıt belgesi nasıl alınır? {NEG:word} kadar kolay olsun, adım adım anlat."}
+{"lang": "tr", "domain": "e-devlet", "text": "{NEG:institution} randevusu için e-Devlet'te {NEG:word} sekmesi çıkmıyor. {NEG:org} şifresiyle giriş yeterli mi?"}
+{"lang": "tr", "domain": "e-devlet", "text": "Pasaport yenileme: {NEG:institution} mi yoksa nüfus müdürlüğü mü? {NEG:place} gezisinden önce yetişir mi?"}
+{"lang": "tr", "domain": "e-devlet", "text": "e-devletten adres degisikligi nasil yapilir, {NEG:institution} ayrica bildirmem gerekiyor mu, {NEG:word} sorun cikar mi"}
+{"lang": "tr", "domain": "e-devlet", "text": "{NEG:law+DAT} göre e-Devlet'te hangi kişisel verilerim görünüyor? {NEG:institution} bunları paylaşabilir mi?"}
+{"lang": "tr", "domain": "e-devlet", "text": "Babam {PERSON1.first} Bey emekli oldu, {NEG:institution} hizmet dökümünü e-Devlet'ten nasıl indiririz? {NEG:word} hata veriyor."}
+{"lang": "tr", "domain": "e-devlet", "text": "Askerlik durum belgesi {NEG:institution} sayfasında {NEG:word} diye görünüyor, bu ne demek?"}
+{"lang": "tr", "domain": "e-devlet", "text": "{NEG:org} aboneliğimi e-Devlet üzerinden iptal edebilir miyim? {NEG:word} faturası geliyor hâlâ."}
+{"lang": "tr", "domain": "e-devlet", "text": "E-DEVLET İŞLEMLERİ\n1. {NEG:institution} transkript\n2. {NEG:institution} SGK dökümü\n3. {NEG:word} vergisi sorgulama\nHangisi için barkodlu belge geçerli?"}
+{"lang": "en", "domain": "e-devlet", "text": "How do foreigners in {NEG:place} log into e-Devlet? Is the {NEG:institution} residence permit number enough, or do I {NEG:word} need a PTT password?"}
+{"lang": "en", "domain": "e-devlet", "text": "My colleague {PERSON1.first} said I can get a criminal record certificate from e-Devlet in English. Is it accepted by the {NEG:institution} for a {NEG:place} visa?"}
+{"lang": "mix", "domain": "e-devlet", "text": "e-Devlet'te {NEG:institution} document verification nasıl çalışıyor? Barcode'u {NEG:org} HR'ına göndereceğim."}
+{"lang": "mix", "domain": "e-devlet", "text": "{NEG:law} kapsamında e-Devlet login history'mi görebilir miyim? {NEG:word} bir giriş var, ben yapmadım."}
+{"lang": "tr", "domain": "e-devlet", "text": "Annem {PERSON1.first} Hanım {NEG:word} sabahı {NEG:institution} randevusu almak istiyor, MHRS'de nasıl yapılır?"}
+{"lang": "tr", "domain": "e-devlet", "text": "{NEG:institution} mezuniyet belgem e-Devlet'te görünmüyor, {NEG:word} sebebi ne olabilir?"}
+{"lang": "tr", "domain": "legal", "text": "Kiracı olarak {NEG:law+GEN} hangi maddesi beni korur? Ev sahibi {NEG:word} sebebiyle tahliye istiyor."}
+{"lang": "tr", "domain": "legal", "text": "İnternetten aldığım {NEG:brand} ürünü 14 gün içinde iade edebilir miyim? {NEG:law} ne diyor?"}
+{"lang": "tr", "domain": "legal", "text": "İşyerinde fazla mesai ücreti ödenmiyor, {NEG:law} ve {NEG:law} açısından haklarım neler?"}
+{"lang": "tr", "domain": "legal", "text": "{NEG:org} müşteri verilerimi izinsiz paylaşmış. {NEG:law+DAT} göre {NEG:institution+DAT} şikayet nasıl yapılır?"}
+{"lang": "tr", "domain": "legal", "text": "komsunun {NEG:word} agaci bizim bahceye tasiyor, {NEG:law} buna ne diyor"}
+{"lang": "tr", "domain": "legal", "text": "Boşanma davasında {NEG:word} hakkı nasıl belirleniyor? İsim vermeden genel bilgi ver, {NEG:law} maddeleriyle."}
+{"lang": "tr", "domain": "legal", "text": "{NEG:institution} tarafından gelen tebligatı geç aldım, {NEG:word} süresi kaçırıldı mı? {NEG:law} kapsamında itiraz şansım var mı?"}
+{"lang": "en", "domain": "legal", "text": "Under {NEG:law}, can my employer read my messages on the {NEG:brand} laptop they gave me?"}
+{"lang": "en", "domain": "legal", "text": "What does {NEG:law} say about returning a {NEG:brand} phone bought online? I {NEG:word} opened the box once."}
+{"lang": "en", "domain": "legal", "text": "Is a verbal agreement binding under {NEG:law}? No names, just a general question about selling a car in {NEG:place}."}
+{"lang": "mix", "domain": "legal", "text": "{NEG:law} ile {NEG:law} arasındaki farkı explain et, özellikle data breach notification süreleri."}
+{"lang": "mix", "domain": "legal", "text": "Freelancer olarak {NEG:org} ile contract imzalayacağım, {NEG:word} clause'u ne demek? {NEG:law} ile uyumlu mu?"}
+{"lang": "tr", "domain": "legal", "text": "Mirasta {NEG:word} payı nasıl hesaplanır? {NEG:law} ve {NEG:institution} kararlarına göre genel bilgi ver."}
+{"lang": "tr", "domain": "legal", "text": "Avukatım {PERSON1} {NEG:law+GEN} 344. maddesini söyledi. Bu maddeyi sade Türkçeyle açıklar mısın? {NEG:word} kelimesi kafamı karıştırdı."}
+{"lang": "tr", "domain": "legal", "text": "{NEG:org} kredi kartı aidatını geri almak için {NEG:institution+DAT} başvuru dilekçesi yaz, isim kısmını boş bırak."}
+{"lang": "en", "domain": "legal", "text": "Can a landlord in {NEG:place} keep my deposit because of {NEG:word} damage? My flatmate {PERSON1.first} took photos when we moved in."}
+{"lang": "tr", "domain": "legal", "text": "Trafik kazasında karşı taraf {NEG:org} sigortalıydı, {NEG:law} kapsamında değer kaybı talebi nasıl yazılır?"}
+{"lang": "tr", "domain": "e-devlet", "text": "{NEG:institution} burs başvurusu için e-Devlet'ten gelir belgesi lazım, {NEG:word} durumumda ne yapmalıyım?"}
+{"lang": "tr", "domain": "e-devlet", "text": "ehliyet yenileme {NEG:institution} randevusu ve {NEG:institution} saglik raporu, hangisi once alinmali"}
+{"lang": "en", "domain": "e-devlet", "text": "Explain the {NEG:institution} tax refund process step by step. I {NEG:word} filed late last year."}
+{"lang": "tr", "domain": "legal", "text": "Tüketici hakem heyetine {NEG:brand} buzdolabı için başvuracağım. {NEG:law} sınırı bu yıl ne kadar?"}
+{"lang": "tr", "domain": "legal", "text": "{NEG:media} dizisindeki mahkeme sahnesi gerçekçi mi? {NEG:law} usulüyle karşılaştır."}
+{"lang": "tr", "domain": "legal", "text": "Komşum {PERSON1.first} Hanım'ın {NEG:word} sesli köpeği gece havlıyor; {NEG:law} kapsamında gürültü şikayeti nasıl yapılır?"}
+{"lang": "mix", "domain": "legal", "text": "{NEG:org} beni haksız yere işten çıkardı, severance pay {NEG:law} kapsamında ne kadar? {NEG:word} yıl çalıştım."}
+{"lang": "tr", "domain": "e-devlet", "text": "{NEG:institution+GEN} sitesinde \"{NEG:word}\" butonu çalışmıyor, başvurumu nasıl tamamlarım?"}
+{"lang": "en", "domain": "legal", "text": "Draft a generic complaint letter to {NEG:org} citing {NEG:law}. Leave the name and address blank."}
+{"lang": "tr", "domain": "legal", "text": "{NEG:law} uyarınca çerez bannerında {NEG:word} seçeneği zorunlu mu? {NEG:brand} sitesinde yok."}
+{"lang": "tr", "domain": "e-devlet", "text": "Kardeşim {PERSON1.first} ile {PERSON2.first} için {NEG:institution} okul kaydını e-Devlet'ten yapabilir miyim? {NEG:word} mahallesinde oturuyoruz."}
+{"lang": "en", "domain": "e-devlet", "text": "What documents do I need at the {NEG:institution} office in {NEG:place} to register a {NEG:brand} car I imported?"}
+{"lang": "tr", "domain": "legal", "text": "Kira sözleşmesinde \"{NEG:word} bedeli\" maddesi var, {NEG:law+DAT} aykırı mı?"}
+{"lang": "tr", "domain": "legal", "text": "sozlesmede {NEG:org} lehine tek tarafli fesih var, {NEG:law} bunu gecersiz sayar mi"}
+{"lang": "en", "domain": "legal", "text": "My lawyer {PERSON1.last} mentioned {NEG:law} and {NEG:law}. Which one applies to a small bakery in {NEG:place}?"}
+{"lang": "tr", "domain": "e-devlet", "text": "{NEG:institution} sınav sonucu {NEG:word} saatte açıklanacak, e-Devlet'ten mi bakılır yoksa {NEG:institution} sitesinden mi?"}
+{"lang": "tr", "domain": "legal", "text": "{NEG:place+LOC} aldığım tarlada {NEG:word} hakkı komşuya mı ait? Tapu ve {NEG:law} açısından genel bilgi ver."}
+{"lang": "mix", "domain": "e-devlet", "text": "e-Devlet'te {NEG:org} bank login seçeneği var, safe mi? {NEG:law} açısından risk var mı?"}
+{"lang": "mix", "domain": "social-media", "text": "{PERSON1.first} ile {NEG:word} kenarında çektiğimiz photo için caption lazım, {NEG:club} formasıyla pozluyoruz."}
+{"lang": "mix", "domain": "shopping", "text": "{PERSON1.first} bana {NEG:brand} sneakers önerdi ama {NEG:word} rengi sold out. Alternative öner."}
+{"lang": "mix", "domain": "cooking", "text": "Akşam {PERSON1.first} geliyor, {NEG:ai} bana {NEG:place} style risotto önerdi. Shopping list çıkar, {NEG:word} tuzu da ekle."}
+{"lang": "mix", "domain": "pets", "text": "Köpeğim Çakıl {NEG:brand} mamayı sevmedi, vet {PERSON1.first} Hanım {NEG:word} protein önerdi. Brand recommendation?"}
+{"lang": "mix", "domain": "phones", "text": "{PERSON1.first+GEN} {NEG:brand} phone'u {NEG:word} suyuna düştü, rice trick gerçekten işe yarıyor mu?"}
+{"lang": "mix", "domain": "home", "text": "Ev arkadaşım {PERSON1.first} {NEG:brand} speaker'ı gece açık bırakıyor. {NEG:ai} ile automation kurup {NEG:word} saatinde kapatabilir miyim?"}
+{"lang": "mix", "domain": "cars", "text": "{PERSON1.first} Bey'den {NEG:brand} aldım, test drive'da {NEG:word} gibi bir titreşim vardı. {NEG:org} ekspertiz raporu yeterli mi?"}
+{"lang": "mix", "domain": "marketing", "text": "Client {PERSON1} {NEG:brand} için \"{NEG:word} every day\" sloganını istiyor. Türkçe versiyonu da yaz."}
+{"lang": "mix", "domain": "writing", "text": "Hocam {PERSON1.first} Hanım essay'imde \"{NEG:word}\" kelimesini çok kullandığımı söyledi. {NEG:institution} başvurusu için synonyms öner."}
+{"lang": "mix", "domain": "translation", "text": "{PERSON1.first} sent me this: \"{NEG:word} you join us at {NEG:place}?\" Türkçesi ne, \"will\" burada fiil mi?"}
+{"lang": "mix", "domain": "news", "text": "{NEG:media} article'ını özetle: {PERSON1} {NEG:org} CEO'su oldu, {NEG:word} stratejisi değişecek."}
+{"lang": "mix", "domain": "e-devlet", "text": "{PERSON1.first} abim için e-Devlet'ten {NEG:institution} belgesi almam lazım, vekaletle olur mu? {NEG:word} acil."}
+{"lang": "mix", "domain": "legal", "text": "{NEG:law} kapsamında {PERSON1.first+GEN} fotoğrafını {NEG:media} paylaşmam legal mi? Kendisi izin vermedi."}
+{"lang": "mix", "domain": "social-media", "text": "Story için text: \"{NEG:word} mode on 🌊 with {PERSON1.first}\" — {NEG:place} tatilindeyiz. Daha cool yap. Emoji kalsın."}
+{"lang": "mix", "domain": "shopping", "text": "{NEG:brand} ve {NEG:brand} laptop compare et, {PERSON1.first} üniversite için alacak, {NEG:institution} yazılımları çalışmalı."}
+{"lang": "mix", "domain": "cooking", "text": "{PERSON1.first} teyzenin {NEG:place} böreği recipe'sini İngilizceye çevir, {NEG:word} yağı kısmını açıkla."}
+{"lang": "mix", "domain": "pets", "text": "Kedim Şeker'i {PERSON1.first} adlı pet sitter'a bırakacağım, {NEG:brand} kamera ile izlemek mantıklı mı? {NEG:word} gibi uysal bir kedi."}
+{"lang": "mix", "domain": "phones", "text": "{NEG:ai} assistant'a \"call {PERSON1.first}\" diyorum, {NEG:word} diye anlıyor. {NEG:brand} ayarlarından nasıl düzeltirim?"}
+{"lang": "mix", "domain": "social-media", "text": "{NEG:club} maçında {PERSON1.first} ile tanıştık, {NEG:media} DM'den ne yazayım? Casual ama {NEG:word} dolu olsun."}
+{"lang": "mix", "domain": "home", "text": "{NEG:brand} klima remote'u kayboldu, {PERSON1.first} {NEG:brand} app'ini önerdi. Kurulum adımları?"}
+{"lang": "mix", "domain": "marketing", "text": "{NEG:org} newsletter'ı için {PERSON1.first} imzalı bir intro yaz, konu {NEG:word} season ve {NEG:place} offers."}
+{"lang": "mix", "domain": "writing", "text": "\"{NEG:word} gibi parlıyordu {PERSON1.first+GEN} gözleri\" cümlesini English poetic tone'da yaz, {NEG:place} gecesi geçsin."}
+{"lang": "mix", "domain": "news", "text": "{NEG:club} transfer haberi: {PERSON1} {NEG:place} ekibine gidiyor mu? {NEG:media} ne diyor, short summary."}
+{"lang": "mix", "domain": "cars", "text": "{PERSON1.first} ile {NEG:place} road trip yapacağız, {NEG:brand} EV için charging plan çıkar; {NEG:word} yolu üzerinden gideceğiz."}
+{"lang": "mix", "domain": "legal", "text": "Landlord {PERSON1.first} Bey deposit'i iade etmiyor, {NEG:law} kapsamında ne yapabilirim? {NEG:word} ay geçti."}
+{"lang": "mix", "domain": "translation", "text": "\"{NEG:word} bey\" bir isim mi yoksa unvan mı? {PERSON1.first+GEN} mesajında geçiyor, {NEG:media} dizisinden alıntı."}
+{"lang": "mix", "domain": "shopping", "text": "{NEG:brand} gift card'ı {PERSON1.first+DAT} göndereceğim, {NEG:word} mesajı yaz, kısa olsun."}
+{"lang": "mix", "domain": "pets", "text": "{PERSON1.first+GEN} köpeği Bulut ile bizim kedi Tekir {NEG:word} gibi geçinemiyor. Introduce etme tips? {NEG:brand} feromon difüzörü işe yarar mı?"}
+{"lang": "mix", "domain": "cooking", "text": "{NEG:media} chef'i {PERSON1} {NEG:word} sauce yaptı, Türk mutfağında karşılığı ne? {NEG:brand} ürünleriyle yapılır mı?"}
+{"lang": "mix", "domain": "e-devlet", "text": "{NEG:institution} appointment'ı {PERSON1.first} için iptal etmem lazım, e-Devlet'te {NEG:word} butonu yok."}
+{"lang": "en", "domain": "shopping", "text": "My friend {PERSON1.first} swears by {NEG:brand} sheets, but I {NEG:word} sleep hot. Are {NEG:brand} bamboo sheets better?"}
+{"lang": "en", "domain": "cooking", "text": "{PERSON1.first} and I are hosting a {NEG:club} watch party. Snack ideas that won't make a mess on the {NEG:brand} couch?"}
+{"lang": "en", "domain": "pets", "text": "Our dog Pepper and my neighbour {PERSON1.first}'s dog Hope keep fighting over the {NEG:brand} ball. I {NEG:word} lose my mind."}
+{"lang": "en", "domain": "phones", "text": "How do I share my {NEG:brand} location with {PERSON1.first} only while we're in {NEG:place}?"}
+{"lang": "en", "domain": "home", "text": "Write a chore chart for me, {PERSON1.first} and {PERSON2.first}. Include feeding our cat Grace, cleaning the {NEG:brand} dishwasher and descaling the {NEG:brand} kettle."}
+{"lang": "en", "domain": "writing", "text": "Edit this birthday card: \"Dear {PERSON1.first}, may your year be full of {NEG:word} and {NEG:word}.\""}
+{"lang": "en", "domain": "news", "text": "Summarise this {NEG:media} piece on {NEG:ai} for my dad {PERSON1.first}, who isn't techy."}
+{"lang": "en", "domain": "marketing", "text": "Rewrite the {NEG:brand} ad script so the narrator, played by {PERSON1}, says \"{NEG:word} is closer than you think.\""}
+{"lang": "en", "domain": "legal", "text": "My boss {PERSON1.first} wants me to sign an NDA. Does {NEG:law} limit how broad it can be? We're based in {NEG:place}."}
+{"lang": "en", "domain": "social-media", "text": "Caption for a photo of {PERSON1.first} and me at the {NEG:club} stadium. Something with the word {NEG:word}."}
+{"lang": "en", "domain": "cars", "text": "My uncle {PERSON1.first} is selling his {NEG:brand}. What should I check before buying? I {NEG:word} know nothing about engines."}
+{"lang": "en", "domain": "translation", "text": "Translate {PERSON1.first}'s postcard: \"{NEG:word} from {NEG:place}, wish you were here.\""}
+{"lang": "tr", "domain": "pets", "text": "Kuzenim {PERSON1.first} kedisi Umut'u bize bıraktı; {NEG:word} ediyorum ki {NEG:brand} mamayı yer. Geçiş nasıl yapılır?"}
+{"lang": "tr", "domain": "home", "text": "Ev sahibim {PERSON1.first} Bey {NEG:word} manzaralı daireye {NEG:brand} kombi taktırdı, bakım masrafı kime ait?"}
+{"lang": "tr", "domain": "phones", "text": "{PERSON1.first} bana {NEG:media} üzerinden {NEG:word} diye bir link attı, açmalı mıyım? Dolandırıcılık olabilir mi?"}
+{"lang": "tr", "domain": "cooking", "text": "Arkadaşım {PERSON1.first} {NEG:word} balığı sevmiyor, {NEG:place} usulü sebze yemeği öner."}
+{"lang": "tr", "domain": "news", "text": "{NEG:media} röportajında {PERSON1} {NEG:word} kavramını {NEG:org} ile ilişkilendirmiş. Röportajın özeti ne?"}
+{"lang": "tr", "domain": "shopping", "text": "nisanlim {PERSON1.first} icin {NEG:brand} yuzuk mu {NEG:brand} kolye mi alsam, {NEG:word} gibi zarif bir sey olsun"}
+{"lang": "tr", "domain": "writing", "text": "{PERSON1.first} adlı karakter {NEG:word} kenarında {NEG:club} maçını dinliyor; bu sahneyi 100 kelimeyle yaz."}
+{"lang": "tr", "domain": "legal", "text": "Komşum {PERSON1.first} Bey {NEG:word} duvarını bizim tarafa taşırdı. {NEG:law} kapsamında ne yapabilirim? {NEG:institution} başvurusu gerekir mi?"}

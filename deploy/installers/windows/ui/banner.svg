@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="493" height="58" viewBox="0 0 493 58">
+  <!--
+    Singularity AIDR installer banner bitmap (top of the inner pages), 493x58.
+    Source of truth for banner.bmp: `node deploy/installers/windows/ui/render-bitmaps.mjs`.
+    Windows Installer draws the page title and description over the left part,
+    so only the right edge carries the mark. Same allowed subset as dialog.svg.
+  -->
+  <defs>
+    <linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="380" y1="0" x2="493" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="1" stop-color="#E8F0F8" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="493" height="58" fill="#FFFFFF" />
+  <rect x="380" y="0" width="113" height="58" fill="url(#fade)" />
+  <polygon points="439,15.3 455,10 471,15.3 471,29 468.4,35.1 464,40.4 459.5,44.6 455,48 450.5,44.6 446,40.4 441.6,35.1 439,29" fill="#2EC4B6" />
+  <polygon points="443,19.1 455,15 467,19.1 467,29.5 465.1,34.1 461.7,38.2 458.4,41.4 455,44 451.6,41.4 448.3,38.2 444.9,34.1 443,29.5" fill="#0B1F3A" />
+  <circle cx="455" cy="28" r="7" fill="#2EC4B6" />
+  <circle cx="455" cy="28" r="4.6" fill="#0B1F3A" />
+  <circle cx="455" cy="28" r="2" fill="#FFFFFF" />
+</svg>

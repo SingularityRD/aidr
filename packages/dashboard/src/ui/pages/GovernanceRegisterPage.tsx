@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type TeamMember, useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { type Translate, useT } from "../../i18n/I18nProvider";
 import {
 	type AiAsset,
 	ASSET_STATUSES,
@@ -19,9 +21,9 @@ import {
 	RISK_LABEL,
 	RISK_TIERS,
 	type RiskTier,
-	SOURCE_LABEL,
 	STATUS_BADGE,
 	STATUS_LABEL,
+	sourceLabel,
 	TEXT_MAX,
 } from "../../lib/ai-governance";
 import { supabase } from "../../lib/supabase";
@@ -126,26 +128,25 @@ function fieldsFrom(draft: AssetDraft, asset: AiAsset | null): Record<string, un
 	);
 }
 
-function draftProblem(draft: AssetDraft, creating: boolean): string | null {
+function draftProblem(draft: AssetDraft, creating: boolean): DashboardMessageKey | null {
 	if (creating && !/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$/.test(draft.identifier.trim())) {
-		return "Identifier: letters, digits and . _ : / @ + - only (for MCP servers, the server name used in tool calls).";
+		return "gov.reg.problem.identifier";
 	}
 	if (
 		creating &&
 		draft.assetType === "mcp_server" &&
 		!/^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,255}$/.test(draft.identifier.trim())
 	) {
-		return "MCP server identifiers may not contain @ or +.";
+		return "gov.reg.problem.mcpIdentifier";
 	}
-	if (!validText(draft.name, 120)) return "Enter a name of up to 120 characters.";
-	if (draft.vendor.trim() && !validText(draft.vendor, 120))
-		return "Vendor must be up to 120 characters.";
+	if (!validText(draft.name, 120)) return "gov.reg.problem.name";
+	if (draft.vendor.trim() && !validText(draft.vendor, 120)) return "gov.reg.problem.vendor";
 	if (draft.businessPurpose.trim() && !validText(draft.businessPurpose, TEXT_MAX))
-		return "Business purpose must be up to 1000 characters.";
+		return "gov.reg.problem.purpose";
 	if (draft.riskScore.trim() && !/^(100|[1-9]?\d)$/.test(draft.riskScore.trim()))
-		return "Risk score must be a whole number from 0 to 100.";
+		return "gov.reg.problem.score";
 	if (draft.riskTier === "prohibited" && draft.status !== "banned" && draft.status !== "retired") {
-		return "A prohibited-tier system must be banned or retired.";
+		return "gov.reg.problem.prohibited";
 	}
 	return null;
 }
@@ -163,6 +164,7 @@ function AssetForm({
 	onSubmit: (fields: Record<string, unknown>) => void;
 	onCancel: () => void;
 }) {
+	const t = useT();
 	// The parent keys this form by entry id and version, so a saved or
 	// concurrently changed entry remounts it with fresh values.
 	const [draft, setDraft] = useState<AssetDraft>(() => draftFrom(asset));
@@ -185,7 +187,7 @@ function AssetForm({
 				<div className="cols">
 					<div className="stack" style={{ gap: 4 }}>
 						<label className="label" htmlFor={`${prefix}-type`}>
-							Type
+							{t("gov.reg.type")}
 						</label>
 						<select
 							id={`${prefix}-type`}
@@ -195,14 +197,14 @@ function AssetForm({
 						>
 							{ASSET_TYPES.map((type) => (
 								<option key={type} value={type}>
-									{ASSET_TYPE_LABEL[type]}
+									{t(ASSET_TYPE_LABEL[type])}
 								</option>
 							))}
 						</select>
 					</div>
 					<div className="stack" style={{ gap: 4 }}>
 						<label className="label" htmlFor={`${prefix}-identifier`}>
-							Identifier
+							{t("gov.reg.identifier")}
 						</label>
 						<input
 							id={`${prefix}-identifier`}
@@ -224,7 +226,7 @@ function AssetForm({
 			<div className="cols">
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor={`${prefix}-name`}>
-						Name
+						{t("common.name")}
 					</label>
 					<input
 						id={`${prefix}-name`}
@@ -236,7 +238,7 @@ function AssetForm({
 				</div>
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor={`${prefix}-vendor`}>
-						Vendor
+						{t("gov.reg.vendor")}
 					</label>
 					<input
 						id={`${prefix}-vendor`}
@@ -248,7 +250,7 @@ function AssetForm({
 				</div>
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor={`${prefix}-owner`}>
-						Owner
+						{t("gov.reg.owner")}
 					</label>
 					<select
 						id={`${prefix}-owner`}
@@ -256,7 +258,7 @@ function AssetForm({
 						value={draft.ownerUserId}
 						onChange={(event) => set("ownerUserId", event.target.value)}
 					>
-						<option value="">Unassigned</option>
+						<option value="">{t("gov.reg.unassigned")}</option>
 						{members.map((member) => (
 							<option key={member.user_id} value={member.user_id}>
 								{member.email || member.user_id}
@@ -267,7 +269,7 @@ function AssetForm({
 			</div>
 			<div className="stack" style={{ gap: 4 }}>
 				<label className="label" htmlFor={`${prefix}-purpose`}>
-					Business purpose
+					{t("gov.reg.purpose")}
 				</label>
 				<textarea
 					id={`${prefix}-purpose`}
@@ -279,7 +281,7 @@ function AssetForm({
 				/>
 			</div>
 			<fieldset className="stack" style={{ gap: 4, border: 0, padding: 0, margin: 0 }}>
-				<legend className="label">Data categories processed</legend>
+				<legend className="label">{t("gov.reg.categories")}</legend>
 				<div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
 					{DATA_CATEGORIES.map((category) => (
 						<label key={category} className="row small" style={{ gap: 4 }}>
@@ -295,7 +297,7 @@ function AssetForm({
 									)
 								}
 							/>
-							{CATEGORY_LABEL[category]}
+							{t(CATEGORY_LABEL[category])}
 						</label>
 					))}
 				</div>
@@ -303,7 +305,7 @@ function AssetForm({
 			<div className="cols">
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor={`${prefix}-tier`}>
-						Risk tier (EU AI Act style)
+						{t("gov.reg.tier")}
 					</label>
 					<select
 						id={`${prefix}-tier`}
@@ -313,14 +315,14 @@ function AssetForm({
 					>
 						{RISK_TIERS.map((tier) => (
 							<option key={tier} value={tier}>
-								{RISK_LABEL[tier]}
+								{t(RISK_LABEL[tier])}
 							</option>
 						))}
 					</select>
 				</div>
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor={`${prefix}-score`}>
-						Internal risk score (0–100)
+						{t("gov.reg.score")}
 					</label>
 					<input
 						id={`${prefix}-score`}
@@ -332,7 +334,7 @@ function AssetForm({
 				</div>
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor={`${prefix}-status`}>
-						Status
+						{t("common.status")}
 					</label>
 					<select
 						id={`${prefix}-status`}
@@ -342,14 +344,14 @@ function AssetForm({
 					>
 						{ASSET_STATUSES.map((status) => (
 							<option key={status} value={status}>
-								{STATUS_LABEL[status]}
+								{t(STATUS_LABEL[status])}
 							</option>
 						))}
 					</select>
 				</div>
 				<div className="stack" style={{ gap: 4 }}>
 					<label className="label" htmlFor={`${prefix}-review`}>
-						Next review
+						{t("gov.reg.nextReview")}
 					</label>
 					<input
 						id={`${prefix}-review`}
@@ -361,21 +363,21 @@ function AssetForm({
 				</div>
 			</div>
 			<p className="muted small">
-				Effect of this status:{" "}
-				{
-					ENFORCEMENT_LABEL[
-						enforcementOf({
-							assetType: draft.assetType,
-							identifier: draft.identifier.trim(),
-							status: draft.status,
-						})
-					]
-				}
-				.
+				{t("gov.reg.effectOf", {
+					effect: t(
+						ENFORCEMENT_LABEL[
+							enforcementOf({
+								assetType: draft.assetType,
+								identifier: draft.identifier.trim(),
+								status: draft.status,
+							})
+						],
+					),
+				})}
 			</p>
 			{problem ? (
 				<p className="small" role="alert">
-					{problem}
+					{t(problem)}
 				</p>
 			) : null}
 			<div className="row" style={{ gap: 8 }}>
@@ -384,7 +386,7 @@ function AssetForm({
 					type="submit"
 					disabled={busy || problem !== null || Object.keys(fields).length === 0}
 				>
-					{creating ? "Add to register" : "Save changes"}
+					{creating ? t("gov.reg.add") : t("gov.reg.save")}
 				</button>
 				<button
 					className="button button-secondary"
@@ -392,7 +394,7 @@ function AssetForm({
 					disabled={busy}
 					onClick={onCancel}
 				>
-					Cancel
+					{t("common.cancel")}
 				</button>
 			</div>
 		</form>
@@ -402,7 +404,14 @@ function AssetForm({
 interface Suggestion {
 	kind: AssetEvidence["kind"];
 	ref: string;
-	label: string;
+	date: string;
+	severity?: string;
+}
+
+function suggestionLabel(item: Suggestion, t: Translate): string {
+	return item.kind === "posture_finding"
+		? t("gov.reg.findingSuggestion", { severity: item.severity ?? "", date: item.date })
+		: t("gov.reg.incidentSuggestion", { id: item.ref, date: item.date });
 }
 
 function EvidencePanel({
@@ -420,9 +429,11 @@ function EvidencePanel({
 	tenantId: string;
 	onLink: (kind: string, ref: string, link: boolean) => void;
 }) {
+	const t = useT();
 	const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 	// A failed lookup must not look like "nothing to suggest".
 	const [suggestionsUnavailable, setSuggestionsUnavailable] = useState(false);
+	// Suggestions store data; labels are built at render time in the viewer's language.
 	useEffect(() => {
 		if (!canManage) return;
 		let cancelled = false;
@@ -463,13 +474,14 @@ function EvidencePanel({
 						(row) => ({
 							kind: "posture_finding" as const,
 							ref: String(row.id),
-							label: `MCP inventory finding · ${row.severity} · ${formatDate(row.observed_at)}`,
+							severity: row.severity,
+							date: formatDate(row.observed_at),
 						}),
 					),
 					...(incidents.data as Array<{ id: number; created_at: string }>).map((row) => ({
 						kind: "incident" as const,
 						ref: String(row.id),
-						label: `Incident #${row.id} · ${formatDate(row.created_at)}`,
+						date: formatDate(row.created_at),
 					})),
 				]);
 			} catch {
@@ -488,15 +500,17 @@ function EvidencePanel({
 	);
 	return (
 		<div className="stack" style={{ gap: 6 }}>
-			<h3 style={{ margin: 0 }}>Linked evidence</h3>
+			<h3 style={{ margin: 0 }}>{t("gov.reg.evidence")}</h3>
 			{evidence.length === 0 ? (
-				<p className="muted small">No findings or incidents linked yet.</p>
+				<p className="muted small">{t("gov.reg.noEvidence")}</p>
 			) : (
 				<ul className="stack" style={{ gap: 4, paddingLeft: 18, margin: 0 }}>
 					{evidence.map((item) => (
 						<li key={item.id} className="small">
 							<span className="mono">{item.label}</span>{" "}
-							<span className="muted">(linked {formatDate(item.linkedAt)})</span>
+							<span className="muted">
+								{t("gov.reg.linkedOn", { date: formatDate(item.linkedAt) })}
+							</span>
 							{canManage ? (
 								<button
 									className="button button-ghost button-sm"
@@ -504,7 +518,7 @@ function EvidencePanel({
 									disabled={busy}
 									onClick={() => onLink(item.kind, item.ref, false)}
 								>
-									Unlink
+									{t("gov.reg.unlink")}
 								</button>
 							) : null}
 						</li>
@@ -513,14 +527,13 @@ function EvidencePanel({
 			)}
 			{canManage && suggestionsUnavailable ? (
 				<p className="muted small" role="status" style={{ margin: 0 }}>
-					Evidence suggestions are unavailable right now; this does not mean there are no related
-					findings or incidents.
+					{t("gov.reg.suggestionsUnavailable")}
 				</p>
 			) : null}
 			{canManage && unlinked.length > 0 ? (
 				<div className="stack" style={{ gap: 4 }}>
 					<p className="muted small" style={{ margin: 0 }}>
-						Link related evidence:
+						{t("gov.reg.linkRelated")}
 					</p>
 					<div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
 						{unlinked.map((item) => (
@@ -531,7 +544,7 @@ function EvidencePanel({
 								disabled={busy}
 								onClick={() => onLink(item.kind, item.ref, true)}
 							>
-								+ {item.label}
+								+ {suggestionLabel(item, t)}
 							</button>
 						))}
 					</div>
@@ -542,7 +555,9 @@ function EvidencePanel({
 }
 
 function EnforcementCard({ tenantId }: { tenantId: string }) {
+	const t = useT();
 	const [preview, setPreview] = useState<EnforcementPreview | null>(null);
+	// The error code; the message is rendered in the viewer's language.
 	const [error, setError] = useState<string | null>(null);
 	const [refresh, setRefresh] = useState(0);
 	useEffect(() => {
@@ -550,12 +565,12 @@ function EnforcementCard({ tenantId }: { tenantId: string }) {
 		void governanceAction(tenantId, "enforcement_preview").then((result) => {
 			if (cancelled) return;
 			if (!result.ok) {
-				setError(governanceErrorMessage(result.error));
+				setError(result.error);
 				return;
 			}
 			const parsed = readPreview(result.value);
 			setPreview(parsed);
-			setError(parsed ? null : governanceErrorMessage("governance_unavailable"));
+			setError(parsed ? null : "governance_unavailable");
 		});
 		return () => {
 			cancelled = true;
@@ -565,41 +580,33 @@ function EnforcementCard({ tenantId }: { tenantId: string }) {
 	return (
 		<section className="card stack" aria-labelledby="enforcement-heading">
 			<div className="panel-head">
-				<h2 id="enforcement-heading">What the register enforces</h2>
+				<h2 id="enforcement-heading">{t("gov.reg.enforces")}</h2>
 				<button
 					className="button button-secondary button-sm"
 					type="button"
 					onClick={() => setRefresh((value) => value + 1)}
 				>
-					Refresh
+					{t("common.refresh")}
 				</button>
 			</div>
-			<p className="muted small">
-				The register only ever adds restrictions on top of your published runtime policy. Banned MCP
-				servers are blocked and restricted ones require approval on every managed connector at its
-				next policy refresh; an approved exception lifts that for its scope until it expires. Coding
-				agents and model services are recorded only.
-			</p>
-			{error ? <p role="alert">{error}</p> : null}
+			<p className="muted small">{t("gov.reg.enforcesLead")}</p>
+			{error ? <p role="alert">{governanceErrorMessage(error, t)}</p> : null}
 			{preview ? (
 				<>
 					{preview.runtimePolicyVersion === 0 &&
 					(preview.denyServers.length > 0 || preview.approvalServers.length > 0) ? (
 						<div className="notice notice-warning" role="status">
-							No runtime policy is published for this workspace yet, so connectors do not receive
-							these MCP restrictions. Publish a runtime policy under Policies to deliver them.
+							{t("gov.reg.noRuntimePolicy")}
 						</div>
 					) : null}
 					<dl className="kv">
-						<dt>MCP servers blocked (tenant-wide)</dt>
-						<dd className="mono">{preview.denyServers.join(", ") || "None"}</dd>
-						<dt>MCP servers requiring approval</dt>
-						<dd className="mono">{preview.approvalServers.join(", ") || "None"}</dd>
+						<dt>{t("gov.reg.mcpBlocked")}</dt>
+						<dd className="mono">{preview.denyServers.join(", ") || t("gov.none")}</dd>
+						<dt>{t("gov.reg.mcpApproval")}</dt>
+						<dd className="mono">{preview.approvalServers.join(", ") || t("gov.none")}</dd>
 					</dl>
 					<p className="small" style={{ marginBottom: 4 }}>
-						Browser Guard managed policy for banned AI chat sites. The control plane does not push
-						browser policy: deploy this through your browser management (Chrome/Edge policy for the
-						extension).
+						{t("gov.reg.browserPolicy")}
 					</p>
 					<pre className="approval-summary" data-testid="browser-guard-managed-policy">
 						{managed}
@@ -620,6 +627,7 @@ export function GovernanceRegisterPage() {
 }
 
 function TenantGovernanceRegisterPage() {
+	const t = useT();
 	const { currentTeam, currentRole, roleResolved, members, currentUserId } = useTeam();
 	const tenantId = currentTeam?.id ?? null;
 	const { data, error, reload } = useGovernanceData(tenantId);
@@ -664,6 +672,7 @@ function TenantGovernanceRegisterPage() {
 	const pendingIntake = data?.intake.filter((request) => request.status === "pending").length ?? 0;
 
 	async function run(action: string, payload: Record<string, unknown>, success: string) {
+		// `success` is already translated by the caller.
 		if (!tenantId) return false;
 		setBusy(true);
 		setNotice(null);
@@ -672,7 +681,7 @@ function TenantGovernanceRegisterPage() {
 		if (!result.ok) {
 			setNotice({
 				tone: "error",
-				message: governanceErrorMessage(result.error),
+				message: governanceErrorMessage(result.error, t),
 				code: result.error,
 			});
 			return false;
@@ -682,38 +691,33 @@ function TenantGovernanceRegisterPage() {
 		return true;
 	}
 
-	if (!currentTeam || !tenantId)
-		return <div role="alert">Select a team to view the AI asset register.</div>;
+	if (!currentTeam || !tenantId) return <div role="alert">{t("gov.reg.selectTeam")}</div>;
 
 	return (
 		<div className="stack">
 			<div className="card">
-				<p className="eyebrow">AI governance</p>
-				<h1>AI asset register</h1>
+				<p className="eyebrow">{t("gov.eyebrow")}</p>
+				<h1>{t("gov.reg.title")}</h1>
 				<p className="muted" style={{ maxWidth: 820 }}>
-					One register of the AI systems in use in this workspace — coding agents and connectors,
-					MCP servers, AI chat sites and SaaS tools, models and AI services — with owner, business
-					purpose, data categories, risk tier, status and review date. Entries come from what AIDR
-					already observes (enrolled agents, MCP inventory, Browser Guard site counts, discovery)
-					and from manual entries and approved intake requests.
+					{t("gov.reg.lead")}
 				</p>
 				<GovernanceTabs />
 			</div>
 			{notice ? <NoticeBanner notice={notice} tenantId={tenantId} /> : null}
 			{error ? (
 				<div className="notice notice-danger" role="alert">
-					{governanceErrorMessage(error)}
+					{governanceErrorMessage(error, t)}
 				</div>
 			) : null}
-			{!data && !error ? <div role="status">Loading the register…</div> : null}
+			{!data && !error ? <div role="status">{t("gov.reg.loading")}</div> : null}
 			{data && (data.truncated.assets || data.truncated.evidence) ? (
 				<div className="notice notice-warning" role="note" data-testid="register-truncated">
 					{data.truncated.assets
-						? `Only the first ${assets.length.toLocaleString()} register entries could be read; counts and lists below are incomplete.`
+						? t("gov.reg.truncatedAssets", { count: assets.length.toLocaleString() })
 						: null}
 					{data.truncated.assets && data.truncated.evidence ? " " : null}
 					{data.truncated.evidence
-						? `Only the newest ${data.evidence.length.toLocaleString()} evidence links were read; older links are not shown.`
+						? t("gov.reg.truncatedEvidence", { count: data.evidence.length.toLocaleString() })
 						: null}
 				</div>
 			) : null}
@@ -721,44 +725,47 @@ function TenantGovernanceRegisterPage() {
 				<>
 					<div className="grid">
 						<div className="card stat-card">
-							<span className="stat-label">AI systems</span>
+							<span className="stat-label">{t("gov.reg.stat.systems")}</span>
 							<span className="stat-value">{assets.length}</span>
 						</div>
 						<div className="card stat-card">
-							<span className="stat-label">Approved</span>
+							<span className="stat-label">{t("gov.reg.stat.approved")}</span>
 							<span className="stat-value">
 								{assets.filter((a) => a.status === "approved").length}
 							</span>
 						</div>
 						<div className="card stat-card">
-							<span className="stat-label">Restricted or banned</span>
+							<span className="stat-label">{t("gov.reg.stat.restricted")}</span>
 							<span className="stat-value">
 								{assets.filter((a) => a.status === "restricted" || a.status === "banned").length}
 							</span>
 						</div>
 						<div className="card stat-card">
-							<span className="stat-label">Reviews overdue</span>
+							<span className="stat-label">{t("gov.reg.stat.overdue")}</span>
 							<span className="stat-value" data-testid="overdue-count">
 								{overdue.length}
 							</span>
 						</div>
 						<div className="card stat-card">
-							<span className="stat-label">Pending intake</span>
+							<span className="stat-label">{t("gov.reg.stat.intake")}</span>
 							<span className="stat-value">{pendingIntake}</span>
 						</div>
 					</div>
 					{overdue.length > 0 ? (
 						<div className="notice notice-warning" role="status" data-testid="overdue-reviews">
 							<b>
-								{overdue.length === 1 ? "1 AI system is" : `${overdue.length} AI systems are`} past
-								the review date.
+								{overdue.length === 1
+									? t("gov.reg.overdueOne")
+									: t("gov.reg.overdueMany", { count: overdue.length })}
 							</b>
 							<div className="muted small" style={{ marginTop: 6 }}>
 								{overdue
 									.slice(0, 8)
-									.map((asset) => `${asset.name} (due ${asset.reviewDueAt})`)
+									.map((asset) =>
+										t("gov.reg.due", { name: asset.name, date: asset.reviewDueAt ?? "—" }),
+									)
 									.join(" · ")}
-								{overdue.length > 8 ? ` · and ${overdue.length - 8} more` : ""}
+								{overdue.length > 8 ? t("gov.reg.andMore", { count: overdue.length - 8 }) : ""}
 							</div>
 							<button
 								className="button button-secondary button-sm"
@@ -766,7 +773,7 @@ function TenantGovernanceRegisterPage() {
 								style={{ marginTop: 8 }}
 								onClick={() => setOverdueOnly(true)}
 							>
-								Show overdue only
+								{t("gov.reg.showOverdue")}
 							</button>
 						</div>
 					) : null}
@@ -774,37 +781,37 @@ function TenantGovernanceRegisterPage() {
 						<div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
 							<input
 								className="input"
-								aria-label="Search the register"
-								placeholder="Search name, identifier or vendor"
+								aria-label={t("gov.reg.search")}
+								placeholder={t("gov.reg.searchPlaceholder")}
 								value={search}
 								onChange={(event) => setSearch(event.target.value)}
 								style={{ maxWidth: 280 }}
 							/>
 							<select
 								className="input"
-								aria-label="Filter by type"
+								aria-label={t("gov.reg.filterType")}
 								value={typeFilter}
 								style={{ maxWidth: 220 }}
 								onChange={(event) => setTypeFilter(event.target.value as AssetType | "all")}
 							>
-								<option value="all">All types</option>
+								<option value="all">{t("gov.reg.allTypes")}</option>
 								{ASSET_TYPES.map((type) => (
 									<option key={type} value={type}>
-										{ASSET_TYPE_LABEL[type]}
+										{t(ASSET_TYPE_LABEL[type])}
 									</option>
 								))}
 							</select>
 							<select
 								className="input"
-								aria-label="Filter by status"
+								aria-label={t("gov.reg.filterStatus")}
 								value={statusFilter}
 								style={{ maxWidth: 180 }}
 								onChange={(event) => setStatusFilter(event.target.value as AssetStatus | "all")}
 							>
-								<option value="all">All statuses</option>
+								<option value="all">{t("gov.reg.allStatuses")}</option>
 								{ASSET_STATUSES.map((status) => (
 									<option key={status} value={status}>
-										{STATUS_LABEL[status]}
+										{t(STATUS_LABEL[status])}
 									</option>
 								))}
 							</select>
@@ -814,7 +821,7 @@ function TenantGovernanceRegisterPage() {
 									checked={overdueOnly}
 									onChange={(event) => setOverdueOnly(event.target.checked)}
 								/>
-								Overdue reviews only
+								{t("gov.reg.overdueOnly")}
 							</label>
 							{canManage ? (
 								<>
@@ -822,15 +829,9 @@ function TenantGovernanceRegisterPage() {
 										className="button button-secondary button-sm"
 										type="button"
 										disabled={busy}
-										onClick={() =>
-											void run(
-												"import_candidates",
-												{},
-												"Observed AI systems imported as proposed entries.",
-											)
-										}
+										onClick={() => void run("import_candidates", {}, t("gov.reg.imported"))}
 									>
-										Import observed AI systems
+										{t("gov.reg.import")}
 									</button>
 									<button
 										className="button button-sm"
@@ -841,21 +842,21 @@ function TenantGovernanceRegisterPage() {
 											setSelectedId(null);
 										}}
 									>
-										Add AI system
+										{t("gov.reg.addSystem")}
 									</button>
 								</>
 							) : null}
 						</div>
 						{creating && canManage ? (
 							<div className="card">
-								<h2>Add an AI system</h2>
+								<h2>{t("gov.reg.addTitle")}</h2>
 								<AssetForm
 									asset={null}
 									members={members}
 									busy={busy}
 									onCancel={() => setCreating(false)}
 									onSubmit={(fields) =>
-										void run("upsert_asset", { fields }, "Added to the register.").then(
+										void run("upsert_asset", { fields }, t("gov.reg.added")).then(
 											(ok) => ok && setCreating(false),
 										)
 									}
@@ -864,26 +865,24 @@ function TenantGovernanceRegisterPage() {
 						) : null}
 						{assets.length === 0 ? (
 							<p className="muted">
-								The register is empty.
-								{canManage
-									? " Import the AI systems AIDR has observed, or add one manually."
-									: " Ask an owner or administrator to populate it, or file an intake request."}
+								{t("gov.reg.empty")}
+								{canManage ? t("gov.reg.emptyManage") : t("gov.reg.emptyMember")}
 							</p>
 						) : (
 							<div className="table-wrap">
 								<table className="table" data-testid="asset-register">
 									<thead>
 										<tr>
-											<th scope="col">AI system</th>
-											<th scope="col">Type</th>
-											<th scope="col">Status</th>
-											<th scope="col">Risk</th>
-											<th scope="col">Owner</th>
-											<th scope="col">Data</th>
-											<th scope="col">Next review</th>
-											<th scope="col">Source</th>
+											<th scope="col">{t("gov.reg.col.system")}</th>
+											<th scope="col">{t("gov.reg.type")}</th>
+											<th scope="col">{t("common.status")}</th>
+											<th scope="col">{t("gov.reg.col.risk")}</th>
+											<th scope="col">{t("gov.reg.owner")}</th>
+											<th scope="col">{t("gov.reg.col.data")}</th>
+											<th scope="col">{t("gov.reg.nextReview")}</th>
+											<th scope="col">{t("gov.reg.col.source")}</th>
 											<th scope="col">
-												<span className="sr-only">Actions</span>
+												<span className="sr-only">{t("gov.reg.col.actions")}</span>
 											</th>
 										</tr>
 									</thead>
@@ -894,29 +893,29 @@ function TenantGovernanceRegisterPage() {
 													<div>{asset.name}</div>
 													<div className="mono muted small">{asset.identifier}</div>
 												</td>
-												<td>{ASSET_TYPE_LABEL[asset.assetType]}</td>
+												<td>{t(ASSET_TYPE_LABEL[asset.assetType])}</td>
 												<td>
 													<span className={STATUS_BADGE[asset.status]}>
-														{STATUS_LABEL[asset.status]}
+														{t(STATUS_LABEL[asset.status])}
 													</span>
 												</td>
 												<td>
-													{RISK_LABEL[asset.riskTier]}
+													{t(RISK_LABEL[asset.riskTier])}
 													{asset.riskScore !== null ? ` · ${asset.riskScore}` : ""}
 												</td>
-												<td>{memberLabel(members, asset.ownerUserId, currentUserId)}</td>
+												<td>{memberLabel(members, asset.ownerUserId, currentUserId, t)}</td>
 												<td className="small">
-													{asset.dataCategories.map((c) => CATEGORY_LABEL[c]).join(", ") || "—"}
+													{asset.dataCategories.map((c) => t(CATEGORY_LABEL[c])).join(", ") || "—"}
 												</td>
 												<td>
 													{asset.reviewDueAt ?? "—"}
 													{isReviewOverdue(asset, now) ? (
 														<span className="badge badge-warning" style={{ marginLeft: 6 }}>
-															Overdue
+															{t("gov.reg.overdue")}
 														</span>
 													) : null}
 												</td>
-												<td className="small">{SOURCE_LABEL[asset.source] ?? asset.source}</td>
+												<td className="small">{sourceLabel(asset.source, t)}</td>
 												<td>
 													<button
 														className="button button-secondary button-sm"
@@ -926,14 +925,14 @@ function TenantGovernanceRegisterPage() {
 															setCreating(false);
 														}}
 													>
-														Open
+														{t("gov.reg.open")}
 													</button>
 												</td>
 											</tr>
 										))}
 										{filtered.length === 0 ? (
 											<tr>
-												<td colSpan={9}>No AI systems match the filters.</td>
+												<td colSpan={9}>{t("gov.reg.noMatch")}</td>
 											</tr>
 										) : null}
 									</tbody>
@@ -942,7 +941,10 @@ function TenantGovernanceRegisterPage() {
 						)}
 					</section>
 					{selected ? (
-						<section className="card stack" aria-label={`Register entry ${selected.name}`}>
+						<section
+							className="card stack"
+							aria-label={t("gov.reg.entry", { name: selected.name })}
+						>
 							<div className="panel-head">
 								<h2>{selected.name}</h2>
 								<button
@@ -950,27 +952,30 @@ function TenantGovernanceRegisterPage() {
 									type="button"
 									onClick={() => setSelectedId(null)}
 								>
-									Close
+									{t("gov.reg.close")}
 								</button>
 							</div>
 							<dl className="kv">
-								<dt>Identifier</dt>
+								<dt>{t("gov.reg.identifier")}</dt>
 								<dd className="mono">{selected.identifier}</dd>
-								<dt>Effect</dt>
-								<dd>{ENFORCEMENT_LABEL[enforcementOf(selected)]}</dd>
-								<dt>Observed</dt>
+								<dt>{t("gov.reg.effect")}</dt>
+								<dd>{t(ENFORCEMENT_LABEL[enforcementOf(selected)])}</dd>
+								<dt>{t("gov.reg.observed")}</dt>
 								<dd>
 									{selected.firstObservedAt
 										? `${formatDate(selected.firstObservedAt)} – ${formatDate(selected.lastObservedAt)}`
-										: "Not observed by AIDR"}
+										: t("gov.reg.notObserved")}
 								</dd>
-								<dt>Last review</dt>
+								<dt>{t("gov.reg.lastReview")}</dt>
 								<dd>
 									{selected.lastReviewedAt
-										? `${formatTime(selected.lastReviewedAt)} by ${memberLabel(members, selected.lastReviewedBy, currentUserId)}`
-										: "Never"}
+										? t("gov.reg.reviewedBy", {
+												time: formatTime(selected.lastReviewedAt),
+												member: memberLabel(members, selected.lastReviewedBy, currentUserId, t),
+											})
+										: t("gov.never")}
 								</dd>
-								<dt>Business purpose</dt>
+								<dt>{t("gov.reg.purpose")}</dt>
 								<dd>{selected.businessPurpose ?? "—"}</dd>
 							</dl>
 							{canReview && selected.status !== "retired" ? (
@@ -983,14 +988,14 @@ function TenantGovernanceRegisterPage() {
 											void run(
 												"review_asset",
 												{ asset_id: selected.id },
-												`Review of ${selected.name} recorded.`,
+												t("gov.reg.reviewRecorded", { name: selected.name }),
 											)
 										}
 									>
-										Mark reviewed
+										{t("gov.reg.markReviewed")}
 									</button>
 									<span className="muted small" style={{ marginLeft: 8 }}>
-										Sets the next review date from the workspace review interval.
+										{t("gov.reg.markReviewedHint")}
 									</span>
 								</div>
 							) : null}
@@ -1005,15 +1010,12 @@ function TenantGovernanceRegisterPage() {
 										void run(
 											"upsert_asset",
 											{ asset_id: selected.id, expected_version: selected.version, fields },
-											`${selected.name} updated.`,
+											t("gov.reg.updated", { name: selected.name }),
 										)
 									}
 								/>
 							) : (
-								<p className="muted small">
-									Only owners and administrators can change register entries. Use Requests &amp;
-									exceptions to ask for a change.
-								</p>
+								<p className="muted small">{t("gov.reg.readOnly")}</p>
 							)}
 							<EvidencePanel
 								asset={selected}
@@ -1025,7 +1027,7 @@ function TenantGovernanceRegisterPage() {
 									void run(
 										"link_evidence",
 										{ asset_id: selected.id, kind, ref, link },
-										link ? "Evidence linked." : "Evidence unlinked.",
+										link ? t("gov.reg.evidenceLinked") : t("gov.reg.evidenceUnlinked"),
 									)
 								}
 							/>

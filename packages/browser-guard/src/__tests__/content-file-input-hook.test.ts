@@ -257,7 +257,32 @@ describe("isolated guard without the page-world hook", () => {
 		expect(seen).toEqual([]);
 		expect(input.files?.length).toBe(0);
 		expect(g.sanitizeFile).not.toHaveBeenCalled();
-		expect(g.bubble()?.textContent ?? "").toContain("cannot check files chosen");
+		expect(g.bubble()?.textContent ?? "").toContain("cannot be checked on this page");
 		expect(g.records().at(-1)).toMatchObject({ action: "blocked", channel: "file" });
+	});
+});
+
+describe("page-world footprint (BG-14)", () => {
+	const ownKeys = (target: object) => [
+		...Object.getOwnPropertyNames(target),
+		...Object.getOwnPropertySymbols(target).map(String),
+	];
+
+	it("leaves no named global, symbol or flag on window", () => {
+		const before = new Set(ownKeys(window));
+		hook = installFileInputHook(window);
+		expect(hook).not.toBeNull();
+		expect(ownKeys(window).filter((k) => !before.has(k))).toEqual([]);
+		expect(ownKeys(window).filter((k) => /aidr/i.test(k))).toEqual([]);
+		expect("__aidrFileInputHook" in window).toBe(false);
+	});
+
+	it("still installs only once per window, and again after uninstall", () => {
+		hook = installFileInputHook(window);
+		expect(hook).not.toBeNull();
+		expect(installFileInputHook(window)).toBeNull();
+		hook?.uninstall();
+		hook = installFileInputHook(window);
+		expect(hook).not.toBeNull();
 	});
 });

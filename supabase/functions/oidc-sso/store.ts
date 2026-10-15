@@ -5,9 +5,17 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import type { MappedRole, OidcAlgorithm, OidcDiscovery } from "./oidc.ts";
 import { SUPPORTED_ALGORITHMS } from "./oidc.ts";
 import { type FeatureDecision, requireFeature } from "../_shared/plan-entitlements.ts";
+import { EXTRA_SCOPES } from "./types.ts";
 import type {
 	AuditValues,
 	DomainRow,
+	JitConfig,
+	JitMapping,
+	JitMemberRow,
+	JitProvisionInput,
+	JitReadmitResult,
+	JitStatus,
+	SaveJitPolicyResult,
 	OidcAuthRequestRow,
 	OidcPolicyRow,
 	OidcProviderRow,
@@ -18,12 +26,22 @@ import type {
 	SaveProviderResult,
 } from "./types.ts";
 
+const JIT_STATUSES: ReadonlySet<string> = new Set<JitStatus>([
+	"provisioned", "updated", "unchanged", "manual_membership", "scim_managed", "scim_bound",
+	"disabled", "tenant_inactive", "domain_not_allowed", "directory_authoritative", "scim_inactive",
+	"scim_conflict", "removed_by_admin", "other_tenant", "groups_unevaluable", "no_role", "revoked",
+]);
+
+function isMappedRole(value: unknown): value is MappedRole {
+	return value === "admin" || value === "member" || value === "viewer";
+}
+
 // deno-lint-ignore no-explicit-any
 type Db = SupabaseClient<any, "public">;
 type Row = Record<string, unknown>;
 
 const PROVIDER_COLUMNS =
-	"id,tenant_id,kind,display_name,issuer,client_id,client_secret_ref,token_auth_method,allowed_algs,subject_claim,groups_claim,groups_mode,session_max_seconds,clock_skew_seconds,discovery,enabled";
+	"id,tenant_id,kind,display_name,issuer,client_id,client_secret_ref,token_auth_method,allowed_algs,subject_claim,groups_claim,groups_mode,session_max_seconds,clock_skew_seconds,discovery,enabled,extra_scopes";
 const REQUEST_COLUMNS =
 	"state_hash,provider_id,tenant_id,nonce_hash,code_verifier,binding_hash,redirect_uri,mode,link_user_id,expires_at";
 
@@ -70,6 +88,9 @@ function asProvider(row: Row): OidcProviderRow | null {
 		clock_skew_seconds: Number(row.clock_skew_seconds),
 		discovery: asDiscovery(row.discovery),
 		enabled: row.enabled === true,
+		extra_scopes: Array.isArray(row.extra_scopes)
+			? EXTRA_SCOPES.filter((scope) => (row.extra_scopes as unknown[]).includes(scope))
+			: [],
 	};
 }
 
@@ -135,6 +156,7 @@ export class SupabaseOidcStore implements OidcStore {
 				clock_skew_seconds: row.clock_skew_seconds,
 				discovery: row.discovery,
 				enabled: row.enabled,
+				extra_scopes: row.extra_scopes,
 			},
 			p_audit_action: audit.action,
 			p_audit_detail: audit.detail,
@@ -214,6 +236,105 @@ export class SupabaseOidcStore implements OidcStore {
 				mappings.set(String(row.external_group_id), row.role);
 		}
 		return mappings;
+	}
+
+	async jitEnabled(tenantId: string): Promise<boolean | null> {
+		const { data, error } = await this.db.from("oidc_jit_policies").select("enabled").eq("tenant_id", tenantId).maybeSingle();
+		if (error) return null;
+		return (data as Row | null)?.enabled === true;
+	}
+
+	async jitProvision(input: JitProvisionInput): Promise<{ status: JitStatus; role: string | null } | "error"> {
+		const { data, error } = await this.db.rpc("oidc_jit_provision", {
+			p_provider_id: input.providerId,
+			p_auth_user_id: input.authUserId,
+			p_subject: input.subject,
+			p_email_domain: input.emailDomain,
+			p_groups: input.groups,
+			p_groups_evaluable: input.groupsEvaluable,
+			p_request_id: input.requestId.slice(0, 128),
+		});
+		const value = data && typeof data === "object" ? (data as Row) : null;
+		if (error || !value || typeof value.status !== "string" || !JIT_STATUSES.has(value.status)) return "error";
+		return { status: value.status as JitStatus, role: typeof value.role === "string" ? value.role : null };
+	}
+
+	async jitConfig(tenantId: string): Promise<JitConfig | null> {
+		const [policy, mappings, members, authority] = await Promise.all([
+			this.db.from("oidc_jit_policies").select("provider_id,enabled,issuer,allowed_domains,default_role").eq("tenant_id", tenantId).maybeSingle(),
+			this.db.from("oidc_jit_group_role_mappings").select("group_value,role").eq("tenant_id", tenantId).order("group_value").limit(100),
+			this.db.from("oidc_jit_memberships").select("auth_user_id,provider_id,subject,role,removed_at,last_synced_at").eq("tenant_id", tenantId)
+				.order("last_synced_at", { ascending: false }).limit(200),
+			this.db.from("tenant_directory_authority").select("enabled").eq("tenant_id", tenantId).maybeSingle(),
+		]);
+		if (policy.error || mappings.error || members.error || authority.error) return null;
+		const memberRows = (members.data ?? []) as Row[];
+		const subjects = memberRows.map((row) => String(row.subject));
+		const emails = new Map<string, string>();
+		if (subjects.length > 0) {
+			const identities = await this.db.from("oidc_identities").select("subject,email_claim").eq("tenant_id", tenantId).in("subject", subjects);
+			if (identities.error) return null;
+			for (const row of (identities.data ?? []) as Row[])
+				if (typeof row.email_claim === "string") emails.set(String(row.subject), row.email_claim);
+		}
+		const policyRow = policy.data as Row | null;
+		return {
+			policy: policyRow
+				? {
+					provider_id: String(policyRow.provider_id),
+					enabled: policyRow.enabled === true,
+					issuer: String(policyRow.issuer),
+					allowed_domains: Array.isArray(policyRow.allowed_domains) ? policyRow.allowed_domains.map(String) : [],
+					default_role: policyRow.default_role === "member" || policyRow.default_role === "viewer" ? policyRow.default_role : null,
+				}
+				: null,
+			mappings: ((mappings.data ?? []) as Row[]).flatMap((row): JitMapping[] =>
+				isMappedRole(row.role) ? [{ group: String(row.group_value), role: row.role }] : []),
+			members: memberRows.map((row): JitMemberRow => ({
+				user_id: String(row.auth_user_id),
+				role: isMappedRole(row.role) ? row.role : null,
+				removed_at: typeof row.removed_at === "string" ? row.removed_at : null,
+				last_synced_at: String(row.last_synced_at),
+				email_claim: emails.get(String(row.subject)) ?? null,
+			})),
+			directory_authoritative: (authority.data as Row | null)?.enabled === true,
+		};
+	}
+
+	async saveJitPolicy(input: Parameters<OidcStore["saveJitPolicy"]>[0]): Promise<SaveJitPolicyResult> {
+		const { error } = await this.db.rpc("oidc_save_jit_policy", {
+			p_actor_user_id: input.actorUserId,
+			p_tenant_id: input.tenantId,
+			p_provider_id: input.providerId,
+			p_enabled: input.enabled,
+			p_allowed_domains: input.allowedDomains,
+			p_default_role: input.defaultRole,
+			p_mappings: input.mappings,
+			p_request_id: input.requestId.slice(0, 128),
+		});
+		if (!error) return "saved";
+		const message = (error as { message?: string }).message ?? "";
+		if (message.includes("oidc_jit_forbidden") || message.includes("oidc_tenant_inactive")) return "owner_required";
+		if (message.includes("oidc_jit_provider_missing")) return "provider_missing";
+		if (message.includes("oidc_jit_domain_required")) return "domain_required";
+		if (message.includes("oidc_jit_domain_not_verified")) return "domain_not_verified";
+		if (message.includes("oidc_jit_directory_authoritative")) return "directory_authoritative";
+		if (message.includes("invalid_oidc_jit_policy")) return "invalid";
+		return "error";
+	}
+
+	async jitReadmit(input: Parameters<OidcStore["jitReadmit"]>[0]): Promise<JitReadmitResult> {
+		const { error } = await this.db.rpc("oidc_jit_readmit", {
+			p_actor_user_id: input.actorUserId,
+			p_tenant_id: input.tenantId,
+			p_user_id: input.userId,
+			p_request_id: input.requestId.slice(0, 128),
+		});
+		if (!error) return "readmitted";
+		const message = (error as { message?: string }).message ?? "";
+		if (message.includes("oidc_jit_forbidden")) return "owner_required";
+		if (message.includes("oidc_jit_member_not_removed")) return "not_removed";
+		return "error";
 	}
 
 	async verifiedDomains(tenantId: string): Promise<string[] | null> {

@@ -24,6 +24,54 @@
 <script src="/__fixture__/kit.js"></script>
 <script>
 	let turn = 0;
+
+	// Edit-and-resend on a sent message, modelled on ChatGPT: "Edit message" swaps the
+	// turn for a textarea with "Cancel" and a primary "Send" button (no data-testid and no
+	// aria-label), and "Send" posts the edited text as a new prompt.
+	function editButton(msg, body) {
+		const edit = document.createElement("button");
+		edit.type = "button";
+		edit.setAttribute("aria-label", "Edit message");
+		edit.textContent = "Edit";
+		edit.addEventListener("click", () => {
+			const box = document.createElement("div");
+			box.className = "edit-box";
+			const area = document.createElement("textarea");
+			area.value = body.textContent;
+			const cancel = document.createElement("button");
+			cancel.type = "button";
+			cancel.className = "btn btn-secondary";
+			cancel.textContent = "Cancel";
+			const send = document.createElement("button");
+			send.type = "button";
+			send.className = "btn btn-primary";
+			send.textContent = "Send";
+			box.append(area, cancel, send);
+			body.hidden = true;
+			edit.hidden = true;
+			msg.appendChild(box);
+			area.focus();
+			const close = () => {
+				box.remove();
+				body.hidden = false;
+				edit.hidden = false;
+			};
+			cancel.addEventListener("click", close);
+			send.addEventListener("click", async () => {
+				const text = area.value.trim();
+				if (!text) return;
+				window.__fixture.sends.push(text);
+				body.textContent = text;
+				close();
+				await fetch("/backend-api/conversation", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ site: "chatgpt", prompt: text, edit: true }),
+				});
+			});
+		});
+		return edit;
+	}
 	FixtureChat.init({
 		site: "chatgpt",
 		kind: "prosemirror",
@@ -42,6 +90,7 @@
 			body.className = "whitespace-pre-wrap";
 			body.textContent = text;
 			msg.appendChild(body);
+			msg.appendChild(editButton(msg, body));
 			article.appendChild(msg);
 			return article;
 		},

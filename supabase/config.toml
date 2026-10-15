@@ -103,7 +103,21 @@ verify_jwt = false
 verify_jwt = true
 [functions.file-check]
 verify_jwt = false
+[functions.fleet-keys]
+# Dashboard: owners/admins issue, list and revoke multi-use fleet enrollment
+# keys (aidr_fleet_*). The handler repeats session, identity barrier and role checks.
+verify_jwt = true
 [functions.ingest]
+verify_jwt = false
+[functions.installer-download]
+# Dashboard Download page: installer catalog and short-lived signed URLs. The
+# handler repeats session, identity barrier, membership and admission checks,
+# verifies the signed catalog and audits every URL it mints.
+verify_jwt = true
+[functions.installer-update]
+# `aidr update` on an enrolled endpoint: the same signed installer catalog and
+# signed URLs, authenticated with the device's tenant API key (not a JWT). The
+# handler authenticates the key, membership, tenant and admission itself.
 verify_jwt = false
 [functions.packs-download]
 verify_jwt = false
@@ -114,6 +128,16 @@ verify_jwt = false
 [functions.operator-admin]
 # Platform-operator surface (admission mode, legal documents, licenses). The
 # handler repeats session revocation, operator allowlist and AAL2 checks.
+verify_jwt = true
+[functions.agent-lifecycle]
+# Device retirement and automatic offline retirement (seat lifecycle). The
+# handler repeats session, identity barrier, owner/admin role and AAL2 checks;
+# the RPCs re-check the role under the tenant lock.
+verify_jwt = true
+[functions.license-admin]
+# Tenant side of the signed license import: verifies the aidr-license-v1
+# signature against AIDR_LICENSE_PUBLIC_KEYS_B64 and only stages the license.
+# Session, identity barrier, owner/admin role and AAL2 are checked per request.
 verify_jwt = true
 [functions.pilot-admin]
 verify_jwt = true
@@ -145,6 +169,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.policy-ack]
 verify_jwt = false
+[functions.connector-heartbeat]
+# Tenant API key (the enrolled device key); see supabase/functions/connector-heartbeat.
+verify_jwt = false
 [functions.browser-guard-policy]
 # Signed Browser Guard policy (Shadow AI decisions). Browser Guard authenticates with
 # its hash-only telemetry key (scope ingest:browser_guard or tenant), not a Supabase
@@ -163,6 +190,12 @@ verify_jwt = true
 # tenant API key (not a Supabase JWT), so gateway JWT verification is off; the
 # handler verifies the API key (scope tenant) for create/poll and, for
 # decisions, the Supabase session, identity barrier, owner/admin role and AAL2.
+verify_jwt = false
+[functions.false-positive-reports]
+# `aidr report-fp`: developer false-positive reports. The CLI authenticates
+# with a hash-only tenant API key (not a Supabase JWT), so gateway JWT
+# verification is off; the handler verifies the key (scope tenant), applies a
+# tenant rate limit and writes only bounded ids and a redacted note.
 verify_jwt = false
 
 [functions.compliance-report]
@@ -186,6 +219,18 @@ verify_jwt = true
 # session, identity barrier, owner/admin role and a tenant rate limit, and the
 # SQL re-checks under locks.
 verify_jwt = true
+[functions.incidents]
+# Incident triage (status, owner, resolution note, snooze, history). Dashboard
+# sessions only; the handler repeats session, identity barrier and membership,
+# adds owner/admin and AAL2 for changes and a tenant rate limit, and the RPC
+# re-checks under a tenant lock and writes the history and audit rows.
+verify_jwt = true
+[functions.reports]
+# Executive summary, team rollup, printable report and scheduled-report
+# options. Dashboard sessions only; the handler repeats session, identity
+# barrier (per workspace in the rollup), owner/admin role, AAL2 for option
+# changes and a tenant rate limit.
+verify_jwt = true
 
 [functions.notification-channels]
 # Tenant alert channels (Settings -> Notifications). The handler repeats session,
@@ -194,6 +239,17 @@ verify_jwt = true
 
 [functions.notification-dispatch]
 # Outbox dispatcher, invoked by the deployment scheduler with the dedicated
+# AIDR_NOTIFICATION_DISPATCH_TOKEN bearer (not a JWT); never browser-facing.
+verify_jwt = false
+
+[functions.siem-destinations]
+# Central SIEM forwarding destinations (SIEM page). The handler repeats session,
+# identity barrier, owner/admin, AAL2 and the siem_export plan check;
+# connection settings are write-only.
+verify_jwt = true
+
+[functions.siem-forwarder]
+# SIEM outbox forwarder, invoked by the deployment scheduler with the
 # AIDR_NOTIFICATION_DISPATCH_TOKEN bearer (not a JWT); never browser-facing.
 verify_jwt = false
 [functions.oauth-callback]

@@ -92,6 +92,10 @@ const AUDITED_ALLOW_CATEGORIES: ReadonlySet<string> = new Set([
 	"dlp_redacted",
 	"prompt_protection",
 	"prompt_protection_warning",
+	// Decided by local detection while a reputation leg is not enabled: the
+	// record says which URLs/packages were NOT checked, so it is never a clean
+	// reputation result.
+	"reputation_not_checked",
 	// An allow whose runaway guard could not run is not a clean check.
 	"runaway_guard_unavailable",
 	"secure_code_warning",
@@ -134,11 +138,15 @@ export function buildRuntimeVerdictEntry(
 	verdict: Verdict,
 	userOverride = false,
 	durationMs?: number,
+	actionId?: string,
 ): Record<string, unknown> {
 	return {
 		type: "runtime_verdict",
 		timestamp: new Date().toISOString(),
 		session_id: sessionId,
+		// Local log only: the id the block message names, so `aidr report-fp`
+		// can find this record. A digest of the call, never its content.
+		...(actionId && /^[a-f0-9]{64}$/.test(actionId) ? { action_id: actionId } : {}),
 		tool_name: toolName,
 		tool_input_summary: toolInputSummary(toolName, toolInput),
 		artifacts: redactTelemetryData(verdict.artifacts),
@@ -440,6 +448,7 @@ export async function logVerdict(
 	verdict: Verdict,
 	userOverride = false,
 	durationMs?: number,
+	actionId?: string,
 ): Promise<void> {
 	if (!config.enabled) return;
 
@@ -459,6 +468,7 @@ export async function logVerdict(
 		verdict,
 		userOverride,
 		durationMs,
+		actionId,
 	);
 
 	try {

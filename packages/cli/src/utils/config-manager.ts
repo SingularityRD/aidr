@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
 	closeSync,
 	constants,
@@ -20,12 +20,13 @@ import { isCommercialBuild, resolvePath, VERSION } from "@singularityrd/aidr-cor
 import { generateApiKey } from "./crypto.js";
 import {
 	type CommandRunner,
-	type SecretStore,
-	type SecretStoreKind,
 	createFileAclStore,
 	createSecretReferenceId,
 	isSecretStoreKind,
+	resolveCredentialStore,
 	resolveSecretStore,
+	type SecretStore,
+	type SecretStoreKind,
 } from "./secret-store.js";
 
 const CONFIG_DIR = resolvePath("~/.singularity-aidr");
@@ -72,10 +73,17 @@ foreach ($entry in $updated.GetAccessRules($true, $true, [System.Security.Princi
 `;
 
 export interface Environment {
+	/** The first host with AIDR registered, else the first host found, else "unknown". */
 	agent: "claude" | "cursor" | "vscode" | "openclaw" | "opencode" | "codex" | "unknown";
+	/** Every agent host found in the user's home (the same measurement as `aidr status`). */
+	detectedHosts?: Array<"claude-code" | "cursor" | "vscode" | "openclaw" | "opencode" | "codex">;
 	hasNode: boolean;
 	nodeVersion: string;
-	projectRoot: string;
+	/**
+	 * Legacy: the directory setup happened to run in. No longer written — a global
+	 * config must not depend on the caller's working directory (PRD-4, PRD-14).
+	 */
+	projectRoot?: string;
 }
 
 export interface Config {
@@ -119,6 +127,11 @@ export interface ConfigCreationResult {
 	path: string;
 	/** "created" wrote a new config; "reused" kept the existing one. */
 	outcome: "created" | "reused";
+	/**
+	 * Where the CLI credential went. `none` in local mode: nothing reads one
+	 * there, so setup neither mints nor stores a credential and needs no vault.
+	 */
+	credential?: "none" | SecretStoreKind;
 	/** Set when the new credential committed but the previous one could not be revoked. */
 	warning?: string;
 }
@@ -604,9 +617,14 @@ function writeConfigAtomically(
 	}
 }
 
+/**
+ * The store for a credential that is actually needed: the OS vault, or — on a
+ * host with none and no explicit selection — the machine-bound encrypted file
+ * store, never a plaintext config entry unless `file-acl` was chosen explicitly.
+ */
 function selectStore(options: ConfigManagerOptions): SecretStore {
 	if (options.secretStore) return options.secretStore;
-	return resolveSecretStore({
+	return resolveCredentialStore({
 		selection: options.secretStoreSelection,
 		runner: options.secretStoreRunner,
 	});
@@ -624,8 +642,11 @@ function resolveRotationStore(config: Config, options: ConfigManagerOptions): Se
 }
 
 /** Best effort: an uncommitted secret must not be left behind in the vault. */
-function discardUncommittedSecret(store: SecretStore, reference: SecretReference | null): void {
-	if (!reference || store.location !== "os-vault") return;
+function discardUncommittedSecret(
+	store: SecretStore | null,
+	reference: SecretReference | null,
+): void {
+	if (!store || !reference || store.location === "config-file") return;
 	try {
 		store.revoke(reference.id);
 	} catch {
@@ -644,14 +665,14 @@ function discardUncommittedSecret(store: SecretStore, reference: SecretReference
 function revokePreviousSecret(
 	previous: SecretReference | null,
 	current: SecretReference | null,
-	store: SecretStore,
+	store: SecretStore | null,
 	options: ConfigManagerOptions,
 ): string | null {
 	if (!previous || previous.store === "file-acl") return null;
 	if (current && previous.store === current.store && previous.id === current.id) return null;
 	try {
 		const previousStore =
-			previous.store === store.kind ? store : storeForReference(previous, options);
+			store && previous.store === store.kind ? store : storeForReference(previous, options);
 		previousStore.revoke(previous.id);
 		return null;
 	} catch {
@@ -674,6 +695,14 @@ function readPreviousConfig(
 	}
 }
 
+/**
+ * Whether setup must hold a CLI credential. Only a managed configuration does;
+ * the default local mode reads none, so it needs neither a credential nor a vault.
+ */
+function requiresCliCredential(config: Partial<Config> | undefined): boolean {
+	return (config as { mode?: unknown } | undefined)?.mode === "managed";
+}
+
 /** A config with no credential at all (e.g. after a revoke) has nothing to reuse. */
 function hasCredential(config: Config): boolean {
 	return config.secretRef !== undefined || config.apiKey !== "";
@@ -688,7 +717,7 @@ function mintCredential(
 	createdAt: string,
 ): { apiKey: string; reference: SecretReference | null } {
 	const apiKey = generateApiKey();
-	if (store.location !== "os-vault") return { apiKey, reference: null };
+	if (store.location === "config-file") return { apiKey, reference: null };
 	const reference: SecretReference = {
 		store: store.kind,
 		id: createSecretReferenceId(),
@@ -708,31 +737,50 @@ export async function createConfig(
 	const expected = existing?.stats ?? null;
 	const previous = existing ? readPreviousConfig(existing, options) : null;
 
-	if (previous && !force && hasCredential(previous.config)) {
+	// An explicitly chosen store (`--secret-store`, or an injected one) asks for
+	// a credential too; the AIDR_SECRET_STORE variable only picks where one goes.
+	const needsCredential =
+		requiresCliCredential(previous?.config) ||
+		options.secretStore !== undefined ||
+		options.secretStoreSelection !== undefined;
+	if (previous && !force && (!needsCredential || hasCredential(previous.config))) {
 		if (!IS_POSIX) hardenWindowsAcl(CONFIG_FILE, previous.stats, false);
 		if (isCommercialBuild() && previous.config.auth) {
 			writeConfigAtomically(previous.config, previous.stats, directory ?? undefined, options);
 		}
-		return { path: CONFIG_FILE, outcome: "reused" };
+		return {
+			path: CONFIG_FILE,
+			outcome: "reused",
+			credential: hasCredential(previous.config)
+				? (previous.config.secretRef?.store ?? previous.config.secretStore ?? "file-acl")
+				: "none",
+		};
 	}
 
-	const store = selectStore(options);
+	// Local mode (the default) evaluates every call on this machine and reads no
+	// credential, so none is minted and no vault is required (PRD-4, MSC-13). A
+	// managed configuration gets one, in the vault or the encrypted file store.
+	const store = needsCredential ? selectStore(options) : null;
 	const createdAt = new Date().toISOString();
-	const { apiKey, reference } = mintCredential(store, createdAt);
+	const { apiKey, reference } = store
+		? mintCredential(store, createdAt)
+		: { apiKey: "", reference: null };
+	const { projectRoot: _legacyProjectRoot, ...environment } = env;
 	const config: Config = {
 		// The CLI and runtime share config.json. Replacing setup metadata must not
 		// discard policy, mode, auth, or other runtime settings already present.
 		...(previous?.config ?? {}),
 		apiKey,
-		environment: env,
+		environment,
 		version: VERSION,
 		createdAt,
 		hooksInstalled: false,
 		agentConfigured: false,
-		secretStore: store.kind,
 	};
 	delete config.secretRef;
 	delete config.secretRevokedAt;
+	delete config.secretStore;
+	if (store) config.secretStore = store.kind;
 	if (reference) config.secretRef = reference;
 
 	let written: boolean;
@@ -754,7 +802,12 @@ export async function createConfig(
 		store,
 		options,
 	);
-	return { path: CONFIG_FILE, outcome: "created", ...(warning ? { warning } : {}) };
+	return {
+		path: CONFIG_FILE,
+		outcome: "created",
+		credential: store ? store.kind : "none",
+		...(warning ? { warning } : {}),
+	};
 }
 
 export function getConfig(options: ConfigManagerOptions = {}): Config | null {

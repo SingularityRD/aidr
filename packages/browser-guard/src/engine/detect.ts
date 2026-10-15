@@ -49,6 +49,7 @@ import {
 } from "../types.js";
 import { createExactDataMatcher, type ExactDataMatcher } from "./exact-data.js";
 import { detectLabelled } from "./labelled.js";
+import { detectStructured } from "./structured.js";
 
 /** Largest supported `maxInputChars` (the privacy normaliser's own view limit). */
 const MAX_INPUT_CHARS_LIMIT = 1_048_576;
@@ -463,6 +464,10 @@ class Scan {
 		// Labelled free-text USERNAME / HEALTH_ID / LICENSE_PLATE / LOCATION (engine/labelled.ts).
 		detectLabelled(patched.text, enabled, (a, b, type, score, evidence) =>
 			this.pushView(view, [a, b], type, score, evidence, "rule"),
+		);
+		// Values under a sensitive JSON key or table column (engine/structured.ts).
+		detectStructured(patched.text, enabled, (a, b, type) =>
+			this.pushView(view, [a, b], type, 0.9, "context", "rule"),
 		);
 		matcher?.scan(foldI(view.text), (a, b, type) =>
 			this.pushView(view, [a, b], type, 1, "dictionary", "literal"),

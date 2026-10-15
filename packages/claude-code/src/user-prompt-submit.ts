@@ -44,9 +44,12 @@
 
 import {
 	CANARY_PROMPT_BLOCK_MESSAGE,
+	type Config,
+	checkDashboardDecisions,
 	checkPromptForCanaries,
 	DEFAULT_PROMPT_PROTECTION,
 	exitAfterStdoutFlush,
+	formatDashboardDecisionNotices,
 	initialPromptFailureState,
 	initSentry,
 	isPromptTenantPolicyConfigured,
@@ -60,6 +63,7 @@ import {
 	promptFailureBlocks,
 	scanPrompt,
 	type TenantPromptSafetyPolicy,
+	t,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
@@ -105,14 +109,12 @@ function writeInspectionFailure(): void {
 	if (promptFailureBlocks(fallback)) {
 		write({
 			decision: "block",
-			reason:
-				"🛡️ Singularity AIDR could not inspect this prompt for secrets, so it was not sent. Try again; if this persists, run `aidr status`.",
+			reason: t("prompt.notSent.uninspected"),
 		});
 		return;
 	}
 	write({
-		systemMessage:
-			"Singularity AIDR could not inspect this prompt for secrets; it was sent without prompt protection.",
+		systemMessage: t("prompt.sent.uninspected"),
 	});
 }
 
@@ -122,16 +124,14 @@ function writeDeadlineResponse(onWritten?: () => void): boolean {
 		return write(
 			{
 				decision: "block",
-				reason:
-					"🛡️ Singularity AIDR could not finish inspecting this prompt in time, so it was not sent. Shorten the prompt or split it up and try again.",
+				reason: t("prompt.notSent.timeout"),
 			},
 			onWritten,
 		);
 	}
 	return write(
 		{
-			systemMessage:
-				"Singularity AIDR could not finish inspecting this prompt in time; it was sent without being fully inspected for secrets or personal data.",
+			systemMessage: t("prompt.sent.timeout"),
 		},
 		onWritten,
 	);
@@ -140,19 +140,42 @@ function writeDeadlineResponse(onWritten?: () => void): boolean {
 function writeTenantPolicyFailure(): void {
 	write({
 		decision: "block",
-		reason:
-			"🛡️ Singularity AIDR could not verify your organization's data-loss prevention policy, so this prompt was not sent.",
+		reason: t("prompt.notSent.policy"),
 	});
 }
 
-function writeResult(result: PromptProtectionResult): void {
+/**
+ * `decisionNotice`: dashboard approval decisions that landed since the last
+ * prompt, for the user only (never the model's context).
+ */
+function writeResult(result: PromptProtectionResult, decisionNotice: string | null = null): void {
 	if (result.decision === "block") {
 		write({ decision: "block", reason: result.userMessage });
 	} else if (result.decision === "warn") {
 		write({
-			systemMessage: result.userMessage,
+			systemMessage: decisionNotice
+				? `${result.userMessage}\n${decisionNotice}`
+				: result.userMessage,
 			hookSpecificOutput: { hookEventName: HOOK_EVENT, additionalContext: result.modelContext },
 		});
+	} else if (decisionNotice) {
+		write({ systemMessage: decisionNotice });
+	}
+}
+
+/** Bounded so a slow control plane never delays the prompt noticeably. */
+const DECISION_NOTICE_BUDGET_MS = 1_500;
+
+async function dashboardDecisionNotice(config: Config): Promise<string | null> {
+	try {
+		const notices = await checkDashboardDecisions(config, {
+			logger,
+			totalBudgetMs: DECISION_NOTICE_BUDGET_MS,
+			requestTimeoutMs: DECISION_NOTICE_BUDGET_MS,
+		});
+		return formatDashboardDecisionNotices(notices);
+	} catch {
+		return null;
 	}
 }
 
@@ -285,7 +308,9 @@ async function main(): Promise<void> {
 				// An audit failure cannot change the prompt decision.
 			}
 		}
-		writeResult(result);
+		const decisionNotice =
+			result.decision === "block" ? null : await dashboardDecisionNotice(config);
+		writeResult(result, decisionNotice);
 	} catch {
 		writeInspectionFailure();
 	}

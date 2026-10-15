@@ -1,64 +1,142 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { TeamProvider, useTeam } from "../enterprise/team-provider";
+import type { DashboardMessageKey } from "../i18n/en";
+import { LanguageToggle, useT } from "../i18n/I18nProvider";
 import { supabaseEnvError } from "../lib/supabase";
+import { LicenseBanner } from "./LicenseBanner";
 import { signOut } from "./session";
 import { ThemeToggle } from "./ThemeToggle";
 import { usePendingApprovalCount } from "./use-pending-approvals";
 
-/**
- * Team navigation entries.
- *
- * "Team" is shown to every authenticated user because every role may read the
- * membership list ("Team Members" in AdminPanel is read-only for members and
- * viewers). "Policies" is hidden only once the caller's role is known to lack
- * policy-edit rights — while the role is still loading the link stays visible,
- * because hiding a capability on an unresolved role would make a slow or
- * failed lookup look like a permission decision. The page and row-level
- * security both re-check the permission, so link visibility is never the
- * control.
- */
 function ManagedOutlet() {
 	const { currentTeam, isLoading, error } = useTeam();
-	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
+	const t = useT();
+	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
 	if (!currentTeam && error)
 		return (
 			<div role="alert">
-				<p>Your team membership could not be loaded.</p>
+				<p>{t("layout.teamLoadFailed")}</p>
 				<p>{error}</p>
 			</div>
 		);
 	// TeamProvider now bootstraps identity and gates BEFORE any protected table
 	// read. Requiring currentTeam to discover the MFA policy deadlocked at AAL1.
-	return <Outlet />;
-}
-
-function TeamNavLinks() {
-	const { canEditPolicy, currentRole, roleResolved } = useTeam();
-
 	return (
 		<>
-			<NavLink to="/team">Team</NavLink>
-			{currentRole === "owner" ? <NavLink to="/scim">Directory provisioning</NavLink> : null}
-			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/retention">Legal holds & retention</NavLink>
-			) : null}
-			{currentRole === "owner" ? <NavLink to="/sso">Single sign-on</NavLink> : null}
-			{!roleResolved || canEditPolicy ? <NavLink to="/policies">Policies</NavLink> : null}
-			{canEditPolicy ? <NavLink to="/siem">SIEM export</NavLink> : null}
-			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/compliance">Compliance</NavLink>
-			) : null}
-			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/governance">Governance</NavLink>
-			) : null}
-			{currentRole === "owner" || currentRole === "admin" ? (
-				<NavLink to="/governance/detection-exceptions">Detection exceptions</NavLink>
-			) : null}
-			<NavLink to="/governance/register">AI register</NavLink>
+			<LicenseBanner />
+			<Outlet />
 		</>
 	);
 }
+
+interface NavAccess {
+	canEditPolicy: boolean;
+	currentRole: string | null;
+	roleResolved: boolean;
+}
+
+interface NavItem {
+	to: string;
+	label: DashboardMessageKey;
+	/** Omitted: shown to every signed-in member. */
+	show?: (access: NavAccess) => boolean;
+}
+
+interface NavSection {
+	id: string;
+	label: DashboardMessageKey;
+	items: readonly NavItem[];
+}
+
+const isOwner = ({ currentRole }: NavAccess) => currentRole === "owner";
+const isOwnerOrAdmin = ({ currentRole }: NavAccess) =>
+	currentRole === "owner" || currentRole === "admin";
+
+/**
+ * Console navigation, grouped by task. Each label is also the heading of the
+ * page it opens (the page renders the same catalog key), so the link and the
+ * page always use the same words.
+ *
+ * Visibility only declutters the menu: every page and row-level security
+ * re-check the permission, so link visibility is never the control. "Team
+ * policy" is hidden only once the caller's role is known to lack policy-edit
+ * rights — while the role is still loading the link stays visible, because
+ * hiding a capability on an unresolved role would make a slow or failed
+ * lookup look like a permission decision. "Team" is shown to every
+ * authenticated user because every role may read the membership list.
+ */
+export const NAV_SECTIONS: readonly NavSection[] = [
+	{
+		id: "overview",
+		label: "nav.section.overview",
+		items: [
+			{ to: "/dashboard", label: "nav.dashboard" },
+			{ to: "/events", label: "nav.events" },
+			{ to: "/discovery", label: "nav.discovery" },
+			{ to: "/posture", label: "nav.posture" },
+		],
+	},
+	{
+		id: "protection",
+		label: "nav.section.protection",
+		items: [
+			{
+				to: "/policies",
+				label: "nav.policies",
+				show: ({ canEditPolicy, roleResolved }) => !roleResolved || canEditPolicy,
+			},
+			{
+				to: "/governance/detection-exceptions",
+				label: "nav.detectionExceptions",
+				show: isOwnerOrAdmin,
+			},
+			{ to: "/privacy-guard", label: "nav.browserGuard" },
+			{ to: "/autosecops", label: "nav.autosecops" },
+		],
+	},
+	{
+		id: "response",
+		label: "nav.section.response",
+		items: [
+			{ to: "/approvals", label: "nav.approvals" },
+			{ to: "/incidents", label: "nav.incidents" },
+		],
+	},
+	{
+		id: "devices",
+		label: "nav.section.devices",
+		items: [
+			{ to: "/onboarding", label: "nav.onboarding" },
+			{ to: "/downloads", label: "nav.downloads" },
+			{ to: "/agents", label: "nav.agents" },
+			{ to: "/api-keys", label: "nav.apiKeys" },
+		],
+	},
+	{
+		id: "governance",
+		label: "nav.section.governance",
+		items: [
+			{ to: "/governance", label: "nav.governance", show: isOwnerOrAdmin },
+			{ to: "/governance/register", label: "nav.aiRegister" },
+			{ to: "/compliance", label: "nav.compliance", show: isOwnerOrAdmin },
+			{ to: "/reports", label: "nav.reports", show: isOwnerOrAdmin },
+		],
+	},
+	{
+		id: "admin",
+		label: "nav.section.admin",
+		items: [
+			{ to: "/team", label: "nav.team" },
+			{ to: "/settings", label: "nav.settings" },
+			{ to: "/billing", label: "nav.billing" },
+			{ to: "/sso", label: "nav.sso", show: isOwner },
+			{ to: "/scim", label: "nav.scim", show: isOwner },
+			{ to: "/retention", label: "nav.retention", show: isOwnerOrAdmin },
+			{ to: "/siem", label: "nav.siem", show: ({ canEditPolicy }) => canEditPolicy },
+		],
+	},
+];
 
 /**
  * Dashboard approvals link. The pending-count badge is read only for roles
@@ -68,15 +146,16 @@ function ApprovalsNavLink() {
 	const { currentTeam, currentRole, roleResolved } = useTeam();
 	const canDecide = roleResolved && (currentRole === "owner" || currentRole === "admin");
 	const count = usePendingApprovalCount(canDecide && currentTeam ? currentTeam.id : null);
+	const t = useT();
 	return (
 		<NavLink to="/approvals">
-			Approvals
+			{t("nav.approvals")}
 			{count ? (
 				<span
 					className="badge badge-warning badge-plain nav-count"
 					data-testid="approvals-pending-count"
 				>
-					<span className="sr-only">, pending: </span>
+					<span className="sr-only">{t("layout.pendingCount")}</span>
 					{count > 99 ? "99+" : count}
 				</span>
 			) : null}
@@ -84,48 +163,71 @@ function ApprovalsNavLink() {
 	);
 }
 
+function NavSections() {
+	const { canEditPolicy, currentRole, roleResolved } = useTeam();
+	const t = useT();
+	const access: NavAccess = { canEditPolicy, currentRole, roleResolved };
+	return (
+		<div className="nav-sections">
+			{NAV_SECTIONS.map((section) => {
+				const items = section.items.filter((item) => !item.show || item.show(access));
+				if (items.length === 0) return null;
+				const headingId = `nav-section-${section.id}`;
+				return (
+					<div key={section.id} className="nav-section" role="group" aria-labelledby={headingId}>
+						<p className="nav-section-title" id={headingId}>
+							{t(section.label)}
+						</p>
+						{items.map((item) =>
+							item.to === "/approvals" ? (
+								<ApprovalsNavLink key={item.to} />
+							) : (
+								// "/governance" must not stay highlighted on its sub-pages,
+								// which have their own entries.
+								<NavLink key={item.to} to={item.to} end={item.to === "/governance"}>
+									{t(item.label)}
+								</NavLink>
+							),
+						)}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
 export function AppLayout() {
 	const navigate = useNavigate();
 	const [signingOut, setSigningOut] = useState(false);
-	if (signingOut) return <div role="status">Ending this browser session…</div>;
+	const t = useT();
+	if (signingOut) return <div role="status">{t("layout.signingOut")}</div>;
 
 	return (
 		<TeamProvider>
 			<div className="app">
 				<a className="skip-link" href="#page-content">
-					Skip to content
+					{t("layout.skip")}
 				</a>
 				<header className="console-topbar">
 					<Link to="/" className="brand-link">
-						<span className="brand-word" aria-hidden="true">
+						<span className="brand-word" aria-hidden="true" lang="en">
 							AIDR
 						</span>
 						<span className="brand-sub" aria-hidden="true">
-							Control plane
+							{t("layout.controlPlane")}
 						</span>
-						<span className="sr-only">Singularity AIDR</span>
+						<span className="sr-only" lang="en">
+							Singularity AIDR
+						</span>
 					</Link>
 					<div className="header-actions">
+						<LanguageToggle />
 						<ThemeToggle />
 					</div>
 				</header>
 				<main className="main">
-					<nav className="navcard" aria-label="Dashboard">
-						<NavLink to="/onboarding">Connect</NavLink>
-						<NavLink to="/downloads">Downloads</NavLink>
-						<NavLink to="/dashboard">Dashboard</NavLink>
-						<NavLink to="/billing">Billing</NavLink>
-						<NavLink to="/api-keys">API Keys</NavLink>
-						<NavLink to="/agents">Agents</NavLink>
-						<NavLink to="/events">Events</NavLink>
-						<NavLink to="/discovery">Discovery</NavLink>
-						<NavLink to="/posture">Posture</NavLink>
-						<NavLink to="/incidents">Incidents</NavLink>
-						<ApprovalsNavLink />
-						<NavLink to="/privacy-guard">Browser Privacy</NavLink>
-						<NavLink to="/autosecops">AutoSecOps</NavLink>
-						<NavLink to="/settings">Settings</NavLink>
-						<TeamNavLinks />
+					<nav className="navcard" aria-label={t("layout.navLabel")}>
+						<NavSections />
 						<span className="navcard-signout">
 							<button
 								className="button button-secondary button-sm"
@@ -143,13 +245,13 @@ export function AppLayout() {
 									}
 								}}
 							>
-								Sign out
+								{t("layout.signOut")}
 							</button>
 						</span>
 					</nav>
 					{supabaseEnvError ? (
 						<div className="notice notice-danger" style={{ marginBottom: 14 }}>
-							<b>Dashboard environment is incomplete.</b>
+							<b>{t("layout.envIncomplete")}</b>
 							<div className="muted small" style={{ marginTop: 6 }}>
 								{supabaseEnvError}
 							</div>

@@ -25,6 +25,7 @@
  * redactor and bounded before they leave this module.
  */
 
+import { isProjectEnvPathLexical } from "./project-env.js";
 import { redactTelemetryString } from "./telemetry-redaction.js";
 import {
 	DEFAULT_FLOW_CAPABILITIES,
@@ -93,6 +94,8 @@ export interface FlowClassifierOptions {
 	 * the shipped file when omitted.
 	 */
 	patterns?: FlowCapabilityPatterns;
+	/** Absolute working directory of the session; groups the project's `.env` files. */
+	workingDirectory?: string;
 }
 
 export interface FlowToolCall {
@@ -119,7 +122,10 @@ function bound(text: string): string {
 /** Collapse home-directory spellings so `~/.aws/x`, `$HOME/.aws/x` and `/home/<user>/.aws/x` agree. */
 export function normalizeFlowPath(raw: string): string {
 	let path = raw.trim().replace(/^["'`]+|["'`]+$/g, "");
-	path = path.replace(/^(?:\$HOME|\$\{HOME\}|%USERPROFILE%)(?=[\\/]|$)/i, "~");
+	path = path.replace(
+		/^(?:\$HOME|\$\{HOME\}|%USERPROFILE%|\$env:(?:USERPROFILE|HOME))(?=[\\/]|$)/i,
+		"~",
+	);
 	path = path.replace(/^\/(?:home|Users)\/[^\\/]+(?=[\\/]|$)/, "~");
 	path = path.replace(/^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/, "~");
 	path = path.replace(/\\/g, "/");
@@ -434,16 +440,20 @@ function addSensitivePath(
 	set: ObservationSet,
 	path: string,
 	verb: string,
-	patterns: FlowCapabilityPatterns,
+	options: Pick<ResolvedOptions, "patterns" | "workingDirectory">,
 ): void {
-	const rule = sensitivePathRule(path, patterns);
+	const rule = sensitivePathRule(path, options.patterns);
 	if (!rule) return;
 	const normalized = normalizeFlowPath(path);
+	// All environment files of the session's project are one credential store
+	// for the bulk-access count (docs/project-env-files.md); the read is still
+	// secret-grade material for exfiltration chains.
+	const projectEnv = isProjectEnvPathLexical(path, options.workingDirectory);
 	set.add({
 		cap: "private_data",
 		kind: rule.kind,
-		summary: `${verb} ${normalized} (${rule.label})`,
-		target: `path:${normalized}`,
+		summary: `${verb} ${normalized} (${projectEnv ? "project environment file" : rule.label})`,
+		target: projectEnv ? "project-env" : `path:${normalized}`,
 		secret: rule.secret,
 	});
 }
@@ -692,7 +702,7 @@ function handleCopyClient(ctx: StageContext): boolean {
 	if (isRemoteCopyOperand(last)) {
 		addRemoteUpload(ctx.set, ctx.exe, last, "copies files out");
 		for (const source of operands.slice(0, -1))
-			addSensitivePath(ctx.set, source, ctx.exe, ctx.options.patterns);
+			addSensitivePath(ctx.set, source, ctx.exe, ctx.options);
 	} else if (operands.slice(0, -1).some(isRemoteCopyOperand)) {
 		ctx.downloads.push(last);
 	}
@@ -838,6 +848,15 @@ function classifyStage(
 	});
 }
 
+/** Windows path spellings in raw command text (drive, UNC-free home variables, `~\`). */
+const WINDOWS_PATH =
+	/(?:[A-Za-z]:|~|\$env:(?:USERPROFILE|HOMEPATH|HOME|APPDATA|LOCALAPPDATA)|%(?:USERPROFILE|HOMEPATH|APPDATA|LOCALAPPDATA)%)\\[^\s"'|;,()<>`]{1,1000}/gi;
+
+function windowsPathsIn(text: string): string[] {
+	if (!text.includes("\\")) return [];
+	return [...text.matchAll(WINDOWS_PATH)].map((match) => match[0].replace(/^@/, ""));
+}
+
 function classifyShellCommand(
 	command: string,
 	set: ObservationSet,
@@ -856,10 +875,16 @@ function classifyShellCommand(
 				for (const piece of word.split(/[=,]/)) {
 					const candidate = piece.replace(/^@/, "");
 					if (candidate.length < 2) continue;
-					addSensitivePath(set, candidate, "shell access to", options.patterns);
+					addSensitivePath(set, candidate, "shell access to", options);
 					if (!transfer && !candidate.startsWith("-")) reads.push(candidate);
 				}
 			});
+			// POSIX word splitting reads `\` as an escape, so a Windows path
+			// (`C:\Users\dev\.ssh\id_rsa`, `$env:USERPROFILE\.aws\credentials`)
+			// loses its separators above. Check those spellings from the raw text.
+			for (const path of windowsPathsIn(stage.text)) {
+				addSensitivePath(set, path, "shell access to", options);
+			}
 		}
 	}
 	for (const rule of options.patterns.credentialCommands) {
@@ -987,7 +1012,7 @@ export function classifyToolCallFlow(
 		const direct = stringField(toolInput, ["file_path", "path", "notebook_path"]);
 		if (direct) paths.add(direct);
 		for (const path of paths) {
-			addSensitivePath(set, path, toolName, patterns);
+			addSensitivePath(set, path, toolName, options);
 			reads.push(path);
 		}
 	} else if (toolName === "WebFetch") {
@@ -1035,7 +1060,7 @@ export function classifyToolCallFlow(
 		}
 		if (patterns.toolNames.fileRead.test(leaf)) {
 			for (const path of artifactValues(artifacts, "file_path")) {
-				addSensitivePath(set, path, leaf, patterns);
+				addSensitivePath(set, path, leaf, options);
 				reads.push(path);
 			}
 		}

@@ -2,7 +2,8 @@
 
 In the cloud option SingularityRD operates the AIDR control plane: the dashboard, the
 Supabase database and the Edge Functions that handle enrollment, policy, ingest and
-audit export. Enforcement never moves to the cloud. Agent connectors and Browser Guard
+audit export. It is the same control plane, from this repository, that customers
+run on-prem; the `aidr-landing` website and vendor `/admin` panel are not part of it. Enforcement never moves to the cloud. Agent connectors and Browser Guard
 evaluate on the endpoint; the control plane manages policy and receives the
 redacted events they send.
 
@@ -22,7 +23,7 @@ redacted events they send.
 | Device enrollment by short-lived device code (start, verify, poll) | `supabase/functions/device-start`, `device-verify`, `device-poll` |
 | Tenant API keys, stored as hashes only | `supabase/functions/api-keys` |
 | Signed runtime policy for agent connectors, with staged rollout and acknowledgement | `supabase/functions/policy`, `policy-management`, `policy-ack`; dashboard `src/enterprise/policy-rollout.tsx` |
-| Signed Browser Guard policy: Shadow AI allow/block decisions from the dashboard (needs the policy signing key; extensions pin its public key in managed `dashboardPolicy`) | `supabase/functions/browser-guard-policy`; dashboard Browser Privacy Guard → Shadow AI |
+| Signed Browser Guard policy: Shadow AI allow/block decisions from the dashboard (needs the policy signing key; extensions pin its public key in managed `dashboardPolicy`) | `supabase/functions/browser-guard-policy`; dashboard Browser Guard → Shadow AI |
 | Signed rule and intel packs | `supabase/functions/packs-manifest`, `packs-download` |
 | Event ingest for agent verdicts, and Browser Guard `privacy_scan` counts per the [telemetry contract](../contracts/privacy-telemetry.md) | `supabase/functions/ingest` |
 | Incidents, response playbooks and AutoSecOps views | dashboard `/incidents`, `/autosecops` |
@@ -72,6 +73,12 @@ Orders currently go through an approved written quote and invoice. Online checko
 built but disabled until the payment provider, entitlement reconciliation and Finance
 approval are accepted. Payment never grants admission on its own. Plans and list
 prices are in [pricing.md](../sales/pricing.md) and are subject to COM-001 approval.
+
+## Data residency
+
+The hosted service has no Turkey region and its EU placement is not verified
+end to end. Customers that need data to stay in Turkey run the control plane
+on-prem; see [data residency](data-residency.md).
 
 ## Operator references
 

@@ -72,7 +72,7 @@ async function expectAllowed(handler: ToolCallHandler, event: ToolCallEvent): Pr
 async function expectBlocked(handler: ToolCallHandler, event: ToolCallEvent): Promise<void> {
 	const result = await handler(event);
 	expect(result?.block, `expected ${JSON.stringify(event)} to be blocked`).toBe(true);
-	expect(result?.blockReason).toMatch(/Singularity AIDR (blocked|flagged) this action/);
+	expect(result?.blockReason).toMatch(/Singularity AIDR (blocked|stopped) this action/);
 }
 
 // --- Tests ---
@@ -156,14 +156,40 @@ describe("OpenClaw integration: Singularity AIDR plugin pipeline", { timeout: 30
 		});
 	});
 
-	it("blocks web_fetch when reputation is disabled because the URL is unverified", async () => {
+	it("allows a benign web_fetch when reputation is disabled (local detection decides)", async () => {
+		// GA audit CON-8: OpenClaw turns `ask` into a block, so a disabled leg that
+		// asked used to hard-block every fetch on a fresh install.
+		const prevHome = process.env.HOME;
+		const tmpHome = await mkdtemp(resolve(tmpdir(), "aidr-openclaw-url-default-"));
+		const aidrDir = resolve(tmpHome, ".singularity-aidr");
+		await mkdir(aidrDir, { recursive: true });
+		await writeFile(
+			resolve(aidrDir, "config.json"),
+			JSON.stringify({ url_check: { enabled: false } }),
+			"utf8",
+		);
+		process.env.HOME = tmpHome;
+
+		try {
+			await expectAllowed(handler, {
+				toolName: "web_fetch",
+				params: { url: "https://example.com" },
+			});
+		} finally {
+			if (prevHome === undefined) delete process.env.HOME;
+			else process.env.HOME = prevHome;
+			await rm(tmpHome, { recursive: true, force: true });
+		}
+	});
+
+	it("blocks web_fetch when reputation is disabled and unchecked_action is ask", async () => {
 		const prevHome = process.env.HOME;
 		const tmpHome = await mkdtemp(resolve(tmpdir(), "aidr-openclaw-no-url-reputation-"));
 		const aidrDir = resolve(tmpHome, ".singularity-aidr");
 		await mkdir(aidrDir, { recursive: true });
 		await writeFile(
 			resolve(aidrDir, "config.json"),
-			JSON.stringify({ url_check: { enabled: false } }),
+			JSON.stringify({ url_check: { enabled: false, unchecked_action: "ask" } }),
 			"utf8",
 		);
 		process.env.HOME = tmpHome;

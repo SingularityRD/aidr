@@ -81,10 +81,7 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 	): Promise<void> {
 		const before = hooks["tool.execute.before"];
 		expect(before).toBeDefined();
-		await before?.(
-			{ tool, sessionID, callID },
-			{ args },
-		);
+		await before?.({ tool, sessionID, callID }, { args });
 	}
 
 	async function captureBlock(command: string, sessionID: string): Promise<string> {
@@ -97,7 +94,7 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 
 		expect(caught).toBeDefined();
 		const message = caught instanceof Error ? caught.message : String(caught);
-		expect(message).toMatch(/Singularity AIDR (blocked|flagged) this action/);
+		expect(message).toMatch(/Singularity AIDR (blocked|stopped) this action/);
 		return message;
 	}
 
@@ -118,7 +115,7 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 	}
 
 	function actionIdFrom(message: string): string {
-		const match = message.match(/actionId:\s*"([^"]+)"/);
+		const match = message.match(/Approval reference: (\S+)/);
 		expect(match?.[1]).toMatch(/^[a-f0-9]{64}$/);
 		return match?.[1] ?? "";
 	}
@@ -304,16 +301,16 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 			"deny-session",
 		);
 		expect(message).toContain("blocked this action");
-		expect(message).toContain("Severity:");
+		expect(message).toMatch(/Why: .*\(critical, rule /);
 	});
 
 	it("blocks a high-risk command and surfaces an operator-only approval reference", async () => {
 		const message = await captureBlock("chmod 777 ./script.sh", "ask-session");
-		expect(message).toContain("blocked it pending explicit user approval");
+		expect(message).toContain("stopped this action until you approve it");
 		expect(actionIdFrom(message)).toHaveLength(64);
 		// No agent-callable approval recipe is offered.
 		expect(message).not.toContain("aidr_approve");
-		expect(message).toContain("cannot approve this action yourself");
+		expect(message).toContain("you cannot approve this action");
 	});
 
 	it("exposes no agent-callable approval tool and keeps the retry blocked", async () => {
@@ -329,7 +326,7 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 
 		// Even armed with the actionId from the error message, the retry is blocked.
 		await expect(runBefore(command, "approve-session", "retry-call")).rejects.toThrow(
-			/blocked it pending explicit user approval/,
+			/stopped this action until you approve it/,
 		);
 	});
 
@@ -338,7 +335,7 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 		const first = await captureBlock(command, "reject-session");
 		const retry = await captureBlock(command, "reject-session");
 
-		expect(retry).toContain("blocked it pending explicit user approval");
+		expect(retry).toContain("stopped this action until you approve it");
 		// Same action, same approval reference - and still no way for the agent to
 		// satisfy it on its own.
 		expect(actionIdFrom(retry)).toBe(actionIdFrom(first));
@@ -364,7 +361,7 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 
 		// Nothing was persisted and the command stays blocked.
 		await expect(runBefore(command, "allowlist-session", "allowlisted-retry")).rejects.toThrow(
-			/blocked it pending explicit user approval/,
+			/stopped this action until you approve it/,
 		);
 		await expect(
 			remove?.execute({ type: "command", value: command }, makeContext("allowlist-session")),
@@ -392,11 +389,14 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 			},
 			{
 				name: "obfuscated execution",
-				command: 'python3 -c \'exec(__import__("base64").b64decode("cHJpbnQoImhlbGxvIik=").decode())\'',
+				command:
+					'python3 -c \'exec(__import__("base64").b64decode("cHJpbnQoImhlbGxvIik=").decode())\'',
 			},
 			{
-				name: "package supply-chain change",
-				command: "npm install synthetic-aidr-package@latest",
+				// With package_check off (the default) a registry install is decided by
+				// local signals; a name one edit from a popular package is held.
+				name: "package supply-chain change (typosquat)",
+				command: "npm install expres@latest",
 			},
 			{
 				name: "PowerShell execution-policy bypass",
@@ -409,12 +409,12 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 			},
 		];
 
-		const results = await Promise.all(
+		const results = (await Promise.all(
 			commandProbes.map(async (probe, index) => ({
 				...probe,
 				...(await observeTool("bash", { command: probe.command }, `matrix-command-${index}`)),
 			})),
-		) as Array<Record<string, unknown>>;
+		)) as Array<Record<string, unknown>>;
 		// Each probe has its own session id and this phase has no cache/audit writes,
 		// so running the independent matrix concurrently preserves every assertion
 		// while keeping the mandatory contract inside the existing hook budget on a
@@ -437,7 +437,10 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 		};
 		// The verdict cache only honours authenticated entries.
 		await writeSignedCacheFixture(cachePath, cachedPackageDeny);
-		const productionLikeConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+		const productionLikeConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<
+			string,
+			unknown
+		>;
 		productionLikeConfig.package_check = { enabled: true };
 		productionLikeConfig.cache = { enabled: true, path: cachePath };
 		await writeFile(configPath, JSON.stringify(productionLikeConfig), "utf8");
@@ -508,7 +511,9 @@ describe("OpenCode AIDR contract", { timeout: 30_000 }, () => {
 		const guarded = results.filter((result) => result.name !== "synthetic PII in write content");
 		for (const result of guarded) {
 			expect(result.status, String(result.name)).toBe("guarded");
-			expect(result.message, String(result.name)).toMatch(/Singularity AIDR (blocked|flagged) this action/);
+			expect(result.message, String(result.name)).toMatch(
+				/Singularity AIDR (blocked|stopped) this action/,
+			);
 		}
 	});
 });

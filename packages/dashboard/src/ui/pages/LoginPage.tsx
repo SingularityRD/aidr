@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { redirectToIdp, startOidcFlow } from "../../auth/oidc-sso";
 import { Turnstile } from "../../components/Turnstile";
+import { LanguageToggle, useT } from "../../i18n/I18nProvider";
 import { supabase } from "../../lib/supabase";
 import { ShieldIcon } from "../icons";
 import { sanitizeReturnTo, setPostAuthReturnTo } from "../return-to";
@@ -11,6 +12,7 @@ type SamlLoginProvider = { providerId: string; label: string } | { domain: strin
 
 export function LoginPage() {
 	const navigate = useNavigate();
+	const t = useT();
 	const [params] = useSearchParams();
 	const [email, setEmail] = useState("");
 	const [workspaceName, setWorkspaceName] = useState("");
@@ -32,9 +34,13 @@ export function LoginPage() {
 	);
 	const samlProviderId = window.__AIDR_CONFIG__?.samlProviderId;
 	const samlDomain = window.__AIDR_CONFIG__?.samlDomain;
-	const samlProviders: SamlLoginProvider[] = window.__AIDR_CONFIG__?.samlProviders ?? (samlProviderId
-		? [{ providerId: samlProviderId, label: "company SSO" }]
-		: samlDomain ? [{ domain: samlDomain, label: "company SSO" }] : []);
+	const samlProviders: SamlLoginProvider[] =
+		window.__AIDR_CONFIG__?.samlProviders ??
+		(samlProviderId
+			? [{ providerId: samlProviderId, label: t("login.companySso") }]
+			: samlDomain
+				? [{ domain: samlDomain, label: t("login.companySso") }]
+				: []);
 	const samlEnabled = samlProviders.length > 0;
 	const oidcEnabled = window.__AIDR_CONFIG__?.oidcSso === true;
 	const [ssoEmail, setSsoEmail] = useState("");
@@ -59,7 +65,7 @@ export function LoginPage() {
 				if (!cancelled && session) navigate(returnTo, { replace: true });
 			})
 			.catch(() => {
-				if (!cancelled) setStatus("Unable to check your session. Please try again.");
+				if (!cancelled) setStatus(t("login.sessionCheckFailed"));
 			});
 		return () => {
 			cancelled = true;
@@ -80,7 +86,7 @@ export function LoginPage() {
 					options: { captchaToken: token },
 				});
 				if (error) {
-					setStatus("Sign-in failed. Check your email and password or contact your administrator.");
+					setStatus(t("login.passwordFailed"));
 					return;
 				}
 				navigate(returnTo, { replace: true });
@@ -91,18 +97,14 @@ export function LoginPage() {
 					options: { emailRedirectTo: redirectTo, captchaToken: token, shouldCreateUser: false },
 				});
 				if (error) {
-					setStatus(
-						error.status === 429
-							? "Email delivery is temporarily limited. Please try again later."
-							: "Unable to send a sign-in link. Contact your administrator.",
-					);
+					setStatus(error.status === 429 ? t("login.emailLimited") : t("login.linkFailed"));
 					return;
 				}
 				setSent(true);
-				setStatus("If this account is enabled, check your inbox for a sign-in link.");
+				setStatus(t("login.linkSent"));
 			}
 		} catch {
-			setStatus("Sign-in is unavailable. Please try again.");
+			setStatus(t("login.unavailable"));
 		} finally {
 			setPassword("");
 			resetCaptcha();
@@ -114,11 +116,11 @@ export function LoginPage() {
 		if (busy || !cloudSignupEnabled || !captchaReady) return;
 		const name = workspaceName.trim();
 		if (!name || name.length > 200 || /[\x00-\x1f\x7f]/.test(workspaceName)) {
-			setStatus("Enter a team name of up to 200 characters without control characters.");
+			setStatus(t("login.teamNameInvalid"));
 			return;
 		}
 		if (password !== confirmPassword) {
-			setStatus("Passwords do not match.");
+			setStatus(t("login.passwordMismatch"));
 			return;
 		}
 		setBusy(true);
@@ -136,24 +138,18 @@ export function LoginPage() {
 				},
 			});
 			if (error || !data.user) {
-				setStatus(
-					error?.status === 429
-						? "Email delivery is temporarily limited. Please try again later."
-						: "Unable to create an account. Check the password requirements or contact support.",
-				);
+				setStatus(error?.status === 429 ? t("login.emailLimited") : t("login.registerFailed"));
 				return;
 			}
 			if (data.session) {
 				await supabase.auth.signOut({ scope: "local" });
-				setStatus("Email confirmation is not enabled. Account registration is unavailable.");
+				setStatus(t("login.confirmationDisabled"));
 				return;
 			}
 			setSent(true);
-			setStatus(
-				"If this address is eligible, check your inbox for a confirmation link. Open it in this browser to continue setup.",
-			);
+			setStatus(t("login.registerSent"));
 		} catch {
-			setStatus("Account registration is unavailable. Please try again later.");
+			setStatus(t("login.registerUnavailable"));
 		} finally {
 			setPassword("");
 			setConfirmPassword("");
@@ -167,7 +163,7 @@ export function LoginPage() {
 		setBusy(true);
 		setStatus(null);
 		try {
-			const started = await startOidcFlow({ email: ssoEmail, returnTo });
+			const started = await startOidcFlow({ email: ssoEmail, returnTo, t });
 			if (!started.ok) {
 				setStatus(started.message);
 				return;
@@ -175,7 +171,7 @@ export function LoginPage() {
 			setPostAuthReturnTo(returnTo);
 			redirectToIdp(started.url);
 		} catch {
-			setStatus("Company sign-in is unavailable. Contact your administrator.");
+			setStatus(t("login.companyUnavailable"));
 		} finally {
 			setBusy(false);
 		}
@@ -195,14 +191,15 @@ export function LoginPage() {
 			const target = data?.url ? new URL(data.url) : null;
 			const safeProtocol =
 				target?.protocol === "https:" ||
-				(target?.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname));
+				(target?.protocol === "http:" &&
+					["localhost", "127.0.0.1", "[::1]"].includes(target.hostname));
 			if (error || !target || !safeProtocol || target.username || target.password) {
-				setStatus("Company sign-in is unavailable. Contact your administrator.");
+				setStatus(t("login.companyUnavailable"));
 				return;
 			}
 			window.location.assign(target.href);
 		} catch {
-			setStatus("Company sign-in is unavailable. Contact your administrator.");
+			setStatus(t("login.companyUnavailable"));
 		} finally {
 			setBusy(false);
 		}
@@ -216,24 +213,16 @@ export function LoginPage() {
 						<ShieldIcon size={26} />
 					</span>
 					<div>
-						<h1 className="auth-title">Welcome to AIDR</h1>
+						<h1 className="auth-title">{t("login.welcome")}</h1>
 						<p className="auth-subtitle">
-							{registering
-								? "Create an account to protect your AI agents"
-								: "Sign in to protect your AI agents"}
+							{registering ? t("login.subtitleRegister") : t("login.subtitleSignIn")}
 						</p>
 					</div>
 				</div>
 				{signOutStatus === "revocation-unconfirmed" ? (
-					<p role="alert">
-						This browser signed out, but revocation of other sessions could not be confirmed.
-						Contact your administrator if those sessions must be ended.
-					</p>
+					<p role="alert">{t("login.revocationUnconfirmed")}</p>
 				) : signOutStatus === "local-failed" ? (
-					<p role="alert">
-						This browser sign-out could not be confirmed. Close this tab and ask your administrator
-						to revoke active sessions.
-					</p>
+					<p role="alert">{t("login.localSignOutFailed")}</p>
 				) : null}
 				{!registering &&
 					providers.map((provider) => (
@@ -255,21 +244,22 @@ export function LoginPage() {
 											...(provider === "azure" ? { scopes: "openid profile email" } : {}),
 										},
 									});
-									if (error)
-										setStatus("This sign-in provider is unavailable. Contact your administrator.");
+									if (error) setStatus(t("login.providerUnavailable"));
 								} catch {
-									setStatus("Sign-in is unavailable. Please try again.");
+									setStatus(t("login.unavailable"));
 								} finally {
 									setBusy(false);
 								}
 							}}
 						>
-							Continue with{" "}
-							{provider === "google"
-								? "Google"
-								: provider === "github"
-									? "GitHub"
-									: "Microsoft Entra ID"}
+							{t("login.continueWith", {
+								provider:
+									provider === "google"
+										? "Google"
+										: provider === "github"
+											? "GitHub"
+											: "Microsoft Entra ID",
+							})}
 						</button>
 					))}
 				{!registering &&
@@ -281,19 +271,19 @@ export function LoginPage() {
 							disabled={busy}
 							onClick={() => void signInWithSaml(provider)}
 						>
-							Continue with {provider.label}
+							{t("login.continueWith", { provider: provider.label })}
 						</button>
 					))}
 				{!registering && oidcEnabled && (
 					<form
-						aria-label="Company single sign-on"
+						aria-label={t("login.ssoFormLabel")}
 						onSubmit={(event) => {
 							event.preventDefault();
 							void signInWithOidc();
 						}}
 					>
 						<label className="label" htmlFor="sso-email">
-							Work email for single sign-on
+							{t("login.ssoEmailLabel")}
 						</label>
 						<input
 							id="sso-email"
@@ -303,12 +293,12 @@ export function LoginPage() {
 							onChange={(event) => setSsoEmail(event.target.value)}
 						/>
 						<button type="submit" className="auth-provider" disabled={busy || !ssoEmail.trim()}>
-							Continue with work email SSO
+							{t("login.ssoContinue")}
 						</button>
 					</form>
 				)}
 				{!registering && (providers.length > 0 || samlEnabled || oidcEnabled) && emailEnabled && (
-					<div className="auth-divider">or continue with email</div>
+					<div className="auth-divider">{t("login.orEmail")}</div>
 				)}
 				{emailEnabled && (
 					<form
@@ -318,7 +308,7 @@ export function LoginPage() {
 						}}
 					>
 						<label className="label" htmlFor="login-email">
-							Email address
+							{t("login.email")}
 						</label>
 						<input
 							id="login-email"
@@ -333,7 +323,7 @@ export function LoginPage() {
 						{registering && cloudSignupEnabled && (
 							<>
 								<label className="label" htmlFor="register-workspace-name">
-									Team or organization name
+									{t("login.teamName")}
 								</label>
 								<input
 									id="register-workspace-name"
@@ -349,7 +339,7 @@ export function LoginPage() {
 						{passwordEnabled && (
 							<>
 								<label className="label" htmlFor="login-password">
-									Password
+									{t("login.password")}
 								</label>
 								<input
 									id="login-password"
@@ -364,7 +354,7 @@ export function LoginPage() {
 								{registering && (
 									<>
 										<label className="label" htmlFor="register-confirm-password">
-											Confirm password
+											{t("login.confirmPassword")}
 										</label>
 										<input
 											id="register-confirm-password"
@@ -401,12 +391,12 @@ export function LoginPage() {
 							}
 						>
 							{busy
-								? "Please wait…"
+								? t("login.wait")
 								: registering
-									? "Create account"
+									? t("login.createAccount")
 									: passwordEnabled
-										? "Sign in"
-										: "Send magic link"}
+										? t("login.signIn")
+										: t("login.sendMagicLink")}
 						</button>
 						{!registering && passwordEnabled && magicEnabled && (
 							<button
@@ -415,12 +405,12 @@ export function LoginPage() {
 								disabled={busy || !email.trim() || !captchaReady}
 								onClick={() => void signIn("magic-link")}
 							>
-								Email a sign-in link
+								{t("login.emailLink")}
 							</button>
 						)}
 						{!registering && passwordEnabled && (
 							<div className="auth-footer">
-								<Link to="/auth/recover">Forgot password or lost your second factor?</Link>
+								<Link to="/auth/recover">{t("login.forgot")}</Link>
 							</div>
 						)}
 						{cloudSignupEnabled && (
@@ -437,16 +427,14 @@ export function LoginPage() {
 										setSent(false);
 									}}
 								>
-									{registering
-										? "Already have an account? Sign in"
-										: "New to AIDR? Create an account"}
+									{registering ? t("login.haveAccount") : t("login.newAccount")}
 								</button>
 							</div>
 						)}
 					</form>
 				)}
 				{methods.length === 0 && !samlEnabled && !oidcEnabled && (
-					<p role="alert">Sign-in has not been configured. Contact your administrator.</p>
+					<p role="alert">{t("login.notConfigured")}</p>
 				)}
 				{status && (
 					<div
@@ -457,13 +445,12 @@ export function LoginPage() {
 					</div>
 				)}
 				<div className="auth-footer">
-					<Link to="/">← Back to home</Link>
+					<Link to="/">{t("login.backHome")}</Link>
+					<LanguageToggle />
 				</div>
 				<div className="auth-note">
 					<ShieldIcon size={13} />
-					{cloudSignupEnabled
-						? "Confirm your email before setting up a workspace."
-						: "Use the account provided by your administrator."}
+					{cloudSignupEnabled ? t("login.noteConfirm") : t("login.noteAdmin")}
 				</div>
 			</div>
 		</div>

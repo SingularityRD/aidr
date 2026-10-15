@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/I18nProvider";
 
 interface TurnstileProps {
 	onVerify: (token: string) => void;
@@ -22,6 +23,7 @@ export function Turnstile({ onVerify, onError, onExpire }: TurnstileProps) {
 	const [isLoading, setIsLoading] = useState(true);
 	const [hasError, setHasError] = useState(false);
 
+	const t = useT();
 	const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
 	useEffect(() => {
@@ -84,7 +86,7 @@ export function Turnstile({ onVerify, onError, onExpire }: TurnstileProps) {
 	if (!siteKey) {
 		return (
 			<div className="notice notice-warning small" style={{ marginTop: 16 }}>
-				CAPTCHA not configured. Add VITE_TURNSTILE_SITE_KEY to enable bot protection.
+				{t("captcha.notConfigured")}
 			</div>
 		);
 	}
@@ -93,14 +95,10 @@ export function Turnstile({ onVerify, onError, onExpire }: TurnstileProps) {
 		<div style={{ marginTop: 16, marginBottom: 16 }}>
 			{isLoading && (
 				<div style={{ padding: 20, textAlign: "center", color: "var(--text-secondary)" }}>
-					Loading verification...
+					{t("captcha.loading")}
 				</div>
 			)}
-			{hasError && (
-				<div className="notice notice-danger small">
-					Verification failed to load. Please refresh the page.
-				</div>
-			)}
+			{hasError && <div className="notice notice-danger small">{t("captcha.failed")}</div>}
 			<div ref={containerRef} style={{ display: isLoading || hasError ? "none" : "block" }} />
 		</div>
 	);

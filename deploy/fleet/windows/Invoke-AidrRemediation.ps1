@@ -143,9 +143,12 @@ function Invoke-AidrDenyCanary {
     $decision = Get-AidrProperty -Value $hookOutput -Name 'permissionDecision'
     $reason = Get-AidrProperty -Value $hookOutput -Name 'permissionDecisionReason'
     $message = Get-AidrProperty -Value $verdict -Name 'systemMessage'
-    $expectedReason = [char]::ConvertFromUtf32(0x1F6E1) + [char]0xFE0F + ' Singularity AIDR: Threat Blocked'
-    if ([string]$decision -ne 'deny' -or [string]$reason -cne $expectedReason -or
-        $null -eq $message -or -not ([string]$message).Contains('Remote code execution via curl pipe to shell')) {
+    # The block text is localized and reworded across releases; the canary
+    # checks the decision, the product prefix and the rule id (or, for older
+    # hooks, the English rule title), never the exact wording.
+    $expectedPrefix = [char]::ConvertFromUtf32(0x1F6E1) + [char]0xFE0F + ' Singularity AIDR'
+    if ([string]$decision -ne 'deny' -or -not ([string]$reason).StartsWith($expectedPrefix, [System.StringComparison]::Ordinal) -or
+        $null -eq $message -or -not (([string]$message).Contains('CLT-CMD-001') -or ([string]$message).Contains('Remote code execution via curl pipe to shell'))) {
         return [ordered]@{ ok = $false; detail = 'The installed hook failed the local malicious-command canary.' }
     }
     return [ordered]@{ ok = $true; detail = 'deny' }

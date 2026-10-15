@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { VERSION } from "@singularityrd/aidr-core";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import aibomCommand from "./commands/aibom.js";
 import {
 	allowlistAddCommand,
@@ -9,6 +9,7 @@ import {
 	allowlistRemoveCommand,
 } from "./commands/allowlist.js";
 import { approveCommand, pendingCommand } from "./commands/approvals.js";
+import assistantCommand from "./commands/assistant.js";
 import {
 	auditExportCommand,
 	auditRotateKeyCommand,
@@ -38,6 +39,7 @@ import {
 	exceptionListCommand,
 	exceptionRemoveCommand,
 } from "./commands/exceptions.js";
+import heartbeatCommand from "./commands/heartbeat.js";
 import {
 	learningApproveCommand,
 	learningExecuteCommand,
@@ -45,7 +47,13 @@ import {
 	learningIngestCommand,
 	learningKeygenCommand,
 } from "./commands/learning.js";
+import {
+	machineHooksInstallCommand,
+	machineHooksRemoveCommand,
+	machineHooksStatusCommand,
+} from "./commands/machine-hooks.js";
 import privacyScanCommand from "./commands/privacy.js";
+import { privacyNoticeCommand } from "./commands/privacy-notice.js";
 import {
 	profileListCommand,
 	profileShowCommand,
@@ -59,11 +67,16 @@ import {
 	quarantineShowCommand,
 	restoreCommand,
 } from "./commands/quarantine.js";
+import { reportFpCommand } from "./commands/report-fp.js";
 import scanCommand from "./commands/scan.js";
 import setupCommand from "./commands/setup.js";
 import simulateCommand from "./commands/simulate.js";
 import statusCommand from "./commands/status.js";
+import supportBundleCommand from "./commands/support-bundle.js";
 import uninstallCommand from "./commands/uninstall.js";
+import updateCommand from "./commands/update.js";
+import verifyCommand from "./commands/verify.js";
+import { groupCommands, initCliLocale, localizeHelp } from "./i18n/index.js";
 
 const program = new Command();
 
@@ -74,10 +87,32 @@ program
 
 program
 	.command("setup")
-	.description("Configure AIDR and show connector setup guidance")
+	.description(
+		"Configure AIDR and install or update the connector of every detected agent host (idempotent)",
+	)
 	.option("-f, --force", "Replace an existing local configuration")
 	.option("--secret-store <kind>", SECRET_STORE_OPTION_DESCRIPTION)
-	.action(setupCommand);
+	.option("--dry-run", "Show what would be installed or updated; change nothing")
+	.option(
+		"--host <ids>",
+		"Only these hosts, comma-separated: claude-code, cursor, vscode, openclaw, opencode, codex (default: every detected host)",
+	)
+	.option("--no-install", "Configure only and print the manual connector steps")
+	.option(
+		"--claude-plugin-dir <dir>",
+		"Extracted, verified aidr-claude-plugin directory to install into Claude Code",
+	)
+	.option("--cursor-vsix <file>", "Verified aidr-cursor.vsix to install into Cursor")
+	.option("--vscode-vsix <file>", "Verified aidr-vscode.vsix to install into VS Code")
+	.option(
+		"--release-key <file>",
+		"Release public key (Ed25519 PEM) for a manual install; the desktop installers set it up themselves",
+	)
+	.option(
+		"-y, --yes",
+		"With AIDR_OPERATOR_NONINTERACTIVE=1, confirm --force or the installer's company connection without a prompt",
+	)
+	.action((options) => setupCommand(options));
 
 const configProgram = program
 	.command("config")
@@ -108,7 +143,46 @@ program
 	.command("status")
 	.description("Show the local AIDR configuration and hook status")
 	.option("--json", "Emit measured installation state without credentials")
-	.action(statusCommand);
+	.action((options) => statusCommand(options));
+
+program
+	.command("verify")
+	.description(
+		"Pass a harmless canary (data only, never executed) through each registered connector's hook and report PASS/FAIL per host",
+	)
+	.option("--json", "Emit a machine-readable report")
+	.action((options) => verifyCommand(options));
+
+program
+	.command("assistant")
+	.description(
+		"Open the Singularity AIDR Setup Assistant in your browser: a step-by-step setup on this computer (Windows, Linux)",
+	)
+	.option("--no-open", "Do not open a browser; print the one-time address instead")
+	.action((options) => assistantCommand(options));
+
+program
+	.command("update")
+	.description(
+		"Update an installation from the Windows/Linux installers: verify the signed catalog and the installer's SHA-256, install silently, run 'aidr verify', roll back on failure",
+	)
+	.option("--check", "Only report whether a newer version is available; change nothing")
+	.option(
+		"--from <location>",
+		"Installer file, portal mirror directory or https URL your administrator provides (instead of the portal)",
+	)
+	.option(
+		"--catalog <location>",
+		"Signed manifest.json for --from (default: next to the installer)",
+	)
+	.option(
+		"--allow-downgrade",
+		"Allow installing an older version (a rollback your administrator asked for)",
+	)
+	.option("-y, --yes", "With AIDR_OPERATOR_NONINTERACTIVE=1, install without a prompt")
+	.option("--json", "With --check, emit a machine-readable result")
+	.addOption(new Option("--auto", "Background install started by update.auto=install").hideHelp())
+	.action((options) => updateCommand(options));
 
 program
 	.command("scan")
@@ -158,6 +232,14 @@ privacyProgram
 	)
 	.action(privacyScanCommand);
 
+privacyProgram
+	.command("notice")
+	.description(
+		"Show what Singularity AIDR guards and does not guard, what it records on this computer and what it sends where",
+	)
+	.option("--json", "Print the facts the notice is built from")
+	.action((options) => privacyNoticeCommand(options));
+
 program
 	.command("simulate")
 	.description(
@@ -170,7 +252,10 @@ program
 	.option("--sensitivity <level>", "Override sensitivity: paranoid, balanced or relaxed")
 	.option("--format <format>", "Output format: table, json or html", "table")
 	.option("--output <file>", "Write the report to a file instead of stdout")
-	.option("--min-score <n>", "Exit non-zero when the overall detection score is below N (0-100)")
+	.option(
+		"--min-score <n>",
+		"Exit non-zero when the overall detection score is below N (0-100; default 90, 0 = report only)",
+	)
 	.option(
 		"--connector <name>",
 		"Drive a built connector entry point instead of the in-process evaluator (claude-code, codex, cursor, vscode)",
@@ -238,14 +323,28 @@ program
 program
 	.command("uninstall")
 	.description(
-		"Remove only the AIDR-managed agent hooks, preserving your own hooks and configuration",
+		"Remove AIDR: the connector of every agent host, the AIDR-managed hooks, ~/.singularity-aidr and the AIDR vault items (confirmation required)",
 	)
 	.option(
 		"--home <path>",
 		"Target an explicit home directory (managed fleets and verification); defaults to the current user",
 	)
 	.option("--json", "Emit a machine-readable report")
-	.action(uninstallCommand);
+	.option(
+		"--keep-data",
+		"Keep ~/.singularity-aidr (config, audit log, approvals) and the vault items",
+	)
+	.option("--dry-run", "Show what would be removed; change nothing")
+	.option(
+		"--host <ids>",
+		"Only these hosts, comma-separated: claude-code, cursor, vscode, openclaw, opencode, codex (default: all)",
+	)
+	.option(
+		"--hooks-only",
+		"Remove only the receipt-managed Claude Code hooks, preserving everything else",
+	)
+	.option("-y, --yes", "Skip the prompt; honoured only with AIDR_OPERATOR_NONINTERACTIVE=1")
+	.action((options) => uninstallCommand(options));
 
 const learningProgram = program
 	.command("learning")
@@ -321,10 +420,71 @@ learningProgram
 program
 	.command("doctor")
 	.description(
-		"Check hosts, hook registration, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems",
+		"Check AI tools, hook registration, release key, rules, mode, DLP policy, agent profiles, approvals and the last verdict; exits non-zero on problems",
 	)
 	.option("--json", "Emit a machine-readable report")
+	.option("-v, --verbose", "Explain each check (paths, reasons, key storage)")
 	.action((options) => doctorCommand(options));
+
+program
+	.command("heartbeat")
+	.description(
+		"Report whether each AI tool's AIDR hook is in place to the control plane (run hourly by the per-machine installers)",
+	)
+	.option("--json", "Print the measured report as JSON")
+	.option("--dry-run", "Measure and print; send nothing")
+	.option("--quiet", "Print only errors (for the scheduler)")
+	.action((options) => heartbeatCommand(options));
+
+const machineHooksProgram = program
+	.command("machine-hooks")
+	.description(
+		"Deploy AIDR hooks through each AI tool's system-wide managed policy so users cannot remove or disable them (administrator)",
+	);
+
+machineHooksProgram
+	.command("install")
+	.description(
+		"Register the hooks for every user of this machine (Claude Code managed settings, Codex system config)",
+	)
+	.option(
+		"--lock-other-hooks",
+		"Also make the hosts run only managed hooks (Claude Code allowManagedHooksOnly, Codex allow_managed_hooks_only)",
+	)
+	.option("--heartbeat", "Also schedule the hourly 'aidr heartbeat' for every user")
+	.option(
+		"--bundle-root <dir>",
+		"Installed AIDR bundle whose hook binaries the hosts run (default: this bundle)",
+	)
+	.option("--dry-run", "Show what would change; change nothing")
+	.option("--json", "Emit machine-readable results")
+	.action((options) => machineHooksInstallCommand(options));
+
+machineHooksProgram
+	.command("remove")
+	.description("Remove only AIDR's system-wide hook registrations")
+	.option("--heartbeat", "Also remove the scheduled heartbeat")
+	.option("--dry-run", "Show what would change; change nothing")
+	.option("--json", "Emit machine-readable results")
+	.action((options) => machineHooksRemoveCommand(options));
+
+machineHooksProgram
+	.command("status")
+	.description(
+		"Show where the system-wide AIDR hooks are registered and whether only administrators can change them",
+	)
+	.option("--json", "Emit machine-readable results")
+	.action((options) => machineHooksStatusCommand(options));
+
+program
+	.command("support-bundle")
+	.description(
+		"Write a redacted diagnostic archive (versions, doctor checks, hooks, config, recent verdict metadata, rule hashes) for a support case",
+	)
+	.option("--out <path>", "Archive path (.tar.gz); never overwrites an existing file")
+	.option("--audit-entries <n>", "Recent audit verdicts to summarise (0-1000)", "50")
+	.option("--json", "Print the bundle summary as JSON")
+	.action((options) => supportBundleCommand(options));
 
 program
 	.command("coverage")
@@ -336,14 +496,36 @@ program
 
 program
 	.command("pending")
-	.description("List blocked agent actions waiting for an out-of-band operator approval")
+	.description(
+		"List blocked agent actions waiting for your approval (given only in your own terminal)",
+	)
 	.option("--json", "Emit machine-readable JSON")
 	.action((options) => pendingCommand(options));
 
 program
-	.command("approve <actionId>")
+	.command("report-fp")
+	.description(
+		"Report a blocked or held action as a false positive to your IT or security team (ids and rule only; never the command)",
+	)
+	.argument("<actionId>", "The id from the block message (its first 8+ characters are enough)")
+	.option(
+		"--reason <code>",
+		"Why it is a false positive: benign_automation, benign_maintenance, expected_egress, expected_file_write, legitimate_mcp_tool, developer_test, environment_specific, insufficient_context, policy_too_strict or other",
+		"other",
+	)
+	.option("--note <text>", "A short note for the reviewer (secrets are masked; max 500 characters)")
+	.option("--dry-run", "Show what would be reported without sending it")
+	.option("--json", "Emit a machine-readable result")
+	.action((actionId, options) => reportFpCommand(actionId, options));
+
+program
+	.command("approve")
 	.description(
 		"Operator only: approve ONE retry of a blocked call (interactive confirmation; 15-minute default)",
+	)
+	.argument(
+		"[actionId]",
+		"The id from `aidr pending`, or its first 8+ characters; omit it in a terminal to pick from a list",
 	)
 	.option("--ttl <minutes>", "Minutes the approval stays usable (1-1440)", "15")
 	.option("--permit-allowlist", "Also let the agent add these artifacts to the allowlist once")
@@ -576,4 +758,11 @@ canaryProgram
 	.option("--json", "Emit machine-readable JSON")
 	.action((options) => canaryStatusCommand(options));
 
-await program.parseAsync(process.argv);
+// Help text in the user's language (AIDR_LOCALE, config `locale`, LANG); English is unchanged.
+initCliLocale();
+groupCommands(program);
+localizeHelp(program);
+
+// No top-level await: the standalone (SEA) build bundles this entry as CommonJS.
+// An unhandled rejection still exits non-zero with its stack, as before.
+void program.parseAsync(process.argv);

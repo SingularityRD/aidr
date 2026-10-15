@@ -8,6 +8,7 @@ import { parseArgs } from "node:util";
 import { tarDirectory } from "./lib/tar-path.mjs";
 import { loadReleaseBundle } from "./release-signing-lib.mjs";
 import { validateSignedWindowsFleet } from "../.github/scripts/windows-authenticode-inputs.mjs";
+import { verifyBundle as verifyOfflineBundle } from "./onprem-offline-bundle.mjs";
 import {
   CUSTOMER_KIT_BENCHMARK_FILES,
   CUSTOMER_KIT_REQUIRED_FILES,
@@ -17,7 +18,7 @@ import {
 } from "./customer-kit-contract.mjs";
 import { privacyGatewayPackageEntries } from "../deploy/privacy-gateway/privacy-gateway.mjs";
 
-const { values } = parseArgs({ options: { output: { type: "string" }, "upstream-dir": { type: "string" }, "release-dir": { type: "string" }, "envelope-output": { type: "string" }, "windows-authenticode-receipt-sha256": { type: "string" }, "windows-code-signing-thumbprint": { type: "string" } } });
+const { values } = parseArgs({ options: { output: { type: "string" }, "upstream-dir": { type: "string" }, "release-dir": { type: "string" }, "envelope-output": { type: "string" }, "windows-authenticode-receipt-sha256": { type: "string" }, "windows-code-signing-thumbprint": { type: "string" }, "airgap-bundle": { type: "string" } } });
 if (!values.output || !values["upstream-dir"]) throw new Error("--output and --upstream-dir required");
 if (values["envelope-output"] && !values["release-dir"]) throw new Error("--envelope-output requires --release-dir for candidate provenance");
 const output = resolve(values.output); const root = process.cwd(); const upstream = resolve(values["upstream-dir"]);
@@ -54,6 +55,9 @@ for (const path of ["deploy/backup", "deploy/dashboard", "deploy/fleet", "deploy
 // checkout. Ship only the self-contained native operator assets here.
 for (const path of ["deploy/native/README.md", "deploy/native/support-matrix.json", "deploy/native/support-matrix.schema.json", "deploy/native/interception-matrix.json", "deploy/native/run-support-matrix.mjs", "deploy/native/scenarios/TEMPLATE.json", "deploy/native/scenarios/README.md"]) copy(join(root, path), join(output, path));
 copy(join(root, "scripts/benchmarks"), join(output, "scripts/benchmarks"));
+// Kubernetes: the chart and its credential generator (deploy/vendor/yaml.cjs is its YAML runtime in the kit).
+copy(join(root, "deploy/helm/aidr"), join(output, "deploy/helm/aidr"));
+copy(join(root, "deploy/helm/generate-secrets.mjs"), join(output, "deploy/helm/generate-secrets.mjs"));
 // Optional privacy gateway: the image definition plus only the compiled runtime
 // it packages, so deployment-prepare --with-privacy-gateway works from the kit.
 for (const file of ["Dockerfile", "healthcheck.mjs", "privacy-gateway.mjs", "README.md"]) copy(join(root, "deploy/privacy-gateway", file), join(output, "deploy/privacy-gateway", file));
@@ -66,6 +70,7 @@ for (const file of [
 	"lib/atomic-write.mjs",
 	"lib/deployment-credentials.mjs",
 	"lib/deployment-input-copy.mjs",
+	"lib/onprem-sso.mjs",
 	"lib/node-helper-image.mjs",
 	"lib/node-helper.Dockerfile",
   "deployment-bootstrap.mjs",
@@ -77,6 +82,13 @@ for (const file of [
   "deployment-maintenance.mjs",
   "deployment-offboarding.mjs",
   "deployment-upgrade.mjs",
+  "onprem-upgrade.mjs",
+	"lib/onprem-language.mjs",
+	// Copied, not bundled: it imports the kit's bundled import-offline-pack.mjs
+	// (core verifier inlined) and two modules whose CLI guards must stay separate.
+  "onprem-offline-bundle.mjs",
+  "publish-installers.mjs",
+	"lib/tar-path.mjs",
   "endpoint-install.mjs",
   "deployment-doctor.mjs",
   "deployment-tls-renew.mjs",
@@ -166,6 +178,7 @@ for (const [source, target] of [
   ["docs/package-installation.md", "PACKAGE-INSTALLATION.md"],
   ["packages/codex/README.md", "CODEX-CONNECTOR.md"],
   ["supabase/README.md", "CONTROL-PLANE.md"],
+  ["docs/operations/kubernetes.md", "KUBERNETES.md"],
   ["docs/production-readiness/native-host-matrix-v6.md", "NATIVE-HOST-ACCEPTANCE.md"],
 	["docs/production-readiness/first-customer-buyer-handoff-2026-09-23.md", "FIRST-CUSTOMER-SALES-PACKET.md"],
   ["docs/production-readiness/first-customer-ready.md", "CANDIDATE-STATUS.md"],
@@ -209,6 +222,31 @@ if (releaseSigned) {
   copy(signedFleet, join(output, "deploy/fleet/windows"));
   copy(join(root, ".release-evidence/windows-authenticode-receipt.json"), join(output, "deploy/fleet/windows/authenticode-receipt.json"));
 }
+// Optional vendor-signed air-gap image bundle (release-images.yml, job airgap-bundle):
+// checked offline (SHA256SUMS, Ed25519 signature, every image tarball) before it
+// enters the kit, so a disconnected customer never builds an image.
+let airgapBundled = false;
+if (values["airgap-bundle"]) {
+  const bundleDir = resolve(values["airgap-bundle"]);
+  const names = readdirSync(bundleDir).sort();
+  const archives = names.filter((name) => /^aidr-offline-bundle-[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.tar$/.test(name));
+  if (archives.length !== 1) throw new Error("--airgap-bundle must hold exactly one aidr-offline-bundle-<version>.tar");
+  const expected = [archives[0], `${archives[0]}.cosign.bundle`, "offline-bundle-signing-public.pem", "SHA256SUMS"].sort();
+  if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error(`--airgap-bundle must hold exactly: ${expected.join(", ")}`);
+  const listed = new Map(readFileSync(join(bundleDir, "SHA256SUMS"), "utf8").trim().split(/\r?\n/).map((line) => {
+    const match = /^([a-f0-9]{64}) {2}([A-Za-z0-9._-]+)$/.exec(line);
+    if (!match) throw new Error("Air-gap bundle SHA256SUMS is malformed");
+    return [match[2], match[1]];
+  }));
+  for (const name of expected.filter((entry) => entry !== "SHA256SUMS")) {
+    if (listed.get(name) !== createHash("sha256").update(readFileSync(join(bundleDir, name))).digest("hex")) throw new Error(`Air-gap bundle file does not match SHA256SUMS: ${name}`);
+  }
+  const checked = await verifyOfflineBundle({ bundle: join(bundleDir, archives[0]), publicKey: join(bundleDir, "offline-bundle-signing-public.pem") });
+  checked.cleanup();
+  if (!checked.manifest.components?.images) throw new Error("Air-gap bundle carries no container images");
+  for (const name of expected) copy(join(bundleDir, name), join(output, "airgap", name));
+  airgapBundled = true;
+}
 for (const relative of CUSTOMER_KIT_REQUIRED_FILES) {
   const target = join(output, relative);
   const info = existsSync(target) ? lstatSync(target) : null;
@@ -227,6 +265,8 @@ writeFileSync(join(output, "release-source.json"), JSON.stringify({
   tls_renewal_bundled: true,
   provenance_tool_bundled: true,
   airgap_tool_bundled: true,
+  helm_chart_bundled: true,
+  airgap_image_bundle_bundled: airgapBundled,
   benchmark_contract_bundled: CUSTOMER_KIT_BENCHMARK_FILES.every((relative) => existsSync(join(output, relative))),
   windows_authenticode_receipt_bundled: releaseSigned,
   provenance_statement_bundled: releaseArtifactNames.has("aidr-provenance.intoto.json"),

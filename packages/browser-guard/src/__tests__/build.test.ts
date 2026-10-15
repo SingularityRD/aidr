@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as build from "../../scripts/build.mjs";
 // @ts-expect-error -- plain ESM build script without type declarations
 import { readZip } from "../../scripts/zip.mjs";
-import { MATCH_PATTERNS } from "../sites/index";
+import { FRAME_MATCH_PATTERNS, MATCH_PATTERNS } from "../sites/index";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BUILD_SCRIPT = join(PACKAGE_ROOT, "scripts", "build.mjs");
@@ -33,6 +33,8 @@ const EXPECTED_HOSTS = [
 	"gemini.google.com",
 	"claude.ai",
 	"copilot.microsoft.com",
+	"m365.cloud.microsoft",
+	"copilot.cloud.microsoft",
 	"www.perplexity.ai",
 	"perplexity.ai",
 	"chat.deepseek.com",
@@ -133,6 +135,59 @@ describe("site host list", () => {
 		expect(loaded.matches).toEqual([...build.SITE_MATCHES]);
 	});
 
+	it("the fallback frame host list matches FRAME_MATCH_PATTERNS from src/sites/index.ts", async () => {
+		expect([...build.SITE_FRAME_MATCHES]).toEqual([...FRAME_MATCH_PATTERNS]);
+		expect(FRAME_MATCH_PATTERNS).toEqual([
+			"https://m365.cloud.microsoft/*",
+			"https://copilot.cloud.microsoft/*",
+		]);
+		const loaded = await build.loadSiteMatches(PACKAGE_ROOT);
+		expect(loaded.frameMatches).toEqual([...FRAME_MATCH_PATTERNS]);
+		const fallback = await build.loadSiteMatches(track(makeEntriesRoot()));
+		expect(fallback.frameMatches).toEqual([...build.SITE_FRAME_MATCHES]);
+	});
+
+	it("a sites module without FRAME_MATCH_PATTERNS has no frame-guarded host", async () => {
+		const root = track(
+			makeEntriesRoot({
+				"src/sites/index.ts": `export const MATCH_PATTERNS = ["https://chatgpt.com/*"];`,
+			}),
+		);
+		expect((await build.loadSiteMatches(root)).frameMatches).toEqual([]);
+	});
+
+	it("rejects frame patterns that are not protected site hosts (never all_frames elsewhere)", async () => {
+		for (const frames of [`["https://*/*"]`, `["https://word-edit.officeapps.live.com/*"]`]) {
+			const root = track(
+				makeEntriesRoot({
+					"src/sites/index.ts": `export const MATCH_PATTERNS = ["https://chatgpt.com/*"];
+						export const FRAME_MATCH_PATTERNS = ${frames};`,
+				}),
+			);
+			await expect(build.loadSiteMatches(root)).rejects.toThrow(/is not one of MATCH_PATTERNS/);
+		}
+	});
+
+	it("contentScripts runs only the frame-guarded hosts in subframes, each frame once", () => {
+		const scripts = build.contentScripts(
+			["https://chatgpt.com/*", "https://m365.cloud.microsoft/*"],
+			["https://m365.cloud.microsoft/*", "https://not-a-site.example/*"],
+		) as { matches: string[]; js: string[]; all_frames: boolean; world?: string }[];
+		expect(scripts.map((s) => [s.js[0], s.all_frames, s.matches])).toEqual([
+			["content.js", false, ["https://chatgpt.com/*"]],
+			["content-main.js", false, ["https://chatgpt.com/*"]],
+			["content.js", true, ["https://m365.cloud.microsoft/*"]],
+			["content-main.js", true, ["https://m365.cloud.microsoft/*"]],
+		]);
+		// No frame-guarded host: the manifest keeps the two top-frame entries only.
+		expect(build.contentScripts(["https://chatgpt.com/*"], [])).toHaveLength(2);
+		// The built manifest never matches an Office host page itself.
+		const manifest = build.createManifest("chrome", { version: "1.0.0" });
+		const all = JSON.stringify(manifest);
+		for (const office of ["officeapps.live.com", "office.com", "sharepoint.com", "outlook"])
+			expect(all).not.toContain(office);
+	});
+
 	it("rejects a sites module whose patterns are not exact https hosts", async () => {
 		const root = track(
 			makeEntriesRoot({ "src/sites/index.ts": `export const MATCH_PATTERNS = ["https://*/*"];` }),
@@ -224,19 +279,36 @@ describe("release build with --zip (stub entries)", () => {
 			expect(manifest.permissions).not.toContain(broad);
 		expect(manifest.optional_permissions).toEqual(["nativeMessaging"]);
 		expect(manifest.optional_host_permissions).toEqual(["https://*/*"]);
+		// Frame coverage adds no host permission: the frame-guarded hosts are site hosts.
 		expect(manifest.host_permissions).toEqual([...MATCH_PATTERNS]);
+		const topOnly = MATCH_PATTERNS.filter((p) => !FRAME_MATCH_PATTERNS.includes(p));
 		expect(manifest.content_scripts).toEqual([
 			{
-				matches: [...MATCH_PATTERNS],
+				matches: topOnly,
 				js: ["content.js"],
 				run_at: "document_start",
 				all_frames: false,
 			},
 			{
-				matches: [...MATCH_PATTERNS],
+				matches: topOnly,
 				js: ["content-main.js"],
 				run_at: "document_start",
 				all_frames: false,
+				world: "MAIN",
+			},
+			// The Microsoft 365 Copilot hosts only: their Copilot pane is a cross-origin
+			// iframe inside the Office web apps.
+			{
+				matches: [...FRAME_MATCH_PATTERNS],
+				js: ["content.js"],
+				run_at: "document_start",
+				all_frames: true,
+			},
+			{
+				matches: [...FRAME_MATCH_PATTERNS],
+				js: ["content-main.js"],
+				run_at: "document_start",
+				all_frames: true,
 				world: "MAIN",
 			},
 		]);

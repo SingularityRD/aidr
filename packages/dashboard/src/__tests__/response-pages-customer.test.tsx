@@ -124,7 +124,7 @@ describe("customer response pages", () => {
 			</MemoryRouter>,
 		);
 		expect(await screen.findByText("first-events")).toBeInTheDocument();
-		expect(screen.getByText("first-incident_events: deny")).toBeInTheDocument();
+		expect(screen.getByText("first-incident_events: blocked")).toBeInTheDocument();
 		selected = otherTeamId;
 		page.rerender(
 			<MemoryRouter>
@@ -133,9 +133,9 @@ describe("customer response pages", () => {
 			</MemoryRouter>,
 		);
 		expect(screen.queryByText("first-events")).not.toBeInTheDocument();
-		expect(screen.queryByText("first-incident_events: deny")).not.toBeInTheDocument();
+		expect(screen.queryByText("first-incident_events: blocked")).not.toBeInTheDocument();
 		expect(await screen.findByText("second-events")).toBeInTheDocument();
-		expect(screen.getByText("second-incident_events: deny")).toBeInTheDocument();
+		expect(screen.getByText("second-incident_events: blocked")).toBeInTheDocument();
 		for (const table of ["events", "incident_events", "agents"]) {
 			expect(scopes).toContain(`${table}:${selectedTeamId}`);
 			expect(scopes).toContain(`${table}:${otherTeamId}`);
@@ -192,12 +192,12 @@ describe("customer response pages", () => {
 		await act(async () => {
 			await Promise.resolve();
 		});
-		expect(screen.getByText("1 deny")).toBeInTheDocument();
+		expect(screen.getByText("1 blocked")).toBeInTheDocument();
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(6000);
 		});
 		expect(screen.getByText("Event data is unavailable right now.")).toBeInTheDocument();
-		expect(screen.queryByText("1 deny")).not.toBeInTheDocument();
+		expect(screen.queryByText("1 blocked")).not.toBeInTheDocument();
 		expect(screen.queryByText("bash")).not.toBeInTheDocument();
 	});
 
@@ -239,21 +239,32 @@ describe("customer response pages", () => {
 		});
 		expect(screen.getByText("Incident data is unavailable right now.")).toBeInTheDocument();
 		expect(screen.queryByText("1 blocked")).not.toBeInTheDocument();
-		expect(screen.queryByText("bash: deny (critical)")).not.toBeInTheDocument();
+		expect(screen.queryByText("bash: blocked (critical)")).not.toBeInTheDocument();
 	});
 
 	it.each([
 		["events", EventsPage, "Event data is unavailable right now."],
 		["incidents", IncidentsPage, "Incident data is unavailable right now."],
-	] as const)("treats a null %s feed as unavailable, not empty", async (_name, Page, unavailable) => {
-		from.mockImplementation((table: string) =>
-			query(() => ({ data: table === "agents" ? [] : null, error: null })),
-		);
-		render(<MemoryRouter><Page /></MemoryRouter>);
-		expect(await screen.findByText(unavailable)).toBeInTheDocument();
-		expect(screen.queryByText("No incidents yet.")).not.toBeInTheDocument();
-		expect(screen.queryByText("No events received yet. Check agent enrollment and telemetry delivery.")).not.toBeInTheDocument();
-	});
+	] as const)(
+		"treats a null %s feed as unavailable, not empty",
+		async (_name, Page, unavailable) => {
+			from.mockImplementation((table: string) =>
+				query(() => ({ data: table === "agents" ? [] : null, error: null })),
+			);
+			render(
+				<MemoryRouter>
+					<Page />
+				</MemoryRouter>,
+			);
+			expect(await screen.findByText(unavailable)).toBeInTheDocument();
+			expect(screen.queryByText("No incidents yet.")).not.toBeInTheDocument();
+			expect(
+				screen.queryByText(
+					"No events received yet. Check agent enrollment and telemetry delivery.",
+				),
+			).not.toBeInTheDocument();
+		},
+	);
 
 	it("distinguishes a missing agent from loading", async () => {
 		from.mockImplementation((table: string) =>
@@ -271,12 +282,26 @@ describe("customer response pages", () => {
 	});
 
 	it("does not turn a malformed event response for an existing agent into no events", async () => {
-		from.mockImplementation((table: string) => query(() => table === "agents"
-			? { data: { id: "agent-1", tenant_id: selectedTeamId, iid: "iid-1", display_name: "Agent one" }, error: null }
-			: { data: null, error: null }));
+		from.mockImplementation((table: string) =>
+			query(() =>
+				table === "agents"
+					? {
+							data: {
+								id: "agent-1",
+								tenant_id: selectedTeamId,
+								iid: "iid-1",
+								display_name: "Agent one",
+							},
+							error: null,
+						}
+					: { data: null, error: null },
+			),
+		);
 		render(
 			<MemoryRouter initialEntries={["/agents/agent-1"]}>
-				<Routes><Route path="/agents/:agentId" element={<AgentDetailPage />} /></Routes>
+				<Routes>
+					<Route path="/agents/:agentId" element={<AgentDetailPage />} />
+				</Routes>
 			</MemoryRouter>,
 		);
 		expect(await screen.findByText("Event data is unavailable right now.")).toBeInTheDocument();
@@ -401,21 +426,22 @@ describe("customer response pages", () => {
 	it("does not display AutoSecOps data for a different team", async () => {
 		const otherTeamId = "22222222-2222-4222-8222-222222222222";
 		invoke.mockImplementation(async (_name: string, request: { body: { action: string } }) => ({
-			data: request.body.action === "health"
-				? {
-						ok: true,
-						provider: "autosecops",
-						action: "health",
-						team_id: otherTeamId,
-						data: { snapshot: { state: "healthy", active_agents: 9 } },
-					}
-				: {
-						ok: true,
-						provider: "autosecops",
-						action: "fleet",
-						team_id: otherTeamId,
-						data: { response: { items: [{ agent_id: "foreign", agent_name: "foreign-agent" }] } },
-					},
+			data:
+				request.body.action === "health"
+					? {
+							ok: true,
+							provider: "autosecops",
+							action: "health",
+							team_id: otherTeamId,
+							data: { snapshot: { state: "healthy", active_agents: 9 } },
+						}
+					: {
+							ok: true,
+							provider: "autosecops",
+							action: "fleet",
+							team_id: otherTeamId,
+							data: { response: { items: [{ agent_id: "foreign", agent_name: "foreign-agent" }] } },
+						},
 			error: null,
 		}));
 
@@ -468,11 +494,13 @@ describe("customer response pages", () => {
 											provider: "autosecops",
 											action: "fleet",
 											team_id: firstTeam,
-											data: { response: { items: [{ agent_id: "agent-1", agent_name: "first-agent" }] } },
+											data: {
+												response: { items: [{ agent_id: "agent-1", agent_name: "first-agent" }] },
+											},
 										},
 										error: null,
 									},
-							);
+						);
 					}
 					return request.body.action === "health" ? oldHealth.promise : oldFleet.promise;
 				}

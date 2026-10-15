@@ -5,7 +5,7 @@
  * Wired into Codex via `~/.codex/config.toml`:
  *
  *   [[hooks.PreToolUse]]
- *   matcher = "^(Bash|apply_patch)$"
+ *   matcher = "^(Bash|apply_patch|mcp__.+)$"   # coverage.ts CODEX_SHIPPED_MATCHERS
  *   [[hooks.PreToolUse.hooks]]
  *   type = "command"
  *   command = 'aidr-codex-hook'
@@ -26,11 +26,12 @@
  */
 
 import {
-	ArtifactIntegrityError,
 	createHostObservation,
 	createLogger,
 	exitAfterStdoutFlush,
 	HOOK_HOST_TIMEOUT_MS,
+	initFailureCode,
+	integrityFailureMessage,
 	isValidUtf8,
 	isWellFormedToolCall,
 	type Logger,
@@ -38,17 +39,27 @@ import {
 	readBoundedStdinAsync,
 	recordHostObservation,
 	resolveHookDeadlineMs,
+	t,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
-import { resolveAssetDir } from "./assets.js";
+import { assetOverrideNotice, resolveAssetDir } from "./assets.js";
 import { getCodexConnectorCoverageEvidence } from "./coverage.js";
-import { type CodexWireResult, DENY_HEADLINE, enforceCodexPreToolUse } from "./enforcement.js";
+import {
+	type CodexWireResult,
+	enforceCodexPreToolUse,
+	internalBlockMessage,
+} from "./enforcement.js";
 import {
 	applyCodexFileQuarantine,
 	CODEX_POST_TOOL_USE,
 	enforceCodexPostToolUse,
 } from "./output-protection.js";
-import { CODEX_USER_PROMPT_SUBMIT, enforceCodexUserPromptSubmit } from "./prompt-protection.js";
+import {
+	CODEX_USER_PROMPT_SUBMIT,
+	codexPromptNotices,
+	enforceCodexUserPromptSubmit,
+	withUserNotice,
+} from "./prompt-protection.js";
 
 /** Measured from process start: Codex's hook timeout runs from launch. */
 const startedAt = Date.now();
@@ -86,7 +97,29 @@ function write(wire: CodexWireResult): void {
 	// unsupported output and fails open. Empty stdout is its documented no-op
 	// allow shape, so only deny decisions are written.
 	if (!wire.hookSpecificOutput) return;
-	emit(`${JSON.stringify(wire)}\n`);
+	emit(`${JSON.stringify(withOverrideNotice(wire))}\n`);
+}
+
+/**
+ * A replaced (development build) or ignored (commercial build)
+ * AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR is never silent: it is logged on every
+ * call, listed by `--health`, and appended to every block reason. An allow
+ * stays empty stdout (the only allow shape Codex 0.141.0 accepts).
+ */
+const overrideNotice = assetOverrideNotice();
+if (overrideNotice) logger.warn(overrideNotice);
+
+function withOverrideNotice(wire: CodexWireResult): CodexWireResult {
+	const output = wire.hookSpecificOutput;
+	if (!overrideNotice || !output || typeof output.permissionDecisionReason !== "string")
+		return wire;
+	return {
+		...wire,
+		hookSpecificOutput: {
+			...output,
+			permissionDecisionReason: `${output.permissionDecisionReason}\n${overrideNotice}`,
+		},
+	};
 }
 
 /**
@@ -130,7 +163,14 @@ function blockUnconditionally(reason: string): void {
  */
 async function handleUserPromptSubmit(input: Record<string, unknown>): Promise<void> {
 	try {
-		const { outcome, wire } = await enforceCodexUserPromptSubmit(input, { startedAt, logger });
+		const { outcome, wire: inspected } = await enforceCodexUserPromptSubmit(input, {
+			startedAt,
+			logger,
+		});
+		const wire =
+			outcome.decision === "block"
+				? inspected
+				: withUserNotice(inspected, await codexPromptNotices({ logger }));
 		if (wire) emit(`${JSON.stringify(wire)}\n`);
 		recordHostObservation(hostObservation, {
 			connector: "codex",
@@ -174,7 +214,11 @@ async function main(): Promise<void> {
 	await verifyArtifactIntegrityAndLog({ artifactDir: __dirname, artifactId: "codex/dist", logger });
 
 	if (process.argv.includes("--health") || process.argv.includes("--coverage")) {
-		process.stdout.write(`${JSON.stringify(getCodexConnectorCoverageEvidence(), null, 2)}\n`);
+		const evidence = getCodexConnectorCoverageEvidence();
+		const report = overrideNotice
+			? { ...evidence, rule_dir_override_warning: overrideNotice }
+			: evidence;
+		process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 		return;
 	}
 
@@ -185,7 +229,7 @@ async function main(): Promise<void> {
 		const input = await readBoundedStdinAsync(MAX_CODEX_HOOK_INPUT_BYTES);
 		if (input.status === "oversized") {
 			blockUnconditionally(
-				`${DENY_HEADLINE}\nSingularity AIDR could not inspect the tool call: its input exceeded the ${MAX_CODEX_HOOK_INPUT_BYTES}-byte limit, so it was blocked.`,
+				internalBlockMessage(t("hook.tooLarge.message", { bytes: MAX_CODEX_HOOK_INPUT_BYTES })),
 			);
 			return;
 		}
@@ -193,17 +237,13 @@ async function main(): Promise<void> {
 		// Codex serializes hook input as UTF-8 JSON. Invalid bytes would decode
 		// to U+FFFD and change what is inspected, so they are refused.
 		if (!isValidUtf8(bytes)) {
-			blockUnconditionally(
-				`${DENY_HEADLINE}\nSingularity AIDR received hook input that is not valid UTF-8, so it was blocked.`,
-			);
+			blockUnconditionally(internalBlockMessage(t("hook.inspectionFailed.message")));
 			return;
 		}
 		raw = bytes.toString("utf-8");
 	} catch (error) {
 		// We could not even read the tool call, so we cannot judge it.
-		blockUnconditionally(
-			`${DENY_HEADLINE}\nSingularity AIDR could not read the tool call, so it was blocked.`,
-		);
+		blockUnconditionally(internalBlockMessage(t("hook.inspectionFailed.message")));
 		logger.error("codex hook could not read stdin", { error: String(error) });
 		return;
 	}
@@ -216,9 +256,7 @@ async function main(): Promise<void> {
 		}
 		input = parsed as Record<string, unknown>;
 	} catch {
-		blockUnconditionally(
-			`${DENY_HEADLINE}\nSingularity AIDR could not parse the tool call, so it was blocked.`,
-		);
+		blockUnconditionally(internalBlockMessage(t("hook.inspectionFailed.message")));
 		return;
 	}
 
@@ -236,9 +274,7 @@ async function main(): Promise<void> {
 		return;
 	}
 	if (event !== "PreToolUse") {
-		blockUnconditionally(
-			`${DENY_HEADLINE}\nSingularity AIDR received an unsupported hook event, so the tool call was blocked.`,
-		);
+		blockUnconditionally(internalBlockMessage(t("hook.inspectionFailed.message")));
 		return;
 	}
 
@@ -250,9 +286,7 @@ async function main(): Promise<void> {
 	// artifacts and returns an allow, so Codex would run the call uninspected.
 	// This mirrors the shape check the Claude Code entry point performs.
 	if (!isWellFormedToolCall(input.tool_name, input.tool_input)) {
-		blockUnconditionally(
-			`${DENY_HEADLINE}\nSingularity AIDR could not identify the tool call, so it was blocked.`,
-		);
+		blockUnconditionally(internalBlockMessage(t("hook.inspectionFailed.message")));
 		return;
 	}
 	// NUL or unpaired surrogates in a shell command: the inspected text may
@@ -260,9 +294,7 @@ async function main(): Promise<void> {
 	// UTF-8 bytes were already refused above; a U+FFFD that survives the strict
 	// decode was sent by Codex itself and is inspected as ordinary text.)
 	if (malformedShellCommandReason(input.tool_name as string, input.tool_input)) {
-		blockUnconditionally(
-			`${DENY_HEADLINE}\nSingularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.`,
-		);
+		blockUnconditionally(internalBlockMessage(t("hook.malformed.message")));
 		return;
 	}
 
@@ -278,9 +310,7 @@ async function main(): Promise<void> {
 	} catch {
 		// enforceCodexPreToolUse already fails closed internally; reaching here
 		// means something outside it broke, which must still block.
-		blockUnconditionally(
-			`${DENY_HEADLINE}\nSingularity AIDR failed while evaluating this tool call, so it was blocked.`,
-		);
+		blockUnconditionally(internalBlockMessage(t("hook.inspectionFailed.message")));
 	}
 }
 
@@ -294,9 +324,7 @@ function blockOnDeadline(): void {
 		blockOnBothChannels({ decision: "block", reason }, reason);
 		return;
 	}
-	blockUnconditionally(
-		`${DENY_HEADLINE}\nSingularity AIDR could not finish inspecting this tool call in time, so it was blocked.`,
-	);
+	blockUnconditionally(internalBlockMessage(t("hook.timeout.message")));
 }
 
 const watchdog = setTimeout(
@@ -311,13 +339,14 @@ const watchdog = setTimeout(
 
 main()
 	.catch((error: unknown) => {
-		const integrityFailure =
-			error instanceof Error &&
-			(error instanceof ArtifactIntegrityError || error.name === "ArtifactIntegrityError");
-		const reason = integrityFailure
-			? `${DENY_HEADLINE}\n${(error as Error).message}; this tool call was blocked.`
-			: `${DENY_HEADLINE}\nSingularity AIDR failed to start, so the tool call was blocked.`;
-		blockUnconditionally(reason);
+		// A failed release integrity check names its cause and the administrator's
+		// fix; any other start failure gives its short code, never the raw message.
+		const integrity = integrityFailureMessage(error);
+		blockUnconditionally(
+			integrity
+				? integrity.message
+				: internalBlockMessage(t("init.failed.message", { code: initFailureCode(error) })),
+		);
 	})
 	.finally(() => {
 		if (answered) return;

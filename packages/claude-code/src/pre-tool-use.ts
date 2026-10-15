@@ -8,26 +8,31 @@
  */
 
 import {
+	ApprovalStore,
 	type Artifact,
 	createHookResponder,
 	createHostObservation,
 	describeSecureCodeWarnings,
 	evaluateToolCall,
 	extractFromToolCall,
+	formatAgentBlockReason,
+	formatBlockMessage,
 	formatDashboardApprovalNotice,
 	initSentry,
+	integrityFailureMessage,
 	isWellFormedToolCall,
 	type Logger,
 	malformedShellCommandReason,
 	recordHostObservation,
 	resolveHostAsk,
 	snapshotBeforeAllowedToolCall,
+	t,
 	type Verdict,
 	verifyArtifactIntegrityAndLog,
 } from "@singularityrd/aidr-core";
 import pino from "pino";
 import { addPendingApproval } from "./approval-tracker.js";
-import { resolveAssetDir } from "./assets.js";
+import { assetOverrideNotice, resolveAssetDir } from "./assets.js";
 import { loadProvisionedDetectorContext } from "./detector-provisioning.js";
 import { formatBlockReason } from "./format.js";
 import {
@@ -54,8 +59,7 @@ const hostObservation = createHostObservation();
  */
 function redactedResponse(verdict: Verdict, updatedInput: Record<string, unknown>) {
 	const notice = secureCodeNotice(verdict);
-	const systemMessage =
-		`🛡️ Singularity AIDR redacted sensitive data from this tool call before it ran. ${verdict.reasons[0] ?? ""}`.trim();
+	const systemMessage = t("hook.redacted", { reason: verdict.reasons[0] ?? "" }).trim();
 	const additionalContext =
 		"Singularity AIDR data-loss prevention replaced sensitive values in this tool input with redaction markers before it ran. Do not try to recover or re-insert the original values.";
 	return {
@@ -106,10 +110,40 @@ interface DashboardNote {
 	 * message; only `aidr approve` in the user's own terminal releases a retry.
 	 */
 	operatorHold?: string;
+	/** The call's action id, for the `aidr report-fp` line. */
+	actionId?: string;
 }
 
+/** Secure-code findings of a blocked or held call, listed under its message. */
+function withSecureCodeFindings(message: string, verdict: Verdict): string {
+	return verdict.warnings?.length
+		? `${message}\n${describeSecureCodeWarnings(verdict.warnings, false).userMessage}`
+		: message;
+}
+
+/** A deny whose person-facing text and agent-facing reason are separate fields. */
+function denyWithBanner(systemMessage: string, reason: string): Record<string, unknown> {
+	return {
+		systemMessage,
+		hookSpecificOutput: {
+			hookEventName: "PreToolUse",
+			permissionDecision: "deny",
+			permissionDecisionReason: reason,
+		},
+	};
+}
+
+/**
+ * Claude Code shows `systemMessage` to the person and hands
+ * `permissionDecisionReason` to the model (and shows it in the transcript).
+ * Every block therefore puts the full "what / why / what to do" text in
+ * `systemMessage` and one line for the agent in the reason, so the user does
+ * not read the same banner twice. An ask that may go to Claude Code's own
+ * dialog carries the full text there instead.
+ */
 function makeResponse(
 	verdict: Verdict,
+	artifacts: readonly Artifact[],
 	dashboard: DashboardNote = { notice: null, dashboardOnly: false },
 ): Record<string, unknown> {
 	if (verdict.decision === "allow") {
@@ -118,62 +152,49 @@ function makeResponse(
 			: warnedResponse(verdict);
 	}
 
-	// A blocked or held call that also carries secure-code findings lists them
-	// under the banner.
-	const banner = verdict.warnings?.length
-		? `${formatBlockReason(verdict)}\n${describeSecureCodeWarnings(verdict.warnings, false).userMessage}`
-		: formatBlockReason(verdict);
-
 	if (verdict.decision === "ask" && dashboard.operatorHold) {
-		// Operator mode: never show the native dialog. The deny reason carries the
-		// approval reference; the agent cannot approve it (no tool can, and
-		// CLT-SELF-007 denies the agent running `aidr approve`).
-		return {
-			systemMessage: `${banner}\n${dashboard.operatorHold}`,
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason: `🛡️ Singularity AIDR: blocked pending operator approval\n${dashboard.operatorHold}`,
-			},
-		};
+		// Operator mode: never show the native dialog. The user's message carries
+		// the `aidr approve` step for their own terminal; the agent cannot approve
+		// it (no tool can, and CLT-SELF-007 denies the agent running `aidr approve`).
+		return denyWithBanner(
+			withSecureCodeFindings(dashboard.operatorHold, verdict),
+			formatAgentBlockReason(verdict, true),
+		);
 	}
 
 	if (verdict.decision === "ask" && dashboard.dashboardOnly) {
 		// operator_approvals.dashboard_only: the native dialog would let the local
 		// user approve, so the call is blocked and only the dashboard can release it.
-		const notice = dashboard.notice ?? "Only an AIDR dashboard approval can release this action.";
-		return {
-			systemMessage: `${banner}\n${notice}`,
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason: `🛡️ Singularity AIDR: approval required in the AIDR dashboard\n${notice}`,
-			},
-		};
+		const message = formatBlockMessage(verdict, {
+			approval: { kind: "dashboard" },
+			artifacts,
+			dashboardNotice: dashboard.notice,
+			actionId: dashboard.actionId,
+			audience: "user",
+		});
+		return denyWithBanner(
+			withSecureCodeFindings(message, verdict),
+			formatAgentBlockReason(verdict, true),
+		);
 	}
 
 	if (verdict.decision === "deny") {
-		// For deny: short reason avoids Claude Code duplicating the banner.
-		// Full banner goes in systemMessage, shown separately in the UI.
-		return {
-			systemMessage: banner,
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason:
-					verdict.source === "agent_profile"
-						? "🛡️ Singularity AIDR: Blocked by agent permission profile"
-						: "🛡️ Singularity AIDR: Threat Blocked",
-			},
-		};
+		return denyWithBanner(
+			withSecureCodeFindings(
+				formatBlockReason(verdict, artifacts, null, dashboard.actionId),
+				verdict,
+			),
+			formatAgentBlockReason(verdict),
+		);
 	}
 
-	// For ask: full banner in permissionDecisionReason (shown once in dialog)
+	// Ask: the full message is shown once, in Claude Code's confirmation dialog.
+	const message = formatBlockReason(verdict, artifacts, dashboard.notice, dashboard.actionId);
 	return {
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
 			permissionDecision: verdict.decision,
-			permissionDecisionReason: dashboard.notice ? `${banner}\n${dashboard.notice}` : banner,
+			permissionDecisionReason: withSecureCodeFindings(message, verdict),
 		},
 	};
 }
@@ -190,16 +211,29 @@ const responder = createHookResponder({
 	deadlineMs: resolvePreToolUseDeadlineMs(process.env),
 	onDeadline: () => ({
 		stdout: `${JSON.stringify(
-			denyResponse(
-				"Singularity AIDR could not finish inspecting this tool call in time. The action was blocked.",
-				"Singularity AIDR inspection timed out",
-			),
+			denyResponse(t("hook.timeout.message"), t("hook.timeout.reason")),
 		)}\n`,
 	}),
 });
 
+/**
+ * Warning shown on every verdict while AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR is
+ * set: a replaced (or, in a commercial build, ignored) rule directory is never
+ * silent. Computed once per hook process.
+ */
+const overrideNotice = assetOverrideNotice();
+
+function withOverrideNotice(response: Record<string, unknown>): Record<string, unknown> {
+	if (!overrideNotice) return response;
+	const existing = typeof response.systemMessage === "string" ? response.systemMessage : "";
+	return {
+		...response,
+		systemMessage: existing ? `${existing}\n${overrideNotice}` : overrideNotice,
+	};
+}
+
 function respond(response: Record<string, unknown>): boolean {
-	return responder.answer({ stdout: `${JSON.stringify(response)}\n` });
+	return responder.answer({ stdout: `${JSON.stringify(withOverrideNotice(response))}\n` });
 }
 
 /** Fixed deny response: never echo malformed input or exception details. */
@@ -215,12 +249,7 @@ function denyResponse(systemMessage: string, reason: string): Record<string, unk
 }
 
 function writeInspectionFailure(): void {
-	respond(
-		denyResponse(
-			"Singularity AIDR could not inspect this tool call. The action was blocked.",
-			"Singularity AIDR inspection unavailable",
-		),
-	);
+	respond(denyResponse(t("hook.inspectionFailed.message"), t("hook.inspectionFailed.reason")));
 }
 
 /**
@@ -250,8 +279,8 @@ async function readToolCall(): Promise<Record<string, unknown> | null> {
 	if (input.status === "oversized") {
 		respond(
 			denyResponse(
-				`Singularity AIDR could not inspect this tool call: its input exceeded the ${MAX_PRE_TOOL_INPUT_BYTES}-byte inspection limit. The action was blocked.`,
-				"Singularity AIDR input too large to inspect",
+				t("hook.tooLarge.message", { bytes: MAX_PRE_TOOL_INPUT_BYTES }),
+				t("hook.tooLarge.reason"),
 			),
 		);
 		return null;
@@ -308,12 +337,7 @@ async function main(): Promise<void> {
 	// not be what the shell runs: deny, never downgrade to ask. (Undecodable
 	// stdin bytes were already refused by the strict UTF-8 read above.)
 	if (malformedShellCommandReason(toolName, toolInput)) {
-		respond(
-			denyResponse(
-				"Singularity AIDR blocked this command: it is malformed (not a string or argv, or it contains NUL or invalid UTF-8 text) and cannot be inspected reliably.",
-				"Singularity AIDR malformed command",
-			),
-		);
+		respond(denyResponse(t("hook.malformed.message"), t("hook.malformed.reason")));
 		return;
 	}
 	const sessionId = typeof toolCall.session_id === "string" ? toolCall.session_id : "unknown";
@@ -358,6 +382,7 @@ async function main(): Promise<void> {
 		notice: formatDashboardApprovalNotice(resolution.dashboardApproval),
 		dashboardOnly: resolution.dashboardOnly,
 		operatorHold: resolution.operatorHold?.message,
+		actionId: ApprovalStore.actionId(toolName, toolInput, sessionId),
 	};
 
 	// Only track approvals for allowlistable types (content varies per call, not meaningful to allowlist).
@@ -379,7 +404,7 @@ async function main(): Promise<void> {
 		if (responder.answered) return;
 	}
 
-	if (!respond(makeResponse(verdict, dashboard))) return;
+	if (!respond(makeResponse(verdict, artifacts, dashboard))) return;
 
 	// Native-host acceptance observation. Outside a gate run this is a no-op:
 	// the gate's environment contract is absent, so nothing is written. Inside
@@ -395,6 +420,13 @@ async function main(): Promise<void> {
 	});
 }
 
-main().catch(() => {
+main().catch((error: unknown) => {
+	// A failed release integrity check blocks every call until an administrator
+	// fixes the installation; say so, with the fix, instead of "could not inspect".
+	const integrity = integrityFailureMessage(error);
+	if (integrity) {
+		respond(denyResponse(integrity.message, integrity.reason));
+		return;
+	}
 	writeInspectionFailure();
 });

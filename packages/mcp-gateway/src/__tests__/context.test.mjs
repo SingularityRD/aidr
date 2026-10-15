@@ -9,7 +9,9 @@ import {
 } from "../../../core/dist/mcp-attestation.js";
 import { validateGatewayConfig } from "../config.mjs";
 import { createMcpGateway } from "../gateway.mjs";
+import { approveQuarantinedToolset } from "../operator-approval.mjs";
 import { runStdioBridge } from "../stdio.mjs";
+import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS, testStateDir } from "./helpers/approval-key.mjs";
 
 const running = [];
 afterEach(async () => {
@@ -98,7 +100,8 @@ async function fixture({ modern = false, peer, dependencies = {}, listen = true 
 	const upstream = [];
 	const gateway = createMcpGateway(
 		{
-			stateDir: ".unused-memory-state",
+			stateDir: testStateDir(),
+			approvalKeys: TEST_APPROVAL_KEYS,
 			port: 0,
 			clients: [
 				{
@@ -188,13 +191,14 @@ async function fixture({ modern = false, peer, dependencies = {}, listen = true 
 		return { status: response.status, body: await response.json() };
 	}
 	await call("tools/call", { name: "search", arguments: {} });
-	await gateway.approve({
+	await approveQuarantinedToolset(gateway, {
 		tenantId: "tenant",
 		serverId: "server",
 		toolsetHash: mcpToolsetHash([tool]),
 		bindingSha256: (await store.read("server")).quarantine.bindingSha256,
 		approvedBy: "operator",
 		reason: "Controlled context peer",
+		approvalKey: TEST_APPROVAL_KEY,
 	});
 	if (listen) running.push(gateway);
 	else await gateway.close();
@@ -632,7 +636,8 @@ test("stdio bridge stops on client-sent resource notifications instead of forwar
 
 test("context allowlists are validated fail-closed", () => {
 	const base = {
-		stateDir: ".unused",
+		stateDir: "/var/lib/aidr/unused-state",
+		approvalKeys: TEST_APPROVAL_KEYS,
 		clients: [
 			{
 				id: "client",

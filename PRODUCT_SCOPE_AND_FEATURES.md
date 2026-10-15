@@ -1,9 +1,12 @@
 # Singularity AIDR — Product Scope & Feature Inventory
 
-> Historical intermediate audit. Current capability/consumer status is maintained
-> in [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md) and
-> [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json). The module counts and
-> unsupported/unwired statements below describe the earlier audit snapshot.
+> **Historical document — do not use as current product scope.** This is an earlier
+> intermediate audit. Current capability/consumer status is maintained in
+> [FEATURE_INVENTORY.md](FEATURE_INVENTORY.md) and
+> [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json), tested host versions in the
+> [compatibility matrix](docs/compatibility-matrix.md). The module counts and
+> unsupported/unwired statements below describe the earlier audit snapshot; only the rule
+> count is kept current (checked by `node scripts/check-doc-claims.mjs`).
 
 **Method:** every row was derived from the code, not from documentation. A feature is
 marked **LIVE** only if it is reachable from a production entry point
@@ -43,7 +46,7 @@ deployment: an "exported and unit-tested" module is not a delivered capability.
 |---|---|---|
 | Tool-call interception (Bash/exec, read, write, edit, delete, WebFetch, MCP) | all connectors | **LIVE** |
 | Artifact extraction (commands, URLs, file paths, package specs, content) | `extractors.ts` | **LIVE** |
-| YAML threat heuristics — **351 rules across 23 files** | `heuristics.ts` + `threat-loader.ts` | **LIVE** (verified: 351 loaded, malicious probe matches) |
+| YAML threat heuristics — **519 rules across 31 files** | `heuristics.ts` + `threat-loader.ts` | **LIVE** (`aidr coverage` prints the installed count; malicious probe matches) |
 | Decision engine with confidence scoring and `deny > ask > allow` merge | `engine.ts` | **LIVE** |
 | Sensitivity presets (paranoid 0.70 / balanced 0.85 / relaxed 0.95) | `types.ts`, `engine.ts` | **LIVE** |
 | Verdict cache with TTLs | `cache.ts` | **LIVE** |
@@ -243,7 +246,7 @@ defects stop mattering for the native path.
 | Capability | Claude Code | Cursor/VS Code | OpenClaw | OpenCode | CLI |
 |---|---|---|---|---|---|
 | Command / URL / file extraction | ✅ | ✅ | ✅ | ✅ | — |
-| Heuristic rules (351) | ✅ | ✅ | ✅ | ✅ | ✅ (self-test) |
+| Heuristic rules | ✅ | ✅ | ✅ | ✅ | ✅ (self-test) |
 | Policy evaluation | ✅ | ✅ | ✅ | ✅ | — |
 | Allowlist | ✅ | ✅ | ✅ | ✅ | — |
 | Audit log | ✅ | ✅ | ✅ | ✅ | — |

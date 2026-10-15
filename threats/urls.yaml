@@ -39,6 +39,10 @@
   revoked: false
 
 # --- IP-based URLs (often C2 or staging) ---
+# Every literal IPv4 host matches, internal ones included. An administrator
+# who wants internal hosts to pass declares them in
+# `allowlist.internal_networks` / `allowlist.internal_domain_suffixes`
+# (opt-in; see docs/configuration.md); a URL with userinfo never qualifies.
 - id: "CLT-URL-004"
   category: network_egress
   severity: medium

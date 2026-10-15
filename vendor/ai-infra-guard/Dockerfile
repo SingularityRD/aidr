@@ -22,7 +22,7 @@ RUN rm -rf node_modules/.vite-temp dist \
     && pnpm exec vite build --mode openSource
 
 # 第二阶段：构建Go应用
-FROM golang:1.23.2-alpine@sha256:9dd2625a1ff2859b8d8b01d8f7822c0f528942fe56cfe7a1e7c38d3b8d72d679 AS builder
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS builder
 
 # 设置工作目录
 WORKDIR /app

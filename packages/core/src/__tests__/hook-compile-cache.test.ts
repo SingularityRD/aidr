@@ -45,6 +45,7 @@ describe("enableHookCompileCache", () => {
 		);
 	});
 
+	// AIDR-SKIP: AIDR-063 qa-owner - POSIX 0700 mode bits are not meaningful on NTFS; Windows relies on the profile directory ACL
 	it.skipIf(process.platform === "win32")(
 		"prepares a private 0700 directory before enabling the cache",
 		() => {
@@ -58,6 +59,7 @@ describe("enableHookCompileCache", () => {
 		},
 	);
 
+	// AIDR-SKIP: AIDR-063 qa-owner - group/world mode bits do not exist on NTFS, so there is nothing to repair on Windows
 	it.skipIf(process.platform === "win32")(
 		"repairs a group/world-accessible existing cache directory",
 		() => {
@@ -73,6 +75,7 @@ describe("enableHookCompileCache", () => {
 		},
 	);
 
+	// AIDR-SKIP: AIDR-063 qa-owner - creating a directory symlink needs a Unix host (Windows requires elevated rights)
 	it.skipIf(process.platform === "win32")(
 		"refuses a symlinked cache directory without enabling the cache",
 		() => {

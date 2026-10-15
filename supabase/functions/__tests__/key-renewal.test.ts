@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { authenticateTenantApiKey } from "../_shared/api-key-auth.ts";
+import { ConfigurationError } from "../_shared/config.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
+import * as apiKeyHygiene from "../api-keys/hygiene.ts";
 import {
 	boundedOverlapHours,
 	retiredSecretActive,
@@ -107,7 +109,7 @@ function credentialMutationHarness(
 	let directCredentialWrites = 0;
 	const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
 	const currentCredential = credential.kind === "api"
-		? { id: "33333333-3333-4333-8333-333333333333", user_id: TEST_USER_ID, key_hash: "a".repeat(64), revoked: false }
+		? { id: "33333333-3333-4333-8333-333333333333", user_id: TEST_USER_ID, key_hash: "a".repeat(64), revoked: false, scope: "tenant", expires_at: null }
 		: {
 			id: "33333333-3333-4333-8333-333333333333",
 			user_id: TEST_USER_ID,
@@ -165,11 +167,18 @@ function credentialMutationHarness(
 	if (credential.kind === "api") {
 		new Function(
 			"Deno", "createClient", "getBearerToken", "checkIdentityBarrier", "configFailure", "loadConfig",
-			"runtimeEnv", "corsJson", "handleCors", "boundedOverlapHours", "membershipActive", "readBoundedJson", compiled,
+			"runtimeEnv", "corsJson", "handleCors", "boundedOverlapHours", "membershipActive", "readBoundedJson",
+			"ConfigurationError", "apiKeyPrefix", "DEFAULT_TTL_ENV", "defaultKeyTtlDays", "parseLabel", "resolveExpiry", compiled,
 		)(
 			...common.slice(0, 2),
 			(header: string | null) => header?.match(/^Bearer\s+(.+)$/i)?.[1] ?? null,
 			...common.slice(2),
+			ConfigurationError,
+			apiKeyHygiene.apiKeyPrefix,
+			apiKeyHygiene.DEFAULT_TTL_ENV,
+			apiKeyHygiene.defaultKeyTtlDays,
+			apiKeyHygiene.parseLabel,
+			apiKeyHygiene.resolveExpiry,
 		);
 	} else {
 		new Function(

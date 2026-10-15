@@ -174,6 +174,8 @@ export interface Database {
 					allowed_agents: number;
 					current_agents: number;
 					tenant_id: string;
+					/** Retired agents (20261014120100); they hold no seat. */
+					retired_agents: number;
 				};
 				Insert: {
 					included_agents?: number;
@@ -338,6 +340,15 @@ export interface Database {
 					updated_at?: string;
 				};
 			};
+			agent_retirement_settings: {
+				Row: {
+					tenant_id: string;
+					auto_retire_offline_days: number | null;
+					updated_at: string;
+				};
+				Insert: never;
+				Update: never;
+			};
 			agents: {
 				Row: {
 					id: string;
@@ -349,6 +360,9 @@ export interface Database {
 					display_name: string | null;
 					first_seen: string;
 					last_seen: string;
+					/** Set only by retire_agent / retire_offline_agents (20261014120100). */
+					retired_at: string | null;
+					retired_reason: "manual" | "offline" | null;
 				};
 				Insert: {
 					id?: string;
@@ -893,6 +907,16 @@ export interface Database {
 			};
 		}>;
 		Functions: {
+			/** License banner and pending import (20261014120200). */
+			tenant_license_status: {
+				Args: { p_tenant_id: string };
+				Returns: Record<string, unknown>;
+			};
+			/** Usage report facts for owners/admins (20261014120200). */
+			tenant_usage_report: {
+				Args: { p_tenant_id: string };
+				Returns: Record<string, unknown>;
+			};
 			list_team_members_with_email: {
 				Args: { p_team_id: string };
 				Returns: Array<{
@@ -951,6 +975,10 @@ export interface Database {
 				Returns: unknown;
 			};
 			get_tenant_plan_entitlements: {
+				Args: { p_tenant_id: string };
+				Returns: unknown;
+			};
+			get_approval_settings: {
 				Args: { p_tenant_id: string };
 				Returns: unknown;
 			};

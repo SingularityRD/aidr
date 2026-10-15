@@ -1,0 +1,300 @@
+{"lang": "tr", "domain": "personal", "text": "Sevgili {PERSON1.first},\nİzmir'den taşındığından beri seni çok özledim. Yeni evin {ADDRESS1.tr} adresindeymiş, {PERSON2.first+DAT} sordum. Bu mektubu daha samimi bir dille yeniden yazar mısın?"}
+{"lang": "tr", "domain": "personal", "text": "Eski komşum {PERSON1.firstlast2} için bir veda mektubu yazmak istiyorum. Yirmi yıl {LOCATION1.neighborhood} mahallesinde yan yana oturduk, şimdi kızının yanına {LOCATION2.city+DAT} gidiyor. Duygusal ama abartısız olsun."}
+{"lang": "tr", "domain": "personal", "text": "{PERSON1.first+DAT} doğum günü notu yaz: 'Umut ediyorum ki bu yaş sana bol şans getirir' cümlesi geçsin, deniz kenarında yaptığımız kahvaltıyı da an."}
+{"lang": "tr", "domain": "personal", "text": "Babaannem {PERSON1} geçen hafta vefat etti. Cenazeye gelemeyen kuzenim {PERSON2.first} için kısa bir taziye cevabı yazmam lazım, 'başınız sağ olsun' mesajına teşekkür edeceğim."}
+{"lang": "tr", "domain": "personal", "text": "şu notu düzeltir misin: {PERSON1.lower} ile yarın akşam kadıköyde buluşacağız, {PERSON1.first+GEN} telefonu 0532 111 22 33 kaybolmasın diye buraya yazıyorum"}
+{"lang": "tr", "domain": "personal", "text": "Merhaba, kayınvalidem {PERSON1.first} Hanım {ADDRESS1.tr} adresinden {ADDRESS2.tr_street} adresine taşınıyor. Nakliyeciye gönderilecek kibar bir mesaj taslağı hazırla, kat 3, asansör yok."}
+{"lang": "tr", "domain": "personal", "text": "Bu sabah demir kapıyı boyarken aklıma bir şiir geldi, güneş ve yıldız imgeleriyle dolu. Dört dizelik bir kıta daha ekleyip kafiyeyi düzeltir misin?"}
+{"lang": "tr", "domain": "personal", "text": "Arkadaşım {PERSON1.first} ile {PERSON2.first} ayrıldı, ikisi de benim yakınım. {PERSON2.first+DAT} gönderebileceğim, taraf tutmayan bir mesaj öner."}
+{"lang": "tr", "domain": "personal", "text": "Günlüğüme yazdım: 'Bugün {PERSON1.full+INS} {LOCATION1.district} sahilinde yürüdük, barış görüşmesi gibi geçti, sonunda kucaklaştık.' Bunu daha edebi bir dille anlat."}
+{"lang": "tr", "domain": "personal", "text": "Sayın {PERSON1},\nGeçen ay ödünç aldığım kitapları iade etmek istiyorum. Hâlâ {ADDRESS1.tr} adresinde misiniz? Bu kısa notu resmi dilden daha sıcak bir dile çevir."}
+{"lang": "tr", "domain": "personal", "text": "Can sıkıntısından ne yapacağımı bilmiyorum, hafta sonu için evde yapılabilecek on aktivite öner. Bütçe az, kartal yuvası gibi tepedeki evimde internet de yavaş."}
+{"lang": "tr", "domain": "personal", "text": "Annemin eski mektuplarını dijitalleştiriyorum. İçlerinde {PERSON1.upper} imzası var, {PERSON1.first+GEN} 1987'de {LOCATION1.city+ABL} yazdığı satırları sadeleştirip özetle."}
+{"lang": "tr", "domain": "personal", "text": "Sevgilim {PERSON1.first} için yıldönümü mesajı: ilk buluşmamız {LOCATION1.neighborhood} mahallesindeki küçük bir kafedeydi, ekim ayıydı ve yağmur yağıyordu. Romantik ama klişe olmasın."}
+{"lang": "tr", "domain": "personal", "text": "Lise arkadaşım {PERSON1.initial} yıllar sonra bana yazdı. Ne cevap vereceğimi bilmiyorum, hem mesafeli hem kibar bir yanıt taslağı çıkar."}
+{"lang": "tr", "domain": "personal", "text": "Komşum {PERSON1.last} Bey'in köpeği her gece havlıyor. Kendisine kapısına bırakacağım nazik bir not yaz, apartman {ADDRESS1.tr_street}, daire 7."}
+{"lang": "tr", "domain": "personal", "text": "Sevgi dolu bir teşekkür kartı yazmak istiyorum ama kime olduğunu söylemeyeceğim; genel bir şablon olsun, gül bahçesi ve bahar temasıyla."}
+{"lang": "en", "domain": "personal", "text": "Dear {PERSON1.first},\nI've been meaning to write since you moved to {LOCATION1.city}. Is your new place at {ADDRESS1.en} still the one with the blue door? Please make this letter sound warmer and less rambling."}
+{"lang": "en", "domain": "personal", "text": "My best friend {PERSON1} lost her father last week. Can you help me write a short condolence note that doesn't sound generic? I want to mention how kind he was when we visited them in {LOCATION1.city}."}
+{"lang": "en", "domain": "personal", "text": "rewrite this text to my ex so it sounds calm: hey {PERSON1.lower}, i still have your jacket and the books, i can drop them off at {ADDRESS1.en_street} on saturday if thats ok"}
+{"lang": "en", "domain": "personal", "text": "I need a thank-you note for Mrs. {PERSON1.last}, who watered my plants for three weeks while I was in {LOCATION1.country}. Keep it under 80 words."}
+{"lang": "en", "domain": "personal", "text": "Help me write a short grace to say before my own birthday dinner. Gratitude, hope, a little humour, and something about the May sunshine."}
+{"lang": "en", "domain": "personal", "text": "Can you proofread my letter to {PERSON1.full}? 'I hope this finds you well. Since our trip to {LOCATION1.city}, I have thought often about what {PERSON2.first} said at dinner.'"}
+{"lang": "en", "domain": "personal", "text": "I'm writing a letter to my future self, to be opened in May 2036. I'd like prompts for sections on hope, health and work. No names, just a structure."}
+{"lang": "en", "domain": "personal", "text": "My neighbour {PERSON1.first} keeps parking in front of my garage at {ADDRESS1.en}. Draft a polite but firm note I can leave on the windshield."}
+{"lang": "en", "domain": "personal", "text": "Please translate this into Turkish for my pen pal {PERSON1.first}: 'I finally visited {LOCATION1.city}! Your recommendation about the old bazaar was perfect.'"}
+{"lang": "en", "domain": "personal", "text": "Sign-off ideas for a letter to my grandmother {PERSON1.firstlast2}? She's 92, lives in {LOCATION1.city}, and loves when I write by hand."}
+{"lang": "en", "domain": "personal", "text": "Turn these notes into a heartfelt apology: forgot {PERSON1.first}'s birthday, was travelling for work, want to make it up with dinner next Friday, she prefers Thai food."}
+{"lang": "en", "domain": "personal", "text": "Summarise this voicemail transcript for me: 'Hi, it's {PERSON1.first}, I'm outside {ADDRESS1.en_street}, the buzzer isn't working, call me back on 555-0142.'"}
+{"lang": "en", "domain": "personal", "text": "I keep a small journal. Today's entry: rose early, walked to the lake, felt hopeful for the first time in weeks. Can you expand it into a reflective paragraph?"}
+{"lang": "en", "domain": "personal", "text": "Write a short farewell card for {PERSON1.first} {PERSON1.last}... actually just use '{PERSON1.first}', she hates formality. She's moving back to {LOCATION1.country} next month."}
+{"lang": "en", "domain": "personal", "text": "My roommate {PERSON1} left this note: 'Rent for {ADDRESS1.en} is due on the 1st, {PERSON2.first} still owes half.' How do I bring it up without starting a fight?"}
+{"lang": "mix", "domain": "personal", "text": "{PERSON1.first+DAT} bir mesaj atacağım, İngilizce olsun: 'Hope you're settling in well in {LOCATION1.city}, burada her şey aynı, sadece seni özlüyoruz.' Bunu tamamen İngilizceye çevir."}
+{"lang": "mix", "domain": "personal", "text": "Can you make this more natural? 'Merhaba {PERSON1.first}, I got your package at {ADDRESS1.tr}, çok teşekkürler, the tea is amazing.'"}
+{"lang": "mix", "domain": "personal", "text": "Kuzenim {PERSON1.full} Londra'dan geliyor, ona airport pickup için WhatsApp mesajı yaz, mixed Turkish-English olsun, o öyle konuşuyor."}
+{"lang": "mix", "domain": "personal", "text": "Need a quick note for my landlord {PERSON1.last} Bey: kombi bozuldu, it's been three days, adres {ADDRESS1.tr_street}. Hem Türkçe hem İngilizce versiyonu ver."}
+{"lang": "mix", "domain": "personal", "text": "Bu mektup çok uzun, shorten it pls: 'Canım {PERSON1.first}, {LOCATION1.district} sahilinde yürürken seni düşündüm, deniz çok sakindi...'"}
+{"lang": "mix", "domain": "personal", "text": "Write a sorry message to {PERSON1.first}, dün akşam yemeğe gelemedim çünkü Galatasaray maçı uzadı, ama gerçekten üzgünüm."}
+{"lang": "mix", "domain": "personal", "text": "Pen pal mektubum için yardım: I want to tell {PERSON1.first} about Bayram, şeker yediğimiz, büyüklerin elini öptüğümüz günler. Keep it simple, A2 level English."}
+{"lang": "tr", "domain": "family", "text": "Soy ağacı çıkarıyorum: dedem {PERSON1}, babaannem {PERSON2}, onların çocukları {PERSON3.first}, {PERSON4.first} ve {PERSON5.first}. {PERSON3.first} benim babam. Bunu Markdown ağaç olarak göster."}
+{"lang": "tr", "domain": "family", "text": "Büyük dedem {PERSON1.upper} 1923'te {LOCATION1.city+DAT} göç etmiş, nüfus kaydı {LOCATION2.district} ilçesinde. Osmanlıca kayıtları nerede araştırabilirim?"}
+{"lang": "tr", "domain": "family", "text": "{PERSON1.first+GEN} babası ile benim annem kardeş, peki {PERSON1.first} ile benim çocuğum arasındaki akrabalık adı ne olur?"}
+{"lang": "tr", "domain": "family", "text": "Kızım {PERSON1.first} bu yıl üniversiteyi kazandı ve {LOCATION1.city+DAT} gidiyor. Ona yurda götürmesi için bir liste ve küçük bir veda notu hazırla."}
+{"lang": "tr", "domain": "family", "text": "Annem {PERSON1.first} Hanım ile kayınpederim {PERSON2.last} Bey bayramda aynı sofrada olacak, araları gergin. Ortamı yumuşatacak sohbet konuları öner."}
+{"lang": "tr", "domain": "family", "text": "Aile WhatsApp grubuna atılacak duyuru: 'Dedemiz {PERSON1.full} 90 yaşına giriyor, kutlama {ADDRESS1.tr} adresindeki evde, herkes bir yemek getirsin.' Daha neşeli yaz."}
+{"lang": "tr", "domain": "family", "text": "Kardeşlerim {PERSON1.first}, {PERSON2.first} ve ben miras konusunu konuşacağız. Ev {ADDRESS1.tr} adresinde, tarla ise {LOCATION1.district} ilçesinde. Tarafsız bir toplantı gündemi hazırla."}
+{"lang": "tr", "domain": "family", "text": "Oğlum {PERSON1.first} ile kızım {PERSON2.first} sürekli kavga ediyor, biri 8 diğeri 11 yaşında. Kardeş kıskançlığı için pratik öneriler ver."}
+{"lang": "tr", "domain": "family", "text": "Ailemizde bir gelenek var: her bahar dedemin köyünde ceviz ağacının altında toplanırız. Bu geleneği anlatan kısa bir paragraf yaz, isim kullanma."}
+{"lang": "tr", "domain": "family", "text": "Teyzem {PERSON1.firstlast2} ile eniştem {PERSON2.last} yıllardır {LOCATION1.country} yaşıyor. Onlara Türkiye'den gönderilecek bir yılbaşı kartı metni yaz."}
+{"lang": "tr", "domain": "family", "text": "Eşim {PERSON1.first+INS} çocukların okul servisi konusunda anlaşamıyoruz. Servis {LOCATION1.neighborhood} mahallesinden geçmiyor. İki tarafın argümanlarını tabloya dök."}
+{"lang": "tr", "domain": "family", "text": "Nüfus müdürlüğünden aldığım vukuatlı nüfus kayıt örneğinde annemin kızlık soyadı {PERSON1.last} olarak geçiyor, dedem ise {PERSON2.initial}. Bu belgeyi nasıl okumalıyım?"}
+{"lang": "tr", "domain": "family", "text": "yeğenim {PERSON1.lower} bebek oldu, adı da {PERSON2.first} koyuldu. aile grubuna atacağım tebrik mesajını biraz süsle"}
+{"lang": "tr", "domain": "family", "text": "Aslan payını hep büyük abim alırdı, şimdi babamın bakımı da bana kaldı. Bu durumu kardeşlerime nasıl açarım? İsim vermeden genel tavsiye istiyorum."}
+{"lang": "tr", "domain": "family", "text": "Rahmetli annem {PERSON1} için mevlit okutacağız. Davet metni hazırla: tarih Cumartesi, yer {ADDRESS1.tr}, ikindi namazından sonra."}
+{"lang": "tr", "domain": "family", "text": "Babam {PERSON1.first} Bey emekli oldu ve {LOCATION1.district+DAT} yazlığa yerleşmek istiyor, annem istemiyor. İkisini de kırmadan nasıl arabuluculuk yaparım?"}
+{"lang": "en", "domain": "family", "text": "I'm building a family tree. My great-grandmother was {PERSON1.firstlast2}, born in {LOCATION1.city}, married {PERSON2} in 1931. Which records should I look for next?"}
+{"lang": "en", "domain": "family", "text": "My sister {PERSON1.first} and her husband {PERSON2.first} are moving in with us at {ADDRESS1.en} for three months. Help me write house rules that don't sound bossy."}
+{"lang": "en", "domain": "family", "text": "What do you call my cousin's daughter? My cousin is {PERSON1.first} and her daughter is {PERSON2.first}."}
+{"lang": "en", "domain": "family", "text": "Rewrite this note for the family group chat: 'Grandpa {PERSON1.last} is out of hospital and back home in {LOCATION1.city}, visitors welcome from Sunday, call Aunt {PERSON2.first} first.'"}
+{"lang": "en", "domain": "family", "text": "My dad {PERSON1} wants to sell the family farm near {LOCATION1.city}. My brother {PERSON2.first} disagrees. Summarise both positions in a neutral way."}
+{"lang": "en", "domain": "family", "text": "Can you help me plan a Hope Street family reunion? Hope Street is the name of the park, not a person. About 40 people, mostly kids."}
+{"lang": "en", "domain": "family", "text": "Write a short bio of my grandfather for the reunion booklet: {PERSON1.full}, born in {LOCATION1.country}, came to {LOCATION2.city} in 1962, worked at Ford for 35 years, six grandchildren."}
+{"lang": "en", "domain": "family", "text": "Family schedule as CSV please:\nname,school,pickup\n{PERSON1.first},Lincoln Elementary,15:10\n{PERSON2.first},Westview Middle,15:40\nAdd a column for Wednesday swim practice."}
+{"lang": "en", "domain": "family", "text": "My mother-in-law, Mrs. {PERSON1.last}, keeps giving my kids sweets. How do I talk to my husband {PERSON2.first} about it first?"}
+{"lang": "en", "domain": "family", "text": "Our family motto is 'faith, grace and hard work'. Design a simple crest description around it, no personal names."}
+{"lang": "en", "domain": "family", "text": "Need help with a letter to my estranged brother {PERSON1.first}. Last address I have is {ADDRESS1.en}. I want to reconnect, not relitigate."}
+{"lang": "en", "domain": "family", "text": "Who in my family should I ask about this old photo? It says '{PERSON1.initial} and {PERSON2.initial}, {LOCATION1.city}, summer 1958' on the back."}
+{"lang": "en", "domain": "family", "text": "My twins {PERSON1.first} and {PERSON2.first} start kindergarten in May. Give me a checklist and a short note for their teacher."}
+{"lang": "mix", "domain": "family", "text": "Family tree app'e girmem lazım: anneannem {PERSON1}, born {LOCATION1.city}, dedem {PERSON2}, birth year unknown. JSON formatında yaz."}
+{"lang": "mix", "domain": "family", "text": "Kayınvalidem {PERSON1.first} Hanım is visiting from {LOCATION1.city} for two weeks, evde misafir odası yok. Polite way to suggest a nearby hotel?"}
+{"lang": "mix", "domain": "family", "text": "Can you translate this for my British husband: 'Dayım {PERSON1.first+GEN} oğlu {PERSON2.first} evleniyor, bütün aile {LOCATION1.city+DAT} gidiyoruz.'"}
+{"lang": "mix", "domain": "family", "text": "Kids' chore chart lazım: {PERSON1.first} dishes, {PERSON2.first} laundry, weekend'de rotation olsun. Markdown table yap."}
+{"lang": "mix", "domain": "family", "text": "My grandmother still says 'Allah rahmet eylesin' when she mentions {PERSON1.first} Dede. How do I explain this phrase to my kids in English?"}
+{"lang": "mix", "domain": "family", "text": "Ailecek Fenerbahçe maçına gidiyoruz, kids are 6 and 9. Stadyuma ne götürmeliyiz, any safety tips?"}
+{"lang": "tr", "domain": "family", "text": "Kuzenim {PERSON1.full} ile yeğenim {PERSON2.first} aynı gün doğmuş, otuz yıl arayla. Bu tesadüfle ilgili aile gazetesine kısa bir yazı yaz."}
+{"lang": "en", "domain": "family", "text": "My son {PERSON1.first} wants to visit his biological father {PERSON2} in {LOCATION1.city}. How do I prepare him emotionally? He's 14."}
+{"lang": "tr", "domain": "family", "text": "Ekim ayında aile büyüklerini ziyaret turu planlıyoruz: önce {LOCATION1.city}, sonra {LOCATION2.city}. Güzergâhı ve kalış sürelerini öner, dedem {PERSON1.first} Bey uzun yolculuğu sevmez."}
+{"lang": "tr", "domain": "social-media", "text": "Instagram açıklaması yaz: '{PERSON1.first} ile {LOCATION1.city} sokaklarında kaybolduk 🌿' gibi bir şey, @{PERSON1.first} etiketini koru, en fazla iki emoji."}
+{"lang": "tr", "domain": "social-media", "text": "Twitter'da {PERSON1.full} hakkında bir tartışma döndü, ben de cevap yazmak istiyorum ama kavgaya girmeden. Şu tweet'ime yanıt öner: 'Herkes fikrini söyleyebilir ama hakaret etmeyelim.'"}
+{"lang": "tr", "domain": "social-media", "text": "Galatasaray derbiyi kazandı, story için kısa ve coşkulu üç alternatif yazı öner. Kişi etiketleme olmasın."}
+{"lang": "tr", "domain": "social-media", "text": "Bu yorumu kibar hale getir: '@{PERSON1.first} senin yüzünden bütün grup ertelendi, {PERSON2.first+GEN} de söylediğine göre hep böyle yapıyorsun.'"}
+{"lang": "tr", "domain": "social-media", "text": "LinkedIn gönderisi: Sevgili hocam {PERSON1.full+DAT} teşekkür etmek istiyorum, {LOCATION1.city+DAT} taşındığımda bana kapısını açtı. Samimi ama profesyonel olsun."}
+{"lang": "tr", "domain": "social-media", "text": "Facebook'ta mahalle grubuna yazacağım: kayıp kedi, en son {LOCATION1.neighborhood} mahallesinde {ADDRESS1.tr_street} civarında görüldü, bulan {PERSON1.first+DAT} haber versin 0555 000 11 22."}
+{"lang": "tr", "domain": "social-media", "text": "TikTok videom için altyazı lazım: 'Deniz, güneş, kum ve bir fincan Türk kahvesi.' Hashtag de öner, ama #yıldız ve #bahar olmasın."}
+{"lang": "tr", "domain": "social-media", "text": "Kız arkadaşım {PERSON1.first} için doğum günü postu yazacağım, {PERSON2.first} ve {PERSON3.first} de fotoğrafta var. Hepsini etiketleyerek tatlı bir caption yaz."}
+{"lang": "tr", "domain": "social-media", "text": "{PERSON1.first} Hanım'ın yemek sayfası çok popüler, ben de onun tarifini denedim. 'Tarif için @{PERSON1.first} sayfasına teşekkürler' ifadesini içeren bir gönderi metni yaz."}
+{"lang": "tr", "domain": "social-media", "text": "Story'de anket yapacağım: Beşiktaş mı Fenerbahçe mi değil, kahve mi çay mı. Eğlenceli soru ve seçenek metinleri öner."}
+{"lang": "tr", "domain": "social-media", "text": "Grup sohbetinden alıntı:\n[21:03] {PERSON1.first}: bu akşam {LOCATION1.district+DAT} gelen var mı\n[21:05] {PERSON2.first}: ben varım ama geç kalırım\nBunu Instagram notu formatına dönüştür."}
+{"lang": "tr", "domain": "social-media", "text": "Takipçilerime veda gönderisi: hesabı kapatıyorum, sebebi yorgunluk. {PERSON1.first+DAT} ve ilk günden beri yanımda olan herkese teşekkür et."}
+{"lang": "tr", "domain": "social-media", "text": "Ünlü şarkıcı {PERSON1} dün {LOCATION1.city+LOC} konser verdi. Konserden aldığım fotoğraf için heyecanlı bir paylaşım metni yaz, yanlış bilgi içermesin."}
+{"lang": "tr", "domain": "social-media", "text": "Komşu grubuna bilgilendirme: Pazartesi sabah su kesintisi olacakmış. Kısa ve net bir mesaj yaz, isim yok."}
+{"lang": "tr", "domain": "social-media", "text": "Bir kullanıcı yorumuma 'umut fakirin ekmeği' yazmış, buna esprili ama kırıcı olmayan bir cevap öner."}
+{"lang": "en", "domain": "social-media", "text": "Write an Instagram caption for our trip: '{PERSON1.first} finally convinced me to try paragliding in {LOCATION1.city}.' Keep the @{PERSON1.first} tag and add three hashtags."}
+{"lang": "en", "domain": "social-media", "text": "Help me reply to this tweet from {PERSON1.full} without sounding defensive: 'Influencers who post about mental health and then sell supplements should be ashamed.'"}
+{"lang": "en", "domain": "social-media", "text": "Draft a Facebook post for our neighbourhood page: a black bike was taken from outside {ADDRESS1.en_street} last night. If you saw anything, message {PERSON1.first}."}
+{"lang": "en", "domain": "social-media", "text": "Make this LinkedIn post less cringe: 'Humbled and honored to announce I've joined the team under the legendary {PERSON1.full}. #grateful #newchapter'"}
+{"lang": "en", "domain": "social-media", "text": "Caption idea for a sunset photo at the beach. Something about hope and golden hour, no people tagged, no location."}
+{"lang": "en", "domain": "social-media", "text": "Thread summary needed:\n@{PERSON1.first}: who's coming to the meetup?\n@{PERSON2.first}: me + {PERSON3.first}\n@{PERSON1.first}: cool, it's at {ADDRESS1.en}\nSummarise who is attending."}
+{"lang": "en", "domain": "social-media", "text": "My friend {PERSON1.first} posted a mean comment about my outfit. Should I respond publicly, privately, or not at all? Give me pros and cons."}
+{"lang": "en", "domain": "social-media", "text": "Write a birthday shoutout for my best friend {PERSON1.first}: we met in a dorm in {LOCATION1.city} ten years ago, she still steals my hoodies."}
+{"lang": "en", "domain": "social-media", "text": "Suggest a bio for my plant account. Something witty about roses, ivy and overwatering. 150 characters max."}
+{"lang": "en", "domain": "social-media", "text": "A fan account keeps posting photos of {PERSON1} outside his house in {LOCATION1.city}. How do I report this to Instagram as a privacy violation?"}
+{"lang": "en", "domain": "social-media", "text": "Rewrite this Reddit post to be shorter: 'My roommate {PERSON1.first} keeps inviting {PERSON2.first} over without asking and they're loud until 3am in our flat on {ADDRESS1.en_street}.'"}
+{"lang": "en", "domain": "social-media", "text": "I run a meme page about Real Madrid and Manchester United. Give me ten caption templates for match-day posts."}
+{"lang": "mix", "domain": "social-media", "text": "Collab post caption: '{PERSON1.first} ile beraber {LOCATION1.city+DAT} road trip yaptık, best weekend ever!' Daha catchy yap, emoji ekle."}
+{"lang": "mix", "domain": "social-media", "text": "Bu story text'i İngilizceye çevir: '{PERSON1.first+GEN} yeni kafesi {LOCATION1.neighborhood} mahallesinde açıldı, herkes gelsin!' Tag @{PERSON1.first}."}
+{"lang": "mix", "domain": "social-media", "text": "Engagement neden düştü sence? Son postlarım: bahar temalı flat lay, Beşiktaş maç günü, deniz manzarası. Content strategy öner."}
+{"lang": "mix", "domain": "social-media", "text": "Can you write a reply to @{PERSON1.first}: 'Abi videoyu çok beğendim ama {PERSON2.first} haklı, ses çok düşük.' Polite, thankful, slightly funny."}
+{"lang": "mix", "domain": "social-media", "text": "Tweet thread'i özetle: {PERSON1.full} says the new metro line in {LOCATION1.city} is delayed again, belediye sözcüsü {PERSON2.full} ise bunu yalanlıyor."}
+{"lang": "tr", "domain": "social-media", "text": "Bu mesajı DM olarak göndereceğim, daha kibar yaz: 'Merhaba {PERSON1.first}, geçen ay {LOCATION1.city+LOC} çektiğin fotoğrafı izinsiz kullandım, özür dilerim, kaldırayım mı?'"}
+{"lang": "en", "domain": "social-media", "text": "Pinned comment for my YouTube video: thank {PERSON1.first} for editing and {PERSON2.first} for the music, and remind people the giveaway closes Monday."}
+{"lang": "tr", "domain": "social-media", "text": "Gül kurusu renkli bir ruj tanıtımı için Instagram Reels metni yaz, ışıltı, kadife doku ve uzun kalıcılık vurgulansın."}
+{"lang": "en", "domain": "social-media", "text": "Help me write a respectful post about {PERSON1.full}, a local firefighter from {LOCATION1.city} who passed away. The family asked people to share memories."}
+{"lang": "mix", "domain": "social-media", "text": "Story highlights isimleri öner: travel, food, family, ama Türkçe-İngilizce karışık olsun, örneğin 'Yol Notes'. Kişi adı geçmesin."}
+{"lang": "tr", "domain": "journalism", "text": "Bu haberi 150 kelimeye indir: '{LOCATION1.city} Büyükşehir Belediye Başkanı {PERSON1} dün yaptığı açıklamada, {LOCATION2.district} ilçesindeki kentsel dönüşüm projesinin Haziran'da başlayacağını söyledi. Muhalefet sözcüsü {PERSON2.full} ise projeye itiraz etti.'"}
+{"lang": "tr", "domain": "journalism", "text": "Basın bülteni taslağı: 'Şirketimizin yeni genel müdürü {PERSON1.full}, 15 yıllık sektör tecrübesiyle görevine başladı.' Bunu daha kurumsal bir dille yeniden yaz, alıntı ekle."}
+{"lang": "tr", "domain": "journalism", "text": "Röportaj dökümünü temizle:\nMUHABİR: Çocukluğunuz nerede geçti?\n{PERSON1.upper}: {LOCATION1.city+LOC}, babam {PERSON2.first} demir yolunda çalışırdı.\nYazım hatalarını düzelt, anlamı değiştirme."}
+{"lang": "tr", "domain": "journalism", "text": "Spor haberi: Fenerbahçe, Kadıköy'de Trabzonspor'u 2-1 yendi. Golleri atan oyuncular {PERSON1.full} ve {PERSON2.last}. Bunu manşet ve spot olarak yaz."}
+{"lang": "tr", "domain": "journalism", "text": "Yerel gazete için yangın haberi: '{ADDRESS1.tr} adresindeki binada çıkan yangında ev sahibi {PERSON1.initial} hafif yaralandı.' Haberi tarafsız ve mağduru teşhir etmeyecek şekilde düzenle."}
+{"lang": "tr", "domain": "journalism", "text": "Köşe yazısı fikri: barış görüşmeleri, umut ve yorgunluk üzerine. Giriş paragrafı yaz, hiçbir siyasetçinin adını anma."}
+{"lang": "tr", "domain": "journalism", "text": "Ödül töreni haberi: Yılın gazetecisi ödülünü {PERSON1.full} aldı, ödülü {PERSON2.full} takdim etti. Tören {LOCATION1.city+LOC} yapıldı. İki cümlelik spot yaz."}
+{"lang": "tr", "domain": "journalism", "text": "Muhabirimiz {PERSON1.first+GEN} gönderdiği notlar: 'kaza sabah 7de, {LOCATION1.district} çevre yolunda, sürücü {PERSON2.lower}, 34 yaşında, hastaneye kaldırıldı'. Bunu haber diline çevir."}
+{"lang": "tr", "domain": "journalism", "text": "Bakan {PERSON1.last}, Ankara'daki basın toplantısında yeni teşvik paketini açıkladı. Bu cümleyi Yıldız Teknik Üniversitesi'nden bir ekonomistin yorumuyla genişlet, ekonomist adı {PERSON2.full}."}
+{"lang": "tr", "domain": "journalism", "text": "Haber ajansı metnini sadeleştir: 'Kartal ilçesinde düzenlenen Ekim festivaline 20 bin kişi katıldı.' Burada Kartal ilçe adı, festival de genel bir etkinlik."}
+{"lang": "tr", "domain": "journalism", "text": "Okurdan gelen mektubu yayına hazırla: 'Ben {PERSON1.full}, {LOCATION1.neighborhood} mahallesinde oturuyorum, sokağımızdaki çukur iki yıldır kapatılmıyor.' Okur adını sadece baş harflerle ver."}
+{"lang": "tr", "domain": "journalism", "text": "Belgesel için anlatım metni: {PERSON1.full}, 1950'lerde {LOCATION1.city+ABL} İstanbul'a gelen ilk kadın taksi şoförlerinden biriydi. Sıcak ve merak uyandırıcı bir giriş yaz."}
+{"lang": "tr", "domain": "journalism", "text": "Bu alıntıyı doğrula ve kaynak gösterim biçimini düzelt: \"Eğitim her şeyin başıdır\" — {PERSON1.full}, {LOCATION1.city} konuşması."}
+{"lang": "tr", "domain": "journalism", "text": "Bugünkü gündem başlıklarını derle: dolar kuru, Haziran enflasyonu, Galatasaray'ın transfer haberleri. Kişi adı içermeyen kısa bir bülten yaz."}
+{"lang": "tr", "domain": "journalism", "text": "Taziye haberi: Usta oyuncu {PERSON1} 84 yaşında hayatını kaybetti. Cenazesi yarın {LOCATION1.district} ilçesindeki camiden kaldırılacak. Saygılı bir haber metni yaz."}
+{"lang": "en", "domain": "journalism", "text": "Tighten this press release paragraph: 'Acme Robotics today announced that {PERSON1.full}, formerly of Tesla, will join as Chief Technology Officer, reporting to CEO {PERSON2.full}.'"}
+{"lang": "en", "domain": "journalism", "text": "Turn my interview notes into a profile lede: {PERSON1.first} {PERSON1.last}, 71, has run the same bakery on {ADDRESS1.en_street} for four decades. Grew up in {LOCATION1.country}."}
+{"lang": "en", "domain": "journalism", "text": "Fact-check structure please. Claim: Senator {PERSON1.last} said in {LOCATION1.city} that the bill would 'cut wait times in half'. What sources should I check?"}
+{"lang": "en", "domain": "journalism", "text": "Write a neutral 100-word news brief: a house fire at {ADDRESS1.en} displaced a family of four; neighbor {PERSON1.full} called 911. No injuries reported."}
+{"lang": "en", "domain": "journalism", "text": "Summarise this op-ed in three bullet points. It's about grace under pressure in public service and doesn't name anyone."}
+{"lang": "en", "domain": "journalism", "text": "Headline options for: Local teacher {PERSON1.full} wins national award; students from {LOCATION1.city} raised money to fly her to the ceremony."}
+{"lang": "en", "domain": "journalism", "text": "Edit this quote for clarity without changing meaning: 'We were, uh, honestly not expecting it,' said coach {PERSON1.last}, whose team beat Galatasaray in Istanbul."}
+{"lang": "en", "domain": "journalism", "text": "Obituary draft: {PERSON1.firstlast2}, 88, of {LOCATION1.city}, died peacefully on Tuesday. She is survived by her children {PERSON2.first} and {PERSON3.first}. Make it more graceful."}
+{"lang": "en", "domain": "journalism", "text": "My editor wants a sidebar box with key people in the story. Format as a table: {PERSON1.full} (whistleblower), {PERSON2.full} (company spokesperson), {PERSON3.full} (regulator)."}
+{"lang": "en", "domain": "journalism", "text": "Rewrite this wire copy for a younger audience: 'Prime Minister {PERSON1.last} met President {PERSON2.last} in {LOCATION1.city} to discuss trade and energy.'"}
+{"lang": "en", "domain": "journalism", "text": "Can you suggest five angles for a feature on how Hurricane season affects small towns? No specific people yet."}
+{"lang": "en", "domain": "journalism", "text": "Transcribe-and-clean: 'This is {PERSON1.full} reporting live from {LOCATION1.city}, where crowds have gathered outside {ADDRESS1.en_street} since dawn.'"}
+{"lang": "en", "domain": "journalism", "text": "Our correction notice needs wording: we misspelled the name of {PERSON1.full} and misidentified her hometown as {LOCATION1.city}. Short and sincere."}
+{"lang": "mix", "domain": "journalism", "text": "Haber metnini İngilizceye çevir, wire style: '{PERSON1.full}, {LOCATION1.city+LOC} düzenlenen zirvede iklim krizine dikkat çekti.'"}
+{"lang": "mix", "domain": "journalism", "text": "Press release'i Türkçeleştir ama brand names İngilizce kalsın: 'Mercedes-Benz Türk appoints {PERSON1.full} as Head of Sales, effective May 1.'"}
+{"lang": "mix", "domain": "journalism", "text": "Röportajdan quote seç: {PERSON1.first} said 'Hayatım boyunca {LOCATION1.city+LOC} yaşadım, burayı hiç bırakmadım.' Pull quote olarak hangisi daha güçlü?"}
+{"lang": "mix", "domain": "journalism", "text": "Spor sayfası için match report: Beşiktaş beat Konyaspor 3-0, hat-trick by {PERSON1.full}. Türkçe başlık + English summary."}
+{"lang": "mix", "domain": "journalism", "text": "Editörüm diyor ki lede zayıf. Konu: {PERSON1.full}, a retired nurse from {LOCATION1.district}, yaşlılara ücretsiz kitap dağıtıyor. Write three stronger ledes."}
+{"lang": "tr", "domain": "journalism", "text": "Haber sitesindeki yorumları moderasyon için özetle; kullanıcılar 'Deniz ulaşımı neden pahalı?' sorusunu tartışıyor. Kişi adlarını yazma."}
+{"lang": "en", "domain": "journalism", "text": "Help me pitch a story to my editor: {PERSON1.full}, a refugee from {LOCATION1.country}, opened a restaurant at {ADDRESS1.en} and now employs twelve people."}
+{"lang": "tr", "domain": "journalism", "text": "Bu basın açıklamasındaki imza bloğunu düzenle:\n{PERSON1.full}\nKurumsal İletişim Müdürü\nbasin@ornek.com.tr | 0212 555 00 00"}
+{"lang": "tr", "domain": "journalism", "text": "Gazeteci {PERSON1.full+GEN} {PERSON2.full+INS} yaptığı söyleşiyi okudum. Ana fikirleri madde madde çıkar."}
+{"lang": "en", "domain": "journalism", "text": "Style check: should it be 'Dr. {PERSON1.last}' on second reference or just '{PERSON1.last}'? The story is about her clinic in {LOCATION1.city}."}
+{"lang": "tr", "domain": "marketing", "text": "Influencer brief'i hazırla: içerik üreticisi {PERSON1.full} (@{PERSON1.first}) yeni cilt bakım serimizi 3 Reels ve 5 story ile tanıtacak. Çekim {LOCATION1.city+LOC}, teslim 20 Haziran."}
+{"lang": "tr", "domain": "marketing", "text": "Müşterimiz {PERSON1.first} Hanım'ın yorumunu reklam metnine çevir: 'Ürünü {LOCATION1.district+LOC} kullandım, cildim hiç bu kadar yumuşak olmamıştı.' İsim yerine baş harf kullan."}
+{"lang": "tr", "domain": "marketing", "text": "Bahar kampanyası için slogan öner: güneş, çiçek ve deniz temalı, hedef kitle 25-35 yaş kadınlar. On alternatif."}
+{"lang": "tr", "domain": "marketing", "text": "Ajansımızdan {PERSON1.full} ile marka yöneticisi {PERSON2.full} arasındaki e-posta yazışmasını özetle, kararlar ve açık konuları ayrı listele."}
+{"lang": "tr", "domain": "marketing", "text": "Yeni şubemiz {ADDRESS1.tr} adresinde açılıyor. Açılış günü için SMS metni yaz, 160 karakteri geçmesin."}
+{"lang": "tr", "domain": "marketing", "text": "Bayi listesi tablosunu düzenle:\nBayi | Yetkili | İl\nKaya Yapı | {PERSON1.full} | {LOCATION1.city}\nDemir Ticaret | {PERSON2.full} | {LOCATION2.city}\nYetkili sütununu alfabetik sırala."}
+{"lang": "tr", "domain": "marketing", "text": "Kartal markalı spor ayakkabı için Google Ads başlıkları yaz; Kartal burada marka adı. Maks 30 karakter, 8 başlık."}
+{"lang": "tr", "domain": "marketing", "text": "Ünlü şef {PERSON1} ile yapacağımız iş birliği için sosyal medya duyurusu taslağı hazırla, şefin {LOCATION1.city+LOC} açtığı restorana da değin."}
+{"lang": "tr", "domain": "marketing", "text": "Müşteri vaka çalışması yaz: {PERSON1.full}, {LOCATION1.city+LOC} küçük bir pastane işletiyor, bizim POS sistemimizle satışlarını %30 artırdı."}
+{"lang": "tr", "domain": "marketing", "text": "Bülten aboneliğinden çıkan kullanıcılar için geri kazanım e-postası yaz. Kişiselleştirme alanı olarak sadece 'Merhaba {PERSON1.first},' kullan."}
+{"lang": "tr", "domain": "marketing", "text": "Sevgi Pastanesi ve Nur Optik için ortak indirim kampanyası metni yaz; ikisi de dükkan adı, kişi değil."}
+{"lang": "tr", "domain": "marketing", "text": "Marka elçimiz {PERSON1.full+GEN} sözleşmesi bitiyor. Yerine düşündüğümüz {PERSON2.full} ve {PERSON3.full} için artı-eksi tablosu hazırla."}
+{"lang": "tr", "domain": "marketing", "text": "Influencer'a gönderilecek ürün kargosunun adres etiketi: Alıcı {PERSON1.upper}, {ADDRESS1.tr}, Tel 0533 222 44 55. Bunu kargo formuna uygun sırala."}
+{"lang": "en", "domain": "marketing", "text": "Write a creator brief for {PERSON1.full} (@{PERSON1.first}): two TikToks about our running shoes, filmed in {LOCATION1.city}, no competitor brands like Nike visible."}
+{"lang": "en", "domain": "marketing", "text": "Turn this customer testimonial into a 20-word ad quote: 'I'm {PERSON1.first} from {LOCATION1.city} and this app saved me four hours a week.'"}
+{"lang": "en", "domain": "marketing", "text": "Email subject lines for our May sale. Tone: playful, a bit of hope after a long winter. No names."}
+{"lang": "en", "domain": "marketing", "text": "Summarize the call notes: {PERSON1.full} from the agency proposed a billboard on {ADDRESS1.en_street}; {PERSON2.first} from our side wants digital only. Next steps?"}
+{"lang": "en", "domain": "marketing", "text": "Write a press-ready partnership blurb: Johnson & Johnson and our startup will co-host a wellness pop-up in {LOCATION1.city} with nutritionist {PERSON1.full}."}
+{"lang": "en", "domain": "marketing", "text": "Personalise this cold email: 'Hi {PERSON1.first}, I saw your talk in {LOCATION1.city} on community marketing and loved your point about micro-influencers.'"}
+{"lang": "en", "domain": "marketing", "text": "Influencer shortlist as JSON please:\n[{\"name\":\"{PERSON1.full}\",\"followers\":\"120k\"},{\"name\":\"{PERSON2.full}\",\"followers\":\"85k\"}]\nAdd an engagement_rate field with placeholder values."}
+{"lang": "en", "domain": "marketing", "text": "Brainstorm a campaign name for a rose-scented candle line. Keep it under three words, elegant, nothing with 'Grace' because a competitor uses it."}
+{"lang": "en", "domain": "marketing", "text": "We're launching a store at {ADDRESS1.en}. Write a flyer that mentions the opening DJ, {PERSON1.full}, and free coffee for the first 50 guests."}
+{"lang": "en", "domain": "marketing", "text": "Rewrite our About page bio for the founder: {PERSON1.full} grew up in {LOCATION1.city}, studied at MIT, and started the company in her garage."}
+{"lang": "en", "domain": "marketing", "text": "Write three variants of a Facebook ad for a dog grooming salon. Warm, local, under 125 characters each."}
+{"lang": "en", "domain": "marketing", "text": "Our ambassador {PERSON1.full} posted without the #ad disclosure. Draft a friendly reminder message to her manager {PERSON2.first}."}
+{"lang": "mix", "domain": "marketing", "text": "Brief'i İngilizceye çevir: 'Kampanya yüzü {PERSON1.full} olacak, çekimler {LOCATION1.city+LOC}, budget 200k TL, deliverables 4 post + 6 story.'"}
+{"lang": "mix", "domain": "marketing", "text": "Landing page copy lazım, hero section için: 'Deniz kenarında work from anywhere.' Make it punchy, Türkçe-İngilizce karışık kalsın."}
+{"lang": "mix", "domain": "marketing", "text": "Can you write a WhatsApp campaign message? Hitap: 'Merhaba {PERSON1.first},' sonra yeni koleksiyon, %20 off, valid until Sunday."}
+{"lang": "mix", "domain": "marketing", "text": "KOL listesi var: {PERSON1.full}, {PERSON2.full}, {PERSON3.full}. Hangisi Gen Z audience için daha uygun, criteria table ile karşılaştır."}
+{"lang": "mix", "domain": "marketing", "text": "Store opening event'i için invite metni: yeni mağaza {ADDRESS1.tr_street}, {LOCATION1.district}, special guest {PERSON1.full}. Instagram + SMS versiyonu."}
+{"lang": "mix", "domain": "marketing", "text": "Q3 marketing report'u özetle, KPI'lar: CTR 2.1%, CPA 45 TL, ROAS 3.2. No names, sadece bullet points."}
+{"lang": "tr", "domain": "marketing", "text": "{PERSON1.first} Bey, geçen haftaki toplantıda bahsettiğimiz katalog fiyatlarını {LOCATION1.city} bayisine iletmedi. Ona hatırlatma e-postası yaz, kibar ama net."}
+{"lang": "en", "domain": "marketing", "text": "Persona doc: 'Meet {PERSON1.first}, 34, a nurse in {LOCATION1.city} who shops online after night shifts.' Expand into a full buyer persona with pains and goals."}
+{"lang": "tr", "domain": "marketing", "text": "Ürün lansmanında konuşacak isimler: {PERSON1.full} (CEO), {PERSON2.full} (Ar-Ge), {PERSON3.initial} (müşteri temsilcisi). Sahne akışı ve süreleri planla."}
+{"lang": "en", "domain": "marketing", "text": "Create a referral email template where {PERSON1.first} invites a friend. Use {PERSON2.first} as the friend's name in the example."}
+{"lang": "tr", "domain": "marketing", "text": "Altın Yıldız ödüllerine başvuru metni hazırla; kampanyamız Koç Holding iş birliğiyle yürütüldü, sorumlu müdür {PERSON1.full}."}
+{"lang": "en", "domain": "marketing", "text": "A customer named {PERSON1.full} at {ADDRESS1.en} wrote a 1-star review about late delivery. Draft a public response that apologises without sharing her details."}
+{"lang": "tr", "domain": "events", "text": "Düğün davetiyesi metni yaz: {PERSON1.firstlast2} ile {PERSON2.full} 14 Haziran Cumartesi günü saat 19.00'da {ADDRESS1.tr} adresindeki düğün salonunda evleniyor. Aileleri: {PERSON3.last} ve {PERSON4.last} aileleri."}
+{"lang": "tr", "domain": "events", "text": "Kına gecesi için WhatsApp davet mesajı: gelin {PERSON1.first}, yer {LOCATION1.neighborhood} mahallesindeki bahçe, kıyafet kırmızı tonlarında. Eğlenceli yaz."}
+{"lang": "tr", "domain": "events", "text": "Davetli listesini masalara böl:\n{PERSON1.full}\n{PERSON2.full}\n{PERSON3.full}\n{PERSON4.full}\n{PERSON5.full}\n{PERSON1.first} ile {PERSON2.first} aynı masada olmasın."}
+{"lang": "tr", "domain": "events", "text": "Oğlumun sünnet düğünü için davetiye: Sünnet çocuğu {PERSON1.first}, anne-baba {PERSON2.full} ve {PERSON3.full}. Tarih 21 Ekim, yer {ADDRESS1.tr}."}
+{"lang": "tr", "domain": "events", "text": "Nişan konuşması yazmama yardım et: kardeşim {PERSON1.first} ve nişanlısı {PERSON2.first} {LOCATION1.city+LOC} tanışmışlar, ikisi de deniz tutkunu. 2 dakikalık konuşma olsun."}
+{"lang": "tr", "domain": "events", "text": "Mezuniyet töreni programı hazırla: açılış konuşması Rektör {PERSON1.full}, mezun konuşması {PERSON2.full}, kep atma 16.30'da. Yer Sabancı Üniversitesi açık amfi."}
+{"lang": "tr", "domain": "events", "text": "Ekim ayında yapılacak şirket pikniği için katılım formu metni yaz. İsim alanı formda olacak, sen örnek isim yazma."}
+{"lang": "tr", "domain": "events", "text": "Anneannemin 80. yaş günü sürprizi: {PERSON1.first} teyzem pastayı getirecek, {PERSON2.first} dayım müziği ayarlayacak, mekan {ADDRESS1.tr_street}. Görev dağılımı listesi yap."}
+{"lang": "tr", "domain": "events", "text": "Taziye için başsağlığı mesajı: arkadaşım {PERSON1.first+GEN} annesi {PERSON2.full} vefat etti, cenaze {LOCATION1.district} mezarlığında. Kısa ve içten olsun."}
+{"lang": "tr", "domain": "events", "text": "Bebek mevlidi duyurusu: '{PERSON1.first} bebeğimizin doğumu vesilesiyle {ADDRESS1.tr} adresindeki evimizde mevlit okutulacaktır.' Daha akıcı yaz."}
+{"lang": "tr", "domain": "events", "text": "Doğum günü partisi için tema öner: 7 yaşında bir çocuk, yıldızlar ve uzay seviyor, bahçede yapılacak. İsim kullanmana gerek yok."}
+{"lang": "tr", "domain": "events", "text": "Düğünde nikâh şahitleri {PERSON1.full} ve {PERSON2.full} olacak. Nikah memurunun okuyacağı metne şahit isimlerini yerleştir, belediye {LOCATION1.district} Evlendirme Dairesi."}
+{"lang": "tr", "domain": "events", "text": "Konferans yaka kartları için CSV düzenle:\nad,soyad,kurum\n{PERSON1.first},{PERSON1.last},Koç Üniversitesi\n{PERSON2.first},{PERSON2.last},Dell Türkiye\nKurumu büyük harfe çevir."}
+{"lang": "tr", "domain": "events", "text": "Bahar şenliği için okul aile birliği duyurusu: stantlar, gül fidanı satışı ve çocuk koşusu olacak. Kısa afiş metni yaz."}
+{"lang": "tr", "domain": "events", "text": "Emeklilik partisi konuşması: {PERSON1.full} Hanım 32 yıl hastanemizde hemşirelik yaptı, {LOCATION1.city+ABL} gelip burada kök saldı. Duygusal ve esprili olsun."}
+{"lang": "en", "domain": "events", "text": "Wedding invitation wording please: Together with their families, {PERSON1.full} and {PERSON2.full} invite you to celebrate their marriage on Saturday, May 16, at {ADDRESS1.en}."}
+{"lang": "en", "domain": "events", "text": "Seating chart help. Guests: {PERSON1.full}, {PERSON2.full}, {PERSON3.full}, {PERSON4.full}. {PERSON3.first} and {PERSON4.first} are divorced, keep them apart."}
+{"lang": "en", "domain": "events", "text": "Write a best man speech outline for my brother {PERSON1.first}. He met {PERSON2.first} on a hiking trip in {LOCATION1.country} and proposed on the same trail."}
+{"lang": "en", "domain": "events", "text": "Birthday party invite for my daughter {PERSON1.first}, turning 6. Unicorn theme, Saturday 2pm at {ADDRESS1.en}, RSVP to 555-0199."}
+{"lang": "en", "domain": "events", "text": "Memorial service program: In loving memory of {PERSON1.firstlast2}. Eulogy by {PERSON2.full}, reading by {PERSON3.full}. Reception afterwards at {ADDRESS1.en_street}."}
+{"lang": "en", "domain": "events", "text": "Draft an email to the venue manager, Ms. {PERSON1.last}, to move our anniversary dinner from Friday to Saturday and add two guests."}
+{"lang": "en", "domain": "events", "text": "Suggest a playlist for a Hope & Grace charity gala; it's a cancer research fundraiser, so upbeat but respectful."}
+{"lang": "en", "domain": "events", "text": "Baby shower invite: hosted by {PERSON1.first} and {PERSON2.first} for mom-to-be {PERSON3.full}. Brunch at {ADDRESS1.en}, registry link to follow."}
+{"lang": "en", "domain": "events", "text": "Conference speaker intro: Our next speaker, {PERSON1.full}, leads the data team at Mercedes-Benz and grew up in {LOCATION1.city}. Make it 45 seconds when read aloud."}
+{"lang": "en", "domain": "events", "text": "Guest list cleanup: remove duplicates and sort by last name.\n- {PERSON1.full}\n- {PERSON2.full}\n- {PERSON1.upper}\n- {PERSON3.initial}"}
+{"lang": "en", "domain": "events", "text": "Help me plan a 30th birthday weekend in {LOCATION1.city} for my partner {PERSON1.first}. She loves food markets and hates crowds."}
+{"lang": "en", "domain": "events", "text": "Write rules for a family trivia night. Teams, scoring, tiebreaker. No names needed."}
+{"lang": "mix", "domain": "events", "text": "Destination wedding {LOCATION1.city+LOC} olacak, guests from {LOCATION2.country}. Bilingual save-the-date yaz: {PERSON1.first} & {PERSON2.first}, September 12."}
+{"lang": "mix", "domain": "events", "text": "Bridal shower için games öner, gelin {PERSON1.first} kitap kurdu, nedime {PERSON2.first} organizasyonu yapıyor. Türkçe-İngilizce karışık liste olsun."}
+{"lang": "mix", "domain": "events", "text": "Event run-of-show lazım: 18.00 karşılama, 18.30 {PERSON1.full} keynote, 19.15 panel ({PERSON2.full}, {PERSON3.full}), 20.00 kokteyl. Table olarak yaz."}
+{"lang": "mix", "domain": "events", "text": "Can you write a thank-you note to guests after the wedding? Gelin {PERSON1.first}, damat {PERSON2.first}, 'katılımınız için çok teşekkürler' kısmı Türkçe kalsın."}
+{"lang": "mix", "domain": "events", "text": "Yılbaşı partisi ofiste, dress code 'glitter & gold', secret Santa çekilişi var. Duyuru e-postası yaz, isim yok."}
+{"lang": "mix", "domain": "events", "text": "Reunion organizasyonu: class of 2006, venue {ADDRESS1.tr}, organizers {PERSON1.full} ve {PERSON2.full}. RSVP form questions öner."}
+{"lang": "tr", "domain": "events", "text": "Kartal yuvası gibi tepede bir mekanda yapılacak yaz konserinin duyurusunu yaz: sahne gün batımında, sanatçı {PERSON1}, slogan '{PERSON1.last} şarkılarıyla barış dolu bir akşam' olsun."}
+{"lang": "en", "domain": "events", "text": "Funeral reception logistics: about 60 people at {ADDRESS1.en}. {PERSON1.first} is handling food, {PERSON2.first} flowers. Make me a checklist with timings."}
+{"lang": "tr", "domain": "events", "text": "Düğün fotoğrafçısına gönderilecek çekim listesi: gelin {PERSON1.first}, damat {PERSON2.first}, anneler {PERSON3.first} ve {PERSON4.first}, özel kare: dedemiz {PERSON5.full} ile."}
+{"lang": "en", "domain": "events", "text": "Toast for my parents' 40th anniversary: Mom ({PERSON1.first}) and Dad ({PERSON2.first}) married in {LOCATION1.city} in 1986 with eleven guests and one cake."}
+{"lang": "tr", "domain": "events", "text": "Mahalle iftar sofrası duyurusu: {LOCATION1.neighborhood} mahallesi muhtarı {PERSON1.full} herkesi parka davet ediyor, yemek saat 19.42'de."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Sevgilim {PERSON1.first} ile 3 yıldır birlikteyiz, o {LOCATION1.city+LOC} iş buldu ve taşınmak istiyor, ben {LOCATION2.city+LOC} kalmak zorundayım. Uzak mesafe ilişki yürür mü?"}
+{"lang": "tr", "domain": "real-life-advice", "text": "Flört uygulamasında {PERSON1.first} adında biriyle eşleştim, ilk buluşmada nereye gitmeliyiz? İkimiz de {LOCATION1.district} tarafında oturuyoruz."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Ev arkadaşım {PERSON1.full} kirayı üç aydır geç ödüyor. Ev {ADDRESS1.tr} adresinde, kontrat benim adıma. Hukuki olarak ne yapabilirim?"}
+{"lang": "tr", "domain": "real-life-advice", "text": "Arkadaşım {PERSON1.first} sürekli borç istiyor, en son 5 bin TL verdim. {PERSON1.first+DAT} hayır demenin kibar bir yolunu öner."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Yeni eve taşınıyorum: eski adres {ADDRESS1.tr}, yeni adres {ADDRESS2.tr}. Adres değişikliğini bildirmem gereken kurumların listesini çıkar."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Umut etmekten yoruldum, iş aramam bir yıldır sonuçsuz. Motivasyonumu toparlamak için gerçekçi bir haftalık plan öner."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Erkek arkadaşım {PERSON1.first}, annesi {PERSON2.first} Hanım'ın her kararımıza karışmasına ses çıkarmıyor. Bunu onunla nasıl konuşurum?"}
+{"lang": "tr", "domain": "real-life-advice", "text": "Kayınbiraderim {PERSON1.full+INS} ortak iş kurmayı düşünüyoruz, dükkan {LOCATION1.neighborhood} mahallesinde. Akraba ile ortaklığın riskleri neler?"}
+{"lang": "tr", "domain": "real-life-advice", "text": "Komşum {PERSON1.last} ailesinin çocukları gece geç saatte top oynuyor, apartman yönetimine şikâyet mi edeyim, önce kapılarını mı çalayım?"}
+{"lang": "tr", "domain": "real-life-advice", "text": "Barış yapmak istiyorum ama gururum izin vermiyor. Kavga ettiğim en yakın arkadaşıma ilk adımı atmak için ne yazabilirim? İsim vermeyeceğim."}
+{"lang": "tr", "domain": "real-life-advice", "text": "{LOCATION1.city+ABL} {LOCATION2.city+DAT} taşınıyoruz, iki çocuk ve bir köpekle. Nakliye, okul kaydı ve ev arama için zaman çizelgesi yap."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Eski eşim {PERSON1.full} çocukları hafta sonu almıyor. Velayet anlaşmamız {LOCATION1.city} Aile Mahkemesi'nde yapıldı. Ne gibi adımlar atabilirim?"}
+{"lang": "tr", "domain": "real-life-advice", "text": "Can dostum dediğim biri arkamdan konuşmuş. {PERSON1.first+ABL} duydum, {PERSON2.first} öyle demiş. Yüzleşmeli miyim?"}
+{"lang": "tr", "domain": "real-life-advice", "text": "Demir eksikliği yüzünden halsizim, doktor takviye verdi. Gündelik hayatta enerjimi artırmak için beslenme önerileri ver."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Ev sahibim {PERSON1.first} Bey depozitoyu iade etmiyor, evi {ADDRESS1.tr} adresinde temiz teslim ettim. Ona gönderilecek resmi bir ihtar metni taslağı hazırla."}
+{"lang": "en", "domain": "real-life-advice", "text": "My girlfriend {PERSON1.first} wants to move in together but I'm not ready. How do I say that without her thinking I don't love her?"}
+{"lang": "en", "domain": "real-life-advice", "text": "I'm moving from {ADDRESS1.en} to {ADDRESS2.en} next month. Make me a moving checklist: utilities, mail forwarding, packing order."}
+{"lang": "en", "domain": "real-life-advice", "text": "Matched with {PERSON1.first} on Hinge, she lives in {LOCATION1.city} and I'm two hours away. Good first-date ideas halfway between?"}
+{"lang": "en", "domain": "real-life-advice", "text": "My coworker-turned-friend {PERSON1.full} told everyone about my divorce. How do I set boundaries without making the office awkward?"}
+{"lang": "en", "domain": "real-life-advice", "text": "My partner {PERSON1.first} keeps checking my phone. Is this a red flag? Give me a balanced view and how to raise it."}
+{"lang": "en", "domain": "real-life-advice", "text": "Should I take a job in {LOCATION1.city} or stay near my parents in {LOCATION2.city}? My mom {PERSON1.first} is recovering from surgery."}
+{"lang": "en", "domain": "real-life-advice", "text": "How do I stop doom-scrolling at night? I've tried apps, grayscale mode, leaving the phone in the kitchen. No personal details needed."}
+{"lang": "en", "domain": "real-life-advice", "text": "Draft a message to my landlord {PERSON1.full}: the heating at {ADDRESS1.en} has been broken for five days, I need a repair date in writing."}
+{"lang": "en", "domain": "real-life-advice", "text": "My best friend {PERSON1.first} is marrying {PERSON2.first}, who I think is controlling. Do I say something before the wedding or stay quiet?"}
+{"lang": "en", "domain": "real-life-advice", "text": "I keep saying yes to everything. How do I learn to say no with grace at work and at home?"}
+{"lang": "en", "domain": "real-life-advice", "text": "My ex {PERSON1.full} moved into my building at {ADDRESS1.en_street}. I'm uncomfortable. Practical options?"}
+{"lang": "en", "domain": "real-life-advice", "text": "Help me write a dating profile. I love hiking, May sunsets, and cooking badly. Avoid clichés like 'partner in crime'."}
+{"lang": "en", "domain": "real-life-advice", "text": "How do I tell my roommates {PERSON1.first} and {PERSON2.first} I'm moving out to {LOCATION1.city} without leaving them stuck with the lease?"}
+{"lang": "mix", "domain": "real-life-advice", "text": "Boyfriend'im {PERSON1.first} wants us to spend Bayram with his family in {LOCATION1.city}, ama ben kendi ailemle olmak istiyorum. How do we compromise?"}
+{"lang": "mix", "domain": "real-life-advice", "text": "Moving abroad: {LOCATION1.city+ABL} {LOCATION2.city+DAT} gidiyorum, visa çıktı. What should I sort out in my first two weeks? Banka, telefon, ev."}
+{"lang": "mix", "domain": "real-life-advice", "text": "My Turkish mother-in-law {PERSON1.first} Hanım calls every day, eşim de bir şey demiyor. How do I raise this kindly?"}
+{"lang": "mix", "domain": "real-life-advice", "text": "Ghosted by {PERSON1.first} after three dates, bir mesaj atsam mı? Write two options, one casual one closure."}
+{"lang": "mix", "domain": "real-life-advice", "text": "Kira artışı %60, landlord {PERSON1.last} Bey says take it or leave. Ev {ADDRESS1.tr} adresinde. What are my rights under Turkish law, kısa anlat."}
+{"lang": "mix", "domain": "real-life-advice", "text": "Burnout yaşıyorum, work-life balance için tips ver. Weekend'de deniz kenarına gitmek iyi geliyor ama yetmiyor."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Kız kardeşim {PERSON1.first} sevgilisi {PERSON2.full} ile evlenmek istiyor, ailemiz karşı çünkü adam {LOCATION1.country} yaşıyor. Aileme nasıl anlatabilirim?"}
+{"lang": "en", "domain": "real-life-advice", "text": "I found out my friend {PERSON1.first} has been lying about her job. Do I confront her? Context: we're flatmates at {ADDRESS1.en}."}
+{"lang": "tr", "domain": "real-life-advice", "text": "Yıldız falıma göre bu ay şanslıymışım, ama ciddi bir yatırım kararı vermeden önce mantıklı bir kontrol listesi hazırlar mısın?"}
+{"lang": "tr", "domain": "education-homework", "text": "Ödevim 'Ailemden Bir Kahraman' başlıklı kompozisyon. Dedem {PERSON1.full} {LOCATION1.city+LOC} öğretmenlik yapmış, köy okullarına kitap taşımış. 300 kelimelik bir giriş yaz."}
+{"lang": "tr", "domain": "education-homework", "text": "Türkçe ödevi: annem {PERSON1.first} hakkında betimleyici bir paragraf yazdım, noktalama hatalarını düzelt: 'annem {PERSON1.first} her sabah erkenden kalkar çay demler ve bahçedeki gülleri sular'"}
+{"lang": "tr", "domain": "education-homework", "text": "Sınıf öğretmenimiz {PERSON1.first} Hanım'a dönem sonu teşekkür kartı yazacağım, 5. sınıf öğrencisi diliyle olsun."}
+{"lang": "tr", "domain": "education-homework", "text": "Tarih ödevi: büyük dedem {PERSON1.upper} Kurtuluş Savaşı'nda {LOCATION1.city} cephesindeymiş. Bu bilgiyi kullanarak bir sözlü tarih röportaj soru listesi hazırla."}
+{"lang": "tr", "domain": "education-homework", "text": "Coğrafya ödevi: Karadeniz kıyısında deniz seviyesi, kaya oluşumları ve yağış hakkında 5 madde yaz. İnsan adı yok."}
+{"lang": "tr", "domain": "education-homework", "text": "Oğlum {PERSON1.first} 3. sınıfta, 'Benim Mahallem' ödevi var. {LOCATION1.neighborhood} mahallesinde oturuyoruz, adres {ADDRESS1.tr_street}. Çocuk diliyle 5 cümle yaz ama adresi koyma, sadece mahalle adı geçsin."}
+{"lang": "tr", "domain": "education-homework", "text": "Proje grubumuz: {PERSON1.full}, {PERSON2.full}, {PERSON3.full}. Görev dağılımını tablo olarak yap: araştırma, sunum, rapor."}
+{"lang": "tr", "domain": "education-homework", "text": "İngilizce ödevim için 'My Family' metnimi kontrol et ama Türkçe açıkla: 'My father {PERSON1.first} is a engineer. My sister {PERSON2.first} live in {LOCATION1.city}.'"}
+{"lang": "tr", "domain": "education-homework", "text": "Edebiyat ödevi: {PERSON1+GEN} İnce Memed romanında kartal ve dağ imgeleri nasıl kullanılıyor? '{PERSON1.last} ve Toros Dağları' başlıklı bir paragraf yaz."}
+{"lang": "tr", "domain": "education-homework", "text": "Rehberlik dersi için 'Hayalimdeki Meslek' kompozisyonu: astronot olmak istiyorum, yıldızlara ve uzaya merakım küçükken başladı. Giriş-gelişme-sonuç yap."}
+{"lang": "tr", "domain": "education-homework", "text": "Okul gezisi izin dilekçesi: Velisi bulunduğum {PERSON1.full} isimli öğrencinin {LOCATION1.city} gezisine katılmasına izin veriyorum. Veli: {PERSON2.full}, Tel 0544 333 22 11. Resmi formata sok."}
+{"lang": "tr", "domain": "education-homework", "text": "Hocam {PERSON1.last+DAT} ödevi geç teslim ettiğim için özür e-postası yaz, sebebi hastalık, rapor ekte."}
+{"lang": "tr", "domain": "education-homework", "text": "Biyoloji ödevi: ekim nöbeti ve münavebe tarımı nedir? Ortaokul seviyesinde açıkla."}
+{"lang": "tr", "domain": "education-homework", "text": "Kompozisyon: 'Yaz tatilinde {LOCATION1.city+DAT} gittik, anneannem {PERSON1.first+GEN} evinde kaldık, {PERSON2.first} ile her gün denize girdik.' Bunu 200 kelimeye genişlet."}
+{"lang": "tr", "domain": "education-homework", "text": "Öğrencim {PERSON1.full+GEN} karnesine yazılacak öğretmen görüşünü yumuşat: 'Derslere ilgisiz, sık sık devamsızlık yapıyor.'"}
+{"lang": "en", "domain": "education-homework", "text": "Homework: write a personal essay about someone who inspires me. I chose my grandmother {PERSON1.full}, who emigrated from {LOCATION1.country} alone at 19. Help me outline it."}
+{"lang": "en", "domain": "education-homework", "text": "Check my grammar: 'My uncle {PERSON1.first} live in {LOCATION1.city} and he have two dog. Every summer we visits him.'"}
+{"lang": "en", "domain": "education-homework", "text": "My daughter {PERSON1.first} has a 'family heritage' project. Her great-grandfather {PERSON2.full} was born in {LOCATION1.city}. What artifacts or documents could she bring?"}
+{"lang": "en", "domain": "education-homework", "text": "Explain the difference between 'hope' and 'wish' for my ESL class, with five example sentences each. No names."}
+{"lang": "en", "domain": "education-homework", "text": "Write a reflection paragraph for my college application about my brother {PERSON1.first}, who has autism and taught me patience."}
+{"lang": "en", "domain": "education-homework", "text": "Group project members: {PERSON1.first} (slides), {PERSON2.first} (research), {PERSON3.first} (script). {PERSON2.first} hasn't contributed. Draft a polite message to the group."}
+{"lang": "en", "domain": "education-homework", "text": "Book report help: To Kill a Mockingbird, focus on the father as a moral figure and the theme of courage. Give me analysis themes and two quotes to look for."}
+{"lang": "en", "domain": "education-homework", "text": "Email to Professor {PERSON1.last} asking for an extension on my history paper; I was at my cousin {PERSON2.first}'s funeral in {LOCATION1.city}."}
+{"lang": "en", "domain": "education-homework", "text": "Help my son write 'All About Me': his name is {PERSON1.first}, he's 7, lives in {LOCATION1.city}, loves trains and pancakes. Keep it in a 7-year-old's voice."}
+{"lang": "en", "domain": "education-homework", "text": "Summarise the causes of the French Revolution in 6 bullet points for a Grade 9 test. Leave out names of historical figures."}
+{"lang": "en", "domain": "education-homework", "text": "Interview questions for my oral history assignment. I'll interview my neighbour Mr. {PERSON1.last}, who grew up at {ADDRESS1.en} during the 1960s."}
+{"lang": "en", "domain": "education-homework", "text": "Recommendation letter draft for my student {PERSON1.full}, applying to study engineering. She led our robotics team to the regional finals in {LOCATION1.city}."}
+{"lang": "en", "domain": "education-homework", "text": "Rate my thesis statement: 'Ford's assembly line changed not only manufacturing but the structure of the American family.'"}
+{"lang": "mix", "domain": "education-homework", "text": "İngilizce essay yazıyorum: 'My hero is my mother, {PERSON1.first}. She raised three kids alone in {LOCATION1.district}.' Bunu B2 seviyesine çıkar."}
+{"lang": "mix", "domain": "education-homework", "text": "Science fair poster'ı için başlık öner, konu güneş enerjisi. Team: {PERSON1.first}, {PERSON2.first}. Catchy olsun."}
+{"lang": "mix", "domain": "education-homework", "text": "Ödev: translate this paragraph into English: 'Babam {PERSON1.full}, {LOCATION1.city+LOC} doğdu ve otuz yıl Demir Çelik fabrikasında çalıştı.'"}
+{"lang": "mix", "domain": "education-homework", "text": "My teacher {PERSON1.first} Hoca said my essay is too short. Konu 'Göç ve Aile', 250 kelime daha nasıl eklerim, ideas ver."}
+{"lang": "mix", "domain": "education-homework", "text": "Erasmus motivation letter: {LOCATION1.city+LOC} doğdum, şimdi {LOCATION2.city} university'ye apply ediyorum. Intro paragraph yaz."}
+{"lang": "mix", "domain": "education-homework", "text": "Math homework: bir bahçenin kenarı 12 m, the other side 15 m. Alanı ve çevreyi step by step çöz, isim yok."}
+{"lang": "tr", "domain": "education-homework", "text": "Veli toplantısı notu: {PERSON1.first+GEN} matematik notları düştü, {PERSON2.first} Hanım evde destek olacağını söyledi. Notu resmi bir tutanak haline getir."}
+{"lang": "en", "domain": "education-homework", "text": "Proofread my scholarship essay intro: 'When my father {PERSON1.full} lost his job in {LOCATION1.city}, I learned what resilience really means.'"}
+{"lang": "tr", "domain": "education-homework", "text": "Matematik öğretmeni {PERSON1.full} için yıl sonu veda konuşması yaz; sınıf başkanı olarak ben okuyacağım, adres ve telefon olmasın."}

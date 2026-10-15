@@ -22,9 +22,12 @@ restores the originals locally in the answer.
 | Firefox | Mozilla-signed XPI (addons.mozilla.org or self-hosted unlisted) | `policies.json` `ExtensionSettings` |
 
 Build the store packages with `pnpm package:browser-guard`. It writes
-`packages/browser-guard/dist/aidr-browser-guard-{chrome,firefox}-<version>.zip`
-and a `SHA256SUMS` file; the zips are reproducible, so you can rebuild from the
-tagged source and compare the hashes.
+`packages/browser-guard/dist/aidr-browser-guard-{chrome,firefox,source}-<version>.zip`
+and a `SHA256SUMS` file and runs the offline store validator; the zips are
+reproducible, so you can rebuild from the tagged source and compare the hashes.
+Step-by-step deployment from the store listings (Intune, Google Admin console, Jamf,
+Group Policy, Firefox `policies.json`, verification, rollback):
+[`docs/installation/browser-guard-enterprise.md`](../installation/browser-guard-enterprise.md).
 
 ### 2. Decide the policy
 
@@ -98,7 +101,8 @@ optional `nativeMessaging` permission, so each user accepts it once on the optio
 page (**Protection** → **Advanced name and address detection** → **Grant
 permission**). Prompts and pastes are then scanned by the host and the rules in
 parallel; when the host is not reachable the check is rules-only and the user sees
-"Advanced detection is unavailable; built-in rules are active" in the popup and a
+"Names and addresses are not checked: the AIDR Privacy helper app is not available.
+Built-in rules are active." in the popup and a
 "checked with built-in rules only" note in the page. See
 [`packages/browser-guard/docs/native-host.md`](../../packages/browser-guard/docs/native-host.md).
 
@@ -107,8 +111,9 @@ only downgrades the check to the built-in rules. Set the managed key
 `requireNativeNer: true` (default `false`) when that is not acceptable:
 
 - *What it blocks:* while `PERSON`, `ADDRESS` or `LOCATION` is enabled, a prompt
-  send, paste or file upload that the host did not check with NER is blocked ("Your
-  organisation requires advanced name and address detection ... Nothing was sent.").
+  send, paste or file upload that the host did not check with NER is blocked ("Nothing
+  was sent. Your organisation requires the AIDR Privacy helper app to check names and
+  addresses, and it could not ...").
   That includes a host that is not installed, not granted `nativeMessaging`,
   crashed, backed off or slower than the 2.5 s page timeout, a rules-only host (no
   approved `ner` block), and text over the host's 200,000-character limit. A prompt
@@ -127,7 +132,7 @@ only downgrades the check to the built-in rules. Set the managed key
   upload. Measure with your largest typical files on your target hardware.
 
 Owners and administrators can also switch the requirement on for every enrolled
-browser from the dashboard (**Browser Privacy Guard** → **Require native NER**;
+browser from the dashboard (**Browser Guard** → **Require native NER**;
 multi-factor verification, audited). It is delivered in the signed dashboard policy
 (managed `telemetry` and `dashboardPolicy` must be set) and merged with the managed
 key: `true` from either side wins, so the dashboard cannot switch off a managed
@@ -155,7 +160,7 @@ refused until four-eyes is turned off by a second approver.
 | Settings not locked | The policy is under the right extension ID; values have the right type (`REG_DWORD` for booleans/integers, JSON text for arrays/objects on Windows). Any managed policy also locks `mode`, `enabledEntities`, `literals`, `maskPaste`, `restoreResponses` and `disabledSites` unless it sets `allowUserOverrides: true` |
 | Nothing masked on a site | The site is in the supported list and not in `disabledSites` (a disabled site is only monitored: sends are counted, nothing is masked); `mode` is not `monitor`; the entity type is in `enabledEntities` |
 | Names in running text not masked | `useNativeHost` is on, the user granted `nativeMessaging`, the popup says "Advanced detection is connected", and the host config has an approved `ner` block (without one it runs rules-only) |
-| Every send blocked with "requires advanced name and address detection" | `requireNativeNer` is on (managed key or the dashboard's **Require native NER**) and the host gave no NER answer: install the host with an approved `ner` block, grant `nativeMessaging` on the options page, and check host start-up time against the 2.5 s timeout |
+| Every send blocked with "requires the AIDR Privacy helper app to check names and addresses" | `requireNativeNer` is on (managed key or the dashboard's **Require native NER**) and the host gave no NER answer: install the host with an approved `ner` block, grant `nativeMessaging` on the options page, and check host start-up time against the 2.5 s timeout |
 | No telemetry | `controlPlaneUrl` is `https://`; the API key is valid; the machine can reach the control plane |
 | Internal AI portal not masked | The host is listed exactly in `customSites` (no port or path), the options page shows the site as **Protected** (not **Needs access**), and the tab was reloaded after access was granted; check the selectors against the portal's markup |
 | Shadow AI shows no usage or does not block | `shadowAi.mode` is `monitor` or `block-unsanctioned`; the options page says "Access granted" (otherwise click **Allow access**); the service is in the catalog (`packages/browser-guard/src/sites/catalog.ts`) |

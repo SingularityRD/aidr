@@ -24,6 +24,8 @@ import { assertNoLeaks } from "../lib/harness.mjs";
 import { SITES } from "../lib/sites.mjs";
 
 const SITE = "chatgpt";
+/** An internal reason code such as SENSITIVE_DATA_IN_PDF: never shown to the user. */
+const NO_CODE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/;
 const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /** Office/PDF handling is product behaviour the self-test extension does not implement. */
@@ -240,7 +242,7 @@ export default [
 			const warning = await waitFor(
 				async () =>
 					(await h.overlays(page, SITE)).find(
-						(o) => !baseline.includes(o) && o.includes("legacy Office"),
+						(o) => !baseline.includes(o) && o.includes("old .doc/.xls/.ppt format"),
 					),
 				{ timeout: 10000, message: "a legacy-format warning" },
 			).catch(() => null);
@@ -265,13 +267,14 @@ export default [
 			const bubble = await waitFor(
 				async () =>
 					(await h.overlays(page, SITE)).find(
-						(o) => !baseline.includes(o) && o.includes("SENSITIVE_DATA_IN_LEGACY_OFFICE"),
+						(o) => !baseline.includes(o) && o.includes("Old Office files (.doc/.xls/.ppt) cannot be masked"),
 					),
 				{ timeout: 10000, message: "a bubble explaining the blocked .doc" },
 			).catch(() => null);
-			checks.check("a bubble names SENSITIVE_DATA_IN_LEGACY_OFFICE", bubble, await h.overlays(page, SITE));
-			// Overlay text is truncated by the harness; the save-as hint follows this sentence.
-			checks.contains("the bubble says legacy files cannot be masked", bubble ?? "", /cannot be masked/);
+			checks.check("a bubble says the .doc was not uploaded", bubble, await h.overlays(page, SITE));
+			checks.contains("the bubble names the data found", bubble ?? "", /personal or confidential data \(1 email address\)/);
+			checks.contains("the bubble suggests saving as .docx", bubble ?? "", /save it as \.docx/);
+			checks.check("the bubble shows no internal reason code", !NO_CODE.test(bubble ?? ""), bubble);
 			let quiet = true;
 			await staysFalse(() => h.recorder.apiSince(mark, { kind: "upload" }).length > 0, {
 				window: 1500,
@@ -301,12 +304,13 @@ export default [
 			const bubble = await waitFor(
 				async () =>
 					(await h.overlays(page, SITE)).find(
-						(o) => !baseline.includes(o) && o.includes("SENSITIVE_DATA_IN_PDF"),
+						(o) => !baseline.includes(o) && o.includes("PDFs cannot be masked"),
 					),
 				{ timeout: 10000, message: "a bubble explaining the blocked PDF" },
 			).catch(() => null);
-			checks.check("a bubble names SENSITIVE_DATA_IN_PDF", bubble, await h.overlays(page, SITE));
+			checks.check("a bubble says the PDF was not uploaded", bubble, await h.overlays(page, SITE));
 			checks.contains("the bubble suggests pasting the text instead", bubble ?? "", /paste/i);
+			checks.check("the bubble shows no internal reason code", !NO_CODE.test(bubble ?? ""), bubble);
 			let quiet = true;
 			await staysFalse(() => h.recorder.apiSince(mark, { kind: "upload" }).length > 0, {
 				window: 1500,

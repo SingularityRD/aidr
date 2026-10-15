@@ -91,6 +91,7 @@ describe("policy: customSites", () => {
 		["single label", [{ ...INTERNAL, hosts: ["intranet"] }]],
 		["IP address", [{ ...INTERNAL, hosts: ["10.0.0.5"] }]],
 		["built-in host", [{ ...INTERNAL, hosts: ["chatgpt.com"] }]],
+		["shared Microsoft 365 host", [{ ...INTERNAL, hosts: ["m365.cloud.microsoft"] }]],
 		["no hosts", [{ ...INTERNAL, hosts: [] }]],
 		[
 			"too many hosts",
@@ -115,11 +116,21 @@ describe("policy: customSites", () => {
 		],
 		["not an array", INTERNAL],
 	];
+	/** Valid entries an invalid list keeps (fail safe: one bad site must not drop the others). */
+	const kept: Record<string, number> = {
+		"duplicate id": 1,
+		"duplicate host": 1,
+		"more than 20 sites": 20,
+	};
 	for (const [name, value] of bad) {
-		it(`rejects the whole key for ${name}`, () => {
+		it(`drops the invalid entries for ${name} and reports the key`, () => {
 			const { policy, warnings } = managedPolicy({ customSites: value });
-			expect(policy.customSites).toEqual([]);
-			expect(warnings).toContain('managed: invalid value for "customSites" ignored');
+			expect(policy.customSites).toHaveLength(kept[name] ?? 0);
+			expect(policy.policyErrors).toEqual(["customSites"]);
+			expect(policy.managedKeys).toContain("customSites");
+			expect(warnings).toContain(
+				'managed: invalid value for "customSites"; fail-safe value applied',
+			);
 		});
 	}
 
@@ -208,18 +219,22 @@ describe("policy: shadowAi", () => {
 		expect(policy.managedKeys).toContain("shadowAi");
 	});
 
-	for (const value of [
-		{ mode: "audit" },
-		{ sanctioned: [] },
-		{ mode: "monitor", sanctioned: ["Bad Id"] },
-		{ mode: "monitor", blocked: "poe" },
-		{ mode: "monitor", extra: true },
-		"monitor",
-	]) {
-		it(`rejects ${JSON.stringify(value)}`, () => {
+	// Fail safe: an unknown mode is the strictest one, valid ids are kept, bad ones dropped.
+	const strict = { mode: "block-unsanctioned", sanctioned: [], blocked: [] };
+	const monitor = { mode: "monitor", sanctioned: [], blocked: [] };
+	for (const [value, expected] of [
+		[{ mode: "audit" }, strict],
+		[{ sanctioned: [] }, strict],
+		[{ mode: "monitor", sanctioned: ["Bad Id"] }, monitor],
+		[{ mode: "monitor", blocked: "poe" }, monitor],
+		[{ mode: "monitor", extra: true }, monitor],
+		["monitor", strict],
+	] as const) {
+		it(`fails safe on ${JSON.stringify(value)}`, () => {
 			const { policy, warnings } = managedPolicy({ shadowAi: value });
-			expect(policy.shadowAi).toEqual(DEFAULT_POLICY.shadowAi);
-			expect(warnings).toContain('managed: invalid value for "shadowAi" ignored');
+			expect(policy.shadowAi).toEqual(expected);
+			expect(policy.policyErrors).toEqual(["shadowAi"]);
+			expect(warnings).toContain('managed: invalid value for "shadowAi"; fail-safe value applied');
 		});
 	}
 });
@@ -268,6 +283,30 @@ describe("Shadow AI rules", () => {
 		}
 		expect(rules[0]?.condition.requestDomains).toEqual(["poe.com"]);
 		expect(new Set(SHADOW_DNR_RULE_IDS).size).toBe(AI_SERVICES.length);
+	});
+
+	it("blocks Microsoft 365 Copilot Chat on its host and /chat path, not the rest of Microsoft 365 (BG-10)", () => {
+		const [rule] = buildShadowRules(policy({ blocked: ["m365-copilot"] }));
+		expect(rule?.condition.requestDomains).toBeUndefined();
+		expect(rule?.condition.resourceTypes).toEqual(["main_frame", "sub_frame"]);
+		const filter = new RegExp(rule?.condition.regexFilter ?? "^$");
+		for (const url of [
+			"https://m365.cloud.microsoft/chat",
+			"https://m365.cloud.microsoft/chat/",
+			"https://m365.cloud.microsoft/chat?auth=2",
+			"https://copilot.cloud.microsoft/",
+			"https://eu.copilot.cloud.microsoft/x",
+		])
+			expect(filter.test(url), url).toBe(true);
+		for (const url of [
+			"https://m365.cloud.microsoft/",
+			"https://m365.cloud.microsoft/apps",
+			"https://m365.cloud.microsoft/chatter",
+			"https://evil.test/m365.cloud.microsoft/chat",
+			"https://copilot.cloud.microsoft.evil.test/",
+			"https://notcopilot.cloud.microsoft/",
+		])
+			expect(filter.test(url), url).toBe(false);
 	});
 });
 
@@ -363,7 +402,7 @@ describe("worker: Shadow AI", () => {
 			SHADOW_DNR_RULE_IDS.includes(r.id),
 		);
 		expect(installed).toHaveLength(AI_SERVICES.length - 1);
-		expect(installed.some((r) => r.condition.requestDomains.includes("chatgpt.com"))).toBe(false);
+		expect(installed.some((r) => r.condition.requestDomains?.includes("chatgpt.com"))).toBe(false);
 
 		t.navigate(7, "https://poe.com/chat/abc?x=1");
 		await vi.waitFor(() =>

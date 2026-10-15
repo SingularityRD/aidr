@@ -2,9 +2,25 @@ name: Browser Guard Release
 
 # Builds, tests and publishes the Browser Guard extension zips for a protected,
 # signed browser-guard-vX.Y.Z tag. The output is a draft GitHub release with the
-# zips, SHA256SUMS and a build-provenance attestation. Store submission (Chrome
-# Web Store, Edge Add-ons, AMO) is a separate, manual step: this workflow holds
-# no store credentials.
+# store packages (Chrome/Edge zip, Firefox zip, AMO source zip), SHA256SUMS and a
+# build-provenance attestation; the offline store validator gates the packages.
+#
+# The store-drafts job then uploads the attested packages as DRAFTS for the owner
+# to publish: Chrome Web Store (upload, never publish), Edge Add-ons (draft
+# package, never submitted) and addons.mozilla.org (unlisted channel: signed for
+# self-distribution, never listed). A store whose secrets are not configured is
+# skipped with a notice (the GitHub draft release still carries every package);
+# a partly configured store fails that job loudly. That job checks out nothing and
+# runs no repository code next to the store credentials.
+#
+# Self-hosted channel (optional; outside the stores, for air-gapped and internal hosting):
+# with the repository variable BROWSER_GUARD_UPDATE_BASE_URL set, the build also makes the
+# -selfhosted- packages (the store packages plus the browser's update URL, nothing else),
+# and the self-hosted-feed job signs the Chrome/Edge one as a CRX3 with the owner key
+# (secret BROWSER_GUARD_CRX_KEY_PEM, environment browser-guard-self-hosted), checks the ID
+# against the pinned variable BROWSER_GUARD_CRX_EXTENSION_ID and builds the update feed
+# (update.xml, packages/, SHA256SUMS). A missing key or pin fails the release: nothing is
+# signed with another key. The CRX goes on the draft release; the feed is an artifact.
 
 on:
   push:
@@ -29,7 +45,10 @@ jobs:
     environment: browser-guard-release
     outputs:
       version: ${{ steps.identity.outputs.version }}
+      package_version: ${{ steps.identity.outputs.package_version }}
       sha: ${{ steps.identity.outputs.sha }}
+      self_hosted: ${{ steps.channel.outputs.self_hosted }}
+      update_base_url: ${{ steps.channel.outputs.update_base_url }}
     steps:
       - name: Checkout protected tag (pinned)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,7 +106,30 @@ jobs:
           }
           {
             echo "version=${version}"
+            # Package file names carry the manifest version (pre-release suffix dropped, see build.mjs).
+            echo "package_version=${version%%-*}"
             echo "sha=${tag_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve the self-hosted update channel
+        id: channel
+        shell: bash
+        env:
+          UPDATE_BASE_URL: ${{ vars.BROWSER_GUARD_UPDATE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${UPDATE_BASE_URL}" ]]; then
+            echo "self_hosted=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice title=self-hosted::BROWSER_GUARD_UPDATE_BASE_URL is not set: store packages only, no self-hosted update feed."
+            exit 0
+          fi
+          [[ "${UPDATE_BASE_URL}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$ ]] || {
+            echo "BROWSER_GUARD_UPDATE_BASE_URL must be a plain https:// URL (no credentials, query or fragment)." >&2
+            exit 1
+          }
+          {
+            echo "self_hosted=true"
+            echo "update_base_url=${UPDATE_BASE_URL%/}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Frozen dependency install (no lifecycle mutation)
@@ -117,7 +159,10 @@ jobs:
       - name: Release build, zips and reproducibility check
         shell: bash
         env:
-          VERSION: ${{ steps.identity.outputs.version }}
+          VERSION: ${{ steps.identity.outputs.package_version }}
+          SELF_HOSTED: ${{ steps.channel.outputs.self_hosted }}
+          # Read by build.mjs and validate-store.mjs: adds and requires the -selfhosted- packages.
+          BROWSER_GUARD_UPDATE_BASE_URL: ${{ steps.channel.outputs.update_base_url }}
         run: |
           set -euo pipefail
           dist=packages/browser-guard/dist
@@ -131,17 +176,31 @@ jobs:
           (cd "${dist}" && sha256sum --check --strict SHA256SUMS)
           output="${GITHUB_WORKSPACE}/release-output-browser-guard"
           mkdir "${output}"
-          for target in chrome firefox; do
+          for target in chrome firefox source; do
             zip="aidr-browser-guard-${target}-${VERSION}.zip"
             [[ -f "${dist}/${zip}" ]] || { echo "Missing ${zip}" >&2; exit 1; }
             cp "${dist}/${zip}" "${output}/"
           done
+          if [[ "${SELF_HOSTED}" == "true" ]]; then
+            for target in chrome-selfhosted firefox-selfhosted; do
+              zip="aidr-browser-guard-${target}-${VERSION}.zip"
+              [[ -f "${dist}/${zip}" ]] || { echo "Missing ${zip}" >&2; exit 1; }
+              cp "${dist}/${zip}" "${output}/"
+            done
+          fi
           cp "${dist}/SHA256SUMS" "${output}/SHA256SUMS"
           # SHA256SUMS must list exactly the staged zips, nothing more.
           listed="$(awk '{print $2}' "${output}/SHA256SUMS" | sort)"
           staged="$(cd "${output}" && ls ./*.zip | sed 's#^\./##' | sort)"
           [[ "${listed}" == "${staged}" ]] || { echo "SHA256SUMS does not match the staged zips." >&2; exit 1; }
           (cd "${output}" && sha256sum --check --strict SHA256SUMS)
+
+      - name: Offline store validation of the staged packages
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          # Set: the -selfhosted- packages must be present and carry exactly this feed's URLs.
+          BROWSER_GUARD_UPDATE_BASE_URL: ${{ steps.channel.outputs.update_base_url }}
+        run: node packages/browser-guard/scripts/validate-store.mjs --dist release-output-browser-guard --version "${VERSION}"
 
       - name: Clean-source gate after release build
         shell: bash
@@ -160,9 +219,81 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  self-hosted-feed:
+    name: Sign the self-hosted Chrome/Edge package and build the update feed
+    needs: build
+    if: needs.build.outputs.self_hosted == 'true'
+    runs-on: ubuntu-22.04
+    # The owner's CRX key lives only in this environment; add required reviewers to it.
+    # The job runs update-feed.mjs from the verified tag commit with Node built-ins only:
+    # no dependency install, no package manager, no build.
+    environment: browser-guard-self-hosted
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.package_version }}
+      UPDATE_BASE_URL: ${{ needs.build.outputs.update_base_url }}
+    steps:
+      - name: Checkout the verified tag commit (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Browser Guard release bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-browser-guard-${{ needs.build.outputs.version }}
+          path: release-output-browser-guard
+
+      - name: Recheck the bundle before signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release-output-browser-guard && sha256sum --check --strict SHA256SUMS)
+
+      - name: Sign the CRX3 and build the update feed (fails closed without the key)
+        shell: bash
+        env:
+          BROWSER_GUARD_CRX_KEY_PEM: ${{ secrets.BROWSER_GUARD_CRX_KEY_PEM }}
+          EXTENSION_ID: ${{ vars.BROWSER_GUARD_CRX_EXTENSION_ID }}
+        run: |
+          set -euo pipefail
+          [[ -n "${BROWSER_GUARD_CRX_KEY_PEM}" ]] || {
+            echo "::error::BROWSER_GUARD_CRX_KEY_PEM is not set in the browser-guard-self-hosted environment: the self-hosted package is not signed. Add the owner's extension key, or unset BROWSER_GUARD_UPDATE_BASE_URL." >&2
+            exit 1
+          }
+          [[ "${EXTENSION_ID}" =~ ^[a-p]{32}$ ]] || {
+            echo "::error::Pin the self-hosted extension ID in the BROWSER_GUARD_CRX_EXTENSION_ID variable (print it with: node packages/browser-guard/scripts/update-feed.mjs --print-extension-id)." >&2
+            exit 1
+          }
+          # The key reaches the script through the environment only, never argv or disk.
+          node packages/browser-guard/scripts/update-feed.mjs \
+            --base-url "${UPDATE_BASE_URL}" \
+            --out update-feed \
+            --chrome-zip "release-output-browser-guard/aidr-browser-guard-chrome-selfhosted-${VERSION}.zip" \
+            --extension-id "${EXTENSION_ID}"
+          (cd update-feed && sha256sum --check --strict SHA256SUMS)
+          echo "| self-hosted | CRX ${VERSION} signed for ${EXTENSION_ID}; feed for ${UPDATE_BASE_URL} (artifact aidr-browser-guard-update-feed-${VERSION}) |" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the update feed (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidr-browser-guard-update-feed-${{ needs.build.outputs.version }}
+          path: update-feed/
+          if-no-files-found: error
+          retention-days: 30
+
   attest-publish:
     name: Attest and publish Browser Guard draft release
-    needs: build
+    needs: [build, self-hosted-feed]
+    # Runs when the feed job succeeded or was skipped (no self-hosted channel), never after a failure.
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.self-hosted-feed.result == 'success' || needs.self-hosted-feed.result == 'skipped') }}
     runs-on: ubuntu-22.04
     environment: browser-guard-release
     permissions:
@@ -176,16 +307,34 @@ jobs:
           name: aidr-browser-guard-${{ needs.build.outputs.version }}
           path: release-output-browser-guard
 
+      - name: Download the update feed (pinned)
+        if: needs.build.outputs.self_hosted == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-browser-guard-update-feed-${{ needs.build.outputs.version }}
+          path: update-feed
+
       - name: Recheck bundle across the runner boundary
         shell: bash
         env:
-          VERSION: ${{ needs.build.outputs.version }}
+          VERSION: ${{ needs.build.outputs.package_version }}
+          SELF_HOSTED: ${{ needs.build.outputs.self_hosted }}
         run: |
           set -euo pipefail
           cd release-output-browser-guard
           sha256sum --check --strict SHA256SUMS
-          expected="$(printf '%s\n' "aidr-browser-guard-chrome-${VERSION}.zip" "aidr-browser-guard-firefox-${VERSION}.zip" SHA256SUMS | sort)"
+          names=("aidr-browser-guard-chrome-${VERSION}.zip" "aidr-browser-guard-firefox-${VERSION}.zip" "aidr-browser-guard-source-${VERSION}.zip" SHA256SUMS)
+          if [[ "${SELF_HOSTED}" == "true" ]]; then
+            names+=("aidr-browser-guard-chrome-selfhosted-${VERSION}.zip" "aidr-browser-guard-firefox-selfhosted-${VERSION}.zip")
+          fi
+          expected="$(printf '%s\n' "${names[@]}" | sort)"
           [[ "$(ls -1 | sort)" == "${expected}" ]] || { echo "Unexpected files in the release bundle." >&2; ls -la >&2; exit 1; }
+          if [[ "${SELF_HOSTED}" == "true" ]]; then
+            # The signed CRX joins the draft release next to the zips it was built from.
+            (cd ../update-feed && sha256sum --check --strict SHA256SUMS)
+            crx="aidr-browser-guard-${VERSION}.crx"
+            cp "../update-feed/packages/${crx}" "${crx}"
+          fi
 
       - name: Attest the Browser Guard zips (pinned)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -203,3 +352,236 @@ jobs:
           files: release-output-browser-guard/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  store-drafts:
+    name: Upload store drafts for the owner to publish
+    needs: [build, attest-publish]
+    # Explicit: the optional self-hosted-feed job upstream may be skipped.
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.attest-publish.result == 'success' }}
+    runs-on: ubuntu-22.04
+    # Store credentials live only in this environment; add required reviewers to it
+    # so every upload is approved by a person. No checkout: nothing from the tag runs here.
+    environment: browser-guard-store
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.package_version }}
+      SELF_HOSTED: ${{ needs.build.outputs.self_hosted }}
+      AMO_ADDON_ID: browser-guard@singularityrd.com
+    steps:
+      - name: Download Browser Guard release bundle (pinned)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aidr-browser-guard-${{ needs.build.outputs.version }}
+          path: release-output-browser-guard
+
+      - name: Recheck the attested bundle before any upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release-output-browser-guard && sha256sum --check --strict SHA256SUMS)
+          mkdir -p store-receipts
+
+      - name: Detect configured store credentials
+        id: stores
+        shell: bash
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          EDGE_ADDONS_CLIENT_ID: ${{ secrets.EDGE_ADDONS_CLIENT_ID }}
+          EDGE_ADDONS_API_KEY: ${{ secrets.EDGE_ADDONS_API_KEY }}
+          EDGE_ADDONS_PRODUCT_ID: ${{ secrets.EDGE_ADDONS_PRODUCT_ID }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          incomplete=0
+          detect() {
+            local store="$1"; shift
+            local present=0 missing=()
+            for name in "$@"; do
+              if [[ -n "${!name}" ]]; then present=$((present + 1)); else missing+=("${name}"); fi
+            done
+            if (( present == 0 )); then
+              echo "${store}=skipped" >> "${GITHUB_OUTPUT}"
+              echo "::notice title=${store}::No ${store} credentials configured: draft upload skipped; the packages are on the draft GitHub release."
+              echo "| ${store} | skipped (no credentials) |" >> "${GITHUB_STEP_SUMMARY}"
+            elif (( ${#missing[@]} > 0 )); then
+              echo "${store}=incomplete" >> "${GITHUB_OUTPUT}"
+              echo "::error title=${store}::Incomplete ${store} credentials, missing: ${missing[*]}"
+              echo "| ${store} | NOT uploaded: missing ${missing[*]} |" >> "${GITHUB_STEP_SUMMARY}"
+              incomplete=1
+            else
+              echo "${store}=configured" >> "${GITHUB_OUTPUT}"
+            fi
+          }
+          echo "| Store | Draft upload |" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|---|---|" >> "${GITHUB_STEP_SUMMARY}"
+          detect cws CWS_CLIENT_ID CWS_CLIENT_SECRET CWS_REFRESH_TOKEN CWS_EXTENSION_ID CWS_PUBLISHER_ID
+          detect edge EDGE_ADDONS_CLIENT_ID EDGE_ADDONS_API_KEY EDGE_ADDONS_PRODUCT_ID
+          detect amo AMO_JWT_ISSUER AMO_JWT_SECRET
+          echo "incomplete=${incomplete}" >> "${GITHUB_OUTPUT}"
+
+      - name: Chrome Web Store - upload package as a draft (never published)
+        if: steps.stores.outputs.cws == 'configured'
+        shell: bash
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          zip="release-output-browser-guard/aidr-browser-guard-chrome-${VERSION}.zip"
+          # Credentials go through stdin and header files, never the process list.
+          printf 'client_id=%s&client_secret=%s&refresh_token=%s&grant_type=refresh_token' \
+            "${CWS_CLIENT_ID}" "${CWS_CLIENT_SECRET}" "${CWS_REFRESH_TOKEN}" \
+            | curl -fsS --retry 3 -X POST https://oauth2.googleapis.com/token --data-binary @- -o "${RUNNER_TEMP}/cws-token.json"
+          token="$(jq -r '.access_token // empty' "${RUNNER_TEMP}/cws-token.json")"
+          rm -f "${RUNNER_TEMP}/cws-token.json"
+          [[ -n "${token}" ]] || { echo "::error::Chrome Web Store: the refresh token gave no access token." >&2; exit 1; }
+          echo "::add-mask::${token}"
+          printf 'Authorization: Bearer %s\n' "${token}" > "${RUNNER_TEMP}/cws-auth"
+          base="https://chromewebstore.googleapis.com"
+          item="publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}"
+          # Chrome Web Store API v2 upload: replaces the draft package only. The item stays
+          # unpublished until the owner submits it for review in the developer dashboard;
+          # this workflow never calls the publish method.
+          curl -fsS --retry 3 -X POST -H @"${RUNNER_TEMP}/cws-auth" -H "Content-Type: application/zip" \
+            --data-binary @"${zip}" "${base}/upload/v2/${item}:upload" -o "${RUNNER_TEMP}/cws-upload.json"
+          state="$(jq -r '.uploadState // empty' "${RUNNER_TEMP}/cws-upload.json")"
+          for _ in $(seq 1 30); do
+            [[ "${state}" == "IN_PROGRESS" || "${state}" == "UPLOAD_IN_PROGRESS" ]] || break
+            sleep 10
+            curl -fsS --retry 3 -H @"${RUNNER_TEMP}/cws-auth" "${base}/v2/${item}:fetchStatus" -o "${RUNNER_TEMP}/cws-status.json"
+            state="$(jq -r '.lastAsyncUploadState // .uploadState // empty' "${RUNNER_TEMP}/cws-status.json")"
+          done
+          rm -f "${RUNNER_TEMP}/cws-auth"
+          jq -n --arg state "${state}" --arg version "${VERSION}" --arg sha "$(sha256sum "${zip}" | cut -d' ' -f1)" \
+            '{store: "chrome-web-store", action: "draft-upload", version: $version, sha256: $sha, state: $state}' \
+            > store-receipts/chrome-web-store.json
+          [[ "${state}" == "SUCCEEDED" ]] || {
+            echo "::error::Chrome Web Store upload state: ${state:-unknown}" >&2
+            jq '{uploadState, itemError}' "${RUNNER_TEMP}/cws-upload.json" >&2 || true
+            exit 1
+          }
+          echo "| cws | draft uploaded (${VERSION}); submit it for review in the developer dashboard |" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Edge Add-ons - upload package to the draft submission (never submitted)
+        if: steps.stores.outputs.edge == 'configured'
+        shell: bash
+        env:
+          EDGE_ADDONS_CLIENT_ID: ${{ secrets.EDGE_ADDONS_CLIENT_ID }}
+          EDGE_ADDONS_API_KEY: ${{ secrets.EDGE_ADDONS_API_KEY }}
+          EDGE_ADDONS_PRODUCT_ID: ${{ secrets.EDGE_ADDONS_PRODUCT_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          zip="release-output-browser-guard/aidr-browser-guard-chrome-${VERSION}.zip"
+          printf 'Authorization: ApiKey %s\nX-ClientID: %s\n' "${EDGE_ADDONS_API_KEY}" "${EDGE_ADDONS_CLIENT_ID}" > "${RUNNER_TEMP}/edge-auth"
+          trap 'rm -f "${RUNNER_TEMP}/edge-auth"' EXIT
+          draft="https://api.addons.microsoftedge.microsoft.com/v1/products/${EDGE_ADDONS_PRODUCT_ID}/submissions/draft/package"
+          # Edge Add-ons API v1.1: the package replaces the draft only. Publishing would be a
+          # separate POST to .../submissions, which this workflow never makes.
+          status="$(curl -sS --retry 3 -X POST -H @"${RUNNER_TEMP}/edge-auth" -H "Content-Type: application/zip" \
+            --data-binary @"${zip}" -D "${RUNNER_TEMP}/edge-headers" -o /dev/null -w '%{http_code}' "${draft}")"
+          [[ "${status}" == "202" ]] || { echo "::error::Edge Add-ons draft upload returned HTTP ${status}" >&2; exit 1; }
+          operation="$(awk 'tolower($1) == "location:" {print $2}' "${RUNNER_TEMP}/edge-headers" | tr -d '\r' | sed 's#.*/##')"
+          [[ "${operation}" =~ ^[A-Za-z0-9-]+$ ]] || { echo "::error::Edge Add-ons returned no operation id" >&2; exit 1; }
+          state="InProgress"
+          for _ in $(seq 1 30); do
+            sleep 10
+            curl -fsS --retry 3 -H @"${RUNNER_TEMP}/edge-auth" "${draft}/operations/${operation}" -o "${RUNNER_TEMP}/edge-status.json"
+            state="$(jq -r '.status // empty' "${RUNNER_TEMP}/edge-status.json")"
+            [[ "${state}" == "InProgress" ]] || break
+          done
+          jq -n --arg state "${state}" --arg version "${VERSION}" --arg sha "$(sha256sum "${zip}" | cut -d' ' -f1)" --arg operation "${operation}" \
+            '{store: "edge-add-ons", action: "draft-upload", version: $version, sha256: $sha, operation: $operation, state: $state}' \
+            > store-receipts/edge-add-ons.json
+          [[ "${state}" == "Succeeded" ]] || {
+            echo "::error::Edge Add-ons draft upload state: ${state:-unknown}" >&2
+            jq '{status, message, errorCode, errors}' "${RUNNER_TEMP}/edge-status.json" >&2 || true
+            exit 1
+          }
+          echo "| edge | draft uploaded (${VERSION}); publish it in Partner Center |" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: addons.mozilla.org - submit unlisted version for signing (never listed)
+        if: steps.stores.outputs.amo == 'configured'
+        shell: bash
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          umask 077
+          zip="release-output-browser-guard/aidr-browser-guard-firefox-${VERSION}.zip"
+          # With the self-hosted channel, Mozilla signs the package that carries the feed's
+          # gecko.update_url, so self-hosted Firefox copies update themselves.
+          if [[ "${SELF_HOSTED}" == "true" ]]; then
+            zip="release-output-browser-guard/aidr-browser-guard-firefox-selfhosted-${VERSION}.zip"
+          fi
+          source="release-output-browser-guard/aidr-browser-guard-source-${VERSION}.zip"
+          api="https://addons.mozilla.org/api/v5/addons"
+          trap 'rm -f "${RUNNER_TEMP}/amo-auth"' EXIT
+          # A fresh short-lived JWT (HS256, 60 s) per request, built inline: no repository code runs here.
+          auth() {
+            node -e '
+              const { createHmac, randomUUID } = require("node:crypto");
+              const b64 = (v) => Buffer.from(JSON.stringify(v)).toString("base64url");
+              const now = Math.floor(Date.now() / 1000);
+              const body = `${b64({ alg: "HS256", typ: "JWT" })}.${b64({ iss: process.env.AMO_JWT_ISSUER, jti: randomUUID(), iat: now, exp: now + 60 })}`;
+              process.stdout.write(`Authorization: JWT ${body}.${createHmac("sha256", process.env.AMO_JWT_SECRET).update(body).digest("base64url")}\n`);
+            ' > "${RUNNER_TEMP}/amo-auth"
+          }
+          # Unlisted channel only: Mozilla signs the package for self-distribution; it is
+          # never listed on addons.mozilla.org and reaches no user until the owner hosts it.
+          auth
+          curl -fsS --retry 3 -X POST -H @"${RUNNER_TEMP}/amo-auth" -F "upload=@${zip}" -F "channel=unlisted" \
+            "${api}/upload/" -o "${RUNNER_TEMP}/amo-upload.json"
+          uuid="$(jq -r '.uuid // empty' "${RUNNER_TEMP}/amo-upload.json")"
+          [[ "${uuid}" =~ ^[0-9a-f]{32}$ ]] || { echo "::error::addons.mozilla.org returned no upload id" >&2; exit 1; }
+          for _ in $(seq 1 30); do
+            [[ "$(jq -r '.processed' "${RUNNER_TEMP}/amo-upload.json")" == "true" ]] && break
+            sleep 10
+            auth
+            curl -fsS --retry 3 -H @"${RUNNER_TEMP}/amo-auth" "${api}/upload/${uuid}/" -o "${RUNNER_TEMP}/amo-upload.json"
+          done
+          if [[ "$(jq -r '.valid' "${RUNNER_TEMP}/amo-upload.json")" != "true" ]]; then
+            echo "::error::addons.mozilla.org validation did not pass" >&2
+            jq '.validation.messages // .validation' "${RUNNER_TEMP}/amo-upload.json" >&2 || true
+            exit 1
+          fi
+          auth
+          status="$(curl -sS --retry 3 -X POST -H @"${RUNNER_TEMP}/amo-auth" -F "upload=${uuid}" -F "source=@${source}" \
+            -o "${RUNNER_TEMP}/amo-version.json" -w '%{http_code}' "${api}/addon/${AMO_ADDON_ID}/versions/")"
+          if [[ "${status}" == "404" ]]; then
+            echo "::error::addons.mozilla.org has no add-on ${AMO_ADDON_ID} for this account: make the first unlisted submission once in the AMO Developer Hub." >&2
+            exit 1
+          fi
+          [[ "${status}" == "201" ]] || { echo "::error::addons.mozilla.org version create returned HTTP ${status}" >&2; jq . "${RUNNER_TEMP}/amo-version.json" >&2 || true; exit 1; }
+          jq --arg sha "$(sha256sum "${zip}" | cut -d' ' -f1)" \
+            '{store: "addons.mozilla.org", action: "unlisted-version", channel: .channel, version: .version, id: .id, sha256: $sha, file_status: .file.status}' \
+            "${RUNNER_TEMP}/amo-version.json" > store-receipts/addons-mozilla-org.json
+          [[ "$(jq -r '.channel' store-receipts/addons-mozilla-org.json)" == "unlisted" ]] || { echo "::error::AMO version is not in the unlisted channel" >&2; exit 1; }
+          echo "| amo | unlisted version ${VERSION} submitted for signing; download the signed XPI from the Developer Hub |" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload store draft receipts (pinned)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidr-browser-guard-store-receipts-${{ needs.build.outputs.version }}
+          path: store-receipts/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Fail on incomplete store credentials
+        if: steps.stores.outputs.incomplete == '1'
+        shell: bash
+        run: |
+          echo "::error::At least one store has only part of its credentials configured; see the job summary." >&2
+          exit 1

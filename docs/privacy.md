@@ -45,6 +45,14 @@ flowchart LR
    may also send its API key as an Authorization header. Direct callers of
    `checkForUpdate()` are separate. The installation ID is persisted at
    `~/.singularity-aidr/installation-id`.
+
+   An endpoint installed with the Windows/Linux desktop installers instead
+   checks the signed installer catalog (`update.auto`, default `notify`; at
+   most once per `update.check_interval_hours`). It contacts only the
+   tenant's own control plane (managed mode, Authorization: the device's API
+   key; no runtime metadata or installation ID in the request) or the
+   configured `update.source` mirror. Device-managed machines and
+   `update.auto: "off"` make no such request.
 4. **Managed control plane** — only when managed mode, control-plane sync and
    an API key are configured. Runtime verdict events cross a mandatory
    credential redaction boundary. The default `redact_mode: "hash"` replaces
@@ -168,6 +176,7 @@ Disable optional reputation and managed telemetry for a fully local pilot:
   "file_check": { "enabled": false },
   "package_check": { "enabled": false },
   "version_check": { "enabled": false },
+  "update": { "auto": "off" },
   "control_plane": {
     "enabled": false,
     "send_audit_logs": false

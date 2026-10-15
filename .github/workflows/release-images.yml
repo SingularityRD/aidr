@@ -1,0 +1,457 @@
+name: Release Container Images
+
+# Builds the AIDR-owned Kubernetes images from a protected, signed release
+# candidate tag: dashboard, edge-functions, migrations, privacy-gateway and the
+# optional posture scanner server, agent and bridge (deploy/helm/build-images.mjs).
+# Each image is pushed to GHCR under the immutable candidate tag (never
+# "latest"), resolved to its registry digest, scanned by digest (Trivy; a
+# CRITICAL finding with a fix fails the run), signed keyless with cosign (GitHub
+# OIDC), given a CycloneDX SBOM attestation and a SLSA build-provenance
+# attestation. The Helm chart is packaged with values pinned to those digests,
+# pushed as an OCI artifact, signed and attested the same way. Nothing here
+# publishes a GitHub release or moves a production tag; customers verify with
+# `cosign verify` / `gh attestation verify` (docs/operations/kubernetes.md).
+
+on:
+  push:
+    tags:
+      - "v*.*.*-rc.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing protected vX.Y.Z-rc.N tag to build images for"
+        required: true
+        type: string
+
+concurrency:
+  group: release-images-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22.12.0
+  PNPM_VERSION: 10.29.3
+  GO_TOOLCHAIN: go1.27.2
+  COSIGN_VERSION: v3.1.3
+  TRIVY_VERSION: 0.75.0
+  TRIVY_SHA256: c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
+  IMAGE_COMPONENTS: dashboard,edge-functions,migrations,privacy-gateway,posture-scanner-server,posture-scanner-agent,posture-scanner-bridge
+
+jobs:
+  build-sign:
+    name: Build, push, scan, sign and attest images by digest
+    runs-on: ubuntu-22.04
+    environment: release-images
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      subjects: ${{ steps.subjects.outputs.subjects }}
+      tag: ${{ steps.identity.outputs.tag }}
+      sha: ${{ steps.identity.outputs.sha }}
+      image_tag: ${{ steps.identity.outputs.image_tag }}
+    steps:
+      - name: Checkout protected tag (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Resolve and verify immutable release identity
+        id: identity
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          TAG_PGP_PUBLIC_KEY: ${{ secrets.RELEASE_TAG_PGP_PUBLIC_KEY }}
+          TAG_PGP_FINGERPRINT: ${{ secrets.RELEASE_TAG_PGP_FINGERPRINT }}
+          MANUAL_BUILD_ENABLED: ${{ vars.RELEASE_MANUAL_BUILD_ENABLED }}
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG}"
+          [[ "${tag}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+)$ ]] || { echo "Tag must be vX.Y.Z-rc.N." >&2; exit 1; }
+          image_tag="${BASH_REMATCH[1]}"
+          tag_sha="$(git rev-list -n 1 "${tag}^{commit}")"
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            [[ "${GITHUB_REF_PROTECTED}" == "true" ]] || { echo "The RC tag must be protected by a repository ruleset." >&2; exit 1; }
+            [[ "${tag_sha}" == "${GITHUB_SHA}" ]] || { echo "Tag does not point at the workflow commit." >&2; exit 1; }
+          else
+            [[ "${MANUAL_BUILD_ENABLED:-false}" == "true" ]] || { echo "Manual builds require RELEASE_MANUAL_BUILD_ENABLED=true." >&2; exit 1; }
+            [[ "${GITHUB_REF}" == "refs/tags/${tag}" && "${GITHUB_SHA}" == "${tag_sha}" ]] || {
+              echo "Manual workflow ref and commit must exactly match the requested protected tag." >&2
+              exit 1
+            }
+          fi
+          [[ "$(git cat-file -t "${tag}")" == "tag" ]] || { echo "Release tag must be annotated." >&2; exit 1; }
+          [[ -n "${TAG_PGP_PUBLIC_KEY}" && -n "${TAG_PGP_FINGERPRINT}" ]] || {
+            echo "RELEASE_TAG_PGP_PUBLIC_KEY and RELEASE_TAG_PGP_FINGERPRINT are required." >&2
+            exit 1
+          }
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          printf '%s\n' "${TAG_PGP_PUBLIC_KEY}" | gpg --batch --import
+          verification="${RUNNER_TEMP}/tag-verification.txt"
+          git verify-tag --raw "${tag}" >"${verification}" 2>&1 || { cat "${verification}" >&2; exit 1; }
+          actual="$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {print toupper($3); exit}' "${verification}")"
+          expected="$(printf '%s' "${TAG_PGP_FINGERPRINT}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          [[ -n "${actual}" && "${actual}" == "${expected}" ]] || { echo "Release tag signer fingerprint mismatch." >&2; exit 1; }
+          rm -rf "${GNUPGHOME}"
+          {
+            echo "tag=${tag}"
+            echo "sha=${tag_sha}"
+            echo "image_tag=${image_tag}"
+            echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          } >> "${GITHUB_OUTPUT}"
+
+      # cosign is built from the pinned module version: the Go checksum database
+      # authenticates the source, GOTOOLCHAIN fetches the exact Go release.
+      - name: Install pinned Trivy and cosign
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/release-tools"
+          mkdir -p "${bin}"
+          archive="${RUNNER_TEMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${archive}" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  ${archive}" | sha256sum --check --strict
+          tar -xzf "${archive}" -C "${bin}" trivy
+          GOTOOLCHAIN="${GO_TOOLCHAIN}" GOBIN="${bin}" go install "github.com/sigstore/cosign/v3/cmd/cosign@${COSIGN_VERSION}"
+          "${bin}/cosign" version
+          echo "${bin}" >> "${GITHUB_PATH}"
+
+      # Helm publishes binaries on get.helm.sh and signs them with maintainer
+      # keys listed in the repository KEYS file. Trust is anchored on the pinned
+      # signer fingerprint, not on the download location: the tarball signature
+      # and the signed checksum must both verify before the binary is used.
+      - name: Install Helm 3.19.0 (pinned, signature and checksum verified)
+        shell: bash
+        env:
+          HELM_VERSION: v3.19.0
+          HELM_SIGNER_FINGERPRINT: 208DD36ED5BB3745A16743A4C7C6FBB5B91C1155
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/helm-download"
+          tool_dir="${RUNNER_TEMP}/helm"
+          archive="helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          mkdir -p "${work}" "${tool_dir}"
+          fetch() { curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$1" "$2"; }
+          fetch "${work}/${archive}" "https://get.helm.sh/${archive}"
+          fetch "${work}/${archive}.sha256sum" "https://get.helm.sh/${archive}.sha256sum"
+          fetch "${work}/${archive}.asc" "https://github.com/helm/helm/releases/download/${HELM_VERSION}/${archive}.asc"
+          fetch "${work}/${archive}.sha256sum.asc" "https://github.com/helm/helm/releases/download/${HELM_VERSION}/${archive}.sha256sum.asc"
+          fetch "${work}/KEYS" "https://raw.githubusercontent.com/helm/helm/${HELM_VERSION}/KEYS"
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          gpg --batch --quiet --import "${work}/KEYS"
+          verify_signature() {
+            local status
+            status="$(gpg --batch --status-fd 1 --verify "$1" "$2" 2>/dev/null)" || { echo "Bad Helm signature: $1" >&2; exit 1; }
+            local primary
+            primary="$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" {print toupper($12); exit}' <<<"${status}")"
+            [[ "${primary}" == "${HELM_SIGNER_FINGERPRINT}" ]] || { echo "Unexpected Helm signer: ${primary:-none}" >&2; exit 1; }
+          }
+          verify_signature "${work}/${archive}.asc" "${work}/${archive}"
+          verify_signature "${work}/${archive}.sha256sum.asc" "${work}/${archive}.sha256sum"
+          expected="$(awk '{print $1; exit}' "${work}/${archive}.sha256sum")"
+          [[ "${expected}" =~ ^[0-9a-f]{64}$ ]]
+          echo "${expected}  ${work}/${archive}" | sha256sum --check --strict
+          tar -xzf "${work}/${archive}" -C "${tool_dir}" --strip-components=1 linux-amd64/helm
+          [[ "$("${tool_dir}/helm" version --template '{{.Version}}')" == "${HELM_VERSION}" ]]
+          rm -rf "${GNUPGHOME}"
+          echo "${tool_dir}" >> "${GITHUB_PATH}"
+
+      - name: Frozen install and build image inputs from the tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm audit:vendored
+          pnpm -C packages/dashboard build
+          pnpm --filter @singularityrd/aidr-privacy build
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: printf '%s' "${GITHUB_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build and push images under the immutable candidate tag
+        shell: bash
+        env:
+          REGISTRY: ${{ steps.identity.outputs.registry }}
+          IMAGE_TAG: ${{ steps.identity.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          node deploy/helm/build-images.mjs --output "${RUNNER_TEMP}/aidr-images" --only "${IMAGE_COMPONENTS}" \
+            --registry "${REGISTRY}" --tag "${IMAGE_TAG}" --build --push
+          mkdir -p release-images
+          node scripts/release-images.mjs digests --images "${RUNNER_TEMP}/aidr-images/images.json" --out release-images/release-images.json
+
+      - name: Scan every pushed digest (fixable CRITICAL fails)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release-images.mjs scan-plan --manifest release-images/release-images.json --out "${RUNNER_TEMP}/scan-plan.json"
+          node scripts/scan-runtime-images.mjs scan --plan "${RUNNER_TEMP}/scan-plan.json" --output release-images/scan --engine trivy
+          node scripts/release-images.mjs gate --summary release-images/scan/summary.json
+
+      - name: SBOM, keyless signature and SBOM attestation for every digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="${GITHUB_SERVER_URL}/${GITHUB_WORKFLOW_REF}"
+          mkdir -p release-images/sbom
+          jq -r '.images[] | [.component, .pinned_ref] | @tsv' release-images/release-images.json | while IFS=$'\t' read -r component ref; do
+            [[ "${ref}" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "${component}: not a digest reference: ${ref}" >&2; exit 1; }
+            trivy image --quiet --image-src remote --format cyclonedx --output "release-images/sbom/${component}.cdx.json" "${ref}"
+            cosign sign --yes "${ref}"
+            cosign attest --yes --type cyclonedx --predicate "release-images/sbom/${component}.cdx.json" "${ref}"
+            cosign verify --certificate-identity "${identity}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "${ref}" > /dev/null
+          done
+
+      - name: Package, push and sign the digest-pinned Helm chart
+        shell: bash
+        env:
+          REGISTRY: ${{ steps.identity.outputs.registry }}
+          IMAGE_TAG: ${{ steps.identity.outputs.image_tag }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          stage="${RUNNER_TEMP}/chart"
+          mkdir -p "${stage}"
+          cp -R deploy/helm/aidr "${stage}/aidr"
+          node scripts/release-images.mjs pin-chart --manifest release-images/release-images.json --values "${stage}/aidr/values.yaml"
+          helm package "${stage}/aidr" --version "${IMAGE_TAG}" --app-version "${IMAGE_TAG}" --destination release-images
+          printf '%s' "${GITHUB_TOKEN}" | helm registry login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          helm push "release-images/aidr-${IMAGE_TAG}.tgz" "oci://${REGISTRY}/charts" 2>&1 | tee "${RUNNER_TEMP}/helm-push.log"
+          chart_digest="$(awk '$1 == "Digest:" {print $2}' "${RUNNER_TEMP}/helm-push.log")"
+          [[ "${chart_digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "helm push reported no digest" >&2; exit 1; }
+          cosign sign --yes "${REGISTRY}/charts/aidr@${chart_digest}"
+          jq --arg ref "${REGISTRY}/charts/aidr:${IMAGE_TAG}@${chart_digest}" --arg digest "${chart_digest}" \
+            '.chart = {ref: $ref, digest: $digest}' release-images/release-images.json > "${RUNNER_TEMP}/release-images.json"
+          mv "${RUNNER_TEMP}/release-images.json" release-images/release-images.json
+          (cd release-images && sha256sum "aidr-${IMAGE_TAG}.tgz" release-images.json > SHA256SUMS)
+
+      - name: Provenance subjects for every image and the chart
+        id: subjects
+        shell: bash
+        env:
+          REGISTRY: ${{ steps.identity.outputs.registry }}
+        run: |
+          set -euo pipefail
+          subjects="$(jq -c --arg chart "${REGISTRY}/charts/aidr" \
+            '[.images[] | {name: (.registry + "/" + .repository), digest}] + [{name: $chart, digest: .chart.digest}]' \
+            release-images/release-images.json)"
+          echo "subjects=${subjects}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release image evidence (pinned)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-images-${{ github.run_id }}
+          path: release-images/
+          if-no-files-found: ignore
+
+  provenance:
+    name: Build provenance attestation (${{ matrix.subject.name }})
+    needs: build-sign
+    runs-on: ubuntu-22.04
+    environment: release-images
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        subject: ${{ fromJSON(needs.build-sign.outputs.subjects) }}
+    steps:
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: printf '%s' "${GITHUB_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Attest build provenance for the pushed digest (pinned)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ matrix.subject.name }}
+          subject-digest: ${{ matrix.subject.digest }}
+          push-to-registry: true
+
+  # Air-gapped delivery without a customer-side build (deploy/README.md,
+  # "Disconnected (air-gapped) installation"). Every image a default self-hosted
+  # stack runs (Compose services, the dashboard image built from this tag and the
+  # build bases) is saved with `docker save` into one transfer bundle, signed
+  # twice: Ed25519 with the vendor offline-bundle key (verifiable with Node.js
+  # only, no network: scripts/onprem-offline-bundle.mjs verify/import) and
+  # keyless with cosign (GitHub OIDC; `cosign verify-blob`). The throwaway stack
+  # used to list the images is deleted on the runner: credentials are generated
+  # on the customer's host, never carried on the transfer media.
+  airgap-bundle:
+    name: Signed air-gap image bundle (Ed25519 + cosign)
+    needs: build-sign
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    environment: release-images
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout protected tag (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-sign.outputs.tag }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Confirm the checkout is the verified release commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.build-sign.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ && "$(git rev-parse HEAD)" == "${EXPECTED_SHA}" ]] || {
+            echo "The checkout is not the commit whose signed tag build-sign verified." >&2
+            exit 1
+          }
+
+      - name: Free runner disk for the image tarballs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pinned cosign
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/release-tools"
+          mkdir -p "${bin}"
+          GOTOOLCHAIN="${GO_TOOLCHAIN}" GOBIN="${bin}" go install "github.com/sigstore/cosign/v3/cmd/cosign@${COSIGN_VERSION}"
+          "${bin}/cosign" version
+          echo "${bin}" >> "${GITHUB_PATH}"
+
+      - name: Save every image of the default self-hosted stack (throwaway stack, credentials discarded)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm -C packages/dashboard build
+          stack="${RUNNER_TEMP}/aidr-plan-stack"
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "${stack}" "${scratch}"' EXIT
+          openssl genpkey -algorithm ed25519 -out "${scratch}/throwaway.pem"
+          openssl pkey -in "${scratch}/throwaway.pem" -pubout -out "${scratch}/throwaway.pub.pem"
+          node scripts/deployment-prepare.mjs --mode self-hosted --output "${stack}" \
+            --region self-hosted --tenant-region self-hosted \
+            --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example \
+            --artifact-verification-public-key-file "${scratch}/throwaway.pub.pem" \
+            --telemetry-queue-root /var/lib/aidr-telemetry
+          # The dashboard image (aidr-dashboard:<version>) is built here, from this tag,
+          # so the customer's `docker compose up -d` finds it loaded and builds nothing.
+          docker compose --project-directory "${stack}" -f "${stack}/compose.yml" build
+          node scripts/build-airgap-images.mjs --compose "${stack}/compose.yml" --output "${RUNNER_TEMP}/aidr-airgap" --platform linux/amd64
+          node scripts/build-airgap-images.mjs --verify --compose "${stack}/compose.yml" --output "${RUNNER_TEMP}/aidr-airgap"
+          docker image prune --all --force > /dev/null
+
+      # The first-party dashboard image in the bundle must have no CRITICAL or HIGH
+      # finding at all (AIDR-079): no ignore file, no VEX, fixed or not. The reviewed
+      # upstream images keep their recorded findings (AIDR-080) and are not gated here.
+      - name: Gate the bundled dashboard image (no CRITICAL or HIGH, no ignores)
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ needs.build-sign.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/release-tools"
+          archive="${RUNNER_TEMP}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl --fail --location --proto '=https' --tlsv1.2 --output "${archive}" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  ${archive}" | sha256sum --check --strict
+          tar -xzf "${archive}" -C "${bin}" trivy
+          tarball="$(jq -r '.images[] | select(.ref | startswith("aidr-dashboard:")) | .tarball' "${RUNNER_TEMP}/aidr-airgap/aidr-airgap-images.manifest.json")"
+          [[ -n "${tarball}" && "${tarball}" != *$'\n'* ]] || { echo "The bundle must carry exactly one aidr-dashboard image." >&2; exit 1; }
+          empty="$(mktemp -d)"
+          : > "${empty}/empty.trivyignore"
+          "${bin}/trivy" image --input "${RUNNER_TEMP}/aidr-airgap/${tarball}" --scanners vuln --pkg-types os,library \
+            --ignorefile "${empty}/empty.trivyignore" --severity CRITICAL,HIGH --exit-code 1 --format table
+
+      - name: Sign the transfer bundle (Ed25519 offline signature and cosign keyless)
+        id: bundle
+        shell: bash
+        env:
+          OFFLINE_BUNDLE_SIGNING_KEY: ${{ secrets.AIDR_OFFLINE_BUNDLE_SIGNING_KEY_PEM }}
+          OFFLINE_BUNDLE_KEY_ID: ${{ vars.AIDR_OFFLINE_BUNDLE_KEY_ID }}
+          IMAGE_TAG: ${{ needs.build-sign.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          [[ -n "${OFFLINE_BUNDLE_SIGNING_KEY}" && "${OFFLINE_BUNDLE_KEY_ID}" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || {
+            echo "AIDR_OFFLINE_BUNDLE_SIGNING_KEY_PEM and AIDR_OFFLINE_BUNDLE_KEY_ID are required; no unsigned air-gap bundle is produced." >&2
+            exit 1
+          }
+          key_dir="$(mktemp -d)"
+          trap 'rm -rf "${key_dir}"' EXIT
+          (umask 077 && printf '%s\n' "${OFFLINE_BUNDLE_SIGNING_KEY}" > "${key_dir}/signing.pem")
+          unset OFFLINE_BUNDLE_SIGNING_KEY
+          out="${RUNNER_TEMP}/airgap-release"
+          name="aidr-offline-bundle-${IMAGE_TAG}"
+          mkdir -p "${out}"
+          node scripts/onprem-offline-bundle.mjs build --output "${out}/${name}" \
+            --signing-key "${key_dir}/signing.pem" --key-id "${OFFLINE_BUNDLE_KEY_ID}" \
+            --images "${RUNNER_TEMP}/aidr-airgap" --tar
+          rm -rf "${RUNNER_TEMP}/aidr-airgap" "${out:?}/${name}"
+          openssl pkey -in "${key_dir}/signing.pem" -pubout -out "${out}/offline-bundle-signing-public.pem"
+          # The same offline check the customer runs on the disconnected host.
+          node scripts/onprem-offline-bundle.mjs verify --bundle "${out}/${name}.tar" --public-key "${out}/offline-bundle-signing-public.pem"
+          cosign sign-blob --yes --bundle "${out}/${name}.tar.cosign.bundle" "${out}/${name}.tar"
+          cosign verify-blob --bundle "${out}/${name}.tar.cosign.bundle" \
+            --certificate-identity "${GITHUB_SERVER_URL}/${GITHUB_WORKFLOW_REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "${out}/${name}.tar"
+          (cd "${out}" && sha256sum "${name}.tar" "${name}.tar.cosign.bundle" offline-bundle-signing-public.pem > SHA256SUMS)
+          echo "name=${name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Attest the air-gap bundle (pinned)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/airgap-release/${{ steps.bundle.outputs.name }}.tar
+
+      - name: Upload the signed air-gap bundle (pinned)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.bundle.outputs.name }}
+          path: ${{ runner.temp }}/airgap-release/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0

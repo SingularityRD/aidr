@@ -1,5 +1,14 @@
 # Control Plane (Auth, Dashboard, Licensing)
 
+**One control plane.** The product control plane, for on-prem and for the
+hosted service alike, is the Supabase stack and the Vite dashboard in this
+repository (`supabase/`, `packages/dashboard`, `deploy/`). The separate
+`aidr-landing` application is the marketing website and SingularityRD's vendor
+`/admin` panel (customer records, licence issuing, installer builds); it is not
+a customer control plane and runs nothing at the customer.
+
+Install it on-prem with the [on-prem runbook](operations/onprem-runbook.md).
+
 The control plane is the managed layer for:
 
 - User authentication (dashboard login)
@@ -17,6 +26,20 @@ unreachable managed install disables only the managed features and keeps enforci
 ## Single sign-on
 
 Tenants can require SAML or OpenID Connect (Entra ID, Okta, generic) sign-in; see [OIDC SSO](production-readiness/oidc-sso-admin.md) and [SCIM directory setup](production-readiness/scim-directory-admin.md). Both are optional and off by default.
+
+## Installer downloads
+
+The dashboard **Downloads** page (`/downloads`, and step 1 of onboarding) offers
+the Windows and Linux installers of the current release (no macOS installer is
+offered). The `installer-download` Edge Function lists a signed installer
+catalog only to active members of an active tenant whose admission (licence,
+trial or pilot) is active, and returns a 30–900 second signed Storage URL per
+file after writing an `installer.download` audit row (tenant, user, version,
+platform, file, SHA-256; no IP address). Unauthenticated, removed, revoked or
+unentitled callers get 401/403, and a catalog that fails its signature check is
+not served. For roles that can enroll, the page also shows the control plane's
+URL and the device-code flow below. Publishing and configuration:
+[Installer download portal](installation/download-portal.md).
 
 ## Enrollment (managed mode)
 
@@ -59,20 +82,25 @@ Failure handling is per layer, not a blanket "fail-open":
   bundle that is installed but cannot be verified blocks tool calls rather than being
   silently dropped.
 - **Connector entry points** (Claude Code, Cursor / VS Code, OpenClaw, OpenCode, Codex) fail
-  **closed**: an internal error produces a deny or block, not a silent allow.
+  **closed**: an internal error produces a deny or block, not a silent allow. The host still
+  decides what happens when the hook is disabled, untrusted, killed or timed out: Claude Code
+  was observed to run the call when its hook was disabled or killed, and Codex runs it when
+  its hook is untrusted, crashes or times out (see
+  [host failure behaviour](compatibility-matrix.md#host-failure-behaviour)).
+  Cursor and VS Code are a preview with no real-host acceptance evidence yet.
 - **Detection internals** (an erroring rule, an optional reputation lookup, a cache or policy
   load) skip that signal and log it; a skipped signal is never reported as a clean result.
 - **Security controls** on the control plane (authentication, tenant isolation, rate limits,
   webhook signatures, approvals) fail closed.
 
-## Browser Privacy Guard (browser installs)
+## Browser Guard (browser installs)
 
 Singularity AIDR Browser Guard (`packages/browser-guard`) masks sensitive data
 in prompts, pastes and files before they reach AI chat products. Detection and
 masking run locally in the browser. Enrollment adds counts-only reporting to the
 control plane; it is not a precondition for protection.
 
-**Enroll browsers** (dashboard: **Browser Privacy**, route `/privacy-guard`):
+**Enroll browsers** (dashboard: **Browser Guard**, route `/privacy-guard`):
 
 1. Deploy the Browser Guard extension package from your AIDR release to Chrome,
    Edge or Firefox, per user or force-installed by browser management policy.
@@ -203,7 +231,10 @@ HTTPS webhook (URL plus HMAC secret) or 1–10 e-mail recipients — and its
 filters: new incidents at or above a minimum severity, critical runtime denies,
 approval requests (`ask` verdicts; approval itself stays out-of-band) and
 spikes of blocked Browser Guard prompts (threshold within a window). At most 20
-channels per workspace.
+channels per workspace. The agent-health filter (`agent_offline`) also delivers
+`agent.unprotected` when a device's heartbeat reports that an AI tool's AIDR hook
+was removed, disabled or is not trusted
+([`docs/operations/hook-tamper-resistance.md`](operations/hook-tamper-resistance.md)).
 
 **Write-only destinations.** The `notification-channels` Edge Function
 validates a destination (https only, provider host allow-list for Slack/Teams,
@@ -285,6 +316,66 @@ there is no automatic re-encryption).
 **Not included.** `agent.offline` alerts, per-user notification preferences,
 digest/batching, and mTLS to webhook receivers are not implemented.
 
+**E-mail on-prem.** Set `SMTP_HOST` (and the other `SMTP_*` values) in `.env`
+for Auth mail; the functions reuse the same relay for alert, invitation and
+digest mail (`smtp` provider, STARTTLS or implicit TLS, internal CA in
+`AIDR_SMTP_CA_PEM_B64`). Air-gapped installations need no Internet mail API.
+
+## Central SIEM forwarding
+
+The **SIEM** page lets owners and administrators send incidents, agent
+decisions and Browser Guard events from the control plane to syslog (TLS, TCP
+or UDP; JSON, CEF or LEEF), Splunk HEC, Elastic, Microsoft Sentinel or a
+signed webhook. Delivery is at-least-once with retries, a bounded backlog and
+re-queueable dead letters; connection secrets are encrypted with the alert
+keyring and never shown again. Scheduling: the `siem-forwarder` CronJob
+(Helm), the `siem-forwarder` Compose service, or pg_cron on Supabase Cloud.
+Contract: [contracts/siem-forwarding.md](contracts/siem-forwarding.md);
+QRadar and Wazuh set-up: [integrations/qradar.md](integrations/qradar.md),
+[integrations/wazuh.md](integrations/wazuh.md).
+
+## Retention maintenance
+
+Time-based deletion and the scheduled governance digest only happen when the
+maintenance worker runs. It calls, in apply mode and in bounded batches, the
+retention routines for temporary audit exports (Storage objects, with the
+exact-deletion protocol), billing webhooks, telemetry (per-tenant retention),
+GA trial subjects, public waitlist sign-ups (365 days), expired team
+invitations, decided approval requests, AI governance records and rate-limit
+counters, then dispatches due governance digests. Every routine honours legal
+holds and the shared tenant lock. Schedule it on every topology:
+
+| Topology | Scheduler | Evidence |
+|---|---|---|
+| Docker Compose on-prem | systemd timer `aidr-export-retention.timer`, hourly (`deploy/maintenance/install-systemd.sh`) | `/srv/aidr/maintenance-evidence.json`, journal |
+| Kubernetes (Helm) | `maintenance` CronJob, hourly, **on by default** (`maintenance.enabled`); runs `deployment-maintenance.mjs --from-env --apply` against the in-cluster API gateway with the service-role key from `secrets.existingSecret` | Pod log (the evidence JSON); exit 2 = incomplete (e.g. a legal hold or missing tenant policy), exit 1 = failed |
+| Supabase Cloud | pg_cron jobs `aidr-retention-*` and `aidr-governance-digest` (migration `20261013000200`), one bounded batch per data class every 10–60 minutes | `public.retention_job_runs`, `public.retention_job_status` (last run / last success per job) |
+
+**Supabase Cloud setup.** Enable the `pg_cron` extension (and `pg_net` for the
+digest). If pg_cron was enabled before the migration ran, the jobs already
+exist; otherwise run once as an operator:
+
+```sql
+select app.schedule_retention_maintenance();   -- idempotent; app.unschedule_retention_maintenance() removes them
+-- Governance digest only: store the project origin and service key in Vault.
+select vault.create_secret('https://<project-ref>.supabase.co', 'aidr_project_url');
+select vault.create_secret('<service-role key>', 'aidr_service_role_key');
+```
+
+Without the two Vault secrets the digest job records `not_configured` (a
+failed run in `retention_job_status`). The pg_cron jobs do **not** delete
+expired temporary audit-export objects: that needs the Storage API protocol.
+Where audit exports are used, also run the HTTP worker hourly from an operator
+host or CI runner: `AIDR_MAINTENANCE_API_URL=https://<project-ref>.supabase.co
+SERVICE_ROLE_KEY=… node scripts/deployment-maintenance.mjs <evidence-dir>
+--from-env --apply`. Running it next to the pg_cron jobs is safe: every
+routine is bounded, idempotent and lock-protected.
+
+**Alerting.** Alert when `retention_job_status.last_success_at` is older than
+two hours for any job, when the Helm CronJob's last successful run is older
+than two hours, or when `maintenance-evidence.json` reports `status:
+incomplete` for more than a day.
+
 ## Operator administration
 
 Platform operators fix the deployment admission mode, record the approved
@@ -339,7 +430,8 @@ When at least one key is configured, a policy is applied only if all of these ho
 
 Unsigned, tampered, wrong-signer, expired, revoked-key and rolled-back policies are rejected.
 With `control_plane.remote_policy_required` the connector then fails closed (no policy applies
-and the call is blocked); otherwise the response is ignored and local policy stays in force.
+and the call is blocked, as far as the host honours the hook: a disabled, untrusted, killed or
+timed-out hook blocks nothing); otherwise the response is ignored and local policy stays in force.
 The last good signed policy is still cached and may be used inside the offline grace window, but
 never beyond its signed `expires_at`, and it is re-verified on every load, so a tampered cache
 file is rejected.

@@ -429,12 +429,23 @@ describe("config manager with a secret store", () => {
 		}
 	});
 
-	it("fails closed when no store is available and the fallback was not selected", async () => {
+	it("needs no store in local mode, and never falls back from an explicitly selected one", async () => {
 		const missing: CommandRunner = () => ({ status: null, error: new Error("spawn ENOENT") });
 
-		await expect(createConfig(env, false, { secretStoreRunner: missing })).rejects.toThrow(
-			SecretStoreUnavailableError,
-		);
+		// Local mode (PRD-4): no credential, so a missing vault is not an error.
+		const local = await createConfig(env, false, { secretStoreRunner: missing });
+		expect(local.credential).toBe("none");
+		expect(storedDocument().apiKey).toBeUndefined();
+		expect(storedDocument().secret_ref).toBeUndefined();
+		rmSync(configDir, { recursive: true, force: true });
+
+		// A store the operator named explicitly is required, not silently replaced.
+		await expect(
+			createConfig(env, false, {
+				secretStoreSelection: "linux-secret-service",
+				secretStoreRunner: missing,
+			}),
+		).rejects.toThrow(SecretStoreUnavailableError);
 		// Nothing was written: not a plaintext credential, not even an empty config.
 		expect(existsSync(configFile)).toBe(false);
 

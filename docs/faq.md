@@ -8,7 +8,7 @@ one, it cannot provide a working verification URL. See [Device Auth](device-auth
 
 ## Is Singularity AIDR always running?
 
-On Claude Code, yes - it loads automatically via hooks on every session. On Cursor/VS Code, you need to explicitly enable protection via the command palette. On OpenClaw, it runs once installed as a plugin.
+On Claude Code, yes - it loads automatically via hooks on every session. On Cursor/VS Code (preview — no real-host acceptance evidence yet), you need to explicitly enable protection via the command palette. On OpenClaw, it runs once installed as a plugin.
 
 ## What happens if Singularity AIDR encounters an error?
 
@@ -38,11 +38,13 @@ Yes. Place valid YAML rule files in `~/.singularity-aidr/threats/`; they are loa
 
 ## Does Singularity AIDR work offline?
 
-Partially. Local heuristics can run offline; URL/file/package checks are
-enabled by default in source/development builds and may use network access.
-If an enabled reputation leg is unavailable, the result can require review;
-it is not a verified clean result. Disable those legs for an offline pilot and
-verify egress. Commercial builds force managed mode.
+Yes for detection. Local heuristics, policy and the offline typosquat check run
+offline. URL/file/package reputation checks are off by default; with them off,
+URL fetches and package installs are decided locally and recorded as "not
+checked" (never as clean). If you enable a reputation leg and it is
+unavailable, the call requires review. Commercial builds force managed mode;
+when they cannot reach the control plane past the grace period, managed
+features switch off and local detection keeps enforcing.
 
 ## What about MCP tool calls?
 
@@ -53,7 +55,8 @@ coverage in a pilot.
 
 ## How do I disable Singularity AIDR temporarily?
 
-- **Claude Code:** Uninstall the plugin or run Claude without `--plugin-dir`
+- **Any connector:** `aidr uninstall --host <id> --keep-data` removes it and keeps your configuration (see [Uninstall](getting-started.md#uninstall))
+- **Claude Code:** `/plugin uninstall aidr@aidr` (a development `--plugin-dir` install: run Claude without `--plugin-dir`)
 - **Cursor/VS Code:** Run `Singularity AIDR: Disable Protection` from the command palette
 - **OpenClaw:** Uninstall the plugin via `openclaw plugins uninstall aidr-openclaw`
 

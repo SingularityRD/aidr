@@ -1,0 +1,1 @@
+Masks personal and confidential data before it reaches AI chat tools, and restores it locally in the answers.

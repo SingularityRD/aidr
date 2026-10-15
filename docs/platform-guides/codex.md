@@ -1,7 +1,7 @@
 # Codex CLI
 
 The Codex connector (`@singularityrd/aidr-codex`) is a native `PreToolUse` command hook
-for the OpenAI Codex CLI. It evaluates `Bash` and `apply_patch` calls with the shared
+for the OpenAI Codex CLI. It evaluates `Bash`, `apply_patch` and MCP calls with the shared
 AIDR detection core before Codex runs them. Verified against `codex-cli 0.141.0`. The
 package README ([packages/codex/README.md](../../packages/codex/README.md)) is the full
 reference.
@@ -27,7 +27,7 @@ Register the hook in `~/.codex/config.toml`:
 
 ```toml
 [[hooks.PreToolUse]]
-matcher = "^(Bash|apply_patch)$"
+matcher = "^(Bash|apply_patch|mcp__.+)$"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
@@ -98,11 +98,16 @@ AIDR on Codex is a guardrail at the hook boundary, not endpoint isolation.
 
 ## Scope
 
-- Covered: `Bash` and `apply_patch` calls before execution.
-- Not covered: tool output before the model reads it, MCP and other local function
-  tools outside the matcher, and hosted tools such as web search that do not pass
-  through the tool-hook path. Use the [MCP Gateway](../../packages/mcp-gateway/README.md)
-  for MCP traffic.
+- Covered: `Bash`, `apply_patch` and MCP (`mcp__*`) calls before execution. The
+  real-host record covers `Bash`; MCP coverage follows the 0.141.0 source and the
+  connector's tests.
+- Observed, not enforced: `Bash` and MCP tool output (`PostToolUse`). The host source
+  replaces a blocked result with the reason, but no real-host run shows it, so no
+  pre-model output protection is claimed for Codex.
+- Not covered: other local function tools outside the matcher (for example
+  `update_plan`), `apply_patch` output, and hosted tools such as web search that do
+  not pass through the tool-hook path. Use the
+  [MCP Gateway](../../packages/mcp-gateway/README.md) for enforced MCP result inspection.
 
 ## Verify
 
@@ -115,6 +120,8 @@ Repeat host acceptance for every Codex version you deploy; a new host version ca
 change hook behaviour.
 
 ## Real-host acceptance
+
+Tested host versions for every connector, generated from these records: [compatibility matrix](../compatibility-matrix.md). Treat any other host version as unverified.
 
 Recorded by `pnpm test:e2e:real-host` (see [development](../development.md#real-host-e2e-with-a-scripted-mock-model)): the real host binary on linux/x64, AIDR installed from the development build in a disposable HOME, and a scripted loopback mock model in place of a real one. It proves what the host does with AIDR's answer at each boundary, not how a real model behaves or how broad detection is. Record: [`docs/evidence/real-host/codex.json`](../evidence/real-host/codex.json)
 (`codex-cli 0.141.0`, `codex exec` with a custom `model_providers` entry and

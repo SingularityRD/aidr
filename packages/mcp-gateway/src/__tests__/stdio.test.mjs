@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { Readable, Writable } from "node:stream";
 import { describe, it } from "node:test";
-import { runStdioBridge, validateStdioBinding } from "../stdio.mjs";
+import { assertStdioIsolationPolicy, runStdioBridge, validateStdioBinding } from "../stdio.mjs";
 
 const token = "s".repeat(48);
 function fixture(maxBodyBytes = 4096) {
@@ -168,5 +168,29 @@ describe("MCP stdio bridge", () => {
 			assert.equal(f.closed, true);
 			assert.deepEqual(output.lines, []);
 		}
+	});
+
+	it("warns that stdio mode is not an isolation boundary and can refuse upstream credentials", () => {
+		const servers = [
+			{ tenantId: "tenant-a", id: "plain" },
+			{ tenantId: "tenant-a", id: "credentialed", upstreamAuthEnv: "UPSTREAM_SECRET_ENV" },
+		];
+		const run = (serverId, stdioUpstreamCredentials) => {
+			const lines = [];
+			const stderr = { write: (line) => lines.push(line) };
+			assertStdioIsolationPolicy(
+				{ servers, stdioUpstreamCredentials },
+				{ tenantId: "tenant-a", serverId, stderr },
+			);
+			return lines;
+		};
+		const plain = run("plain", "warn");
+		assert.equal(plain.length, 1);
+		assert.match(plain[0], /not a credential-isolation or approval boundary/);
+		const warned = run("credentialed", "warn");
+		assert.equal(warned.length, 2);
+		assert.match(warned[1], /upstreamAuthEnv is set/);
+		assert.equal(run("plain", "refuse").length, 1);
+		assert.throws(() => run("credentialed", "refuse"), /stdio upstream credential refused/);
 	});
 });

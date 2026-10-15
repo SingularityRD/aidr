@@ -4,6 +4,7 @@ import {
 	type Config,
 	checkRunaway,
 	DecisionEngine,
+	extractFromBash,
 	extractFromUnknownTool,
 	extractUrls,
 	getEffectiveManagedApiKey,
@@ -19,7 +20,9 @@ import {
 	loadTrustedDomains,
 	managedStatePath,
 	nullLogger,
+	REPUTATION_NOT_CHECKED_CATEGORY,
 	type ResponseBarrierInspection,
+	reputationNotCheckedVerdict,
 	type Threat,
 	type ThreatLoadError,
 	type TrustedDomain,
@@ -40,6 +43,7 @@ import type {
 } from "./config.js";
 import { CheckRequestSchema, CheckResultSchema, SDKConfigSchema } from "./config.js";
 import { INDETERMINATE_METADATA_KEY } from "./enforcement.js";
+import { MAX_INSPECTED_HEADER_CHARS, partitionHeaders } from "./http-headers.js";
 import {
 	AIDRPrivacyTextError,
 	loadPrivacyTextGateway,
@@ -80,6 +84,29 @@ function withReasons(result: CheckResult, reasons: readonly string[]): CheckResu
 	const extra = reasons.filter((reason) => !result.reason?.includes(reason));
 	if (extra.length === 0) return result;
 	return { ...result, reason: [result.reason, ...extra].filter(Boolean).join("; ") };
+}
+
+/**
+ * Surface core's `reputation_not_checked` label on the SDK result so callers can
+ * tell "no reputation service looked at these URLs" from a clean reputation result.
+ */
+function labelNotChecked(
+	result: CheckResult,
+	verdict: Verdict,
+	urlsNotChecked: readonly string[],
+): CheckResult {
+	if (urlsNotChecked.length === 0 || verdict.category !== REPUTATION_NOT_CHECKED_CATEGORY) {
+		return result;
+	}
+	return {
+		...result,
+		metadata: {
+			...result.metadata,
+			category: REPUTATION_NOT_CHECKED_CATEGORY,
+			leg: "url_reputation",
+			uncheckedUrls: verdict.artifacts,
+		},
+	};
 }
 
 /** Same marker the core generic extractor emits for an input it could not fully walk. */
@@ -535,14 +562,23 @@ export class AIDRClient {
 		// Run heuristics (heuristics is guaranteed to be initialized here)
 		const matches = this.heuristics?.match(artifacts);
 
-		const { urlCheckResults, unavailableReason: urlLegUnavailableReason } =
-			await this._reputationLeg(request, artifacts);
+		const {
+			urlCheckResults,
+			unavailableReason: urlLegUnavailableReason,
+			notChecked: urlsNotChecked = [],
+		} = await this._reputationLeg(request, artifacts, installed);
 
-		// Get verdict from decision engine
-		const verdict = await this.engine.decide({
+		// Get verdict from decision engine. URLs no reputation service looked at
+		// (leg not enabled, `unchecked_action: allow`) label a clean local allow
+		// `reputation_not_checked`, exactly as the core evaluator does.
+		const decided = await this.engine.decide({
 			heuristicMatches: matches ?? [],
 			urlCheckResults,
 		});
+		const verdict =
+			urlsNotChecked.length > 0
+				? reputationNotCheckedVerdict(decided, urlsNotChecked, [], true)
+				: decided;
 		// Installed mandatory routing can change while a provider lookup is pending.
 		let current: Config;
 		try {
@@ -576,7 +612,14 @@ export class AIDRClient {
 		// An incomplete reputation result must not be cached as clean (or as if
 		// all enabled checks had completed); neither may a verdict from incomplete rules,
 		// since the cache file is shared with clients that loaded the full rule set.
-		if (this.cache && !urlLegUnavailableReason && this.ruleErrors.length === 0) {
+		// A not-checked allow is not cached either: the cache entry would lose its
+		// `reputation_not_checked` label and come back looking like a clean allow.
+		if (
+			this.cache &&
+			!urlLegUnavailableReason &&
+			urlsNotChecked.length === 0 &&
+			this.ruleErrors.length === 0
+		) {
 			const isMalicious = verdict.decision === "deny";
 			this.cache.putUrl(
 				cacheKey,
@@ -594,7 +637,11 @@ export class AIDRClient {
 			this.cacheEntryCount++;
 		}
 
-		return this._applySessionLayers(request, current, this._verdictToResult(verdict));
+		return this._applySessionLayers(
+			request,
+			current,
+			labelNotChecked(this._verdictToResult(verdict), verdict, urlsNotChecked),
+		);
 	}
 
 	/**
@@ -649,25 +696,39 @@ export class AIDRClient {
 	/**
 	 * URL reputation for a `fetch` action: the resource and every URL found in
 	 * the structured input / body are verified, not only the resource. Returns
-	 * `unavailableReason` when the leg could not run, so the result is never clean.
+	 * `unavailableReason` when an enabled leg could not run, so the result is never
+	 * clean. While the leg is not enabled the URLs are returned as `notChecked`
+	 * (decided by local rules, labelled `reputation_not_checked`) unless
+	 * `urlReputationUncheckedAction` or the installed `url_check.unchecked_action`
+	 * is `ask`, which keeps the strict hold-for-review behaviour.
 	 */
 	private async _reputationLeg(
 		request: CheckRequest,
 		artifacts: readonly Artifact[],
-	): Promise<{ urlCheckResults: UrlCheckResult[]; unavailableReason?: string }> {
+		installed: Config,
+	): Promise<{
+		urlCheckResults: UrlCheckResult[];
+		unavailableReason?: string;
+		notChecked?: string[];
+	}> {
 		if (request.action !== "fetch") return { urlCheckResults: [] };
-		if (!this.config.urlReputationEnabled) {
-			return {
-				urlCheckResults: [],
-				unavailableReason: "disabled to avoid sending URLs to an external reputation provider",
-			};
-		}
 		const urls = [
 			...new Set([
 				request.resource,
 				...artifacts.filter((artifact) => artifact.type === "url").map((a) => a.value),
 			]),
 		];
+		if (!this.config.urlReputationEnabled) {
+			const strict =
+				this.config.urlReputationUncheckedAction === "ask" ||
+				installed.url_check?.unchecked_action === "ask";
+			return strict
+				? {
+						urlCheckResults: [],
+						unavailableReason: "disabled to avoid sending URLs to an external reputation provider",
+					}
+				: { urlCheckResults: [], notChecked: urls };
+		}
 		if (urls.length > MAX_REPUTATION_URLS) {
 			return {
 				urlCheckResults: [],
@@ -790,6 +851,37 @@ export class AIDRClient {
 
 		if (request.artifacts) artifacts.push(...request.artifacts);
 		artifacts.push(...this._contextBodyArtifacts(request));
+		artifacts.push(...this._contextHeaderArtifacts(request));
+		return artifacts;
+	}
+
+	/**
+	 * Artifacts from `request.context.headers` (HTTP request headers). Every
+	 * non-credential header value is walked by the generic extractor, so a
+	 * command, URL or injection payload smuggled in a header is inspected like
+	 * one in the body. Credential headers (`Authorization`, `Cookie`, any name
+	 * containing token/secret/session/…) are skipped here as well as by the
+	 * middleware: their values are opaque secrets, not content. A header set
+	 * larger than {@link MAX_INSPECTED_HEADER_CHARS} is reported as not fully
+	 * inspected (the check then denies).
+	 */
+	private _contextHeaderArtifacts(request: CheckRequest): Artifact[] {
+		const raw = request.context?.headers;
+		if (raw === undefined || raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+			return [];
+		}
+		const { inspected } = partitionHeaders(raw as Record<string, string>);
+		if (Object.keys(inspected).length === 0) return [];
+		const size = Object.entries(inspected).reduce(
+			(total, [name, value]) => total + name.length + value.length,
+			0,
+		);
+		if (size > MAX_INSPECTED_HEADER_CHARS) return [notFullyInspected()];
+		// Header names say nothing about the value's kind (`x-cmd`, `x-query`), so
+		// besides the generic walk each value is also parsed as a shell command:
+		// a backend that forwards a header to a shell is exactly the case to catch.
+		const artifacts = extractFromUnknownTool("http_headers", inspected);
+		for (const value of Object.values(inspected)) artifacts.push(...extractFromBash(value));
 		return artifacts;
 	}
 
@@ -872,7 +964,7 @@ export class AIDRClient {
 					request.resource,
 					artifacts,
 					this.config.baseUrl ?? "",
-					this.config.apiKey,
+					this.config.apiKey ?? "",
 					this.config.urlReputationEnabled,
 					this.config.includeUrlQueryParameters,
 				]),

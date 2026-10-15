@@ -10,9 +10,17 @@ heuristics. This does not mean they are offline by default: enabled URL, file,
 and package checks can make outbound requests. Signed
 commercial connector packages are intentionally stricter: before first start,
 provision `config.json` with the independently delivered Ed25519 artifact
-verification public key produced by the deployment flow. They fail closed when
-that trust configuration, signed manifest, or a covered runtime file is missing
-or changed. The release signing private key never belongs in this file.
+verification public key produced by the deployment flow, in
+`integrity.public_keys_pem` (see [Integrity verification](integrity.md)):
+
+```json
+{ "integrity": { "enabled": true, "verify_on_start": true, "public_keys_pem": ["-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"] } }
+```
+
+They fail closed when that trust configuration, signed manifest, or a covered
+runtime file is missing or changed: every tool call is blocked (Claude Code reports
+`Singularity AIDR inspection unavailable`). The release signing private key never
+belongs in this file.
 
 For source/development builds, managed mode is an **opt-in additive layer**
 (dashboard telemetry, signed intel packs, remote policy, seat enforcement).
@@ -154,6 +162,11 @@ flows](privacy.md) before enabling network features.
   "version_check": {
     "enabled": false
   },
+  "update": {
+    "auto": "notify",
+    "check_interval_hours": 24,
+    "catalog_public_keys": []
+  },
   "heuristics_enabled": true,
   "cache": {
     "enabled": true,
@@ -192,36 +205,85 @@ One of `"local"` or `"managed"`. Default: `"local"`.
   `enrollment_token`, **and a deployed control plane**.
 
 Commercial builds force `managed`; setting `local` does not bypass their
-artifact trust or entitlement requirements. If a managed installation has no
-valid enrollment credentials, managed-only features stay disabled and local
-detection continues. An enrolled commercial installation with invalid signed
-entitlement can instead return a blocking review verdict. The runtime reports
-these states rather than presenting an unverified check as clean.
+artifact trust or entitlement requirements. Licensing and enrollment state
+switch **managed** features off; they never switch local detection off. With
+no enrollment credentials, a missing, invalid, expired (past `grace_until`) or
+revoked signed entitlement, or managed sync disabled by the control plane, the
+remote policy fetch, telemetry upload, dashboard approvals and paid intel stay
+off, and heuristics, policy and allowlists decide every call exactly as in
+`local` mode, in every build. Each verdict then carries a notice ("managed
+features are off (...). Local detection is still enforcing"), and the session
+banner reports "Local protection ACTIVE (managed features unavailable: ...)".
+The one exception is a commercial build whose own artifact integrity check
+failed (degraded safe mode): every call is additionally held for review, and a
+local `deny` stays a `deny` with its detection reason first.
+`control_plane.remote_policy_required: true` keeps its fail-closed deny when
+the central policy cannot be loaded, including while managed features are off.
 
-> **Deployment requirement:** no control plane is currently deployed, so `managed`
-> cannot complete enrollment. Leave `mode` at its `local` default unless your
-> deployment provides the `/v1/device-start`, `/v1/device-poll`, `/v1/enroll`,
-> `/v1/ingest` and `/v1/revocations` endpoints.
+> **Deployment requirement:** `managed` needs a reachable control plane: your own
+> on-prem installation (the Supabase stack and dashboard from this repository;
+> see the [on-prem runbook](operations/onprem-runbook.md)) or the hosted service
+> once it is accepted for customer use (it is not today; see
+> [SaaS deployment](deployment/saas.md)). Leave `mode` at its `local` default
+> unless your deployment provides the `/v1/device-start`, `/v1/device-poll`,
+> `/v1/enroll`, `/v1/ingest` and `/v1/revocations` endpoints.
 
 ### `auth`
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `api_key` | (none) | API key for managed control plane services (telemetry + licensing). |
-| `enrollment_token` | (none) | Optional one-time token for bootstrapping managed mode (support/fallback path). |
+| `enrollment_token` | (none) | Optional enrollment code (`aidr_enroll_…`, one-time) or fleet enrollment key (`aidr_fleet_…`) exchanged for a credential on first use. A fleet key in the machine policy fills this for a managed install that has no credential. |
 
 ### `control_plane`
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `true` | Allow control-plane integration in managed mode; local mode does not sync. A deployed endpoint is still required. |
-| `endpoint` | empty | Base URL for a deployed control plane; no built-in deployment is provided. |
+| `endpoint` | empty | API origin of your control plane (on-prem or hosted); no default endpoint is built in. |
 | `timeout_seconds` | `0.5` | Request timeout for control plane calls |
 | `send_audit_logs` | `true` | In managed mode with enrollment, send runtime verdict events for the dashboard; local mode does not sync. |
 | `send_clean_verdicts` | `false` | Also send `allow` events (higher volume) |
 | `sync_incidents` | `false` | Also send incident events (when emitted) |
 | `grace_period_hours` | `72` | Offline grace window for managed mode |
 | `redact_mode` | `"hash"` | Remote minimisation: `"hash"` replaces summaries/artifacts with SHA-256 digests; `"full"` omits them; `"none"` is debug-only and still receives mandatory credential/query redaction. |
+| `remote_policy_required` | `false` | An enrolled endpoint must hold the central runtime policy; without it (past the offline grace) every call is denied. |
+| `remote_policy_offline_grace_seconds` | `3600` | How long the last central policy may be used after it expired while the control plane is unreachable. Never renewed offline. |
+| `offline_policy` | (unset) | Install-time choice for an unreachable control plane: `"keep_enforcing_local"` (local detection keeps deciding every call; sets `remote_policy_required: false`) or `"block_after_grace"` (deny every call once the grace is over; sets `remote_policy_required: true`). Chosen with `deployment-prepare --offline-policy` and usually delivered by the [machine policy](installation/desktop-installers.md#machine-policy-every-user-of-a-computer). While the control plane does not answer, each session start tells the user which applies and, for `block_after_grace`, when the block begins. |
+
+### `network`
+
+Outbound settings for every first-party request (control plane, reputation,
+version and update checks). Certificate verification is never turned off: these
+only add trust anchors or a route.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `ca_file` | (none) | PEM bundle of an internal CA or a TLS-inspecting proxy, trusted **in addition** to Node's bundled roots. |
+| `use_os_trust_store` | `false` | Also trust the operating system's store (Windows certificate store, `/etc/ssl`). Needs Node.js 22.15+ (the standalone build bundles it). |
+| `https_proxy` | (none) | `http://host:port` proxy for outbound HTTPS (HTTP `CONNECT` tunnel; TLS stays end-to-end). Unset: `HTTPS_PROXY` / `https_proxy` from the environment. |
+| `no_proxy` | (none) | Comma-separated hosts, domain suffixes, `host:port` or `*` that go direct. Unset: `NO_PROXY` / `no_proxy`. Loopback always goes direct. |
+
+An unparseable value is ignored (a connectivity setting never changes what is
+enforced). Without any of these, and without `HTTPS_PROXY`, nothing changes.
+
+### `organization`
+
+Display only: shown to users by the connectors and the offline notice.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `support_contact_url` | (none) | `https://` or `mailto:` support contact of the organisation. |
+| `privacy_notice_url` | (none) | `https://` privacy notice (aydınlatma metni) of the organisation. |
+
+### Machine policy
+
+An administrator can set `control_plane.endpoint`, a fleet enrollment key,
+`licensing.public_keys_pem`, `network.*`, `organization.*`,
+`operator_approvals.approvals_mode` and `control_plane.offline_policy` for every
+user of a computer in `HKLM\SOFTWARE\Policies\Singularity AIDR` (Windows) or
+`/etc/singularity-aidr/managed.json` (Linux, root-owned). Those values win over
+this file. See [Machine policy](installation/desktop-installers.md#machine-policy-every-user-of-a-computer).
 
 ### `policy`
 
@@ -311,10 +373,25 @@ aidr restore <snapshot-id> [--overwrite-changed]   # a target changed since the 
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `false` | Explicit opt-in to send URLs without credentials, query, or fragment to the reputation provider. Withheld/disabled lookups require review; they are not reported clean. |
+| `enabled` | `false` | Explicit opt-in to send URLs without credentials, query, or fragment to the reputation provider. An enabled lookup that fails, times out or is withheld requires review; it is never reported clean. |
+| `unchecked_action` | `"allow"` | What a call with URLs gets while `enabled` is `false` and local rules found nothing. `allow`: the call proceeds and the verdict and audit log record it as `reputation_not_checked` ("Not checked by a reputation service ... this is not a clean reputation result"). `ask`: every such call is held for review (the behaviour before this option existed). |
 | `endpoint` | (built-in) | Optional override for the URL reputation endpoint (use this for self-hosted deployments) |
 | `include_query_parameters` | `false` | Explicit opt-in to send URL query parameters. URLs containing queries are otherwise withheld and require review. User info and fragments are never sent. |
 | `timeout_seconds` | `5` | Request timeout |
+
+With the default (`enabled: false`, `unchecked_action: allow`), a URL is judged
+by the local threat rules only (for example pipe-to-shell, raw-IP or paste-site
+downloads, exfiltration patterns and session toxic-flow chains). A URL those
+rules do not flag is allowed and recorded as not checked; it is never labelled
+clean. No first-party reputation endpoint is deployed today, so enabling the leg
+without your own `endpoint` makes every URL call ask (the leg is enabled but
+cannot run).
+
+The SDK (`AIDRClient`) applies the same rule to `fetch` checks: with
+`urlReputationEnabled: false` a fetch local rules find nothing in is allowed with
+`metadata.category: "reputation_not_checked"`, and `urlReputationUncheckedAction:
+"ask"` (or this installed `url_check.unchecked_action: ask`) holds it for review.
+See the [SDK README](../packages/sdk/README.md#url-reputation-and-data-sharing).
 
 Example (Supabase Edge Function):
 
@@ -348,7 +425,8 @@ Example (Supabase Edge Function):
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `false` | Explicit opt-in to send package names to npm/PyPI. Disabled package operations are marked unverified and require review. |
+| `enabled` | `false` | Explicit opt-in to send package names to npm/PyPI. |
+| `unchecked_action` | `"allow"` | What a registry install (or lockfile/manifest install, or an unsupported manager such as `uv`/`poetry`) gets while `enabled` is `false` and local signals found nothing. `allow`: the install proceeds and is recorded as `reputation_not_checked`, never as clean. `ask`: every such install is held for review. |
 | `timeout_seconds` | `5` | Request timeout |
 | `new_package_days` | `30` | Slopsquatting window. A package first published fewer days ago than this, with low adoption, is held for review with a slopsquatting reason. Packages younger than 7 days are always held. `0` turns the low-adoption signal off. |
 | `low_adoption_weekly_downloads` | `1000` | npm packages below this many downloads last week count as low adoption inside the window. |
@@ -357,9 +435,19 @@ Example (Supabase Edge Function):
 
 A package that does not exist on the registry, or a requested version that was
 never published (a hallucinated name or version), is denied. With `enabled:
-false`, or when the registry cannot be reached, none of these signals runs and
-the package operation is reported as unverified, never as clean. See
+true` and the registry unreachable, none of these signals runs and the package
+operation is held for review as unverified, never as clean. See
 [Data and context poisoning protection](poisoning-protection.md#slopsquatting).
+
+With `enabled: false` (the default) no package name leaves the device and the
+registry signals above do not run. The install is decided by local signals: the
+threat rules (for example known miner and malware package names) and an offline
+typosquat check that holds for review a name one edit away from a widely used
+npm or PyPI package (`lodahs`, `reqeusts`, `reactdom`). Names shorter than five
+characters are not judged by that check. An install from a direct URL, Git or a
+local path bypasses the registry and is always held for review. Anything else is
+allowed under `unchecked_action: allow` and recorded as not checked by a
+reputation service.
 
 ### `poisoning_protection`
 
@@ -399,13 +487,44 @@ stores no request field and is rate limited (aggregate
 `AIDR_VERSION_CHECK_CLIENT_RATE_LIMIT_PER_MINUTE`, default 30), failing closed
 when the limiter is unavailable.
 
+### `update`
+
+`aidr update` for endpoints installed with the Windows and Linux desktop
+installers ([Updating](installation/desktop-installers.md#updating)).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `auto` | `"notify"` | `notify`: at AI tool session start, at most once per `check_interval_hours`, check the signed installer catalog and show "To install it, run: aidr update". `install`: also start `aidr update --auto` in the background, which installs only a newer verified version from the configured source and rolls back on a failed `aidr verify`. `off`: no automatic check. Device management turns it off (below). |
+| `source` | unset | A mirror of the download portal tree: a folder or an `https` URL holding `latest.json`. Used when there is no managed control plane (local mode) or the device is not enrolled. |
+| `catalog_public_keys` | `[]` | Installer-catalog public keys (PEM, or base64 SPKI DER / raw Ed25519). Used only when the install folder has no `config/installer-catalog-public.pem`; that file wins. No key: nothing is downloaded or installed. |
+| `check_interval_hours` | `24` | Hours between automatic checks (1–720). |
+
+Source order for `aidr update`: `--from`, then the tenant portal in managed
+mode (`control_plane.endpoint` with the device's API key, Edge Function
+`installer-update`), then `source`. Every source is verified the same way:
+the catalog signature with the pinned key, then the installer's SHA-256 and
+size. An older version needs `--allow-downgrade`.
+
+**Device management.** On a machine marked as device-managed
+(`/etc/singularity-aidr/mdm-managed` on Linux; on Windows the policy value
+`HKLM\SOFTWARE\Policies\Singularity AIDR\MdmManaged = 1`, set by the MSI
+property `AIDR_MDM_MANAGED=1`, or the file
+`%ProgramData%\Singularity AIDR\mdm-managed`) automatic checks are off
+whatever `auto` says and `aidr update` only checks: MDM customers update
+through their MDM.
+
+These checks are separate from `version_check`: on an installer endpoint the
+session-start notice comes from the signed installer catalog, not from the
+`version-check` endpoint.
+
 ### `amsi_check`
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `true` | Enable AMSI (Antimalware Scan Interface) scanning on Windows and WSL |
+| `unavailable_action` | `"ask"` | What an otherwise-allowed call gets when AMSI cannot run on this host at all (no native backend and PowerShell blocked, e.g. ConstrainedLanguage under AppLocker/WDAC): `"ask"` holds every such call for review; `"annotate"` (opt-in) skips the AMSI signal, logs it once per state change and names it on the verdict (`amsi_not_available`, never a clean result). A scan that fails on a working backend is always an `ask`. |
 
-When enabled, Singularity AIDR scans tool inputs (commands, file content, edits) through the Windows AMSI API before execution. This integrates with any installed antimalware provider (Windows Defender, etc.) to detect malicious content. AMSI scanning is automatically skipped on unsupported platforms (macOS, non-WSL Linux). See [AMSI Scanning](amsi-scanning.md) for details.
+When enabled, Singularity AIDR scans tool inputs (commands, file content, edits) through the Windows AMSI API before execution. This integrates with any installed antimalware provider (Windows Defender, etc.) to detect malicious content. AMSI scanning is automatically skipped on unsupported platforms (macOS, non-WSL Linux). See [AMSI Scanning](amsi-scanning.md) for details, including the host state record and the session-start notice.
 
 ### `prompt_protection`
 
@@ -450,7 +569,8 @@ the model, and the model's own safety behaviour remains the primary control.
   For each category the effective action is the **stronger** of the local and tenant
   values: a tenant can tighten `warn` to `block` for its fleet, but it cannot relax a local
   setting. An unknown category in the signed payload makes the policy invalid, and the
-  connector then fails closed. A connector build that predates this field rejects a
+  connector then fails closed (denies the call; a hook the host disabled, did not trust,
+  killed or timed out cannot deny anything). A connector build that predates this field rejects a
   payload that contains it, so roll the connector out before provisioning `prompt_safety`.
 - Rule ids (for framework mapping and tests): `jailbreak.instruction_override`,
   `jailbreak.instruction_override_tr`, `jailbreak.persona_override`,
@@ -582,8 +702,9 @@ MCP gateway) gets it. See [Toxic-flow detection](toxic-flow.md) for the model.
   `injection_to_action` (`AIDR-FLOW-003`), `bulk_sensitive_access` (`AIDR-FLOW-004`). The verdict
   category is `toxic_flow` and the reason names the chain, the earlier steps (tool plus a redacted
   target summary and age) and this call.
-- An `ask` is a block pending out-of-band approval like any other (`aidr pending` /
-  `aidr approve <actionId>` on soft-gated connectors, the native dialog in Claude Code).
+- An `ask` is blocked until a person approves it, like any other (`aidr pending` /
+  `aidr approve <first 8 characters of the id>` in the user's own terminal on soft-gated
+  connectors, the native dialog in Claude Code).
 - Calls the operator allowlisted are recorded but never escalated.
 - Failure policy: a state file that cannot be read or written is a skipped signal; the call is
   evaluated by every other layer and an `allow` is marked `toxic_flow_unavailable` in the audit
@@ -661,6 +782,10 @@ Boolean, default `true`. Set to `false` to disable all local pattern matching.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `path` | `~/.singularity-aidr/allowlist.json` | Allowlist file location (must remain under `~/.singularity-aidr`) |
+| `internal_networks` | unset | Administrator-declared internal networks as IPv4/IPv6 CIDR (`"10.20.0.0/16"`, `"193.140.0.0/16"`, `"2001:db8:aa::/48"`). A URL whose host is a literal address inside one is treated like an allowlisted URL. Entries broader than `/8` (IPv4) or `/16` (IPv6), and malformed entries, are ignored. |
+| `internal_domain_suffixes` | unset | Administrator-declared internal domains (`"corp.example.com.tr"`). Dot-bounded suffix match: it covers `git.corp.example.com.tr`, never `evilcorp.example.com.tr`. Public registry and hosting suffixes (`com.tr`, `gov.tr`, `github.io`, …) and bare public labels are ignored; private-use single labels (`local`, `lan`, `internal`, `intranet`, `corp`, `home`, `localdomain`) are accepted. |
+
+Internal networks and domains (both keys can also be listed in the allowlist file itself, under the same names) cover **URL artifacts only**: rules that match the URL (direct-IP, executable download, reputation lookup) are skipped for it, while the command around it is still inspected, so `curl http://<internal>/x.sh | bash` is still blocked and a secret read followed by an upload is still an exfiltration chain. A URL with userinfo (`http://<internal>@<other>/`) never qualifies. An explicit `policy.network` deny or private-IP deny still applies. Without these keys every literal IPv4 host, internal ones included, triggers the direct-IP rule `CLT-URL-004`; listing an internal range here is the opt-in that clears it. The cloud metadata endpoints `169.254.169.254` and `169.254.170.2` are never cleared.
 
 The allowlist stores user overrides for false positives. When Singularity AIDR returns an `ask` verdict and the user proceeds, the artifact can be allowlisted for future sessions. Manage it with `aidr allowlist list`, `aidr allowlist add <url|command|file_path> <value>` (operator-only, interactive confirmation) and `aidr allowlist remove <type> <value>`; commands are stored as a SHA-256 of the command text, so `list` shows the hash and `remove` accepts either the text or a unique hash prefix.
 
@@ -728,19 +853,51 @@ Measured cost (Windows 11, Node 22, file system with fsync): `logVerdict` p50
 dominated by process start and ACL hardening) showed no difference beyond run
 noise over 40 spawns per variant.
 
+### `project_env_reads`
+
+One of `"ask"` (default), `"auto"` or `"allow"`. Whether reading the project's own `.env` files (inside the session working directory) into the agent's context is prompted. `ask` keeps the prompt; `auto` (opt-in) allows it except under `paranoid` sensitivity; `allow` (opt-in) always allows it. Reads stay tracked as secret material, so a later upload is still an exfiltration chain. See [Project `.env` files](project-env-files.md).
+
 ### `sensitivity`
 
 One of `"paranoid"`, `"balanced"`, or `"relaxed"`. Default: `"balanced"`. See [How It Works](how-it-works.md#sensitivity-presets).
 
-In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw, OpenCode and Codex, and a deny can never be released by an operator approval. Those connectors cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a human approves it out of band with `aidr approve` (see [Operator approvals](#operator-approvals)); the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
+In `paranoid` mode, `ask` verdicts are promoted to `deny` on OpenClaw, OpenCode and Codex, and a deny can never be released by an operator approval. Those connectors cannot open a host-native approval dialog, so an `ask` verdict stays blocked until a person approves it in their own terminal with `aidr approve` (see [Operator approvals](#operator-approvals)); the agent cannot approve its own action. Claude Code supports a host approval UI. Cursor `preToolUse` does not support an enforceable `ask` response, so its adapter maps `ask` to an explicit deny. See the [OpenClaw](../packages/openclaw/README.md#approving-a-flagged-action) and [OpenCode](../packages/opencode/README.md#approval-flow) connector notes.
+
+### `locale`
+
+Display language of user-facing messages: `"en"` or `"tr"`. Unset by default.
+It changes only text a person reads (hook block and approval messages, the
+session-start banner, `aidr --help`, `aidr status`, `aidr pending` and
+`aidr approve`); hook JSON fields, decision values, rule ids, the `actionId`
+token and every machine-readable (`--json`) output are identical in both
+languages. Rule titles and reasons come from the English threat rules and stay
+English.
+
+Resolution order, first match wins: the `AIDR_LOCALE` environment variable,
+this key, then the POSIX locale (`LC_ALL`, `LC_MESSAGES`, `LANG`, so
+`LANG=tr_TR.UTF-8` selects Turkish), then the operating system locale as Node's
+`Intl` reports it (Windows sets no POSIX variables; a Turkish Windows selects
+Turkish here), then English. An unsupported value is ignored; it never makes the
+configuration invalid.
+
+The Cursor / VS Code extension follows the editor's display language, and so do
+its hooks: the host starts the hook without the editor's environment, so the
+extension records `vscode.env.language` in the hook launcher's `runner.json` on
+every activation and the launcher sets `AIDR_LOCALE` from it, unless
+`AIDR_LOCALE` is already set (then that wins). Because it arrives as
+`AIDR_LOCALE`, the editor language takes precedence over this key inside
+editor-launched hooks. The dashboard has its own language switcher.
 
 ### `operator_approvals`
 
-`key_storage`: `"os-vault"` (default) or `"file"`. Where the operator approval
-key and the single-use ledger live. With `"os-vault"` and no OS credential vault,
-operator approvals are disabled and asks stay blocked; `"file"` is an explicit,
-reduced-protection opt-in that `aidr doctor` warns about. Overridden by
-`AIDR_OPERATOR_APPROVAL_KEY_STORAGE`. See [Key custody](#key-custody).
+`key_storage`: `"auto"` (default), `"os-vault"`, `"encrypted-file"` or `"file"`.
+Where the operator approval key and the single-use ledger live. `"auto"` uses the
+OS credential vault and, on a Linux host with none (headless servers, WSL,
+containers), the machine-bound encrypted file store, so asks can still be recorded
+and approved there. `"os-vault"` requires a vault: without one, operator approvals
+are disabled and asks stay blocked. `"file"` is the legacy plain-key-file opt-in
+that `aidr doctor` warns about. Overridden by `AIDR_OPERATOR_APPROVAL_KEY_STORAGE`.
+See [Key custody](#key-custody).
 
 `dashboard_only`: `false` (default) or `true`. **Managed mode only.** When `true`,
 an `ask` can be released only by a [dashboard approval](#managed-mode-dashboard-approvals):
@@ -757,9 +914,10 @@ VS Code hooks. OpenClaw, OpenCode and Codex always use the operator channel.
   record is informational only: it has no integrity MAC, is stored apart from
   approvable asks, and `aidr approve` refuses it.
 - `"operator"`: the host's dialog is never shown. The call is **denied** with the
-  same approval reference the soft-gated connectors use (`actionId: "…"`, plus
-  "you cannot approve this action yourself"), the ask is recorded as an
-  approvable pending ask, and after `aidr approve <actionId>` in the user's own
+  same block message the soft-gated connectors use (its first step is the command to
+  run, `aidr approve <first 8 characters of the id>`, followed by the full approval
+  reference and the line telling the agent it cannot approve the action), the ask is
+  recorded as an approvable pending ask, and after `aidr approve` in the user's own
   terminal exactly **one** retry of the identical call is released — the same
   HMAC-signed store, OS-vault key and single-use consumption ledger as every other
   operator approval. In `paranoid` sensitivity the ask is a plain deny, as on the
@@ -769,6 +927,48 @@ VS Code hooks. OpenClaw, OpenCode and Codex always use the operator channel.
 ```json
 { "operator_approvals": { "mode": "operator" } }
 ```
+
+`approvals_mode`: unset (default), `"dashboard_only"` or `"host_dialog"`. The
+organisation-wide choice, normally from the machine policy: `"dashboard_only"`
+sets `dashboard_only: true`; `"host_dialog"` sets `dashboard_only: false` and
+`mode: "host_dialog"`.
+
+### `support_contact_url`, `privacy_notice_url`, `approvals_mode`
+
+Machine-policy keys (Windows `HKLM\SOFTWARE\Policies\Singularity AIDR`, Linux
+`/etc/singularity-aidr/managed.json`); machine policy wins over the user
+configuration for them. In `config.json` they live at
+`organization.support_contact_url`, `organization.privacy_notice_url` and
+`operator_approvals.approvals_mode`. All three only change what people are shown and who
+approves; none of them weakens detection.
+
+- `support_contact_url`: where a developer reports a block they think is wrong.
+  Block messages show it next to the `aidr report-fp <id>` line, and `aidr
+  report-fp` prints it. Only plain `http(s)` links without credentials, spaces,
+  control or bidi characters are shown; anything else is dropped.
+- `privacy_notice_url`: the organisation's privacy notice (aydınlatma metni),
+  linked from the first-run notice every connector shows (see
+  [First-run notice](#first-run-privacy-notice)). Same link rules.
+- `approvals_mode`: `"dashboard_only"` or `"host_dialog"`; see
+  [Managed mode: dashboard approvals](#managed-mode-dashboard-approvals).
+
+### First-run privacy notice
+
+Every connector (Claude Code and OpenClaw / OpenCode at session start, Codex on
+the first prompt, Cursor / VS Code on activation) shows the developer, once, what
+Singularity AIDR guards and what it does not guard (an ordinary `kubectl delete`,
+`git push --force` or `docker system prune` runs without a warning unless a rule
+is added; commands typed outside the assistant and AI tools without a connector
+are not inspected), what it records on the computer (the audit log path and
+whether allowed actions are included) and what leaves the computer (nothing about
+the developer's work in local mode; in managed mode the console host, the
+redaction mode and whether allowed actions are sent), with the
+`privacy_notice_url`. This includes MDM and silent installs, where nobody ran the
+welcome flow. It is shown again whenever one of those facts changes (for example
+on enrolment), and `aidr privacy notice` prints it at any time
+(`--json` for the facts). The shown state is kept in
+`~/.singularity-aidr/privacy-notice-state.json`; losing it only means the notice
+is shown again.
 
 ### `disabled_threats`
 
@@ -968,29 +1168,39 @@ sent to the AIDR dashboard for an administrator to approve — see
    `…(truncated)`. The record also keeps the total artifact count, so
    `aidr pending` says "showing 16 of 40 (truncated)" when a call had more
    artifacts than are previewed. The CLI escapes again at display time.
-2. The operator reviews open asks with `aidr pending` and approves one with
-   `aidr approve <actionId>`. The CLI prints what will be released and requires
+2. The operator reviews open asks with `aidr pending` (times in the machine's
+   local time zone) and approves one with `aidr approve <id>`. The id may
+   be shortened to a unique prefix of at least 8 hex characters; in an
+   interactive terminal `aidr approve` with no id lists the waiting asks
+   numbered to pick from. The CLI prints what will be released and requires
    the operator to type `approve` in an interactive terminal. For automation it
-   accepts `--yes` only when `AIDR_OPERATOR_NONINTERACTIVE=1` is also set.
+   accepts `--yes` only when `AIDR_OPERATOR_NONINTERACTIVE=1` is also set, and
+   then the full 64-character id is required. After approval it prints "Approved.
+   Ask the agent to retry within 15 minutes." (the `--ttl` minutes).
 3. The approval records `{actionId, artifactDigest, tool, approvedAt, expiresAt,
    approver}`. It expires after 15 minutes (`--ttl <minutes>`, 1–1440) and is
    **single-use**: the first retry of the identical call (same tool, same
    artifacts, same session) spends it, and later retries are blocked again. A
    different command, tool or session is never released by it, and a `deny` —
    including a paranoid-promoted `ask` — is never released at all.
-4. `aidr approve <actionId> --permit-allowlist` additionally lets the agent's
+4. `aidr approve <id> --permit-allowlist` additionally lets the agent's
    `aidr_allowlist_add` tool turn each approved artifact into one permanent
    allowlist entry. Without that flag the agent cannot allowlist anything.
 
 | CLI | Purpose |
 |-----|---------|
+| `aidr setup [--dry-run] [--host <ids>] [--no-install] [--release-key <file.pem>] [--force] [--yes]` | Configure AIDR and install or update the connector of every detected AI tool (idempotent). `--release-key` sets up the release public key (Ed25519 PEM) for a manual install after operator confirmation; the desktop installers provision it themselves. Exit code `0` protected, `3` no supported AI tool found yet (nothing changed, not an error; the installers still complete), `1` a real problem |
+| `aidr status [--json]` | Measured installation state, ending with one line: protected tools, tools to restart, manual steps |
+| `aidr verify [--json]` | Pass a harmless canary (data only, never executed) through each registered connector's hook; PASS / FAIL / SKIP per AI tool |
+| `aidr update [--check] [--from <location>] [--catalog <location>] [--allow-downgrade] [--yes] [--json]` | Desktop-installer endpoints only: verify the signed catalog and the installer's SHA-256, install, run `aidr verify`, roll back on failure; see [`update`](#update) |
 | `aidr pending [--json]` | List asks waiting for a decision (and say so when approvals are disabled) |
-| `aidr approve <actionId> [--ttl <min>] [--permit-allowlist] [--yes]` | Approve one retry (operator only) |
+| `aidr approve [actionId\|prefix] [--ttl <min>] [--permit-allowlist] [--yes]` | Approve one retry (operator only); no id in a terminal = pick from a numbered list |
 | `aidr allowlist list\|add\|remove` | Manage permanent exceptions (`add` is operator only) |
-| `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted |
+| `aidr audit tail [-n N] [--json]` | Show recent audit entries, re-redacted (the readable view skips incident roll-up rows; `--json` keeps them) |
 | `aidr audit export [--since 24h\|ISO] [--format jsonl\|csv] [-o file]` | Export redacted entries, including rotated files; the session id is replaced by a digest and CSV cells are neutralised against spreadsheet formulas |
 | `aidr audit verify [--json] [--expect-root <fp>] [--response-chain <path>]` | Verify the signed verdict log and, when enabled, the Ed25519-signed response-action chain offline (`--response-chain <path>` checks only that file) and print the first broken link. Both modes share one exit-code contract: `0` verified, `1` broken (edited, reordered, deleted or truncated entry, forged or missing signature, tampered retention manifest), `2` unverifiable (configuration or log unreadable, log or signing key missing, or no signed chain enabled). A broken chain outranks an unverifiable one. Never creates a signing key |
-| `aidr doctor [--json]` | Check hosts, hook registration, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
+| `aidr doctor [--json] [--verbose]` | One line per check (details with `--verbose`): hosts, hook registration, release verification key, rule count, core version, mode, DLP policy, agent permission profiles, the approval store and key custody, and the last verdict; exits non-zero on problems |
+| `aidr support-bundle [--out <path>] [--audit-entries <n>] [--json]` | Write a redacted diagnostic bundle for a support case; see [support-diagnostics.md](support-diagnostics.md) |
 | `aidr profile list\|show\|validate\|test` | Inspect, validate and dry-run agent permission profiles (see [Agent permission profiles](agent-profiles.md)) |
 
 The protection-weakening commands take the same operator confirmation as
@@ -1011,21 +1221,43 @@ Where that key lives is set by `operator_approvals.key_storage`:
 
 ```json
 {
-  "operator_approvals": { "key_storage": "os-vault" }
+  "operator_approvals": { "key_storage": "auto" }
 }
 ```
 
 | `key_storage` | Key and single-use ledger | Without it |
 |---------------|---------------------------|------------|
-| `"os-vault"` (default) | OS credential vault only — Windows DPAPI, macOS Keychain, or libsecret `secret-tool` — under the ids `aidr-operator-approval-key` and `aidr-operator-approval-ledger` | **Approvals are disabled.** Asks stay blocked (fail closed), the block message tells the user the ask could not be recorded, and `aidr pending`, `aidr approve` and `aidr doctor` say why. There is no silent fallback to a file. |
-| `"file"` (explicit opt-in) | Owner-only files `~/.singularity-aidr/operator-approval.key` and `operator-approval-ledger.json` | — |
+| `"auto"` (default) | The OS credential vault when one answers. On a Linux/POSIX host with **no** vault (headless servers, WSL without a keyring, containers, CI runners): the machine-bound encrypted file store described below. Never a plaintext file. | On Windows and macOS (which always have a vault) and on a host whose key was created in a vault that no longer answers: **approvals are disabled** (fail closed), as for `"os-vault"`. |
+| `"os-vault"` | OS credential vault only — Windows DPAPI, macOS Keychain, or libsecret `secret-tool` — under the ids `aidr-operator-approval-key` and `aidr-operator-approval-ledger` | **Approvals are disabled.** Asks stay blocked (fail closed), the block message tells the user the ask could not be recorded, and `aidr pending`, `aidr approve` and `aidr doctor` say why. |
+| `"encrypted-file"` | The machine-bound encrypted file store, even where a vault exists | — |
+| `"file"` (legacy explicit opt-in) | Plain owner-only files `~/.singularity-aidr/operator-approval.key` and `operator-approval-ledger.json` | — |
 
-`AIDR_OPERATOR_APPROVAL_KEY_STORAGE=os-vault|file` overrides the config.
-Anything other than an explicit `file` means the vault; `AIDR_SECRET_STORE=file-acl`
-does **not** opt approvals into the key file — it only means "no vault", which
-disables approvals. `aidr doctor` warns loudly whenever the file storage is in use:
-any process running as the same user — including a compromised agent with shell
-access — can read a key file and forge approvals.
+**The encrypted file store** (`~/.singularity-aidr/sealed/`, directory `0700`,
+files `0600`) keeps each secret in its own `<id>.sealed.json`, AES-256-GCM
+encrypted under a key derived with HKDF-SHA256 from the host's machine id
+(`/etc/machine-id`, else `/var/lib/dbus/machine-id`), a per-install random salt
+(`store.salt`), the user id and the secret id; the secret id is authenticated
+data. Nothing is written in plaintext: a backup, support bundle, synced folder or
+a copy on another machine does not yield the key, and an edited, truncated or
+swapped file fails authentication and is refused (the ask stays blocked). Its
+limit is the same as libsecret's on Linux: any process running as the same user
+on the same machine can read the machine id and the salt and so derive the key.
+On a host without a machine id (some minimal container images) the key is derived
+from the salt alone and `aidr doctor` reports the store as not machine-bound. An
+operator passphrase is deliberately not used: connectors record asks and spend
+approvals unattended, so a key that needs a human to unlock it would make every
+ask unrecordable again. The [self-defense rules](#self-defense-rules) deny agent
+access to `~/.singularity-aidr` (which contains `sealed/`) exactly as for the
+other key locations; the out-of-band channel is unchanged — only `aidr approve`,
+confirmed in an interactive terminal, writes an approval.
+
+`AIDR_OPERATOR_APPROVAL_KEY_STORAGE=auto|os-vault|encrypted-file|file` overrides
+the config. A malformed value means `auto`, which never selects the plain key
+file; `AIDR_SECRET_STORE=file-acl` does **not** opt approvals into the plain key
+file — it only means "no vault". `aidr doctor` warns loudly whenever the plain
+`file` storage is in use (any process running as the same user — including a
+compromised agent with shell access — can read a key file and forge approvals)
+and states when the encrypted file store is in use.
 
 Under the vault storage the provider never reads a key file, whatever
 `operator-approval-key.json` (an informational record of where the key lives)
@@ -1057,6 +1289,8 @@ record. Under the `file` storage the ledger is a file in the same directory, so 
 stops a rollback of `approvals.json` alone but not a rollback of both files; on
 Windows the DPAPI-sealed vault entry is itself a file under
 `~/.singularity-aidr/secrets`, so sealing prevents forging it but not restoring an
+older copy of it. The same holds for the encrypted file store (`sealed/`):
+authenticated encryption prevents forging or editing the ledger, not restoring an
 older copy of it.
 
 ### Self-defense rules
@@ -1065,18 +1299,60 @@ The approval channel is protected by hard-deny rules (never `ask`, which would
 hand the agent an actionId to have approved):
 
 - `CLT-SELF-007` — an agent command that runs `aidr approve`, `aidr pending`,
-  `aidr allowlist add`, `aidr quarantine release|delete`, `aidr restore`,
-  `aidr audit rotate-key`, the MCP gateway's toolset approval `aidr-mcp-approve`,
-  or sets `AIDR_OPERATOR_NONINTERACTIVE`.
-  `aidr allowlist add`, `aidr exception add`, the MCP gateway's toolset approval
-  `aidr-mcp-approve`, or
-  sets `AIDR_OPERATOR_NONINTERACTIVE`.
+  `aidr allowlist add`, `aidr exception add`, `aidr quarantine release|delete`,
+  `aidr restore`, `aidr audit rotate-key`, `aidr uninstall`, `aidr config --set`,
+  `aidr setup --force`, the MCP gateway's toolset approval `aidr-mcp-approve`
+  (also by glob, e.g. `aidr-mcp-appr*.mjs`), or sets
+  `AIDR_OPERATOR_NONINTERACTIVE`. The host-native equivalents of
+  `aidr uninstall` are denied the same way: `claude plugin
+  disable|uninstall|marketplace remove` of the aidr plugin,
+  `code|cursor --uninstall-extension|--disable-extension(s)` of the SingularityRD
+  extension, `openclaw|opencode plugins disable|uninstall|remove` of aidr,
+  `openclaw config set|unset plugins.entries.aidr-openclaw.*`, a global
+  npm/pnpm/yarn/bun (un)install of any `@singularityrd/aidr-*` package, and
+  setting `AIDR_THREATS_DIR` / `AIDR_ALLOWLISTS_DIR` (`export`, `VAR=…`, `setx`,
+  `setenv`, `os.environ[…] =`).
 - `CLT-SELF-008` — any agent reference to the AIDR state directory
   `.singularity-aidr`, in a shell command, a file-tool path, a Write/Edit body or
   an MCP argument.
 - `CLT-SELF-009` — the vault entries and key/ledger file names
   (`singularity-aidr-cli`, `aidr-operator-approval-*`, `aidr-audit-chain-*`,
-  `operator-approval*.key|json`).
+  `operator-approval*.key|json`), agent code that imports the MCP gateway's
+  library (`@singularityrd/aidr-mcp-gateway`, `aidr-mcp-library.mjs`), and the
+  documented gateway attestation directory (`/var/lib/aidr/mcp-attestation`).
+  The library import rule is defence in depth. A rule cannot see an import
+  path computed at run time, so the gateway side closes that case: the
+  library and serving bundles contain no approval writer (approvals are signed
+  only by `aidr-mcp-approve` with the operator's passphrase-protected key), and
+  the gateway honours only entries signed by a key in its `approvalKeys`.
+
+Removing or switching off AIDR's hooks is covered by three more rules that look
+at what a call **changes** (the `modified_path` view in
+`packages/core/src/self-defense-paths.ts`: paths removed, moved, overwritten,
+truncated, linked over or re-permissioned by `rm`, `mv`, `cp`, `truncate`,
+`sed -i`, `tee`, `>`, `chmod`, interpreter fs calls such as `os.remove` /
+`fs.rmSync`, or Write/Edit/Delete; `cat` and Read produce nothing):
+
+- `CLT-SELF-001` (deny) — AIDR's own installation: the state directory, the
+  `aidr-codex-hook` binary, globally installed `@singularityrd/aidr-*`
+  packages, the OpenClaw extension, the Cursor/VS Code extension and the
+  Claude Code plugin checkout.
+- `CLT-SELF-003` (ask) — host hook and plugin configuration that also holds the
+  user's other settings: `~/.claude/settings*.json` and `~/.claude/plugins`,
+  `~/.codex/hooks.json` and `config.toml`, `~/.cursor/hooks.json`, VS Code /
+  Cursor / Windsurf user settings and extension directories,
+  `~/.openclaw/openclaw.json` and its extensions, `~/.config/opencode`.
+- `CLT-SELF-004` (deny) — configuration written by the agent that switches AIDR
+  off: `heuristics_enabled: false`, URL checks off, `AIDR_THREATS_DIR` /
+  `AIDR_ALLOWLISTS_DIR` in a settings `env` block, env file or shell start-up
+  file, Claude Code `disableAllHooks: true` or `"aidr@aidr": false`, OpenClaw
+  `aidr-openclaw` `enabled: false`, Codex `codex_hooks = false`.
+
+The path view expands `~`, `$HOME`, `%USERPROFILE%`, `%APPDATA%` and every
+`/home/<user>`, `/Users/<user>` or `C:\Users\<user>` to `~`, follows a `cd` in the
+same command and the host's working directory for relative names, and resolves
+globs (`~/.codex/hook*`, `~/.co?ex/*`) to the protected names they would expand
+to.
 
 They match the **shell-normalized** view of the text (`match_on:
 command_normalized`, `file_path_normalized`, `content_normalized`), in which
@@ -1117,8 +1393,8 @@ files the agent's file tools can read; agent tool calls normally have no TTY; th
 self-defense rules above deny the direct and obfuscated routes; and every release
 is written to the audit log as a user override.
 
-**Recommended deployment:** keep `key_storage` at `"os-vault"` and configure the
-vault item to prompt on every access (Keychain Access → the
+**Recommended deployment:** where an OS vault exists, keep `key_storage` at
+`"auto"` or `"os-vault"` and configure the vault item to prompt on every access (Keychain Access → the
 `singularity-aidr-cli` item → Access Control → "Ask for Keychain password"; each
 recorded ask and each approval then shows a prompt), or run the agent under a
 separate OS account from the operator, so its shell cannot open the operator's
@@ -1184,12 +1460,35 @@ nor any same-user process can mint an approval, re-bind one to another call, or
 replay one. What remains local is *which* request to poll, and tampering with that
 only ever results in a block.
 
-By default the local operator channel keeps working alongside the dashboard (and
-Claude Code / VS Code keep their native dialog). Set
-`operator_approvals.dashboard_only: true` to make the dashboard the **only**
-channel: `aidr approve` approvals are ignored, native dialogs become blocks, and if
-the dashboard is unavailable (not enrolled, no signed entitlement, control plane
-unreachable) the call stays blocked with the reason in the message.
+**Default in managed mode: the dashboard.** When the installation is managed and
+its dashboard approval channel is usable (enrolled, an active signed entitlement,
+a secure control-plane endpoint), an `ask` is released **only** by a dashboard
+approval, so a developer cannot approve their own blocked action with the host's
+"Yes" or `aidr approve`. A managed installation without a usable dashboard keeps
+the host dialog / operator channel rather than leaving an ask that nothing can
+release. Who decides is set by the machine-policy key `approvals_mode`, which wins
+over the user configuration:
+
+| `approvals_mode` | Behaviour |
+| --- | --- |
+| unset (default) | Dashboard when usable, as above; `operator_approvals.mode: "operator"` keeps the operator channel. |
+| `"dashboard_only"` | Dashboard only, always (same as `operator_approvals.dashboard_only: true`): `aidr approve` approvals are ignored, native dialogs become blocks, and if the dashboard is unavailable the call stays blocked with the reason in the message. |
+| `"host_dialog"` | The pre-0.7 behaviour: the local operator channel works alongside the dashboard and Claude Code / VS Code keep their native dialog. |
+
+**The developer's side of the loop.** The block message names the request and
+links its dashboard page, `https://<dashboard>/approvals?request=<request id>`,
+when the control plane has `AIDR_DASHBOARD_URL` set; the link carries no token,
+and the connector rebuilds it from the dashboard origin alone. `aidr pending`
+lists the requests this computer filed with their live status (waiting, approved,
+denied, expired) and the page link. When a decision lands, the developer is told
+once, without retrying: on the next prompt in Claude Code and Codex, and as an
+editor notification in Cursor / VS Code (polled every 30 s while requests are
+waiting, at most every 20 s across processes). The notice never spends the
+approval: the identical retry still verifies and spends the single-use token.
+
+**Approver notifications.** New notification channels select "approval
+requested" by default (migration `20261014003300`); existing channels keep what
+their administrators chose. The notification links the dashboard approvals page.
 
 ## Detection exceptions
 
@@ -1259,11 +1558,13 @@ bound to that user or agent; repository exceptions are matched on the endpoint.
 | `~/.singularity-aidr/approvals.json` | Operator approval store: pending asks and `aidr approve` approvals (HMAC-protected, `0600`), plus informational host-dialog asks (no MAC, never approvable) |
 | `~/.singularity-aidr/detection-exceptions.json` | Local [detection exceptions](#detection-exceptions) (HMAC-protected with the approval key, `0600`; expired records are dropped) |
 | `~/.singularity-aidr/operator-approval.key` | Approval HMAC key, only with the explicit `operator_approvals.key_storage: "file"` opt-in (`0600`) |
-| `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives in the OS vault |
+| `~/.singularity-aidr/operator-approval-ledger.json` | Single-use consumption ledger, only with the `file` key storage (`0600`); otherwise it lives next to the approval key (OS vault or `sealed/`) |
+| `~/.singularity-aidr/sealed/` | Machine-bound encrypted file store (`0700`; `<id>.sealed.json` and `store.salt`, `0600`): the approval key and ledger on hosts without an OS vault, and the local CLI credential when one is needed there (see [Key custody](#key-custody)) |
 | `~/.singularity-aidr/operator-approval-key.json` | Informational record of where the approval key lives; never makes AIDR read a key file |
 | `~/.singularity-aidr/dashboard-approval-requests.json` | Managed mode: which dashboard approval request to poll for which pending ask (`0600`); grants nothing by itself |
 | `~/.singularity-aidr/session-flow/` | Per-session toxic-flow records (`<digest>.json`, HMAC-protected, `0600`, pruned after `toxic_flow.window_minutes`) and their per-install key `.flow-key` (`0600`) |
 | `~/.singularity-aidr/agent-safety/` | Runaway-guard session state (`runaway-<digest>.json`, HMAC-protected, `0600`, bounded by `agent_safety.runaway.max_sessions` and `state_ttl_hours`) and its per-install key `session-state.key` (`0600`). Kept next to the active `config.json`. |
+| `~/.singularity-aidr/amsi-state.json` | Windows/WSL: last AMSI start-up outcome on this host (`available` with the backend, or `unavailable` with the reason; re-probed after 1 h, or 24 h for a ConstrainedLanguage refusal, and on every AIDR version change). Never marks content clean. |
 | `~/.singularity-aidr/installation-id` | Random UUID identifying this installation |
 | `~/.singularity-aidr/managed.json` | Managed-mode state (seat status, backoff windows) |
 | `~/.singularity-aidr/pending-approvals.json` | Pending approval state (transient, managed by PreToolUse hook) |

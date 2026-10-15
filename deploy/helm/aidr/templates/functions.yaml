@@ -72,6 +72,37 @@ spec:
               value: "false"
             - name: AIDR_BILLING_PROVIDER
               value: {{ $values.billingProvider | quote }}
+            # AIDR mail (alerts, invitations, digests) reuses the Auth SMTP relay
+            # (auth.smtp); with auth.smtp.host set the SMTP provider is selected.
+            {{- with $values.mail.provider }}
+            - name: AIDR_MAIL_PROVIDER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.auth.smtp.host }}
+            - name: SMTP_HOST
+              value: {{ .Values.auth.smtp.host | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.auth.smtp.port | quote }}
+            - name: SMTP_USER
+              value: {{ .Values.auth.smtp.user | quote }}
+            {{- if .Values.auth.smtp.passwordKey }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "SMTP_PASS" "key" .Values.auth.smtp.passwordKey) | nindent 12 }}
+            {{- end }}
+            - name: SMTP_ADMIN_EMAIL
+              value: {{ .Values.auth.smtp.adminEmail | quote }}
+            - name: SMTP_SENDER_NAME
+              value: {{ .Values.auth.smtp.senderName | quote }}
+            {{- with $values.mail.smtpSecurity }}
+            - name: AIDR_SMTP_SECURITY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if $values.mail.smtpCaSecretKey }}
+            {{- include "aidr.secretEnv" (dict "root" . "env" "AIDR_SMTP_CA_PEM_B64" "key" $values.mail.smtpCaSecretKey) | nindent 12 }}
+            {{- end }}
+            {{- end }}
+            # Central SIEM forwarding: RFC 1918 collectors only with this switch.
+            - name: AIDR_SIEM_ALLOW_PRIVATE_NETWORKS
+              value: {{ .Values.siem.allowPrivateNetworks | ternary "true" "false" | quote }}
             - name: HOME
               value: /tmp
             - name: DENO_DIR
@@ -79,6 +110,18 @@ spec:
             {{- with $values.npmRegistry }}
             - name: NPM_CONFIG_REGISTRY
               value: {{ . | quote }}
+            {{- end }}
+            {{- $idp := $values.identityProvider | default (dict) }}
+            # Internal IdP hosts the oidc-sso function may reach on private addresses.
+            - name: AIDR_OIDC_INTERNAL_IDP_HOSTS
+              value: {{ join "," ($idp.internalHosts | default (list)) | quote }}
+            {{- $idpCa := $idp.caBundle | default (dict) }}
+            {{- if $idpCa.existingConfigMap }}
+            # Public roots stay trusted; the customer CA file is added to them.
+            - name: DENO_TLS_CA_STORE
+              value: mozilla,system
+            - name: SSL_CERT_FILE
+              value: /etc/aidr/idp-ca.pem
             {{- end }}
             {{- with $values.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -100,10 +143,24 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if $idpCa.existingConfigMap }}
+            - name: idp-ca
+              mountPath: /etc/aidr/idp-ca.pem
+              subPath: {{ $idpCa.key | default "ca.crt" }}
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 1Gi
+        {{- if $idpCa.existingConfigMap }}
+        - name: idp-ca
+          configMap:
+            name: {{ $idpCa.existingConfigMap }}
+            items:
+              - key: {{ $idpCa.key | default "ca.crt" }}
+                path: {{ $idpCa.key | default "ca.crt" }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

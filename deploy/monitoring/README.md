@@ -133,6 +133,20 @@ AIDR_QUEUE_MAX_FAILED_JOBS=0
 AIDR_CERT_MIN_REMAINING_SECONDS=1209600
 ```
 
+## License expiry gauges (optional)
+
+When `AIDR_LICENSE_HEALTH_FILE` points at the license evidence that
+`scripts/deployment-maintenance.mjs` writes hourly (`<deployment>/health/license.json`,
+mounted as `/run/aidr-health/license.json`), `/metrics` adds
+`aidr_license_evidence_ok`, `aidr_license_present`,
+`aidr_license_status_age_seconds`, `aidr_license_remaining_seconds` and
+`aidr_license_grace_remaining_seconds` for the earliest-ending licensed
+admission. A missing, malformed, failed or future-dated document publishes
+`aidr_license_evidence_ok 0` and no remaining-time gauges. License expiry is not
+a readiness check and never affects `/readyz`; the `aidr-license` alert group
+warns at 30 days, pages at 7 days, during grace and after it
+([licensing](../../docs/operations/licensing.md#expiry-warnings)).
+
 ## Prometheus and paging
 
 Load [prometheus-alerts.yml](./prometheus-alerts.yml) into Prometheus and adapt
@@ -161,6 +175,26 @@ uses five-minute and one-hour server-error ratios, a 100-request minimum, and a
 14.4x burn threshold against the repository's non-contractual 99.9% internal
 reference. It is an early operational signal, not a measured monthly SLI, an
 approved SLA, external-probe evidence, or service-credit evidence.
+
+### Posture scanner bridge (optional)
+
+When the AI Security Posture scanner is installed, the bridge
+(`services/aig-bridge`) serves its own Bearer-protected `GET /metrics`. It is
+disabled (`404`) until `BRIDGE_METRICS_TOKEN` is set, answers `401` to any other
+credential, and refuses to enable when the token equals `BRIDGE_API_KEY`. Put a
+separate random token in `BRIDGE_METRICS_TOKEN` and in Prometheus's
+`/run/secrets/aidr_bridge_metrics_token`; the `aidr-posture-scanner-bridge`
+job in the scrape example targets `aig-bridge:8099`. Series:
+`aig_bridge_http_requests_total{method,route,status}` and
+`aig_bridge_http_request_duration_seconds` (route templates only, excluding
+`/api/v1/livez`, `/api/v1/readyz` and `/metrics`),
+`aig_bridge_auth_rejections_total{status}` (401/403),
+`aig_bridge_upstream_failures_total{outcome}` (`rejected`, `unavailable`,
+`ambiguous` AIG calls), and `aig_bridge_active_tasks{state}` (reserved, queued,
+running) with `aig_bridge_task_registry_up`, which is `0` and drops the depth
+gauge when the registry cannot be read. Labels never carry task or tenant ids,
+targets, URLs or error text. The counters are process-local. No alert rules ship
+for these series yet.
 
 Every alert must have a named primary owner, secondary owner, paging destination
 and tested escalation. The supplied alert rules do not prove that a paging

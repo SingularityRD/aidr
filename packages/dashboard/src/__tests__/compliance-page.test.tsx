@@ -409,6 +409,32 @@ describe("compliance export helpers", () => {
 		]);
 	});
 
+	it("splits the control mappings into one table per framework's controls", () => {
+		const blocks = sectionBlocks(hashOnly.sections.control_mappings);
+		const frameworks = blocks.find((block) => block.path === "frameworks");
+		expect(frameworks?.headers).toEqual(["id", "name", "version", "scope", "controls"]);
+		const iso = blocks.find((block) => block.path === "frameworks[iso-iec-27001].controls");
+		expect(iso?.headers).toEqual([
+			"id",
+			"group",
+			"title",
+			"coverage",
+			"capabilities",
+			"evidence",
+			"note",
+		]);
+		expect(iso?.rows.map((row) => row[0])).toContain("A.8.12");
+		for (const id of ["bddk-bsebh", "cbddo-big"]) {
+			expect(
+				blocks.some((block) => block.path === `frameworks[${id}].controls`),
+				id,
+			).toBe(true);
+		}
+		const names = csvBundleFiles(hashOnly).map((file) => file.name);
+		expect(names).toContain("10_control_mappings__frameworks_iso-iec-27001_controls.csv");
+		expect(hashOnly.sections.control_mappings.kind).toBe("vendor_mapping");
+	});
+
 	it("bounds custom periods like the server", () => {
 		const now = Date.parse("2026-09-25T10:00:00.000Z");
 		expect(customPeriod("2026-09-01", "2026-09-30", now)).toEqual({

@@ -17,7 +17,12 @@ vi.mock("../lib/supabase", () => ({
 vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
 
 import { useTeam } from "../enterprise/team-provider";
-import { draftProblem, exceptionState, isProtectedRule } from "../lib/detection-exceptions";
+import {
+	draftFromQuery,
+	draftProblem,
+	exceptionState,
+	isProtectedRule,
+} from "../lib/detection-exceptions";
 import { supabase } from "../lib/supabase";
 import { DetectionExceptionsPage } from "../ui/pages/DetectionExceptionsPage";
 
@@ -151,6 +156,45 @@ describe("DetectionExceptionsPage", () => {
 				}),
 			),
 		);
+	});
+
+	it("is pre-filled from a false-positive incident but sends nothing until submitted", async () => {
+		team("owner");
+		vi.mocked(supabase.functions.invoke).mockResolvedValue({
+			data: { ok: true, exceptions: [] },
+			error: null,
+		} as never);
+		const agent = "44444444-4444-4444-8444-444444444444";
+		render(
+			<MemoryRouter
+				initialEntries={[
+					`/governance/detection-exceptions?rule=CLT-CMD-011&subject_kind=agent&subject=${agent}&reason=Release%20script%2C%20reviewed`,
+				]}
+			>
+				<DetectionExceptionsPage />
+			</MemoryRouter>,
+		);
+		await screen.findByText("No detection exceptions yet.");
+		expect(screen.getByText(/Filled in from a false-positive incident/)).toBeInTheDocument();
+		expect(screen.getByLabelText("Rule id")).toHaveValue("CLT-CMD-011");
+		expect(screen.getByLabelText("Agent id")).toHaveValue(agent);
+		expect(screen.getByLabelText("Reason")).toHaveValue("Release script, reviewed");
+		expect(
+			vi
+				.mocked(supabase.functions.invoke)
+				.mock.calls.every(([, o]) => (o as { body: { action: string } }).body.action === "list"),
+		).toBe(true);
+	});
+
+	it("ignores a protected rule or a malformed subject in the query string", () => {
+		const draft = draftFromQuery(
+			"?rule=CLT-SELF-008&subject_kind=agent&subject=nope&reason=x",
+			Date.now(),
+		);
+		expect(draft.ruleId).toBe("");
+		expect(draft.subject).toBe("");
+		expect(draft.subjectKind).toBe("agent");
+		expect(draftFromQuery("?subject_kind=tenant", Date.now()).subjectKind).toBe("user");
 	});
 
 	it("never sends a self-defense rule", async () => {

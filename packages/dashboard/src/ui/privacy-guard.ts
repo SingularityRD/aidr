@@ -7,33 +7,36 @@
  * a malformed or partial answer is shown as unavailable, never as zeros.
  */
 
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate } from "../i18n/I18nProvider";
+
 export const PRIVACY_WINDOWS = [7, 30] as const;
 export type PrivacyWindow = (typeof PRIVACY_WINDOWS)[number];
 
-const PRIVACY_ENTITY_LABELS: Readonly<Record<string, string>> = {
-	PERSON: "Person name",
-	EMAIL: "Email address",
-	PHONE: "Phone number",
-	TC_KIMLIK: "TC Kimlik No",
-	IBAN: "IBAN",
-	CREDIT_CARD: "Credit card",
-	ADDRESS: "Postal address",
-	US_SSN: "US SSN",
-	DATE_OF_BIRTH: "Date of birth",
-	PASSPORT: "Passport number",
-	NATIONAL_ID: "National ID",
-	TAX_ID: "Tax ID",
-	BANK_ACCOUNT: "Bank account",
-	IP_ADDRESS: "IP address",
-	MAC_ADDRESS: "MAC address",
-	SECRET: "Secret or credential",
-	PRIVATE_KEY: "Private key",
-	INTERNAL: "Internal marking",
-	CLASSIFIED: "Classified marking",
-	LOCATION: "Location",
-	USERNAME: "Username",
-	HEALTH_ID: "Health ID",
-	LICENSE_PLATE: "License plate",
+const PRIVACY_ENTITY_LABELS: Readonly<Record<string, DashboardMessageKey | null>> = {
+	PERSON: "pg.entity.person",
+	EMAIL: "pg.entity.email",
+	PHONE: "pg.entity.phone",
+	TC_KIMLIK: "pg.entity.tckn",
+	IBAN: null,
+	CREDIT_CARD: "pg.entity.creditCard",
+	ADDRESS: "pg.entity.address",
+	US_SSN: "pg.entity.ssn",
+	DATE_OF_BIRTH: "pg.entity.dob",
+	PASSPORT: "pg.entity.passport",
+	NATIONAL_ID: "pg.entity.nationalId",
+	TAX_ID: "pg.entity.taxId",
+	BANK_ACCOUNT: "pg.entity.bankAccount",
+	IP_ADDRESS: "pg.entity.ip",
+	MAC_ADDRESS: "pg.entity.mac",
+	SECRET: "pg.entity.secret",
+	PRIVATE_KEY: "pg.entity.privateKey",
+	INTERNAL: "pg.entity.internal",
+	CLASSIFIED: "pg.entity.classified",
+	LOCATION: "pg.entity.location",
+	USERNAME: "pg.entity.username",
+	HEALTH_ID: "pg.entity.healthId",
+	LICENSE_PLATE: "pg.entity.plate",
 };
 
 /** Entity types in the privacy engine's order (packages/privacy ENTITY_TYPES). */
@@ -58,8 +61,12 @@ const PRIVACY_SITE_LABELS: Readonly<Record<string, string>> = {
 	deepseek: "DeepSeek",
 	mistral: "Mistral",
 	grok: "Grok",
-	custom: "Internal AI site",
-	other: "Other AI site",
+};
+
+/** Generic site buckets, translated; named AI products keep their names. */
+const PRIVACY_SITE_KEYS: Readonly<Record<string, DashboardMessageKey>> = {
+	custom: "pg.site.custom",
+	other: "pg.site.other",
 };
 
 const PRIVACY_ACTIONS = ["masked", "warned", "blocked", "allowed"] as const;
@@ -67,19 +74,15 @@ export type PrivacyAction = (typeof PRIVACY_ACTIONS)[number];
 const PRIVACY_CHANNELS = ["prompt", "paste", "file"] as const;
 
 export const GUARD_MODES = [
-	{
-		value: "auto",
-		label: "Auto-mask",
-		hint: "Replace sensitive values with placeholders before sending.",
-	},
-	{
-		value: "confirm",
-		label: "Confirm",
-		hint: "Show the findings and let the user choose to mask or edit.",
-	},
-	{ value: "block", label: "Block", hint: "Stop any send that still contains sensitive values." },
-	{ value: "monitor", label: "Monitor", hint: "Only record counts; prompts are sent unchanged." },
-] as const;
+	{ value: "auto", label: "pg.mode.auto", hint: "pg.mode.autoHint" },
+	{ value: "confirm", label: "pg.mode.confirm", hint: "pg.mode.confirmHint" },
+	{ value: "block", label: "pg.mode.block", hint: "pg.mode.blockHint" },
+	{ value: "monitor", label: "pg.mode.monitor", hint: "pg.mode.monitorHint" },
+] as const satisfies ReadonlyArray<{
+	value: string;
+	label: DashboardMessageKey;
+	hint: DashboardMessageKey;
+}>;
 export type GuardModeValue = (typeof GUARD_MODES)[number]["value"];
 
 interface PrivacyTotals {
@@ -250,12 +253,14 @@ export function parseBrowserGuardSettings(value: unknown): { requireNativeNer: b
 	return { requireNativeNer: value.browser_guard_require_native_ner };
 }
 
-export function entityLabel(type: string): string {
-	return PRIVACY_ENTITY_LABELS[type] ?? type;
+export function entityLabel(type: string, t: Translate = englishT): string {
+	const key = PRIVACY_ENTITY_LABELS[type];
+	return key ? t(key) : type;
 }
 
-export function siteLabel(site: string): string {
-	return PRIVACY_SITE_LABELS[site] ?? site;
+export function siteLabel(site: string, t: Translate = englishT): string {
+	const key = PRIVACY_SITE_KEYS[site];
+	return key ? t(key) : (PRIVACY_SITE_LABELS[site] ?? site);
 }
 
 /** Badge class and generic decision for a guard action (contract mapping). */
@@ -324,35 +329,37 @@ const ACCEPTABLE_USE_LIMITS = Object.freeze({
 const NOTICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const NOTICE_CONTROL = /[^\P{Cc}\t\n\r]/u;
 
-export function acceptableUseNotice(input: {
-	id: string;
-	version: string | number;
-	title: string;
-	text: string;
-	url: string;
-}): { ok: true; value: AcceptableUseNoticeInput } | { ok: false; error: string } {
+export function acceptableUseNotice(
+	input: {
+		id: string;
+		version: string | number;
+		title: string;
+		text: string;
+		url: string;
+	},
+	t: Translate = englishT,
+): { ok: true; value: AcceptableUseNoticeInput } | { ok: false; error: string } {
 	const id = input.id.trim();
 	const version = typeof input.version === "number" ? input.version : Number(input.version.trim());
 	const title = input.title.trim();
 	const text = input.text.trim();
 	const url = input.url.trim();
-	if (!NOTICE_ID.test(id))
-		return { ok: false, error: "Notice ID: letters, digits, . _ : - (up to 64)." };
+	if (!NOTICE_ID.test(id)) return { ok: false, error: t("pg.notice.idInvalid") };
 	if (!Number.isSafeInteger(version) || version < 1 || version > ACCEPTABLE_USE_LIMITS.versionMax)
-		return { ok: false, error: "Version must be a whole number from 1 to 999999." };
+		return { ok: false, error: t("pg.notice.versionInvalid") };
 	if (!title || title.length > ACCEPTABLE_USE_LIMITS.titleMax || NOTICE_CONTROL.test(title))
-		return { ok: false, error: "Title is required (up to 120 characters)." };
+		return { ok: false, error: t("pg.notice.titleInvalid") };
 	if (!text || text.length > ACCEPTABLE_USE_LIMITS.textMax || NOTICE_CONTROL.test(text))
-		return { ok: false, error: "Notice text is required (up to 4000 characters, plain text)." };
+		return { ok: false, error: t("pg.notice.textInvalid") };
 	if (url) {
 		let parsed: URL;
 		try {
 			parsed = new URL(url);
 		} catch {
-			return { ok: false, error: "Policy link must be an https:// address." };
+			return { ok: false, error: t("pg.notice.urlInvalid") };
 		}
 		if (parsed.protocol !== "https:" || parsed.username || parsed.password || url.length > 2048)
-			return { ok: false, error: "Policy link must be an https:// address." };
+			return { ok: false, error: t("pg.notice.urlInvalid") };
 		return { ok: true, value: { id, version, title, text, url: parsed.href } };
 	}
 	return { ok: true, value: { id, version, title, text } };

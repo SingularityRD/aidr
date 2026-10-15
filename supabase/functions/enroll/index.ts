@@ -1,15 +1,20 @@
 // Supabase Edge Function: POST /v1/enroll
 //
-// Auth: Authorization: Bearer <enrollment_token_plaintext>
+// Auth: Authorization: Bearer <enrollment_token_plaintext | fleet_enrollment_key>
 // Body: { iid, agent_runtime, agent_runtime_version }
 //
-// Exchanges a one-time enrollment token for an API key and (optionally) returns a signed entitlement.
-// This makes first-time setup easy while keeping API keys hash-only at rest.
+// Exchanges a one-time enrollment token, or a multi-use fleet enrollment key
+// (`aidr_fleet_`, see _shared/fleet-keys.ts), for a per-machine API key and
+// (optionally) returns a signed entitlement. Both paths enforce tenant
+// admission and seat allocation in one database transaction; API keys stay
+// hash-only at rest.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { canonicalJson } from "../_shared/canonical-json.ts";
+import { entitledPackKeys } from "../_shared/pack-keys.ts";
 import { configFailure, loadConfig, partialGroupError, runtimeEnv } from "../_shared/config.ts";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
+import { fleetEnrollRateLimit, isFleetKeyBearer, isWellFormedFleetKey } from "../_shared/fleet-keys.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 import { entitlementWindow, validateEnrollmentBody } from "./contract.ts";
 import { buildPremiumModules, tenantRuntimeCapabilities } from "../_shared/runtime-capabilities.ts";
@@ -24,7 +29,9 @@ const ENTITLEMENT_SIGNING_KEY_ID = (Deno.env.get("AIDR_ENTITLEMENT_SIGNING_KEY_I
 const ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64 = (
 	Deno.env.get("AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64") ?? ""
 ).trim();
+// Premium pack keys: same derivation and shared-key set as /v1/ingest (_shared/pack-keys.ts).
 const PACK_MASTER_KEY_B64 = (Deno.env.get("AIDR_PACK_MASTER_KEY_B64") ?? "").trim();
+const SHARED_PACK_KEYS = Deno.env.get("AIDR_SHARED_PACK_KEYS") ?? "";
 
 const ENTITLEMENT_TTL_HOURS = Deno.env.get("AIDR_ENTITLEMENT_TTL_HOURS") ?? "168";
 const ENTITLEMENT_GRACE_HOURS = Deno.env.get("AIDR_ENTITLEMENT_GRACE_HOURS") ?? "72";
@@ -32,6 +39,9 @@ const MAX_ENROLL_BODY_BYTES = 8 * 1024;
 
 // Abuse throttling for enrollment token exchange.
 const ENROLL_RATE_LIMIT_PER_MIN = Number(Deno.env.get("AIDR_ENROLL_RL_PER_MIN") ?? "30");
+// Fleet keys get one bucket per key (not per creating admin), sized for a
+// 500+ machine rollout; machines answered 429 retry after the window.
+const FLEET_ENROLL_RATE_LIMIT_PER_MIN = fleetEnrollRateLimit(Deno.env.get("AIDR_ENROLL_FLEET_RL_PER_MIN"));
 // Deployment-wide budget for bearer values that resolve to no enrollment token.
 // It is checked before resolve_enrollment_token, so guessing cannot buy
 // unbounded token lookups; a resolvable token never consumes it.
@@ -98,27 +108,6 @@ async function signEd25519Detached(payloadJson: string): Promise<string | null> 
 	}
 }
 
-async function deriveTenantPackKeyB64(userId: string): Promise<string | null> {
-	if (!PACK_MASTER_KEY_B64) return null;
-	try {
-		const master = Uint8Array.from(atob(PACK_MASTER_KEY_B64), (c) => c.charCodeAt(0));
-		const key = await crypto.subtle.importKey("raw", master, "HKDF", false, ["deriveBits"]);
-		const bits = await crypto.subtle.deriveBits(
-			{
-				name: "HKDF",
-				hash: "SHA-256",
-				salt: new Uint8Array(),
-				info: new TextEncoder().encode(`aidr:packkey:${userId}`),
-			},
-			key,
-			256,
-		);
-		return bytesToBase64(new Uint8Array(bits));
-	} catch {
-		return null;
-	}
-}
-
 Deno.serve(async (req) => {
 	if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
 
@@ -148,6 +137,9 @@ Deno.serve(async (req) => {
 		|| ENROLL_UNRESOLVED_RATE_LIMIT_PER_MIN < 1 || ENROLL_UNRESOLVED_RATE_LIMIT_PER_MIN > 100_000) {
 		return json(503, { error: "enrollment_rate_limit_config_invalid" });
 	}
+	if (FLEET_ENROLL_RATE_LIMIT_PER_MIN === null) {
+		return json(503, { error: "enrollment_rate_limit_config_invalid" });
+	}
 	const window = entitlementWindow(new Date(), ENTITLEMENT_TTL_HOURS, ENTITLEMENT_GRACE_HOURS);
 	if (!window) return json(503, { error: "entitlement_timing_unavailable" });
 
@@ -171,13 +163,18 @@ Deno.serve(async (req) => {
 	}
 	if (unresolvedCount >= ENROLL_UNRESOLVED_RATE_LIMIT_PER_MIN) return json(429, { error: "rate_limited" });
 	// Resolve the token before selecting a rate-limit bucket. Never let an
-	// attacker choose an arbitrary bucket with an unverified bearer value.
-	const { data: resolvedToken, error: resolveError } = await supabase.rpc("resolve_enrollment_token", {
-		p_token_hash: tokenHash,
-	});
+	// attacker choose an arbitrary bucket with an unverified bearer value. A
+	// malformed fleet key is charged to the unresolved budget without a lookup.
+	const fleet = isFleetKeyBearer(enrollToken);
+	const { data: resolvedToken, error: resolveError } = fleet
+		? isWellFormedFleetKey(enrollToken)
+			? await supabase.rpc("resolve_fleet_enrollment_key", { p_key_hash: tokenHash })
+			: { data: null, error: null }
+		: await supabase.rpc("resolve_enrollment_token", { p_token_hash: tokenHash });
 	const resolved = resolvedToken && typeof resolvedToken === "object" && !Array.isArray(resolvedToken)
 		? resolvedToken as Record<string, unknown> : null;
-	if (resolveError || !resolved || typeof resolved.tenant_id !== "string" || typeof resolved.user_id !== "string") {
+	if (resolveError || !resolved || typeof resolved.tenant_id !== "string" || typeof resolved.user_id !== "string"
+		|| (fleet && typeof resolved.key_id !== "string")) {
 		if (resolveError) return json(503, { error: "enrollment_authorization_unavailable" });
 		const { error: unresolvedUpdateError } = await supabase.rpc("increment_rate_limit", {
 			p_key: ENROLL_UNRESOLVED_RATE_KEY, p_window_start: nowMin, p_delta: 1,
@@ -187,7 +184,10 @@ Deno.serve(async (req) => {
 			error: "invalid_or_expired_enrollment_token", enrollment_outcome: "unknown",
 		});
 	}
-	const rateKey = `enroll:${resolved.tenant_id}:${resolved.user_id}`;
+	const rateKey = fleet
+		? `enroll:fleet:${resolved.key_id}`
+		: `enroll:${resolved.tenant_id}:${resolved.user_id}`;
+	const rateLimit = fleet ? FLEET_ENROLL_RATE_LIMIT_PER_MIN : ENROLL_RATE_LIMIT_PER_MIN;
 	const { error: rateUpdateError } = await supabase.rpc("increment_rate_limit", {
 		p_key: rateKey, p_window_start: nowMin, p_delta: 1,
 	});
@@ -199,7 +199,10 @@ Deno.serve(async (req) => {
 	if (!Number.isSafeInteger(count) || count < 1) {
 		return json(503, { error: "enrollment_rate_limit_unavailable" });
 	}
-	if (count > ENROLL_RATE_LIMIT_PER_MIN) return json(429, { error: "rate_limited" });
+	if (count > rateLimit) {
+		return json(429, fleet ? { error: "rate_limited", retry_after_seconds: 60 - (Math.floor(Date.now() / 1000) % 60) }
+			: { error: "rate_limited" });
+	}
 
 	const parsed = await readBoundedJson(req, MAX_ENROLL_BODY_BYTES);
 	if (!parsed.ok) return json(parsed.status, { error: parsed.error });
@@ -212,13 +215,15 @@ Deno.serve(async (req) => {
 	// hide a committed response, so the outcome is explicitly unknown there.
 	const apiKey = randomApiKey();
 	const keyHash = await sha256Hex(apiKey);
-	const { data: exchangeData, error: exchangeErr } = await supabase.rpc("exchange_enrollment_token", {
-		p_token_hash: tokenHash,
+	const runtime = {
 		p_iid: iid,
 		p_agent_runtime: body.agent_runtime,
 		p_agent_runtime_version: body.agent_runtime_version,
 		p_key_hash: keyHash,
-	});
+	};
+	const { data: exchangeData, error: exchangeErr } = fleet
+		? await supabase.rpc("exchange_fleet_enrollment_key", { p_fleet_key_hash: tokenHash, ...runtime })
+		: await supabase.rpc("exchange_enrollment_token", { p_token_hash: tokenHash, ...runtime });
 	if (exchangeErr?.code === "42501") return json(403, { error: "tenant_not_admitted" });
 	if (exchangeErr) return json(503, { error: "enrollment_exchange_failed", enrollment_outcome: "unknown" });
 	const exchange = exchangeData && typeof exchangeData === "object" && !Array.isArray(exchangeData)
@@ -231,6 +236,14 @@ Deno.serve(async (req) => {
 	});
 	if (exchange?.status === "tenant_not_authorized") return json(403, { error: "tenant_not_authorized" });
 	if (exchange?.status === "missing_entitlements") return json(503, { error: "missing_entitlements" });
+	// The fleet key's own seat cap is spent; the tenant may still have seats.
+	if (exchange?.status === "fleet_key_exhausted") {
+		return json(409, {
+			error: "fleet_key_exhausted",
+			seat_cap: Number(exchange.seat_cap ?? 0),
+			enrolled_count: Number(exchange.enrolled_count ?? 0),
+		});
+	}
 	if (exchange?.status === "seat_exceeded") {
 		return json(402, {
 			error: "agent_limit_exceeded",
@@ -288,7 +301,9 @@ Deno.serve(async (req) => {
 		tenantId, Deno.env.get("AIDR_RUNTIME_CAPABILITIES_BY_TENANT"), admissionData,
 	) : [];
 	const premiumModules = buildPremiumModules(exchange, capabilities);
-	const tenantPackKey = premiumModules.includes("premium_intel") ? await deriveTenantPackKeyB64(tenantId) : null;
+	const packKeys = premiumModules.includes("premium_intel")
+		? await entitledPackKeys({ masterB64: PACK_MASTER_KEY_B64, sharedKeys: SHARED_PACK_KEYS, tenantId })
+		: [];
 	const entitlement = {
 		schema_version: 2,
 		tenant_id: tenantId,
@@ -297,17 +312,14 @@ Deno.serve(async (req) => {
 		extra_agents: extraAgents,
 		allowed_agents: allowedAgents,
 		premium_modules: premiumModules,
-		pack_keys:
-			tenantPackKey && premiumModules.includes("premium_intel")
-				? [
-						{
-							alg: "aes-256-gcm",
-							key_id: "aidr-pack-v1",
-							key_b64: tenantPackKey,
-							expires_at: cappedWindow.graceUntil,
-						},
-					]
-				: [],
+		pack_keys: premiumModules.includes("premium_intel")
+			? packKeys.map((key) => ({
+					alg: "aes-256-gcm",
+					key_id: key.key_id,
+					key_b64: key.key_b64,
+					expires_at: cappedWindow.graceUntil,
+				}))
+			: [],
 		issued_at: window.issuedAt,
 		expires_at: cappedWindow.expiresAt,
 		grace_until: cappedWindow.graceUntil,
@@ -346,17 +358,20 @@ Deno.serve(async (req) => {
 		// Snapshot persistence is diagnostic-only; enrollment already succeeded.
 	}
 
-	// Best-effort audit log
-	try {
-		await supabase.from("admin_audit_logs").insert({
-			actor_user_id: userId,
-			tenant_id: tenantId,
-			action: "enroll.consume_token",
-			target_user_id: userId,
-			detail: { iid, runtime_capabilities: capabilities },
-		});
-	} catch {
-		// Post-commit audit transport failure must not hide the plaintext key.
+	// Best-effort audit log. A fleet enrollment was already audited inside
+	// exchange_fleet_enrollment_key, in the same transaction as the key.
+	if (!fleet) {
+		try {
+			await supabase.from("admin_audit_logs").insert({
+				actor_user_id: userId,
+				tenant_id: tenantId,
+				action: "enroll.consume_token",
+				target_user_id: userId,
+				detail: { iid, runtime_capabilities: capabilities },
+			});
+		} catch {
+			// Post-commit audit transport failure must not hide the plaintext key.
+		}
 	}
 
 	return json(200, {

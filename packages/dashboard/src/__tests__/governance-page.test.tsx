@@ -27,8 +27,9 @@ vi.mock("../lib/supabase", () => ({
 }));
 vi.mock("../enterprise/team-provider", () => ({ useTeam: () => team.value }));
 
+import { en } from "../i18n/en";
 import { frameworkCoverage, parseGovernanceScorecard, topRisks } from "../lib/governance";
-import { renderGovernanceReport } from "../ui/governance-print";
+import { GOVERNANCE_STATEMENT, renderGovernanceReport } from "../ui/governance-print";
 import { GovernancePage } from "../ui/pages/GovernancePage";
 import { acceptableUseNotice, managedPolicySnippet } from "../ui/privacy-guard";
 
@@ -325,5 +326,13 @@ describe("acceptable-use notice in the managed policy snippet", () => {
 				}),
 			).toBeNull();
 		}
+	});
+});
+
+describe("governance statement wording", () => {
+	it("shows the on-screen statement with the same English text as the printed report", () => {
+		// The page renders the catalog copy so it can be translated; the printed
+		// report keeps the English constant. They must not drift apart.
+		expect(en["gsc.statement"]).toBe(GOVERNANCE_STATEMENT);
 	});
 });

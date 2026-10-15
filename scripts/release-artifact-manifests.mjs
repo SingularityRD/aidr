@@ -132,6 +132,11 @@ function finalEnv(extra = {}) {
 	return {
 		...process.env,
 		...extra,
+		// Every release-mode manifest records the commit and committed tree it was
+		// built from, so a candidate assembler can refuse dist/ trees left over
+		// from another checkout (scripts/lib/dist-provenance.mjs).
+		AIDR_GIT_SHA: gitSha,
+		AIDR_SOURCE_DIGEST: sourceDigest,
 		...(commercial
 			? {
 					AIDR_FINAL_MANIFEST: "1",

@@ -10,6 +10,7 @@ import { after, before, test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { coreSourcePlugin, gatewayBundleOptions, readRuleSets } from "../../scripts/bundle-options.mjs";
+import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS } from "./helpers/approval-key.mjs";
 
 const packageRoot = resolve(import.meta.dirname, "../..");
 let root;
@@ -30,6 +31,7 @@ before(async () => {
 		`export * from ${JSON.stringify(join(packageRoot, "src", "standalone.mjs"))};`,
 		`export * from ${JSON.stringify(join(packageRoot, "src", "gateway.mjs"))};`,
 		`export * from ${JSON.stringify(join(packageRoot, "src", "stdio.mjs"))};`,
+		`export * from ${JSON.stringify(join(packageRoot, "src", "operator-approval.mjs"))};`,
 		`export * from ${JSON.stringify(resolve(packageRoot, "../core/src/mcp-attestation.ts"))};`,
 	].join("\n"));
 	const bundleOptions = gatewayBundleOptions({ ruleSets: await readRuleSets() });
@@ -74,7 +76,7 @@ after(async () => { await rm(root, { recursive: true, force: true }); });
 function fixtureConfig(overrides = {}) {
 	const keys = generateKeyPairSync("ed25519");
 	const tools = [{ name: "search", description: "Search", input_schema: { type: "object" } }];
-	return { stateDir: join(root, "state"), port: 0,
+	return { stateDir: join(root, "state"), approvalKeys: TEST_APPROVAL_KEYS, port: 0,
 		clients: [{ id: "client", tenantId: "tenant", tokenSha256: createHash("sha256").update(token).digest("hex"), allowedTools: { server: ["search"] } }],
 		servers: [{ id: "server", tenantId: "tenant", url: "https://mcp.example.test/mcp", transport: "json", sessionMode: "stateless",
 			signedManifest: runtime.signMcpToolManifest({ keyId: "publisher", privateKey: keys.privateKey, manifest: {
@@ -216,8 +218,8 @@ async function ready(gateway) {
 	gateway.address = await gateway.listen();
 	await request(gateway, { jsonrpc: "2.0", id: 0, method: "ping" });
 	const state = await gateway.storeFor("tenant").read("server");
-	await gateway.approve({ tenantId: "tenant", serverId: "server", toolsetHash: runtime.mcpToolsetHash(gateway.config.servers[0].signedManifest.manifest.tools),
-		bindingSha256: state.quarantine.bindingSha256, approvedBy: "test operator", reason: "synthetic controlled test" });
+	await runtime.approveQuarantinedToolset(gateway, { tenantId: "tenant", serverId: "server", toolsetHash: runtime.mcpToolsetHash(gateway.config.servers[0].signedManifest.manifest.tools),
+		bindingSha256: state.quarantine.bindingSha256, approvedBy: "test operator", reason: "synthetic controlled test", approvalKey: TEST_APPROVAL_KEY });
 }
 test("source-alias standalone guards preserve a complete normal local tool request and result", async () => withRuntime(async (f) => {
 	const gateway = f.create(); await ready(gateway);
@@ -285,3 +287,42 @@ test("stdio source bridge withholds a loopback reply if profile changes while it
 	}), /standalone_privacy_unavailable/);
 	assert.deepEqual(chunks, []);
 }));
+
+async function runWithConfig(name, config, extraEnv = {}) {
+	const path = join(root, `${name}-variant.json`);
+	await writeFile(path, JSON.stringify(config));
+	const prepared = childOptions(name, extraEnv);
+	prepared.args[prepared.args.indexOf(gatewayConfig)] = path;
+	return spawnSync(process.execPath, prepared.args, { ...prepared.options, input: "" });
+}
+
+test("public gateway CLI refuses an expired signed manifest with a precise reason and never reports listening", async () => {
+	await profile("{}");
+	const config = fixtureConfig();
+	const keys = generateKeyPairSync("ed25519");
+	config.servers[0].signedManifest = runtime.signMcpToolManifest({ keyId: "publisher", privateKey: keys.privateKey, manifest: {
+		...config.servers[0].signedManifest.manifest, issued_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+		expires_at: new Date(Date.now() - 86400000).toISOString() } });
+	config.servers[0].trustedSigners = { publisher: keys.publicKey.export({ type: "spki", format: "pem" }).toString() };
+	const result = await runWithConfig("cli.mjs", config);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /AIDR MCP gateway failed: startup_failed:manifest_expired\n/);
+	assert.doesNotMatch(result.stdout, /listening/);
+});
+
+test("public stdio CLI warns about its isolation limits and can refuse an upstream credential", async () => {
+	await profile("{}");
+	const upstream = "u".repeat(48);
+	const warned = await runWithConfig("stdio-cli.mjs", fixtureConfig({ upstreamAuthEnv: "TEST_STDIO_UPSTREAM" }),
+		{ TEST_STDIO_UPSTREAM: upstream });
+	assert.equal(warned.status, 0, warned.stderr);
+	assert.match(warned.stderr, /not a credential-isolation or approval boundary/);
+	assert.match(warned.stderr, /upstreamAuthEnv is set/);
+	assert.equal(warned.stderr.includes(upstream), false);
+
+	const refused = await runWithConfig("stdio-cli.mjs",
+		{ ...fixtureConfig({ upstreamAuthEnv: "TEST_STDIO_UPSTREAM" }), stdioUpstreamCredentials: "refuse" },
+		{ TEST_STDIO_UPSTREAM: upstream });
+	assert.equal(refused.status, 1, refused.stderr);
+	assert.match(refused.stderr, /AIDR MCP stdio bridge failed: stdio_isolation_refused:stdio_upstream_credential_refused\n/);
+});

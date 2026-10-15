@@ -8,6 +8,9 @@ import type { MappedRole, OidcAlgorithm, OidcDiscovery } from "./oidc.ts";
 
 export type ProviderKind = "entra" | "okta" | "generic";
 export type TokenAuthMethod = "client_secret_basic" | "client_secret_post" | "none";
+/** Extra authorization scopes from a fixed allow-list (ADFS allatclaims, Okta groups, Keycloak roles). */
+export type ExtraScope = "allatclaims" | "groups" | "roles";
+export const EXTRA_SCOPES: readonly ExtraScope[] = ["allatclaims", "groups", "roles"];
 
 export interface OidcProviderRow {
 	id: string;
@@ -26,6 +29,7 @@ export interface OidcProviderRow {
 	clock_skew_seconds: number;
 	discovery: OidcDiscovery | null;
 	enabled: boolean;
+	extra_scopes: ExtraScope[];
 }
 
 export interface OidcAuthRequestRow {
@@ -80,6 +84,82 @@ export interface DomainRow {
 
 export type RateLimitDecision = "allowed" | "limited" | "unavailable";
 
+/**
+ * Outcome of public.oidc_jit_provision (migration 20261014000110). The first
+ * six leave the user with a membership owned by JIT, an administrator or SCIM;
+ * every other status means JIT granted nothing and the login is denied.
+ */
+export type JitStatus =
+	| "provisioned"
+	| "updated"
+	| "unchanged"
+	| "manual_membership"
+	| "scim_managed"
+	| "scim_bound"
+	| "disabled"
+	| "tenant_inactive"
+	| "domain_not_allowed"
+	| "directory_authoritative"
+	| "scim_inactive"
+	| "scim_conflict"
+	| "removed_by_admin"
+	| "other_tenant"
+	| "groups_unevaluable"
+	| "no_role"
+	| "revoked";
+
+export interface JitProvisionInput {
+	providerId: string;
+	authUserId: string;
+	subject: string;
+	emailDomain: string;
+	/** Exact group claim values; null when the provider has no groups claim. */
+	groups: string[] | null;
+	/** False when the IdP signalled overage or sent a malformed claim: nothing changes. */
+	groupsEvaluable: boolean;
+	requestId: string;
+}
+
+export interface JitMapping {
+	group: string;
+	role: MappedRole;
+}
+
+interface JitPolicyRow {
+	provider_id: string;
+	enabled: boolean;
+	issuer: string;
+	allowed_domains: string[];
+	default_role: "member" | "viewer" | null;
+}
+
+export interface JitMemberRow {
+	user_id: string;
+	role: MappedRole | null;
+	removed_at: string | null;
+	last_synced_at: string;
+	email_claim: string | null;
+}
+
+export interface JitConfig {
+	policy: JitPolicyRow | null;
+	mappings: JitMapping[];
+	members: JitMemberRow[];
+	directory_authoritative: boolean;
+}
+
+export type SaveJitPolicyResult =
+	| "saved"
+	| "owner_required"
+	| "provider_missing"
+	| "domain_required"
+	| "domain_not_verified"
+	| "directory_authoritative"
+	| "invalid"
+	| "error";
+
+export type JitReadmitResult = "readmitted" | "owner_required" | "not_removed" | "error";
+
 export interface OidcStore {
 	findProviderById(id: string): Promise<OidcProviderRow | null>;
 	findProviderByTenant(tenantId: string): Promise<OidcProviderRow | null>;
@@ -112,6 +192,24 @@ export interface OidcStore {
 	pendingAuthRequest(stateHash: string, nowIso: string): Promise<{ provider_id: string } | null | "error">;
 
 	groupMappings(tenantId: string): Promise<ReadonlyMap<string, MappedRole> | null>;
+
+	/** Whether the tenant opted into JIT provisioning; null when unreadable. */
+	jitEnabled(tenantId: string): Promise<boolean | null>;
+	/** One transaction (RPC oidc_jit_provision); "error" when the call failed. */
+	jitProvision(input: JitProvisionInput): Promise<{ status: JitStatus; role: string | null } | "error">;
+	jitConfig(tenantId: string): Promise<JitConfig | null>;
+	/** One transaction (RPC oidc_save_jit_policy): owner re-check, policy, mappings and audit. */
+	saveJitPolicy(input: {
+		actorUserId: string;
+		tenantId: string;
+		providerId: string;
+		enabled: boolean;
+		allowedDomains: string[];
+		defaultRole: "member" | "viewer" | null;
+		mappings: JitMapping[];
+		requestId: string;
+	}): Promise<SaveJitPolicyResult>;
+	jitReadmit(input: { actorUserId: string; tenantId: string; userId: string; requestId: string }): Promise<JitReadmitResult>;
 	verifiedDomains(tenantId: string): Promise<string[] | null>;
 	listDomains(tenantId: string): Promise<DomainRow[] | null>;
 	addDomain(tenantId: string, domain: string, token: string, actorUserId: string): Promise<DomainRow | null>;

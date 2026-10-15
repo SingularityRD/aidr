@@ -35,14 +35,22 @@ When several chains fire, the strongest is reported and the others are listed un
 
 ### What the agent and the user see
 
-The verdict category is `toxic_flow`. The reason names the chain, the earlier steps and this
-call, for example:
+The verdict category is `toxic_flow`. The reason recorded in the verdict and the audit log
+names the chain, the earlier steps and this call, for example:
 
 ```text
 Toxic flow "exfil_chain": this call sends data to an external destination after secret
 material was read in this session. Earlier steps: [private data] Read: Read
 ~/.aws/credentials (cloud credentials) (4m ago). This call: [external communication]
 Bash: curl → collector.example (carries data).
+```
+
+The block message a person and the agent read says the same thing in plain words, in English
+or Turkish (`AIDR_LOCALE`), without the chain name or capability tags:
+
+```text
+Risky combination in this session: the agent read sensitive data (cloud credentials) and is
+now sending data to collector.example. Together these could leak the secret.
 ```
 
 Step summaries name a tool and a target: a path, a host or a remote name. They never
@@ -57,9 +65,9 @@ file contents. The telemetry redactor is also applied to them.
 - `ask` / `deny`: fixed.
 - `monitor`: the call is allowed. The finding is recorded in the audit log (`toxic_flow_monitor`) so you can tune the settings before you enforce them.
 
-An `ask` blocks the call until a human approves it out of band, as every other `ask`
+An `ask` blocks the call until a person approves it outside the agent, as every other `ask`
 does. In Claude Code the native permission dialog asks the user. In OpenClaw, OpenCode and
-Codex the operator approves it with `aidr approve <actionId>` in their own terminal. The
+Codex the user approves it with `aidr approve <first 8 characters of the id>` in their own terminal. The
 agent cannot approve its own block.
 
 Other layers still decide first. A call that another layer denied is not recorded, because
@@ -116,7 +124,9 @@ payload still is.
 - **A record that cannot be read or written** (permissions, I/O) is a skipped detection
   signal. The call is still evaluated by every other layer, the failure is logged, and an
   `allow` is recorded as `toxic_flow_unavailable`, never as a clean result. Connector
-  entry points stay fail-closed as before.
+  entry points stay fail-closed as before; a hook the host disabled, did not trust,
+  killed or timed out is outside that guarantee (see
+  [host failure behaviour](compatibility-matrix.md#host-failure-behaviour)).
 - Residual risk: like the operator approval store, this is not a boundary against arbitrary
   code that already runs as the same OS user with full shell access. It makes tampering
   detectable and turns it into a stricter posture.

@@ -14,6 +14,18 @@ import { discoverMcpServers } from "../mcp-discovery.js";
 import { runSessionStart } from "../session-start.js";
 import { ConfigSchema } from "../types.js";
 
+// Operator approval key: approvals are honoured only when signed by a configured key.
+const operatorApproval = generateKeyPairSync("ed25519");
+const OPERATOR_APPROVAL_KEY = {
+	keyId: "operator-approval-1",
+	privateKey: operatorApproval.privateKey,
+};
+const OPERATOR_APPROVAL_KEYS = {
+	"operator-approval-1": operatorApproval.publicKey
+		.export({ type: "spki", format: "pem" })
+		.toString(),
+};
+
 const originalFetch = globalThis.fetch;
 
 function signedToolManifest(
@@ -89,6 +101,7 @@ describe("session start MCP tool-manifest coverage", () => {
 		);
 		if (!filesystem) throw new Error("missing filesystem inventory");
 		const decision = await attestMcpToolManifest({
+			approvalKeys: OPERATOR_APPROVAL_KEYS,
 			candidate: signed,
 			connection: [
 				"discovery-v1",
@@ -104,6 +117,7 @@ describe("session start MCP tool-manifest coverage", () => {
 		});
 		if (decision.status !== "quarantined") throw new Error("expected quarantine");
 		await approveQuarantinedMcpToolset({
+			approvalKey: OPERATOR_APPROVAL_KEY,
 			serverId: "filesystem",
 			toolsetHash: decision.toolsetHash,
 			bindingSha256: (await store.read("filesystem"))?.quarantine?.bindingSha256 ?? "",
@@ -141,6 +155,7 @@ describe("session start MCP tool-manifest coverage", () => {
 				keyring: { "publisher-key-1": publicKeyPem },
 				manifests: { filesystem: signed, draft: draftSigned },
 				store,
+				approvalKeys: OPERATOR_APPROVAL_KEYS,
 			},
 		});
 

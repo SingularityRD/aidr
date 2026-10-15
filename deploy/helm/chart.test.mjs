@@ -17,7 +17,12 @@ const root = resolve(here, "../..");
 const chartDir = join(here, "aidr");
 const { parse, parseAllDocuments } = createRequire(join(root, "packages/core/package.json"))("yaml");
 const readYaml = (path) => parse(readFileSync(path, "utf8"));
+// Source of truth for the chart appVersion and every first-party default image tag.
+const APP_VERSION = JSON.parse(readFileSync(join(root, "packages/dashboard/package.json"), "utf8")).version;
 const CI_VALUES = ["default", "prod", "posture-scanner", "privacy-gateway"];
+// Synthetic age recipient (valid bech32 shape) for rendering encrypted backups.
+const AGE_RECIPIENT = "age10sncrgwzlg4tsr6y7k9tn5qgqc6je72f9u3vdnwfspjtfreueheshljgj2";
+const ENCRYPTED = `backup.encryption.ageRecipients={${AGE_RECIPIENT}}`;
 const KUBE_VERSION = "1.30.0";
 
 function findHelm() {
@@ -69,9 +74,10 @@ test("chart metadata pins apiVersion v2 and appVersion to the product version", 
 	const chart = readYaml(join(chartDir, "Chart.yaml"));
 	assert.equal(chart.apiVersion, "v2");
 	assert.equal(chart.name, "aidr");
-	assert.equal(chart.appVersion, "0.6.0");
-	const dashboardPackage = JSON.parse(readFileSync(join(root, "packages/dashboard/package.json"), "utf8"));
-	assert.equal(chart.appVersion, dashboardPackage.version);
+	// appVersion is the default tag of every first-party image; scripts/sync-manifests.mjs
+	// keeps it equal to the dashboard package version on every Changesets bump.
+	assert.equal(chart.appVersion, APP_VERSION);
+	assert.match(String(chart.version), /^\d+\.\d+\.\d+$/u);
 });
 
 test("default values are secure and generate no credentials", () => {
@@ -294,14 +300,14 @@ test("rendering refuses backups that miss file storage objects", { skip: helmSki
 		assert.notEqual(result.status, 0, `expected failure for ${sets.join(" ")}`);
 		assert.match(result.stderr, message, sets.join(" "));
 	}
-	const acknowledged = renderOk([base], ["backup.enabled=true", "backup.storage.acknowledgeNotBackedUp=true"]);
+	const acknowledged = renderOk([base], ["backup.enabled=true", "backup.storage.acknowledgeNotBackedUp=true", ENCRYPTED]);
 	const cron = acknowledged.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
 	assert.ok(!cron.spec.jobTemplate.spec.template.spec.volumes.some((volume) => volume.name === "storage-data"));
 });
 
 test("rendered storage backup mounts the file volume read-only next to the storage pod", { skip: helmSkip }, () => {
 	const base = join(chartDir, "ci", "default-values.yaml");
-	const docs = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true"]);
+	const docs = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true", ENCRYPTED]);
 	for (const name of ["aidr-backup", "aidr-backup-pre-upgrade"]) {
 		const doc = docs.find((item) => ["CronJob", "Job"].includes(item.kind) && item.metadata.name === name);
 		assert.ok(doc, name);
@@ -315,10 +321,10 @@ test("rendered storage backup mounts the file volume read-only next to the stora
 		assert.equal(term.labelSelector.matchLabels["app.kubernetes.io/component"], "storage");
 		assert.deepEqual(spec.securityContext.supplementalGroups, [1000]);
 		const script = spec.containers[0].command[2];
-		assert.match(script, /\.storage\.tar\.gz\.sha256/);
-		assert.match(script, /\.dump\.sha256/);
+		assert.match(script, /\.storage\.tar\.gz\.age\.sha256/);
+		assert.match(script, /\.dump\.age\.sha256/);
 	}
-	const rwx = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true", "storage.persistence.accessModes={ReadWriteMany}"]);
+	const rwx = renderOk([base], ["backup.enabled=true", "backup.storage.enabled=true", "storage.persistence.accessModes={ReadWriteMany}", ENCRYPTED]);
 	const cron = rwx.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
 	assert.equal(cron.spec.jobTemplate.spec.template.spec.affinity, undefined, "ReadWriteMany needs no co-location");
 });
@@ -346,6 +352,198 @@ test("rendered upgrades run the backup hook before migrations and refuse to migr
 	assert.ok(!renderOk([base]).some((doc) => doc.metadata.name === "aidr-backup-pre-upgrade"));
 });
 
+// ---------------------------------------------------------------------------
+// values.example.yaml: the commented customer starting point.
+// ---------------------------------------------------------------------------
+const EXAMPLE_VALUES = join(chartDir, "values.example.yaml");
+
+function unknownKeys(example, defaults, prefix = "") {
+	if (!example || typeof example !== "object" || Array.isArray(example)) return [];
+	return Object.entries(example).flatMap(([key, value]) => {
+		const path = prefix ? `${prefix}.${key}` : key;
+		if (!defaults || typeof defaults !== "object" || !(key in defaults)) return [path];
+		// Free-form maps (selectors, annotations) accept any key.
+		const target = defaults[key];
+		if (target && typeof target === "object" && !Array.isArray(target) && Object.keys(target).length === 0) return [];
+		if (["matchLabels"].includes(key)) return [];
+		return unknownKeys(value, target, path);
+	});
+}
+
+test("values.example.yaml uses only real chart keys and keeps the secure upgrade gates", () => {
+	const example = readYaml(EXAMPLE_VALUES);
+	assert.deepEqual(unknownKeys(example, readYaml(join(chartDir, "values.yaml"))), []);
+	assert.match(example.publicUrls.dashboard, /^https:\/\//);
+	assert.match(example.publicUrls.api, /^https:\/\//);
+	assert.ok(example.secrets.existingSecret && example.secrets.functionsExistingSecret);
+	assert.equal(example.backup.enabled, true);
+	assert.equal(example.backup.preUpgrade.enabled, true);
+	assert.equal(example.backup.storage.enabled, true, "file storage objects are backed up");
+	assert.ok(example.backup.encryption.ageRecipients.length > 0);
+	assert.equal(example.backup.encryption.allowPlaintext, undefined);
+	assert.equal(example.migrations?.allowWithoutBackup, undefined, "the example never disables the backup gate");
+	assert.equal(example.networkPolicy.enabled, true);
+	const text = readFileSync(EXAMPLE_VALUES, "utf8");
+	assert.match(text, /CHANGE/);
+	assert.match(readFileSync(join(chartDir, "README.md"), "utf8"), /## Upgrade in 3 commands/);
+});
+
+test("values.example.yaml lints and renders for install and upgrade", { skip: helmSkip }, () => {
+	const lint = runHelm(["lint", chartDir, "--strict", "--kube-version", KUBE_VERSION, "-f", EXAMPLE_VALUES]);
+	assert.equal(lint.status, 0, `${lint.stdout}${lint.stderr}`);
+	assert.ok(renderOk([EXAMPLE_VALUES]).some((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup"));
+	const upgrade = renderOk([EXAMPLE_VALUES], [], ["--is-upgrade"]);
+	const backupHook = upgrade.find((doc) => doc.kind === "Job" && doc.metadata.name === "aidr-backup-pre-upgrade");
+	assert.equal(backupHook?.metadata.annotations["helm.sh/hook"], "pre-upgrade");
+	assert.ok(upgrade.some((doc) => doc.kind === "Job" && doc.metadata.name === "aidr-migrations"));
+	assert.ok(!upgrade.some((doc) => doc.kind === "Secret"), "the chart renders no Secret");
+});
+
+// ---------------------------------------------------------------------------
+// Retention maintenance (CP-3): runs on every Helm install by default.
+// ---------------------------------------------------------------------------
+test("the maintenance CronJob is on by default and runs the shipped maintenance worker", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.maintenance.enabled, true, "retention must not depend on an opt-in");
+	assert.equal(values.maintenance.apply, true);
+	assert.match(values.maintenance.schedule, /^\d+ \* \* \* \*$/, "hourly, like the Compose timer");
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8"));
+	assert.deepEqual(Object.keys(schema.properties.maintenance.properties).sort(), ["activeDeadlineSeconds", "apply", "enabled", "image", "resources", "runAsUser", "schedule"]);
+	assert.equal(
+		readFileSync(join(chartDir, "files", "deployment-maintenance.mjs"), "utf8"),
+		readFileSync(join(root, "scripts", "deployment-maintenance.mjs"), "utf8"),
+		"deploy/helm/aidr/files/deployment-maintenance.mjs is stale: cp scripts/deployment-maintenance.mjs deploy/helm/aidr/files/",
+	);
+	const template = readFileSync(join(chartDir, "templates", "maintenance-cronjob.yaml"), "utf8");
+	assert.match(template, /^\{\{- if \.Values\.maintenance\.enabled \}\}/);
+	assert.match(template, /\.Files\.Get "files\/deployment-maintenance\.mjs"/);
+	assert.match(template, /concurrencyPolicy: Forbid/);
+	assert.match(template, /- --from-env\n\s+\{\{- if \$values\.apply \}\}\n\s+- --apply/);
+	assert.match(template, /include "aidr\.secretEnv" \(dict "root" \. "env" "SERVICE_ROLE_KEY" "key" "service-role-key"\)/);
+	assert.match(template, /value: \{\{ include "aidr\.gatewayUrl" \. \| quote \}\}/);
+	assert.doesNotMatch(template, /\$\{?SERVICE_ROLE_KEY/, "the key is read from the environment, never interpolated into argv");
+	const policies = readFileSync(join(chartDir, "templates", "networkpolicy.yaml"), "utf8");
+	assert.match(policies, /if \.Values\.maintenance\.enabled \}\}\n\s+\{\{- include "aidr\.np\.peer" \(dict "root" \. "component" "maintenance"\)/, "the gateway admits the maintenance pod");
+	assert.match(policies, /selectorLabels" \(dict "root" \. "component" "maintenance"\)[\s\S]*?component" "api-gw"\) \| nindent 8 \}\}\n\s+ports:\n\s+- port: 8000/, "maintenance egress is the gateway only");
+	// The worker accepts plain HTTP only for in-cluster Service names.
+	const script = readFileSync(join(root, "scripts", "deployment-maintenance.mjs"), "utf8");
+	assert.match(script, /--from-env/);
+	assert.match(script, /purge_expired_waitlist_signups/);
+});
+
+test("rendered default values schedule maintenance against the in-cluster gateway", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const docs = renderOk([base]);
+	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-maintenance");
+	assert.ok(cron, "maintenance CronJob");
+	const container = cron.spec.jobTemplate.spec.template.spec.containers[0];
+	assert.deepEqual(container.command, ["node", "/opt/aidr-maintenance/deployment-maintenance.mjs", "/tmp/maintenance", "--from-env", "--apply"]);
+	const env = Object.fromEntries(container.env.map((entry) => [entry.name, entry]));
+	assert.equal(env.AIDR_MAINTENANCE_API_URL.value, "http://aidr-api-gw:8000");
+	assert.deepEqual(env.SERVICE_ROLE_KEY.valueFrom.secretKeyRef, { name: "aidr-platform", key: "service-role-key" });
+	const config = docs.find((doc) => doc.kind === "ConfigMap" && doc.metadata.name === "aidr-maintenance");
+	assert.equal(config.data["deployment-maintenance.mjs"], readFileSync(join(root, "scripts", "deployment-maintenance.mjs"), "utf8").replace(/\n$/, ""));
+	const policy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name === "aidr-maintenance");
+	assert.equal(policy.spec.egress[0].ports[0].port, 8000);
+	const gateway = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name === "aidr-api-gw");
+	assert.ok(JSON.stringify(gateway.spec.ingress).includes('"maintenance"'));
+
+	const off = renderOk([base], ["maintenance.enabled=false"]);
+	assert.ok(!off.some((doc) => doc.metadata?.name === "aidr-maintenance"));
+	const dry = renderOk([base], ["maintenance.apply=false"]);
+	assert.ok(!dry.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-maintenance").spec.jobTemplate.spec.template.spec.containers[0].command.includes("--apply"));
+});
+
+// ---------------------------------------------------------------------------
+// Backups are encrypted and can leave the cluster (OPS-9).
+// ---------------------------------------------------------------------------
+test("backups are sealed with age before they touch the volume and never upload plaintext", () => {
+	const values = readYaml(join(chartDir, "values.yaml")).backup;
+	assert.equal(values.enabled, false, "off by default: the identity custody is an operator decision (README)");
+	assert.deepEqual(values.encryption, { ageRecipients: [], allowPlaintext: false });
+	assert.equal(values.offsite.enabled, false);
+	const helpers = readFileSync(join(chartDir, "templates", "_backup.tpl"), "utf8");
+	const validate = helpers.slice(helpers.indexOf('define "aidr.backup.validate"'), helpers.indexOf('define "aidr.backup.podSpec"'));
+	assert.match(validate, /if and \$backup\.enabled \(empty \$encryption\.ageRecipients\) \(not \$encryption\.allowPlaintext\) -\}\}\s*\{\{- fail /);
+	assert.match(validate, /backup\.offsite\.enabled uploads backups off the cluster and requires backup\.encryption\.ageRecipients/);
+	assert.match(validate, /backup\.offsite\.egressCIDRs is required when networkPolicy\.enabled/);
+	const podSpec = helpers.slice(helpers.indexOf('define "aidr.backup.podSpec"'));
+	const encrypted = podSpec.slice(podSpec.indexOf("{{- if $encrypt }}"), podSpec.indexOf("# PLAINTEXT"));
+	assert.match(podSpec, /set -o pipefail/, "a failing pg_dump or tar fails the pipeline into age");
+	assert.match(encrypted, /pg_dump --format=custom --no-owner \| age /);
+	assert.match(encrypted, /-czf - \. \| age /);
+	assert.doesNotMatch(encrypted, /--file=|\.dump\.partial"|storage\.tar\.gz\.partial"/, "no plaintext artifact in the encrypted branch");
+	assert.match(encrypted, /curl -K - /, "object-store credentials reach curl on stdin, not argv");
+	assert.match(encrypted, /--proto =https/);
+	assert.match(encrypted, /command -v age > \/dev\/null \|\| \{[^}]*exit 1; \}/, "a custom image without age fails instead of writing plaintext");
+	assert.ok(encrypted.indexOf("| age ") < encrypted.indexOf("upload \"${artifact}\""), "only sealed artifacts are uploaded");
+	const dockerfile = readFileSync(join(here, "images", "migrations.Dockerfile"), "utf8");
+	assert.match(dockerfile, /apk add --no-cache age curl/);
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8")).properties.backup.properties;
+	assert.equal(schema.encryption.properties.ageRecipients.items.pattern, "^age1[02-9ac-hj-np-z]{58}$");
+	assert.equal(schema.offsite.properties.endpoint.pattern, "^(|https://[^/?#@]+)$");
+	const readme = readFileSync(join(chartDir, "README.md"), "utf8");
+	for (const needle of ["backup.encryption.ageRecipients", "backup.offsite.enabled", "pgsodium_root.key", "### Key material", "age -d -i", "**off by default**"]) {
+		assert.ok(readme.includes(needle), needle);
+	}
+});
+
+test("rendered backups refuse plaintext and misconfigured off-cluster copies", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const prod = join(chartDir, "ci", "prod-values.yaml");
+	const ack = "backup.storage.acknowledgeNotBackedUp=true";
+	const cases = [
+		[[base], ["backup.enabled=true", ack], /backup\.encryption\.ageRecipients/],
+		[[base], ["backup.enabled=true", ack, "backup.encryption.ageRecipients={age1notarecipient}"], /ageRecipients|age X25519 recipient/],
+		[[base], ["backup.enabled=true", ack, "backup.encryption.allowPlaintext=true", "backup.offsite.enabled=true"], /requires backup\.encryption\.ageRecipients/],
+		[[prod], ["backup.offsite.endpoint=http://s3.example.com"], /offsite|endpoint/],
+		[[prod], ["backup.offsite.egressCIDRs=null"], /egressCIDRs/],
+		[[prod], ["backup.offsite.existingSecret="], /existingSecret/],
+	];
+	for (const [files, sets, message] of cases) {
+		const result = render(files, sets);
+		assert.notEqual(result.status, 0, `expected failure for ${sets.join(" ")}`);
+		assert.match(result.stderr, message, sets.join(" "));
+	}
+	const docs = renderOk([prod]);
+	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
+	const container = cron.spec.jobTemplate.spec.template.spec.containers[0];
+	assert.match(container.command[2], /pg_dump --format=custom --no-owner \| age -r 'age1[a-z0-9]{58}' -r 'age1[a-z0-9]{58}' -o "\$\{base\}\.dump\.age\.partial"/);
+	assert.doesNotMatch(container.command[2], /--file=/);
+	const env = Object.fromEntries(container.env.map((entry) => [entry.name, entry]));
+	assert.equal(env.AIDR_OFFSITE_ENDPOINT.value, "https://s3.eu-west-1.amazonaws.com");
+	assert.deepEqual(env.AWS_SECRET_ACCESS_KEY.valueFrom.secretKeyRef, { name: "aidr-backup-offsite", key: "secret-access-key" });
+	const offsite = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name === "aidr-backup-offsite");
+	assert.deepEqual(offsite.spec.egress, [{ to: [{ ipBlock: { cidr: "10.60.0.0/16" } }], ports: [{ port: 443, protocol: "TCP" }] }]);
+	const plaintext = renderOk([base], ["backup.enabled=true", ack, "backup.encryption.allowPlaintext=true"]);
+	const devCron = plaintext.find((doc) => doc.kind === "CronJob" && doc.metadata.name === "aidr-backup");
+	assert.match(devCron.spec.jobTemplate.spec.template.spec.containers[0].command[2], /--file="\$\{base\}\.dump\.partial"/);
+});
+
+// ---------------------------------------------------------------------------
+// Posture scanner bridge: only tenant-bound broker auth (OPS-10).
+// ---------------------------------------------------------------------------
+test("the posture scanner bridge accepts only broker authentication", () => {
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8"));
+	assert.deepEqual(schema.properties.postureScanner.properties.bridge.properties.authMode.enum, ["broker"]);
+	assert.equal(readYaml(join(chartDir, "values.yaml")).postureScanner.bridge.authMode, "broker");
+	const template = readFileSync(join(chartDir, "templates", "posture-scanner.yaml"), "utf8");
+	assert.match(template, /\{\{- if ne \$scanner\.bridge\.authMode "broker" -\}\}\n\{\{- fail /);
+	assert.doesNotMatch(template, /BRIDGE_API_KEY|bridge-api-key/, "the shared-key mode cannot be configured");
+	assert.match(template, /- name: BRIDGE_TENANT_REQUIRED\n\s+value: "true"/);
+});
+
+test("rendering refuses the bridge's api_key mode", { skip: helmSkip }, () => {
+	const scanner = join(chartDir, "ci", "posture-scanner-values.yaml");
+	const refused = render([scanner], ["postureScanner.bridge.authMode=api_key"]);
+	assert.notEqual(refused.status, 0);
+	assert.match(refused.stderr, /authMode|broker/);
+	const bridge = renderOk([scanner]).find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-posture-scanner-bridge"));
+	const env = Object.fromEntries(bridge.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry]));
+	assert.equal(env.BRIDGE_AUTH_MODE.value, "broker");
+	assert.equal(env.BRIDGE_API_KEY, undefined);
+});
+
 test("the notification dispatcher CronJob is opt-in, token-authenticated and never sees the service-role key", () => {
 	const values = readYaml(join(chartDir, "values.yaml"));
 	assert.equal(values.notifications.dispatcher.enabled, false, "upgrades with an older functions Secret must not start failing jobs");
@@ -359,6 +557,41 @@ test("the notification dispatcher CronJob is opt-in, token-authenticated and nev
 	assert.doesNotMatch(template, /\$\{?AIDR_NOTIFICATION_DISPATCH_TOKEN/, "the token is read from the environment, never interpolated into argv");
 	const policies = readFileSync(join(chartDir, "templates", "networkpolicy.yaml"), "utf8");
 	assert.match(policies, /component" "notification-dispatch"\) \| nindent 8 \}\}[\s\S]*?port: 9000/);
+});
+
+test("the SIEM forwarder CronJob is opt-in, token-authenticated and collectors are an explicit egress list", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.siem.forwarder.enabled, false);
+	assert.equal(values.siem.allowPrivateNetworks, false, "private collectors stay an operator opt-in");
+	assert.deepEqual(values.networkPolicy.siemEgress, []);
+	const template = readFileSync(join(chartDir, "templates", "siem-forwarder-cronjob.yaml"), "utf8");
+	assert.match(template, /^\{\{- if \.Values\.siem\.forwarder\.enabled \}\}/);
+	assert.match(template, /concurrencyPolicy: Forbid/);
+	assert.match(template, /secretKeyRef:\s+name: \{\{ include "aidr\.functionsSecretName" \. \}\}\s+key: AIDR_NOTIFICATION_DISPATCH_TOKEN/);
+	assert.match(template, /http:\/\/%s:9000\/siem-forwarder/);
+	assert.doesNotMatch(template, /service-role-key|SERVICE_ROLE/);
+	const policies = readFileSync(join(chartDir, "templates", "networkpolicy.yaml"), "utf8");
+	assert.match(policies, /component" "siem-forwarder"\) \| nindent 8 \}\}[\s\S]*?port: 9000/);
+	assert.match(policies, /range \$np\.siemEgress/);
+	const functions = readFileSync(join(chartDir, "templates", "functions.yaml"), "utf8");
+	// AIDR mail reuses the Auth relay; the password only ever comes from the Secret.
+	assert.match(functions, /name: SMTP_HOST\s+value: \{\{ \.Values\.auth\.smtp\.host \| quote \}\}/);
+	assert.match(functions, /"env" "SMTP_PASS" "key" \.Values\.auth\.smtp\.passwordKey/);
+	assert.match(functions, /AIDR_SIEM_ALLOW_PRIVATE_NETWORKS/);
+});
+
+test("rendered prod values add the SIEM forwarder, SMTP mail env and collector egress", { skip: helmSkip }, () => {
+	const docs = renderDocs("prod");
+	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-siem-forwarder"));
+	assert.ok(cron, "siem-forwarder CronJob");
+	const functionsPolicy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith("-functions"));
+	assert.ok(JSON.stringify(functionsPolicy.spec.ingress).includes("siem-forwarder"));
+	assert.ok(functionsPolicy.spec.egress.some((rule) => rule.ports?.[0]?.port === 514 && rule.ports[0].protocol === "UDP"));
+	const deployment = docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-functions"));
+	const env = Object.fromEntries(deployment.spec.template.spec.containers[0].env.map((entry) => [entry.name, entry]));
+	assert.equal(env.AIDR_SIEM_ALLOW_PRIVATE_NETWORKS.value, "true");
+	assert.ok(env.SMTP_HOST, "functions reuse the Auth SMTP relay");
+	assert.ok(!renderDocs("default").some((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-siem-forwarder")));
 });
 
 test("rendered prod values add the notification dispatcher with its own network allow-list", { skip: helmSkip }, () => {
@@ -480,7 +713,7 @@ test("rendered images give the complete air-gap pull list", { skip: helmSkip }, 
 	for (const name of CI_VALUES) {
 		for (const { spec } of podSpecs(renderDocs(name))) for (const container of spec.containers) images.add(container.image);
 	}
-	for (const expected of ["supabase/gotrue:v2.197.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.80.2", "envoyproxy/envoy:v1.39.2", "supabase/postgres:17.11.0.004", "aidr/dashboard:0.6.0", "aidr/edge-functions:0.6.0", "aidr/migrations:0.6.0"]) {
+	for (const expected of ["supabase/gotrue:v2.197.0", "postgrest/postgrest:v14.17", "supabase/storage-api:v1.80.2", "envoyproxy/envoy:v1.39.2", "supabase/postgres:17.11.0.004", `aidr/dashboard:${APP_VERSION}`, `aidr/edge-functions:${APP_VERSION}`, `aidr/migrations:${APP_VERSION}`]) {
 		assert.ok([...images].some((image) => image === `registry.example.internal/${expected}`), expected);
 	}
 });
@@ -571,7 +804,7 @@ test("rendered privacy-gateway values add a hardened gateway with an egress allo
 	assert.equal(deployment.spec.replicas, 1);
 	assert.equal(spec.securityContext.runAsUser, 10001);
 	assert.equal(spec.containers[0].securityContext.readOnlyRootFilesystem, true);
-	assert.equal(spec.containers[0].image, "registry.example.internal/aidr/privacy-gateway:0.6.0");
+	assert.equal(spec.containers[0].image, `registry.example.internal/aidr/privacy-gateway:${APP_VERSION}`);
 	assert.ok(!spec.containers[0].env.some((entry) => entry.valueFrom));
 	const config = JSON.parse(docs.find((doc) => doc.kind === "ConfigMap" && doc.metadata.name === "aidr-privacy-gateway").data["service.json"]);
 	assert.equal(config.secretStore, "mounted-files");
@@ -610,4 +843,61 @@ test("rendering refuses a weak privacy gateway configuration", { skip: helmSkip 
 		assert.notEqual(result.status, 0, `expected failure for ${sets.join(" ")}`);
 		assert.match(result.stderr, message, sets.join(" "));
 	}
+});
+
+// --- On-prem SSO (docs/operations/onprem-sso.md) ------------------------------------
+
+test("on-prem SSO settings are off by default and the internal IdP CA is added to the public roots", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.equal(values.dashboard.oidcSso, false);
+	assert.deepEqual(values.auth.saml, { enabled: false, privateKeyKey: "" });
+	assert.deepEqual(values.functions.identityProvider, { caBundle: { existingConfigMap: "", key: "ca.crt" }, internalHosts: [] });
+	assert.deepEqual(values.networkPolicy.identityProviderEgress, []);
+	const functions = readFileSync(join(chartDir, "templates", "functions.yaml"), "utf8");
+	assert.match(functions, /DENO_TLS_CA_STORE\n\s+value: mozilla,system/, "public roots must stay trusted next to the customer CA");
+	assert.match(functions, /SSL_CERT_FILE\n\s+value: \/etc\/aidr\/idp-ca\.pem/);
+	assert.match(functions, /readOnly: true/);
+	assert.match(functions, /AIDR_OIDC_INTERNAL_IDP_HOSTS/);
+	const auth = readFileSync(join(chartDir, "templates", "auth.yaml"), "utf8");
+	assert.match(auth, /GOTRUE_SAML_PRIVATE_KEY" "key" \$values\.saml\.privateKeyKey/, "the SAML key only comes from the platform Secret");
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8"));
+	const hostPattern = new RegExp(schema.properties.functions.properties.identityProvider.properties.internalHosts.items.pattern);
+	for (const host of ["keycloak.corp.example:8443", "adfs.corp.local"]) assert.match(host, hostPattern);
+	for (const host of ["10.0.0.5", "keycloak", "*.corp.example", "https://adfs.corp.local", "Keycloak.corp.example"]) assert.doesNotMatch(host, hostPattern);
+});
+
+test("rendered on-prem SSO values mount the CA read-only, list internal IdP hosts and open only their egress", { skip: helmSkip }, () => {
+	const base = join(chartDir, "ci", "default-values.yaml");
+	const docs = renderOk([base], [
+		"functions.identityProvider.caBundle.existingConfigMap=corp-idp-ca",
+		"functions.identityProvider.internalHosts={keycloak.corp.example:8443,adfs.corp.local}",
+		"networkPolicy.identityProviderEgress[0].cidr=10.20.30.40/32",
+		"networkPolicy.identityProviderEgress[0].port=8443",
+		"dashboard.oidcSso=true",
+		"auth.saml.enabled=true",
+		"auth.saml.privateKeyKey=gotrue-saml-private-key",
+	]);
+	const deployment = (suffix) => docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith(suffix));
+	const functions = deployment("-functions").spec.template.spec;
+	const env = Object.fromEntries(functions.containers[0].env.map((entry) => [entry.name, entry.value ?? entry.valueFrom]));
+	assert.equal(env.DENO_TLS_CA_STORE, "mozilla,system");
+	assert.equal(env.SSL_CERT_FILE, "/etc/aidr/idp-ca.pem");
+	assert.equal(env.AIDR_OIDC_INTERNAL_IDP_HOSTS, "keycloak.corp.example:8443,adfs.corp.local");
+	assert.deepEqual(functions.containers[0].volumeMounts.find((mount) => mount.name === "idp-ca"), { name: "idp-ca", mountPath: "/etc/aidr/idp-ca.pem", subPath: "ca.crt", readOnly: true });
+	assert.equal(functions.volumes.find((volume) => volume.name === "idp-ca").configMap.name, "corp-idp-ca");
+	const policy = docs.find((doc) => doc.kind === "NetworkPolicy" && doc.metadata.name.endsWith("-functions"));
+	assert.ok(policy.spec.egress.some((rule) => rule.to?.[0]?.ipBlock?.cidr === "10.20.30.40/32" && rule.ports[0].port === 8443));
+	const dashboardEnv = deployment("-dashboard").spec.template.spec.containers[0].env;
+	assert.equal(dashboardEnv.find((entry) => entry.name === "AIDR_OIDC_SSO").value, "true");
+	const authEnv = deployment("-auth").spec.template.spec.containers[0].env;
+	assert.equal(authEnv.find((entry) => entry.name === "GOTRUE_SAML_ENABLED").value, "true");
+	assert.equal(authEnv.find((entry) => entry.name === "GOTRUE_SAML_PRIVATE_KEY").valueFrom.secretKeyRef.key, "gotrue-saml-private-key");
+
+	const plain = renderDocs("default");
+	const plainFunctions = plain.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-functions")).spec.template.spec;
+	assert.equal(plainFunctions.containers[0].env.some((entry) => entry.name === "SSL_CERT_FILE"), false);
+	assert.equal(plainFunctions.volumes.some((volume) => volume.name === "idp-ca"), false);
+	const refused = render([base], ["auth.saml.enabled=true"]);
+	assert.notEqual(refused.status, 0);
+	assert.match(refused.stderr, /auth\.saml\.enabled requires auth\.saml\.privateKeyKey/);
 });

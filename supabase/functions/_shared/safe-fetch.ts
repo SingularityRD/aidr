@@ -14,6 +14,14 @@
 // mixed-answer SSRF; it cannot pin the connection the way the core transport
 // does. The Supabase Edge network has no route to the project's private
 // services, which is the compensating control.
+//
+// On-prem identity providers (Keycloak, ADFS) usually live on an internal
+// network. The operator - never a tenant owner - may exempt exact host names
+// from rules 1-3 with AIDR_OIDC_INTERNAL_IDP_HOSTS (parseInternalHosts below):
+// a listed host may use a listed port and resolve to RFC 1918 / CGNAT / IPv6
+// ULA addresses. https, the no-redirect rule, the size/time bounds and the
+// refusal of loopback, link-local, metadata and other reserved addresses still
+// apply to it, and every host that is not listed keeps the public-only policy.
 
 import { isBlockedHostname, isPublicIpAddress, ipVersion } from "./egress-guard.ts";
 
@@ -39,12 +47,63 @@ export type SafeFetchResult =
 
 type DnsResolver = (hostname: string, type: "A" | "AAAA") => Promise<string[]>;
 
+/** Operator-listed internal hosts: exact lower-case DNS name -> extra allowed ports. */
+export type InternalHosts = ReadonlyMap<string, readonly number[]>;
+
 export interface SafeFetchOptions {
 	fetch?: typeof fetch;
 	resolveDns?: DnsResolver;
 	timeoutMs?: number;
 	maxBytes?: number;
 	allowedPorts?: readonly number[];
+	internalHosts?: InternalHosts;
+}
+
+export const INTERNAL_HOSTS_ENV = "AIDR_OIDC_INTERNAL_IDP_HOSTS";
+const MAX_INTERNAL_HOSTS = 16;
+const DNS_NAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/;
+// Names that stay refused even when listed: loopback aliases and cloud metadata.
+const NEVER_INTERNAL = /(^|\.)localhost$|^localhost\.localdomain$|^ip6-(localhost|loopback)$|^metadata\.google\.(internal|com)$|^instance-data\.ec2\.internal$/;
+
+/**
+ * Parse AIDR_OIDC_INTERNAL_IDP_HOSTS: comma- or space-separated `host[:port]`
+ * entries, fully qualified DNS names only (no IP literals, no wildcards). An
+ * empty value means no exemption; any malformed entry rejects the whole value,
+ * so a typo never silently widens or narrows the policy.
+ */
+export function parseInternalHosts(raw: string | undefined | null):
+	| { ok: true; hosts: InternalHosts }
+	| { ok: false; error: "invalid_internal_hosts" } {
+	const hosts = new Map<string, number[]>();
+	const entries = (raw ?? "").split(/[\s,]+/).filter(Boolean);
+	if (entries.length > MAX_INTERNAL_HOSTS) return { ok: false, error: "invalid_internal_hosts" };
+	for (const entry of entries) {
+		const match = /^([^:]+)(?::(\d{1,5}))?$/.exec(entry.toLowerCase());
+		const host = match?.[1]?.replace(/\.$/, "") ?? "";
+		const port = match?.[2] === undefined ? 443 : Number(match[2]);
+		if (!match || !DNS_NAME.test(host) || ipVersion(host) !== 0 || NEVER_INTERNAL.test(host) || port < 1 || port > 65_535)
+			return { ok: false, error: "invalid_internal_hosts" };
+		const ports = hosts.get(host) ?? [];
+		if (!ports.includes(port)) ports.push(port);
+		hosts.set(host, ports);
+	}
+	return { ok: true, hosts };
+}
+
+/**
+ * Private ranges an operator may reach through a listed internal host:
+ * 10/8, 172.16/12, 192.168/16, 100.64/10 (CGNAT) and fc00::/7 (ULA). Loopback,
+ * link-local, unspecified, multicast, documentation and every other reserved
+ * range stay refused.
+ */
+export function isOperatorPrivateAddress(value: string): boolean {
+	const address = value.trim().toLowerCase().replace(/^\[|\]$/g, "");
+	const version = ipVersion(address);
+	if (version === 4) {
+		const [a, b] = address.split(".").map(Number) as [number, number];
+		return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+	}
+	return version === 6 && /^f[cd][0-9a-f]{0,2}:/.test(address);
 }
 
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -77,9 +136,11 @@ export async function assertSafeUrl(
 	if (url.username || url.password || url.hash)
 		return { ok: false, error: "url_credentials_forbidden" };
 	const port = url.port === "" ? 443 : Number(url.port);
-	if (!(options.allowedPorts ?? [443]).includes(port)) return { ok: false, error: "port_not_allowed" };
 	const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.+$/, "").toLowerCase();
-	if (!host || ipVersion(host) !== 0 || isBlockedHostname(host))
+	const internalPorts = options.internalHosts?.get(host);
+	if (!(options.allowedPorts ?? [443]).includes(port) && !internalPorts?.includes(port))
+		return { ok: false, error: "port_not_allowed" };
+	if (!host || ipVersion(host) !== 0 || (!internalPorts && isBlockedHostname(host)))
 		return { ok: false, error: "blocked_host" };
 
 	const resolve = options.resolveDns ?? defaultResolver;
@@ -95,7 +156,10 @@ export async function assertSafeUrl(
 	}
 	const addresses = [...new Set(answers.map((address) => address.trim().toLowerCase()))];
 	if (!anyLookupSucceeded || addresses.length === 0) return { ok: false, error: "dns_lookup_failed" };
-	if (!addresses.every(isPublicIpAddress)) return { ok: false, error: "private_address" };
+	const permitted = internalPorts
+		? (address: string) => isPublicIpAddress(address) || isOperatorPrivateAddress(address)
+		: isPublicIpAddress;
+	if (!addresses.every(permitted)) return { ok: false, error: "private_address" };
 	return { ok: true, url, addresses };
 }
 

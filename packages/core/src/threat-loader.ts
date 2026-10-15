@@ -9,6 +9,7 @@ import { parse as parseYaml } from "yaml";
 import { getFileContentRaw } from "./file-utils.js";
 import { loadFrameworkMappings, resolveRuleFrameworks } from "./framework-mappings.js";
 import { THREAT_PARSE_CACHE } from "./generated/threat-parse-cache.js";
+import { registerRuleTitle } from "./i18n/display.js";
 import {
 	checkCoveredFile,
 	loadResourceManifestCoverage,
@@ -318,6 +319,13 @@ export async function loadThreatsWithReport(
 					})
 				: null;
 
+			// Optional display translation; a non-string value is ignored, never a rule error.
+			const titleTr =
+				typeof record.title_tr === "string" && record.title_tr.trim() !== ""
+					? record.title_tr.trim()
+					: undefined;
+			registerRuleTitle(record.id as string, record.title as string, titleTr);
+
 			threats.push({
 				id: record.id as string,
 				category: record.category as string,
@@ -328,6 +336,7 @@ export async function loadThreatsWithReport(
 				compiledPattern,
 				matchOn,
 				title: record.title as string,
+				...(titleTr ? { titleTr } : {}),
 				expiresAt: parseExpiresAt(record.expires_at as string | null | undefined),
 				revoked: false,
 				...(diff === undefined ? {} : { diff: diff as NonNullable<Threat["diff"]> }),

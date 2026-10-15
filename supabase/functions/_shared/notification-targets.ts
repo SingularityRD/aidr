@@ -185,7 +185,7 @@ export async function targetHint(target: ChannelTarget): Promise<string> {
 
 // ── Address classification ─────────────────────────────────────────────────
 
-function parseIpv4(value: string): number[] | null {
+export function parseIpv4(value: string): number[] | null {
 	const parts = value.split(".");
 	if (parts.length !== 4) return null;
 	const octets: number[] = [];
@@ -199,7 +199,7 @@ function parseIpv4(value: string): number[] | null {
 }
 
 /** Parse an IPv6 literal (optionally with an embedded IPv4 tail) into 16 bytes. */
-function parseIpv6(value: string): number[] | null {
+export function parseIpv6(value: string): number[] | null {
 	let text = value.toLowerCase();
 	const zone = text.indexOf("%");
 	if (zone >= 0) text = text.slice(0, zone);
@@ -352,7 +352,7 @@ export interface NotificationKeyring {
 
 const KEY_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
-function base64ToBytes(value: string): Uint8Array | null {
+function base64ToBytes(value: string): Uint8Array<ArrayBuffer> | null {
 	try {
 		const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
 		const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
@@ -400,26 +400,28 @@ export interface TargetBinding {
 	type: ChannelType;
 }
 
-function associatedData(binding: TargetBinding): Uint8Array {
-	return new TextEncoder().encode(
-		`aidr-notification-target:v1:${binding.tenantId.toLowerCase()}:${binding.channelId.toLowerCase()}:${binding.type}`,
-	);
+function associatedData(binding: TargetBinding): string {
+	return `aidr-notification-target:v1:${binding.tenantId.toLowerCase()}:${binding.channelId.toLowerCase()}:${binding.type}`;
 }
 
-export async function encryptTarget(
+/**
+ * AES-256-GCM over a JSON value with the keyring's active key, as
+ * `v1.<key id>.<base64url(iv || ciphertext)>`. `context` is the associated
+ * data: a ciphertext only opens under the exact same context.
+ */
+export async function sealJson(
 	keyring: NotificationKeyring,
-	binding: TargetBinding,
-	target: ChannelTarget,
+	context: string,
+	value: unknown,
 ): Promise<{ ciphertext: string; keyId: string }> {
-	if (target.type !== binding.type) throw new TypeError("target type does not match its binding");
 	const key = keyring.keys.get(keyring.activeKeyId);
 	if (!key) throw new TypeError("active notification key missing");
 	const iv = crypto.getRandomValues(new Uint8Array(12));
 	const sealed = new Uint8Array(
 		await crypto.subtle.encrypt(
-			{ name: "AES-GCM", iv, additionalData: associatedData(binding), tagLength: 128 },
+			{ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(context), tagLength: 128 },
 			key,
-			new TextEncoder().encode(JSON.stringify(target)),
+			new TextEncoder().encode(JSON.stringify(value)),
 		),
 	);
 	const payload = new Uint8Array(iv.length + sealed.length);
@@ -428,33 +430,41 @@ export async function encryptTarget(
 	return { ciphertext: `v1.${keyring.activeKeyId}.${bytesToBase64Url(payload)}`, keyId: keyring.activeKeyId };
 }
 
+/** Open a `sealJson` ciphertext under the same context; null on any failure. */
+export async function openJson(keyring: NotificationKeyring, context: string, ciphertext: string): Promise<unknown> {
+	const match = /^v1\.([a-z0-9][a-z0-9_-]{0,31})\.([A-Za-z0-9_-]+)$/.exec(ciphertext);
+	if (!match) return null;
+	const key = keyring.keys.get(match[1]);
+	const payload = base64ToBytes(match[2]);
+	if (!key || !payload || payload.length < 12 + 16 + 2) return null;
+	try {
+		const plaintext = await crypto.subtle.decrypt(
+			{ name: "AES-GCM", iv: payload.slice(0, 12), additionalData: new TextEncoder().encode(context), tagLength: 128 },
+			key,
+			payload.slice(12),
+		);
+		return JSON.parse(new TextDecoder().decode(plaintext));
+	} catch {
+		return null;
+	}
+}
+
+export async function encryptTarget(
+	keyring: NotificationKeyring,
+	binding: TargetBinding,
+	target: ChannelTarget,
+): Promise<{ ciphertext: string; keyId: string }> {
+	if (target.type !== binding.type) throw new TypeError("target type does not match its binding");
+	return await sealJson(keyring, associatedData(binding), target);
+}
+
 /** Decrypt and re-validate a stored destination; null on any failure. */
 export async function decryptTarget(
 	keyring: NotificationKeyring,
 	binding: TargetBinding,
 	ciphertext: string,
 ): Promise<ChannelTarget | null> {
-	const match = /^v1\.([a-z0-9][a-z0-9_-]{0,31})\.([A-Za-z0-9_-]+)$/.exec(ciphertext);
-	if (!match) return null;
-	const key = keyring.keys.get(match[1]);
-	const payload = base64ToBytes(match[2]);
-	if (!key || !payload || payload.length < 12 + 16 + 2) return null;
-	let plaintext: ArrayBuffer;
-	try {
-		plaintext = await crypto.subtle.decrypt(
-			{ name: "AES-GCM", iv: payload.slice(0, 12), additionalData: associatedData(binding), tagLength: 128 },
-			key,
-			payload.slice(12),
-		);
-	} catch {
-		return null;
-	}
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(new TextDecoder().decode(plaintext));
-	} catch {
-		return null;
-	}
+	const parsed = await openJson(keyring, associatedData(binding), ciphertext);
 	if (!isRecord(parsed) || parsed.type !== binding.type) return null;
 	const { type: _type, ...rest } = parsed;
 	const checked = parseTarget(binding.type, rest);

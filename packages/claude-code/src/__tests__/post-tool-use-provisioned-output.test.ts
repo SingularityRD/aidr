@@ -4,6 +4,7 @@ import { runInNewContext } from "node:vm";
 import type { OutputFinding } from "@singularityrd/aidr-core";
 import { transformSync } from "esbuild";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { toolNameFromInputPrefix } from "../hook-input.js";
 import {
 	inspectCachedProvisionedToolResponse,
 	postToolInspectionUnavailable,
@@ -40,7 +41,16 @@ const customFinding: OutputFinding = {
 	redactedExcerpt: "[REDACTED_DLP]",
 };
 
-async function runHook(toolResponse: unknown) {
+interface RunHookOptions {
+	toolName?: string;
+	deadlineMs?: number;
+	/** Canary bookkeeping never settles, after the output verdict is known. */
+	hangBookkeeping?: boolean;
+	/** Replaces the parsed stdin result (e.g. oversized or never-ending input). */
+	readInput?: (progress: { prefix: string }) => Promise<unknown>;
+}
+
+async function runHook(toolResponse: unknown, options: RunHookOptions = {}) {
 	const log = vi.fn();
 	const logger = { warn: log, error: log, info: log, debug: log };
 	const pino = Object.assign(() => logger, { destination: () => ({}) });
@@ -50,12 +60,14 @@ async function runHook(toolResponse: unknown) {
 			scanProvisionedOutput,
 			// Session-flow, canary and outcome feeds are observation only here.
 			recordToolOutcome: vi.fn().mockResolvedValue(undefined),
-			recordToolOutputCanaries: vi.fn().mockResolvedValue(undefined),
+			recordToolOutputCanaries: options.hangBookkeeping
+				? () => new Promise(() => {})
+				: vi.fn().mockResolvedValue(undefined),
 			recordToolOutputFlow: vi.fn().mockResolvedValue(undefined),
 			toolResultReportsFailure: () => false,
 			// The hook exits after answering; the sandbox has no process to end.
 			exitAfterStdoutFlush: vi.fn(),
-			resolveHookDeadlineMs: () => 4_000,
+			resolveHookDeadlineMs: () => options.deadlineMs ?? 4_000,
 			// File quarantine is off by default and never changes this response.
 			quarantineAgentWrittenFiles: vi.fn().mockResolvedValue({
 				enabled: false,
@@ -70,10 +82,24 @@ async function runHook(toolResponse: unknown) {
 		"./approval-tracker.js": { consumePendingApproval: async () => null },
 		"./format.js": { artifactTypeLabel: (value: string) => value },
 		"./hook-input.js": {
-			readStdinJson: async () => ({
-				status: "parsed",
-				value: { tool_use_id: "tool-1", session_id: "session-1", tool_response: toolResponse },
-			}),
+			resolvePostToolInputLimit: () => 16 * 1024 * 1024,
+			toolNameFromInputPrefix,
+			readPostToolStdin: async (
+				_maxBytes: number,
+				_stream: unknown,
+				progress: { prefix: string },
+			) =>
+				options.readInput
+					? options.readInput(progress)
+					: {
+							status: "parsed",
+							value: {
+								tool_use_id: "tool-1",
+								session_id: "session-1",
+								...(options.toolName ? { tool_name: options.toolName } : {}),
+								tool_response: toolResponse,
+							},
+						},
 		},
 		"./output-inspection.js": {
 			postToolInspectionUnavailable,
@@ -95,7 +121,11 @@ async function runHook(toolResponse: unknown) {
 				if (!Object.hasOwn(modules, name)) throw new Error(`Unexpected hook import: ${name}`);
 				return modules[name];
 			},
-			process: { env: {}, stdout: { write: (chunk: string) => done(JSON.parse(chunk)) } },
+			process: {
+				env: {},
+				stdin: {},
+				stdout: { write: (chunk: string) => done(JSON.parse(chunk)) },
+			},
 			setTimeout,
 			clearTimeout,
 			__dirname: "/test",
@@ -222,5 +252,95 @@ describe("Claude signed tenant output policy", () => {
 			expect.stringContaining("original output may remain available to the host"),
 		);
 		expect(JSON.stringify(response)).not.toContain("PRIVATE_PROGRAM_42");
+	});
+});
+
+describe("Claude PostToolUse fails closed when inspection cannot finish (CON-9)", () => {
+	const secretMarker = "PRIVATE_PROGRAM_42";
+
+	it("withholds parsed Bash output when the deadline passes during inspection", async () => {
+		// Policy warmup never resolves: only the watchdog can answer.
+		scanProvisionedOutput.mockImplementation(() => new Promise(() => {}));
+		const { response } = await runHook(
+			{ stdout: `build log ... ${secretMarker}`, stderr: "", interrupted: false },
+			{ toolName: "Bash", deadlineMs: 20 },
+		);
+		expect(response.decision).toBe("block");
+		expect(String(response.reason)).toContain("did not finish in time");
+		expect(response.hookSpecificOutput).toMatchObject({
+			hookEventName: "PostToolUse",
+			updatedToolOutput: { stdout: expect.stringContaining("quarantined"), interrupted: false },
+		});
+		expect(JSON.stringify(response)).not.toContain(secretMarker);
+	});
+
+	it("withholds MCP output of an unknown shape when the deadline passes", async () => {
+		scanProvisionedOutput.mockImplementation(() => new Promise(() => {}));
+		const { response } = await runHook(
+			{ structured: { token: secretMarker } },
+			{ toolName: "mcp__docs__lookup", deadlineMs: 20 },
+		);
+		expect(response.hookSpecificOutput).toMatchObject({
+			updatedToolOutput: [{ type: "text", text: expect.stringContaining("quarantined") }],
+		});
+		expect(JSON.stringify(response)).not.toContain(secretMarker);
+	});
+
+	it("answers with the settled verdict when only later bookkeeping overruns the deadline", async () => {
+		const clean = await runHook(
+			{ stdout: "Build succeeded" },
+			{ toolName: "Bash", deadlineMs: 20, hangBookkeeping: true },
+		);
+		expect(clean.response).toEqual({});
+
+		scanCachedProvisionedOutput.mockReturnValue([customFinding]);
+		const risky = await runHook(
+			{ stdout: secretMarker },
+			{ toolName: "Bash", deadlineMs: 20, hangBookkeeping: true },
+		);
+		expect(risky.response.hookSpecificOutput).toHaveProperty("updatedToolOutput.stdout");
+		expect(JSON.stringify(risky.response)).toContain("OUT-DLP-CUSTOM");
+		expect(JSON.stringify(risky.response)).not.toContain(secretMarker);
+	});
+
+	it("names the tool from the input prefix when stdin never finishes", async () => {
+		const { response } = await runHook(undefined, {
+			deadlineMs: 20,
+			readInput: (progress) => {
+				progress.prefix = `{"session_id":"s","tool_name":"Bash","tool_input":{},"tool_response":{"stdout":"${secretMarker}`;
+				return new Promise(() => {});
+			},
+		});
+		expect(response.decision).toBe("block");
+		expect(response.hookSpecificOutput).toMatchObject({
+			updatedToolOutput: { stdout: expect.any(String), stderr: "", interrupted: false },
+		});
+		expect(JSON.stringify(response)).not.toContain(secretMarker);
+	});
+
+	it("replaces oversized MCP input it could not parse", async () => {
+		const { response } = await runHook(undefined, {
+			readInput: async (progress) => {
+				progress.prefix = `{"tool_name":"mcp__evil__dump","tool_response":[{"type":"text","text":"${secretMarker}`;
+				return { status: "oversized" };
+			},
+		});
+		expect(String(response.reason)).toContain("processing limit");
+		expect(response.hookSpecificOutput).toMatchObject({
+			updatedToolOutput: [{ type: "text", text: expect.stringContaining("quarantined") }],
+		});
+		expect(JSON.stringify(response)).not.toContain(secretMarker);
+	});
+
+	it("says plainly when an unparsed built-in result cannot be replaced", async () => {
+		const { response } = await runHook(undefined, {
+			readInput: async (progress) => {
+				progress.prefix = '{"tool_name":"WebFetch","tool_response":{';
+				return { status: "oversized" };
+			},
+		});
+		expect(response.decision).toBe("block");
+		expect(response.hookSpecificOutput).not.toHaveProperty("updatedToolOutput");
+		expect(JSON.stringify(response)).toContain("Replacement unavailable");
 	});
 });

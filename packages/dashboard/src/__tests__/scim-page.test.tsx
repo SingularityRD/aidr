@@ -245,7 +245,7 @@ describe("SCIM dashboard customer workflow", () => {
 			},
 		);
 		render(<ScimPage />);
-		await screen.findByRole("row", { name: /directory-group-immutable-id viewer/ });
+		await screen.findByRole("row", { name: /directory-group-immutable-id Viewer/ });
 		fireEvent.change(screen.getByLabelText("Exact external group ID"), {
 			target: { value: " directory-group-immutable-id " },
 		});
@@ -276,7 +276,7 @@ describe("SCIM dashboard customer workflow", () => {
 				},
 			}),
 		);
-		const row = screen.getByRole("row", { name: /directory-group-immutable-id viewer/ });
+		const row = screen.getByRole("row", { name: /directory-group-immutable-id Viewer/ });
 		fireEvent.click(within(row).getByRole("button", { name: "Edit" }));
 		expect(screen.getByLabelText("Exact external group ID")).toHaveValue(externalId);
 		expect(screen.getByLabelText("AIDR role")).toHaveValue("viewer");

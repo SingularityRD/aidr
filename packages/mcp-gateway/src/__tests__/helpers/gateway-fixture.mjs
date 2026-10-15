@@ -6,6 +6,8 @@ import {
 	signMcpToolManifest,
 } from "@singularityrd/aidr-core";
 import { createMcpGateway } from "../../gateway.mjs";
+import { approveQuarantinedToolset } from "../../operator-approval.mjs";
+import { TEST_APPROVAL_KEY, TEST_APPROVAL_KEYS, testStateDir } from "./approval-key.mjs";
 
 const running = [];
 afterEach(async () => {
@@ -65,8 +67,8 @@ export function fixture(overrides = {}) {
 		schema_version: 1,
 		server_id: "server-a",
 		sequence: overrides.sequence ?? 1,
-		issued_at: new Date(Date.now() - 60_000).toISOString(),
-		expires_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+		issued_at: overrides.issuedAt ?? new Date(Date.now() - 60_000).toISOString(),
+		expires_at: overrides.expiresAt ?? new Date(Date.now() + 60 * 60_000).toISOString(),
 		tools,
 	};
 	const signedManifest =
@@ -119,6 +121,7 @@ export function fixture(overrides = {}) {
 			return stores.get(tenantId);
 		},
 		scanner: overrides.scanner,
+		...(overrides.now ? { now: overrides.now } : {}),
 		onEvent: overrides.onEvent ?? ((event) => events.push(event)),
 		directUpstreamCheck: overrides.directUpstreamCheck,
 		...(overrides.evaluateToolCall ? { evaluateToolCall: overrides.evaluateToolCall } : {}),
@@ -145,19 +148,20 @@ export function fixture(overrides = {}) {
 			);
 		},
 	};
-	const gateway = createMcpGateway(
-		{
-			stateDir: ".test-mcp-gateway",
-			port: 0,
-			clients,
-			servers,
-			maxBodyBytes: overrides.maxBodyBytes ?? 4096,
-			...(overrides.gatewayConfig ?? {}),
-		},
-		dependencies,
-	);
+	const input = {
+		stateDir: testStateDir(),
+		approvalKeys: TEST_APPROVAL_KEYS,
+		port: 0,
+		clients,
+		servers,
+		maxBodyBytes: overrides.maxBodyBytes ?? 4096,
+		...(overrides.gatewayConfig ?? {}),
+	};
+	// `createGateway` lets a test drive the built, installed library's factory.
+	const gateway = (overrides.createGateway ?? createMcpGateway)(input, dependencies);
 	return {
 		gateway,
+		input,
 		tools,
 		tokenA,
 		tokenB,
@@ -186,13 +190,14 @@ export function fixture(overrides = {}) {
 				bindingSha256 ??
 				(await gateway.storeFor(tenantId).read("server-a"))?.quarantine?.bindingSha256;
 			if (!reviewed) throw new Error("missing reviewed MCP binding");
-			return gateway.approve({
+			return approveQuarantinedToolset(gateway, {
 				tenantId,
 				serverId: "server-a",
 				toolsetHash: mcpToolsetHash(tools),
 				bindingSha256: reviewed,
 				approvedBy: "security-operator",
 				reason: "approved manifest test",
+				approvalKey: TEST_APPROVAL_KEY,
 			});
 		},
 	};

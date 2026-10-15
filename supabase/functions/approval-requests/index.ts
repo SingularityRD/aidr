@@ -70,10 +70,10 @@ const readRuntimeEnv: EnvReader = (name) => {
 	} catch {
 		// Node contract tests use process.env when Deno is unavailable.
 	}
-	return globalThis.process?.env?.[name];
+	return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
 };
 
-type DatabaseClient = ReturnType<typeof createClient>;
+type DatabaseClient = ReturnType<typeof createClient<any, "public">>;
 
 export interface ApprovalRequestsDeps {
 	env?: EnvReader;
@@ -313,12 +313,31 @@ function rpcFailure(req: Request, error: RpcError, fallback: string, headers: Re
 	}
 }
 
+/**
+ * The dashboard page for one request, from the optional `AIDR_DASHBOARD_URL`:
+ * its origin plus `/approvals?request=<id>`. Never carries a token; the
+ * connector rebuilds the link from the origin alone.
+ */
+export function approvalConsoleUrl(dashboardUrl: string | undefined, requestId: string): string | null {
+	if (!dashboardUrl || !UUID.test(requestId)) return null;
+	try {
+		const url = new URL(dashboardUrl.trim());
+		const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+		if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) return null;
+		if (url.username || url.password) return null;
+		return `${url.origin}/approvals?request=${requestId.toLowerCase()}`;
+	} catch {
+		return null;
+	}
+}
+
 async function handleCreate(
 	req: Request,
 	db: DatabaseClient,
 	token: string,
 	value: unknown,
 	nowMs: number,
+	dashboardUrl?: string,
 ): Promise<Response> {
 	const body = parseCreateBody(value, nowMs);
 	if (!body.ok) return corsJson(req, 400, { error: body.error });
@@ -352,10 +371,12 @@ async function handleCreate(
 		!["pending", "approved", "denied", "expired"].includes(String(data.status))) {
 		return corsJson(req, 503, { error: "approval_request_unavailable" }, rateLimitHeaders(rate));
 	}
+	const consoleUrl = approvalConsoleUrl(dashboardUrl, data.request_id);
 	return corsJson(req, 201, {
 		request_id: data.request_id,
 		status: data.status,
 		created: data.created === true,
+		...(consoleUrl ? { console_url: consoleUrl } : {}),
 	}, rateLimitHeaders(rate));
 }
 
@@ -365,6 +386,7 @@ async function handlePoll(
 	token: string,
 	requestId: string,
 	nowMs: number,
+	dashboardUrl?: string,
 ): Promise<Response> {
 	const auth = await authenticateTenantApiKeyBudgeted(db, token, "approval-requests", nowMs);
 	if (!auth.ok) return corsJson(req, auth.status, { error: auth.error });
@@ -393,9 +415,11 @@ async function handlePoll(
 	if (decided && (typeof data.token !== "string" || typeof data.key_id !== "string")) {
 		return corsJson(req, 503, { error: "approval_request_unavailable" }, rateLimitHeaders(rate));
 	}
+	const consoleUrl = approvalConsoleUrl(dashboardUrl, requestId);
 	return corsJson(req, 200, {
 		request_id: requestId,
 		status: data.status,
+		...(consoleUrl ? { console_url: consoleUrl } : {}),
 		...(decided
 			? { token: data.token, key_id: data.key_id, token_expires_at: data.token_expires_at ?? null }
 			: {}),
@@ -543,6 +567,11 @@ async function handleDashboard(
 	if (data.outcome === "expired") {
 		return corsJson(req, 409, { error: "approval_request_expired", status: "expired" }, headers);
 	}
+	// Separation of duties: the tenant requires someone other than the
+	// requester to approve. Nothing was signed into the request (CP-9).
+	if (data.outcome === "self_approval_forbidden") {
+		return corsJson(req, 403, { error: "approval_self_approval_forbidden" }, headers);
+	}
 	if (data.outcome !== "decided" || (data.status !== "approved" && data.status !== "denied")) {
 		return corsJson(req, 503, { error: "approval_decision_failed" }, headers);
 	}
@@ -585,13 +614,17 @@ export function createApprovalRequestsHandler(deps: ApprovalRequestsDeps = {}) {
 			);
 		}
 		const token = getBearerToken(req.headers.get("Authorization"));
+		// Optional: the dashboard deep link in connector responses.
+		const dashboardUrl = runtimeEnv("AIDR_DASHBOARD_URL") ?? undefined;
 		const missingApiKey = () => corsJson(req, 401, { error: "missing_api_key" });
 		const missingSession = () => corsJson(req, 401, { error: "missing_access_token" });
 
 		try {
 			const db = () => makeClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY);
 			if (route.kind === "poll") {
-				return token ? await handlePoll(req, db(), token, route.requestId, now()) : missingApiKey();
+				return token
+					? await handlePoll(req, db(), token, route.requestId, now(), dashboardUrl)
+					: missingApiKey();
 			}
 			const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
 			if (route.kind === "decision") {
@@ -612,7 +645,7 @@ export function createApprovalRequestsHandler(deps: ApprovalRequestsDeps = {}) {
 			}
 			if (!token) return missingApiKey();
 			if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
-			return await handleCreate(req, db(), token, parsed.value, now());
+			return await handleCreate(req, db(), token, parsed.value, now(), dashboardUrl);
 		} catch {
 			return corsJson(req, 503, { error: "approval_request_unavailable" });
 		}

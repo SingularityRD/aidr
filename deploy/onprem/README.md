@@ -1,8 +1,14 @@
 # AIDR on-prem installation
 
 This is the entry point for running the AIDR control plane on a customer-owned
-Linux host with Docker Compose. It covers one host. It does not provide
-Kubernetes manifests, multi-host high availability or an availability SLA.
+Linux host with Docker Compose. It covers one host; Compose has no multi-host
+high availability. For Kubernetes, use the Helm chart in
+[`deploy/helm/aidr`](../helm/aidr/README.md) as described in
+[Running AIDR on Kubernetes](../../docs/operations/kubernetes.md). Neither path
+comes with an availability SLA. For the whole journey in order (prerequisites,
+NTP, TLS with a public or internal CA, install, first administrator, endpoints,
+backup, monitoring, acceptance) follow the
+[end-to-end on-prem runbook](../../docs/operations/onprem-runbook.md).
 The detailed contracts it builds on are in [the installation guide](../README.md),
 [the first-customer guide](../FIRST_CUSTOMER.md), [the upgrade runbook](../UPGRADE.md)
 and [the backup runbook](../backup/README.md).
@@ -21,6 +27,10 @@ telemetry and the dashboard.
 - The artifact-verification public key from the independent release-signer channel.
 - HTTPS origins for the dashboard and API, a TLS reverse proxy, SMTP settings
   and a backup target, as described in [the installation guide](../README.md).
+  Certificates can come from a public CA (ACME/Certbot) or from the customer's
+  internal CA (`deployment-tls-renew.mjs --mode static`).
+- Time synchronisation (NTP) on the host and on every endpoint; signed
+  licences, approvals and enrollment are time-checked.
 - Optional AI Security Posture scanner: the scanner release data-signing RSA
   public key and its key id, plus the scanner sources in the release checkout.
 
@@ -48,7 +58,7 @@ window, or prepare the target in a new directory during an upgrade.
 Run from the verified kit or built repository root on the deployment host:
 
 ```sh
-node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --profile small --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry
+node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --profile small --region self-hosted --tenant-region self-hosted --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem --telemetry-queue-root /var/lib/aidr-telemetry --offline-policy keep_enforcing_local
 docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml config --quiet
 docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --build
 node scripts/deployment-migrate.mjs /srv/aidr
@@ -158,11 +168,40 @@ apply the prepared `privacy-gateway/egress-firewall.sh` before starting it. See
 [the privacy gateway guide](../privacy-gateway/README.md) for the inputs,
 the start commands and what the gateway does and does not do.
 
+### Optional single sign-on with an internal identity provider
+
+Tenant owners connect Keycloak, ADFS or another OIDC provider in the dashboard;
+users can be created at first sign-in (just-in-time provisioning) without SCIM,
+and Active Directory is connected through Keycloak user federation. When the
+identity provider uses an internal CA or a private address, prepare with
+`--idp-ca-file <pem>` (the CA is added to the public roots of the functions
+runtime and mounted read-only) and `--oidc-internal-idp-hosts host[:port],...`
+(only those exact names may resolve to private addresses). `--with-saml` turns
+on SAML in GoTrue and generates its signing key on this host. Set
+`AIDR_OIDC_SSO=true` in `.env` to show the SSO form on the sign-in page. See
+[the on-prem SSO runbook](../../docs/operations/onprem-sso.md)
+([Türkçe](../../docs/operations/onprem-sso.tr.md)) for the Keycloak, ADFS and
+LDAP steps.
+
 ## Upgrade
 
-Never rerun preparation over `/srv/aidr`. Prepare the target release in a new
-directory, take and verify an encrypted backup, run the preflight and apply
-steps in [the upgrade runbook](../UPGRADE.md), then rerun the doctor.
+Prepare the new release in a new directory (never over `/srv/aidr`), then run one
+command from the new release's kit:
+
+```sh
+pnpm onprem:upgrade --to /srv/aidr-target --dry-run   # the plan; changes nothing
+pnpm onprem:upgrade --to /srv/aidr-target
+```
+
+It checks that the release fits, takes and verifies an encrypted backup, runs the
+preflight, applies the database changes in one transaction, starts the new version,
+runs the doctor and the post-upgrade checks, and stops at the first failure with the
+exact next step. It reads the compatibility contract from
+`/secure/aidr-upgrade/upgrade-compatibility.json` and the backup key from
+`/secure/aidr-recovery.key` unless you pass `--contract` and `--key-file`. Step by
+step, what to do when it stops, and the Turkish version:
+[docs/operations/onprem-upgrade.md](../../docs/operations/onprem-upgrade.md). The
+contracts behind each step are in [the upgrade runbook](../UPGRADE.md).
 
 The upgrade tool does not carry the posture scanner's staged build contexts.
 When the current installation runs the scanner and the target was prepared
@@ -184,6 +223,13 @@ Posture scanner state (`<project>_aig-db`, `<project>_aig-bridge-state`,
 separately while the scanner is stopped if scan history must survive a host loss.
 
 ## Air-gapped hosts
+
+For one signed transfer that carries the images, the latest signed intel packs,
+the desktop installers with their signed catalog and the Browser Guard update
+files, use `scripts/onprem-offline-bundle.mjs` (`build` on the connected staging
+host, `verify` and `import` on the disconnected one); see
+[the air-gap section of the upgrade guide](../../docs/operations/onprem-upgrade.md#disconnected-air-gapped-hosts-one-bundle).
+The images alone can still be bundled directly as below.
 
 On a connected staging host with the same release, prepare the installation,
 build the local images, then bundle every image the stack needs:

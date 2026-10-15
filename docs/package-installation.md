@@ -17,8 +17,9 @@ repository merely to make installation work. A customer-facing private
 registry and its invoice-to-access lifecycle must be approved and tested
 before these commands become customer instructions. A source build or locally
 generated tarball is for development/testing, not a supported customer
-release. `aidr setup` only configures local AIDR state; it does not download or
-activate every connector, provision a tenant, or deploy a control plane.
+release. `aidr setup` configures local AIDR state and registers the connector of
+each detected host from packages or verified artifacts you already have; it does
+not download release artifacts, provision a tenant, or deploy a control plane.
 
 ## Registry access
 
@@ -61,7 +62,12 @@ GitHub's current access rule is documented in [package access control](https://d
 
 ## Install a connector
 
-Use the exact version named in the approved release record:
+Use the exact version named in the approved release record. Release builds are
+managed-only and verify their signed artifacts before they inspect anything: before
+installing any connector, put the independently distributed Ed25519 release public key in
+`integrity.public_keys_pem` in `~/.singularity-aidr/config.json` (see
+[Integrity verification](integrity.md)). Without it every tool call is blocked. Tested host
+versions are listed in the [compatibility matrix](compatibility-matrix.md).
 
 | Host | Install |
 | --- | --- |
@@ -76,9 +82,9 @@ These additional connectors are release-bundle files, not public npm packages:
 
 | Host | Release file | Install |
 | --- | --- | --- |
-| Claude Code | `aidr-claude-plugin-VERSION.tar.gz` | Verify the enclosing publisher-signed release bundle before extracting the archive. Provision the integrity public key separately, then add the verified plugin directory as a local marketplace; use the included `packages/claude-code/README.md` for host-specific steps. |
-| Cursor | `aidr-cursor.vsix` | `cursor --install-extension ./aidr-cursor.vsix` |
-| VS Code | `aidr-vscode.vsix` | `code --install-extension ./aidr-vscode.vsix` |
+| Claude Code | `aidr-claude-plugin-VERSION.tar.gz` | Verify the enclosing publisher-signed release bundle before extracting the archive. Provision the integrity public key separately in `integrity.public_keys_pem` ([Integrity verification](integrity.md)), then add the verified plugin directory as a local marketplace; use the included `packages/claude-code/README.md` for host-specific steps. |
+| Cursor (preview — no real-host acceptance evidence yet) | `aidr-cursor.vsix` | `cursor --install-extension ./aidr-cursor.vsix` |
+| VS Code (preview — no real-host acceptance evidence yet) | `aidr-vscode.vsix` | `code --install-extension ./aidr-vscode.vsix` |
 
 Use the exact Claude archive version from the approved release record. Install
 each VSIX only from the same verified release bundle, and confirm the host
@@ -116,10 +122,12 @@ installation and trust/activation checks.
 ## CLI and local setup
 
 After installing the CLI, use `aidr --help` to see commands. `aidr setup` writes
-local configuration and prints connector setup guidance; it does not install or
-activate a connector. Run it only after the customer's approved runtime
-configuration and secret-store choice are ready. It does not create a cloud
-account or deploy the control plane.
+local configuration and installs or updates the connector of every agent host it
+detects in the home directory (Codex hook registration, OpenCode plugin pin, and
+the host's own CLI for OpenClaw, a verified VSIX or a verified Claude Code plugin
+directory); `aidr setup --dry-run` shows the plan first. In the default local
+mode it needs no credential and no OS vault. It does not create a cloud account
+or deploy the control plane. See the [CLI README](../packages/cli/README.md#setup).
 
 For host-specific behavior and limitations, use each connector guide. For
 release signing, customer kits, and deployment acceptance, follow the

@@ -5,13 +5,21 @@
  * The marketplace plugin keeps `threats/` and `allowlists/` at the plugin
  * root. A package consumer cannot rely on the monorepo cwd, so release builds
  * copy the same directories to integrity-covered `dist/resources/` and this resolver prefers
- * that location. Explicit environment overrides remain available for managed
- * deployments and customer-specific rule stores.
+ * that location. The `AIDR_THREATS_DIR` / `AIDR_ALLOWLISTS_DIR` overrides are
+ * honoured only in development builds and are always reported (see core
+ * `rule-dir-override.ts` and {@link assetOverrideNotice}); a commercial build
+ * ignores them and loads its bundled, integrity-checked resources.
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import {
+	ruleDirOverride,
+	ruleDirOverrideNotice,
+	ruleDirOverrides,
+	runningAsSea,
+} from "@singularityrd/aidr-core";
 
 type AssetKind = "threats" | "allowlists";
 
@@ -25,10 +33,13 @@ const repositoryRoot = resolve(packageRoot, "..", "..");
  * missing-data signal rather than silently using an unrelated cwd directory.
  */
 export function resolveAssetDir(kind: AssetKind): string {
-	const envName = kind === "threats" ? "AIDR_THREATS_DIR" : "AIDR_ALLOWLISTS_DIR";
+	const override = ruleDirOverride(kind);
 	const packaged = join(packageRoot, "dist", "resources", kind);
+	// Standalone bundle (desktop installers): the rules ship in
+	// <bundle>/dist/resources only; never fall back to cwd or home rules.
+	if (runningAsSea()) return resolve(override?.accepted ? override.path : packaged);
 	const candidates = [
-		process.env[envName],
+		override?.accepted ? override.path : undefined,
 		packaged,
 		join(packageRoot, "resources", kind),
 		join(packageRoot, kind),
@@ -42,6 +53,14 @@ export function resolveAssetDir(kind: AssetKind): string {
 	}
 
 	return packaged;
+}
+
+/**
+ * The warning to show while an `AIDR_THREATS_DIR` / `AIDR_ALLOWLISTS_DIR`
+ * override is set (used or, in a commercial build, ignored), else null.
+ */
+export function assetOverrideNotice(): string | null {
+	return ruleDirOverrideNotice(ruleDirOverrides());
 }
 
 /**

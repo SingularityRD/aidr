@@ -8,6 +8,10 @@
     "gateMustMatchBrowserCallSites": true
   },
   "functions": {
+    "agent-lifecycle": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/agent-lifecycle-contract.test.ts"]
+    },
     "api-keys": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/api-key-auth.test.ts"]
@@ -52,6 +56,14 @@
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/governance-digest-contract.test.ts"]
     },
+    "incidents": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/incidents-contract.test.ts"]
+    },
+    "reports": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/reports-contract.test.ts"]
+    },
     "device-poll": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/device-poll-retry.test.ts", "supabase/functions/__tests__/security-flow.test.ts"]
@@ -72,9 +84,21 @@
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/enrollment-exchange.test.ts"]
     },
+    "fleet-keys": {
+      "owner": "Identity Engineering",
+      "tests": ["supabase/functions/__tests__/fleet-enrollment-keys.test.ts"]
+    },
     "identity-security": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/identity-security.test.ts", "supabase/functions/__tests__/identity-barrier.test.ts"]
+    },
+    "installer-download": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/installer-download-contract.test.ts"]
+    },
+    "installer-update": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/installer-update-contract.test.ts"]
     },
     "invoice-entitlement": {
       "owner": "Billing Engineering",
@@ -83,6 +107,13 @@
     "oauth-callback": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/oauth-callback-contract.test.ts"]
+    },
+    "license-admin": {
+      "owner": "Platform Engineering",
+      "tests": [
+        "supabase/functions/__tests__/license-admin-contract.test.ts",
+        "supabase/functions/__tests__/license-verify-parity.test.ts"
+      ]
     },
     "operator-admin": {
       "owner": "Platform Engineering",
@@ -99,6 +130,10 @@
     "notification-channels": {
       "owner": "Platform Engineering",
       "tests": ["supabase/functions/__tests__/notification-channels-contract.test.ts", "supabase/functions/__tests__/notification-delivery.test.ts"]
+    },
+    "siem-destinations": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/siem-destinations-contract.test.ts", "supabase/functions/__tests__/siem-forwarding.test.ts"]
     },
     "pilot-status": {
       "owner": "Product Engineering",

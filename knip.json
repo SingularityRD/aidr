@@ -25,6 +25,8 @@
 				"scripts/customer-kit-verify.mjs",
 				"scripts/deployment-maintenance.mjs",
 				"scripts/encrypt-intel-pack-file.mjs",
+				"scripts/intel-pack-keys.mjs",
+				"scripts/license-revocations-issue.mjs",
 				"scripts/endpoint-install.mjs",
 				"scripts/generate-provenance.mjs",
 				"scripts/generate-production-sales-gap-audit.mjs",
@@ -70,9 +72,9 @@
 				"supabase/tests/**/*.{js,mjs,ts}",
 				"*.{js,cjs,mjs,ts}"
 			],
-			"ignore": ["deploy/upstream/**", "vendor/**"],
+			"ignore": ["deploy/upstream/**", "vendor/**", "deploy/helm/aidr/files/**"],
 			"ignoreDependencies": ["npm", "playwright-core"],
-			"ignoreBinaries": ["bash", "docker", "gh", "gitleaks", "go", "icacls.exe", "psql", "where.exe", "wrangler"]
+			"ignoreBinaries": ["bash", "docker", "dpkg-deb", "du", "gh", "gitleaks", "go", "icacls.exe", "npm.cmd", "psql", "where.exe", "wrangler"]
 		},
 		"packages/core": {
 			"entry": ["src/index.ts"],
@@ -84,7 +86,9 @@
 				"src/post-tool-use.ts",
 				"src/mcp-server.ts",
 				"src/session-start.ts",
-				"src/health.ts"
+				"src/health.ts",
+				"src/user-prompt-submit.ts",
+				"src/response-worker.ts"
 			],
 			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,mjs,ts}"]
 		},

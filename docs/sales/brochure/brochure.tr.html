@@ -296,7 +296,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 		<p class="tagline">Yapay zekâ ajanları ve çalışanlarınız için tespit, müdahale ve veri gizliliği</p>
 		<div class="rule"></div>
 		<dl class="reach">
-			<dt>Ajan bağlayıcıları</dt><dd>Claude Code · Cursor · VS Code · OpenClaw · OpenCode · Codex CLI</dd>
+			<dt>Ajan bağlayıcıları</dt><dd>Claude Code · OpenClaw · OpenCode · Codex CLI · Cursor · VS Code (Cursor, VS Code: önizleme — henüz gerçek ortam kabul kanıtı yok)</dd>
 			<dt>Browser Guard siteleri</dt><dd>ChatGPT · Gemini · Claude · Copilot · Perplexity · DeepSeek · Mistral · Grok</dd>
 			<dt>Yaşam döngüsü</dt><dd>Keşfet · Değerlendir · Koru · Denetle · İncele · Onayla · Kanıtla; uçtan uca yönetişimle</dd>
 		</dl>
@@ -359,8 +359,8 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 			</div>
 			<p class="what">Her araç çağrısı, ajan uygulamadan önce yerel karar motoruna gelir ve <span class="v-allow">allow</span> <span class="v-ask">ask</span> <span class="v-deny">deny</span> kararıyla döner.</p>
 			<ul class="bul">
-				<li><b><span data-fact="threat-rules">507</span> YAML tespit kuralı</b> (<span data-fact="threat-files">29</span> dosya): tehlikeli komut, kimlik bilgisi erişimi, kalıcılık, gizleme, tedarik zinciri; Linux, macOS, Windows.</li>
-				<li><b>Hata durumunda kapalı:</b> bağlayıcı giriş noktaları iç hatada çağrıyı reddeder.</li>
+				<li><b><span data-fact="threat-rules">519</span> YAML tespit kuralı</b> (<span data-fact="threat-files">31</span> dosya): tehlikeli komut, kimlik bilgisi erişimi, kalıcılık, gizleme, tedarik zinciri; Linux, macOS, Windows.</li>
+				<li><b>Hata durumunda kapalı:</b> bağlayıcı giriş noktaları iç hatada çağrıyı reddeder; devre dışı, güvenilmeyen ya da öldürülen hook karar vermez.</li>
 				<li><b>MCP Gateway</b> araç sonuçlarını modele ulaşmadan tarar; <b>SDK</b> ve <b>CLI</b> aynı motoru kullanır.</li>
 				<li><b>Zehirli akış ve ajan güvenliği:</b> saldırı zinciri, kaçak döngü, test sabotajı ve geri alınamaz eylem onaya kalır.</li>
 			</ul>
@@ -459,7 +459,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 				<text x="228" y="56" class="dg-b dg-w" font-size="12">Yerel motor</text>
 				<text x="228" y="69" class="dg-w" font-size="9.3" fill-opacity="0.78">bulut gerektirmez</text>
 				<rect x="202" y="82" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
-				<text x="212" y="97" class="dg-b dg-w" font-size="10"><tspan data-fact="threat-rules">507</tspan> YAML kuralı</text>
+				<text x="212" y="97" class="dg-b dg-w" font-size="10"><tspan data-fact="threat-rules">519</tspan> YAML kuralı</text>
 				<text x="212" y="110" class="dg-w" font-size="8.8" fill-opacity="0.8">komut zinciri · gizleme</text>
 				<rect x="202" y="124" width="146" height="36" rx="7" fill="#fff" fill-opacity="0.12" stroke="#fff" stroke-opacity="0.25"/>
 				<text x="212" y="139" class="dg-b dg-w" font-size="10">DLP + gizlilik</text>
@@ -527,7 +527,7 @@ h3.sub::after { content: ""; flex: 1; height: 0.3mm; background: var(--line); ma
 	<h3 class="sub">Öne çıkan yetenekler</h3>
 	<div class="features">
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-check"/></svg></span>Satır içi karar</div><p>Her araç çağrısında allow, ask veya deny; eşleşen kural ve bulgu adıyla.</p></div>
-		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span>Veri olarak kurallar</div><p><span data-fact="threat-rules">507</span> YAML kuralı, gizlenmiş komutlar dahil; kendi kuralınızı ekleyin.</p></div>
+		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span>Veri olarak kurallar</div><p><span data-fact="threat-rules">519</span> YAML kuralı, gizlenmiş komutlar dahil; kendi kuralınızı ekleyin.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-link"/></svg></span>Zehirli akış</div><p>Özel veri, güvenilmeyen içerik ve dış kanal aynı oturumda birleşince son adım onaya kalır.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-box"/></svg></span>Paket ve model</div><p>npm/PyPI kontrolleri, oturum başında eklenti taraması ve güvenli model yükleme.</p></div>
 		<div class="feat"><div class="t"><span class="ic"><svg class="i"><use href="#i-plug"/></svg></span>MCP Gateway</div><p>Araç sonuçları modele ulaşmadan taranır; imzalı sunucu bildirimi.</p></div>

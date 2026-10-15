@@ -5,7 +5,10 @@ import { createPublicKey, generateKeyPairSync, sign } from "node:crypto";
  * IP:127.0.0.1) with node:crypto only: no private key lives in the repository, no
  * openssl binary is needed, and nothing outside the test process is read.
  */
-export function selfSignedLoopbackTls(): { key: string; cert: string } {
+export function selfSignedLoopbackTls(options: { dnsNames?: string[] } = {}): {
+	key: string;
+	cert: string;
+} {
 	const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 	const tlv = (tag: number, content: Buffer): Buffer => {
 		const n = content.length;
@@ -37,7 +40,14 @@ export function selfSignedLoopbackTls(): { key: string; cert: string } {
 	const now = Date.now();
 	const subjectAltName = seq(
 		oid("2.5.29.17"),
-		tlv(0x04, seq(tlv(0x87, Buffer.from([127, 0, 0, 1])))),
+		tlv(
+			0x04,
+			seq(
+				tlv(0x87, Buffer.from([127, 0, 0, 1])),
+				// Optional dNSName entries (context tag 2) for name-verified collectors.
+				...(options.dnsNames ?? []).map((name) => tlv(0x82, Buffer.from(name, "ascii"))),
+			),
+		),
 	);
 	const tbs = seq(
 		tlv(0xa0, tlv(0x02, Buffer.from([2]))),

@@ -15,6 +15,7 @@
   pattern: "(curl|wget)\\s+.{0,300}install.{0,300}\\|\\s*(bash|sh|zsh|sudo\\s+bash|sudo\\s+sh)"
   match_on: command
   title: "Install script piped to shell (supply chain risk)"
+  title_tr: "Kurulum betiği doğrudan kabuğa aktarılıyor (tedarik zinciri riski)"
   expires_at: null
   revoked: false
 
@@ -31,5 +32,6 @@
   pattern: "\"(?:pre|post)?install\"\\s*:\\s*\"[^\"]{0,300}\\b(curl|wget|fetch)\\b[^\"]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)\\b"
   match_on: content
   title: "Package manifest install hook fetches and executes remote code"
+  title_tr: "Paket bildirimindeki kurulum kancası uzaktan kod indirip çalıştırıyor"
   expires_at: null
   revoked: false

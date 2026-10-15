@@ -41,7 +41,7 @@ function prepare(output, ...options) {
 		...(options.includes("--region") ? [] : ["--region", "self-hosted"]),
 		...(options.includes("--tenant-region") ? [] : ["--tenant-region", "self-hosted"]),
 	];
-	return spawnSync(process.execPath, [script, "--output", output, "--dashboard-url", dashboardUrl, "--supabase-url", supabaseUrl, "--artifact-verification-public-key-file", publicKeyFile, "--telemetry-queue-root", "/var/lib/aidr-telemetry", ...defaultRegion, ...options], {
+	return spawnSync(process.execPath, [script, "--output", output, "--dashboard-url", dashboardUrl, "--supabase-url", supabaseUrl, "--artifact-verification-public-key-file", publicKeyFile, "--telemetry-queue-root", "/var/lib/aidr-telemetry", ...defaultRegion, ...(options.includes("--offline-policy") ? [] : ["--offline-policy", "keep_enforcing_local"]), ...options], {
 		encoding: "utf8", timeout: 60_000,
 	});
 }
@@ -80,10 +80,16 @@ test("production first boot does not wait on readiness evidence that is installe
 	assert.match(installation, /docker compose --project-directory \/srv\/aidr -f \/srv\/aidr\/compose\.yml up -d --build/);
 	assert.doesNotMatch(installation, /up -d --wait/);
 	assert.match(installation, /deployment-doctor\.mjs --deployment\s+\/srv\/aidr --online/);
-	const airgap = readFileSync(join(root, "deploy/README.md"), "utf8").split("On the disconnected host:")[1].split("## Release boundary")[0];
-	assert.match(airgap, /docker compose --project-directory \.aidr-deploy -f \.aidr-deploy\/compose\.yml up -d\s+node scripts\/deployment-migrate\.mjs \.aidr-deploy/);
-	assert.doesNotMatch(airgap, /up -d --wait/);
-	assert.match(airgap, /deployment-doctor\.mjs --deployment\s+\.aidr-deploy --online/);
+	const airgap = readFileSync(join(root, "deploy/README.md"), "utf8").split("### On the disconnected host")[1].split("### Operator-built bundle")[0];
+	// Credentials are generated on the disconnected host, before the signed images are imported.
+	assert.ok(airgap.indexOf("node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr") < airgap.indexOf("node scripts/onprem-offline-bundle.mjs import"));
+	assert.match(airgap, /onprem-offline-bundle\.mjs import --bundle airgap\/aidr-offline-bundle-<version>\.tar \\\n\s+--public-key airgap\/offline-bundle-signing-public\.pem --compose \/srv\/aidr\/compose\.yml --load-images/);
+	assert.match(airgap, /docker compose --project-directory \/srv\/aidr -f \/srv\/aidr\/compose\.yml up -d\nnode scripts\/deployment-migrate\.mjs \/srv\/aidr/, "no --build: the vendor image is used");
+	assert.doesNotMatch(airgap, /up -d --wait|up -d --build/);
+	assert.match(airgap, /deployment-doctor\.mjs --deployment\s+\/srv\/aidr --online/);
+	const operatorBuilt = readFileSync(join(root, "deploy/README.md"), "utf8").split("### Operator-built bundle")[1].split("## Release boundary")[0];
+	assert.match(operatorBuilt, /rm -rf \/tmp\/aidr-plan/, "the throwaway stack with its credentials never reaches the transfer media");
+	assert.doesNotMatch(readFileSync(join(root, "deploy/README.md"), "utf8"), /Transfer the whole `\.aidr-airgap` directory/);
 });
 
 test("operator runtime capability configuration is forwarded only to private function env", () => {
@@ -255,6 +261,51 @@ test("cloud ingress upstream uses a provider origin behind the public API proxy"
 	});
 });
 
+test("the offline behaviour is an explicit install-time choice, written to the agent config and the endpoint policy", () => {
+	inTemporaryDirectory((directory) => {
+		const unset = join(directory, "unset");
+		const publicKeyFile = join(directory, "artifact.pem");
+		writeFileSync(publicKeyFile, artifactVerificationPublicKeyPem, "utf8");
+		const refused = spawnSync(process.execPath, [script,
+			"--mode", "cloud", "--output", unset,
+			"--dashboard-url", dashboardUrl, "--supabase-url", supabaseUrl,
+			"--artifact-verification-public-key-file", publicKeyFile,
+			"--telemetry-queue-root", "/var/lib/aidr-telemetry",
+			"--region", "self-hosted", "--tenant-region", "self-hosted",
+		], { encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] });
+		assert.notEqual(refused.status, 0);
+		assert.match(refused.stderr, /requires --offline-policy keep_enforcing_local\|block_after_grace/);
+		assert.equal(existsSync(unset), false);
+		const invalid = prepare(join(directory, "invalid"), "--mode", "cloud", "--offline-policy", "fail_open");
+		assert.notEqual(invalid.status, 0);
+		assert.match(invalid.stderr, /--offline-policy must be one of/);
+
+		for (const choice of ["keep_enforcing_local", "block_after_grace"]) {
+			const output = join(directory, choice);
+			const result = prepare(output, "--mode", "cloud", "--offline-policy", choice);
+			assert.equal(result.status, 0, result.stderr);
+			const agentConfig = JSON.parse(readFileSync(join(output, "agent-config.json"), "utf8"));
+			assert.equal(agentConfig.control_plane.offline_policy, choice);
+			assert.equal(agentConfig.control_plane.remote_policy_required, choice === "block_after_grace");
+			assert.equal(JSON.parse(readFileSync(join(output, "deployment.json"), "utf8")).offline_policy, choice);
+			// The endpoint machine policy carries the address, the deployment's signing key and the choice.
+			const policy = JSON.parse(readFileSync(join(output, "endpoint-policy/managed.json"), "utf8"));
+			assert.deepEqual(Object.keys(policy).sort(), ["control_plane_url", "licensing_public_keys_pem", "offline_policy"]);
+			assert.equal(policy.control_plane_url, `${supabaseUrl}/functions/v1`);
+			assert.equal(policy.offline_policy, choice);
+			const licensing = createPublicKey(agentConfig.licensing.public_keys_pem[0]).export({ type: "spki", format: "der" }).toString("base64");
+			assert.deepEqual(policy.licensing_public_keys_pem, [licensing]);
+			assert.equal(readFileSync(join(output, "endpoint-policy/licensing-public-keys.pem"), "utf8"), agentConfig.licensing.public_keys_pem[0]);
+			const reg = readFileSync(join(output, "endpoint-policy/aidr-machine-policy.reg"), "utf8");
+			assert.match(reg, /\[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Singularity AIDR\]/);
+			assert.match(reg, new RegExp(`"offline_policy"="${choice}"`));
+			const readme = readFileSync(join(output, "endpoint-policy/README.txt"), "utf8");
+			assert.match(readme, new RegExp(`AIDR_POLICY_OFFLINE_POLICY=${choice}`));
+			assert.doesNotMatch(readme + reg + JSON.stringify(policy), /PRIVATE KEY|aidr_fleet_[A-Za-z0-9]/);
+		}
+	});
+});
+
 test("development loopback agent config explicitly opts into HTTP", () => {
 	inTemporaryDirectory((directory) => {
 		const output = join(directory, "development-loopback");
@@ -371,9 +422,15 @@ test("generated self-hosted deployment wires protected monitoring without invent
 			AIDR_SIGNING_HEALTH_FILE: "/run/aidr-health/signing.json",
 			AIDR_BACKUP_HEALTH_FILE: "/run/aidr-health/backup.json",
 			AIDR_QUEUE_HEALTH_FILE: "/run/aidr-health/queue.json",
+			AIDR_LICENSE_HEALTH_FILE: "/run/aidr-health/license.json",
 			AIDR_PUBLIC_HTTPS_URL: dashboardUrl,
 			AIDR_METRICS_TOKEN: "${AIDR_METRICS_TOKEN:?AIDR_METRICS_TOKEN is required}",
 			AIDR_READINESS_REQUIRED_CHECKS: "database,storage,functions,signing,backup,queue,certificate",
+			// Single sign-on switches stay off unless the operator sets them in .env.
+			AIDR_OIDC_SSO: "${AIDR_OIDC_SSO:-false}",
+			AIDR_SAML_PROVIDERS: "${AIDR_SAML_PROVIDERS:-}",
+			AIDR_SAML_PROVIDER_ID: "${AIDR_SAML_PROVIDER_ID:-}",
+			AIDR_SAML_DOMAIN: "${AIDR_SAML_DOMAIN:-}",
 		});
 		assert.match(dashboard.healthcheck.test.at(-1), /\/readyz/);
 		assert.deepEqual(dashboard.volumes, [{ type: "bind", source: "./health", target: "/run/aidr-health", read_only: true }]);
@@ -402,6 +459,11 @@ test("generated self-hosted deployment wires protected monitoring without invent
 		const functionEnv = readFileSync(join(output, ".env.functions"), "utf8");
 		assert.ok(functionEnv.split(/\r?\n/).includes(`AIDR_RUNTIME_CAPABILITIES_BY_TENANT=${JSON.stringify(JSON.parse(process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT?.trim() || "{}"))}`));
 		assert.match(functionEnv, /^AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
+		// The license import trust root is the kit's shipped registry, byte for byte.
+		const licenseKeys = functionEnv.split(/\r?\n/).find((line) => line.startsWith("AIDR_LICENSE_PUBLIC_KEYS_B64="));
+		assert.ok(licenseKeys, "license trust registry missing from the function environment");
+		assert.equal(Buffer.from(licenseKeys.slice("AIDR_LICENSE_PUBLIC_KEYS_B64=".length), "base64").toString("utf8"),
+			readFileSync(join(root, "deploy", "onprem", "license-public-keys.json"), "utf8"));
 		assert.match(functionEnv, /^AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64=\S+$/m);
 		assert.match(functionEnv, /^AIDR_PACK_DOWNLOAD_GRANT_SECRET=[A-Za-z0-9_-]{43}$/m);
@@ -550,7 +612,7 @@ test("on-prem profile applies resource budgets, runtime policy and a versioned d
 		assert.equal(result.status, 0, result.stderr);
 		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
 		const budgets = resourceProfiles.profiles.medium.services;
-		assert.deepEqual(Object.keys(compose.services).sort(), ["api-gw", "auth", "dashboard", "db", "functions", "imgproxy", "meta", "realtime", "rest", "storage", "studio"]);
+		assert.deepEqual(Object.keys(compose.services).sort(), ["api-gw", "auth", "dashboard", "db", "functions", "imgproxy", "meta", "realtime", "rest", "siem-forwarder", "storage", "studio"]);
 		for (const [name, service] of Object.entries(compose.services)) {
 			assertBudget(service, budgets[name], name);
 			assert.equal(service.restart, "unless-stopped", `${name} restart policy`);
@@ -575,6 +637,20 @@ test("on-prem profile applies resource budgets, runtime policy and a versioned d
 		assert.equal(compose.services.dashboard.build, "./dashboard");
 		assert.equal(compose.services.dashboard.healthcheck.retries, 3);
 		assert.match(compose.services.dashboard.healthcheck.test.at(-1), /\/readyz/, "the overlay must not replace the production readiness probe");
+		// AIDR mail reuses the Auth SMTP relay; the central SIEM forwarder sees only its token.
+		for (const name of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_ADMIN_EMAIL", "SMTP_SENDER_NAME"]) {
+			assert.equal(compose.services.functions.environment[name], `\${${name}:-}`, name);
+		}
+		const forwarder = compose.services["siem-forwarder"];
+		assert.equal(forwarder.image, `aidr-dashboard:${dashboardVersion}`);
+		assert.deepEqual(Object.keys(forwarder.environment).sort(), ["AIDR_NOTIFICATION_DISPATCH_TOKEN", "AIDR_SIEM_FORWARDER_URL", "AIDR_SIEM_FORWARD_INTERVAL_SECONDS"]);
+		assert.equal(forwarder.environment.AIDR_SIEM_FORWARDER_URL, "http://functions:9000/siem-forwarder");
+		assert.equal(Object.hasOwn(forwarder, "env_file"), false, "the scheduler never loads the functions keyring");
+		assert.doesNotMatch(forwarder.command.join(" "), /\$/, "no Compose interpolation inside the loop script");
+		const dotEnv = readFileSync(join(output, ".env"), "utf8");
+		const functionsEnv = readFileSync(join(output, ".env.functions"), "utf8");
+		const token = (text) => /^AIDR_NOTIFICATION_DISPATCH_TOKEN=(.+)$/m.exec(text)?.[1];
+		assert.ok(token(dotEnv) && token(dotEnv) === token(functionsEnv));
 		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
 		assert.equal(deployment.resource_profile, "medium");
 		assert.equal(deployment.dashboard_image, `aidr-dashboard:${dashboardVersion}`);
@@ -628,8 +704,8 @@ test("--with-posture-scanner merges the single-host posture scanner stack with a
 		}
 		assert.equal(compose.services["aig-agent"].deploy.replicas, "${POSTURE_SCANNER_AGENT_COUNT:-${AIG_AGENT_COUNT:-1}}", "the single-worker replica pin must survive the resource merge");
 		const aigManifest = JSON.parse(readFileSync(join(root, "packages/core/src/generated/aig-data-manifest.json"), "utf8"));
-		assert.equal(compose.services["aig-server"].image, "aidr-aig-server:v4.6.1-aidr.1");
-		assert.equal(compose.services["aig-agent"].image, "aidr-aig-agent:v4.6.1-aidr.1");
+		assert.equal(compose.services["aig-server"].image, "aidr-aig-server:v4.6.1-aidr.2");
+		assert.equal(compose.services["aig-agent"].image, "aidr-aig-agent:v4.6.1-aidr.2");
 		assert.equal(compose.services["aig-bridge"].image, `aidr-aig-bridge:${dashboardVersion}`);
 		assert.match(compose.services["aig-egress"].image, /^ubuntu\/squid:[^@]+@sha256:[a-f0-9]{64}$/);
 		assert.equal(compose.services["aig-server"].build.context, "./posture-scanner/vendor/ai-infra-guard");
@@ -978,4 +1054,63 @@ test("the privacy gateway image definition is hardened and matches the in-image 
 	}
 	assert.match(containerConfig, /config\.secretStore !== 'mounted-files'/);
 	assert.match(containerConfig, /fail\('SERVICE_TLS_CONFIG'\)/);
+});
+
+// --- On-prem SSO (scripts/lib/onprem-sso.mjs, docs/operations/onprem-sso.md) ---------
+
+test("on-prem SSO options wire the IdP CA, internal IdP hosts and GoTrue SAML; the default stays unchanged", { skip: opensslAvailable ? false : "openssl is required to mint throwaway test certificates (set AIDR_OPENSSL)" }, () => {
+	inTemporaryDirectory((directory) => {
+		const baseline = join(directory, "sso-default");
+		const plain = prepare(baseline, "--mode", "self-hosted");
+		assert.equal(plain.status, 0, plain.stderr);
+		const plainCompose = parse(readFileSync(join(baseline, "compose.yml"), "utf8"));
+		assert.equal(plainCompose.services.functions.environment.SSL_CERT_FILE, undefined);
+		assert.equal(plainCompose.services.functions.environment.DENO_TLS_CA_STORE, undefined);
+		assert.equal(plainCompose.services.dashboard.environment.AIDR_OIDC_SSO, "${AIDR_OIDC_SSO:-false}");
+		assert.equal(plainCompose.services.auth.environment.GOTRUE_SAML_ENABLED, "${GOTRUE_SAML_ENABLED:-false}");
+		assert.ok(readFileSync(join(baseline, ".env.functions"), "utf8").split(/\r?\n/).includes("AIDR_OIDC_INTERNAL_IDP_HOSTS="));
+		assert.doesNotMatch(readFileSync(join(baseline, ".env"), "utf8"), /^GOTRUE_SAML_/m);
+		assert.deepEqual(JSON.parse(readFileSync(join(baseline, "deployment.json"), "utf8")).identity, { oidc_internal_idp_hosts: [], idp_ca: null, gotrue_saml: false });
+		assert.equal(existsSync(join(baseline, "functions-trust")), false);
+
+		const ca = opensslCertificate(directory, "corp-root-ca", { ca: true });
+		const output = join(directory, "sso");
+		const result = prepare(output, "--mode", "self-hosted", "--idp-ca-file", ca.cert, "--oidc-internal-idp-hosts", "Keycloak.corp.example:8443,adfs.corp.local", "--with-saml");
+		assert.equal(result.status, 0, result.stderr);
+		const compose = parse(readFileSync(join(output, "compose.yml"), "utf8"));
+		assert.equal(compose.services.functions.environment.DENO_TLS_CA_STORE, "mozilla,system", "public roots stay trusted");
+		assert.equal(compose.services.functions.environment.SSL_CERT_FILE, "/etc/aidr/idp-ca.pem");
+		assert.deepEqual(compose.services.functions.volumes.at(-1), { type: "bind", source: "./functions-trust/idp-ca.pem", target: "/etc/aidr/idp-ca.pem", read_only: true });
+		const mounted = join(output, "functions-trust/idp-ca.pem");
+		assert.equal(readFileSync(mounted, "utf8").trim(), readFileSync(ca.cert, "utf8").trim());
+		if (process.platform !== "win32") assert.equal(statSync(mounted).mode & 0o777, 0o644);
+		assert.ok(readFileSync(join(output, ".env.functions"), "utf8").split(/\r?\n/).includes("AIDR_OIDC_INTERNAL_IDP_HOSTS=keycloak.corp.example:8443,adfs.corp.local"));
+		const envText = readFileSync(join(output, ".env"), "utf8");
+		assert.match(envText, /^GOTRUE_SAML_ENABLED=true$/m);
+		const samlKey = /^GOTRUE_SAML_PRIVATE_KEY=([A-Za-z0-9+/=]+)$/m.exec(envText)?.[1];
+		assert.ok(samlKey, "the SAML signing key is generated on this host");
+		assert.equal(createPrivateKey({ key: Buffer.from(samlKey, "base64"), format: "der", type: "pkcs1" }).asymmetricKeyType, "rsa");
+		assert.equal(readFileSync(join(output, "compose.yml"), "utf8").includes(samlKey.slice(0, 40)), false, "the key stays in .env");
+		const deployment = JSON.parse(readFileSync(join(output, "deployment.json"), "utf8"));
+		assert.deepEqual(deployment.identity.oidc_internal_idp_hosts, ["keycloak.corp.example:8443", "adfs.corp.local"]);
+		assert.equal(deployment.identity.gotrue_saml, true);
+		assert.equal(deployment.identity.idp_ca.file, "functions-trust/idp-ca.pem");
+		assert.equal(deployment.identity.idp_ca.certificates[0].ca, true);
+		assert.ok(deployment.artifacts.some((artifact) => artifact.path === "functions-trust/idp-ca.pem"));
+
+		const refusals = [
+			["cloud SAML", ["--mode", "cloud", "--with-saml"], /self-hosted stack only/],
+			["cloud CA", ["--mode", "cloud", "--idp-ca-file", ca.cert], /self-hosted stack only/],
+			["missing CA", ["--mode", "self-hosted", "--idp-ca-file", join(directory, "missing.pem")], /missing or unreadable/],
+			["private key as CA", ["--mode", "self-hosted", "--idp-ca-file", ca.key], /private key/],
+			["IP literal host", ["--mode", "self-hosted", "--oidc-internal-idp-hosts", "10.0.0.5"], /--oidc-internal-idp-hosts/],
+		];
+		for (const [index, [label, options, pattern]] of refusals.entries()) {
+			const refused = join(directory, `sso-refused-${index}`);
+			const outcome = prepare(refused, ...options);
+			assert.notEqual(outcome.status, 0, `${label} unexpectedly succeeded`);
+			assert.match(outcome.stderr, pattern, label);
+			assert.equal(existsSync(refused), false, `${label} left a partial installation`);
+		}
+	});
 });

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { englishT, type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabaseEnvError } from "../../lib/supabase";
 import {
@@ -12,50 +14,51 @@ import {
 	type WorkspaceClosure,
 	type WorkspaceSettings,
 } from "../../lib/workspace-settings";
+import { LicenseSection } from "../LicenseSection";
 import { NotificationSettings } from "../NotificationSettings";
 import { getSession, signOut } from "../session";
 import { useTheme } from "../ThemeProvider";
 
-const ROLE_LABELS: Record<string, string> = {
-	owner: "Owner",
-	admin: "Administrator",
-	member: "Member",
-	viewer: "Viewer",
+const ROLE_LABELS: Record<string, DashboardMessageKey> = {
+	owner: "common.role.owner",
+	admin: "common.role.admin",
+	member: "common.role.member",
+	viewer: "common.role.viewer",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-	active: "Active",
-	suspended: "Suspended",
-	closing: "Closing (offboarding in progress)",
-	closed: "Closed",
+const STATUS_LABELS: Record<string, DashboardMessageKey> = {
+	active: "settings.status.active",
+	suspended: "settings.status.suspended",
+	closing: "settings.status.closing",
+	closed: "settings.status.closed",
 };
 
 /** Operator copy for the service's machine-readable workspace errors. */
-function workspaceErrorMessage(code: string): string {
+function workspaceErrorMessage(code: string, t: Translate = englishT): string {
 	switch (code) {
 		case "mfa_required":
-			return "Multi-factor verification is required for workspace changes. Verify with your authenticator, then try again.";
+			return t("settings.error.mfaRequired");
 		case "workspace_role_insufficient":
-			return "Your role cannot make this workspace change.";
+			return t("settings.error.role");
 		case "workspace_forbidden":
-			return "You no longer have access to this workspace's settings.";
+			return t("settings.error.forbidden");
 		case "workspace_not_active":
-			return "This workspace is not active, so its settings can no longer be changed.";
+			return t("settings.error.notActive");
 		case "retention_reduction_unconfirmed":
-			return "Confirm the shorter retention period before saving.";
+			return t("settings.error.retentionUnconfirmed");
 		case "confirmation_mismatch":
-			return "The name you typed does not match the workspace name. Nothing was closed.";
+			return t("settings.error.confirmationMismatch");
 		case "invalid_workspace_name":
-			return "Enter a workspace name of 1 to 200 characters without control characters.";
+			return t("settings.error.invalidName");
 		case "invalid_retention_days":
-			return "Enter a whole number of retention days within the allowed range.";
+			return t("settings.error.invalidRetention");
 		case "rate_limited":
-			return "Too many workspace changes. Wait a minute and try again.";
+			return t("settings.error.rateLimited");
 		case "session_revoked":
 		case "invalid_access_token":
-			return "Your session is no longer valid. Sign in again.";
+			return t("common.sessionInvalid");
 		default:
-			return "The workspace service did not confirm the request.";
+			return t("settings.error.generic");
 	}
 }
 
@@ -78,29 +81,29 @@ function MfaStatus({
 	assurance: SessionAssurance | null;
 	failed: boolean;
 }) {
-	if (!tenantId)
-		return <p className="muted">Select a workspace to check this session's MFA status.</p>;
+	const t = useT();
+	if (!tenantId) return <p className="muted">{t("settings.mfa.noTeam")}</p>;
 	if (failed) {
 		return (
 			<p className="muted" role="status">
-				MFA status could not be confirmed by the control plane.
+				{t("settings.mfa.failed")}
 			</p>
 		);
 	}
-	if (!assurance) return <p className="muted">Checking MFA status…</p>;
+	if (!assurance) return <p className="muted">{t("settings.mfa.checking")}</p>;
 	if (assurance.currentLevel === "aal2") {
-		return <p data-testid="mfa-status">Verified for this session (AAL2).</p>;
+		return <p data-testid="mfa-status">{t("settings.mfa.verified")}</p>;
 	}
 	return (
 		<div data-testid="mfa-status">
 			<p>
-				Not verified for this session (AAL1).{" "}
+				{t("settings.mfa.notVerified")}{" "}
 				{assurance.requireMfa
-					? "This workspace requires MFA."
-					: "Workspace changes still require MFA."}
+					? t("settings.mfa.workspaceRequires")
+					: t("settings.mfa.changesRequire")}
 			</p>
 			<Link className="button button-secondary button-sm" to={stepUpPath(tenantId)}>
-				Set up or verify MFA
+				{t("settings.mfa.setUp")}
 			</Link>
 		</div>
 	);
@@ -115,6 +118,7 @@ function ProfileSection({
 	tenantId: string | null;
 	onSignOut: () => void;
 }) {
+	const t = useT();
 	const [assurance, setAssurance] = useState<SessionAssurance | null>(null);
 	const [assuranceError, setAssuranceError] = useState(false);
 
@@ -135,20 +139,20 @@ function ProfileSection({
 
 	return (
 		<div className="card">
-			<h2>Profile</h2>
+			<h2>{t("settings.profile.title")}</h2>
 			<div className="session-box" style={{ marginTop: 10, maxWidth: 420 }}>
-				<div className="muted small">Signed in as</div>
+				<div className="muted small">{t("settings.profile.signedInAs")}</div>
 				<div className="mono" style={{ marginTop: 2, overflowWrap: "anywhere" }}>
-					{email ?? "unknown"}
+					{email ?? t("common.unknown")}
 				</div>
 			</div>
 			<div style={{ marginTop: 12 }}>
-				<div className="muted small">Multi-factor authentication</div>
+				<div className="muted small">{t("settings.profile.mfa")}</div>
 				<MfaStatus tenantId={tenantId} assurance={assurance} failed={assuranceError} />
 			</div>
 			<div className="row" style={{ marginTop: 12 }}>
 				<button className="button button-secondary" type="button" onClick={onSignOut}>
-					Sign out of this session
+					{t("settings.profile.signOut")}
 				</button>
 			</div>
 		</div>
@@ -201,6 +205,7 @@ function WorkspaceEditForm({
 	onSaved: (workspace: Workspace) => void;
 	onError: (code: string) => void;
 }) {
+	const t = useT();
 	const [name, setName] = useState(workspace.name);
 	const [retention, setRetention] = useState(String(workspace.retentionDays));
 	const [confirmReduction, setConfirmReduction] = useState(false);
@@ -235,7 +240,7 @@ function WorkspaceEditForm({
 	return (
 		<form onSubmit={save} className="stack" style={{ marginTop: 16, maxWidth: 480 }}>
 			<label className="label">
-				Workspace name
+				{t("settings.form.name")}
 				<input
 					className="input"
 					value={name}
@@ -247,7 +252,7 @@ function WorkspaceEditForm({
 			{canEditRetention ? (
 				<>
 					<label className="label">
-						Telemetry retention (days)
+						{t("settings.form.retention")}
 						<input
 							className="input"
 							type="number"
@@ -264,14 +269,12 @@ function WorkspaceEditForm({
 						/>
 					</label>
 					<p className="muted small">
-						Allowed range: {bounds.min}–{bounds.max} days. Commercial and security audit records
-						keep their own minimum retention.
+						{t("settings.form.range", { min: bounds.min, max: bounds.max })}
 					</p>
 				</>
 			) : (
 				<p className="muted small" data-testid="retention-owner-only">
-					Telemetry retention ({workspace.retentionDays} days) can only be changed by a workspace
-					owner, because shortening it permanently deletes older telemetry.
+					{t("settings.form.ownerOnly", { days: workspace.retentionDays })}
 				</p>
 			)}
 			{draft.reducing ? (
@@ -282,19 +285,19 @@ function WorkspaceEditForm({
 						onChange={(event) => setConfirmReduction(event.target.checked)}
 					/>
 					<span>
-						I understand that shortening retention from {workspace.retentionDays} to {draft.days}{" "}
-						days makes older telemetry eligible for permanent deletion.
+						{t("settings.form.confirmReduction", {
+							from: workspace.retentionDays,
+							to: draft.days,
+						})}
 					</span>
 				</label>
 			) : null}
 			<div className="row">
 				<button className="button" type="submit" disabled={!canSave}>
-					{busy ? "Saving…" : "Save workspace settings"}
+					{busy ? t("common.saving") : t("settings.form.save")}
 				</button>
 			</div>
-			<p className="muted small">
-				Changes require multi-factor verification (AAL2) and are recorded in the audit log.
-			</p>
+			<p className="muted small">{t("settings.form.note")}</p>
 		</form>
 	);
 }
@@ -310,6 +313,8 @@ function CloseWorkspaceForm({
 	onClosed: (closure: WorkspaceClosure) => void;
 	onError: (code: string) => void;
 }) {
+	const t = useT();
+	const richT = useRichT();
 	const [confirmName, setConfirmName] = useState("");
 	const [busy, setBusy] = useState(false);
 	const matches = confirmName.trim() === workspaceName;
@@ -334,14 +339,10 @@ function CloseWorkspaceForm({
 			className="stack"
 			style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--border)", maxWidth: 480 }}
 		>
-			<h3>Close workspace</h3>
-			<p className="muted small">
-				Closing starts offboarding: API keys, SCIM tokens and delegated credentials are revoked
-				immediately, members lose access, and workspace data is deleted as each retention period
-				ends. Active legal holds pause deletion. This cannot be undone from the console.
-			</p>
+			<h3>{t("settings.close.title")}</h3>
+			<p className="muted small">{t("settings.close.body")}</p>
 			<label className="label">
-				Type <b>{workspaceName}</b> to confirm
+				{richT("settings.close.confirm", { name: <b>{workspaceName}</b> })}
 				<input
 					className="input"
 					value={confirmName}
@@ -351,7 +352,7 @@ function CloseWorkspaceForm({
 			</label>
 			<div className="row">
 				<button className="button button-danger" type="submit" disabled={busy || !matches}>
-					Close workspace
+					{t("settings.close.title")}
 				</button>
 			</div>
 		</form>
@@ -359,6 +360,7 @@ function CloseWorkspaceForm({
 }
 
 function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: string }) {
+	const t = useT();
 	const error = notice.tone === "error";
 	return (
 		<div
@@ -370,7 +372,7 @@ function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: string }
 			{notice.code === "mfa_required" ? (
 				<div style={{ marginTop: 8 }}>
 					<Link className="button button-sm" to={stepUpPath(tenantId)}>
-						Verify with authenticator
+						{t("common.verifyMfa")}
 					</Link>
 				</div>
 			) : null}
@@ -380,7 +382,9 @@ function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: string }
 
 function WorkspaceSection({ tenantId }: { tenantId: string }) {
 	const { applyWorkspaceName } = useTeam();
+	const t = useT();
 	const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
+	// The error code; its text is chosen at render time in the current language.
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<Notice | null>(null);
 	const request = useRef(0);
@@ -391,7 +395,7 @@ function WorkspaceSection({ tenantId }: { tenantId: string }) {
 		const result = await loadWorkspaceSettings(tenantId);
 		if (id !== request.current) return;
 		setSettings(result.ok ? result.value : null);
-		setLoadError(result.ok ? null : workspaceErrorMessage(result.error));
+		setLoadError(result.ok ? null : result.error);
 	}, [tenantId]);
 
 	useEffect(() => {
@@ -404,31 +408,35 @@ function WorkspaceSection({ tenantId }: { tenantId: string }) {
 	if (loadError || !settings) {
 		return (
 			<div className="card">
-				<h2>Workspace</h2>
+				<h2>{t("settings.workspace.title")}</h2>
 				{loadError ? (
 					<>
 						<div className="notice notice-danger" role="alert">
-							{loadError}
+							{workspaceErrorMessage(loadError, t)}
 						</div>
 						<button className="button button-secondary" type="button" onClick={() => void load()}>
-							Retry
+							{t("common.retry")}
 						</button>
 					</>
 				) : (
-					<p className="muted">Loading workspace settings…</p>
+					<p className="muted">{t("settings.workspace.loading")}</p>
 				)}
 			</div>
 		);
 	}
 
 	const { workspace } = settings;
+	const label = (labels: Record<string, DashboardMessageKey>, value: string) => {
+		const key = labels[value];
+		return key ? t(key) : value;
+	};
 	const showError = (code: string) =>
-		setNotice({ tone: "error", message: workspaceErrorMessage(code), code });
+		setNotice({ tone: "error", message: workspaceErrorMessage(code, t), code });
 
 	function saved(updated: Workspace) {
 		setSettings((prev) => (prev ? { ...prev, workspace: updated } : prev));
 		if (updated.name !== workspace.name) applyWorkspaceName(tenantId, updated.name);
-		setNotice({ tone: "success", message: "Workspace settings saved." });
+		setNotice({ tone: "success", message: t("settings.workspace.saved") });
 	}
 
 	function closed(closure: WorkspaceClosure) {
@@ -446,29 +454,29 @@ function WorkspaceSection({ tenantId }: { tenantId: string }) {
 		const backup = closure.backupException ? ` ${closure.backupException}` : "";
 		setNotice({
 			tone: "success",
-			message: `Workspace closure requested (offboarding status: ${closure.status}). Credentials are revoked and data is deleted as each retention period ends.${backup}`,
+			message: `${t("settings.workspace.closed", { status: closure.status })}${backup}`,
 		});
 	}
 
 	return (
 		<div className="card">
-			<h2>Workspace</h2>
+			<h2>{t("settings.workspace.title")}</h2>
 			<dl className="stack" style={{ marginTop: 10, gap: 6 }}>
 				<div>
-					<dt className="muted small">Name</dt>
+					<dt className="muted small">{t("common.name")}</dt>
 					<dd data-testid="workspace-name">{workspace.name}</dd>
 				</div>
 				<div>
-					<dt className="muted small">Status</dt>
-					<dd>{STATUS_LABELS[workspace.status] ?? workspace.status}</dd>
+					<dt className="muted small">{t("common.status")}</dt>
+					<dd>{label(STATUS_LABELS, workspace.status)}</dd>
 				</div>
 				<div>
-					<dt className="muted small">Telemetry retention</dt>
-					<dd>{workspace.retentionDays} days</dd>
+					<dt className="muted small">{t("settings.workspace.retention")}</dt>
+					<dd>{t("common.days", { count: workspace.retentionDays })}</dd>
 				</div>
 				<div>
-					<dt className="muted small">Your role</dt>
-					<dd>{ROLE_LABELS[settings.role] ?? settings.role}</dd>
+					<dt className="muted small">{t("settings.workspace.role")}</dt>
+					<dd>{label(ROLE_LABELS, settings.role)}</dd>
 				</div>
 			</dl>
 
@@ -486,8 +494,8 @@ function WorkspaceSection({ tenantId }: { tenantId: string }) {
 			) : (
 				<p className="muted" style={{ marginTop: 12 }}>
 					{workspace.status === "active"
-						? "Only an owner or administrator can change workspace settings."
-						: "This workspace is read-only."}
+						? t("settings.workspace.adminOnly")
+						: t("settings.workspace.readOnly")}
 				</p>
 			)}
 
@@ -507,6 +515,7 @@ export function SettingsPage() {
 	const navigate = useNavigate();
 	const { theme, toggleTheme } = useTheme();
 	const { currentTeam } = useTeam();
+	const t = useT();
 	const [email, setEmail] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [endingSession, setEndingSession] = useState(false);
@@ -520,7 +529,7 @@ export function SettingsPage() {
 				if (!cancelled) setEmail(session?.user?.email ?? null);
 			} catch (cause) {
 				if (!cancelled) {
-					setError(readErrorMessage(cause, "Unable to load your session."));
+					setError(readErrorMessage(cause, t("settings.sessionLoadFailed")));
 				}
 			}
 		}
@@ -530,7 +539,7 @@ export function SettingsPage() {
 		};
 	}, []);
 
-	if (endingSession) return <div role="status">Ending this browser session…</div>;
+	if (endingSession) return <div role="status">{t("layout.signingOut")}</div>;
 
 	async function endSession() {
 		setEndingSession(true);
@@ -547,10 +556,8 @@ export function SettingsPage() {
 	return (
 		<div className="stack">
 			<div className="card">
-				<h1>Settings</h1>
-				<p className="muted">
-					Workspace, notifications, profile, appearance, and privacy controls for this console.
-				</p>
+				<h1>{t("nav.settings")}</h1>
+				<p className="muted">{t("settings.intro")}</p>
 				{error ? (
 					<div className="notice notice-danger" role="alert" aria-live="assertive">
 						{error}
@@ -560,6 +567,8 @@ export function SettingsPage() {
 
 			{tenantId ? <WorkspaceSection key={tenantId} tenantId={tenantId} /> : null}
 
+			{tenantId ? <LicenseSection key={`license-${tenantId}`} tenantId={tenantId} /> : null}
+
 			{tenantId ? (
 				<NotificationSettings key={`notifications-${tenantId}`} tenantId={tenantId} />
 			) : null}
@@ -567,8 +576,8 @@ export function SettingsPage() {
 			<ProfileSection email={email} tenantId={tenantId} onSignOut={() => void endSession()} />
 
 			<div className="card">
-				<h2>Appearance</h2>
-				<p className="muted">The console follows your stored preference, then your OS setting.</p>
+				<h2>{t("settings.appearance.title")}</h2>
+				<p className="muted">{t("settings.appearance.body")}</p>
 				<div className="row" style={{ marginTop: 12 }}>
 					<button
 						className={`button ${theme === "light" ? "" : "button-secondary"}`}
@@ -578,7 +587,7 @@ export function SettingsPage() {
 							if (theme !== "light") toggleTheme();
 						}}
 					>
-						Light
+						{t("settings.appearance.light")}
 					</button>
 					<button
 						className={`button ${theme === "dark" ? "" : "button-secondary"}`}
@@ -588,37 +597,33 @@ export function SettingsPage() {
 							if (theme !== "dark") toggleTheme();
 						}}
 					>
-						Dark
+						{t("settings.appearance.dark")}
 					</button>
 				</div>
 			</div>
 
 			<div className="card">
-				<h2>Privacy &amp; data</h2>
-				<p className="muted">
-					Supported connectors evaluate intercepted actions locally against the effective policy.
-					Connector coverage, optional checks, and data sent to configured providers vary by
-					deployment; review the canonical documents for the exact scope and retention terms.
-				</p>
+				<h2>{t("settings.privacy.title")}</h2>
+				<p className="muted">{t("settings.privacy.body")}</p>
 				<div className="row" style={{ marginTop: 12, flexWrap: "wrap" }}>
 					<Link className="button button-secondary button-sm" to="/privacy">
-						Privacy notice
+						{t("settings.privacy.notice")}
 					</Link>
 					<Link className="button button-secondary button-sm" to="/security">
-						Security
+						{t("public.security")}
 					</Link>
 					<Link className="button button-secondary button-sm" to="/terms">
-						Terms
+						{t("public.terms")}
 					</Link>
 					<Link className="button button-secondary button-sm" to="/support">
-						Support
+						{t("public.support")}
 					</Link>
 				</div>
 			</div>
 
 			{supabaseEnvError ? (
 				<div className="notice notice-danger" role="alert">
-					<b>Environment is incomplete.</b>
+					<b>{t("settings.envIncomplete")}</b>
 					<div className="muted small" style={{ marginTop: 6 }}>
 						{supabaseEnvError}
 					</div>

@@ -40,3 +40,13 @@ export function validSsn(value:string):boolean {
   const area=Number(s.slice(0,3));
   return area>0 && area!==666 && area<900 && Number(s.slice(3,5))>0 && Number(s.slice(5))>0;
 }
+/** Turkish tax number (VKN, 10 digits) check digit. */
+export function validVkn(value:string):boolean {
+  if(!/^[0-9]{10}$/.test(value)||/^(.)\1+$/.test(value)) return false;
+  let sum=0;
+  for(let i=0;i<9;i++) {
+    const t=(Number(value[i])+9-i)%10;
+    sum+=t===9?9:(t*2**(9-i))%9;
+  }
+  return (10-sum%10)%10===Number(value[9]);
+}

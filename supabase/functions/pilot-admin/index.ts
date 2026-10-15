@@ -16,7 +16,7 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 16 * 1024;
 
 export interface PilotAdminDeps {
-	db?: ReturnType<typeof createClient>;
+	db?: ReturnType<typeof createClient<any, "public">>;
 }
 
 function json(status: number, body: Record<string, unknown>) {

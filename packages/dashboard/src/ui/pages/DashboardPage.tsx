@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { englishT, type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import { dashboardAgentFreshness } from "../dashboard-freshness";
@@ -59,7 +61,7 @@ function isEventRow(value: unknown): value is EventRow {
 
 function queryRows<T>(result: unknown, isRow: (value: unknown) => value is T): T[] {
 	if (isRecord(result) && isRecord(result.error) && typeof result.error.message === "string") {
-		throw new Error(readErrorMessage(result.error, "Dashboard query failed."));
+		throw new Error(readErrorMessage(result.error, englishT("dash.queryFailed")));
 	}
 	if (
 		!isRecord(result) ||
@@ -67,7 +69,7 @@ function queryRows<T>(result: unknown, isRow: (value: unknown) => value is T): T
 		!Array.isArray(result.data) ||
 		!result.data.every(isRow)
 	) {
-		throw new Error("Malformed dashboard query response.");
+		throw new Error(englishT("dash.malformed"));
 	}
 	return result.data;
 }
@@ -85,23 +87,37 @@ function queryAgentPage(result: unknown): AgentPage {
 	const rows = queryRows(result, isAgentRow);
 	const total = isRecord(result) ? result.count : undefined;
 	if (typeof total !== "number" || !Number.isSafeInteger(total) || total < rows.length) {
-		throw new Error("Malformed dashboard query response.");
+		throw new Error(englishT("dash.malformed"));
 	}
 	return { rows, total };
 }
 
-function eventSummary(event: EventRow): string {
+const VERDICT_LABEL: Record<string, DashboardMessageKey> = {
+	allow: "verdict.allow",
+	deny: "verdict.deny",
+	ask: "verdict.ask",
+};
+
+const FRESHNESS_LABEL: Record<string, DashboardMessageKey> = {
+	fresh: "dash.fresh",
+	stale: "dash.stale",
+	unknown: "dash.unknown",
+};
+
+function eventSummary(event: EventRow, t: Translate): string {
 	if (event.type === "runtime_verdict") {
 		const tool =
-			typeof event.payload?.tool_name === "string" ? String(event.payload.tool_name) : "tool";
-		const verdict =
-			typeof event.payload?.verdict === "string" ? String(event.payload.verdict) : "unknown";
-		return `${tool}: ${verdict}`;
+			typeof event.payload?.tool_name === "string"
+				? String(event.payload.tool_name)
+				: t("activity.tool");
+		const raw = typeof event.payload?.verdict === "string" ? String(event.payload.verdict) : null;
+		const key = raw ? VERDICT_LABEL[raw] : undefined;
+		return `${tool}: ${key ? t(key) : (raw ?? t("common.unknown"))}`;
 	}
 	if (event.type === "plugin_scan") return pluginScanSummary(event.payload);
 	if (event.type === "privacy_scan") return privacyEventSummary(event.payload);
 	if (event.type === "shadow_ai_usage") return shadowAiEventSummary(event.payload);
-	return "Additional event details are not shown.";
+	return t("events.noDetails");
 }
 
 function verdictOf(event: EventRow): string | null {
@@ -111,12 +127,15 @@ function verdictOf(event: EventRow): string | null {
 
 export function DashboardPage() {
 	const { currentTeam, isLoading } = useTeam();
-	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
-	if (!currentTeam) return <div role="alert">Select a team to view dashboard.</div>;
+	const t = useT();
+	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
+	if (!currentTeam) return <div role="alert">{t("dash.noTeam")}</div>;
 	return <TenantDashboardPage key={currentTeam.id} tenantId={currentTeam.id} />;
 }
 
 function TenantDashboardPage({ tenantId }: { tenantId: string }) {
+	const t = useT();
+	const richT = useRichT();
 	const [email, setEmail] = useState<string | null>(null);
 	// null = not loaded / unavailable (fail-closed); [] = a real, empty result.
 	const [agentPage, setAgentPage] = useState<AgentPage | null>(null);
@@ -147,7 +166,7 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 				let deadline: ReturnType<typeof setTimeout> | undefined;
 				try {
 					const timeout = new Promise<never>((_resolve, reject) => {
-						deadline = setTimeout(() => reject(new Error("Dashboard query timed out.")), 15_000);
+						deadline = setTimeout(() => reject(new Error(t("dash.timeout"))), 15_000);
 						deadlines.add(deadline);
 					});
 					const data = await Promise.race([read(), timeout]);
@@ -158,7 +177,7 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 				} catch (cause) {
 					if (!cancelled) {
 						setData(null);
-						setProblem?.(readErrorMessage(cause, "Dashboard query failed."));
+						setProblem?.(readErrorMessage(cause, t("dash.queryFailed")));
 					}
 				} finally {
 					if (deadline !== undefined) {
@@ -202,35 +221,39 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 
 		// Outstanding enrollment tokens require pilot approval; unavailable or
 		// malformed results must not become a made-up zero.
-		poll(async () => {
-			const result = await supabase.functions.invoke("enrollment-tokens", {
-				method: "GET",
-				headers: { "X-AIDR-Tenant-ID": tenantId },
-			});
-			if (
-				!isRecord(result) ||
-				result.error !== null ||
-				!isRecord(result.data) ||
-				result.data.ok !== true ||
-				!Array.isArray(result.data.tokens)
-			) {
-				throw new Error("Enrollment tokens are unavailable.");
-			}
-			const tokens = result.data.tokens;
-			const now = Date.now();
-			return tokens.filter((token: unknown) => {
+		poll(
+			async () => {
+				const result = await supabase.functions.invoke("enrollment-tokens", {
+					method: "GET",
+					headers: { "X-AIDR-Tenant-ID": tenantId },
+				});
 				if (
-					!isRecord(token) ||
-					!isNullableString(token.consumed_at) ||
-					(token.consumed_at !== null && !Number.isFinite(Date.parse(token.consumed_at))) ||
-					typeof token.expires_at !== "string" ||
-					!Number.isFinite(Date.parse(token.expires_at))
+					!isRecord(result) ||
+					result.error !== null ||
+					!isRecord(result.data) ||
+					result.data.ok !== true ||
+					!Array.isArray(result.data.tokens)
 				) {
-					throw new Error("Malformed enrollment token.");
+					throw new Error(t("dash.tokensUnavailable"));
 				}
-				return token.consumed_at === null && Date.parse(token.expires_at) > now;
-			}).length;
-		}, setPendingTokens, setPendingError);
+				const tokens = result.data.tokens;
+				const now = Date.now();
+				return tokens.filter((token: unknown) => {
+					if (
+						!isRecord(token) ||
+						!isNullableString(token.consumed_at) ||
+						(token.consumed_at !== null && !Number.isFinite(Date.parse(token.consumed_at))) ||
+						typeof token.expires_at !== "string" ||
+						!Number.isFinite(Date.parse(token.expires_at))
+					) {
+						throw new Error(t("dash.tokenMalformed"));
+					}
+					return token.consumed_at === null && Date.parse(token.expires_at) > now;
+				}).length;
+			},
+			setPendingTokens,
+			setPendingError,
+		);
 
 		async function loadSession() {
 			try {
@@ -294,39 +317,39 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 			<section className="card console-hero">
 				<div className="console-hero-grid">
 					<div>
-						<p className="eyebrow">AIDR control plane</p>
-						<h1>Review reported agent security decisions in one dashboard.</h1>
+						<p className="eyebrow">{t("dash.eyebrow")}</p>
+						<h1>{t("nav.dashboard")}</h1>
+						<p style={{ marginTop: 4 }}>{t("dash.lead")}</p>
 						<p className="muted" style={{ marginTop: 8 }}>
-							Start with prompt-based onboarding, approve a device code once, then review agent
-							check-ins and security events as they are reported.
+							{t("dash.intro")}
 						</p>
 						<div className="row" style={{ marginTop: 16 }}>
 							<Link className="button" to="/onboarding">
-								Connect agent
+								{t("dash.connect")}
 							</Link>
 							<Link className="button button-secondary" to="/verify">
-								Verify code
+								{t("dash.verify")}
 							</Link>
 							<Link className="button button-secondary" to="/settings">
-								Privacy settings
+								{t("dash.privacy")}
 							</Link>
 						</div>
 					</div>
 					<div>
 						<div className="session-box">
-							<div className="muted small">Signed in as</div>
+							<div className="muted small">{t("dash.signedInAs")}</div>
 							<div className="mono" style={{ marginTop: 2, overflowWrap: "anywhere" }}>
-								{email ?? "unknown"}
+								{email ?? t("common.unknown")}
 							</div>
 							<div className="muted small" style={{ marginTop: 10 }}>
-								Latest heartbeat
+								{t("dash.heartbeat")}
 							</div>
 							<div className="mono" style={{ marginTop: 2 }}>
 								{latestHeartbeat
 									? latestHeartbeat.toLocaleString()
 									: agents?.length === 0
-										? "no agents yet"
-										: "unavailable"}
+										? t("dash.noAgentsYet")
+										: t("common.unavailable")}
 							</div>
 						</div>
 					</div>
@@ -343,57 +366,57 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 				) : null}
 			</section>
 
-			<section className="grid" aria-label="Fleet counters">
+			<section className="grid" aria-label={t("dash.counters")}>
 				<div className="card stat-card">
-					<div className="stat-label">Agents</div>
+					<div className="stat-label">{t("dash.agents")}</div>
 					<div className="stat-value">{agentPage === null ? "—" : agentPage.total}</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Connected</div>
+					<div className="stat-label">{t("dash.connected")}</div>
 					<div className="stat-value">
 						{agentPage === null ? "—" : `${connectedCount}${connectedIsLowerBound ? "+" : ""}`}
 					</div>
 					{connectedIsLowerBound ? (
-						<div className="stat-hint">at least; latest {AGENT_ROW_LIMIT} heartbeats</div>
+						<div className="stat-hint">{t("dash.atLeast", { count: AGENT_ROW_LIMIT })}</div>
 					) : null}
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Pending</div>
+					<div className="stat-label">{t("dash.pending")}</div>
 					<div className="stat-value">{pendingTokens ?? "—"}</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Events</div>
+					<div className="stat-label">{t("dash.events")}</div>
 					<div className="stat-value">{events === null ? "—" : events.length}</div>
-					<div className="stat-hint">latest 500</div>
+					<div className="stat-hint">{t("dash.latest500")}</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Deny</div>
+					<div className="stat-label">{t("dash.blocked")}</div>
 					<div className="stat-value">{events === null ? "—" : denyCount}</div>
-					<div className="stat-hint">latest 500</div>
+					<div className="stat-hint">{t("dash.latest500")}</div>
 				</div>
 				<div className="card stat-card">
-					<div className="stat-label">Ask</div>
+					<div className="stat-label">{t("dash.needsApproval")}</div>
 					<div className="stat-value">{events === null ? "—" : askCount}</div>
-					<div className="stat-hint">latest 500</div>
+					<div className="stat-hint">{t("dash.latest500")}</div>
 				</div>
 			</section>
 
 			<section className="cols">
 				<div className="card">
 					<div className="panel-head">
-						<h2>Live agents</h2>
+						<h2>{t("dash.liveAgents")}</h2>
 						<Link className="view-all" to="/agents">
-							View all
+							{t("dash.viewAll")}
 						</Link>
 					</div>
-					<p className="muted small">Connected installations and their current health.</p>
+					<p className="muted small">{t("dash.liveIntro")}</p>
 					<div className="table-wrap">
 						<table className="table">
 							<thead>
 								<tr>
-									<th>Agent</th>
-									<th>Runtime</th>
-									<th>State</th>
+									<th>{t("activity.agent")}</th>
+									<th>{t("agents.runtime")}</th>
+									<th>{t("dash.state")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -404,12 +427,12 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 												{agent.display_name ?? agent.iid.slice(0, 12)}
 											</Link>
 										</td>
-										<td className="muted">{agent.agent_runtime ?? "unknown"}</td>
+										<td className="muted">{agent.agent_runtime ?? t("common.unknown")}</td>
 										<td>
 											<span
 												className={`badge ${freshness === "fresh" ? "badge-success" : "badge-neutral"}`}
 											>
-												{freshness === "fresh" ? "connected" : freshness}
+												{FRESHNESS_LABEL[freshness] ? t(FRESHNESS_LABEL[freshness]) : freshness}
 											</span>
 										</td>
 									</tr>
@@ -417,14 +440,11 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 								{liveAgents.length === 0 ? (
 									<tr>
 										<td colSpan={3} className="muted">
-											{agents === null ? (
-												"Agent data is unavailable right now."
-											) : (
-												<>
-													No agents yet. Use <Link to="/onboarding">Connect</Link> to enroll your
-													first runtime.
-												</>
-											)}
+											{agents === null
+												? t("dash.agentsUnavailable")
+												: richT("dash.noAgents", {
+														link: <Link to="/onboarding">{t("nav.onboarding")}</Link>,
+													})}
 										</td>
 									</tr>
 								) : null}
@@ -435,19 +455,19 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 
 				<div className="card">
 					<div className="panel-head">
-						<h2>Recent events</h2>
+						<h2>{t("dash.recentEvents")}</h2>
 						<Link className="view-all" to="/events">
-							View all
+							{t("dash.viewAll")}
 						</Link>
 					</div>
-					<p className="muted small">The latest security events received from your agents.</p>
+					<p className="muted small">{t("dash.recentIntro")}</p>
 					<div className="table-wrap">
 						<table className="table">
 							<thead>
 								<tr>
-									<th>Time</th>
-									<th>Type</th>
-									<th>Summary</th>
+									<th>{t("activity.time")}</th>
+									<th>{t("activity.type")}</th>
+									<th>{t("activity.summary")}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -459,15 +479,13 @@ function TenantDashboardPage({ tenantId }: { tenantId: string }) {
 										<td>
 											<span className="badge badge-neutral badge-plain mono">{event.type}</span>
 										</td>
-										<td className="mono">{eventSummary(event)}</td>
+										<td className="mono">{eventSummary(event, t)}</td>
 									</tr>
 								))}
 								{recentEvents.length === 0 ? (
 									<tr>
 										<td colSpan={3} className="muted">
-											{events === null
-												? "Event data is unavailable right now."
-												: "No events recorded yet."}
+											{events === null ? t("dash.eventsUnavailable") : t("dash.noEvents")}
 										</td>
 									</tr>
 								) : null}

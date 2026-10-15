@@ -16,8 +16,9 @@
  * show persisted billing seats that may have passed their provider term.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTeam } from "../enterprise/team-provider";
+import { type Translate, useT } from "../i18n/I18nProvider";
 import type { Database } from "../lib/database.types";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
@@ -104,20 +105,20 @@ function barColour(ratio: number): string {
 /**
  * Human-readable label for a subscription status value.
  */
-function formatSubscriptionStatus(status: string): string {
+function formatSubscriptionStatus(status: string, t: Translate): string {
 	switch (status) {
 		case "active":
-			return "Active";
+			return t("usage.status.active");
 		case "paused":
-			return "Paused";
+			return t("usage.status.paused");
 		case "cancelled":
-			return "Cancelled";
+			return t("usage.status.cancelled");
 		case "past_due":
-			return "Past due";
+			return t("usage.status.pastDue");
 		case "expired":
-			return "Expired";
+			return t("usage.status.expired");
 		case "term_unverified":
-			return "Term expired or unverified";
+			return t("usage.status.unverified");
 		default:
 			return status.charAt(0).toUpperCase() + status.slice(1);
 	}
@@ -135,6 +136,7 @@ function formatSubscriptionStatus(status: string): string {
  * ratio crosses the configured thresholds.
  */
 function UsageBar({ value, max }: { value: number; max: number }) {
+	const t = useT();
 	const ratio = max > 0 ? value / max : 0;
 	const pct = Math.min(ratio, 1) * 100;
 	const colour = barColour(ratio);
@@ -153,7 +155,7 @@ function UsageBar({ value, max }: { value: number; max: number }) {
 			aria-valuenow={value}
 			aria-valuemin={0}
 			aria-valuemax={max}
-			aria-label={`${value} of ${max} agents used`}
+			aria-label={t("usage.barLabel", { value, max })}
 		>
 			<div
 				style={{
@@ -174,6 +176,7 @@ function UsageBar({ value, max }: { value: number; max: number }) {
  * busiest day in the period.
  */
 function TrendChart({ data }: { data: DailyTrend[] }) {
+	const t = useT();
 	const maxCount = Math.max(1, ...data.map((d) => d.count));
 
 	return (
@@ -185,7 +188,7 @@ function TrendChart({ data }: { data: DailyTrend[] }) {
 				height: 48,
 				paddingTop: "var(--space-2)",
 			}}
-			aria-label="Agent creation trend over the last 7 days"
+			aria-label={t("usage.trendLabel")}
 			role="img"
 		>
 			{data.map((day) => {
@@ -203,7 +206,11 @@ function TrendChart({ data }: { data: DailyTrend[] }) {
 							alignItems: "center",
 							gap: 2,
 						}}
-						title={`${dayLabel}: ${day.count} agent${day.count === 1 ? "" : "s"}`}
+						title={
+							day.count === 1
+								? t("usage.dayAgent", { day: dayLabel })
+								: t("usage.dayAgents", { day: dayLabel, count: day.count })
+						}
 					>
 						<div
 							style={{
@@ -266,6 +273,7 @@ async function loadUsageData(
 	setUsage: UsageSetter,
 	setError: ErrorSetter,
 	cancelled: () => boolean,
+	t: Translate,
 ) {
 	const res = await supabase
 		.from("seat_usage")
@@ -276,11 +284,13 @@ async function loadUsageData(
 	if (!res.error && res.data) {
 		const row = res.data as Database["public"]["Tables"]["seat_usage"]["Row"];
 		const values = [row.included_agents, row.extra_agents, row.allowed_agents, row.current_agents];
-		if (!values.every((value) => Number.isSafeInteger(value) && value >= 0) ||
-			row.allowed_agents !== row.included_agents + row.extra_agents) {
+		if (
+			!values.every((value) => Number.isSafeInteger(value) && value >= 0) ||
+			row.allowed_agents !== row.included_agents + row.extra_agents
+		) {
 			if (!cancelled()) {
 				setUsage(null);
-				setError("Seat entitlement data is unavailable.");
+				setError(t("usage.unavailable"));
 			}
 			return;
 		}
@@ -296,9 +306,9 @@ async function loadUsageData(
 	}
 	if (!cancelled()) {
 		setUsage(null);
-		setError(res.error
-			? readErrorMessage(res.error, "Failed to load usage data")
-			: "Seat entitlement data is unavailable.");
+		setError(
+			res.error ? readErrorMessage(res.error, t("usage.loadFailed")) : t("usage.unavailable"),
+		);
 	}
 }
 
@@ -365,10 +375,12 @@ async function loadBillingData(
 		const row = subData as Database["public"]["Tables"]["subscriptions"]["Row"];
 		const providerTermRequired = row.provider === "stripe" || row.provider === "paddle";
 		const termEnd = row.current_period_end ? Date.parse(row.current_period_end) : Number.NaN;
-		const status = providerTermRequired &&
+		const status =
+			providerTermRequired &&
 			(row.status === "active" || row.status === "trialing") &&
 			(!Number.isFinite(termEnd) || termEnd <= Date.now())
-			? "term_unverified" : row.status;
+				? "term_unverified"
+				: row.status;
 		if (!cancelled()) {
 			setBilling({
 				status,
@@ -388,6 +400,7 @@ interface MeteringHeaderProps {
 }
 
 function MeteringHeader({ billing, usage }: MeteringHeaderProps) {
+	const t = useT();
 	if (billing) {
 		const isActive = billing.status === "active";
 		return (
@@ -408,14 +421,14 @@ function MeteringHeader({ billing, usage }: MeteringHeaderProps) {
 						display: "inline-block",
 					}}
 				/>
-				{formatSubscriptionStatus(billing.status)}
+				{formatSubscriptionStatus(billing.status, t)}
 			</span>
 		);
 	}
 
 	return (
 		<span className="pill" style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}>
-			{usage?.allowedAgents === 0 ? "No active access" : "No subscription record"}
+			{usage?.allowedAgents === 0 ? t("usage.noAccess") : t("usage.noSubscription")}
 		</span>
 	);
 }
@@ -426,6 +439,7 @@ interface BillingSectionProps {
 }
 
 function BillingSection({ billing, usage }: BillingSectionProps) {
+	const t = useT();
 	if (billing) {
 		return (
 			<div
@@ -441,20 +455,20 @@ function BillingSection({ billing, usage }: BillingSectionProps) {
 				}}
 			>
 				<div>
-					<div className="muted small">Provider</div>
+					<div className="muted small">{t("billing.provider")}</div>
 					<div className="mono" style={{ fontSize: "var(--text-xs)", marginTop: 2 }}>
 						{billing.provider}
 					</div>
 				</div>
 				<div>
-					<div className="muted small">Extra agents</div>
+					<div className="muted small">{t("billing.extraAgents")}</div>
 					<div className="mono" style={{ fontSize: "var(--text-xs)", marginTop: 2 }}>
 						{usage?.extraAgents ?? 0}
 					</div>
 				</div>
 				{billing.currentPeriodEnd ? (
 					<div style={{ gridColumn: "1 / -1" }}>
-						<div className="muted small">Current period ends</div>
+						<div className="muted small">{t("usage.currentPeriodEnds")}</div>
 						<div className="mono" style={{ fontSize: "var(--text-xs)", marginTop: 2 }}>
 							{new Date(billing.currentPeriodEnd).toLocaleDateString(undefined, {
 								year: "numeric",
@@ -480,11 +494,13 @@ function BillingSection({ billing, usage }: BillingSectionProps) {
 				fontSize: "var(--text-sm)",
 			}}
 		>
-			<div className="muted small">Plan</div>
+			<div className="muted small">{t("plan.title")}</div>
 			<div className="mono" style={{ fontSize: "var(--text-xs)", marginTop: 2 }}>
 				{allowed === 0
-					? "No active agent allocation"
-					: `Effective allocation — ${allowed} agent${allowed === 1 ? "" : "s"} (${included} included)`}
+					? t("usage.noAllocation")
+					: allowed === 1
+						? t("usage.allocationOne", { included })
+						: t("usage.allocation", { allowed, included })}
 			</div>
 		</div>
 	);
@@ -497,6 +513,7 @@ interface UpgradePromptProps {
 }
 
 function UpgradePrompt({ showCritical, showWarning, usageRatio }: UpgradePromptProps) {
+	const t = useT();
 	if (showCritical) {
 		return (
 			<div
@@ -509,13 +526,13 @@ function UpgradePrompt({ showCritical, showWarning, usageRatio }: UpgradePromptP
 				}}
 			>
 				<span>
-					<b>Over limit.</b> New agents may be rejected.{" "}
+					<b>{t("usage.overLimit")}</b> {t("usage.mayReject")}{" "}
 					<span className="muted" style={{ fontSize: "var(--text-sm)" }}>
-						Add extra seats to continue.
+						{t("usage.addSeats")}
 					</span>
 				</span>
 				<a className="btn btn-primary btn-sm" href="/billing" style={{ flexShrink: 0 }}>
-					Upgrade
+					{t("usage.upgrade")}
 				</a>
 			</div>
 		);
@@ -535,13 +552,13 @@ function UpgradePrompt({ showCritical, showWarning, usageRatio }: UpgradePromptP
 				}}
 			>
 				<span>
-					<b>Approaching limit.</b>{" "}
+					<b>{t("usage.approaching")}</b>{" "}
 					<span className="muted" style={{ fontSize: "var(--text-sm)" }}>
-						You've used {Math.round(usageRatio * 100)}% of your agent allowance.
+						{t("usage.used", { percent: Math.round(usageRatio * 100) })}
 					</span>
 				</span>
 				<a className="btn btn-primary btn-sm" href="/billing" style={{ flexShrink: 0 }}>
-					Upgrade
+					{t("usage.upgrade")}
 				</a>
 			</div>
 		);
@@ -584,10 +601,11 @@ function LoadingSkeleton() {
 }
 
 function ErrorBlock({ message }: { message: string }) {
+	const t = useT();
 	return (
 		<div className="card">
 			<h2 style={{ margin: 0, marginBottom: "var(--space-2)", fontSize: "var(--text-lg)" }}>
-				Usage Metering
+				{t("usage.title")}
 			</h2>
 			<div className="notice notice-danger">{message}</div>
 		</div>
@@ -608,12 +626,13 @@ async function loadAllData(
 	tenantId: string,
 	{ setUsage, setTrend, setBilling, setError, setIsLoading }: DataSetters,
 	isCancelled: () => boolean,
+	t: Translate,
 ) {
 	setIsLoading(true);
 	setError(null);
 
 	const promises = [
-		loadUsageData(tenantId, setUsage, setError, isCancelled),
+		loadUsageData(tenantId, setUsage, setError, isCancelled, t),
 		loadTrendData(tenantId, setTrend, setError, isCancelled),
 		loadBillingData(tenantId, setBilling, setError, isCancelled),
 	];
@@ -624,7 +643,7 @@ async function loadAllData(
 
 	for (const r of results) {
 		if (r.status === "rejected") {
-			setError(readErrorMessage(r.reason, "Failed to load usage data"));
+			setError(readErrorMessage(r.reason, t("usage.loadFailed")));
 			break;
 		}
 	}
@@ -636,11 +655,16 @@ async function loadAllData(
 
 export function UsageMetering() {
 	const { currentTeam } = useTeam();
-	if (!currentTeam) return <div className="card">Select a team to view usage.</div>;
+	const t = useT();
+	if (!currentTeam) return <div className="card">{t("usage.noTeam")}</div>;
 	return <TenantUsageMetering key={currentTeam.id} tenantId={currentTeam.id} />;
 }
 
 function TenantUsageMetering({ tenantId }: { tenantId: string }) {
+	const t = useT();
+	// Read through a ref so a language switch re-renders without reloading data.
+	const translator = useRef(t);
+	translator.current = t;
 	const [usage, setUsage] = useState<UsageData | null>(null);
 	const [trend, setTrend] = useState<DailyTrend[]>([]);
 	const [billing, setBilling] = useState<BillingInfo | null>(null);
@@ -652,9 +676,12 @@ function TenantUsageMetering({ tenantId }: { tenantId: string }) {
 		const isCancelled = () => cancelled;
 
 		const setters: DataSetters = { setUsage, setTrend, setBilling, setError, setIsLoading };
-		loadAllData(tenantId, setters, isCancelled);
+		loadAllData(tenantId, setters, isCancelled, translator.current);
 
-		const interval = setInterval(() => loadAllData(tenantId, setters, isCancelled), 30_000);
+		const interval = setInterval(
+			() => loadAllData(tenantId, setters, isCancelled, translator.current),
+			30_000,
+		);
 		return () => {
 			cancelled = true;
 			clearInterval(interval);
@@ -695,9 +722,11 @@ function TenantUsageMetering({ tenantId }: { tenantId: string }) {
 				}}
 			>
 				<div>
-					<h2 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: 600 }}>Usage Metering</h2>
+					<h2 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: 600 }}>
+						{t("usage.title")}
+					</h2>
 					<p className="muted small" style={{ margin: "var(--space-1) 0 0" }}>
-						Agent consumption vs your plan allowance
+						{t("usage.subtitle")}
 					</p>
 				</div>
 				<MeteringHeader billing={billing} usage={usage} />
@@ -720,7 +749,7 @@ function TenantUsageMetering({ tenantId }: { tenantId: string }) {
 						alignItems: "baseline",
 					}}
 				>
-					<span className="muted small">Agent usage</span>
+					<span className="muted small">{t("usage.agentUsage")}</span>
 					<span className="mono" style={{ fontSize: "var(--text-sm)" }}>
 						{current}
 						<span className="muted"> / {allowed}</span>
@@ -730,7 +759,7 @@ function TenantUsageMetering({ tenantId }: { tenantId: string }) {
 			</div>
 
 			<div style={{ marginBottom: "var(--space-4)" }}>
-				<span className="muted small">New agents (last {TREND_DAYS} days)</span>
+				<span className="muted small">{t("usage.newAgents", { days: TREND_DAYS })}</span>
 				<TrendChart data={trend} />
 			</div>
 

@@ -13,7 +13,7 @@ network access.
 | | |
 |---|---|
 | Browsers | Chrome 120+, Edge 120+ (Chromium), Firefox 140+ (ESR) |
-| Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
+| Sites | ChatGPT (`chatgpt.com`, `chat.openai.com`), Gemini (`gemini.google.com`), Claude (`claude.ai`), Microsoft Copilot (`copilot.microsoft.com`) and Microsoft 365 Copilot Chat (`m365.cloud.microsoft`, `copilot.cloud.microsoft`; same site id `copilot`; also as a subframe, the Copilot pane of the Office web apps, see [Limitations](#limitations)), Perplexity (`www.perplexity.ai`, `perplexity.ai`), DeepSeek (`chat.deepseek.com`), Mistral Le Chat (`chat.mistral.ai`), Grok (`grok.com`) |
 | Languages | English, Turkish |
 | Data sent anywhere | Nothing by default. When an administrator connects a control plane, only counts per entity type are sent (see [Privacy](#privacy)). |
 
@@ -230,11 +230,13 @@ Requires Node.js 22.12+ and pnpm (repository root: `pnpm install`).
 
 ```bash
 pnpm build:browser-guard            # development build (inline source maps)
-pnpm package:browser-guard          # release build + store zips + SHA256SUMS
+pnpm package:browser-guard          # release build + store zips + AMO source zip + SHA256SUMS + store validation
 
 # or inside packages/browser-guard
 pnpm build                          # node scripts/build.mjs
-pnpm build:release                  # node scripts/build.mjs --release --zip
+pnpm build:release                  # build.mjs --release --zip, source-archive.mjs, validate-store.mjs
+pnpm store:validate                 # offline store checks of dist/ zips and store/ (scripts/validate-store.mjs)
+pnpm store:assets                   # regenerate store/images/ from the E2E fixtures (scripts/store-assets.mjs)
 pnpm check                          # tsc --noEmit
 pnpm test:e2e                       # build, then real-browser E2E (see e2e/README.md)
 ```
@@ -246,8 +248,28 @@ dist/chrome/                               unpacked Chrome/Edge extension
 dist/firefox/                              unpacked Firefox extension
 dist/aidr-browser-guard-chrome-<ver>.zip   upload to the Chrome Web Store / Edge Add-ons
 dist/aidr-browser-guard-firefox-<ver>.zip  upload to addons.mozilla.org
+dist/aidr-browser-guard-source-<ver>.zip   source code for the AMO review (scripts/source-archive.mjs)
 dist/SHA256SUMS                            sha256sum -c compatible
 ```
+
+Self-hosted channel (browsers update from an HTTPS feed instead of a store): with
+`BROWSER_GUARD_UPDATE_BASE_URL=https://<host>/browser-guard` the release build also
+writes `dist/aidr-browser-guard-{chrome,firefox}-selfhosted-<ver>.zip` (the store
+packages plus the update URL), and `node scripts/update-feed.mjs` signs the Chrome/Edge
+one as a CRX3 with the owner key (`BROWSER_GUARD_CRX_KEY_PEM`; nothing is produced
+without it) and writes the feed (`update.xml`, `updates.json`, `packages/`,
+`SHA256SUMS`). See [`store/README.md`](store/README.md) and
+["Hosting Browser Guard updates internally"](../../docs/installation/browser-guard-enterprise.md#10-hosting-browser-guard-updates-internally).
+
+The listing kit (descriptions EN/TR, single-purpose statement, permission
+justifications, data-usage answers, privacy policy pages, screenshots and promo
+tiles) and the owner's publishing steps are in [`store/`](store/README.md).
+`scripts/validate-store.mjs` checks the uploaded zips themselves and the kit against
+the store rules that can be checked offline (manifest fields and limits, version,
+icons, no `key`, justified minimum permissions, CSP, no remote code, no source maps)
+and fails the release build on a violation. The source zip is built from esbuild's
+own list of bundle inputs; unpacking it and following its `AMO-REVIEWER-NOTES.md`
+reproduces the Firefox package byte for byte.
 
 `scripts/build.mjs` bundles four entry points with esbuild into classic IIFE
 scripts (`background.js`, `content.js`, `popup.js`, `options.js`) targeting
@@ -297,12 +319,12 @@ node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
 
 | Key | Value | Why |
 |---|---|---|
-| `permissions` | `storage`, `alarms`, `declarativeNetRequest`, `scripting` | settings and the in-memory vault; telemetry batching; blocking sites an admin lists in `blockedSites` or blocks with `shadowAi` (block rules only; `declarativeNetRequest` applies them without host permissions, so an administrator's block never depends on the user's host-access grant; install warning "Block content on any page"); registering the content script for administrator-configured `customSites` (no install warning, and no access by itself: injection still needs host access to the page) |
-| `host_permissions` | the ten HTTPS hosts above | content script injection on supported sites only |
+| `permissions` | `storage`, `alarms`, `declarativeNetRequest`, `scripting` | settings and the in-memory vault; telemetry batching; blocking sites an admin lists in `blockedSites` or blocks with `shadowAi` (block rules only; `declarativeNetRequest` applies them without host permissions, so an administrator's block never depends on the user's host-access grant; install warning "Block content on any page"); registering the content script for administrator-configured `customSites`, and injecting it into AI tabs that were already open when the extension started (no install warning, and no access by itself: injection still needs host access to the page) |
+| `host_permissions` | the twelve HTTPS hosts above | content script injection on supported sites only |
 | `optional_permissions` | `nativeMessaging` | requested on the options page (from the click that turns the native NER host on, or the **Grant permission** button when an administrator enabled it); never at install |
 | `optional_host_permissions` | `https://*/*` | never requested at install. The options page requests exact `https://<host>/*` origins, from a click, only for what the managed policy configures: the hosts of `customSites`, and the Shadow AI catalog origins when `shadowAi` is on (or the origins of explicitly blocked services). No `tabs`, `webNavigation`, `history` or `<all_urls>` permission is requested: the extension sees a tab's URL only on origins it was granted |
-| `content_scripts` | `content.js` and `content-main.js` (`world: "MAIN"`), both `run_at: document_start`, `all_frames: false` | intercept before the page's own handlers; top frame only. `content-main.js` runs in the page's JavaScript world with no extension APIs and no data: it only hooks `<input type=file>` (`click`, `showPicker`, the `files` getter) so detached and shadow-DOM file inputs are handed to `content.js` for checking (see [Limitations](#limitations)). Custom sites get both scripts |
-| `web_accessible_resources` | none | nothing is exposed to web pages, so a page cannot fingerprint the extension by probing its resources. A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
+| `content_scripts` | `content.js` and `content-main.js` (`world: "MAIN"`), both `run_at: document_start`: `all_frames: false` for every site host except the two Microsoft 365 Copilot hosts (`m365.cloud.microsoft`, `copilot.cloud.microsoft`), which get the same two scripts with `all_frames: true` (disjoint `matches`, so no frame gets a script twice) | intercept before the page's own handlers; top frame only, except that on the Microsoft 365 Copilot hosts the scripts also run when that host is loaded as a subframe, which is how the Office web apps embed the Copilot pane (see [Limitations](#limitations)). No host permission is added for this: the frame hosts are already site hosts, and the Office pages that embed them get no script. `content-main.js` runs in the page's JavaScript world with no extension APIs and no data: it only hooks `<input type=file>` (`click`, `showPicker`, the `files` getter) so detached and shadow-DOM file inputs are handed to `content.js` for checking (see [Limitations](#limitations)). Custom sites get both scripts |
+| `web_accessible_resources` | none | no extension resource is exposed to web pages, so a page cannot detect the extension by probing its resources. That does not make the extension invisible: the page-world hook in `content-main.js` is observable to a page that looks for it (the patched `HTMLInputElement` `files` getter, `click` and `showPicker`, and the `aidr-file-*` relay events). It sets no global name or flag on `window`; see [Limitations](#limitations). A site listed in `blockedSites` is refused by a declarativeNetRequest rule and the background worker then opens `blocked.html` in that tab itself (`tabs.update`, an extension-initiated navigation). A DNR redirect would need the page to be web accessible, and Chrome refuses DNR redirects to `use_dynamic_url` resources (verified by the `blocked-site` E2E scenario) |
 | `incognito` | `not_allowed` | the extension does not run in private windows |
 | CSP (`extension_pages`) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` | no remote code; `connect-src 'self'` so the options page can load the packaged `_locales` for the language override; `https:` because the control-plane URL is configurable per tenant; loopback HTTP for local development |
 
@@ -330,18 +352,19 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `enabledEntities` | entity types | all except `USERNAME`, `LOCATION` |
 | `neverRestore` | entity types | `SECRET`, `PRIVATE_KEY` |
 | `literals` | `[{ value, type }]`, up to 1024, 2-256 chars each | none |
-| `exactData` | up to 16 `ExactDataSet`s | none |
+| `exactData` | up to 16 `ExactDataSet`s (`{ datasetId, keySource: "native-host", minEntropyBits >= 64, fingerprints, type }`, no key; see [Exact data match](#exact-data-match)); forces `useNativeHost` on | none |
 | `detectSignals` / `signalAction` | boolean / `off` \| `warn` \| `block` | `true` / `warn` |
 | `blockedSites` / `disabledSites` | site ids | none |
 | `customSites` | up to 20 `{ id, label, hosts, editorSelectors, sendButtonSelectors, responseSelectors }` (managed only) | none |
 | `shadowAi` | `{ mode: off \| monitor \| block-unsanctioned, sanctioned: [ids], blocked: [ids] }` (managed only) | `off` |
-| `allowUserPause` / `allowSendAnyway` | boolean | `true` / `true` |
+| `allowUserPause` / `allowSendAnyway` | boolean (managed only) | `true` / `true` without a managed policy; `false` / `false` under any managed policy unless it sets them |
 | `maskPaste` | boolean | `true` |
 | `fileHandling` / `maxFileBytes` | `scan` \| `block` \| `allow` / bytes (max 50 MiB) | `scan` / 5 MiB |
 | `documentHandling` | `mask` \| `block` \| `allow` (managed only; Office/OpenDocument/legacy Office/PDF when `fileHandling` is `scan`) | `mask` |
 | `restoreResponses` | boolean | `true` |
-| `useNativeHost` | boolean | `false` (also a user setting unless managed) |
+| `useNativeHost` | boolean | `false` (also a user setting unless managed; forced on by `requireNativeNer` or `exactData`) |
 | `requireNativeNer` | boolean (managed only; the signed dashboard policy can also switch it on, `true` wins): native NER is mandatory; a prompt, paste or upload the host could not NER-check (missing, crashed, timed out, rules-only, over the limit) is blocked, recorded as `native_ner: unavailable` in monitor mode; forces `useNativeHost` on | `false` |
+| `workAccounts` | `{ action: warn \| block \| mask-only, unverified?: enforce \| allow, sites: { chatgpt?, claude?, gemini?, copilot?: { workspaceIds?, emailDomains? } } }` (managed only; see [Personal vs company AI accounts](#personal-vs-company-ai-accounts)) | none (no account check) |
 | `telemetry` | `{ controlPlaneUrl, apiKey }` | none (no telemetry) |
 | `language` | `auto` \| `en` \| `tr` | `auto` |
 | `policyId` | string reported with telemetry | `aidr-browser-guard-default` |
@@ -349,7 +372,14 @@ the policy sets `allowUserOverrides: true` (see `deploy/browser-guard/README.md`
 | `allowUserOverrides` | boolean (managed only) | `false`: a managed policy locks the protection settings above |
 
 The authoritative schema is [`static/managed_schema.json`](static/managed_schema.json);
-managed values are validated strictly in `src/background/policy.ts` before use.
+managed values are validated strictly in `src/background/policy.ts` before use. An
+invalid managed value fails safe instead of falling back to the default: a list keeps
+its valid entries, any other protection key takes its strictest value (`FAIL_SAFE`:
+`mode` `block`, pause and send-original off, `requireNativeNer` on, ...), the key is
+locked and listed in `policy.policyErrors`, the popup and options page show a policy
+error, and `privacy_scan` telemetry carries `policy_errors` (the count). A managed
+storage read failure is treated the same way (whole-policy error `*`). Details in
+[`deploy/browser-guard/README.md`](../../deploy/browser-guard/README.md#managed-keys).
 Chrome compiles the schema's `pattern`s with RE2 when the extension loads and
 refuses to load the whole extension if one does not compile (repetition counts,
 nested ones multiplied, are capped at 1000; no lookaround or backreferences), so
@@ -364,7 +394,7 @@ AI host) and up to 20 CSS selectors each for the prompt editor, the send button
 and the assistant responses (no `{ } ; <`, 256 characters max; selectors the page's
 parser rejects are dropped in the page). Generic fallbacks (`textarea`,
 `[contenteditable]`, `button[type=submit]`, ...) are always appended. An invalid
-entry rejects the whole key (a policy warning, the rest of the policy applies).
+entry is dropped (a policy warning and a policy error); the valid sites stay.
 
 A managed policy cannot grant host access, and browsers only show the permission
 prompt from a user gesture, so each user clicks **Allow access** once on the options
@@ -372,8 +402,13 @@ page (**AI services** section). The worker then registers the same `content.js` 
 exactly the granted hosts (`chrome.scripting.registerContentScripts`, id
 `aidr-custom-sites`, top frame, `document_start`), re-syncs on every policy change
 and grant/revocation, and accepts messages from those hosts as site `custom`.
-Tabs that were already open need a reload. Until access is granted the options page
-shows the site as **Needs access** and nothing runs there.
+Tabs that were already open are injected as soon as access is granted
+(`chrome.scripting.executeScript`). Until access is granted the options page
+shows the site as **Needs access** and nothing runs there. The script runs in the top
+frame only: a portal whose chat editor lives in an iframe (an embedded assistant widget
+served from another page or host) is not protected, and the policy cannot detect that.
+Configure the host and selectors of the page that contains the editor itself, and try
+the portal before rolling the policy out.
 
 ### Shadow AI discovery and control
 
@@ -388,7 +423,11 @@ meeting, writing, search, agent), identified by stable catalog ids.
 | `block-unsanctioned` | counted, and every catalogued service not in `sanctioned` is blocked |
 
 A service in both `sanctioned` and `blocked` is blocked. Blocking uses one
-declarativeNetRequest rule per service (`main_frame` + `sub_frame`, ids 7401+). The
+declarativeNetRequest rule per service (`main_frame` + `sub_frame`, ids 7401+) and a
+second one (ids 7701+) that refuses the fetch/XHR and WebSocket requests made by pages
+of the service (`initiatorDomains`), so a tab that was already open when the block
+arrived stops working at once. When a block is applied the worker also sends every
+open tab it can see on a blocked site or service to `blocked.html`. The
 block needs no host access (`declarativeNetRequest` applies block rules everywhere), so
 it holds whether or not the user granted anything; with access to the service's origin
 the worker also shows `blocked.html?service=<id>` in the tab, without it the user sees
@@ -404,12 +443,17 @@ sent as aggregated `shadow_ai_usage` events at each flush
 the `tabs` permission would give visibility without a grant, but it exposes every
 URL the user visits and shows a "Read your browsing history" warning, so it is not
 used. Services on a path of a general-purpose host (Notion AI, GitHub Copilot, Bing)
-are not in the catalog; blocking them by host would break the host product.
+are not in the catalog; blocking them by host would break the host product. The one
+path-scoped entry is Microsoft 365 Copilot Chat (`m365-copilot`): its own host
+`copilot.cloud.microsoft` plus only `/chat` (and below) on the shared
+`m365.cloud.microsoft` host are counted and blocked (a `regexFilter` rule), never the
+rest of Microsoft 365. It is a separate service from consumer Copilot (`copilot`), so the
+work-account Copilot can be sanctioned while the consumer one is blocked.
 
 #### Allow / block from the dashboard
 
 Owners and administrators can also allow or block a detected service from the
-dashboard (Browser Privacy Guard → Shadow AI; AAL2, audited). The decision is an AI
+dashboard (Browser Guard → Shadow AI; AAL2, audited). The decision is an AI
 governance register entry (`ai_site`, catalog id; `approved` or `banned`) and reaches
 enrolled browsers as a **signed** document from
 `GET {controlPlaneUrl}/functions/v1/browser-guard-policy`, authenticated with the
@@ -423,7 +467,7 @@ the last verified one stays in force. Refresh: startup, every managed-policy cha
 every 15 minutes (`aidr-dashboard-policy` alarm).
 
 The same signed document carries the tenant's **Require native NER** setting
-(Browser Privacy Guard → Require native NER; owners/admins, AAL2, audited; switching
+(Browser Guard → Require native NER; owners/admins, AAL2, audited; switching
 it off is refused while four-eyes change control is on) as
 `browser_guard.require_native_ner: true`; the key is omitted when the setting is off,
 so documents of tenants that do not use it stay acceptable to extension versions that
@@ -443,32 +487,70 @@ stay and its sanctions are dropped. Deploy `telemetry` through managed policy as
 so a user cannot disconnect the refresh. The GPO/MDM `shadowAi` snippet remains the
 alternative for fleets without a control plane.
 
+### Personal vs company AI accounts
+
+`workAccounts` (managed only) checks, on ChatGPT, Claude, Gemini and Copilot, whether the
+user is signed in with the organisation's account: a listed ChatGPT workspace id or Claude
+organisation UUID, an account email in a listed domain (Gemini, Microsoft 365 Copilot Chat),
+or the Microsoft 365 host itself. Any other account gets the configured action: `warn`
+(the first send asks Continue / Cancel), `block` (sends and uploads refused) or `mask-only`
+(always masked: no monitor mode, pause or **Send original** on that account). An account the
+page does not identify is treated like a personal one unless `unverified: "allow"`. Signals
+are read from the page's URL, non-HttpOnly cookies and DOM only; ids and domains never leave
+the content script, and telemetry carries only an `account_type` enum. What each site
+exposes, what cannot be detected (desktop apps, Safari, other browsers) and the recommended
+proxy and identity-provider controls are in [`docs/work-accounts.md`](docs/work-accounts.md).
+
 ### Exact data match
 
-`exactData` lets an organisation flag its own records (customer names, account
-numbers, project code names) without shipping the values. Build a dataset from
-a CSV:
+`exactData` lets an organisation flag its own records (customer records, account
+numbers combined with names, project code names) without shipping the values or
+the key. Create the organisation's EDM secret once, install it in the native host
+configuration (`"exactData": {"secretFile": "/etc/aidr/edm-secret.b64"}`, see
+[`docs/native-host.md`](docs/native-host.md#exact-data-keys-exactdata)), then build each
+dataset from a CSV with the same secret:
 
 ```bash
-node scripts/fingerprint-dataset.mjs --in customers.csv --header --columns full_name \
-  --dataset-id crm-customers --type PERSON --key-file crm.key.b64 --out crm-customers.json
+node scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
+node scripts/fingerprint-dataset.mjs --in customers.csv --header \
+  --columns full_name,account_no --composite \
+  --dataset-id crm-customers --type PERSON --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
-Algorithm (identical in the tool and in `src/engine/exact-data.ts`):
+Algorithm (identical in the tool, the native host and `src/engine/exact-data.ts`):
 
 1. `value.normalize("NFKC").toLowerCase()`
 2. remove U+200B-U+200F, U+2060, U+FEFF
 3. fold Turkish `ı` (U+0131) and `i̇` (`i` + U+0307, what `İ` lowercases to) to `i`
 4. tokens = every match of `/[\p{L}\p{N}]+/gu`; a value must give 1-16 tokens and at least 3 characters
-5. fingerprint = lowercase hex `HMAC-SHA256(key, UTF-8(JSON.stringify(tokens)))`
+5. datasetKey = `HMAC-SHA256(secret, UTF-8("aidr-edm-v2" 0x00 datasetId))`
+6. fingerprint = lowercase hex `HMAC-SHA256(datasetKey, UTF-8(JSON.stringify(tokens)))`
 
-In the page, the same normalisation is applied to the prompt and every window
-of up to 16 consecutive tokens is fingerprinted with WebCrypto and compared with
-the dataset. Only fingerprints and the HMAC key are in the dataset; the source
-values are never written or logged. Anyone holding the dataset can test guesses
-against it, so treat it as confidential and distribute it only through managed
-policy. Without `--key-file`/`--key-b64` a fresh 32-byte key is generated; keep it
-to regenerate the dataset with stable fingerprints.
+The dataset is `{ datasetId, keySource: "native-host", minEntropyBits, fingerprints,
+type }`: no key. Managed policy is readable by every user of the endpoint
+(`chrome://policy`, the policy registry keys, `policies.json`), so the extension
+refuses a dataset that carries `keyB64`. When the policy has datasets the worker
+forces `useNativeHost` on, asks the host for the dataset keys (`edm-keys`), keeps them
+in memory and hands them to the content scripts only. Until a dataset's key has
+arrived (no host, an older host, no secret configured, Firefox), every scan with that
+dataset is incomplete, which the guard treats as not checked (fail closed). In the
+page, the same normalisation is applied to the prompt and every window of up to 16
+consecutive tokens is fingerprinted with WebCrypto and compared with the dataset.
+
+Guessable values are refused. A keyed hash protects only values that cannot be
+enumerated by whoever holds the key, and the host runs as the signed-in user, so a
+user who reads its secret file (or attaches a debugger to the browser) can obtain the
+dataset keys. The tool therefore estimates each value's entropy (digits at log2 10 bits
+each; letter runs as dictionary words, 2 bits per letter up to 16 bits; structured
+identifiers capped: TCKN, card and phone numbers 30 bits, date of birth 16, IBAN 56)
+and refuses the dataset (`LOW_ENTROPY`) when any value is below 64 bits. The policy
+refuses a dataset whose `minEntropyBits` is below 64. Names, short account numbers,
+phone numbers and national ids alone fall below the floor: combine columns with
+`--composite` (one value per row, in column order; it then matches only when the parts
+appear together in that order), or leave weak values out with `--drop-low-entropy`.
+The estimate is conservative but not a proof: a column that looks random but is
+sequential is weaker than estimated. `--key-b64` / `--key-file` are refused. Keep the
+secret: the same secret and dataset id reproduce the same fingerprints.
 
 ## Privacy
 
@@ -496,6 +578,11 @@ to regenerate the dataset with stable fingerprints.
 - Only the listed sites are protected out of the box; internal portals need a
   `customSites` entry and each user's host-access grant. Other AI tools, desktop
   apps and API clients are not covered by this extension.
+- Tabs open before the extension started (install, update, re-enable): the worker
+  injects the content scripts into every open, loaded tab of a protected site once per
+  extension start, and the popup shows **Not protected — reload this tab** for a
+  protected site whose tab has no live content script (a discarded tab, an injection
+  the browser refused).
 - Shadow AI counting, and the `blocked.html` explanation page, act only on origins
   the user granted; the block itself applies without a grant (the user then sees the
   browser's own "blocked by an extension" page). Tab state is kept in memory, so a
@@ -503,10 +590,42 @@ to regenerate the dataset with stable fingerprints.
 - Site adapters depend on each product's DOM. A site redesign can break
   interception until the adapter is updated; the real-browser suite in `e2e/`
   guards against regressions on recorded page structures.
+- Microsoft 365 Copilot Chat (`m365.cloud.microsoft/chat`, `copilot.cloud.microsoft`)
+  shares the site id `copilot` with consumer Copilot, so `disabledSites` and
+  `blockedSites` act on both (a `blockedSites` entry blocks only `/chat` of the shared
+  Microsoft 365 host); use the Shadow AI ids `copilot` / `m365-copilot` to treat them
+  differently. The guard runs on the whole `m365.cloud.microsoft` host, because the
+  Microsoft 365 home enters `/chat` without a page load. Its selectors are covered by
+  unit tests against representative markup, not by the real-browser suite or a live
+  tenant.
+- The Copilot pane inside the Office web apps (Word, Excel, PowerPoint, Outlook on the
+  web) is a cross-origin iframe. On the Microsoft 365 Copilot hosts (`m365.cloud.microsoft`,
+  `copilot.cloud.microsoft`; list in [`src/sites/frames.ts`](src/sites/frames.ts)) the
+  content scripts also run in subframes, so a pane served from one of those hosts is
+  guarded like the top-level page: masking on send and paste, file checks, local restore,
+  fail-closed until a policy arrives, counts reported as site `copilot` (the worker takes
+  the site from the frame's own URL, not from the Office page). The pane keeps its own
+  vault record (`vault:<tab>:frame:<origin>`), so it never overwrites a top-frame guard's
+  in the same tab, and each send is counted once by the frame that sent it. Policy changes
+  reach the pane although its tab's page is not a protected site (the worker registers
+  the frame when it boots). The Office pages themselves (`*.officeapps.live.com`,
+  `*.office.com`, Outlook) get no script, no host permission and no block: a
+  `blockedSites: ["copilot"]` or Shadow AI `m365-copilot` block stops the pane's own frame
+  request (the frame rule covers the Copilot hosts, and on `m365.cloud.microsoft` only
+  `/chat`), never the Office app, and the Office tab is never redirected to
+  `blocked.html`. **Unverified against a live tenant (BG-LIVE):** which origin serves the
+  in-app pane, and its markup, could not be checked; a pane served from another host is
+  not covered (add the host to `src/sites/frames.ts` and the adapter), and the selectors
+  are those of Microsoft 365 Copilot Chat. The pane in a tab that was already open when
+  the extension started is guarded after a reload (open-tab injection is top-frame only),
+  and Shadow AI visit counts see top-level tab URLs only, so the pane is not counted as a
+  visit. The real-browser `frame-copilot-office` scenario covers the frame against a
+  fixture, not against Microsoft 365.
 - Free-form names and addresses without a label ("Name:", "Adres:") need the
   optional native host (NER), which ships without model weights or accuracy
   evidence. Without it, rule detection covers structured identifiers, labelled
-  fields, organisation literals and exact-data sets. Usernames, health/insurance
+  fields, organisation literals and exact-data sets (the latter need the native host
+  for their keys). Usernames, health/insurance
   numbers and places are found only after a label (`Kullanıcı adı:`, `SGK sicil
   no:`, `NHS number:`, `Konum:`, `City:`...); licence plates as validated Turkish
   plates (`34 ABC 123`) or after a plate label. NER is applied to prompts
@@ -551,7 +670,12 @@ to regenerate the dataset with stable fingerprints.
   than checked, while one in a closed shadow root cannot be seen at all. The
   Chromium and Firefox page-world relay is covered by unit tests (jsdom), not yet by
   the real-browser E2E suite. `window.showOpenFilePicker()` (File System Access API)
-  is not intercepted.
+  is not intercepted. The hook is not hidden from the page: it defines no global
+  name, flag or symbol on `window` (its state is kept in a closure), but a page can
+  still tell that `HTMLInputElement.prototype.files`, `click` and `showPicker` are not
+  the browser's own functions and can listen for the `aidr-file-hook-ping`,
+  `aidr-file-scan` and `aidr-file-result` events, so a site can detect that Browser
+  Guard is installed.
 - Restoring works on text the site renders in the page. Content the site
   exports, copies to the clipboard itself, or shares by link contains the
   placeholders, not the originals.
@@ -565,6 +689,8 @@ to regenerate the dataset with stable fingerprints.
 AIDR_TEST_NO_BUILD=1 pnpm exec vitest run packages/browser-guard/src/__tests__
 ```
 
+`store.test.ts` runs the store validator on a release build and the committed
+listing kit, and checks that each store violation it covers is rejected.
 `build.test.ts` builds a stub package in a temporary directory and checks both
 manifests, the CSP, permissions, locale copying, zips and `SHA256SUMS`,
 reproducibility, and every fail-closed path. `build-tools.test.ts` covers the

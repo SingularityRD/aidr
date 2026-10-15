@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { readErrorMessage } from "../lib/errors";
+import { useT } from "../i18n/I18nProvider";
 import { pendingPolicyChangeNotice } from "../lib/ai-governance";
+import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { PolicyRollout } from "./policy-rollout";
 import { useTeam } from "./team-provider";
@@ -58,6 +59,7 @@ async function isMissingSavedDocument(error: unknown): Promise<boolean> {
 
 export function RuntimePolicyEditor() {
 	const { currentTeam, canManageTeam } = useTeam();
+	const t = useT();
 	const [text, setText] = useState(JSON.stringify(INITIAL_POLICY, null, 2));
 	const [version, setVersion] = useState<number | null>(null);
 	const [reviewedDocument, setReviewedDocument] = useState<ReviewedPolicyDocument | null>(null);
@@ -78,16 +80,14 @@ export function RuntimePolicyEditor() {
 			.then(({ data, error }) => {
 				if (cancelled) return;
 				if (error || data?.ok !== true || !Number.isSafeInteger(data.version)) {
-					setMessage(
-						"Published policy could not be loaded. Publishing is disabled until it can be read.",
-					);
+					setMessage(t("runtime.loadFailedPublishing"));
 					return;
 				}
 				setVersion(data.version);
 				setText(JSON.stringify(data.policy ?? INITIAL_POLICY, null, 2));
 			})
 			.catch(() => {
-				if (!cancelled) setMessage("Published policy could not be loaded.");
+				if (!cancelled) setMessage(t("runtime.loadFailed"));
 			});
 		return () => {
 			cancelled = true;
@@ -105,22 +105,18 @@ export function RuntimePolicyEditor() {
 				body: { action: "publish", tenant_id: currentTeam.id, expected_version: version, policy },
 			});
 			if (selectedTeamId.current !== requestedTeam) return;
-			const pendingChange = error ? null : pendingPolicyChangeNotice(data);
+			const pendingChange = error ? null : pendingPolicyChangeNotice(data, t);
 			if (pendingChange) {
 				setMessage(pendingChange);
 				return;
 			}
 			if (error || data?.ok !== true || !Number.isSafeInteger(data.version))
-				throw new Error(
-					"Publication failed. Reload the page if another administrator changed the policy.",
-				);
+				throw new Error(t("runtime.publishFailedReload"));
 			setVersion(data.version);
-			setMessage(
-				`Version ${data.version} published. Agents fetch it on their next policy refresh. Required-policy endpoints retain cached controls within their offline grace, then block until policy is available. Check loading receipts below.`,
-			);
+			setMessage(t("runtime.published", { version: data.version }));
 		} catch (error) {
 			if (selectedTeamId.current === requestedTeam)
-				setMessage(readErrorMessage(error, "Publication failed."));
+				setMessage(readErrorMessage(error, t("runtime.publishFailed")));
 		} finally {
 			if (selectedTeamId.current === requestedTeam) setBusy(false);
 		}
@@ -146,18 +142,10 @@ export function RuntimePolicyEditor() {
 				},
 			});
 			if (selectedTeamId.current !== requestedTeam) return;
-			if (await isMissingSavedDocument(error))
-				throw new Error(
-					"Save a YAML draft in the Security Policy Editor first, then run the dry run.",
-				);
+			if (await isMissingSavedDocument(error)) throw new Error(t("runtime.saveDraftFirst"));
 			if (error || data?.ok !== true || (!data.policy && !data.runtime_policy))
-				throw new Error(
-					"Saved YAML could not be compiled. Review unsupported fields in the policy editor.",
-				);
-			if (!isReviewedPolicyDocument(data.source))
-				throw new Error(
-					"The dry run did not identify the exact saved YAML revision. Try again before publishing.",
-				);
+				throw new Error(t("runtime.compileFailedReview"));
+			if (!isReviewedPolicyDocument(data.source)) throw new Error(t("runtime.revisionUnknown"));
 			setReviewedDocument({
 				id: data.source.id,
 				version: data.source.version,
@@ -168,16 +156,19 @@ export function RuntimePolicyEditor() {
 				? data.semantics.precedence.join(" > ")
 				: "deny > ask > allow";
 			const simulation = data.simulation
-				? ` Unknown MCP simulation: ${data.simulation.action} (${data.simulation.source}).`
+				? t("runtime.unknownSimulation", {
+						action: data.simulation.action,
+						source: data.simulation.source,
+					})
 				: "";
 			const warnings =
 				Array.isArray(data.diagnostics) && data.diagnostics.length > 0
-					? ` ${data.diagnostics.length} shadowed rule warning(s).`
+					? t("runtime.shadowed", { count: data.diagnostics.length })
 					: "";
-			setMessage(`Dry run compiled. Conflict precedence: ${precedence}.${simulation}${warnings}`);
+			setMessage(`${t("runtime.dryCompiled", { precedence })}${simulation}${warnings}`);
 		} catch (error) {
 			if (selectedTeamId.current === requestedTeam)
-				setMessage(readErrorMessage(error, "Saved YAML could not be compiled."));
+				setMessage(readErrorMessage(error, t("runtime.compileFailed")));
 		} finally {
 			if (selectedTeamId.current === requestedTeam) setBusy(false);
 		}
@@ -199,31 +190,24 @@ export function RuntimePolicyEditor() {
 				},
 			});
 			if (selectedTeamId.current !== requestedTeam) return;
-			const pendingChange = error ? null : pendingPolicyChangeNotice(data);
+			const pendingChange = error ? null : pendingPolicyChangeNotice(data, t);
 			if (pendingChange) {
 				setReviewedDocument(null);
 				setMessage(pendingChange);
 				return;
 			}
 			if (error || data?.ok !== true || (!data.policy && !data.runtime_policy))
-				throw new Error(
-					"Saved YAML could not be compiled and published. Run a new dry run before retrying.",
-				);
+				throw new Error(t("runtime.publishDocFailed"));
 			if (!sameReviewedPolicyDocument(data.compiled_from, reviewedSource))
-				throw new Error(
-					"The saved YAML changed after review. Run a new dry run before publishing.",
-				);
-			if (!Number.isSafeInteger(data.version))
-				throw new Error("The compiled policy was not published.");
+				throw new Error(t("runtime.changedAfterReview"));
+			if (!Number.isSafeInteger(data.version)) throw new Error(t("runtime.notPublished"));
 			setText(JSON.stringify(data.runtime_policy ?? data.policy, null, 2));
 			setVersion(data.version);
 			setReviewedDocument(null);
-			setMessage(
-				`Saved YAML compiled and published as version ${data.version}. Check agent loading receipts below.`,
-			);
+			setMessage(t("runtime.docPublished", { version: data.version }));
 		} catch (error) {
 			if (selectedTeamId.current === requestedTeam)
-				setMessage(readErrorMessage(error, "Saved YAML could not be published."));
+				setMessage(readErrorMessage(error, t("runtime.docPublishFailed")));
 		} finally {
 			if (selectedTeamId.current === requestedTeam) setBusy(false);
 		}
@@ -233,19 +217,16 @@ export function RuntimePolicyEditor() {
 	return (
 		<>
 			<section className="card stack">
-				<h2>Runtime policy</h2>
-				<p className="muted">
-					Publish controls for agents enrolled in this team. Detection rules still apply when an
-					action defaults to allow. Use ask to require operator approval, or deny to block.
-				</p>
+				<h2>{t("runtime.title")}</h2>
+				<p className="muted">{t("runtime.intro")}</p>
 				<p>
 					{version === null
-						? "Published version unavailable"
+						? t("runtime.versionUnavailable")
 						: version === 0
-							? "No policy published"
-							: `Published version: ${version}`}
+							? t("runtime.noneYet")
+							: t("runtime.version", { version })}
 				</p>
-				<label htmlFor="runtime-policy">Runtime controls (JSON)</label>
+				<label htmlFor="runtime-policy">{t("runtime.json")}</label>
 				<textarea
 					id="runtime-policy"
 					className="input mono"
@@ -255,10 +236,11 @@ export function RuntimePolicyEditor() {
 					disabled={!canManageTeam || busy}
 				/>
 				<p className="muted small">
-					Actions: command_default, file_default, url_default, package_default, output_default,
-					mcp_default, mcp_unknown, mcp_risky. MCP lists: mcp_allow_servers,
-					mcp_require_approval_servers, mcp_deny_servers and the corresponding *_tools lists.
-					Unsupported fields are rejected.
+					{t("runtime.fields", {
+						actions:
+							"command_default, file_default, url_default, package_default, output_default, mcp_default, mcp_unknown, mcp_risky",
+						lists: "mcp_allow_servers, mcp_require_approval_servers, mcp_deny_servers",
+					})}
 				</p>
 				<div className="row">
 					<button
@@ -267,7 +249,7 @@ export function RuntimePolicyEditor() {
 						disabled={!canManageTeam || busy}
 						onClick={() => void compileSavedDocument()}
 					>
-						Compile saved YAML (dry run)
+						{t("runtime.compile")}
 					</button>
 					<button
 						type="button"
@@ -275,7 +257,7 @@ export function RuntimePolicyEditor() {
 						disabled={!canManageTeam || version === null || reviewedDocument === null || busy}
 						onClick={() => void publishSavedDocument()}
 					>
-						Compile and publish saved YAML
+						{t("runtime.compilePublish")}
 					</button>
 					<button
 						type="button"
@@ -283,7 +265,7 @@ export function RuntimePolicyEditor() {
 						disabled={!canManageTeam || version === null || busy}
 						onClick={() => void publish()}
 					>
-						{busy ? "Working…" : "Publish runtime policy JSON"}
+						{busy ? t("runtime.working") : t("runtime.publishJson")}
 					</button>
 				</div>
 				{message && <p role="status">{message}</p>}

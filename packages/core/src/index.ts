@@ -281,6 +281,14 @@ export {
 	createBehavioralDetectionOrchestrator,
 	LOCAL_EMBEDDER_MODEL_VERSION,
 } from "./behavioral-orchestrator.js";
+// One block/ask message shape for every connector
+export {
+	approveCommand,
+	type BlockApproval,
+	type BlockMessageOptions,
+	formatAgentBlockReason,
+	formatBlockMessage,
+} from "./block-message.js";
 // Build flavor
 export { isCommercialBuild } from "./build-flavor.js";
 // Cache
@@ -320,8 +328,13 @@ export {
 } from "./causal-chain.js";
 // Clients
 export { AmsiClient, isAmsiSupported } from "./clients/amsi.js";
+export { amsiSessionStatus } from "./clients/amsi-availability.js";
 // Control plane client (optional telemetry/licensing)
 export { ControlPlaneClient, type ControlPlaneClientOptions } from "./clients/control-plane.js";
+export {
+	assertSecureControlPlaneEndpoint,
+	DEFAULT_CONTROL_PLANE_ENDPOINT,
+} from "./clients/control-plane-url.js";
 export type { FileCheckBatchResult, FileCheckResult } from "./clients/file-check.js";
 export { FileCheckClient } from "./clients/file-check.js";
 export type { PackageMetadata } from "./clients/package-registry.js";
@@ -386,6 +399,7 @@ export {
 // Config
 export {
 	AIDR_DIR,
+	type ConfigSource,
 	isInvalidConfig,
 	loadConfig,
 	resolveAuditSignedChain,
@@ -445,6 +459,7 @@ export {
 export {
 	type ApprovalRequestBody,
 	type ApprovalRequestStatus,
+	checkDashboardDecisions,
 	DASHBOARD_APPROVAL_REQUEST_TIMEOUT_MS,
 	DASHBOARD_APPROVAL_REQUEST_TTL_MS,
 	DASHBOARD_APPROVAL_SOURCE,
@@ -458,12 +473,16 @@ export {
 	type DashboardApprovalStatus,
 	type DashboardApprovalTokenPayload,
 	type DashboardContextResult,
+	type DashboardDecisionNotice,
+	type DashboardRequestView,
 	type DashboardTokenRejection,
 	type DashboardTokenVerification,
 	type DashboardUnavailableReason,
+	dashboardApprovalLink,
 	dashboardApprovalStatePath,
 	dashboardArtifactDigest,
 	dashboardToolName,
+	listDashboardApprovalRequests,
 	processDashboardApproval,
 	resolveDashboardApprovalContext,
 	verifyDashboardApprovalToken,
@@ -572,6 +591,11 @@ export {
 	discoveryTargetPseudonym,
 	getDiscoveryTargetKey,
 } from "./discovery-target-pseudonym.js";
+// Display-only settings, first-run privacy notice, unprotected AI tools, `aidr report-fp`.
+export {
+	configuredSupportContact,
+	safeDisplayUrl,
+} from "./display-settings.js";
 // DLP (Data Loss Prevention)
 export type {
 	ContentClassification,
@@ -644,7 +668,9 @@ export { CONFIDENCE_THRESHOLD, DecisionEngine } from "./engine.js";
 export {
 	allowVerdict,
 	evaluateToolCall,
+	REPUTATION_NOT_CHECKED_CATEGORY,
 	recordCanaryTrigger,
+	reputationNotCheckedVerdict,
 	type ToolDelegationContext,
 	type ToolEvaluationContext,
 	type ToolEvaluationRequest,
@@ -756,6 +782,14 @@ export {
 	recordFalsePositiveFeedback,
 	verifyFalsePositiveFeedbackStore,
 } from "./false-positive-feedback.js";
+export {
+	type AuditedBlock,
+	buildFalsePositiveReportBody,
+	FALSE_POSITIVE_REASON_CODES,
+	type FalsePositiveReportResult,
+	findAuditedBlocks,
+	submitFalsePositiveReport,
+} from "./false-positive-report.js";
 export type {
 	AnonymizedThreatPattern,
 	FederatedConfig,
@@ -866,6 +900,7 @@ export {
 	executeWithRollback,
 	formatAskMessage,
 	formatDashboardApprovalNotice,
+	formatDashboardDecisionNotices,
 	formatDenyMessage,
 	type GuardOptions,
 	type GuardResponseSettings,
@@ -936,6 +971,31 @@ export {
 	type HostObservationRecord,
 	recordHostObservation,
 } from "./host-observation.js";
+// Plain-language display text for rule titles, categories and sources
+export {
+	categoryLabel,
+	displayReason,
+	registerReasonDisplay,
+	sourceLabel,
+} from "./i18n/display.js";
+// User-facing message catalog (en/tr) and locale resolution
+export {
+	createTranslator,
+	currentLocale,
+	DEFAULT_LOCALE,
+	formatMessage,
+	type Locale,
+	MESSAGE_CATALOGS,
+	type MessageKey,
+	type MessageParams,
+	normalizeLocale,
+	resolveLocale,
+	SUPPORTED_LOCALES,
+	setConfiguredLocale,
+	severityLabel,
+	t,
+	upperCaseFor,
+} from "./i18n/index.js";
 // Incidents (normalized signals + correlation engine)
 export {
 	anchorEvidenceHead,
@@ -982,7 +1042,12 @@ export {
 	writeSignedIncidentAnchorReceipt,
 } from "./incidents/index.js";
 // Connector initialisation failure (fail-closed load)
-export { formatInitFailureMessage, initFailureCode } from "./init-failure.js";
+export {
+	formatInitFailureMessage,
+	type IntegrityFailureMessage,
+	initFailureCode,
+	integrityFailureMessage,
+} from "./init-failure.js";
 // Installation ID
 export { getInstallationId } from "./installation-id.js";
 // Integrity (signed artifact manifest verification)
@@ -993,10 +1058,26 @@ export {
 	type IntegrityCheckResult,
 	type IntegrityMismatch,
 	type IntegrityStatus,
+	isReleaseKeyMissing,
+	runningAsSea,
+	STANDALONE_RUNTIME_ARTIFACT_ID,
+	standaloneRuntimeArtifact,
 	verifyArtifactIntegrity,
 	verifyArtifactIntegrityAndLog,
 } from "./integrity/index.js";
 // Intel packs (signed offline intelligence)
+export {
+	type AcceptPackOptions,
+	acceptPack,
+	type PackAcceptance,
+	type PackRefusalCode,
+} from "./intel/acceptance.js";
+export {
+	LICENSE_REVOCATIONS_FORMAT,
+	type LicenseRevocationsPayload,
+	type VerifiedLicenseRevocations,
+	verifyLicenseRevocations,
+} from "./intel/license-revocations.js";
 export { loadMergedIntelFromDisk } from "./intel/loader.js";
 export type {
 	IntelReputationProvider,
@@ -1004,10 +1085,45 @@ export type {
 	ReputationVerdict,
 } from "./intel/provider.js";
 export { createIntelReputationProvider } from "./intel/provider.js";
-export type { DomainRiskEntry, IntelMerged } from "./intel/types.js";
+export type { DomainRiskEntry, IntelMerged, StaleIntelPack } from "./intel/types.js";
 // JSONC-tolerant config reader shared by the inventory and policy call sites
 export type { JsoncParseResult, JsoncParseStatus } from "./jsonc.js";
 export { parseJsonc, stripJsonComments } from "./jsonc.js";
+// Vendor-signed licenses and customer packets (on-prem customer builds)
+export {
+	CUSTOMER_ID_PATTERN,
+	CUSTOMER_PACKET_FILE_NAME,
+	CUSTOMER_PACKET_FORMAT,
+	type CustomerPacketPayload,
+	type CustomerPacketSearchOptions,
+	type CustomerPacketSensitivity,
+	type CustomerRecord,
+	customerPacketSearchPaths,
+	customerRecordPath,
+	defaultLicenseKeyRegistry,
+	discoverCustomerPacket,
+	installedLicensePath,
+	LICENSE_FORMAT,
+	LICENSE_PUBLIC_KEYS_FORMAT,
+	type LicenseDocument,
+	type LicenseErrorCode,
+	type LicenseKeyRegistry,
+	type LicensePayload,
+	type LicenseState,
+	LicenseVerificationError,
+	type LicenseVerifyOptions,
+	licenseState,
+	licenseTermEndMs,
+	parseLicensePublicKeyRegistry,
+	readCustomerRecord,
+	readInstalledLicense,
+	readSignedDocumentFile,
+	saveCustomerPacket,
+	type VerifiedCustomerPacket,
+	type VerifiedLicense,
+	verifyCustomerPacket,
+	verifyLicense,
+} from "./license/index.js";
 // Local-mode (unsigned, operator-written) DLP policy file.
 export {
 	DEFAULT_LOCAL_DLP_POLICY_PATH,
@@ -1018,6 +1134,20 @@ export {
 } from "./local-dlp-policy.js";
 // Logger
 export { createChildLogger, createLogger, getLogger, setLogger } from "./logger.js";
+// Machine policy (HKLM\SOFTWARE\Policies\Singularity AIDR, /etc/singularity-aidr/managed.json)
+export {
+	clearMachinePolicyCache,
+	FLEET_ENROLLMENT_KEY_PATTERN,
+	LINUX_MACHINE_POLICY_PATH,
+	MACHINE_POLICY_KEYS,
+	type MachinePolicy,
+	type MachinePolicyDeps,
+	type MachinePolicyRead,
+	overlayMachinePolicy,
+	parseMachinePolicy,
+	readMachinePolicy,
+	WINDOWS_MACHINE_POLICY_KEY,
+} from "./machine-policy.js";
 export type { ApprovalPublicKeyEntry, ManagedState } from "./managed.js";
 // Verified managed identity and entitlement state for connector provisioning.
 export {
@@ -1027,6 +1157,8 @@ export {
 	managedStatePath,
 	parseApprovalPublicKeys,
 } from "./managed.js";
+// Device-code enrollment (`aidr assistant`): the same one-time issuance journal startup uses.
+export { enrollManagedInstallation, enrollmentPending } from "./managed-enrollment.js";
 export type {
 	AigMcpCategory,
 	AigMcpDataStatus,
@@ -1046,7 +1178,10 @@ export {
 	resetCategoryCache,
 } from "./mcp-aig-categories.js";
 export type {
+	McpApprovalEntryRejection,
+	McpApprovalKeyring,
 	McpApprovalResult,
+	McpApprovalSubject,
 	McpAttestationDecision,
 	McpAttestationStateStore,
 	McpAttestationStateV1,
@@ -1065,17 +1200,26 @@ export type {
 // MCP tool identity, signed schema attestation and drift quarantine.
 export {
 	approveQuarantinedMcpToolset,
+	assertPrivateMcpStateDirectory,
 	attestMcpToolManifest,
 	canonicalMcpToolManifest,
+	DEFAULT_MCP_APPROVAL_LIFETIME_MS,
 	diffMcpTools,
 	FileMcpAttestationStore,
+	hasHonouredMcpApproval,
+	MAX_MCP_APPROVAL_LIFETIME_MS,
+	McpAttestationStateIntegrityError,
+	McpStateDirectoryError,
 	McpToolDefinitionSchema,
 	McpToolManifestV1Schema,
 	MemoryMcpAttestationStore,
+	mcpApprovalBindingHash,
 	mcpManifestHash,
 	mcpToolsetHash,
 	SignedMcpToolManifestV1Schema,
 	signMcpToolManifest,
+	signMcpToolsetApproval,
+	verifyMcpToolsetApproval,
 	verifySignedMcpToolManifest,
 	writeMcpSignerHealthEvidence,
 } from "./mcp-attestation.js";
@@ -1186,6 +1330,12 @@ export {
 	verifyOperatorRecord,
 	withOperatorFileLock,
 } from "./operator-approvals.js";
+// Outbound proxy / CA for first-party clients
+export {
+	configureOutboundNetwork,
+	type OutboundNetworkResult,
+	resolveOutboundNetwork,
+} from "./outbound-network.js";
 export { type OutputFinding, scanModelOutput } from "./output-scanner.js";
 // High-precision credential / payment-card detection shared by output scanning and the CLI
 export { detectOutputSensitiveData, type OutputSensitiveMatch } from "./output-sensitive-data.js";
@@ -1270,6 +1420,11 @@ export {
 	type PostureUploadResult,
 	uploadPostureEvents,
 } from "./posture-upload.js";
+export {
+	formatPrivacyNotice,
+	privacyNoticeFacts,
+	takeFirstRunPrivacyNotice,
+} from "./privacy-notice.js";
 export { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
 // Connector-side prompt inspection runner (config, tenant DLP, deadline, audit, failure policy)
 export {
@@ -1313,6 +1468,21 @@ export {
 	scanPromptSafety,
 	type TenantPromptSafetyPolicy,
 } from "./prompt-safety.js";
+export type {
+	ProtectionEventConnector,
+	ProtectionEventCounts,
+	ProtectionEventKind,
+	ProtectionEvents,
+	ProtectionLock,
+	ProtectionLockDeps,
+} from "./protection-lock.js";
+export {
+	PROTECTION_LOCKED_KEY,
+	protectionEventsPath,
+	readProtectionEvents,
+	readProtectionLock,
+	recordProtectionEvent,
+} from "./protection-lock.js";
 export {
 	scanCachedProvisionedOutput,
 	scanProvisionedOutput,
@@ -1505,12 +1675,23 @@ export {
 	RollbackRefusedError,
 	SnapshotIncompleteError,
 } from "./rollback.js";
+// AIDR_THREATS_DIR / AIDR_ALLOWLISTS_DIR overrides (ignored in commercial builds, always reported)
+export {
+	RULE_DIR_ENV,
+	type RuleDirKind,
+	type RuleDirOverride,
+	type RuleDirOverrideOptions,
+	ruleDirOverride,
+	ruleDirOverrideNotice,
+	ruleDirOverrides,
+} from "./rule-dir-override.js";
 export type { RuleSyncConfig } from "./rule-sync.js";
 // Real-Time Rule Sync
 export { RealTimeRuleSync } from "./rule-sync.js";
 // Scan handler
 export { createScanHandler, runPluginScan, type ScanHandlerOptions } from "./scan-handler.js";
 export * from "./secret-store.js";
+export { type ModifiedPathOptions, modifiedPaths } from "./self-defense-paths.js";
 // Sentry
 export { initSentry } from "./sentry.js";
 // Session start orchestrator
@@ -1664,6 +1845,7 @@ export {
 export {
 	extractDomain,
 	isTrustedDomain,
+	isTrustedUrl,
 	loadTrustedDomains,
 } from "./trusted-domains.js";
 export type {
@@ -1729,6 +1911,8 @@ export {
 	AgentSafetyConfigSchema,
 	AiSupplyChainConfigSchema,
 	AllowlistConfigSchema,
+	APPROVALS_MODES,
+	type ApprovalsMode,
 	ArtifactSchema,
 	ArtifactTypeSchema,
 	AuthConfigSchema,
@@ -1743,6 +1927,8 @@ export {
 	IntelPacksConfigSchema,
 	LoggingConfigSchema,
 	nullLogger,
+	OFFLINE_POLICIES,
+	type OfflinePolicy,
 	PackageCheckConfigSchema,
 	PoisoningProtectionConfigSchema,
 	PromptContentSafetySchema,
@@ -1756,6 +1942,57 @@ export {
 	UrlCheckConfigSchema,
 	VerdictSeveritySchema,
 } from "./types.js";
+export {
+	detectUnprotectedAiTools,
+	UNSUPPORTED_AI_TOOL_IDS,
+	type UnprotectedAiTool,
+} from "./unprotected-agents.js";
+// Desktop-installer self-update (`aidr update`, session-start update notice)
+export type {
+	CatalogVerification,
+	InstallerCatalog,
+	InstallerCatalogFile,
+	InstallerPlatform,
+	SignedDocument,
+} from "./update/catalog.js";
+export {
+	INSTALLER_PLATFORMS,
+	parseCatalogPublicKey,
+	verifyCatalogDocument,
+	verifyPublishedCatalog,
+} from "./update/catalog.js";
+export type { UpdateCheck, UpdateCheckState, UpdateNotice, UpdateStatus } from "./update/check.js";
+export {
+	checkInstallerUpdate,
+	compareReleaseVersions,
+	installerUpdateNotice,
+	installerUpdatesApply,
+	readUpdateState,
+	resolveManagedApiKey,
+	resolveUpdateSource,
+	UPDATE_STATE_FILE,
+	writeUpdateState,
+} from "./update/check.js";
+export type {
+	InstallerLayout,
+	MdmStatus,
+	TrustedCatalogKeys,
+	UpdateAutoMode,
+	UpdateEnvironmentDeps,
+} from "./update/environment.js";
+export {
+	CATALOG_KEY_FILE,
+	detectMdmManaged,
+	effectiveAutoMode,
+	installerLayoutFor,
+	installerPlatform,
+	LINUX_MDM_MARKER,
+	trustedCatalogKeys,
+	WINDOWS_MDM_POLICY_KEY,
+	WINDOWS_MDM_POLICY_VALUE,
+} from "./update/environment.js";
+export type { SourceDeps, SourceErrorCode, UpdateSource } from "./update/source.js";
+export { downloadVerified, installerLocation, loadCatalog } from "./update/source.js";
 // URL utilities
 export { hashCommand, normalizeFilePath, normalizeUrl } from "./url-utils.js";
 // Build/runtime version used by health, telemetry and consumer CLIs.

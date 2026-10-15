@@ -10,6 +10,9 @@ import type {
 	AuthenticatedCaller,
 	AuthenticationFailure,
 	DomainRow,
+	JitConfig,
+	JitProvisionInput,
+	JitStatus,
 	OidcAuthRequestRow,
 	OidcDeps,
 	OidcPolicyRow,
@@ -217,6 +220,7 @@ export function providerRow(overrides: Partial<OidcProviderRow> = {}): OidcProvi
 		clock_skew_seconds: 60,
 		discovery: null,
 		enabled: true,
+		extra_scopes: [],
 		...overrides,
 	};
 }
@@ -241,6 +245,15 @@ class MemoryStore implements OidcStore {
 	enforcementCalls: Array<Parameters<OidcStore["setEnforcement"]>[0]> = [];
 	enforcementResult: { ok: true } | { ok: false; error: string } = { ok: true };
 	breakGlassResult: { tenant_id: string; user_id: string } | null | "error" = null;
+	/** tenant -> JIT policy (enabled, allowed domains, default role) and group -> role mappings. */
+	jitPolicies = new Map<string, { enabled: boolean; issuer: string; allowed_domains: string[]; default_role: "member" | "viewer" | null }>();
+	jitMappings = new Map<string, Map<string, MappedRole>>();
+	jitCalls: JitProvisionInput[] = [];
+	jitSaves: Array<Parameters<OidcStore["saveJitPolicy"]>[0]> = [];
+	jitReadmits: Array<Parameters<OidcStore["jitReadmit"]>[0]> = [];
+	/** Forces the RPC answer (e.g. "error" or a denial status) instead of the simple model below. */
+	jitOutcome: { status: JitStatus; role: string | null } | "error" | null = null;
+	failJitRead = false;
 	private userSeq = 0;
 	clock: () => number = () => NOW_MS;
 
@@ -321,6 +334,70 @@ class MemoryStore implements OidcStore {
 	}
 	async groupMappings(tenantId: string) {
 		return this.mappings.get(tenantId) ?? new Map<string, MappedRole>();
+	}
+	async jitEnabled(tenantId: string) {
+		if (this.failJitRead) return null;
+		return this.jitPolicies.get(tenantId)?.enabled === true;
+	}
+	/**
+	 * Simplified model of RPC oidc_jit_provision for handler wiring tests (the
+	 * real semantics are covered by scripts/oidc-jit-provisioning-postgres.test.mjs):
+	 * allowed domain, highest mapped group or the default role, else no_role.
+	 */
+	async jitProvision(input: JitProvisionInput) {
+		this.jitCalls.push(input);
+		if (this.jitOutcome) return this.jitOutcome;
+		const provider = this.providers.get(input.providerId);
+		const policy = provider ? this.jitPolicies.get(provider.tenant_id) : undefined;
+		if (!provider || !policy?.enabled) return { status: "disabled" as const, role: null };
+		if (!policy.allowed_domains.includes(input.emailDomain)) return { status: "domain_not_allowed" as const, role: null };
+		if (!input.groupsEvaluable) return { status: "groups_unevaluable" as const, role: null };
+		const key = `${provider.tenant_id}:${input.authUserId}`;
+		const rank = { admin: 1, member: 2, viewer: 3 } as const;
+		let role: MappedRole | null = null;
+		for (const group of input.groups ?? []) {
+			const mapped = this.jitMappings.get(provider.tenant_id)?.get(group);
+			if (mapped && (!role || rank[mapped] < rank[role])) role = mapped;
+		}
+		role ??= policy.default_role;
+		if (!role) return { status: "no_role" as const, role: null };
+		const existed = this.members.has(key);
+		this.members.set(key, role);
+		return { status: existed ? ("updated" as const) : ("provisioned" as const), role };
+	}
+	async jitConfig(tenantId: string): Promise<JitConfig | null> {
+		const policy = this.jitPolicies.get(tenantId);
+		const provider = await this.findProviderByTenant(tenantId);
+		return {
+			policy: policy && provider ? { provider_id: provider.id, ...policy } : null,
+			mappings: [...(this.jitMappings.get(tenantId) ?? new Map<string, MappedRole>())].map(([group, role]) => ({ group, role })),
+			members: [
+				{ user_id: "77777777-7777-4777-8777-777777777777", role: null, removed_at: new Date(this.clock()).toISOString(), last_synced_at: new Date(this.clock()).toISOString(), email_claim: "gone@a-corp.test" },
+			],
+			directory_authoritative: false,
+		};
+	}
+	async saveJitPolicy(input: Parameters<OidcStore["saveJitPolicy"]>[0]) {
+		if (this.members.get(`${input.tenantId}:${input.actorUserId}`) !== "owner") return "owner_required" as const;
+		const verified = this.domains.filter((row) => row.tenant_id === input.tenantId && row.verified_at).map((row) => row.domain);
+		if (input.enabled && input.allowedDomains.length === 0) return "domain_required" as const;
+		if (input.enabled && !input.allowedDomains.every((domain) => verified.includes(domain))) return "domain_not_verified" as const;
+		this.jitSaves.push(input);
+		const provider = this.providers.get(input.providerId);
+		this.jitPolicies.set(input.tenantId, {
+			enabled: input.enabled,
+			issuer: provider?.issuer ?? "",
+			allowed_domains: input.allowedDomains,
+			default_role: input.defaultRole,
+		});
+		this.jitMappings.set(input.tenantId, new Map(input.mappings.map((mapping) => [mapping.group, mapping.role])));
+		this.audits.push({ actor_user_id: input.actorUserId, tenant_id: input.tenantId, target_user_id: null, action: "identity.oidc.jit_policy_updated", detail: { enabled: input.enabled } });
+		return "saved" as const;
+	}
+	async jitReadmit(input: Parameters<OidcStore["jitReadmit"]>[0]) {
+		if (this.members.get(`${input.tenantId}:${input.actorUserId}`) !== "owner") return "owner_required" as const;
+		this.jitReadmits.push(input);
+		return input.userId === "77777777-7777-4777-8777-777777777777" ? ("readmitted" as const) : ("not_removed" as const);
 	}
 	async verifiedDomains(tenantId: string) {
 		return this.domains.filter((row) => row.tenant_id === tenantId && row.verified_at).map((row) => row.domain);

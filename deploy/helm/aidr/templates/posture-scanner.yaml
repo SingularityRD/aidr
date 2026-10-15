@@ -4,12 +4,15 @@
 {{- end }}
 {{- if .Values.postureScanner.enabled }}
 {{- $scanner := .Values.postureScanner -}}
-{{- $secret := required "postureScanner.existingSecret is required when postureScanner.enabled (keys: agent-shared-secret, task-postgres-dsn, bridge-api-key or bridge-jwt-secret)" $scanner.existingSecret -}}
+{{- $secret := required "postureScanner.existingSecret is required when postureScanner.enabled (keys: agent-shared-secret, task-postgres-dsn, bridge-jwt-secret)" $scanner.existingSecret -}}
 {{- $signingSecret := required "postureScanner.signingPublicKeySecret is required when postureScanner.enabled (key: signing-public.pem)" $scanner.signingPublicKeySecret -}}
 {{- $dataConfigMap := required "postureScanner.dataConfigMap is required when postureScanner.enabled (kubectl create configmap ... --from-file=packages/core/src/generated/)" $scanner.dataConfigMap -}}
 {{- $proxy := required "postureScanner.egressProxy.url is required when postureScanner.enabled: remote scan traffic must traverse a reviewed egress proxy" $scanner.egressProxy.url -}}
-{{- if not (has $scanner.bridge.authMode (list "broker" "api_key")) -}}
-{{- fail "postureScanner.bridge.authMode must be broker or api_key" -}}
+{{- /* api_key mode takes the tenant from a caller header (services/aig-bridge/app/auth.py):
+     any holder of the shared key could act for every tenant. The chart serves
+     tenants, so only broker (tenant-bound, scoped JWTs) is accepted. */ -}}
+{{- if ne $scanner.bridge.authMode "broker" -}}
+{{- fail (printf "postureScanner.bridge.authMode must be broker (got %q): api_key mode trusts a caller-supplied tenant header and is not supported by this chart" (toString $scanner.bridge.authMode)) -}}
 {{- end -}}
 {{- $server := include "aidr.component" (dict "root" . "component" "posture-scanner-server") -}}
 {{- $agent := include "aidr.component" (dict "root" . "component" "posture-scanner-agent") -}}
@@ -308,13 +311,6 @@ spec:
               value: {{ $scanner.bridge.authMode | quote }}
             - name: BRIDGE_AUTH_REQUIRED
               value: "true"
-            {{- if eq $scanner.bridge.authMode "api_key" }}
-            - name: BRIDGE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $secret }}
-                  key: bridge-api-key
-            {{- else }}
             - name: BRIDGE_JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -324,7 +320,6 @@ spec:
               value: {{ required "postureScanner.bridge.jwtIssuer is required in broker mode" $scanner.bridge.jwtIssuer | quote }}
             - name: BRIDGE_JWT_AUDIENCE
               value: {{ required "postureScanner.bridge.jwtAudience is required in broker mode" $scanner.bridge.jwtAudience | quote }}
-            {{- end }}
             - name: BRIDGE_JWT_REPLAY_DB
               value: /app/state/jwt-replay.db
             - name: BRIDGE_TENANT_REQUIRED

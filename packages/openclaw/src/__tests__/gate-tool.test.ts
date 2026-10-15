@@ -65,7 +65,7 @@ type ToolCallHandler = (
 const BLOCKED_COMMAND = "chmod 777 ./no-self-approve.sh";
 
 function actionIdFrom(blockReason: string): string {
-	const match = /actionId:\s*"([a-f0-9]{64})"/.exec(blockReason);
+	const match = /Approval reference: ([a-f0-9]{64})/.exec(blockReason);
 	expect(match?.[1], `block message must expose the approval reference: ${blockReason}`).toMatch(
 		/^[a-f0-9]{64}$/,
 	);
@@ -156,11 +156,11 @@ describe("OpenClaw approval authority", { timeout: 30_000 }, () => {
 
 		expect(blocked?.block).toBe(true);
 		const message = blocked?.blockReason ?? "";
-		expect(message).toContain("blocked it pending explicit user approval");
+		expect(message).toContain("stopped this action until you approve it");
 		expect(actionIdFrom(message)).toHaveLength(64);
 		// The block message must not hand the model a callable approval recipe.
 		expect(message).not.toContain("aidr_approve");
-		expect(message).toContain("cannot approve this action yourself");
+		expect(message).toContain("you cannot approve this action");
 	});
 
 	it("an agent cannot self-approve: after trying every registered tool the retry stays blocked", async () => {
@@ -202,7 +202,7 @@ describe("OpenClaw approval authority", { timeout: 30_000 }, () => {
 			session,
 		);
 		expect(retry?.block).toBe(true);
-		expect(retry?.blockReason).toContain("blocked it pending explicit user approval");
+		expect(retry?.blockReason).toContain("stopped this action until you approve it");
 
 		// And it stays blocked in a fresh session too.
 		const freshSession = await handler(

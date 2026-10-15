@@ -8,6 +8,17 @@ This is a minimal multi-tenant dashboard for:
 - Incidents view (derived from `events` telemetry)
 - Billing / seat usage (order-scoped entitlements; production sale approval remains open)
 
+## Language
+
+`src/i18n/` holds English and Turkish strings (`en.ts`, `tr.ts`) and a small
+React provider; there is no i18n library. The header switch (EN/TR) stores the
+choice in the browser (`aidr.locale`); without a stored choice a Turkish browser
+language selects Turkish, anything else English. Translated today: the sign-in
+page, the console and public navigation, the plan gate and the error / 404 /
+configuration pages. The individual console pages (policies, events, billing,
+governance and so on) are still English only. `src/__tests__/i18n.test.tsx`
+fails when a key is missing in either language or unused.
+
 ## AutoSecOps integration
 
 The authenticated AIDR dashboard can show the connected AutoSecOps runtime

@@ -358,3 +358,109 @@ tests:
             exp_annotations:
               summary: AIDR public TLS certificate expires in less than three days
               action: Page the certificate owner, run the aidr-tls-renew unit if the timer did not fire, and complete emergency renewal.
+
+  - name: license expiry alerts follow the 30-day, 7-day, grace and expired thresholds
+    interval: 1m
+    input_series:
+      - series: 'aidr_license_present{job="aidr-control-plane",instance="cp:8080"}'
+        values: '1x359'
+      - series: 'aidr_license_evidence_ok{job="aidr-control-plane",instance="cp:8080"}'
+        values: '1x359'
+      - series: 'aidr_license_status_age_seconds{job="aidr-control-plane",instance="cp:8080"}'
+        values: '60x359'
+      # Four 90-minute phases: 20 days left, 5 days left, in grace, past grace.
+      - series: 'aidr_license_remaining_seconds{job="aidr-control-plane",instance="cp:8080"}'
+        values: '1728000x89 432000x89 0x179'
+      - series: 'aidr_license_grace_remaining_seconds{job="aidr-control-plane",instance="cp:8080"}'
+        values: '2937600x89 1641600x89 864000x89 0x89'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: AIDRLicenseExpiresIn30Days
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: cp:8080
+              severity: warning
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR license ends within 30 days
+              action: Ask the vendor for the renewed signed license, have a workspace admin import it and an admission operator apply it.
+      - eval_time: 80m
+        alertname: AIDRLicenseExpiresIn7Days
+        exp_alerts: []
+      - eval_time: 170m
+        alertname: AIDRLicenseExpiresIn7Days
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: cp:8080
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR license ends within 7 days
+              action: Escalate the renewal; import and apply the renewed signed license before the end date to avoid the grace period.
+      - eval_time: 170m
+        alertname: AIDRLicenseExpiresIn30Days
+        exp_alerts: []
+      - eval_time: 260m
+        alertname: AIDRLicenseInGracePeriod
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: cp:8080
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR license has ended and the grace period is running
+              action: Apply the renewed signed license now; managed features (enrollment, policy sync, telemetry) stop when the grace period ends. Local detection is unaffected.
+      - eval_time: 350m
+        alertname: AIDRLicenseExpired
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: cp:8080
+              severity: critical
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR license and grace period have ended; managed features are stopped
+              action: Apply a renewed signed license. Endpoints keep enforcing local detection but cannot enroll or sync until admission is restored.
+      - eval_time: 350m
+        alertname: AIDRLicenseInGracePeriod
+        exp_alerts: []
+
+  - name: failed or stale license evidence is reported, and an unlicensed deployment does not page
+    interval: 1m
+    input_series:
+      - series: 'aidr_license_evidence_ok{job="aidr-control-plane",instance="failed:8080"}'
+        values: '0x59'
+      - series: 'aidr_license_evidence_ok{job="aidr-control-plane",instance="stale:8080"}'
+        values: '1x59'
+      - series: 'aidr_license_status_age_seconds{job="aidr-control-plane",instance="stale:8080"}'
+        values: '14400x59'
+      - series: 'aidr_license_present{job="aidr-control-plane",instance="unlicensed:8080"}'
+        values: '0x59'
+      - series: 'aidr_license_evidence_ok{job="aidr-control-plane",instance="unlicensed:8080"}'
+        values: '1x59'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: AIDRLicenseEvidenceUnhealthy
+        exp_alerts:
+          - exp_labels:
+              job: aidr-control-plane
+              instance: failed:8080
+              severity: warning
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR license expiry evidence is missing, failed or stale
+              action: Check the hourly aidr-export-retention maintenance run and its license_health receipt; until it recovers, license expiry alerts cannot fire.
+          - exp_labels:
+              job: aidr-control-plane
+              instance: stale:8080
+              severity: warning
+              service: aidr-control-plane
+            exp_annotations:
+              summary: AIDR license expiry evidence is missing, failed or stale
+              action: Check the hourly aidr-export-retention maintenance run and its license_health receipt; until it recovers, license expiry alerts cannot fire.
+      - eval_time: 45m
+        alertname: AIDRLicenseExpired
+        exp_alerts: []

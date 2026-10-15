@@ -134,7 +134,7 @@ describe("canonical service-role user routes", () => {
 	it("calls the barrier in the enumerated JWT-authenticated routes", () => {
 		for (const route of [
 			"api-keys", "audit-export", "autosecops-runtime", "billing-checkout",
-			"device-verify", "enrollment-tokens", "oauth-callback", "operator-admin", "pilot-admin",
+			"device-verify", "enrollment-tokens", "fleet-keys", "oauth-callback", "operator-admin", "pilot-admin",
 			"pilot-apply", "pilot-status", "policy-management", "team-invite",
 			"tenant-settings", "approval-requests", "compliance-report", "governance-digest", "ai-governance",
 		]) {

@@ -6,6 +6,7 @@ import {
 	buildReport,
 	type CaseResult,
 	connectorRepoRoot,
+	DEFAULT_MIN_SCORE,
 	formatHtml,
 	formatReport,
 	formatTable,
@@ -199,6 +200,25 @@ describe("simulate scoring math", () => {
 		};
 		expect(buildReport({ ...base, minScore: 50 }).passed).toBe(true);
 		expect(buildReport({ ...base, minScore: 60 }).passed).toBe(false);
+		// MSC-12: the default threshold fails a half-blind engine.
+		expect(buildReport({ ...base, minScore: DEFAULT_MIN_SCORE }).passed).toBe(false);
+		expect(formatTable(buildReport({ ...base, minScore: DEFAULT_MIN_SCORE }))).toContain(
+			`FAIL — score 50% < minimum ${DEFAULT_MIN_SCORE}%`,
+		);
+	});
+
+	it("never passes a run in which nothing could be scored, whatever the threshold", () => {
+		const report = buildReport({
+			results: [caseResult("a", "deny", abort("reputation leg unavailable"))],
+			suites: ["destructive"],
+			connector: null,
+			minScore: 0,
+			sensitivity: "balanced",
+			mode: "evaluator",
+		});
+		expect(report.totals.counted).toBe(0);
+		expect(report.passed).toBe(false);
+		expect(formatTable(report)).toContain("FAIL — no fixture could be scored");
 	});
 });
 
@@ -224,6 +244,16 @@ describe("simulate formatting", () => {
 		const table = formatTable(report);
 		expect(table).toContain("Attack Simulation Self-Test");
 		expect(table).toContain("Overall detection score: 100%");
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			const turkish = formatTable(report);
+			expect(turkish).toContain("Genel tespit puanı: %100");
+			expect(turkish).toContain("Kategori");
+			expect(turkish).toContain("BAŞARILI");
+			expect(formatHtml(report)).toContain('<html lang="tr">');
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("renders self-contained HTML without vendor names", () => {
@@ -274,6 +304,9 @@ describe("simulate evaluator mode isolation", () => {
 			expect(spawnSpy).not.toHaveBeenCalled();
 			expect(fetchSpy).not.toHaveBeenCalled();
 			expect(report.mode).toBe("evaluator");
+			// MSC-12: without --min-score the gate is the default threshold, not 0.
+			expect(report.minScore).toBe(DEFAULT_MIN_SCORE);
+			expect(report.passed).toBe(report.score >= DEFAULT_MIN_SCORE);
 			expect(report.totals.counted).toBeGreaterThan(0);
 		} finally {
 			spawnSpy.mockRestore();

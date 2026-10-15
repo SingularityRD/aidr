@@ -21,7 +21,7 @@ covers operation.
 
 - One Helm release per installation and namespace. The chart creates no cluster-scoped
   resources.
-- `migrations` is a Helm hook Job; `backup` is an optional CronJob.
+- `migrations` is a Helm hook Job; `maintenance` is an hourly CronJob; `backup` is an optional, encrypted CronJob.
 - `postureScanner.enabled` adds the AI Security Posture scanner (`posture-scanner-server`,
   `posture-scanner-agent` and `posture-scanner-bridge`, the
   `docker-compose.posture-scanner.yml` stack) with the bridge reachable only from
@@ -35,8 +35,8 @@ covers operation.
 - A container registry the cluster can pull from.
 - For production: a Supabase-compatible Postgres 15+ (see below) with backups/PITR, and
   optionally an S3-compatible bucket for storage.
-- A workstation with Node 22+, Docker and this repository to build images and generate
-  credentials.
+- A workstation with Node 22+ and this repository to generate credentials, plus Docker when
+  building the images from source instead of using the signed release images.
 
 ## Images
 
@@ -47,7 +47,40 @@ Upstream images are used unchanged. Three AIDR images are built from this reposi
 |---|---|
 | `aidr/dashboard` | `deploy/dashboard/Dockerfile` + `packages/dashboard/dist` + `supabase/templates` |
 | `aidr/edge-functions` | `deploy/helm/images/edge-functions.Dockerfile`: `supabase/edge-runtime:v1.77.4` (digest-pinned), the reviewed upstream router `docker/volumes/functions/main` (from `deploy/upstream` at the pinned commit; the `hello` sample is dropped) and `supabase/functions` |
-| `aidr/migrations` | `deploy/helm/images/migrations.Dockerfile`: `postgres:17.6-alpine3.22` client, `migrate.sql` and `aidr-migrate.sh` |
+| `aidr/migrations` | `deploy/helm/images/migrations.Dockerfile`: `postgres:17.11-alpine3.24` client (digest-pinned, matching the 17.11 server), `migrate.sql` and `aidr-migrate.sh` |
+
+### Vendor-built, signed images and chart
+
+`.github/workflows/release-images.yml` builds the three images above plus
+`aidr/privacy-gateway` and the three posture scanner images from a protected, signed
+`vX.Y.Z-rc.N` tag, pushes them to `ghcr.io/singularityrd/aidr/<name>:<X.Y.Z-rc.N>`,
+scans each digest with Trivy (a CRITICAL finding with a fix fails the run), signs it
+keyless with cosign, attaches a CycloneDX SBOM attestation and a GitHub build-provenance
+attestation, and pushes the chart as `oci://ghcr.io/singularityrd/charts/aidr` with every
+AIDR image already pinned to `tag@sha256:digest` in its default values. The run's
+`release-images-<run id>` artifact holds `release-images.json` (every digest), the scan
+summary, the SBOMs and the packaged chart. Until GitHub Actions is enabled for the
+repository (OPS-1) and a candidate tag has gone through it, no such images exist; build
+from source as below.
+
+Verify before installing (replace the tag and digest with the release values):
+
+```bash
+identity='https://github.com/SingularityRD/aidr/.github/workflows/release-images.yml@refs/tags/v0.6.0-rc.0'
+cosign verify --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/singularityrd/aidr/dashboard@sha256:<digest>
+cosign verify-attestation --type cyclonedx --certificate-identity "$identity" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/singularityrd/aidr/dashboard@sha256:<digest>
+gh attestation verify oci://ghcr.io/singularityrd/aidr/dashboard@sha256:<digest> --repo SingularityRD/aidr
+helm pull oci://ghcr.io/singularityrd/charts/aidr --version 0.6.0-rc.0
+```
+
+When `global.imageRegistry` points at an internal mirror, the pinned digests still apply,
+so a mirrored image that differs from the signed one does not start.
+
+### Building from source
 
 ```bash
 pnpm -C packages/dashboard build
@@ -156,34 +189,58 @@ your cluster.
 
 ## Upgrade and rollback
 
+Start from [`values.example.yaml`](../../deploy/helm/aidr/values.example.yaml) (the
+common customer settings, commented) and follow
+[Upgrade in 3 commands](../../deploy/helm/aidr/README.md#upgrade-in-3-commands):
+
 ```bash
 node deploy/helm/build-images.mjs --output .aidr-images-<version> --registry <registry> --build --push
-helm upgrade aidr deploy/helm/aidr -n aidr -f my-values.yaml
+helm upgrade aidr deploy/helm/aidr -n aidr -f my-values.yaml --wait --timeout 30m
+kubectl -n aidr wait --for=condition=Available deployment -l app.kubernetes.io/instance=aidr --timeout=10m
 ```
 
-Back up first. The `pre-upgrade` migration applies the new schema atomically before
+Back up first (with `backup.enabled` the chart's pre-upgrade hook does it). The `pre-upgrade` migration applies the new schema atomically before
 new pods roll out; if it fails nothing is applied and the old release keeps serving.
 `helm rollback` restores the previous manifests but not the schema: migrations are
 forward-only, so a rollback across a migration needs a database restore.
 
 ## Backup and restore
 
-`backup.enabled=true` schedules `pg_dump --format=custom` into a PVC with a `.sha256`
-file per dump and `backup.retentionDays` pruning. Copy the volume off-cluster (volume
-snapshots, Velero, or an object-store sync) and rehearse restores regularly:
+Backups are off by default. `backup.enabled=true` (with the required
+`backup.encryption.ageRecipients`) schedules `pg_dump --format=custom` streamed through
+age into a PVC (`aidr-<stamp>.dump.age` plus `.sha256`) with `backup.retentionDays`
+pruning; `backup.offsite.enabled=true` also uploads every encrypted artifact to an
+S3-compatible bucket off the cluster. Keep the age identity, the credential directory and
+the exported pgsodium root key off the cluster (chart README, "Backups" and "Key
+material"), and rehearse restores regularly:
 
 ```bash
 kubectl -n aidr run restore --rm -it --image <registry>/aidr/migrations:<tag> --command -- sh
-sha256sum -c aidr-<stamp>.dump.sha256
-pg_restore --clean --if-exists --no-owner -d "$DATABASE_URL" aidr-<stamp>.dump
+sha256sum -c aidr-<stamp>.dump.age.sha256
+age -d -i backup-identity.txt aidr-<stamp>.dump.age | pg_restore --clean --if-exists --no-owner -d "$DATABASE_URL"
 ```
+
+Copy the identity into the restore pod only for the restore (for example with
+`kubectl cp`) and delete the pod afterwards.
+
+## Retention maintenance
+
+The chart's `maintenance` CronJob (on by default, hourly) runs the same retention,
+erasure and governance-digest worker as the Compose timer; see the chart README,
+"Retention maintenance", and [control-plane.md](../control-plane.md#retention-maintenance).
 
 The Compose tools `scripts/deployment-backup*.mjs` and `deployment-restore-drill.mjs`
 operate on a Compose deployment directory and do not apply to the chart.
 
 ## Air-gapped installs
 
-Build the AIDR images and bundle every upstream image the chart renders with
+The customer kit carries this chart (`deploy/helm/aidr`) and the credential
+generator (`deploy/helm/generate-secrets.mjs`); run the generator on a host inside
+the isolated environment so the credentials never travel. The vendor-signed image
+bundle in the kit (`airgap/`, see the installation guide) covers the Compose
+stack, not the chart's image set: for Kubernetes, mirror the vendor's
+cosign-signed, digest-pinned images (`cosign verify` as above) and every upstream
+image the chart renders through a connected host with
 `scripts/build-airgap-images.mjs` (see the chart README). In the isolated environment,
 push them to the internal registry and set `global.imageRegistry`. The edge functions
 import `npm:` packages at first use; point `functions.npmRegistry` at an internal npm
@@ -217,7 +274,10 @@ missing TLS, incomplete posture scanner inputs and the retired `aig` values key.
   ingress signer (`deploy/ingress/device-start.mjs`) in front of it. The chart does not
   deploy the signer; without it the function rejects requests (fails closed) and agents
   must enroll with enrollment tokens instead.
-- The readiness evidence worker, SIEM delivery and export-retention timers
+- Central SIEM forwarding runs as the `siem-forwarder` CronJob
+  (`siem.forwarder.enabled=true`, collectors listed in `networkPolicy.siemEgress`; see
+  [the SIEM forwarding contract](../contracts/siem-forwarding.md)). The host-side readiness
+  evidence worker, the per-endpoint SIEM queue drain and the export-retention timers
   (`deploy/maintenance`) are not yet shipped as CronJobs.
 - Storage with the `file` backend is a single replica on a `ReadWriteOnce` volume; use
   `storage.backend=s3` for more replicas.

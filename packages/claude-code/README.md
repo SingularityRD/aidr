@@ -28,8 +28,17 @@ model are not covered.
   Unsafe or uninspectable recognized MCP result envelopes are replaced by a
   text-only MCP error result; supported built-in results use shape-preserving
   replacements.
-  Unknown shapes or oversized hook input are reported as coverage-unavailable
-  rather than claimed as quarantined. Live Claude-host acceptance of replacement
+  Output that cannot be inspected in full fails closed: a result beyond the
+  262,144-character scan window, hook input up to the 16 MiB parse ceiling
+  (`AIDR_POST_TOOL_USE_MAX_INPUT_BYTES`, 1–64 MiB), the internal deadline
+  (`AIDR_POST_TOOL_USE_DEADLINE_MS`, default 4 s) and internal errors all answer
+  with a quarantine replacement, never a clean result. When the result could not
+  be parsed (input above the ceiling, deadline before stdin closed) or its shape is
+  unknown, the replacement is chosen by tool name: a text block for MCP tools and
+  the required `stdout`/`stderr`/`interrupted` fields for Bash. For other built-in
+  tools in that situation Claude Code would reject a guessed shape and keep the
+  original, so the hook says plainly that the output may remain available instead
+  of claiming a quarantine. Live Claude-host acceptance of replacement
   outputs covers a Bash result only (see above); MCP and other result shapes are
   not host-accepted, and PostToolUse cannot undo tool execution.
 - Records decisions in the local audit log and, when a managed control plane is
@@ -45,7 +54,7 @@ model are not covered.
   [dashboard approvals](../../docs/configuration.md#managed-mode-dashboard-approvals).
 - With `operator_approvals.mode: "operator"` an `ask` never opens the native
   dialog: the call is denied with an approval reference, listed in `aidr pending`,
-  and exactly one retry is released after `aidr approve <actionId>` in your own
+  and exactly one retry is released after `aidr approve <first 8 characters of the id>` in your own
   terminal (same store, OS-vault key and single-use ledger as OpenClaw/OpenCode/Codex).
   In the default `host_dialog` mode the dialog decides and the ask is listed in
   `aidr pending` for information only. See
@@ -91,6 +100,19 @@ claude --plugin-dir /absolute/path/to/aidr
 
 A fresh install enforces locally with no account or network access. Managed
 features are an opt-in layer on top of local enforcement.
+
+### Machine-wide deployment
+
+Hooks in `~/.claude/settings.json` belong to the user, who can delete them or
+set `disableAllHooks`. A per-machine install (MSI, .deb, .rpm) instead runs
+`aidr machine-hooks install`, which writes the bundle's hooks into a Claude Code
+managed-settings drop-in (`/etc/claude-code/managed-settings.d/50-singularity-aidr.json`,
+`C:\Program Files\ClaudeCode\managed-settings.d\…`). Managed hooks run for every
+user, and a user's `disableAllHooks` does not turn them off. With
+`--lock-other-hooks` the drop-in also sets `allowManagedHooksOnly`. If the
+organisation already delivers Claude Code policy through server-managed
+settings, MDM or the HKLM registry, that source wins over the files; see
+[docs/operations/hook-tamper-resistance.md](../../docs/operations/hook-tamper-resistance.md).
 
 ## Entry points
 

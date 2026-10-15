@@ -1,0 +1,305 @@
+import type { MessagePairs } from "./define";
+
+/** Platform-operator console (tenant licences and usage). */
+export const operatorMessages = {
+	"op.err.tenant": ["That tenant id is not valid.", "Bu çalışma alanı kimliği geçerli değil."],
+	"op.err.plan": ["That plan id is not an active plan.", "Bu plan kimliği etkin bir plan değil."],
+	"op.err.seats": [
+		"Seats must be a whole number from 1 to {max}.",
+		"Koltuk sayısı 1 ile {max} arasında bir tam sayı olmalıdır.",
+	],
+	"op.err.expiry": [
+		"The expiry must be a future date and time.",
+		"Bitiş gelecekte bir tarih ve saat olmalıdır.",
+	],
+	"op.err.reference": [
+		"Enter a single-line reference of up to 200 characters.",
+		"En fazla 200 karakterlik tek satırlık bir başvuru girin.",
+	],
+	"op.err.owner": [
+		"The owner must be a user id (UUID).",
+		"Sahip bir kullanıcı kimliği (UUID) olmalıdır.",
+	],
+	"op.err.reason": [
+		"Enter a single-line reason of up to 200 characters.",
+		"En fazla 200 karakterlik tek satırlık bir gerekçe girin.",
+	],
+	"op.err.page": [
+		"The page cursor was rejected. Reload the tenant list.",
+		"Sayfa imleci reddedildi. Çalışma alanı listesini yeniden yükleyin.",
+	],
+	"op.err.grant": [
+		"The licence grant was rejected. Check each field.",
+		"Lisans verme reddedildi. Her alanı kontrol edin.",
+	],
+	"op.err.ownerRequired": [
+		"This tenant has more than one owner (or none). Enter the owner user id to grant the licence to.",
+		"Bu çalışma alanının birden fazla sahibi var (ya da hiç yok). Lisansın verileceği sahibin kullanıcı kimliğini girin.",
+	],
+	"op.err.ownerNotEligible": [
+		"That user is not a current owner of an active tenant.",
+		"Bu kullanıcı etkin bir çalışma alanının şu anki sahibi değil.",
+	],
+	"op.err.closed": [
+		"The tenant is not active, so it cannot be licensed.",
+		"Çalışma alanı etkin değil; bu yüzden lisanslanamaz.",
+	],
+	"op.err.notFound": ["No tenant has that id.", "Bu kimliğe sahip çalışma alanı yok."],
+	"op.err.admissionOperator": [
+		"You are not an admission operator for this tenant (or you are a member of it). Licences need a separate, unexpired admission-operator grant.",
+		"Bu çalışma alanı için kabul operatörü değilsiniz (ya da onun üyesisiniz). Lisanslar için ayrı ve süresi dolmamış bir kabul operatörü yetkisi gerekir.",
+	],
+	"op.err.admissionMode": [
+		"Licensed grants need the deployment admission mode set to cloud or onprem.",
+		"Lisanslı yetkiler için kurulumun kabul modunun cloud ya da onprem olması gerekir.",
+	],
+	"op.err.unavailable": [
+		"The operator service did not confirm this action. Nothing is shown as done; check the logs and retry.",
+		"Operatör hizmeti bu işlemi onaylamadı. Hiçbir şey yapılmış gibi gösterilmez; kayıtları kontrol edip yeniden deneyin.",
+	],
+	"op.err.authorization": [
+		"Operator authorization could not be checked. Retry shortly.",
+		"Operatör yetkisi denetlenemedi. Birazdan yeniden deneyin.",
+	],
+	"op.err.assurance": [
+		"The session assurance level could not be checked. Retry shortly.",
+		"Oturum güvence düzeyi denetlenemedi. Birazdan yeniden deneyin.",
+	],
+	"op.err.tooLarge": ["The request was too large.", "İstek çok büyük."],
+	"op.err.rejected": ["The request was rejected.", "İstek reddedildi."],
+	"op.err.origin": [
+		"This dashboard origin is not allowed to call the operator service (AIDR_ALLOWED_ORIGINS).",
+		"Bu panel adresinin operatör hizmetini çağırmasına izin verilmiyor (AIDR_ALLOWED_ORIGINS).",
+	],
+	"op.skip": ["Skip to content", "İçeriğe geç"],
+	"op.brand": ["Operator console", "Operatör konsolu"],
+	"op.brandSr": ["Singularity AIDR operator console", "Singularity AIDR operatör konsolu"],
+	"op.verifying": ["Verifying session", "Oturum doğrulanıyor"],
+	"op.verifyingLead": [
+		"Reading the signed-in session before contacting the operator service.",
+		"Operatör hizmetiyle konuşmadan önce açık oturum okunuyor.",
+	],
+	"op.signInRequired": ["Sign in required", "Oturum açmanız gerekiyor"],
+	"op.signInLead": [
+		"The operator console needs a signed-in session.",
+		"Operatör konsolu için oturum açmış olmanız gerekir.",
+	],
+	"op.signIn": ["Sign in", "Oturum aç"],
+	"op.noAdmission": ["No admission", "Kabul yok"],
+	"op.active": ["Active", "Etkin"],
+	"op.inactive": ["Inactive", "Etkin değil"],
+	"op.listUnavailable": [
+		"The operator service is unavailable. No tenant data is shown.",
+		"Operatör hizmeti kullanılamıyor. Hiçbir çalışma alanı verisi gösterilmiyor.",
+	],
+	"op.listUnexpected": [
+		"The operator service returned an unexpected tenant list. No tenant data is shown.",
+		"Operatör hizmeti beklenmeyen bir çalışma alanı listesi döndürdü. Hiçbir çalışma alanı verisi gösterilmiyor.",
+	],
+	"op.checking": ["Checking operator access", "Operatör erişimi denetleniyor"],
+	"op.checkingLead": [
+		"The operator service decides access. Nothing is shown until it answers.",
+		"Erişime operatör hizmeti karar verir. Yanıt gelene kadar hiçbir şey gösterilmez.",
+	],
+	"op.forbidden": ["403 · Forbidden", "403 · Yasak"],
+	"op.accessRequired": ["Operator access required", "Operatör erişimi gerekiyor"],
+	"op.accessRequiredLead": [
+		"This account has no active platform-operator grant, so the operator service refused the request. Platform-operator access is provisioned by a database administrator through change control; it cannot be requested from this page.",
+		"Bu hesabın etkin bir platform operatörü yetkisi yok; bu yüzden operatör hizmeti isteği reddetti. Platform operatörü erişimi, değişiklik denetimiyle bir veritabanı yöneticisi tarafından verilir; bu sayfadan istenemez.",
+	],
+	"op.returnDashboard": ["Return to dashboard", "Panele dön"],
+	"op.sessionInvalid": ["Session no longer valid", "Oturum artık geçerli değil"],
+	"op.sessionInvalidLead": [
+		"The operator service rejected this session. Sign in again.",
+		"Operatör hizmeti bu oturumu reddetti. Yeniden oturum açın.",
+	],
+	"op.unavailable": ["Operator service unavailable", "Operatör hizmeti kullanılamıyor"],
+	"op.eyebrow": ["Platform operator", "Platform operatörü"],
+	"op.title": ["Tenant licences and usage", "Çalışma alanı lisansları ve kullanımı"],
+	"op.lead": [
+		"Grant, renew and revoke tenant licences and read seat and agent usage. Every call is re-authorized by the operator service at AAL2 and recorded in the administrative audit log with your user id — including reads.",
+		"Çalışma alanı lisanslarını verin, yenileyin ve geri alın; koltuk ve araç kullanımını okuyun. Her çağrı operatör hizmeti tarafından AAL2 düzeyinde yeniden yetkilendirilir ve kullanıcı kimliğinizle yönetim denetim kaydına yazılır — okumalar dahil.",
+	],
+	"op.tenants": ["Tenants", "Çalışma alanları"],
+	"op.noTenants": [
+		"No tenants exist on this control plane yet.",
+		"Bu yönetim panelinde henüz çalışma alanı yok.",
+	],
+	"op.tenantsCaption": ["Tenants and licence status", "Çalışma alanları ve lisans durumu"],
+	"op.col.tenant": ["Tenant", "Çalışma alanı"],
+	"op.col.kind": ["Kind", "Tür"],
+	"op.col.licence": ["Licence", "Lisans"],
+	"op.col.plan": ["Plan", "Plan"],
+	"op.col.seats": ["Seats", "Koltuklar"],
+	"op.col.expires": ["Expires", "Bitiş"],
+	"op.col.actions": ["Actions", "İşlemler"],
+	"op.personalWithheld": [
+		"Personal workspace (name withheld)",
+		"Kişisel çalışma alanı (ad gizlendi)",
+	],
+	"op.manageLabel": ["Manage {name}", "{name} yönet"],
+	"op.manage": ["Manage", "Yönet"],
+	"op.previous": ["Previous page", "Önceki sayfa"],
+	"op.next": ["Next page", "Sonraki sayfa"],
+	"op.page": ["Page {page}", "Sayfa {page}"],
+	"op.usageUnavailable": [
+		"Usage is unavailable for this tenant. No figures are shown.",
+		"Bu çalışma alanı için kullanım bilgisi alınamıyor. Hiçbir rakam gösterilmiyor.",
+	],
+	"op.usageUnexpected": [
+		"The operator service returned unexpected usage data. No figures are shown.",
+		"Operatör hizmeti beklenmeyen kullanım verisi döndürdü. Hiçbir rakam gösterilmiyor.",
+	],
+	"op.badPlan": [
+		"Enter a plan id (lowercase letters, digits, - or _).",
+		"Bir plan kimliği girin (küçük harf, rakam, - ya da _).",
+	],
+	"op.badReference": [
+		"Enter the contract or purchase-order reference (single line, up to 200 characters).",
+		"Sözleşme ya da satın alma siparişi başvurusunu girin (tek satır, en fazla 200 karakter).",
+	],
+	"op.grantUnconfirmed": [
+		"The licence grant was not confirmed. Refresh before retrying.",
+		"Lisans verme onaylanmadı. Yeniden denemeden önce yenileyin.",
+	],
+	"op.granted": [
+		"Licence granted: {plan}, {seats} seats, expires {time}.",
+		"Lisans verildi: {plan}, {seats} koltuk, bitiş {time}.",
+	],
+	"op.grantNotConfirmed": ["The licence grant was not confirmed.", "Lisans verme onaylanmadı."],
+	"op.revokeUnconfirmed": [
+		"The revocation was not confirmed. Refresh before retrying.",
+		"Geri alma onaylanmadı. Yeniden denemeden önce yenileyin.",
+	],
+	"op.nothingToRevoke": [
+		"This tenant had no active licence. Nothing was revoked.",
+		"Bu çalışma alanının etkin lisansı yoktu. Hiçbir şey geri alınmadı.",
+	],
+	"op.revoked": ["Licence revoked.", "Lisans geri alındı."],
+	"op.revokeNotConfirmed": ["The revocation was not confirmed.", "Geri alma onaylanmadı."],
+	"op.personal": ["Personal workspace", "Kişisel çalışma alanı"],
+	"op.close": ["Close", "Kapat"],
+	"op.usage": ["Usage and seats", "Kullanım ve koltuklar"],
+	"op.loadingUsage": ["Loading usage…", "Kullanım yükleniyor…"],
+	"op.usageLabel": ["Tenant usage", "Çalışma alanı kullanımı"],
+	"op.admissionMode": ["Deployment admission mode", "Kurulum kabul modu"],
+	"op.noPlan": ["no plan", "plan yok"],
+	"op.activeLower": ["active", "etkin"],
+	"op.revokedAt": ["revoked {time}", "geri alındı {time}"],
+	"op.inactiveLower": ["inactive", "etkin değil"],
+	"op.noAdmissionRecorded": ["No admission recorded", "Kabul kaydı yok"],
+	"op.licensedSeats": ["Licensed seats", "Lisanslı koltuklar"],
+	"op.period": ["Licence period", "Lisans dönemi"],
+	"op.capacity": ["Agent capacity", "Yapay zekâ aracı kapasitesi"],
+	"op.notReported": ["Not reported", "Bildirilmedi"],
+	"op.enrolled": ["Agents enrolled", "Kayıtlı yapay zekâ araçları"],
+	"op.active7d": ["Agents active (7 days)", "Etkin yapay zekâ araçları (7 gün)"],
+	"op.members": ["Current members", "Mevcut üyeler"],
+	"op.renew": ["Renew or change licence", "Lisansı yenile ya da değiştir"],
+	"op.grant": ["Grant licence", "Lisans ver"],
+	"op.grantLead": [
+		"A grant replaces the tenant's current licence terms. It also requires a separate, unexpired admission-operator grant for this tenant, and you must not be a member of it.",
+		"Lisans vermek, çalışma alanının mevcut lisans koşullarının yerini alır. Ayrıca bu çalışma alanı için ayrı ve süresi dolmamış bir kabul operatörü yetkisi gerekir ve onun üyesi olmamalısınız.",
+	],
+	"op.planId": ["Plan id", "Plan kimliği"],
+	"op.expiry": ["Expiry date (ends 23:59:59 UTC)", "Bitiş tarihi (23:59:59 UTC'de biter)"],
+	"op.contract": ["Contract reference", "Sözleşme başvurusu"],
+	"op.ownerOptional": ["Owner user id (optional)", "Sahip kullanıcı kimliği (isteğe bağlı)"],
+	"op.ownerPlaceholder": [
+		"Inferred when the tenant has exactly one owner",
+		"Çalışma alanının tek sahibi varsa kendiliğinden bulunur",
+	],
+	"op.reviewLabel": ["Review licence grant", "Lisans vermeyi incele"],
+	"op.reviewLine": [
+		"Grant {plan} with {seats} seats to {tenant}, expiring {time} (reference {reference}).",
+		"{tenant} için {plan} planını {seats} koltukla ver; bitiş {time} (başvuru {reference}).",
+	],
+	"op.granting": ["Granting…", "Veriliyor…"],
+	"op.confirmGrant": ["Confirm grant", "Vermeyi onayla"],
+	"op.reviewGrant": ["Review grant", "Vermeyi incele"],
+	"op.revoke": ["Revoke licence", "Lisansı geri al"],
+	"op.revokeLead": [
+		"Revocation ends the licensed admission and increments the tenant's entitlement revocation epoch. It takes effect immediately and is recorded in the audit log.",
+		"Geri alma, lisanslı kabulü sona erdirir ve çalışma alanının hak geri alma sayacını artırır. Hemen geçerli olur ve denetim kaydına yazılır.",
+	],
+	"op.revokeReason": ["Revocation reason", "Geri alma gerekçesi"],
+	"op.revoking": ["Revoking…", "Geri alınıyor…"],
+	"op.confirmRevoke": [
+		"Confirm: revoke licence for {tenant}",
+		"Onayla: {tenant} lisansını geri al",
+	],
+	"op.codeRejected": [
+		"The verification code was rejected. The console was not opened.",
+		"Doğrulama kodu reddedildi. Konsol açılmadı.",
+	],
+	"op.stepUp": ["Step-up required", "Ek doğrulama gerekiyor"],
+	"op.stepUpLead": [
+		"The operator service confirmed operator access but reports this session below AAL2. Verify with your authenticator app to continue. Platform administration always requires a second factor.",
+		"Operatör hizmeti operatör erişimini onayladı ama bu oturumu AAL2'nin altında bildiriyor. Devam etmek için doğrulama uygulamanızla doğrulayın. Platform yönetimi her zaman ikinci bir doğrulama adımı gerektirir.",
+	],
+	"op.readingFactors": ["Reading enrolled factors…", "Kayıtlı doğrulama yöntemleri okunuyor…"],
+	"op.factorsFailed": [
+		"Enrolled factors could not be read. Reload the page to try again.",
+		"Kayıtlı doğrulama yöntemleri okunamadı. Yeniden denemek için sayfayı yenileyin.",
+	],
+	"op.noFactor": [
+		"No verified authenticator factor is enrolled for this account.",
+		"Bu hesap için kayıtlı ve doğrulanmış bir doğrulama uygulaması yok.",
+	],
+	"op.err.license": [
+		"That is not an aidr-license-v1 document.",
+		"Bu bir aidr-license-v1 belgesi değil.",
+	],
+	"op.err.licenseRejected": [
+		"The licence was refused by signature verification ({reason}).",
+		"Lisans imza doğrulamasında reddedildi ({reason}).",
+	],
+	"op.err.licenseExpired": ["The licence is past its grace period.", "Lisansın ek süresi dolmuş."],
+	"op.err.licenseNotYetValid": [
+		"The licence is not valid yet; apply it on or after its start date.",
+		"Lisans henüz geçerli değil; başlangıç tarihinde ya da sonrasında uygulayın.",
+	],
+	"op.err.licenseNotPending": [
+		"That import is no longer waiting; reload the list.",
+		"Bu içe aktarma artık beklemede değil; listeyi yenileyin.",
+	],
+	"op.err.licenseMismatch": [
+		"The licence does not match the staged import.",
+		"Lisans, bekleyen içe aktarmayla eşleşmiyor.",
+	],
+	"op.err.licenseOtherTenant": [
+		"That licence is already applied to another tenant.",
+		"Bu lisans zaten başka bir çalışma alanına uygulanmış.",
+	],
+	"op.err.licenseRegistry": [
+		"No trusted licence keys are installed in this deployment (AIDR_LICENSE_PUBLIC_KEYS_B64).",
+		"Bu kurulumda güvenilen lisans anahtarı yok (AIDR_LICENSE_PUBLIC_KEYS_B64).",
+	],
+	"op.license": ["Signed licence imports", "İmzalı lisans içe aktarmaları"],
+	"op.licenseLead": [
+		"Licences that workspace admins verified and submitted. Applying one re-verifies the signature and grants its signed seats, plan and end date (end + grace) through the licensed-admission path; you must be the tenant's admission operator and not a member of the tenant.",
+		"Çalışma alanı yöneticilerinin doğrulayıp gönderdiği lisanslar. Uygulama, imzayı yeniden doğrular ve imzalı koltuk, plan ve bitiş tarihini (bitiş + ek süre) lisanslı kabul yolundan verir; çalışma alanının kabul operatörü olmalı ve o çalışma alanının üyesi olmamalısınız.",
+	],
+	"op.licenseEmpty": ["No licence is waiting.", "Bekleyen lisans yok."],
+	"op.licenseLoad": ["Load waiting licences", "Bekleyen lisansları yükle"],
+	"op.licenseRow": [
+		"{id} · {seats} seats · ends {date} · tenant {tenant}",
+		"{id} · {seats} koltuk · bitiş {date} · çalışma alanı {tenant}",
+	],
+	"op.licenseApply": ["Apply licence", "Lisansı uygula"],
+	"op.licenseApplying": ["Applying…", "Uygulanıyor…"],
+	"op.licenseApplied": [
+		"Licence {id} applied: {seats} seats until {date}.",
+		"{id} lisansı uygulandı: {date} tarihine kadar {seats} koltuk.",
+	],
+	"op.licenseUpload": ["Apply a licence file", "Lisans dosyası uygula"],
+	"op.licenseUploadLead": [
+		"Apply a vendor-signed aidr-license-v1 file directly to a tenant (for example from an air-gapped transfer). The same checks apply.",
+		"Satıcı imzalı aidr-license-v1 dosyasını doğrudan bir çalışma alanına uygulayın (örneğin ağdan yalıtılmış bir aktarımdan). Aynı denetimler geçerlidir.",
+	],
+	"op.licenseFile": ["Licence file", "Lisans dosyası"],
+	"op.licenseUnconfirmed": [
+		"The licence was not confirmed as applied.",
+		"Lisansın uygulandığı doğrulanamadı.",
+	],
+} as const satisfies MessagePairs<string>;

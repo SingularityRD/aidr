@@ -1,0 +1,15 @@
+{
+	"format": "aidr-hook-latency-budget-v1",
+	"description": "PreToolUse hook latency budget. See docs/performance/hook-latency-budget.md. target_ms is the product objective on reference hardware (quiet 4-vCPU Linux or Windows 11 with Defender, Node 22+); p95_ms is the regression gate of scripts/benchmarks/hook-latency.mjs --budget-file; ci_p95_ms is the gate of the vitest latency test, deliberately generous for shared, loaded CI runners.",
+	"target_ms": {
+		"p50": 400,
+		"p95": 600
+	},
+	"p95_ms": {
+		"cold_benign": 1500,
+		"cold_blocked": 1500,
+		"warm_benign": 1200,
+		"warm_blocked": 1200
+	},
+	"ci_p95_ms": 3000
+}

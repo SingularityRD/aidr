@@ -64,7 +64,7 @@
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
       "installPath": [".vsix install via MDM or the extension gallery"],
-      "uninstallPath": ["extension uninstall"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host cursor", "extension uninstall"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Extension disabled by the operator",
@@ -88,7 +88,7 @@
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
       "installPath": [".vsix install via MDM or the extension gallery"],
-      "uninstallPath": ["extension uninstall"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host vscode", "extension uninstall"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Extension disabled by the operator",
@@ -112,7 +112,7 @@
       "supportedArchitectures": ["x64"],
       "supportedContexts": ["user", "service"],
       "installPath": ["openclaw plugin install"],
-      "uninstallPath": ["openclaw plugin uninstall"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host openclaw", "openclaw plugins uninstall aidr-openclaw"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Plugin removed or the gateway started without it",
@@ -142,7 +142,7 @@
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user", "service"],
       "installPath": ["opencode plugin add"],
-      "uninstallPath": ["opencode plugin remove"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host opencode", "opencode plugin remove"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Plugin removed or the CLI invoked with the plugin path overridden",
@@ -171,13 +171,13 @@
       "supportedPlatforms": ["windows", "linux", "macos"],
       "supportedArchitectures": ["x64", "arm64"],
       "supportedContexts": ["user"],
-      "installPath": ["install the approved @singularityrd/aidr-codex package", "register its PreToolUse and UserPromptSubmit command handlers in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks"],
-      "uninstallPath": ["remove only the AIDR PreToolUse and UserPromptSubmit handlers from ~/.codex/config.toml or ~/.codex/hooks.json", "uninstall the @singularityrd/aidr-codex package"],
+      "installPath": ["install the approved @singularityrd/aidr-codex package", "register its PreToolUse (matcher ^(Bash|apply_patch|mcp__.+)$), UserPromptSubmit and PostToolUse command handlers in ~/.codex/config.toml or ~/.codex/hooks.json and review trust in Codex /hooks"],
+      "uninstallPath": ["pnpm dlx @singularityrd/aidr-cli uninstall --host codex", "remove only the AIDR PreToolUse, UserPromptSubmit and PostToolUse handlers from ~/.codex/config.toml or ~/.codex/hooks.json", "uninstall the @singularityrd/aidr-codex package"],
       "supportOwnerRole": "Endpoint Engineering",
       "knownBypasses": [
         "Host fails open when hook execution is unavailable",
-        "No output-side (pre-model) interception exists for this host",
-        "The packaged matcher covers Bash and apply_patch only; MCP and other local function tools do not invoke the AIDR hook",
+        "No output-side (pre-model) interception is claimed for this host: the PostToolUse handler inspects Bash and MCP results after execution, and the 0.141.0 host source replaces a blocked result with the reason, but no real-host run has observed that replacement",
+        "The packaged PreToolUse matcher ^(Bash|apply_patch|mcp__.+)$ covers Bash, apply_patch and MCP (mcp__*) tools; MCP coverage follows the 0.141.0 host source and has no real-host record, and other local function tools (for example update_plan) do not invoke the AIDR hook",
         "Hosted and specialized tool paths may bypass the host tool-hook path",
         "Prompt protection needs the UserPromptSubmit handler registered and trusted separately; an untrusted, crashed or timed-out prompt hook lets the prompt through, and codex exec shows no reason text for a blocked prompt"
       ],

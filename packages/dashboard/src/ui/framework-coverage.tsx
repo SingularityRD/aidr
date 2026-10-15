@@ -1,4 +1,6 @@
 import coverageArtifact from "../generated/framework-coverage.json";
+import type { DashboardMessageKey } from "../i18n/en";
+import { type Translate, useRichT, useT } from "../i18n/I18nProvider";
 
 /**
  * Security framework coverage (OWASP LLM Top 10 2025, OWASP Agentic Top 10
@@ -59,11 +61,11 @@ interface CoverageArtifact {
 
 const artifact = coverageArtifact as CoverageArtifact;
 
-const STATUS_TEXT: Record<CoverageStatus, string> = {
-	covered: "covered",
-	partial: "partial",
-	not_covered: "not covered",
-	not_applicable: "not applicable",
+const STATUS_TEXT: Record<CoverageStatus, DashboardMessageKey> = {
+	covered: "fw.status.covered",
+	partial: "fw.status.partial",
+	not_covered: "fw.status.notCovered",
+	not_applicable: "fw.status.notApplicable",
 };
 
 const STATUS_BADGE: Record<CoverageStatus, string> = {
@@ -111,33 +113,47 @@ export function FrameworkTags({ ruleId }: { ruleId: unknown }) {
 	);
 }
 
-function summaryText(framework: FrameworkCoverage): string {
+function summaryText(framework: FrameworkCoverage, t: Translate): string {
 	const s = framework.status_counts;
 	if (framework.id === "mitre_atlas") {
 		const tactics = framework.tactics ?? [];
-		const touched = tactics.filter((t) => t.techniques_mapped > 0).length;
-		return `${framework.items.length} of ${framework.items_total} techniques and sub-techniques mapped (${s.covered} covered, ${s.partial} partial); ${touched} of ${tactics.length} tactics touched. Unlisted techniques are not covered by the rule set.`;
+		const touched = tactics.filter((tactic) => tactic.techniques_mapped > 0).length;
+		return t("fw.atlasSummary", {
+			mapped: framework.items.length,
+			total: framework.items_total,
+			covered: s.covered,
+			partial: s.partial,
+			touched,
+			tactics: tactics.length,
+		});
 	}
-	return `${s.covered} covered, ${s.partial} partial, ${s.not_covered} not covered, ${s.not_applicable} not applicable of ${framework.items_total}.`;
+	return t("fw.summary", {
+		covered: s.covered,
+		partial: s.partial,
+		notCovered: s.not_covered,
+		notApplicable: s.not_applicable,
+		total: framework.items_total,
+	});
 }
 
 function FrameworkTable({ framework }: { framework: FrameworkCoverage }) {
+	const t = useT();
 	return (
 		<section className="card" aria-label={`${framework.name} ${framework.version}`}>
 			<h3>
 				{framework.name} {framework.version}
 			</h3>
-			<p className="muted small">{summaryText(framework)}</p>
+			<p className="muted small">{summaryText(framework, t)}</p>
 			<div className="table-wrap" style={{ marginTop: 8 }}>
 				<table className="table">
 					<thead>
 						<tr>
 							<th>ID</th>
-							<th>Title</th>
-							<th>Status</th>
-							<th>Rules</th>
-							<th>Example rules</th>
-							<th>Rationale</th>
+							<th>{t("fw.col.title")}</th>
+							<th>{t("fw.col.status")}</th>
+							<th>{t("fw.col.rules")}</th>
+							<th>{t("fw.col.examples")}</th>
+							<th>{t("fw.col.rationale")}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -146,7 +162,7 @@ function FrameworkTable({ framework }: { framework: FrameworkCoverage }) {
 								<td className="mono">{item.label}</td>
 								<td>{item.title}</td>
 								<td>
-									<span className={STATUS_BADGE[item.status]}>{STATUS_TEXT[item.status]}</span>
+									<span className={STATUS_BADGE[item.status]}>{t(STATUS_TEXT[item.status])}</span>
 								</td>
 								<td className="mono">{item.rule_count}</td>
 								<td className="mono small">
@@ -177,18 +193,19 @@ function FrameworkTable({ framework }: { framework: FrameworkCoverage }) {
 
 /** "Framework coverage" view shown in the Posture area. */
 export function FrameworkCoverageSection() {
+	const t = useT();
+	const richT = useRichT();
 	const { matrix } = artifact;
 	return (
-		<section className="stack" aria-label="Framework coverage">
+		<section className="stack" aria-label={t("fw.title")}>
 			<div className="card">
-				<h2>Framework coverage</h2>
+				<h2>{t("fw.title")}</h2>
 				<p className="muted" style={{ maxWidth: 820 }}>
-					How the {matrix.rule_count} detection rules shipped in {matrix.rule_files} rule files map
-					to OWASP and MITRE ATLAS. A mapping means a rule detects an instance of the risk at the
-					agent's tool-call boundary or in a skill/plugin file; it is not a claim that every variant
-					is prevented. Each rationale says what is not detected. This reflects the rule set this
-					dashboard was built with; <span className="mono">aidr coverage</span> prints the same
-					matrix for the rules installed on an endpoint.
+					{richT("fw.lead", {
+						rules: matrix.rule_count,
+						files: matrix.rule_files,
+						command: <span className="mono">aidr coverage</span>,
+					})}
 				</p>
 			</div>
 			{matrix.frameworks.map((framework) => (

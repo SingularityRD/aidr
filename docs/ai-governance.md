@@ -105,7 +105,7 @@ managed-policy JSON for banned built-in AI chat sites; deploy it through your
 browser management (Chrome/Edge policy for the extension).
 
 Shadow AI allow/block from the dashboard: owners and administrators allow or
-block a detected AI service on Browser Privacy Guard → Shadow AI (or here, as an
+block a detected AI service on Browser Guard → Shadow AI (or here, as an
 `ai_site` entry with the catalog id). Each decision is an `upsert_asset` call:
 AAL2, audited (`ai_asset.created` / `ai_asset.status_changed`), optimistic
 versioning, and four-eyes when relaxing a ban with four-eyes on. Enrolled
@@ -124,7 +124,7 @@ The `shadowAi` managed-policy snippet remains the alternative for browsers
 without a control plane.
 
 Require native NER from the dashboard: owners and administrators can make
-Browser Guard's native NER mandatory for every enrolled browser (Browser Privacy
+Browser Guard's native NER mandatory for every enrolled browser (Browser Guard
 Guard → Require native NER). The `update_browser_guard_settings` action (AAL2,
 rate-limited) calls the `update_browser_guard_settings` RPC, which re-checks
 owner/admin on an active tenant under row locks, stores
@@ -137,6 +137,17 @@ document (omitted when off; covered by the document digest). The extension merge
 it with its managed `requireNativeNer` key, `true` wins, and keeps it in force
 after the document expires. An unreadable settings row makes the endpoint answer
 503 rather than serve a document without the requirement.
+
+Separation of duties for agent approvals: owners and administrators choose
+whether the person whose key or agent raised an `ask` approval request may
+approve it themselves (Approvals → Separation of duties). The
+`update_approval_settings` action (AAL2, rate-limited) stores
+`tenant_ai_governance_settings.approval_require_distinct_approver` (`true`,
+`false`, or `null` for the plan default: required on Business and Enterprise,
+allowed on Free and Team; an unresolvable plan counts as required) and writes an
+`approval.settings_updated` audit row. Relaxing it while four-eyes is on is
+refused (`approval_separation_four_eyes_required`). `decide_approval_request`
+enforces the rule in the database; see `docs/contracts/dashboard-approvals.md`.
 
 At most 500 MCP servers can be banned or restricted per workspace.
 

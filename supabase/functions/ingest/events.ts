@@ -73,6 +73,14 @@ const PRIVACY_ENTITY_TYPE_SET = new Set<string>(PRIVACY_ENTITY_TYPES);
 const PRIVACY_SITE_SET = new Set<string>(PRIVACY_SITES);
 const PRIVACY_CHANNEL_SET = new Set<string>(PRIVACY_CHANNELS);
 const PRIVACY_NATIVE_NER_SET = new Set<string>(PRIVACY_NATIVE_NER_STATES);
+/**
+ * Optional (additive) reason a scan was not enforced as the policy mode says: "paused" =
+ * the user had paused protection. Any other value is dropped.
+ */
+export const PRIVACY_REASONS = ["paused"] as const;
+const PRIVACY_REASON_SET = new Set<string>(PRIVACY_REASONS);
+/** Optional count of invalid managed policy keys in force on the browser (1..64). */
+export const MAX_PRIVACY_POLICY_ERRORS = 64;
 
 /**
  * Browser Guard Shadow AI usage (docs/contracts/privacy-telemetry.md): aggregated
@@ -81,7 +89,8 @@ const PRIVACY_NATIVE_NER_SET = new Set<string>(PRIVACY_NATIVE_NER_STATES);
  * well-formed id this server does not know yet is filed under "other".
  */
 export const SHADOW_AI_SERVICE_CATEGORIES: Readonly<Record<string, string>> = {
-	chatgpt: "chat", gemini: "chat", claude: "chat", copilot: "chat", perplexity: "search",
+	chatgpt: "chat", gemini: "chat", claude: "chat", copilot: "chat", "m365-copilot": "chat",
+	perplexity: "search",
 	deepseek: "chat", mistral: "chat", grok: "chat", poe: "chat", "character-ai": "chat",
 	huggingface: "chat", "meta-ai": "chat", pi: "chat", "duck-ai": "chat", kimi: "chat",
 	qwen: "chat", doubao: "chat", ernie: "chat", chatglm: "chat", yuanbao: "chat",
@@ -222,7 +231,8 @@ function privacyEventProblem(event: Record<string, unknown>): string | undefined
 
 /**
  * Counts-only projection of a Browser Guard scan. Nothing but enums (including the
- * optional `native_ner` status), bounded integers and an optional policy identifier
+ * optional `native_ner` status and `reason`), bounded integers (including the optional
+ * `policy_errors` count) and an optional policy identifier
  * survives: raw prompt text, masked text, matched values and page URLs are dropped even
  * when a client sends them.
  */
@@ -255,6 +265,16 @@ function projectPrivacyEvent(event: Record<string, unknown> & { event_id: string
 	if (policyId) projected.policy_id = policyId;
 	const nativeNer = safeEnum(event.native_ner, PRIVACY_NATIVE_NER_SET);
 	if (nativeNer) projected.native_ner = nativeNer;
+	const reason = safeEnum(event.reason, PRIVACY_REASON_SET);
+	if (reason) projected.reason = reason;
+	const policyErrors = event.policy_errors;
+	if (
+		typeof policyErrors === "number" &&
+		Number.isInteger(policyErrors) &&
+		policyErrors >= 1 &&
+		policyErrors <= MAX_PRIVACY_POLICY_ERRORS
+	)
+		projected.policy_errors = policyErrors;
 	return projected;
 }
 

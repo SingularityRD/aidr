@@ -1,4 +1,15 @@
-# Alert notification contract (`aidr.notification.v1`)
+# Alert notification contract (`aidr.notification.v1`, schema revision 1.1)
+
+**Schema revision 1.1** — [`notification.v1.1.schema.json`](notification.v1.1.schema.json)
+(JSON Schema draft 2020-12, `$id` `https://schemas.singularityrd.com/aidr/notification/v1.1.json`)
+is the complete body schema for **all thirteen events** the control plane emits. Revision 1.0
+(the schema embedded below) listed only the original five events. Nothing changed on the
+wire: the body still says `"schema": "aidr.notification.v1"`, and every body valid under 1.0
+is valid under 1.1. A receiver that validates strictly should switch to the 1.1 file before
+enabling agent or governance filters. The contract suite
+(`supabase/functions/__tests__/notification-schema.test.ts`) validates the body emitted for
+every event against it and pins its event list to the producer, the outbox constraint and
+this document.
 
 Status: implemented. Producer: the control plane (`supabase/functions/notification-dispatch`,
 shared code in `supabase/functions/_shared/notification-delivery.ts`). Consumers: Slack
@@ -33,6 +44,7 @@ re-validates each field against a fixed allow-list before it renders a message
 | `notification.test` | Console **Send test** | always (one attempt, no retries) |
 | `agent.offline` | Scheduled scan: an enrolled agent (`public.agents`) whose `last_seen` is older than the channel's threshold | `agent_offline` with `agent_offline_minutes` (5–10080). One alert per agent per outage; only outages that begin after the filter was armed (created, enabled or switched on) alert |
 | `agent.recovered` | Scheduled scan: the agent of an alerted outage reported again | `agent_offline`; `counts.offline_minutes` is the outage length |
+| `agent.unprotected` | A device heartbeat (`connector-heartbeat`, migration `20261014000205`): a connector last reported `protected` is now `hook_missing`, `hook_disabled`, `hook_untrusted` or `hook_broken`, or the count of blocked "Disable protection" attempts on a policy-locked editor rose (`disable_attempted`) | `agent_offline` (the agent-health filter); `category` = connector id, `connector_state` = the state; one alert per agent, connector, state and episode. A stopped heartbeat raises `agent.offline` |
 | `governance.review_overdue` | Scheduled scan: AI register items (not retired) past `review_due_at` | `governance_review_overdue`; a count, at most once per channel per UTC day, only when the count is non-zero |
 | `governance.intake_requested` | A new AI intake request (same transaction) | `governance_intake_requested`; `subject.request_id`, `category` = asset type |
 | `governance.change_pending` | A new four-eyes policy change request (same transaction) | `governance_change_pending`; `subject.request_id`, `category` = change kind |
@@ -133,11 +145,13 @@ included):
 | `counts.items` | integer ≥ 0 or null | `governance.review_overdue`, `governance.exception_expiring` |
 | `counts.window_days` | integer 1–90 or null | `governance.exception_expiring` |
 | `counts.offline_minutes` | integer ≥ 0 or null | `agent.offline` (threshold), `agent.recovered` (outage length) |
+| `connector_state` | `hook_missing`, `hook_disabled`, `hook_untrusted`, `hook_broken`, `disable_attempted` or null | `agent.unprotected` only |
 | `period` | `{ "from", "to" }` date-times or null | `governance.digest` |
 | `digest` | object of integers or null | `governance.digest`: `agents_enrolled`, `agents_active`, `decisions_allow`, `decisions_ask`, `decisions_deny`, `approvals_requested`, `approvals_pending`, `incidents_reported`, `incidents_open`, `incidents_open_critical`, `browser_blocked`, `browser_masked`, `mcp_not_approved`, `reviews_overdue`, `intake_pending`, `policy_changes_pending` |
 
-A receiver that validates strictly should add these event names and optional fields to
-its copy of the schema before enabling the corresponding filters.
+These events always carry every key in the table (`null` when not applicable); the original
+five never carry any of them. Schema revision 1.1 encodes both rules, so a strict receiver can
+use [`notification.v1.1.schema.json`](notification.v1.1.schema.json) as is.
 
 Example:
 
@@ -214,9 +228,13 @@ or a legacy Office 365 connector (`*.webhook.office.com`) with
 ## E-mail
 
 One message per recipient (1 to 10 recipients) through the deployment's mailer
-(`AIDR_MAIL_PROVIDER` / Resend, see `supabase/functions/_shared/mailer.ts`), subject
-`[AIDR] <title>`, text and HTML bodies listing the same facts plus the deep link. The
-provider idempotency key is `aidr-notification:<delivery id>:<recipient index>`. With no
+(`AIDR_MAIL_PROVIDER`, see `supabase/functions/_shared/mailer.ts`): the organisation's own SMTP
+relay (`smtp`, reusing the on-prem `SMTP_*` settings, STARTTLS or implicit TLS with an
+optional internal CA in `AIDR_SMTP_CA_PEM_B64`; certificates are always verified) or Resend.
+Subject `[AIDR] <title>`, text and HTML bodies listing the same facts plus the deep link. The
+idempotency key is `aidr-notification:<delivery id>:<recipient index>`: Resend de-duplicates
+on it, and over SMTP it derives a stable `Message-ID`, so a retried alert carries the same
+id. A 4xx SMTP reply or an unreachable relay is retried; a 5xx reply is permanent. With no
 mailer configured, e-mail deliveries fail permanently with `mail_not_configured`.
 
 ## Delivery semantics

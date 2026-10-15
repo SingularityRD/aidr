@@ -2,7 +2,14 @@
  * Extract security-relevant artifacts from tool inputs.
  */
 
-import { commandFromValue } from "./command-argv.js";
+import { commandFromArgv, commandFromValue } from "./command-argv.js";
+import {
+	CREDENTIAL_READ_CONTEXT,
+	credentialReadsInCommand,
+	credentialReadsInSearchTool,
+	type GlobBudget,
+	newGlobBudget,
+} from "./credential-reads.js";
 import type { Artifact } from "./types.js";
 
 /** Regex for extracting URLs — matches http/https followed by non-whitespace, non-quote chars. */
@@ -332,7 +339,15 @@ function stripHeredocs(command: string): string {
 	return out + command.slice(copiedUpTo);
 }
 
-export function extractFromBash(command: string): Artifact[] {
+/**
+ * @param globBudget shared by every command of one tool call, so a call made
+ * of many commands cannot multiply the glob-matching work (see
+ * credential-reads.ts).
+ */
+export function extractFromBash(
+	command: string,
+	globBudget: GlobBudget = newGlobBudget(),
+): Artifact[] {
 	const artifacts: Artifact[] = [];
 
 	// Bound the raw command before anything scans it. Everything below — heredoc
@@ -382,6 +397,13 @@ export function extractFromBash(command: string): Artifact[] {
 			}
 		}
 		artifacts.push({ type: "url", value: url, context });
+	}
+
+	// Credential files the command reads without naming them literally
+	// (`cd ~/.ssh && cat id_rsa`, `cat ~/.ss?/id_*`, `grep -r . ~/.aws`): the
+	// canonical paths are judged by the file rules in threats/.
+	for (const path of credentialReadsInCommand(effective, globBudget)) {
+		artifacts.push({ type: "file_path", value: path, context: CREDENTIAL_READ_CONTEXT });
 	}
 
 	return artifacts;
@@ -462,10 +484,30 @@ function looksLikePath(value: string): boolean {
 	return false;
 }
 
+/**
+ * Keys whose string value a tool runs as a shell command or script. MCP
+ * servers that execute commands name the field in many ways; `code` and
+ * `script` bodies are executed too, so they are matched as commands.
+ */
+const COMMAND_KEYS = new Set([
+	"command",
+	"cmd",
+	"cmdline",
+	"command_line",
+	"commandline",
+	"script",
+	"code",
+	"shell",
+	"bash",
+	"sh",
+	"powershell",
+	"pwsh",
+]);
+
 function fieldTypeForKey(key: string): Artifact["type"] | null {
 	const k = key.toLowerCase();
 	if (k === "url" || k.endsWith("_url")) return "url";
-	if (k === "command" || k === "cmd" || k.endsWith("_command") || k.endsWith("_cmd"))
+	if (COMMAND_KEYS.has(k) || k.endsWith("_command") || k.endsWith("_cmd") || k.endsWith("_script"))
 		return "command";
 	if (
 		k === "file_path" ||
@@ -573,6 +615,8 @@ function collectStringFields(
 /** Deduplicating artifact list for one generic extraction, capped at MAX_GENERIC_ARTIFACTS. */
 class GenericArtifacts {
 	readonly items: Artifact[] = [];
+	/** Glob evaluations shared by every command found in this tool input. */
+	readonly globBudget = newGlobBudget();
 	private readonly seen = new Set<string>();
 
 	private readonly limits: Set<InspectionLimit>;
@@ -625,13 +669,136 @@ function addFieldArtifacts(
 		limits.add("string_size");
 		return true;
 	}
+	if (type === "command") return addCommandArtifacts(value, context, out);
 	return out.add({ type, value, context });
+}
+
+/**
+ * A command found in an unknown tool's input is inspected exactly like a Bash
+ * command: heredoc data is set aside, piped URLs are flagged and credential
+ * reads are resolved.
+ */
+function addCommandArtifacts(command: string, context: string, out: GenericArtifacts): boolean {
+	return extractFromBash(command, out.globBudget).every((artifact) =>
+		out.add(artifact.context === undefined ? { ...artifact, context } : artifact),
+	);
+}
+
+/** Keys that may hold a program's argument vector. */
+const ARGV_KEYS = new Set([
+	"command",
+	"cmd",
+	"argv",
+	"exec",
+	"run",
+	"entrypoint",
+	"entry_point",
+	"script",
+	"cmdline",
+	"command_line",
+]);
+
+/** Keys that hold the argument list of a sibling program key. */
+const ARGS_KEYS = new Set(["args", "arguments", "params", "parameters"]);
+
+/** Keys naming the program that an argument list is passed to. */
+const PROGRAM_KEYS = [
+	"command",
+	"cmd",
+	"program",
+	"executable",
+	"exe",
+	"binary",
+	"bin",
+	"shell",
+	"interpreter",
+] as const;
+
+interface CommandCandidate {
+	path: string;
+	command: string;
+}
+
+function programOf(value: Record<string, unknown>): string | undefined {
+	for (const key of PROGRAM_KEYS) {
+		const program = value[key];
+		if (typeof program === "string" && program.trim() && !/\s/.test(program.trim())) {
+			return program.trim();
+		}
+	}
+	return undefined;
+}
+
+function isStringArray(value: unknown): value is string[] {
+	return (
+		Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string")
+	);
+}
+
+/**
+ * Shell lines an object's argv-shaped fields run: an argv array under a
+ * command key (`command: ["bash", "-c", "…"]`), a program plus its argument
+ * list (`cmd: "bash", args: ["-c", "…"]`), and any argument that is itself a
+ * shell line (a remote command handed to `ssh`, a `-c` script).
+ */
+function argvCommandsOf(value: Record<string, unknown>, path: string): CommandCandidate[] {
+	const program = programOf(value);
+	return Object.entries(value).flatMap(([key, child]) => {
+		const k = key.toLowerCase();
+		const isArgs = ARGS_KEYS.has(k);
+		if (!isArgs && !ARGV_KEYS.has(k)) return [];
+		const childPath = path ? `${path}.${key}` : key;
+		const prefix = isArgs && program !== undefined ? [program] : [];
+		return argvFieldCommands(child, prefix, isArgs).map((command) => ({
+			path: childPath,
+			command,
+		}));
+	});
+}
+
+/** Command lines one argv-shaped field runs, with `prefix` as its program. */
+function argvFieldCommands(child: unknown, prefix: string[], isArgs: boolean): string[] {
+	if (isStringArray(child)) {
+		const command = commandFromArgv([...prefix, ...child]);
+		const shellLines = child.filter((arg) => /\s/.test(arg.trim()));
+		return command === undefined ? shellLines : [command, ...shellLines];
+	}
+	if (isArgs && prefix.length > 0 && typeof child === "string" && child.trim()) {
+		return [`${prefix[0]} ${child}`];
+	}
+	return [];
+}
+
+/** Walk the input for argv-shaped commands, bounded like the string walk. */
+function collectArgvCommands(
+	value: unknown,
+	path: string,
+	depth: number,
+	found: CommandCandidate[],
+): void {
+	if (depth > MAX_GENERIC_DEPTH || found.length >= MAX_GENERIC_STRINGS) return;
+	if (Array.isArray(value)) {
+		value.forEach((item, i) => {
+			collectArgvCommands(item, `${path}[${i}]`, depth + 1, found);
+		});
+		return;
+	}
+	if (!value || typeof value !== "object") return;
+	const record = value as Record<string, unknown>;
+	found.push(...argvCommandsOf(record, path));
+	for (const [key, child] of Object.entries(record)) {
+		collectArgvCommands(child, path ? `${path}.${key}` : key, depth + 1, found);
+	}
 }
 
 /**
  * Best-effort extraction for unknown / MCP tool calls.
  * Recursively scans the tool input for string fields, extracting:
- * - explicit URLs / commands / file paths based on common key names
+ * - explicit URLs / commands / file paths based on common key names; command
+ *   strings are inspected like a Bash command
+ * - command lines rebuilt from argv arrays (`command: ["bash", "-c", …]`,
+ *   `cmd` + `args`)
+ * - credential files reached through a search/list tool's root or filter
  * - URLs found inside any collected strings
  * - generic content strings for heuristic matching (windowed, never cut)
  *
@@ -647,8 +814,26 @@ export function extractFromUnknownTool(
 	collectStringFields(toolInput, "", 0, walk);
 
 	const out = new GenericArtifacts(walk.limits);
-	for (const field of walk.fields) {
-		if (!addFieldArtifacts(toolName, field, out, walk.limits)) break;
+	let open = walk.fields.every((field) => addFieldArtifacts(toolName, field, out, walk.limits));
+
+	// Argv arrays are walked element by element above, where no element is a
+	// command on its own; rebuild the command line they run.
+	const argvCommands: CommandCandidate[] = [];
+	if (open) collectArgvCommands(toolInput, "", 0, argvCommands);
+	for (const candidate of argvCommands) {
+		if (!open) break;
+		if (candidate.command.length > MAX_ARTIFACT_SIZE) {
+			walk.limits.add("string_size");
+			continue;
+		}
+		open = addCommandArtifacts(candidate.command, `tool:${toolName}:${candidate.path}:argv`, out);
+	}
+
+	// Grep/Glob/list-style tools read below a root or match file names: a
+	// root or filter that reaches a credential location is a credential read.
+	const searchReads = open ? (credentialReadsInSearchTool(toolName, toolInput) ?? []) : [];
+	for (const path of searchReads) {
+		if (!out.add({ type: "file_path", value: path, context: CREDENTIAL_READ_CONTEXT })) break;
 	}
 	return [...out.items, ...[...walk.limits].map(inspectionLimitMarker)];
 }

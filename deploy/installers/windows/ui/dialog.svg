@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="493" height="312" viewBox="0 0 493 312">
+  <!--
+    Singularity AIDR installer dialog bitmap (Welcome and Finish pages), 493x312.
+    Source of truth for dialog.bmp: `node deploy/installers/windows/ui/render-bitmaps.mjs`
+    rasterises this file. Only the subset that script understands is allowed:
+    rect, polygon, circle and userSpaceOnUse linearGradient. No text, no
+    third-party marks. Windows Installer draws the page text to the right of
+    the panel (x >= 180), so that area stays white.
+  -->
+  <defs>
+    <linearGradient id="panel" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="312">
+      <stop offset="0" stop-color="#0B1F3A" />
+      <stop offset="1" stop-color="#14406E" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="493" height="312" fill="#FFFFFF" />
+  <rect x="0" y="0" width="164" height="312" fill="url(#panel)" />
+  <circle cx="82" cy="120" r="64" fill="#FFFFFF" opacity="0.05" />
+  <circle cx="82" cy="120" r="58" fill="url(#panel)" />
+  <polygon points="44,90.9 82,78 120,90.9 120,124 113.9,138.7 103.3,151.6 92.6,161.7 82,170 71.4,161.7 60.7,151.6 50.1,138.7 44,124" fill="#2EC4B6" />
+  <polygon points="51,96.6 82,86 113,96.6 113,124 108,136.2 99.4,146.8 90.7,155.2 82,162 73.3,155.2 64.6,146.8 56,136.2 51,124" fill="url(#panel)" />
+  <circle cx="82" cy="120" r="17" fill="#2EC4B6" />
+  <circle cx="82" cy="120" r="12" fill="url(#panel)" />
+  <circle cx="82" cy="120" r="5" fill="#FFFFFF" />
+  <circle cx="96" cy="107" r="2.5" fill="#FFFFFF" opacity="0.8" />
+  <rect x="62" y="206" width="40" height="3" fill="#2EC4B6" />
+  <rect x="164" y="0" width="1" height="312" fill="#2EC4B6" opacity="0.6" />
+</svg>

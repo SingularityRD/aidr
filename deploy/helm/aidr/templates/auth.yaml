@@ -99,6 +99,14 @@ spec:
               value: {{ $values.smtp.adminEmail | quote }}
             - name: GOTRUE_SMTP_SENDER_NAME
               value: {{ $values.smtp.senderName | quote }}
+            {{- if $values.saml.enabled }}
+            {{- if not $values.saml.privateKeyKey }}
+            {{- fail "auth.saml.enabled requires auth.saml.privateKeyKey (a key in secrets.existingSecret holding the RSA SAML signing key)" }}
+            {{- end }}
+            - name: GOTRUE_SAML_ENABLED
+              value: "true"
+            {{- include "aidr.secretEnv" (dict "root" . "env" "GOTRUE_SAML_PRIVATE_KEY" "key" $values.saml.privateKeyKey) | nindent 12 }}
+            {{- end }}
             {{- with $values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

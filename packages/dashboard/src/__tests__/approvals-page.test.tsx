@@ -28,6 +28,7 @@ vi.mock("../lib/supabase", () => ({
 vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
 
 import { useTeam } from "../enterprise/team-provider";
+import { I18nProvider } from "../i18n/I18nProvider";
 import {
 	APPROVAL_COLUMNS,
 	countPendingApprovals,
@@ -139,17 +140,24 @@ function setup(
 		data?: unknown;
 		error?: { message: string } | null;
 		invoke?: Invoke;
+		governance?: Invoke;
+		separation?: { require_distinct_approver: boolean | null; effective: boolean };
+		locale?: "en" | "tr";
 	} = {},
 ) {
 	const mocks = installDashboardMocks({
 		tableResults: {
 			approval_requests: queueResolver(options.data ?? rows(), options.error ?? null),
 		},
+		...(options.separation
+			? { rpcResults: { get_approval_settings: { data: options.separation, error: null } } }
+			: {}),
 	});
 	const original = mocks.invoke.getMockImplementation() as Invoke | undefined;
 	mocks.invoke.mockImplementation(
 		async (name: string, request?: { body?: Record<string, unknown> }) => {
 			if (name === "approval-requests" && options.invoke) return options.invoke(name, request);
+			if (name === "ai-governance" && options.governance) return options.governance(name, request);
 			return original?.(name, request);
 		},
 	);
@@ -159,9 +167,11 @@ function setup(
 		roleResolved: true,
 	} as unknown as ReturnType<typeof useTeam>);
 	render(
-		<MemoryRouter>
-			<ApprovalsPage />
-		</MemoryRouter>,
+		<I18nProvider initialLocale={options.locale ?? "en"}>
+			<MemoryRouter>
+				<ApprovalsPage />
+			</MemoryRouter>
+		</I18nProvider>,
 	);
 	return mocks;
 }
@@ -172,6 +182,44 @@ afterEach(() => {
 });
 
 describe("ApprovalsPage", () => {
+	it("titles a card with the rule's human name and says what, why and what happens next", async () => {
+		setup({ data: [row({ threat_ids: ["CLT-CMD-001", "CLT-CRED-004"] })] });
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		expect(
+			within(card).getByRole("heading", {
+				name: "Remote code execution via curl pipe to shell (+1 more)",
+			}),
+		).toBeInTheDocument();
+		expect(within(card).getByText("What the agent tried")).toBeInTheDocument();
+		expect(within(card).getByText("Why it was held")).toBeInTheDocument();
+		expect(within(card).getByText("Reading credential or secret file")).toBeInTheDocument();
+		// The rule id stays visible next to its name for operators and auditors.
+		expect(within(card).getByText("CLT-CMD-001")).toBeInTheDocument();
+		expect(within(card).getByText("Critical")).toBeInTheDocument();
+		expect(
+			within(card).getByText(/run once more on host-a, only within 15 minutes/),
+		).toBeInTheDocument();
+	});
+
+	it("falls back to a plain heading for rules the dashboard does not know", async () => {
+		setup();
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		expect(
+			within(card).getByRole("heading", { name: "Action held for review (+1 more)" }),
+		).toBeInTheDocument();
+		expect(within(card).getAllByText("Rule not in this dashboard's catalog")).toHaveLength(2);
+	});
+
+	it("renders the approval card in Turkish", async () => {
+		setup({ data: [row({ threat_ids: ["CLT-CMD-001"] })], locale: "tr" });
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		expect(within(card).getByText("Yapay zekâ aracının yapmak istediği")).toBeInTheDocument();
+		expect(within(card).getByText("Neden bekletildi")).toBeInTheDocument();
+		expect(within(card).getByRole("button", { name: "Onayla" })).toBeInTheDocument();
+		expect(within(card).getByRole("button", { name: "Reddet" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Onaylar", level: 1 })).toBeInTheDocument();
+	});
+
 	it("lists pending requests with tool, threats, redacted summary, agent and a live countdown", async () => {
 		setup();
 		const cards = await screen.findAllByTestId("approval-pending");
@@ -207,9 +255,9 @@ describe("ApprovalsPage", () => {
 		fireEvent.click(screen.getByRole("tab", { name: "History" }));
 		const table = await screen.findByTestId("approval-history");
 		expect(within(table).getByText("WebFetch")).toBeInTheDocument();
-		expect(within(table).getByText("expired")).toBeInTheDocument();
+		expect(within(table).getByText("Expired")).toBeInTheDocument();
 		expect(within(table).getByText("Write")).toBeInTheDocument();
-		expect(within(table).getByText("denied")).toBeInTheDocument();
+		expect(within(table).getByText("Denied")).toBeInTheDocument();
 		expect(within(table).getByText("Unexpected write outside the repo")).toBeInTheDocument();
 		expect(within(table).queryByText("Bash")).not.toBeInTheDocument();
 	});
@@ -314,6 +362,59 @@ describe("ApprovalsPage", () => {
 			}),
 		);
 		expect(await screen.findByRole("status")).toHaveTextContent(`New key apk_${"3".repeat(32)}`);
+	});
+});
+
+describe("approvals separation of duties (CP-9)", () => {
+	it("explains a refused self-approval instead of a generic failure", async () => {
+		setup({ invoke: async () => httpError(403, "approval_self_approval_forbidden") });
+		const card = (await screen.findAllByTestId("approval-pending"))[0] as HTMLElement;
+		fireEvent.change(within(card).getByLabelText("Reason (recorded in the audit log)"), {
+			target: { value: "Mine" },
+		});
+		fireEvent.click(within(card).getByRole("button", { name: "Approve" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"another owner or administrator must approve it",
+		);
+	});
+
+	it("shows the effective rule and lets an owner change it through ai-governance", async () => {
+		const governance = vi.fn(async () => ({
+			data: { ok: true, require_distinct_approver: true, effective: true, changed: true },
+			error: null,
+		}));
+		setup({
+			role: "owner",
+			governance,
+			separation: { require_distinct_approver: null, effective: false },
+		});
+		const select = (await screen.findByLabelText("Approver")) as HTMLSelectElement;
+		expect(select.value).toBe("plan");
+		expect(screen.getByTestId("approval-separation-effective")).toHaveTextContent(
+			"requesters may approve their own requests",
+		);
+		fireEvent.change(select, { target: { value: "required" } });
+		await waitFor(() =>
+			expect(governance).toHaveBeenCalledWith("ai-governance", {
+				method: "POST",
+				body: {
+					action: "update_approval_settings",
+					tenant_id: TEAM_ID,
+					require_distinct_approver: true,
+				},
+			}),
+		);
+		await waitFor(() =>
+			expect(screen.getByTestId("approval-separation-effective")).toHaveTextContent(
+				"a different owner or administrator must approve",
+			),
+		);
+	});
+
+	it("hides the setting from members", async () => {
+		setup({ role: "member", separation: { require_distinct_approver: true, effective: true } });
+		await screen.findAllByTestId("approval-pending");
+		expect(screen.queryByLabelText("Approver")).not.toBeInTheDocument();
 	});
 });
 

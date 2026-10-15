@@ -20,8 +20,8 @@ network access.
 
 An `ask` is a block pending human approval, exactly like every other AIDR `ask`: Claude Code,
 Cursor and VS Code show their native confirmation dialog; OpenClaw, OpenCode and Codex keep the
-call blocked until an operator approves the exact call out of band (`aidr pending`,
-`aidr approve <actionId>`) or, in managed mode, in the dashboard. The agent is never given a
+call blocked until a person approves the exact call in their own terminal (`aidr pending`,
+`aidr approve <first 8 characters of the id>`) or, in managed mode, in the dashboard. The agent is never given a
 way to approve its own block. Every verdict names the specific reason, for example
 *"Test skipped or disabled in a test file (it.skip / xit / @pytest.mark.skip / t.Skip /
 @Disabled)"* or *"Runaway guard paused this session for human review: The same tool call was
@@ -109,7 +109,7 @@ counters.
 **Failure policy.** The runaway guard is a detection signal. If its state cannot be read,
 written or trusted, the signal is skipped and logged, and an otherwise clean call is recorded in
 the audit log as `runaway_guard_unavailable` — never as a clean result. A tampered record is
-reset. Connector entry points remain fail-closed as always.
+reset. Connector entry points remain fail-closed as always; a hook the host disabled, did not trust, killed or timed out is outside that guarantee; see [host failure behaviour](compatibility-matrix.md#host-failure-behaviour).
 
 ## 2. Reward hacking and sabotage
 

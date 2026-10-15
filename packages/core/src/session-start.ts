@@ -3,6 +3,7 @@
  * Combines plugin scanning, version check, and temp cleanup into a single call.
  */
 
+import { hostname } from "node:os";
 import { inspectInfrastructurePolicy } from "./aig-policy.js";
 import { isCommercialBuild } from "./build-flavor.js";
 import { ControlPlaneClient } from "./clients/control-plane.js";
@@ -41,14 +42,17 @@ import {
 	type McpDiscoveryServer,
 } from "./mcp-discovery.js";
 import type { McpInventoryCoverageStatus } from "./mcp-inventory.js";
+import { takeFirstRunPrivacyNotice } from "./privacy-notice.js";
 import { inspectRemoteRuntimePolicyCache } from "./remote-policy.js";
 import {
 	runSessionStartScanWithReport,
 	type SessionStartRulesIncomplete,
 	type SessionStartScanReport,
 } from "./session-start-scan.js";
-import type { AgentRuntime, Logger, PluginInfo, PluginScanResult } from "./types.js";
+import type { AgentRuntime, Config, Logger, PluginInfo, PluginScanResult } from "./types.js";
 import { nullLogger } from "./types.js";
+import { detectUnprotectedAiTools, type UnprotectedAiTool } from "./unprotected-agents.js";
+import { installerUpdateNotice, installerUpdatesApply } from "./update/check.js";
 import { checkForUpdate, type VersionCheckResult, versionCheckEndpoint } from "./version-check.js";
 
 export interface SessionStartContext {
@@ -71,6 +75,13 @@ export interface SessionStartContext {
 	 * reported as unverifiable rather than as a neutral inventory row.
 	 */
 	mcpAttestation?: McpDiscoveryAttestationOptions;
+	/**
+	 * AI tools without an AIDR connector; detected from the home directory and
+	 * PATH when omitted. Pass `[]` to skip detection (tests).
+	 */
+	unprotectedTools?: UnprotectedAiTool[];
+	/** Skip the first-run privacy notice (tests, or a caller that shows it itself). */
+	skipPrivacyNotice?: boolean;
 }
 
 /**
@@ -128,6 +139,74 @@ export interface SessionStartResult {
 	 * never a neutral count in `posture`.
 	 */
 	coverageFindings?: SessionStartCoverageFinding[];
+	/**
+	 * The first-run privacy notice, set the first time this connector starts
+	 * with the current notice (and again when what is recorded or sent changes).
+	 */
+	privacyNotice?: string;
+	/** AI tools on this computer that AIDR does not protect; shown as a warning. */
+	unprotectedTools?: UnprotectedAiTool[];
+	/**
+	 * Set when the company control plane did not answer this session's
+	 * heartbeat: what the install-time offline choice means now, so the user
+	 * hears about a coming block before the grace runs out.
+	 */
+	offline?: SessionStartOfflineNotice;
+}
+
+interface SessionStartOfflineNotice {
+	policy: "keep_enforcing_local" | "block_after_grace";
+	/** block_after_grace: when tool calls start being denied (absent: already denied). */
+	blocksAt?: string;
+	/** Who to tell (machine policy / config `organization.support_contact_url`). */
+	supportContact?: string;
+}
+
+const NOT_A_NETWORK_FAILURE = new Set([
+	"missing_endpoint",
+	"missing_api_key",
+	"degraded_safe_mode",
+	"missing_iid",
+	"invalid_events",
+]);
+
+/** A heartbeat that did not reach a working control plane (network, timeout, 5xx). */
+function heartbeatUnreachable(result: { ok: boolean; status?: number; error?: string }): boolean {
+	if (result.ok) return false;
+	if (result.error && NOT_A_NETWORK_FAILURE.has(result.error)) return false;
+	return result.status === undefined || result.status >= 500;
+}
+
+/** The offline notice for an unreachable control plane. */
+async function offlineNoticeFor(
+	config: Config,
+	token: string,
+	now = Date.now(),
+): Promise<SessionStartOfflineNotice> {
+	const supportContact = config.organization?.support_contact_url;
+	const extra = supportContact ? { supportContact } : {};
+	if (!config.control_plane.remote_policy_required) {
+		return { policy: "keep_enforcing_local", ...extra };
+	}
+	const cache = await inspectRemoteRuntimePolicyCache(config, token, now).catch(() => undefined);
+	const graceEnd = cache?.usable ? Date.parse(cache.offlineGraceExpiresAt ?? "") : Number.NaN;
+	return {
+		policy: "block_after_grace",
+		...(Number.isFinite(graceEnd) && graceEnd > now
+			? { blocksAt: new Date(graceEnd).toISOString() }
+			: {}),
+		...extra,
+	};
+}
+
+/** Host name for the device-code request; the control plane drops a malformed one. */
+function deviceHostname(): string | undefined {
+	try {
+		const name = hostname().trim();
+		return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) ? name : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /** Coverage gaps are visibility failures: verification could not be established. */
@@ -187,7 +266,82 @@ function mcpToolManifestCoverageFindings(
 	return findings;
 }
 
+/**
+ * The session-start update notice. An endpoint installed with the desktop
+ * installers is updated with `aidr update` from its own portal: its notice
+ * comes from the signed installer catalog (update.auto). Every other install
+ * uses the opt-in generic version check.
+ */
+function startVersionCheck(
+	config: Config,
+	ctx: SessionStartContext,
+	token: string | undefined,
+	iidPromise: Promise<string | undefined>,
+	logger: Logger,
+): Promise<VersionCheckResult | null> {
+	if (installerUpdatesApply(process.execPath)) {
+		return installerUpdateNotice({
+			config,
+			currentVersion: ctx.version,
+			apiKey: token,
+			executable: process.execPath,
+		});
+	}
+	if (!config.version_check.enabled) return Promise.resolve(null);
+	return iidPromise
+		.then((iid) =>
+			checkForUpdate(
+				ctx.version,
+				logger,
+				undefined,
+				{ agentRuntime: ctx.agentRuntime, agentRuntimeVersion: ctx.agentRuntimeVersion, iid },
+				token,
+				versionCheckEndpoint(config),
+			),
+		)
+		.catch(() => null);
+}
+
 export async function runSessionStart(ctx: SessionStartContext): Promise<SessionStartResult> {
+	const result = await runSessionStartChecks(ctx);
+	return { ...result, ...(await sessionNotices(ctx)) };
+}
+
+/**
+ * What the developer must be told at every session start, whatever the scan
+ * found and whether or not managed features are available: AI tools AIDR does
+ * not protect, and (once) the privacy notice. Never throws.
+ */
+async function sessionNotices(
+	ctx: SessionStartContext,
+): Promise<Pick<SessionStartResult, "privacyNotice" | "unprotectedTools">> {
+	let unprotectedTools: UnprotectedAiTool[] = [];
+	try {
+		unprotectedTools =
+			ctx.unprotectedTools ??
+			detectUnprotectedAiTools({ home: resolvePath("~"), env: process.env });
+	} catch {
+		unprotectedTools = [];
+	}
+	let privacyNotice: string | null = null;
+	if (!ctx.skipPrivacyNotice) {
+		const config = await loadConfig(ctx.configPath, ctx.logger ?? nullLogger).catch(
+			() => undefined,
+		);
+		if (config && !isInvalidConfig(config)) {
+			privacyNotice = await takeFirstRunPrivacyNotice(config, ctx.agentRuntime, {
+				aidrDir: ctx.aidrDirPath ? resolvePath(ctx.aidrDirPath) : undefined,
+				unprotectedTools: unprotectedTools.map((tool) => tool.label),
+			});
+		}
+	}
+	return {
+		...(unprotectedTools.length > 0 ? { unprotectedTools } : {}),
+		...(privacyNotice ? { privacyNotice } : {}),
+	};
+}
+
+async function runSessionStartChecks(ctx: SessionStartContext): Promise<SessionStartResult> {
 	const logger = ctx.logger ?? nullLogger;
 	const aidrDirPath = resolvePath(ctx.aidrDirPath ?? "~/.singularity-aidr");
 	const config = await loadConfig(ctx.configPath, logger).catch(() => undefined);
@@ -351,6 +505,9 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 					iid,
 					agent_runtime: ctx.agentRuntime,
 					agent_runtime_version: ctx.agentRuntimeVersion,
+					// Lets the approver recognise this device on /verify (CP-1).
+					os: process.platform,
+					hostname: deviceHostname(),
 				});
 				const body = res.body ?? {};
 				const deviceCode =
@@ -515,6 +672,8 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 		}
 	}
 
+	// Whether this session's heartbeat reached the control plane (undefined: no heartbeat).
+	let controlPlaneReachable: boolean | undefined;
 	const managedHeartbeat =
 		config.mode === "managed" && config.control_plane.enabled && token
 			? async () => {
@@ -606,6 +765,7 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 							agent_runtime_version: ctx.agentRuntimeVersion,
 							events,
 						});
+						controlPlaneReachable = !heartbeatUnreachable(result);
 						const next = applyIngestResult(
 							managedState,
 							result,
@@ -632,30 +792,14 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 						}
 					} catch {
 						// Fail open
+						controlPlaneReachable ??= false;
 					}
 				}
 			: async () => {};
 
 	const heartbeatPromise = managedHeartbeat();
 
-	const versionCheckPromise = config.version_check.enabled
-		? iidPromise
-				.then((iid) =>
-					checkForUpdate(
-						ctx.version,
-						logger,
-						undefined,
-						{
-							agentRuntime: ctx.agentRuntime,
-							agentRuntimeVersion: ctx.agentRuntimeVersion,
-							iid,
-						},
-						token,
-						versionCheckEndpoint(config),
-					),
-				)
-				.catch(() => null)
-		: Promise.resolve(null);
+	const versionCheckPromise = startVersionCheck(config, ctx, token, iidPromise, logger);
 
 	const scan = () =>
 		runSessionStartScanWithReport({
@@ -669,17 +813,25 @@ export async function runSessionStart(ctx: SessionStartContext): Promise<Session
 			checkUrls: ctx.checkUrls,
 			checkFileHashes: ctx.checkFileHashes,
 		});
-	const finish = (
+	const finish = async (
 		report: SessionStartScanReport,
 		versionCheck: VersionCheckResult | null,
-	): SessionStartResult => ({
-		enabled: true,
-		scanResults: report.results,
-		...(report.rulesIncomplete ? { rulesIncomplete: report.rulesIncomplete } : {}),
-		versionCheck,
-		posture,
-		coverageFindings,
-	});
+	): Promise<SessionStartResult> => {
+		// Only after the heartbeat: it is what tells whether the control plane answered.
+		const offline =
+			controlPlaneReachable === false
+				? await offlineNoticeFor(config, token ?? "").catch(() => undefined)
+				: undefined;
+		return {
+			enabled: true,
+			scanResults: report.results,
+			...(report.rulesIncomplete ? { rulesIncomplete: report.rulesIncomplete } : {}),
+			versionCheck,
+			posture,
+			coverageFindings,
+			...(offline ? { offline } : {}),
+		};
+	};
 
 	// Commercial build: enforce strict startup order by waiting for managed heartbeat
 	// (revocations + entitlement refresh) before scanning or loading packs.

@@ -226,12 +226,12 @@ describe("createToolCallHandler", () => {
 		const result = await handler({ toolName: "exec", params: { command: "suspicious-command" } });
 		expect(result).toBeDefined();
 		expect(result?.block).toBe(true);
-		expect(result?.blockReason).toContain("Singularity AIDR flagged");
-		expect(result?.blockReason).toContain("blocked it pending explicit user approval");
-		expect(result?.blockReason).toContain("actionId");
+		expect(result?.blockReason).toContain("Singularity AIDR stopped this action");
+		expect(result?.blockReason).toContain("stopped this action until you approve it");
+		expect(result?.blockReason).toContain("Approval reference: mock-action-id");
 		// The agent is told it cannot approve; no callable approval tool is offered.
 		expect(result?.blockReason).not.toContain("aidr_approve");
-		expect(result?.blockReason).toContain("cannot approve this action yourself");
+		expect(result?.blockReason).toContain("you cannot approve this action");
 	});
 
 	it("error in handler → fail-closed block", async () => {

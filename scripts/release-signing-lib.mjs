@@ -444,12 +444,21 @@ export function verifyManifestSignature(rawManifest, signatureEnvelope, validate
 	}
 }
 
-export async function loadRollbackState(statePath, bundlePath) {
+/**
+ * Load the anti-rollback state. A missing file is an empty state, which is
+ * right for an endpoint's very first install; callers that must never treat a
+ * lost state as a first release (production promotion) pass
+ * `requireExisting: true` and get a hard failure instead.
+ */
+export async function loadRollbackState(statePath, bundlePath, { requireExisting = false } = {}) {
 	const resolvedState = await resolveExternalControlPath(statePath, bundlePath, "anti-rollback state");
 	try {
 		await lstat(resolvedState);
 	} catch (error) {
 		if (error?.code !== "ENOENT") throw error;
+		if (requireExisting) {
+			throw new Error(`anti-rollback state is missing (${resolvedState}); a lost state must not be treated as a first release`);
+		}
 		return { path: resolvedState, value: { schema_version: 1, records: {} } };
 	}
 	const { value } = await readJsonFile(resolvedState, "anti-rollback state");
@@ -477,6 +486,71 @@ export function enforceRollbackState(state, manifest, manifestDigest) {
 	if (manifest.release_sequence === current.highest_release_sequence && manifestDigest !== current.manifest_sha256) {
 		throw new Error("release equivocation rejected: sequence is already bound to a different signed manifest");
 	}
+}
+
+/**
+ * Verify one published signed release manifest as anti-rollback evidence.
+ *
+ * Unlike installation, this does not check expiry or bundle bindings: an old,
+ * expired manifest that a trusted, unrevoked signer signed still proves that
+ * its sequence was released, which is all a rollback floor needs. Anything
+ * that does not verify is not evidence and is rejected.
+ * @returns {{key: string, release_sequence: number, manifest_sha256: string, release_version: string, release_tag: string}}
+ */
+export function verifySignedRollbackEvidence(rawManifest, signatureEnvelope, policy) {
+	const raw = Buffer.from(rawManifest);
+	let manifest;
+	try {
+		manifest = JSON.parse(raw.toString("utf8"));
+	} catch {
+		throw new Error("release manifest is not valid JSON");
+	}
+	if (!isPlainObject(manifest) || manifest.schema_version !== 1 || manifest.type !== "aidr-release" || !isPlainObject(manifest.signer)) {
+		throw new Error("release manifest schema is invalid");
+	}
+	const productId = assertProductId(manifest.product_id);
+	const channel = assertChannel(manifest.channel);
+	const releaseSequence = parsePositiveInteger(manifest.release_sequence, "release sequence");
+	if (productId !== policy.productId) throw new Error("release product is not allowed by signer policy");
+	if (!policy.allowedChannels.has(channel)) throw new Error("release channel is not allowed by signer policy");
+	if (typeof manifest.release_version !== "string" || !VERSION_RE.test(manifest.release_version)) throw new Error("release version is invalid");
+	if (typeof manifest.release_tag !== "string" || !TAG_RE.test(manifest.release_tag)) throw new Error("release tag is invalid");
+	const keyId = assertKeyId(manifest.signer.key_id);
+	const fingerprint = normalizeFingerprint(manifest.signer.fingerprint_sha256);
+	if (policy.revokedKeyIds.has(keyId) || policy.revokedFingerprints.has(fingerprint)) throw new Error("release signer is revoked");
+	const signer = policy.trustedSigners.get(keyId);
+	if (!signer) throw new Error("release signer is not in the trusted allowlist");
+	if (signer.fingerprint !== fingerprint) throw new Error("release signer fingerprint does not match policy");
+	verifyManifestSignature(raw, signatureEnvelope, { keyId, signer });
+	return {
+		key: `${productId}/${channel}`,
+		release_sequence: releaseSequence,
+		manifest_sha256: sha256(raw),
+		release_version: manifest.release_version,
+		release_tag: manifest.release_tag,
+	};
+}
+
+/**
+ * Raise `state` to at least every verified evidence record. A sequence bound
+ * to two different signed manifests is equivocation and fails.
+ */
+export function raiseRollbackFloor(state, evidence, recordedAt = new Date()) {
+	for (const item of evidence) {
+		const current = state.value.records[item.key];
+		if (current && item.release_sequence === current.highest_release_sequence && item.manifest_sha256 !== current.manifest_sha256) {
+			throw new Error(`release equivocation: sequence ${item.release_sequence} of ${item.key} is bound to two different signed manifests`);
+		}
+		if (!current || item.release_sequence > current.highest_release_sequence) {
+			state.value.records[item.key] = {
+				highest_release_sequence: item.release_sequence,
+				manifest_sha256: item.manifest_sha256,
+				release_version: item.release_version,
+				recorded_at: recordedAt.toISOString(),
+			};
+		}
+	}
+	return state;
 }
 
 export async function recordRollbackState(state, manifest, manifestDigest, recordedAt = new Date()) {
@@ -559,7 +633,7 @@ export async function verifyAndInstallRelease(options, installCommand = [], deps
 			const validated = validateReleaseManifest(manifest, bundle, policy);
 			verifyManifestSignature(manifestRecord.raw, signatureRecord.value, validated);
 			const manifestDigest = sha256(manifestRecord.raw);
-			const state = await loadRollbackState(statePath, sourceBundle);
+			const state = await loadRollbackState(statePath, sourceBundle, { requireExisting: options.requireState === true });
 			const receiptPath = await validateReceiptPath(options.receipt, sourceBundle, state.path, policy.path);
 			enforceRollbackState(state, manifest, manifestDigest);
 			await afterVerification({ staged, bundle, manifestDigest });

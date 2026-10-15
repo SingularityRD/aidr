@@ -4,9 +4,10 @@
  *
  * A package consumer cannot rely on the monorepo cwd, so builds copy
  * `threats/` and `allowlists/` into `dist/resources/`, inside the signed
- * artifact root, and this resolver prefers that location. Explicit environment
- * overrides stay available for managed deployments and customer-specific rule
- * stores.
+ * artifact root, and this resolver prefers that location. The
+ * `AIDR_THREATS_DIR` / `AIDR_ALLOWLISTS_DIR` overrides are honoured only in
+ * development builds and are always reported (core `rule-dir-override.ts`,
+ * {@link assetOverrideNotice}); a commercial build ignores them.
  *
  * Mirrors the proven resolver in `@singularityrd/aidr-claude-code` so every
  * connector answers "where are my rules?" the same way.
@@ -16,10 +17,19 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	ruleDirOverride,
+	ruleDirOverrideNotice,
+	ruleDirOverrides,
+	runningAsSea,
+} from "@singularityrd/aidr-core";
 
 type AssetKind = "threats" | "allowlists";
 
-const moduleDir = typeof __dirname === "string" && isAbsolute(__dirname) ? __dirname : dirname(fileURLToPath(import.meta.url));
+const moduleDir =
+	typeof __dirname === "string" && isAbsolute(__dirname)
+		? __dirname
+		: dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(dirname(moduleDir));
 const repositoryRoot = resolve(packageRoot, "..", "..");
 
@@ -38,10 +48,18 @@ function isDirectory(candidate: string): boolean {
  * unrelated cwd directory.
  */
 export function resolveAssetDir(kind: AssetKind): string {
-	const envName = kind === "threats" ? "AIDR_THREATS_DIR" : "AIDR_ALLOWLISTS_DIR";
+	const override = ruleDirOverride(kind);
+	if (runningAsSea()) {
+		// Standalone bundle (desktop installers): the hook runs as `<bundle>/bin/aidr
+		// hook aidr-codex-hook` and its rules ship in `<bundle>/dist/resources`,
+		// covered by the bundle's runtime manifest. Nothing outside the bundle
+		// (cwd, home, a parent directory) may stand in for them.
+		const bundled = join(packageRoot, "dist", "resources", kind);
+		return resolve(override?.accepted ? override.path : bundled);
+	}
 	const packaged = join(moduleDir, "resources", kind);
 	const candidates = [
-		process.env[envName],
+		override?.accepted ? override.path : undefined,
 		packaged,
 		join(packageRoot, kind),
 		join(repositoryRoot, kind),
@@ -63,4 +81,12 @@ export function resolveAssetDir(kind: AssetKind): string {
  */
 export function hasAssetDir(kind: AssetKind): boolean {
 	return existsSync(resolveAssetDir(kind));
+}
+
+/**
+ * The warning to show while an `AIDR_THREATS_DIR` / `AIDR_ALLOWLISTS_DIR`
+ * override is set (used or, in a commercial build, ignored), else null.
+ */
+export function assetOverrideNotice(): string | null {
+	return ruleDirOverrideNotice(ruleDirOverrides());
 }

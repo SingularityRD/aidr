@@ -29,6 +29,7 @@ vi.mock("../lib/supabase", () => ({
 vi.mock("../enterprise/team-provider", () => ({ useTeam: vi.fn() }));
 
 import { useTeam } from "../enterprise/team-provider";
+import { en } from "../i18n/en";
 import { PrivacyGuardPage } from "../ui/pages/PrivacyGuardPage";
 import {
 	BROWSER_GUARD_DEFAULT_ENTITIES,
@@ -238,7 +239,7 @@ describe("Browser Privacy Guard page", () => {
 		renderPage();
 
 		const panel = screen.getByRole("region", { name: "Enroll browsers" });
-		expect(within(panel).getByRole("link", { name: "API Keys" })).toHaveAttribute(
+		expect(within(panel).getByRole("link", { name: "API keys" })).toHaveAttribute(
 			"href",
 			"/api-keys?type=browser_guard",
 		);
@@ -345,6 +346,8 @@ describe("Browser Privacy Guard read model", () => {
 			resolve(REPO_ROOT, "packages/dashboard/src/ui/AppLayout.tsx"),
 			"utf8",
 		);
-		expect(layout).toContain('<NavLink to="/privacy-guard">Browser Privacy</NavLink>');
+		expect(layout).toContain('{ to: "/privacy-guard", label: "nav.browserGuard" }');
+		// One product name everywhere: the extension is "Browser Guard".
+		expect(en["nav.browserGuard"]).toBe("Browser Guard");
 	});
 });

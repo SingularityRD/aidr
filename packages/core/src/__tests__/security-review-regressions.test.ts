@@ -145,9 +145,8 @@ describe("shell-normalized view: IFS parameter-expansion separators", () => {
 	])("detects %s through the normalized view only (CLT-OBFUS-011)", (command) => {
 		const ids = matchCommand(engine, command);
 		expect(ids).toContain("CLT-OBFUS-011");
-		// The raw-command rules cannot see it: the evasion is real.
-		expect(ids).not.toContain("CLT-CMD-001");
-		expect(ids).not.toContain("CLT-CMD-002");
+		// Since GA audit DET the pipe-to-shell rules also read the normalized view.
+		expect(ids.some((id) => id === "CLT-CMD-001" || id === "CLT-CMD-002")).toBe(true);
 	});
 
 	it("stays linear on a long run of unterminated IFS expansions", () => {

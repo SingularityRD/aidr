@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { DashboardMessageKey } from "../i18n/en";
+import { type Translate, useRichT, useT } from "../i18n/I18nProvider";
 import {
 	QUOTE_CONTACT_EMAIL,
 	quoteRequestHref,
@@ -13,17 +15,16 @@ import {
 	type PlanDefinition,
 	type PlanId,
 	planById,
-	QUOTE_NOTICE,
 	retentionTerms,
 	seatTerms,
 	type TenantPlan,
 } from "./plans";
 import { createCheckout } from "./stripe-client";
 
-const SOURCE_LABELS: Record<TenantPlan["planSource"], string> = {
-	stripe_subscription: "Verified card subscription",
-	team_record: "Billing record",
-	default: "Default plan",
+const SOURCE_LABELS: Record<TenantPlan["planSource"], DashboardMessageKey> = {
+	stripe_subscription: "plan.source.stripe",
+	team_record: "plan.source.record",
+	default: "plan.source.default",
 };
 
 const PICKABLE_PLANS = PLAN_CATALOG.filter((plan) => plan.active && plan.id !== "free");
@@ -72,9 +73,9 @@ function pickerState(
 	};
 }
 
-function submitLabel(busy: boolean, checkoutPath: boolean): string {
-	if (busy) return "Working…";
-	return checkoutPath ? "Continue to checkout" : "Request upgrade";
+function submitLabel(busy: boolean, checkoutPath: boolean, t: Translate): string {
+	if (busy) return t("plan.working");
+	return checkoutPath ? t("plan.checkout") : t("plan.requestUpgrade");
 }
 
 function PlanStatus({
@@ -84,12 +85,12 @@ function PlanStatus({
 	loadState: "loading" | "ready" | "unavailable";
 	tenantPlan: TenantPlan | null;
 }) {
-	if (loadState === "loading") return <div className="muted small">Loading plan…</div>;
+	const t = useT();
+	if (loadState === "loading") return <div className="muted small">{t("plan.loading")}</div>;
 	if (loadState === "unavailable" || !tenantPlan) {
 		return (
 			<div className="notice notice-danger" role="status">
-				Plan information could not be loaded for this tenant. No plan or usage figure is shown until
-				it can be read.
+				{t("plan.loadFailed")}
 			</div>
 		);
 	}
@@ -105,10 +106,11 @@ function IntervalSelect({
 	value: BillingInterval | null;
 	onChange: (value: BillingInterval) => void;
 }) {
+	const t = useT();
 	if (intervals.length === 0) return null;
 	return (
 		<label>
-			Billing
+			{t("plan.billing")}
 			<select
 				className="input"
 				value={value ?? ""}
@@ -116,7 +118,7 @@ function IntervalSelect({
 			>
 				{intervals.map((option) => (
 					<option key={option} value={option}>
-						{option === "monthly" ? "Monthly" : "Annual"}
+						{option === "monthly" ? t("plan.monthly") : t("plan.annual")}
 					</option>
 				))}
 			</select>
@@ -125,6 +127,7 @@ function IntervalSelect({
 }
 
 function CurrentPlanSummary({ tenantPlan }: { tenantPlan: TenantPlan }) {
+	const t = useT();
 	const usagePercent =
 		tenantPlan.allowedAgents > 0
 			? Math.min(100, Math.round((tenantPlan.currentAgents / tenantPlan.allowedAgents) * 100))
@@ -134,21 +137,21 @@ function CurrentPlanSummary({ tenantPlan }: { tenantPlan: TenantPlan }) {
 		<>
 			<div className="grid" style={{ marginTop: 10 }}>
 				<div className="stat-card">
-					<div className="stat-label">Current plan</div>
+					<div className="stat-label">{t("plan.current")}</div>
 					<div className="stat-value">{tenantPlan.displayName}</div>
-					<div className="muted small">{SOURCE_LABELS[tenantPlan.planSource]}</div>
+					<div className="muted small">{t(SOURCE_LABELS[tenantPlan.planSource])}</div>
 				</div>
 				<div className="stat-card">
-					<div className="stat-label">Protected agents in use</div>
+					<div className="stat-label">{t("plan.inUse")}</div>
 					<div className="stat-value">
 						{tenantPlan.currentAgents} / {tenantPlan.allowedAgents}
 					</div>
 					<div className="muted small">
-						{tenantPlan.includedAgentsPerSeat} agent per seat on this plan
+						{t("plan.perSeat", { count: tenantPlan.includedAgentsPerSeat })}
 					</div>
 				</div>
 				<div className="stat-card">
-					<div className="stat-label">Admission</div>
+					<div className="stat-label">{t("plan.admission")}</div>
 					<div>
 						<span
 							className={
@@ -162,13 +165,15 @@ function CurrentPlanSummary({ tenantPlan }: { tenantPlan: TenantPlan }) {
 								: tenantPlan.admission.status}
 						</span>
 					</div>
-					{expires ? <div className="muted small">Term ends {expires}</div> : null}
+					{expires ? (
+						<div className="muted small">{t("plan.termEnds", { date: expires })}</div>
+					) : null}
 				</div>
 			</div>
 			<div
 				className="usage-bar"
 				role="progressbar"
-				aria-label="Protected agent usage"
+				aria-label={t("plan.usage")}
 				aria-valuemin={0}
 				aria-valuemax={tenantPlan.allowedAgents}
 				aria-valuenow={tenantPlan.currentAgents}
@@ -183,18 +188,18 @@ function CurrentPlanSummary({ tenantPlan }: { tenantPlan: TenantPlan }) {
 }
 
 function CapacityNotice({ tenantPlan }: { tenantPlan: TenantPlan }) {
+	const t = useT();
 	if (tenantPlan.allowedAgents === 0) {
 		return (
 			<div className="notice notice-danger" style={{ marginTop: 10 }}>
-				This tenant has no admitted protected-agent capacity. New agents are rejected by the control
-				plane until a trial, licence or paid plan is active.
+				{t("plan.noCapacity")}
 			</div>
 		);
 	}
 	if (tenantPlan.currentAgents > tenantPlan.allowedAgents) {
 		return (
 			<div className="notice notice-danger" style={{ marginTop: 10 }}>
-				More agents are connected than the plan admits; additional agents may be rejected.
+				{t("plan.overCapacity")}
 			</div>
 		);
 	}
@@ -202,13 +207,23 @@ function CapacityNotice({ tenantPlan }: { tenantPlan: TenantPlan }) {
 }
 
 function SubscriptionLine({ subscription }: { subscription: TenantPlan["subscription"] }) {
+	const t = useT();
 	if (!subscription) return null;
 	const periodEnd = formatDate(subscription.currentPeriodEnd ?? null);
 	return (
 		<div className="muted small" style={{ marginTop: 10 }}>
-			Card subscription: {planById(subscription.planId)?.displayName ?? "Plan"} ·{" "}
-			{subscription.seats} seats · {subscription.billingInterval} · {subscription.status}
-			{periodEnd ? ` · paid through ${periodEnd}` : ""}
+			{t("plan.cardLine", {
+				plan: planById(subscription.planId)?.displayName ?? t("plan.planFallback"),
+				seats: subscription.seats,
+				interval:
+					subscription.billingInterval === "monthly"
+						? t("plan.monthly")
+						: subscription.billingInterval === "yearly"
+							? t("plan.annual")
+							: subscription.billingInterval,
+				status: subscription.status,
+			})}
+			{periodEnd ? t("plan.paidThrough", { date: periodEnd }) : ""}
 		</div>
 	);
 }
@@ -222,6 +237,7 @@ function RequestStatus({
 	safeCheckoutUrl: string | null;
 	failure: string | null;
 }) {
+	const t = useT();
 	return (
 		<>
 			{outcome ? (
@@ -232,7 +248,7 @@ function RequestStatus({
 			{safeCheckoutUrl ? (
 				<div className="row">
 					<a className="button" href={safeCheckoutUrl} target="_blank" rel="noreferrer">
-						Open secure checkout
+						{t("plan.openCheckout")}
 					</a>
 				</div>
 			) : null}
@@ -259,6 +275,8 @@ export function PlanCard({
 	tenantId: string | undefined;
 	canManageBilling: boolean;
 }) {
+	const t = useT();
+	const richT = useRichT();
 	const [tenantPlan, setTenantPlan] = useState<TenantPlan | null>(null);
 	const [loadState, setLoadState] = useState<"loading" | "ready" | "unavailable">("loading");
 	const [selectedId, setSelectedId] = useState<PlanId>("team");
@@ -335,9 +353,7 @@ export function PlanCard({
 		const result = await createCheckout("", "", seats, billing, undefined, active, reqId, plan);
 		if (activeTenantRef.current !== active) return;
 		setCheckoutUrl(result.checkoutUrl);
-		setOutcome(
-			"Checkout is ready. The plan changes only after the payment provider confirms an active subscription.",
-		);
+		setOutcome(t("plan.checkoutReady"));
 	}
 
 	/** Files an upgrade request into the Finance invoice flow. */
@@ -349,7 +365,14 @@ export function PlanCard({
 		});
 		if (activeTenantRef.current !== active) return;
 		setOutcome(
-			`Upgrade request for ${plan.displayName} (${seats} developer seats) was sent to Finance review as ${order.status.replaceAll("_", " ")}. Your plan is unchanged until an approved order is applied.`,
+			t("plan.upgradeSent", {
+				plan: plan.displayName,
+				seats,
+				status:
+					order.status === "pending_finance"
+						? t("billing.orders.pending")
+						: order.status.replaceAll("_", " "),
+			}),
 		);
 		setRequestId(newBillingRequestId());
 	}
@@ -373,33 +396,30 @@ export function PlanCard({
 		} catch {
 			if (activeTenantRef.current !== active) return;
 			// Keep the request ID so a retry of the same request stays idempotent.
-			setFailure(
-				checkoutPath
-					? "Checkout could not be prepared. Retry, or request the upgrade through Finance."
-					: "The upgrade request was not accepted. Retry or contact the approved sales channel.",
-			);
+			setFailure(checkoutPath ? t("plan.checkoutFailed") : t("plan.upgradeRejected"));
 		} finally {
 			if (activeTenantRef.current === active) setBusy(false);
 		}
 	}
 
 	return (
-		<div className="card" aria-label="Current plan">
-			<h2>Plan</h2>
+		<div className="card" aria-label={t("plan.cardLabel")}>
+			<h2>{t("plan.title")}</h2>
 			<PlanStatus loadState={loadState} tenantPlan={tenantPlan} />
 
-			<h3 style={{ marginTop: 20 }}>Change plan</h3>
+			<h3 style={{ marginTop: 20 }}>{t("plan.change")}</h3>
 			<p className="muted small">
-				{QUOTE_NOTICE} For a quote, contact <a href={quoteRequestHref()}>{QUOTE_CONTACT_EMAIL}</a>
-				{checkoutPath
-					? "; a card checkout shows the amount on the payment provider's page before you pay."
-					: "."}
+				{t("plan.quoteNotice")}{" "}
+				{richT("plan.quoteContact", {
+					email: <a href={quoteRequestHref()}>{QUOTE_CONTACT_EMAIL}</a>,
+				})}
+				{checkoutPath ? t("plan.checkoutAmount") : "."}
 			</p>
 			{!canManageBilling ? (
-				<div className="notice">Plan changes are limited to tenant owners and admins.</div>
+				<div className="notice">{t("plan.ownerOnly")}</div>
 			) : (
-				<fieldset className="stack" aria-label="Plan picker" style={{ border: 0, padding: 0 }}>
-					<div className="row" role="radiogroup" aria-label="Plan">
+				<fieldset className="stack" aria-label={t("plan.picker")} style={{ border: 0, padding: 0 }}>
+					<div className="row" role="radiogroup" aria-label={t("plan.title")}>
 						{PICKABLE_PLANS.map((plan) => (
 							<label key={plan.id} className="row" style={{ gap: 6 }}>
 								<input
@@ -417,7 +437,7 @@ export function PlanCard({
 									{plan.displayName}
 									<span className="muted small">
 										{" "}
-										({seatTerms(plan)} · {retentionTerms(plan)})
+										({seatTerms(plan, t)} · {retentionTerms(plan, t)})
 									</span>
 								</span>
 							</label>
@@ -425,7 +445,7 @@ export function PlanCard({
 					</div>
 					<div className="row">
 						<label>
-							Developer seats
+							{t("plan.developerSeats")}
 							<input
 								className="input"
 								type="number"
@@ -453,20 +473,15 @@ export function PlanCard({
 							disabled={!canAct}
 							onClick={() => void submit()}
 						>
-							{submitLabel(busy, checkoutPath)}
+							{submitLabel(busy, checkoutPath, t)}
 						</button>
 					</div>
 					{!seatsValid ? (
 						<div className="muted small">
-							{selected?.displayName} requires at least {minSeats} developer seats.
+							{t("plan.minSeats", { plan: selected?.displayName ?? "", count: minSeats })}
 						</div>
 					) : null}
-					{!checkoutPath ? (
-						<div className="muted small">
-							This request is reviewed by Finance and invoiced; it does not change the plan until an
-							approved order is applied.
-						</div>
-					) : null}
+					{!checkoutPath ? <div className="muted small">{t("plan.financeNote")}</div> : null}
 					<RequestStatus outcome={outcome} safeCheckoutUrl={safeCheckoutUrl} failure={failure} />
 				</fieldset>
 			)}

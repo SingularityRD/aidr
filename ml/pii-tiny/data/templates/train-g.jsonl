@@ -1,0 +1,300 @@
+{"lang": "en", "domain": "software-dev", "text": "Why does this throw undefined?\n\nconst user = { name: \"{PERSON1}\", role: \"admin\" };\nconsole.log(user.fullName.toUpperCase());"}
+{"lang": "en", "domain": "software-dev", "text": "Can you refactor this so getFullName() handles a missing middle name?\n\nclass Person {\n  constructor(firstName, lastName) { this.firstName = firstName; this.lastName = lastName; }\n  getFullName() { return `${this.firstName} ${this.lastName}`; }\n}"}
+{"lang": "en", "domain": "software-dev", "text": "My Flask route returns 500 when I post this body: {\"customer\": \"{PERSON1}\", \"city\": \"{LOCATION1.city}\"}. The traceback says KeyError: 'customerName'. What am I missing?"}
+{"lang": "tr", "domain": "software-dev", "text": "Bu kodda hata nerede? {PERSON1.first+GEN} yazdığı fonksiyon null dönüyor:\n\ndef get_user(id):\n    user = db.find(id)\n    return user.name if user else None"}
+{"lang": "en", "domain": "software-dev", "text": "Write a TypeScript interface for a Customer with name: string, email: string, createdAt: Date, and an optional address field. Add a sample object for {PERSON1} living at {ADDRESS1.en}."}
+{"lang": "mix", "domain": "software-dev", "text": "Şu React component'te state update olmuyor, neden?\n\nconst [name, setName] = useState(\"{PERSON1.first}\");\nuseEffect(() => { setName(props.userName) }, []);"}
+{"lang": "en", "domain": "software-dev", "text": "git blame says {PERSON1.lower} changed this line last week:\n\n- if (retries > 3) throw err;\n+ if (retries >= 3) return null;\n\nIs this a behaviour change?"}
+{"lang": "tr", "domain": "software-dev", "text": "{PERSON1.first} Bey yeni kullanıcılara hoş geldin e-postası atmak için Django signals mı yoksa Celery task mı kullanalım diye soruyor. Farkını ona kısaca anlatan bir cevap yaz."}
+{"lang": "tr", "domain": "software-dev", "text": "Java'da Person sınıfında equals ve hashCode metodlarını nasıl override ederim? Alanlar: firstName, lastName, birthDate."}
+{"lang": "en", "domain": "software-dev", "text": "Here is my commit log, write release notes:\n\na1f3c2e fix: null check in UserService (@{PERSON1.lower})\nb7d9e01 feat: add CSV export ({PERSON2.first})\nc22aa10 chore: bump Kafka client to 3.7"}
+{"lang": "en", "domain": "software-dev", "text": "Python question: why does my f-string print the braces?\n\nname = \"{PERSON1.first}\"\nprint(f\"Hello {{name}}\")"}
+{"lang": "mix", "domain": "software-dev", "text": "{PERSON1.first} Bey'in yazdığı Laravel middleware her request'te DB'ye gidiyor, cache'leyebilir miyiz? Kod aşağıda:\n\npublic function handle($request, Closure $next) { $user = User::find(auth()->id()); return $next($request); }"}
+{"lang": "mix", "domain": "software-dev", "text": "C# record lazım: Employee(FirstName, LastName, Department, HireDate) ve ToString override. Test için new Employee(\"{PERSON1.first}\", \"{PERSON1.last}\", \"IT\", DateTime.Today) örneği ekle."}
+{"lang": "en", "domain": "software-dev", "text": "Our Jenkins job fails on the \"deploy-staging\" stage with exit code 137. The agent is jenkins-agent-04, Hadoop jobs run on the same box. {PERSON1.first} thinks it's OOM. Is it?"}
+{"lang": "tr", "domain": "software-dev", "text": "Aşağıdaki Go kodunda race condition var mı?\n\nvar cache = map[string]string{}\nfunc set(k, v string) { cache[k] = v }\n\n// {PERSON1.initial} tarafından yazıldı, 2023"}
+{"lang": "en", "domain": "software-dev", "text": "Write a regex that matches a Turkish mobile number like 0532 111 22 33 or +90 532 111 22 33."}
+{"lang": "en", "domain": "software-dev", "text": "The seed script inserts this admin user, but login fails:\n\nUser.create!(name: \"{PERSON1}\", email: \"admin@example.com\", password: \"changeme123\")\n\nRails 7.1, Devise."}
+{"lang": "mix", "domain": "software-dev", "text": "Bu TypeScript hatası ne demek: \"Property 'lastName' does not exist on type 'User'\". User type'ı şöyle:\n\ntype User = { id: number; name: string; email: string };"}
+{"lang": "en", "domain": "software-dev", "text": "How do I mock Date.now() in Jest so that the test for {PERSON1.first}'s birthday reminder is deterministic?"}
+{"lang": "en", "domain": "software-dev", "text": "Rename these variables to something clearer: usrNm, usrSrnm, addr1, addr2, tel. They hold the customer name, surname, two address lines and phone."}
+{"lang": "tr", "domain": "software-dev", "text": "{PERSON1.first} Hanım, ilettiğiniz stack trace'e baktım; sorun NumPy sürümünde. Bunu ekibe daha kibar bir dille anlatan bir mesaj yaz."}
+{"lang": "en", "domain": "software-dev", "text": "Translate these i18n strings to Turkish:\n\n\"greeting\": \"Welcome back, {{name}}!\",\n\"logout\": \"Sign out\",\n\"profile.title\": \"Your profile\""}
+{"lang": "en", "domain": "software-dev", "text": "Is it safe to log this object? logger.info({ user: \"{PERSON1}\", address: \"{ADDRESS1.en}\", plan: \"pro\" })"}
+{"lang": "mix", "domain": "software-dev", "text": "Kotlin'de data class Customer(val name: String, val city: String) için default value nasıl verilir? Örnek: Customer(\"{PERSON1}\", \"{LOCATION1.city}\")."}
+{"lang": "en", "domain": "software-dev", "text": "Write a bash one-liner that finds all files under src/ containing the string \"TODO({PERSON1.lower})\" and prints the line numbers."}
+{"lang": "en", "domain": "software-dev", "text": "My Pandas merge drops rows. df_orders has customer_id, df_customers has CustomerID. For example {PERSON1} has orders but disappears after the merge. How do I join them?"}
+{"lang": "tr", "domain": "software-dev", "text": "Şu Python fonksiyonu Türkçe karakterleri bozuyor, düzeltir misin?\n\ndef slugify(s):\n    return s.lower().replace(\" \", \"-\")\n\nprint(slugify(\"{PERSON1}\"))"}
+{"lang": "en", "domain": "software-dev", "text": "PR description draft, please polish:\n\nThis PR (co-authored with {PERSON1}) migrates the auth module from Passport to NextAuth and removes the legacy session table."}
+{"lang": "en", "domain": "software-dev", "text": "What does this Java stack trace mean?\n\nException in thread \"main\" java.lang.NullPointerException: Cannot invoke \"String.trim()\" because \"customer.getName()\" is null\n    at com.acme.billing.InvoiceService.build(InvoiceService.java:42)"}
+{"lang": "mix", "domain": "software-dev", "text": "Copilot şu kodu önerdi ama yanlış gibi:\n\nfunction initials(name) { return name.split(\" \").map(p => p[0]).join(\"\"); }\n\ninitials(\"{PERSON1.firstlast2}\") beklenen çıktı ne olmalı?"}
+{"lang": "mix", "domain": "software-dev", "text": "Dockerfile sorusu: Jupyter container mount ettiğim /data volume'ünü görmüyor. {PERSON1.first+GEN} makinesinde çalışıyor ama bende değil. docker run -v ./data:/data jupyter/scipy-notebook kullanıyorum."}
+{"lang": "en", "domain": "software-dev", "text": "Write a unit-test-friendly function formatName(first, last, style) where style is \"full\", \"initial\" or \"upper\". Example: formatName(\"{PERSON1.first}\", \"{PERSON1.last}\", \"initial\")."}
+{"lang": "tr", "domain": "software-dev", "text": "Ekibe duyuru: {PERSON1} ve {PERSON2} bu sprint backend tarafında, {PERSON3.first} frontend'de. Bunu Slack için kısa ve net yaz."}
+{"lang": "en", "domain": "software-dev", "text": "Explain what the Siri and Alexa SDKs expect for intent names; I want an intent called GetOrderStatus."}
+{"lang": "en", "domain": "software-dev", "text": "The CODEOWNERS file has:\n\n/src/payments/ @{PERSON1.lower}\n/src/auth/ @security-team\n\nWhy isn't the reviewer auto-requested on my PR?"}
+{"lang": "mix", "domain": "software-dev", "text": "Spring Boot'ta @Value ile application.yml'dan değer okumuyor. Config şöyle:\n\napp:\n  owner: \"{PERSON1}\"\n  region: eu-central-1"}
+{"lang": "en", "domain": "software-dev", "text": "Write a SQLAlchemy model for table users with columns id, first_name, last_name, email, created_at, and show how to insert {PERSON1.first} {PERSON1.last}."}
+{"lang": "en", "domain": "software-dev", "text": "Hey, {PERSON1.first} asked me to review this hook but I don't get the dependency array:\n\nuseEffect(() => fetchUser(id), [id, fetchUser]);"}
+{"lang": "tr", "domain": "software-dev", "text": "Node.js'te process.env.USER_NAME undefined geliyor, .env dosyasında USER_NAME=deploy var. Nedeni ne olabilir?"}
+{"lang": "en", "domain": "software-dev", "text": "Convert this Python dict to a YAML config:\n\n{\"maintainer\": \"{PERSON1}\", \"team\": \"platform\", \"oncall\": \"{PERSON2.first}\", \"region\": \"eu-west-1\"}"}
+{"lang": "en", "domain": "software-dev", "text": "Help me write a docstring for this function:\n\ndef full_address(street, district, city):\n    return f\"{street}, {district}/{city}\"\n\nExample call: full_address(\"{ADDRESS1.tr_street}\", \"{LOCATION1.district}\", \"{LOCATION2.city}\")"}
+{"lang": "mix", "domain": "software-dev", "text": "{PERSON1.first+GEN} PR'ında şu yorum var: \"magic number kullanma\". Kod: if (age > 18 && score > 0.85). Nasıl refactor ederim?"}
+{"lang": "tr", "domain": "software-dev", "text": "{PERSON1} için kısa bir not yaz: 10 bin isteklik batch işinde Gemini API ve Claude API rate limit'leri nasıl karşılaştırılır, hangisini seçmeliyiz?"}
+{"lang": "en", "domain": "software-dev", "text": "Can you spot the bug?\n\nnames = [\"{PERSON1}\", \"{PERSON2}\", \"{PERSON3}\"]\nfor i in range(1, len(names)):\n    print(names[i])"}
+{"lang": "tr", "domain": "software-dev", "text": "Merhaba, {PERSON1.first} ben. Dün konuştuğumuz migration script'i hâlâ hata veriyor, log'u ekliyorum:\n\nERROR: column \"kullanici_adi\" does not exist"}
+{"lang": "mix", "domain": "software-dev", "text": "ESLint config yaz: console.log yasak olsun ama server/ klasöründe console.error serbest. {PERSON1.first} bunu PR checklist'e eklemek istiyor."}
+{"lang": "en", "domain": "software-dev", "text": "Mask this before I share it: the bug reporter was {PERSON1} ({PERSON1.lower}@example.com), living at {ADDRESS1.en}, and the crash happens on checkout."}
+{"lang": "mix", "domain": "software-dev", "text": "Rust'ta struct Person { name: String, age: u8 } için Display trait implement eder misin? Test için Person { name: \"{PERSON1.first}\".into(), age: 34 } kullan."}
+{"lang": "mix", "domain": "software-dev", "text": "Kafka consumer group \"billing-consumers\" her 30 saniyede rebalance oluyor, session.timeout.ms 10000. {PERSON1} on-call'da bunu gördü, ne önerirsin?"}
+{"lang": "tr", "domain": "software-dev", "text": "Aşağıdaki commit mesajını İngilizceye çevir: \"{PERSON1.first} ile birlikte login ekranındaki demir yolu bileti hatası düzeltildi.\""}
+{"lang": "en", "domain": "code-review", "text": "Review this PR diff and list issues:\n\n- const userName = req.body.user;\n+ const userName = sanitize(req.body.user);\n+ console.log(\"login attempt by\", userName);"}
+{"lang": "en", "domain": "code-review", "text": "Reviewer {PERSON1} left: \"nit: prefer early return\". Author {PERSON2.first} disagrees. Who is right?\n\nif (user) { process(user); } else { return; }"}
+{"lang": "tr", "domain": "code-review", "text": "Bu kod review yorumunu daha yapıcı yaz: \"{PERSON1.first}, bu fonksiyon çok uzun, kimse okuyamaz.\""}
+{"lang": "mix", "domain": "code-review", "text": "Code review'da {PERSON1.first+DAT} şunu yazmıştım: \"getFullName() içinde null check yok\". Cevap verdi ama anlamadım: \"Optional chaining yeterli\". Haklı mı?"}
+{"lang": "en", "domain": "code-review", "text": "Is hardcoding test data like this acceptable in a PR?\n\nconst ADMIN = { name: \"{PERSON1}\", email: \"admin@example.org\" };"}
+{"lang": "en", "domain": "code-review", "text": "Please review this SQL for injection risk:\n\nquery = \"SELECT * FROM customers WHERE last_name = '\" + lastName + \"'\""}
+{"lang": "tr", "domain": "code-review", "text": "PR açıklamasını düzelt: \"{PERSON1} hocanın istediği gibi validasyon eklendi, {PERSON2.last} beyin yorumu da çözüldü.\""}
+{"lang": "en", "domain": "code-review", "text": "Summarize this review thread:\n\n[{PERSON1.first}] this breaks the Copilot integration test\n[{PERSON2.first}] it was already flaky\n[{PERSON1.first}] not on main, check run #4512"}
+{"lang": "tr", "domain": "code-review", "text": "IAM rollerini değiştiren bir Terraform PR'ını incelerken nelere bakmalıyım? {PERSON1.first+DAT} göndereceğim bir kontrol listesi hazırla."}
+{"lang": "mix", "domain": "code-review", "text": "Reviewer olarak şu satırı flag'ledim: log.info(\"User \" + user.getName() + \" logged in from \" + ip). PII loglama sorunu mu? Nasıl açıklayayım?"}
+{"lang": "en", "domain": "code-review", "text": "The PR from {PERSON1.lower} adds a Person class with fields name and surname. Should we use givenName/familyName instead for i18n?"}
+{"lang": "en", "domain": "code-review", "text": "Review this Python and suggest improvements:\n\nclass UserRepo:\n    def find_by_name(self, name):\n        return [u for u in self.users if u.name == name]"}
+{"lang": "tr", "domain": "code-review", "text": "Aşağıdaki diff'te gereksiz bir şey var mı?\n\n- # TODO: {PERSON1.first} düzeltecek\n+ # FIXME: tarih formatı ekim ayında bozuluyor"}
+{"lang": "en", "domain": "code-review", "text": "Write a polite comment asking {PERSON1.first} to split this 2,000-line PR into smaller ones."}
+{"lang": "en", "domain": "code-review", "text": "Is this Kotlin null-safe?\n\nval displayName = user?.profile?.name ?: \"Guest\"\nprintln(displayName.length)"}
+{"lang": "mix", "domain": "code-review", "text": "{PERSON1.upper} imzalı bu eski kod hâlâ prod'da. Review edip modern C#'a çevirir misin?\n\n// Author: {PERSON1.upper}\npublic string GetName() { return this.name == null ? \"\" : this.name; }"}
+{"lang": "en", "domain": "code-review", "text": "Explain why the reviewer said \"don't use == for strings\" in this Java code:\n\nif (customer.getCity() == \"Istanbul\") { applyDiscount(); }"}
+{"lang": "en", "domain": "code-review", "text": "Draft a review comment: the test fixture contains a real-looking address ({ADDRESS1.en}) and the name {PERSON1}; suggest replacing them with obviously fake data."}
+{"lang": "tr", "domain": "code-review", "text": "Bu fonksiyonda kaç tane code smell görüyorsun?\n\nfunction h(a,b,c){ if(a){ if(b){ if(c){ return 1 } } } return 0 }"}
+{"lang": "en", "domain": "code-review", "text": "Compare these two implementations of slugify and tell me which handles Unicode better (one is from Django, one from our utils module)."}
+{"lang": "mix", "domain": "code-review", "text": "PR #812, author {PERSON1}. Reviewer'lar {PERSON2.initial} ve {PERSON3.initial}. Approve için 2 onay lazım, sadece biri onayladı. Merge'e izin verilir mi branch protection ile?"}
+{"lang": "en", "domain": "code-review", "text": "Rewrite this review in a friendlier tone:\n\n\"{PERSON1.first}, this is wrong. You obviously didn't test it.\""}
+{"lang": "en", "domain": "code-review", "text": "Review: does this regex correctly validate a username (3-16 chars, letters, digits, underscore)?\n\n^[a-zA-Z0-9_]{3,16}$"}
+{"lang": "tr", "domain": "code-review", "text": "{PERSON1.first} Bey, gönderdiğiniz PR'daki Hadoop konfigürasyonu staging'de çalışmıyor. Bunu resmi bir e-posta olarak yaz, imza: {PERSON2}."}
+{"lang": "en", "domain": "code-review", "text": "The Jupyter notebook in this PR still has outputs showing customer rows. What's the best way to strip outputs in a pre-commit hook?"}
+{"lang": "mix", "domain": "code-review", "text": "Şu iki commit'i squash etmeli miyim?\n\n3f1a2c fix typo in firstName validation\n9e0b7d fix typo again ({PERSON1.lower})"}
+{"lang": "en", "domain": "code-review", "text": "Review the error handling here:\n\ntry { await sendEmail(user.email) } catch (e) { }\n\nThe user in the bug report was {PERSON1}."}
+{"lang": "en", "domain": "code-review", "text": "Are there any accessibility problems in this JSX?\n\n<img src={avatarUrl} />\n<span onClick={openProfile}>{user.name}</span>"}
+{"lang": "tr", "domain": "code-review", "text": "Kod incelemesinde {PERSON1.last} şunu sordu: \"neden Kafka yerine Redis Streams?\" Kısa bir teknik gerekçe yaz."}
+{"lang": "en", "domain": "code-review", "text": "Summarize the main concerns in this review in three bullets:\n\n{PERSON1.first}: the migration locks the orders table\n{PERSON2.first}: no rollback script\n{PERSON1.first}: also missing an index on customer_id"}
+{"lang": "en", "domain": "code-review", "text": "Check this C# LINQ for N+1 queries:\n\nvar names = db.Orders.Select(o => o.Customer.FullName).ToList();"}
+{"lang": "mix", "domain": "code-review", "text": "Reviewer şöyle demiş: \"Avoid magic strings like 'admin'\". Kodda role === \"admin\" var. Enum'a çevirir misin TS'de?"}
+{"lang": "en", "domain": "code-review", "text": "Turn this list of review comments into a changelog entry, crediting {PERSON1} and {PERSON2.last}:\n- fixed date parsing in March\n- improved Pandas memory usage"}
+{"lang": "tr", "domain": "code-review", "text": "Bu kodu inceler misin, güneş saatine göre tema değiştiriyor ama gece de açık tema geliyor:\n\nconst isDay = hour > 6 && hour < 18;"}
+{"lang": "en", "domain": "code-review", "text": "Is there a security issue with this Express handler?\n\napp.get(\"/user/:name\", (req, res) => res.send(`<h1>${req.params.name}</h1>`));"}
+{"lang": "en", "domain": "code-review", "text": "{PERSON1.first} approved but {PERSON2.first} requested changes. Write a neutral message to both proposing a 15-minute call."}
+{"lang": "mix", "domain": "code-review", "text": "Bu Python decorator'ünü review et, {PERSON1.first} Hanım yazmış, retry logic doğru mu?\n\ndef retry(n):\n    def deco(f):\n        def w(*a):\n            for _ in range(n):\n                try: return f(*a)\n                except Exception: pass\n        return w\n    return deco"}
+{"lang": "mix", "domain": "code-review", "text": "\"LGTM with nits\" ne demek, ne zaman kullanılır? {PERSON1.first} junior, ilk review'unda bunu görüp şaşırmış."}
+{"lang": "en", "domain": "code-review", "text": "This PR renames customer_name to customerName in the API response. Is that a breaking change for clients built with Rails and Laravel?"}
+{"lang": "tr", "domain": "code-review", "text": "Aşağıdaki review yorumlarını önceliğe göre sırala:\n1. değişken adı umut verici değil\n2. SQL injection riski\n3. test eksik"}
+{"lang": "en", "domain": "code-review", "text": "Code owner is {PERSON1.initial}, but they left the company. Who should I tag? Draft a Slack message to the platform channel asking."}
+{"lang": "mix", "domain": "code-review", "text": "Bu Java metodu çok uzun, extract method yapar mısın? Ayrıca {PERSON1.first+GEN} yazdığı yorumu sil:\n\n// {PERSON1.first}: burayı sonra düzelteceğim\npublic void processOrder(Order o) { ... }"}
+{"lang": "mix", "domain": "code-review", "text": "Bu Dockerfile'ı review et, {PERSON1.last} yazmış:\n\nFROM python:3.12\nCOPY . .\nRUN pip install -r requirements.txt\nCMD [\"python\", \"app.py\"]"}
+{"lang": "en", "domain": "code-review", "text": "Write a reply to {PERSON1} explaining why we can't merge the Alexa skill integration before the security review."}
+{"lang": "tr", "domain": "code-review", "text": "Reviewer {PERSON1} şöyle yazmış: \"bu sorgu her müşteri için ayrı çalışıyor\". Ne demek istiyor, nasıl düzeltirim?\n\nfor m in musteriler:\n    cur.execute(\"SELECT * FROM siparis WHERE musteri_id=%s\", (m.id,))"}
+{"lang": "en", "domain": "code-review", "text": "Give me a short guide for reviewers on spotting PII in test fixtures (names, addresses, phone numbers)."}
+{"lang": "mix", "domain": "code-review", "text": "GitHub'da {PERSON1.lower} kullanıcısı PR'ıma \"please add tests\" yazdı. Vitest ile bu fonksiyona test yaz:\n\nexport const fullName = (u) => `${u.first} ${u.last}`.trim();"}
+{"lang": "en", "domain": "code-review", "text": "In this review, {PERSON1.first} says the cache key should include the tenant id. Show me the corrected code:\n\nconst key = `user:${userId}`;"}
+{"lang": "tr", "domain": "code-review", "text": "Bu kodda bir gariplik var, barış içinde çalışıyordu ama son merge'den sonra testler kırıldı. Diff:\n\n- return a + b\n+ return a + b + 0.1"}
+{"lang": "en", "domain": "code-review", "text": "Review the naming in this schema and suggest consistent names:\n\nUserName, user_email, PhoneNo, addr_line1, CityName"}
+{"lang": "en", "domain": "database", "text": "This INSERT fails with \"value too long for type character varying(50)\":\n\nINSERT INTO customers (customer_name, address, city) VALUES ('{PERSON1.upper}', '{ADDRESS1.en}', '{LOCATION1.city}');"}
+{"lang": "en", "domain": "database", "text": "Write a CREATE TABLE for employees with first_name VARCHAR(100), last_name VARCHAR(100), hire_date DATE, manager_id INT referencing employees. Seed it with {PERSON1} as the manager of {PERSON2}."}
+{"lang": "tr", "domain": "database", "text": "Bu sorgu neden boş dönüyor?\n\nSELECT * FROM musteriler WHERE ad_soyad = '{PERSON1}';\n\nTabloda kayıt var, {PERSON1.first+GEN} kaydını kendim gördüm."}
+{"lang": "mix", "domain": "database", "text": "Postgres'te ILIKE ile arama yapıyorum ama Türkçe İ/ı sorunu var. WHERE name ILIKE '%{PERSON1.last}%' büyük harfli kayıtları bulmuyor. Collation mı değiştirmeliyim?"}
+{"lang": "en", "domain": "database", "text": "Here are the duplicate rows, write a DELETE that keeps the lowest id:\n\nid | full_name | email\n12 | {PERSON1} | {PERSON1.lower}@example.com\n47 | {PERSON1.upper} | {PERSON1.lower}@example.com\n88 | {PERSON2} | p2@example.com"}
+{"lang": "tr", "domain": "database", "text": "SQL Server'da clustered ve non-clustered index farkını Siparisler tablosu üzerinden anlat. Stajyerimiz {PERSON1.first} anlayacak kadar sade olsun."}
+{"lang": "tr", "domain": "database", "text": "Aşağıdaki seed verisini MySQL INSERT'lerine çevir:\n\n{PERSON1}, {ADDRESS1.tr}\n{PERSON2}, {ADDRESS2.tr}\n{PERSON3}, {LOCATION1.district}/{LOCATION2.city}"}
+{"lang": "en", "domain": "database", "text": "MongoDB query help: find all users where profile.name starts with \"{PERSON1.first}\" and status is \"active\"."}
+{"lang": "en", "domain": "database", "text": "Optimize this query, it takes 14 seconds:\n\nSELECT c.customer_name, COUNT(o.id) FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.customer_name ORDER BY 2 DESC;"}
+{"lang": "mix", "domain": "database", "text": "UPDATE çalıştırdım ama 0 row affected:\n\nUPDATE users SET city = '{LOCATION1.city}' WHERE full_name = '{PERSON1}';\n\nfull_name kolonunda trailing space olabilir mi?"}
+{"lang": "en", "domain": "database", "text": "What is the best data type for storing a Turkish IBAN like TR33 0006 1005 1978 6457 8413 26 in PostgreSQL?"}
+{"lang": "en", "domain": "database", "text": "The ORM generated this; why is it so slow?\n\nSELECT \"users\".\"id\", \"users\".\"first_name\", \"users\".\"last_name\" FROM \"users\" WHERE LOWER(\"users\".\"last_name\") = LOWER('{PERSON1.last}');"}
+{"lang": "tr", "domain": "database", "text": "Veritabanında adres alanını normalize etmek istiyorum. Şu anki örnek kayıt: \"{ADDRESS1.tr}\". Mahalle, sokak, ilçe, il kolonlarına nasıl bölerim?"}
+{"lang": "en", "domain": "database", "text": "Write a stored procedure GetCustomerByName(@name NVARCHAR(200)) that returns id, name, phone and city. Show an EXEC call for '{PERSON1}'."}
+{"lang": "en", "domain": "database", "text": "Result of my SELECT, can you explain why two rows have the same customer_id?\n\ncustomer_id | name | city\n1001 | {PERSON1} | {LOCATION1.city}\n1001 | {PERSON2} | {LOCATION2.city}"}
+{"lang": "mix", "domain": "database", "text": "Redis'te user:session:{id} key'leri TTL almıyor. SET user:session:42 '{\"name\":\"{PERSON1.first}\"}' EX 3600 yazıyorum ama TTL -1 gösteriyor."}
+{"lang": "tr", "domain": "database", "text": "Şema tasarımı lazım: personel, departman, proje tabloları. Personel tablosunda ad, soyad, doğum yeri, adres olsun. İlişkileri de çiz."}
+{"lang": "en", "domain": "database", "text": "How do I write a GDPR \"right to be forgotten\" script that anonymizes a customer? E.g. for {PERSON1} with address {ADDRESS1.en}, replace name and address but keep order totals."}
+{"lang": "tr", "domain": "database", "text": "Ekipte {PERSON1.last} ile {PERSON2.last} sürekli tartışıyor: event log'ları Cassandra'da mı tutalım, Kafka'da mı? İkisinin farkını tarafsız bir şekilde özetle."}
+{"lang": "mix", "domain": "database", "text": "Bu CTE'de hata var galiba:\n\nWITH aktif AS (SELECT id, ad FROM kullanicilar WHERE durum = 1)\nSELECT * FROM aktif WHERE ad = '{PERSON1.first}' AND sehir = '{LOCATION1.city}'"}
+{"lang": "en", "domain": "database", "text": "Migrate this column rename safely with zero downtime: customers.name -> customers.full_name. We use Rails migrations. {PERSON1.first} from the DBA team wants a rollback plan too."}
+{"lang": "tr", "domain": "database", "text": "Yedekten geri dönen tabloda {PERSON1} ve {PERSON2} kayıtları eksik. pg_dump ile sadece customers tablosunu nasıl alırım?"}
+{"lang": "en", "domain": "database", "text": "Write an INSERT ... ON CONFLICT for upserting a contact:\n\n('{PERSON1}', 'contact@example.com', '0532 111 22 33', '{ADDRESS1.tr}')"}
+{"lang": "en", "domain": "database", "text": "Explain what this execution plan line means: \"Seq Scan on customers (cost=0.00..18334.00 rows=1 width=64) Filter: ((last_name)::text = 'Smith'::text)\""}
+{"lang": "mix", "domain": "database", "text": "Supabase RLS policy yazmam lazım: kullanıcı sadece kendi profiles satırını görebilsin. Test kullanıcısı {PERSON1}, id = 7f3c..."}
+{"lang": "en", "domain": "database", "text": "Is storing full_name in one column a bad idea? Our CRM has entries like \"{PERSON1.firstlast2}\" and \"{PERSON2.upper}\" and sorting by surname is impossible."}
+{"lang": "tr", "domain": "database", "text": "SQL'de doğum yeri {LOCATION1.city} olan ve {LOCATION2.city} şubesinde çalışan personeli listeleyen sorguyu yaz. Tablolar: personel(ad, soyad, dogum_yeri, sube_id), sube(id, sehir)."}
+{"lang": "en", "domain": "database", "text": "Write a SQL view that hides PII: expose customer_id, signup_date, plan but not name, email or address."}
+{"lang": "en", "domain": "database", "text": "Elasticsearch mapping question: should person_name be text or keyword? I need both full-text search and exact match on names like \"{PERSON1}\"."}
+{"lang": "mix", "domain": "database", "text": "MSSQL'de NVARCHAR yerine VARCHAR kullandığımız için {PERSON1.upper} gibi isimlerde Türkçe karakterler ? olarak kaydolmuş. Nasıl düzeltiriz?"}
+{"lang": "tr", "domain": "database", "text": "Postgres'te \"deadlock detected\" hatası ne demek? Gece {PERSON1.first+GEN} çalıştırdığı batch sırasında üç kez oldu, hangi transaction'ların sebep olduğunu nasıl bulurum?"}
+{"lang": "tr", "domain": "database", "text": "Ekim ayından beri orders tablosu çok büyüdü. Partitioning için tarih bazlı bir plan öner, PostgreSQL 16."}
+{"lang": "en", "domain": "database", "text": "Convert this JSON row into a SQL INSERT for table shipments:\n\n{\"recipient\": \"{PERSON1}\", \"street\": \"{ADDRESS1.en_street}\", \"city\": \"{LOCATION1.city}\", \"country\": \"{LOCATION2.country}\"}"}
+{"lang": "en", "domain": "database", "text": "Our DBA {PERSON1.first} wants us to stop using SELECT *. Write a short explanation I can paste in the team wiki."}
+{"lang": "mix", "domain": "database", "text": "Prisma schema'da model User { name String  address String? } var. {PERSON1.first} için address null gelince frontend patlıyor. Default ne vermeliyim?"}
+{"lang": "en", "domain": "database", "text": "Write a query that counts customers per city and only shows cities with more than 100 customers. I expect {LOCATION1.city} and {LOCATION2.city} at the top."}
+{"lang": "tr", "domain": "database", "text": "Şu tablo çıktısını yorumla:\n\nad_soyad | ilce | il\n{PERSON1} | {LOCATION1.district} | {LOCATION2.city}\n{PERSON2} | {LOCATION3.district} | {LOCATION2.city}\n\nNeden aynı il iki farklı kodla geliyor?"}
+{"lang": "mix", "domain": "database", "text": "SQLite \"database is locked\" diyor, Flask app ile cron job aynı anda yazınca. {PERSON1.first} WAL mode'u önerdi, işe yarar mı?"}
+{"lang": "en", "domain": "database", "text": "Please anonymize these log lines before I send them to the vendor:\n\n2024-03-02 10:41:12 UPDATE customers SET address='{ADDRESS1.en}' WHERE name='{PERSON1}'\n2024-03-02 10:41:13 COMMIT"}
+{"lang": "mix", "domain": "database", "text": "Oracle'da sequence ile id üretiyorum, insert'te ORA-00001 alıyorum. Kayıt: ('{PERSON1}', '{LOCATION1.city}'). Sequence reset mi lazım?"}
+{"lang": "en", "domain": "database", "text": "Design a schema for a library app: members (name, address), books, loans. Include indexes and one sample member row for {PERSON1}, {ADDRESS1.en}."}
+{"lang": "tr", "domain": "database", "text": "{PERSON1.first} Bey, istediğiniz rapor sorgusunu yazdım ama çiçek siparişleri ile kaya tuzu ürünleri aynı kategoride çıkıyor. Kategori tablosunu kontrol edebilir misiniz? Bu mesajı daha profesyonel yap."}
+{"lang": "en", "domain": "database", "text": "Write a Liquibase changeset that adds a NOT NULL column last_name with a default of empty string."}
+{"lang": "en", "domain": "database", "text": "I need test data: generate 5 INSERT statements for customers like this one, varying the values:\n\nINSERT INTO customers VALUES (1, '{PERSON1}', '{ADDRESS1.en}', '555-0100');"}
+{"lang": "mix", "domain": "database", "text": "DynamoDB'de partition key olarak customerName kullanmışlar, hot partition oluyor. Daha iyi key tasarımı öner."}
+{"lang": "en", "domain": "database", "text": "Why does this GROUP BY fail in MySQL 8 with ONLY_FULL_GROUP_BY?\n\nSELECT customer_id, customer_name, SUM(total) FROM orders GROUP BY customer_id;"}
+{"lang": "tr", "domain": "database", "text": "Aşağıdaki sorgunun sonucunu tabloya dök ve açıkla:\n\nSELECT ad, soyad FROM ogrenci WHERE sinif = '10-A';\n-- {PERSON1}\n-- {PERSON2}\n-- {PERSON3}"}
+{"lang": "en", "domain": "database", "text": "Explain normal forms (1NF, 2NF, 3NF) using a table with columns StudentName, CourseName, InstructorName, InstructorOffice."}
+{"lang": "en", "domain": "database", "text": "The audit table shows changed_by = '{PERSON1.lower}' for 3,000 rows at 02:00. Write a query to list what columns they changed."}
+{"lang": "mix", "domain": "database", "text": "Neo4j'de (p:Person {name: \"{PERSON1}\"})-[:LIVES_IN]->(c:City {name: \"{LOCATION1.city}\"}) ilişkisini kuruyorum ama duplicate node oluşuyor. MERGE nasıl kullanılır?"}
+{"lang": "en", "domain": "test-fixtures", "text": "This Jest test fails with \"expected '{PERSON1}' but received undefined\":\n\nconst fixture = { id: 1, name: \"{PERSON1}\", city: \"{LOCATION1.city}\" };\nexpect(render(fixture).title).toBe(\"{PERSON1}\");"}
+{"lang": "en", "domain": "test-fixtures", "text": "Write pytest fixtures for a User model with factory_boy. Use Faker for name and address, but also add a fixed fixture for {PERSON1.upper} that a regression test depends on."}
+{"lang": "tr", "domain": "test-fixtures", "text": "Test verisinde {PERSON1} ve {PERSON2} isimleri var, bunları sahte isimlerle değiştirmek istiyorum. Aşağıdaki JSON'u düzenle:\n\n[{\"ad\": \"{PERSON1}\", \"il\": \"{LOCATION1.city}\"}, {\"ad\": \"{PERSON2}\", \"il\": \"{LOCATION2.city}\"}]"}
+{"lang": "mix", "domain": "test-fixtures", "text": "Snapshot test sürekli kırılıyor çünkü fixture'daki tarih değişiyor. Fixture:\n\n{ \"user\": \"{PERSON1.first}\", \"createdAt\": new Date() }\n\nNasıl sabitlerim?"}
+{"lang": "en", "domain": "test-fixtures", "text": "Generate 3 more rows for this fixtures/customers.json in the same shape:\n\n[\n  {\"id\": 1, \"fullName\": \"{PERSON1}\", \"address\": \"{ADDRESS1.en}\", \"phone\": \"555-0142\"}\n]"}
+{"lang": "tr", "domain": "test-fixtures", "text": "Mock, stub ve fake arasındaki farkı UserRepository örneğiyle anlat. {PERSON1.first} Hanım eğitim sunumunda kullanacak."}
+{"lang": "tr", "domain": "test-fixtures", "text": "Bu birim testinde neden assert hatası alıyorum?\n\ndef test_tam_ad():\n    k = Kisi(\"{PERSON1.first}\", \"{PERSON1.last}\")\n    assert k.tam_ad() == \"{PERSON1.upper}\""}
+{"lang": "en", "domain": "test-fixtures", "text": "Is it okay to commit this fixture? A teammate copied it from production:\n\n- name: {PERSON1}\n  address: {ADDRESS1.en}\n  card_last4: \"4242\""}
+{"lang": "mix", "domain": "test-fixtures", "text": "Cypress testinde login için {PERSON1.lower}@example.com kullanıyorum, staging'de kullanıcı silinmiş. Test user'ı before hook'ta nasıl oluştururum?"}
+{"lang": "en", "domain": "test-fixtures", "text": "Write a JUnit 5 parameterized test for NameFormatter.toInitials with inputs like \"{PERSON1}\", \"{PERSON2.firstlast2}\" and an empty string."}
+{"lang": "mix", "domain": "test-fixtures", "text": "Spring Boot integration test'te Testcontainers ile PostgreSQL nasıl kullanılır? {PERSON1.first+GEN} örnek projesi Java 21'de çalışmıyor."}
+{"lang": "tr", "domain": "test-fixtures", "text": "Aşağıdaki YAML fixture'ı Türkçe adreslerle güncelle, format bozulmasın:\n\nusers:\n  - name: {PERSON1}\n    address: {ADDRESS1.tr}\n  - name: {PERSON2}\n    address: {ADDRESS2.tr}"}
+{"lang": "en", "domain": "test-fixtures", "text": "My Playwright test types a name into the form but the assertion sees a different value:\n\nawait page.fill(\"#firstName\", \"{PERSON1.first}\");\nawait expect(page.locator(\"#greeting\")).toHaveText(\"Hi, {PERSON1.first}!\");"}
+{"lang": "en", "domain": "test-fixtures", "text": "Write a test that ensures our masking function never returns the original name. Example input: \"Customer {PERSON1} called from {LOCATION1.city}.\""}
+{"lang": "mix", "domain": "test-fixtures", "text": "RSpec'te let(:user) { create(:user, name: \"{PERSON1}\") } kullanıyorum ama her testte DB'ye yazıyor. build_stubbed'a geçsem ne değişir?"}
+{"lang": "en", "domain": "test-fixtures", "text": "Give me a list of obviously fake but realistic-looking test emails and phone numbers (use example.com and 555 numbers)."}
+{"lang": "tr", "domain": "test-fixtures", "text": "Test senaryosu yaz: kullanıcı {PERSON1}, adresi {ADDRESS1.tr}, sepete 3 ürün ekliyor, kargo ücreti hesaplanıyor. Gherkin formatında olsun."}
+{"lang": "en", "domain": "test-fixtures", "text": "Gherkin scenario review:\n\nGiven a customer named \"{PERSON1}\" living in \"{LOCATION1.city}\"\nWhen they place an order over 100 EUR\nThen shipping is free"}
+{"lang": "mix", "domain": "test-fixtures", "text": "Vitest testlerimi aynı SQLite dosyasını paylaşmadan nasıl paralel çalıştırırım? CI'da {PERSON1.lower} kullanıcısının runner'ında hep çakışıyor."}
+{"lang": "mix", "domain": "test-fixtures", "text": "Mock server için şu response'u döndürüyorum:\n\n{\"data\":{\"customer\":{\"name\":\"{PERSON1}\",\"district\":\"{LOCATION1.district}\"}}}\n\nAma Apollo client cache'liyor, test izolasyonu bozuluyor."}
+{"lang": "en", "domain": "test-fixtures", "text": "This xUnit test is flaky. The fixture is shared:\n\npublic class CustomerFixture { public Customer C = new Customer(\"{PERSON1}\", \"{ADDRESS1.en}\"); }"}
+{"lang": "tr", "domain": "test-fixtures", "text": "Birim testleri için sahte veri üreten bir Python fonksiyonu yaz: ad, soyad, il, ilçe. Gerçek kişi verisi kullanma."}
+{"lang": "en", "domain": "test-fixtures", "text": "Write a contract test (Pact) for GET /customers/42 returning name, email and city. The provider state is \"customer {PERSON1} exists in {LOCATION1.city}\"."}
+{"lang": "en", "domain": "test-fixtures", "text": "Review this factory and tell me why every user ends up with the same name:\n\nconst userFactory = () => ({ name: \"{PERSON1}\", id: Math.random() });"}
+{"lang": "mix", "domain": "test-fixtures", "text": "E2E testte \"{PERSON1.upper}\" gibi büyük harfli isim girince validation hatası çıkıyor, regex şu: /^[A-Za-z ]+$/. Türkçe karakter desteği ekler misin?"}
+{"lang": "tr", "domain": "test-fixtures", "text": "\"Golden file\" testleri nedir, ne zaman assertion bazlı testlerden iyidir? {PERSON1.initial} bu konuyu sprint retro'da açtı, kısa bir özet yaz."}
+{"lang": "tr", "domain": "test-fixtures", "text": "Test raporu özeti hazırla:\n- {PERSON1.first}: 42 test, 2 fail\n- {PERSON2.first}: 18 test, 0 fail\n- CI: Jenkins pipeline #881 yeşil"}
+{"lang": "en", "domain": "test-fixtures", "text": "Write a hypothesis strategy that generates person names with optional middle names, then test that split_name() round-trips."}
+{"lang": "en", "domain": "test-fixtures", "text": "The fixture loader chokes on this CSV line, why?\n\n42,\"{PERSON1.last}, {PERSON1.first}\",\"{ADDRESS1.en}\",active"}
+{"lang": "mix", "domain": "test-fixtures", "text": "Selenium testinde adres alanına \"{ADDRESS1.tr}\" yazınca autocomplete açılıyor ve testi bozuyor. Nasıl kapatırım?"}
+{"lang": "en", "domain": "test-fixtures", "text": "Write a Go table-driven test for a function NormalizePhone that handles \"0532 111 22 33\", \"+90 532 111 22 33\" and \"5321112233\"."}
+{"lang": "tr", "domain": "test-fixtures", "text": "Aşağıdaki test neden İstanbul ve İzmir için farklı sonuç veriyor? toLowerCase Türkçe İ harfini bozuyor olabilir mi?\n\nexpect(normalize(\"İZMİR\")).toBe(\"izmir\")"}
+{"lang": "en", "domain": "test-fixtures", "text": "Write a seed fixture for a demo environment: 3 customers with names, US street addresses and cities. Format as JSON.\n\nExample: {\"name\": \"{PERSON1}\", \"street\": \"{ADDRESS1.en_street}\", \"city\": \"{LOCATION1.city}\"}"}
+{"lang": "en", "domain": "test-fixtures", "text": "In our test suite, Person and Customer classes both have a name field. Should the fixtures share a base factory?"}
+{"lang": "mix", "domain": "test-fixtures", "text": "Fixture dosyasına {PERSON1.firstlast2} ekledim, iki isimli olunca split(\" \")[1] soyad yerine ikinci adı alıyor. Testi ve fonksiyonu düzelt."}
+{"lang": "en", "domain": "test-fixtures", "text": "Translate these test names to English:\n\ntest_bos_ad_reddedilir\ntest_adres_kisaltilir\ntest_ilce_zorunlu"}
+{"lang": "tr", "domain": "test-fixtures", "text": "Load testinde k6 script'i her istekte aynı kullanıcıyı ({PERSON1}) gönderiyor. CSV'den farklı kullanıcı okutmayı göster."}
+{"lang": "en", "domain": "test-fixtures", "text": "Assert message is confusing:\n\nAssertionError: '{PERSON1.initial}' != '{PERSON1}'\n\nWhat should the formatter return for style=\"initial\"?"}
+{"lang": "en", "domain": "test-fixtures", "text": "Write a fixture for an HR app test: an employee record for {PERSON1}, managed by {PERSON2.initial}, start date in March, office in {LOCATION1.city}. Keep it obviously fake."}
+{"lang": "mix", "domain": "test-fixtures", "text": "Mockito ile when(repo.findByName(\"{PERSON1}\")).thenReturn(Optional.empty()) yazdım ama test hâlâ gerçek DB'ye gidiyor. @MockBean mi lazım?"}
+{"lang": "tr", "domain": "test-fixtures", "text": "Bu testlerin isimlerini daha açıklayıcı yap:\n\ntest1, test2, test_deniz, test_yeni\n\n(test_deniz deniz kenarı teslimat bölgesini test ediyor.)"}
+{"lang": "en", "domain": "test-fixtures", "text": "Our anonymizer test expects this output. Is it right?\n\nInput: \"Ship to {PERSON1}, {ADDRESS1.en}\"\nOutput: \"Ship to [NAME], [ADDRESS]\""}
+{"lang": "mix", "domain": "test-fixtures", "text": "TransactionTestCase kullanan testler arasında Django test DB'sini nasıl resetlerim? {PERSON1} Bey'in yazdığı fixture'lar sızıyor."}
+{"lang": "mix", "domain": "test-fixtures", "text": "Fixture'da kullanıcı {PERSON1}, rol \"editor\". Permission testi geçmesi lazım ama 403 dönüyor. Django REST Framework permission class'ı aşağıda..."}
+{"lang": "en", "domain": "test-fixtures", "text": "Write a Storybook story for a ProfileCard component with args name=\"{PERSON1}\", location=\"{LOCATION1.city}, {LOCATION2.country}\"."}
+{"lang": "tr", "domain": "test-fixtures", "text": "Sahte test verisi: 5 öğrenci kaydı oluştur (ad soyad, okul, şehir). Gerçek isim kullanma, tablo şeklinde ver."}
+{"lang": "en", "domain": "test-fixtures", "text": "Explain why our test named test_getFullName_returns_upper fails only on the CI runner with LANG=tr_TR.UTF-8."}
+{"lang": "mix", "domain": "test-fixtures", "text": "Test DB'ye şu satırı insert ediyorum: ('{PERSON1}', '{LOCATION1.neighborhood}', '{LOCATION2.district}'). Mahalle kolonu çok kısa geldi, kaç karakter yapmalıyım?"}
+{"lang": "en", "domain": "test-fixtures", "text": "Clean up this fixture file, keep only the fields used in the test (name and city):\n\n{\"id\":9,\"name\":\"{PERSON1}\",\"city\":\"{LOCATION1.city}\",\"tags\":[],\"meta\":{\"v\":2}}"}
+{"lang": "en", "domain": "test-fixtures", "text": "Compare Faker locales tr_TR and en_US for generating test addresses. Any gotchas?"}
+{"lang": "en", "domain": "data-analysis", "text": "Here is df.head(), why is the sales column object dtype?\n\n   customer           city     sales\n0  {PERSON1}   {LOCATION1.city}  1,250.00\n1  {PERSON2}   {LOCATION2.city}    980.50\n2  {PERSON3}   {LOCATION1.city}  2,100.00"}
+{"lang": "tr", "domain": "data-analysis", "text": "Pandas'ta store_id'ye göre gruplayıp 7 günlük hareketli ortalama nasıl hesaplanır? Veriyi {PERSON1} gönderdi, {LOCATION1.city} mağazaları da içinde."}
+{"lang": "tr", "domain": "data-analysis", "text": "Aşağıdaki pandas çıktısında {PERSON1.first+GEN} satırı neden iki kez görünüyor?\n\n   ad_soyad        il     tutar\n0  {PERSON1}  {LOCATION1.city}  450\n1  {PERSON1}  {LOCATION1.city}  450\n2  {PERSON2}  {LOCATION2.city}  300"}
+{"lang": "mix", "domain": "data-analysis", "text": "groupby('satis_temsilcisi').sum() yapınca {PERSON1} ile {PERSON1.upper} ayrı grup oluyor. İsimleri normalize etmenin en iyi yolu ne?"}
+{"lang": "mix", "domain": "data-analysis", "text": "Şu NumPy hatası ne demek: \"operands could not be broadcast together with shapes (3,4) (3,)\". Notebook {PERSON1.first+GEN}, ben sadece çalıştırdım."}
+{"lang": "en", "domain": "data-analysis", "text": "Summarize the churn analysis below for a non-technical manager:\n\n- Top churned accounts: {PERSON1}, {PERSON2}, {PERSON3}\n- Churn rate: 4.2% (up from 3.1% in March)\n- Main driver: price increase"}
+{"lang": "tr", "domain": "data-analysis", "text": "Satış verisinde hangi ilçe en çok büyüdü? Veri:\n\nilce,2023,2024\n{LOCATION1.district},1200,1850\n{LOCATION2.district},900,950\n{LOCATION3.district},400,780"}
+{"lang": "en", "domain": "data-analysis", "text": "What's the difference between df.loc and df.iloc? Show examples with a DataFrame that has a \"name\" column containing \"{PERSON1}\" and \"{PERSON2}\"."}
+{"lang": "mix", "domain": "data-analysis", "text": "Jupyter'da şu hata: KeyError: 'Customer Name'. Kolon adı aslında \"Customer Name \" sonda boşlukla. df.columns.str.strip() yeterli mi?"}
+{"lang": "en", "domain": "data-analysis", "text": "I ran value_counts() on the \"assigned_to\" column:\n\n{PERSON1.lower}    412\n{PERSON2.lower}    388\n{PERSON3.lower}     97\n\nWrite a short insight about workload balance."}
+{"lang": "mix", "domain": "data-analysis", "text": "Matplotlib ile bölgeye göre gelir bar chart'ı yap, her barın üstünde değer yazsın. Bölgeler: {LOCATION1.city}, {LOCATION2.city}, {LOCATION3.city}."}
+{"lang": "tr", "domain": "data-analysis", "text": "Anket sonuçlarını yorumla. Katılımcı {PERSON1} şunu yazmış: \"Umut ediyorum ki yeni sistem daha hızlı olur.\" Diğer yorumlarla birlikte duygu analizi yap."}
+{"lang": "en", "domain": "data-analysis", "text": "Fuzzy-match these two customer name lists and tell me which pairs are probably the same person:\n\nList A: {PERSON1}, {PERSON2}, {PERSON3.initial}\nList B: {PERSON1.upper}, {PERSON3}, {PERSON4}"}
+{"lang": "mix", "domain": "data-analysis", "text": "Polars mı Pandas mı? 40 milyon satırlık log datası var, kolonlar: user_id, event, ts, city. Laptop'ta 16GB RAM."}
+{"lang": "en", "domain": "data-analysis", "text": "Explain p-values to my manager {PERSON1.first} in two sentences, no jargon."}
+{"lang": "en", "domain": "data-analysis", "text": "Why does pd.read_csv mangle Turkish characters? The file is from Excel and opens fine there."}
+{"lang": "tr", "domain": "data-analysis", "text": "Aşağıdaki müşteri segmentlerini yorumla ve her biri için öneri yaz:\n\nSegment A: {LOCATION1.city} merkezli, genç, mobil\nSegment B: {LOCATION2.city}, emekli, şube kullanıcısı"}
+{"lang": "en", "domain": "data-analysis", "text": "The outlier in this dataset is the account owned by {PERSON1} (order total 98,000). Should I drop it before computing the median basket size?"}
+{"lang": "mix", "domain": "data-analysis", "text": "df.pivot_table(index='temsilci', columns='ay', values='satis') yapınca Mart ve Haziran kolonları alfabetik sıralanıyor. Ay sırasına göre nasıl dizerim?"}
+{"lang": "en", "domain": "data-analysis", "text": "Write a SQL + Pandas workflow that pulls orders from Postgres and builds a cohort retention table. {PERSON1.last} from finance needs it by Monday."}
+{"lang": "en", "domain": "data-analysis", "text": "Translate this data dictionary to Turkish:\n\ncustomer_name: Full name of the account holder\nbilling_city: City on the invoice\nsignup_source: Channel where the user registered"}
+{"lang": "tr", "domain": "data-analysis", "text": "{PERSON1.first} Hoca için regresyon sonuçlarını sadeleştir:\n\nR² = 0.71, katsayı (reklam_harcamasi) = 0.34, p < 0.01"}
+{"lang": "en", "domain": "data-analysis", "text": "Deduplicate this contact list, keeping the most recent entry:\n\nname,email,updated\n{PERSON1},{PERSON1.lower}@example.com,2024-01-03\n{PERSON1},{PERSON1.lower}@example.com,2024-05-11\n{PERSON2},p2@example.org,2024-02-20"}
+{"lang": "tr", "domain": "data-analysis", "text": "Simpson paradoksunu iki hastane örneğiyle anlat. {PERSON1.first} Hoca'nın istatistik dersindeki ödev için Türkçe olsun."}
+{"lang": "mix", "domain": "data-analysis", "text": "Spark job'ı çok yavaş, groupBy(\"customer_name\") yerine customer_id kullanmam önerildi. Neden fark eder? Örnek isim: {PERSON1}"}
+{"lang": "tr", "domain": "data-analysis", "text": "Veri setinde \"ay\" kolonu var ama bazı satırlarda \"Ay Yıldız\" gibi marka adı yazılmış. Bu kirli veriyi nasıl temizlerim?"}
+{"lang": "en", "domain": "data-analysis", "text": "Here is a printed DataFrame of delivery delays; which courier is the worst?\n\n  courier   region            avg_delay_h\n0 {PERSON1}  {LOCATION1.city}   3.2\n1 {PERSON2}  {LOCATION2.city}   1.1\n2 {PERSON3}  {LOCATION1.city}   5.7"}
+{"lang": "en", "domain": "data-analysis", "text": "How do I geocode a column of addresses like \"{ADDRESS1.en}\" in Python without hitting rate limits?"}
+{"lang": "mix", "domain": "data-analysis", "text": "Seaborn heatmap'te etiketler üst üste biniyor. Kolonlar: Ocak, Şubat, Mart... satırlar şehir isimleri. figsize mı değiştirmeli?"}
+{"lang": "en", "domain": "data-analysis", "text": "Write a short analysis paragraph from these A/B test results: variant B (by {PERSON1.first}'s team) converted at 3.8% vs 3.1% control, n=12,000 each."}
+{"lang": "tr", "domain": "data-analysis", "text": "Şu regex ile log'lardan kullanıcı adlarını çıkarmaya çalışıyorum ama boş liste dönüyor:\n\nre.findall(r\"user=(\\w+)\", line)\n\nÖrnek satır: user={PERSON1.lower} action=login"}
+{"lang": "mix", "domain": "data-analysis", "text": "Hadoop MapReduce ile Spark farkını junior analist {PERSON1.first+DAT} anlatır mısın? Kısa ve örnekli olsun."}
+{"lang": "en", "domain": "data-analysis", "text": "Clean these messy names into First Last format:\n\n\"{PERSON1.upper}\"\n\"{PERSON2.lower}\"\n\"{PERSON3.last}, {PERSON3.first}\""}
+{"lang": "mix", "domain": "data-analysis", "text": "Kaggle'daki Titanic veri setinde Name kolonundan unvanları (Mr, Mrs, Miss) nasıl çıkarırım? str.extract örneği lazım."}
+{"lang": "en", "domain": "data-analysis", "text": "Here's my survey free-text column. Classify each response as positive, neutral or negative:\n\n1. \"{PERSON1.first} from support was amazing\"\n2. \"app crashes on login\"\n3. \"it's fine\""}
+{"lang": "tr", "domain": "data-analysis", "text": "Bölgesel satış raporu: {LOCATION1.city} %12 arttı, {LOCATION2.city} %3 düştü. Bunu yönetim için üç cümlelik bir özete çevir."}
+{"lang": "mix", "domain": "data-analysis", "text": "Büyük Jupyter notebook'ları git'te nasıl saklarız? Repo output'lar yüzünden 2 GB oldu, {PERSON1.upper} imzalı notebook tek başına 400 MB."}
+{"lang": "mix", "domain": "data-analysis", "text": "Bu kod neden SettingWithCopyWarning veriyor?\n\nsub = df[df.city == \"{LOCATION1.city}\"]\nsub[\"segment\"] = \"A\""}
+{"lang": "en", "domain": "data-analysis", "text": "Interpret this logistic regression output; the analyst {PERSON1} says \"tenure\" is the strongest predictor:\n\ntenure  -0.82  (p<0.001)\nplan_pro  0.15  (p=0.21)"}
+{"lang": "tr", "domain": "data-analysis", "text": "Veri gizliliği için analiz öncesi isim ve adres kolonlarını hash'lemek istiyorum. Pandas'ta SHA-256 ile nasıl yaparım?"}
+{"lang": "en", "domain": "data-analysis", "text": "Write a dbt model that aggregates daily active users by country."}
+{"lang": "en", "domain": "data-analysis", "text": "The CRM export lists the account manager as \"{PERSON1.initial}\" in some rows and \"{PERSON1}\" in others. How do I map them to one ID?"}
+{"lang": "mix", "domain": "data-analysis", "text": "Mahalle bazlı analiz yapıyorum, {LOCATION1.neighborhood} ve {LOCATION2.neighborhood} verileri eksik. Imputation için ne önerirsin?"}
+{"lang": "mix", "domain": "data-analysis", "text": "Kafka consumer lag'i sade dille açıkla, dashboard tooltip'i için. {PERSON1.first} Hanım metni Türkçe istiyor."}
+{"lang": "tr", "domain": "data-analysis", "text": "Aşağıdaki korelasyon matrisini yorumla: güneş saati ile satış arasında 0.62, sıcaklık ile 0.58. Mevsimsellik etkisi olabilir mi?"}
+{"lang": "en", "domain": "data-analysis", "text": "Write a function that masks names in a DataFrame column before export. Test it on [\"{PERSON1}\", \"{PERSON2.firstlast2}\"]."}
+{"lang": "mix", "domain": "data-analysis", "text": "Analiz notebook'unu {PERSON1.first} ile paylaşacağım ama içinde müşteri adresleri var (örn. {ADDRESS1.tr}). Paylaşmadan önce nasıl temizlerim?"}
+{"lang": "tr", "domain": "data-analysis", "text": "Bias-variance dengesini basit bir örnekle açıkla. Bunu {PERSON1.first+INS} paylaşacağım, matematik bilgisi az."}
+{"lang": "tr", "domain": "data-analysis", "text": "Pazarlama ekibi için kısa yorum: kampanya en çok {LOCATION1.city} ve {LOCATION2.city} illerinde ilgi gördü, deniz kenarı ilçelerde dönüşüm daha yüksek."}
+{"lang": "en", "domain": "data-analysis", "text": "Write pandas code to split a \"full_name\" column into first_name and last_name, handling names like \"{PERSON1.firstlast2}\"."}
+{"lang": "en", "domain": "spreadsheets", "text": "I pasted rows from Excel, write a VLOOKUP that finds the city for each name:\n\nName\tCity\n{PERSON1}\t{LOCATION1.city}\n{PERSON2}\t{LOCATION2.city}\n{PERSON3}\t{LOCATION3.city}"}
+{"lang": "en", "domain": "spreadsheets", "text": "What's the difference between XLOOKUP and INDEX/MATCH? Which works in Excel 2016? I need to look up {PERSON1}'s department from the Staff tab."}
+{"lang": "tr", "domain": "spreadsheets", "text": "Excel'de A sütununda \"{PERSON1.upper}\" gibi büyük harfli isimler var. Bunları \"{PERSON1}\" formatına çeviren formül nedir? Türkçe İ harfi bozulmasın."}
+{"lang": "mix", "domain": "spreadsheets", "text": "Google Sheets'te SPLIT ile ad soyad ayırıyorum ama \"{PERSON1.firstlast2}\" gibi iki isimlilerde soyad yanlış kolona düşüyor. Formülü düzelt."}
+{"lang": "en", "domain": "spreadsheets", "text": "Here is my payroll sheet, why does the SUM show 0?\n\nEmployee\tHours\tRate\n{PERSON1}\t160\t25\n{PERSON2}\t152\t30\nTotal\t=SUM(B2:B3)"}
+{"lang": "en", "domain": "spreadsheets", "text": "Write a conditional formatting rule that highlights rows where column D (Due Date) is before today."}
+{"lang": "tr", "domain": "spreadsheets", "text": "Şu tabloyu düzenle ve il bazında toplam ver:\n\nPersonel\tİl\tSatış\n{PERSON1}\t{LOCATION1.city}\t12000\n{PERSON2}\t{LOCATION2.city}\t8500\n{PERSON3}\t{LOCATION1.city}\t4300"}
+{"lang": "en", "domain": "spreadsheets", "text": "Write an Apps Script that emails each row's owner when Status changes to \"Done\". Owner column has names like {PERSON1} and email in the next column."}
+{"lang": "mix", "domain": "spreadsheets", "text": "Pivot table'da \"Satış Temsilcisi\" alanını sürükleyince {PERSON1} iki kez görünüyor, biri sonunda boşluklu. TRIM ile nasıl temizlerim tüm sütunu?"}
+{"lang": "tr", "domain": "spreadsheets", "text": "Excel'de mutlak ve göreli referans ($A$1 ve A1) farkını basit bir prim hesabıyla anlat. Örnekte temsilci olarak {PERSON1} ve {PERSON2} geçsin."}
+{"lang": "en", "domain": "spreadsheets", "text": "Fix this formula, it returns #N/A for \"{PERSON1}\" even though the name is in the list:\n\n=VLOOKUP(A2, Staff!A:C, 3, TRUE)"}
+{"lang": "tr", "domain": "spreadsheets", "text": "Excel'de doğum tarihinden yaş hesaplayan formül lazım. Örnek satır: {PERSON1}\t12.03.1988\t{LOCATION1.city}"}
+{"lang": "en", "domain": "spreadsheets", "text": "Turn this TSV into a Markdown table:\n\nName\tAddress\tPhone\n{PERSON1}\t{ADDRESS1.en}\t555-0110\n{PERSON2}\t{ADDRESS2.en}\t555-0187"}
+{"lang": "mix", "domain": "spreadsheets", "text": "Power Query ile iki Excel dosyasını birleştiriyorum, birinde \"MusteriAdi\" diğerinde \"Customer Name\" kolonu var. Merge nasıl yapılır?"}
+{"lang": "en", "domain": "spreadsheets", "text": "Write a formula that counts how many tasks are assigned to each person in column B (names like {PERSON1.first}, {PERSON2.first}, {PERSON3.first})."}
+{"lang": "tr", "domain": "spreadsheets", "text": "Kargo listesi aşağıda. Adresleri il ve ilçeye bölen bir formül yaz:\n\n{PERSON1}\t{ADDRESS1.tr}\n{PERSON2}\t{ADDRESS2.tr}"}
+{"lang": "en", "domain": "spreadsheets", "text": "The shared Google Sheet was last edited by {PERSON1.lower}@example.com and now column F is gone. How do I restore it from version history?"}
+{"lang": "mix", "domain": "spreadsheets", "text": "Excel'de makro yazdım ama \"Run-time error 1004\" alıyorum:\n\nSheets(\"Personel\").Range(\"A2\").Value = \"{PERSON1}\"\n\nSayfa adı doğru, korumalı olabilir mi?"}
+{"lang": "mix", "domain": "spreadsheets", "text": "SUMIFS ne yapar? Q1'de \"North\" bölgesi için {PERSON1} adlı temsilcinin satışlarını toplayan bir örnek göster."}
+{"lang": "tr", "domain": "spreadsheets", "text": "Ekim ayı nöbet çizelgesi:\n\nPazartesi\t{PERSON1.first}\nSalı\t{PERSON2.first}\nÇarşamba\t{PERSON1.first}\n\nBunu dengeli dağıtan yeni bir çizelge öner."}
+{"lang": "en", "domain": "spreadsheets", "text": "Write a data validation rule that only allows dates in 2025 in column C."}
+{"lang": "en", "domain": "spreadsheets", "text": "I have first names in A and last names in B. Give me a formula for \"Last, F.\" format, e.g. \"{PERSON1.last}, F.\""}
+{"lang": "mix", "domain": "spreadsheets", "text": "Sheets'te IMPORTRANGE çalışmıyor, \"You need to connect these sheets\" diyor. {PERSON1.first} sheet'in sahibi, ondan ne istemem lazım?"}
+{"lang": "en", "domain": "spreadsheets", "text": "Summarize this expense sheet and flag anything unusual:\n\nDate\tEmployee\tCategory\tAmount\n03/02\t{PERSON1}\tTravel\t1,240\n03/05\t{PERSON2}\tMeals\t86\n03/09\t{PERSON1}\tTravel\t4,980"}
+{"lang": "tr", "domain": "spreadsheets", "text": "Excel'de TÜRKÇE karakterli isimleri alfabetik sıralayınca Ç ve Ş sona gidiyor. Bölge ayarı mı değiştirmeliyim?"}
+{"lang": "en", "domain": "spreadsheets", "text": "What does the #SPILL! error mean in Excel 365?"}
+{"lang": "mix", "domain": "spreadsheets", "text": "Bu tabloyu JSON'a çevir:\n\nAd\tİlçe\tİl\n{PERSON1}\t{LOCATION1.district}\t{LOCATION2.city}\n{PERSON2}\t{LOCATION3.district}\t{LOCATION4.city}"}
+{"lang": "en", "domain": "spreadsheets", "text": "Write a formula that extracts the domain from emails like jane.doe@example.com in column C."}
+{"lang": "tr", "domain": "spreadsheets", "text": "Öğrenci not çizelgesinde ortalaması 50'nin altında olanları kırmızı yapmak istiyorum. Koşullu biçimlendirme adımlarını yaz."}
+{"lang": "en", "domain": "spreadsheets", "text": "Clean up this mailing list row by row (fix capitalization, split street and city):\n\n{PERSON1.lower}\t{ADDRESS1.en}\n{PERSON2.upper}\t{ADDRESS2.en}"}
+{"lang": "mix", "domain": "spreadsheets", "text": "Excel'de CONCATENATE ile \"Sayın \" & A2 & \" \" & B2 yazıyorum, çıktı \"Sayın {PERSON1.first}  {PERSON1.last}\" çift boşluklu oluyor. Neden?"}
+{"lang": "mix", "domain": "spreadsheets", "text": "Sheet'i korumalı yapıp sadece belirli range'leri edit edilebilir bırakmak istiyorum. Sadece {PERSON1.first} ve {PERSON2.first} B sütununu düzenleyebilsin."}
+{"lang": "tr", "domain": "spreadsheets", "text": "{PERSON1.first} Hanım'ın gönderdiği bütçe tablosunda formüller değer olarak yapıştırılmış. Formülleri geri getirmenin yolu var mı?"}
+{"lang": "en", "domain": "spreadsheets", "text": "Write an Excel formula to generate usernames from first and last name (lowercase first initial + last name). Example: {PERSON1} -> ?"}
+{"lang": "en", "domain": "spreadsheets", "text": "Compare Excel, Google Sheets and LibreOffice Calc for a 200k-row CSV."}
+{"lang": "mix", "domain": "spreadsheets", "text": "Şu satırlarda telefon formatları karışık, hepsini 0532 111 22 33 formatına getiren formül yaz:\n\n{PERSON1}\t05321112233\n{PERSON2}\t+90 532 111 2233"}
+{"lang": "en", "domain": "spreadsheets", "text": "Here is the on-call rota pasted from Sheets; who has the most weekend shifts?\n\nWeek\tSat\tSun\n1\t{PERSON1.first}\t{PERSON2.first}\n2\t{PERSON1.first}\t{PERSON3.first}\n3\t{PERSON2.first}\t{PERSON1.first}"}
+{"lang": "tr", "domain": "spreadsheets", "text": "Excel'de iki listeyi karşılaştırıp sadece ilk listede olan müşterileri bulan formül nedir? Liste A ve Liste B sütunları var."}
+{"lang": "en", "domain": "spreadsheets", "text": "Translate these column headers to Turkish: Full Name, Street Address, City, Postal Code, Date of Birth."}
+{"lang": "mix", "domain": "spreadsheets", "text": "Macro ile her satır için PDF oluşturuyorum, dosya adı \"{PERSON1.last}_Fatura.pdf\" gibi olmalı ama Türkçe karakter olunca kaydetmiyor. VBA'da nasıl çözerim?"}
+{"lang": "en", "domain": "spreadsheets", "text": "Write a QUERY() formula in Google Sheets that selects name and city where status = \"active\". The owner of the sheet is {PERSON1.initial}."}
+{"lang": "tr", "domain": "spreadsheets", "text": "Bayilik listesinde adres sütunu tek hücrede: \"{ADDRESS1.tr}\". Metni Sütunlara Dönüştür ile hangi ayraçla bölmeliyim?"}
+{"lang": "en", "domain": "spreadsheets", "text": "Explain how to make a dependent drop-down list (Country -> City) in Excel."}
+{"lang": "mix", "domain": "spreadsheets", "text": "Sheets'te ARRAYFORMULA ile tüm satırlara \"Merhaba \" & A2:A yazdırmak istiyorum ama boş satırlarda da \"Merhaba\" çıkıyor. IF ile nasıl filtrelerim?"}
+{"lang": "en", "domain": "spreadsheets", "text": "The attendance sheet from the workshop, please count attendees per city:\n\n{PERSON1}\t{LOCATION1.city}\n{PERSON2}\t{LOCATION2.city}\n{PERSON3}\t{LOCATION1.city}\n{PERSON4}\t{LOCATION3.city}"}
+{"lang": "tr", "domain": "spreadsheets", "text": "Stok tablosunda \"demir profil\", \"kaya yünü\" ve \"şeker\" ürünlerini kategoriye ayıran bir EĞER formülü yaz."}
+{"lang": "en", "domain": "spreadsheets", "text": "Write a formula that returns \"Overdue\" if today is past the due date and the status is not \"Paid\"."}
+{"lang": "mix", "domain": "spreadsheets", "text": "Excel'de {PERSON1.first} adlı sekmeye başka sekmeden referans verince ='{PERSON1.first}'!B2 yazmam gerekiyor mu, tırnak şart mı?"}
+{"lang": "tr", "domain": "spreadsheets", "text": "COUNT, COUNTA ve COUNTBLANK farkı nedir? {PERSON1.first+GEN} hazırladığı katılım tablosunda hangisini kullanmalıyım?"}
+{"lang": "tr", "domain": "spreadsheets", "text": "Personel listesinden ({PERSON1}, {PERSON2}, {PERSON3}) rastgele 2 kişi seçen bir Excel formülü yaz, çekiliş için kullanacağız."}

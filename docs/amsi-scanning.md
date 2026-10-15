@@ -37,7 +37,31 @@ The AMSI client uses two backends with automatic fallback:
 1. **Koffi FFI (primary)** - Calls `amsi.dll` directly via the `koffi` (3.x) native FFI package. Fast, but requires the optional `koffi` dependency. Bundled connectors (Claude Code, Cursor/VS Code hook runner, OpenClaw) ship a manifest-covered copy in `dist/vendor/koffi` staged by `scripts/stage-windows-koffi.mjs`: koffi's loader plus the `win32_x64`, `win32_arm64` and `win32_ia32` builds taken from koffi 3's `@koromix/koffi-win32-*` packages. The root `pnpm.supportedArchitectures` setting installs those three packages on every build host.
 2. **PowerShell P/Invoke (fallback)** - Spawns PowerShell with embedded C# P/Invoke bindings to the same AMSI API. No extra dependencies required (PowerShell is built into Windows).
 
-On native Windows, the client probes the koffi backend first. If it is unavailable (e.g. `koffi` not installed), it falls back to PowerShell. Under WSL, the koffi backend is skipped (it cannot load Windows DLLs from Linux userspace) and only the PowerShell backend is tried. If no backend succeeds on a host that supports AMSI while `amsi_check` is enabled, the AMSI leg is logged as unavailable and is **not** treated as a clean scan: a call that would otherwise be allowed is returned as `ask` with reason `amsi_unavailable` (source `amsi`), so it is held for review instead of passing as if it had been scanned. Hosts without AMSI (macOS, Linux outside WSL) skip the leg entirely, and setting `amsi_check.enabled` to `false` turns it off explicitly.
+On native Windows, the client probes the koffi backend first. If it is unavailable (e.g. `koffi` not installed), it falls back to PowerShell. Under WSL, the koffi backend is skipped (it cannot load Windows DLLs from Linux userspace) and only the PowerShell backend is tried. Hosts without AMSI (macOS, Linux outside WSL) skip the leg entirely, and setting `amsi_check.enabled` to `false` turns it off explicitly.
+
+The PowerShell fallback checks `$ExecutionContext.SessionState.LanguageMode` before it compiles its interop type. Under AppLocker or WDAC, PowerShell runs in `ConstrainedLanguage`, `Add-Type` is refused, and the fallback reports that explicitly instead of failing on `Add-Type`.
+
+### When AMSI is unavailable
+
+Two different situations are kept apart. Neither is ever reported as a clean scan.
+
+| Situation | Example | Verdict of an otherwise-allowed call |
+|---|---|---|
+| **AMSI cannot run on this host at all**: no backend could be established | koffi missing or blocked, and PowerShell in `ConstrainedLanguage` | Default (`amsi_check.unavailable_action: "ask"`): `ask`, category `amsi_unavailable`. With the opt-in `"annotate"`: stays `allow`, category `amsi_not_available`, with the reason "content was NOT scanned by AMSI; local threat rules still inspected it; not a clean AMSI result". |
+| **A scan failed on a working backend** | PowerShell process died or timed out mid-scan; start-up threw | Always `ask`, category `amsi_unavailable` (source `amsi`). |
+
+`"annotate"` follows the failure policy for optional detection signals: an unavailable signal is skipped, logged and surfaced, never shown as clean. The default holds the call instead, because a host that cannot run AMSI at all is usually one an administrator locked down on purpose. A `deny` or `ask` from another layer is never weakened; it only gains the note.
+
+**Host state record.** A hook is a new process per tool call. So that a host where AMSI cannot run does not pay a PowerShell start (and a warning) on every call, the outcome of the start-up attempt is kept in `~/.singularity-aidr/amsi-state.json`:
+
+- `unavailable` records skip the start-up attempt until they expire: after 24 hours for a `ConstrainedLanguage` refusal, after 1 hour for any other failure, and immediately when the AIDR version or the host changes.
+- `available` records only document the backend in use; every call still initialises AMSI and scans.
+- The warning "AMSI is unavailable on this host" is logged when the state changes, not on every call.
+- The record can only ever make AIDR say "not scanned"; it can never make content look scanned or clean. Like the rest of `~/.singularity-aidr`, it is protected from the agent by the self-defense rules.
+
+**Session start and health.** The Claude Code session-start hook probes AMSI once (in parallel with the plugin scan) and, when AMSI cannot run, shows one notice for the session (English and Turkish): commands and file writes are still checked by local rules but are NOT scanned by AMSI, and `aidr doctor` is the next step. The extended health check reports `amsi` as `degraded` with the recorded reason, `healthy` with the backend, or `not_configured` (no AMSI on the platform, disabled, or not probed yet).
+
+**Latency.** With the native koffi backend a scan is in-process. Without it, every hook process starts PowerShell (about 300 to 500 ms per call). Shipping the manifest-covered koffi build in the Windows installer is therefore the supported configuration; verify it with `aidr doctor` after installation.
 
 > **Note:** WSL-to-Windows process spawning adds overhead compared to native Windows. The PowerShell backend already spawns a new process per scan, so under WSL each scan has additional cross-boundary latency.
 
@@ -64,6 +88,7 @@ AMSI results are not cached — each tool call triggers a fresh scan.
 ```
 
 - `amsi_check.enabled` - set to `false` to disable AMSI scanning. Default: `true`.
+- `amsi_check.unavailable_action` - `"ask"` (default) or `"annotate"` (opt-in); see [When AMSI is unavailable](#when-amsi-is-unavailable).
 
 AMSI scanning is enabled by default and runs on Windows and WSL. On other platforms the setting has no effect.
 

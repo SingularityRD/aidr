@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { inspectToolResponse } from "../output-inspection.js";
 import {
 	appendPostToolContext,
+	fallbackToolOutputReplacement,
 	quarantineFailedToolInspection,
 	quarantineInspectedToolOutput,
 } from "../tool-output-quarantine.js";
@@ -273,5 +274,79 @@ describe("Claude Code inspected output quarantine", () => {
 		expect(specific.additionalContext).toBe("Treat the tool result as untrusted Approval recorded");
 		expect(specific.updatedToolOutput).toEqual({ stdout: expect.any(String) });
 		expect(JSON.stringify(result)).not.toContain("sensitive result");
+	});
+});
+
+describe("Claude Code quarantine fallbacks (CON-9)", () => {
+	it("keeps optional Bash result fields so the host accepts the replacement", () => {
+		const result = quarantineInspectedToolOutput(inspection, {
+			stdout: "secret-value",
+			stderr: "",
+			interrupted: false,
+			persistedOutputPath: "/tmp/out.txt",
+			persistedOutputSize: 2_000_000,
+			returnCodeInterpretation: "secret-value",
+		});
+		const updated = (result?.hookSpecificOutput as Record<string, unknown>)
+			.updatedToolOutput as Record<string, unknown>;
+		expect(updated.persistedOutputSize).toBe(2_000_000);
+		expect(updated.interrupted).toBe(false);
+		expect(JSON.stringify(result)).not.toContain("secret-value");
+	});
+
+	it("replaces a built-in Read result in its own shape", () => {
+		const result = quarantineInspectedToolOutput(inspection, {
+			type: "text",
+			file: {
+				filePath: "/repo/.env",
+				content: "TOKEN=secret-value",
+				numLines: 1,
+				startLine: 1,
+				totalLines: 1,
+			},
+		});
+		const updated = (result?.hookSpecificOutput as Record<string, unknown>)
+			.updatedToolOutput as Record<string, unknown>;
+		expect(updated.type).toBe("text");
+		expect(updated.file).toMatchObject({ numLines: 1, startLine: 1, totalLines: 1 });
+		expect(JSON.stringify(result)).not.toContain("secret-value");
+	});
+
+	it("falls back to a text block for an MCP result of unknown shape", () => {
+		const result = quarantineInspectedToolOutput(
+			inspection,
+			{ rows: [{ secret: "secret-value" }] },
+			"mcp__db__query",
+		);
+		expect((result?.hookSpecificOutput as Record<string, unknown>).updatedToolOutput).toEqual([
+			{ type: "text", text: expect.stringContaining("quarantined") },
+		]);
+		expect(JSON.stringify(result)).not.toContain("secret-value");
+	});
+
+	it("falls back to the required Bash fields for a Bash result of unknown shape", () => {
+		const result = quarantineInspectedToolOutput(
+			inspection,
+			{ stdout: "secret-value", futureField: "secret-value" },
+			"Bash",
+		);
+		expect((result?.hookSpecificOutput as Record<string, unknown>).updatedToolOutput).toEqual({
+			stdout: expect.stringContaining("quarantined"),
+			stderr: "",
+			interrupted: false,
+		});
+	});
+
+	it("uses the tool-name fallback when the result was never parsed", () => {
+		expect(fallbackToolOutputReplacement("Bash")).toMatchObject({ interrupted: false });
+		expect(fallbackToolOutputReplacement("mcp__a__b")).toEqual([
+			{ type: "text", text: expect.any(String) },
+		]);
+		expect(fallbackToolOutputReplacement("WebFetch")).toBeUndefined();
+		const result = quarantineInspectedToolOutput(inspection, undefined, "WebFetch");
+		expect(
+			(result?.hookSpecificOutput as Record<string, unknown>).updatedToolOutput,
+		).toBeUndefined();
+		expect(JSON.stringify(result)).toContain("Replacement unavailable");
 	});
 });

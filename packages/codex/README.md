@@ -1,7 +1,7 @@
 # @singularityrd/aidr-codex
 
 Singularity AIDR's `PreToolUse` connector for the **OpenAI Codex CLI** (`codex`)
-evaluates named `Bash` and `apply_patch` calls only when an enabled, trusted hook
+evaluates named `Bash`, `apply_patch` and MCP (`mcp__*`) calls only when an enabled, trusted hook
 forwards them and returns a verdict. Codex enforces that verdict; disabled,
 untrusted, crashed, timed-out, or out-of-matcher paths can proceed. The same hook,
 registered for `UserPromptSubmit`, also provides prompt protection (secrets block,
@@ -53,7 +53,7 @@ configuration and package are installed, register the hook with Codex:
 ```toml
 # ~/.codex/config.toml
 [[hooks.PreToolUse]]
-matcher = "^(Bash|apply_patch)$"
+matcher = "^(Bash|apply_patch|mcp__.+)$"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
@@ -86,7 +86,7 @@ Or equivalently, in `~/.codex/hooks.json`:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(Bash|apply_patch)$",
+        "matcher": "^(Bash|apply_patch|mcp__.+)$",
         "hooks": [{ "type": "command", "command": "aidr-codex-hook", "timeout": 10 }]
       }
     ],
@@ -123,6 +123,22 @@ during discovery and never invoked**, which means no enforcement and no visible
 error. After installing, review and trust the hook through Codex's hook UI, or
 run with `--dangerously-bypass-hook-trust` in automation that already vets its
 hook sources.
+
+`aidr doctor` reports the trust state of every AIDR handler in the user's Codex
+home (`codex_hook_trust`): it fails when a handler has no trust record in
+`config.toml` (`[hooks.state."<path>:<event>:<group>:<handler>"]`) or is turned
+off there. It cannot recompute Codex's trust hash, so a recorded trust is
+reported as recorded, not proven.
+
+On a per-machine install the hook is better deployed through Codex's system
+config layer: `aidr machine-hooks install` merges the three handlers into
+`/etc/codex/hooks.json` (Windows: `%ProgramData%\OpenAI\Codex\hooks.json`).
+Codex treats hooks from that layer as managed: trusted without `/hooks` review
+and not switchable off from user config (codex-rs `rust-v0.141.0`,
+`hooks/src/engine/discovery.rs`). `--lock-other-hooks` also sets
+`allow_managed_hooks_only = true` in the system `requirements.toml`. A crashed,
+timed-out or killed hook still lets the call through. See
+[docs/operations/hook-tamper-resistance.md](../../docs/operations/hook-tamper-resistance.md).
 
 ## How this connector handles Codex's fail-open behaviour
 
@@ -202,8 +218,12 @@ injected instructions, leaked secrets and canary values.
 In codex-cli 0.141.0's source (`codex-rs/core/src/tools/registry.rs` at
 `rust-v0.141.0`) a `PostToolUse` block makes Codex hand the model the reason in
 place of the tool result; the tool itself already ran. That replacement has not
-been observed in a live Codex session, so `--health` keeps reporting output
-inspection as `post_execution_observation` and `inlineOutputBlocking: false`.
+been observed in a live Codex session (the real-host record covers `PreToolUse`
+and `UserPromptSubmit` only), so **no pre-model output enforcement is claimed for
+Codex**: `--health` reports output inspection as `post_execution_observation` and
+`inlineOutputBlocking: false`, and the support matrix lists the output side as a
+known bypass. Do not sell tool-output DLP on Codex until a real-host run shows the
+replacement.
 
 Findings also feed session-level detection: secrets become private data and
 injection payloads untrusted content for toxic-flow chains
@@ -232,9 +252,14 @@ Codex runs each hook in a **fresh process**, so an in-memory approval cannot
 survive from the blocked call to the retry. The connector therefore records every
 `ask` in the file-backed operator approval store
 (`~/.singularity-aidr/approvals.json`). In their own terminal the operator runs
-`aidr pending` and `aidr approve <actionId>` (interactive confirmation); the next
+the command the block message shows, `aidr approve <first 8 characters of the id>`
+(or `aidr approve` alone to pick from a numbered list; interactive confirmation); the next
 identical call — same tool, input and Codex session — is then released once,
 within 15 minutes by default. A permanent exception is `aidr allowlist add`.
+This works on headless Linux, WSL and containers too: with no OS credential vault
+the approval key is kept in the machine-bound encrypted file store by default
+(`operator_approvals.key_storage: "auto"`); only `"os-vault"` disables approvals
+there. `aidr doctor` reports where the key lives.
 Residual risk and the key handling are described in
 [docs/configuration.md](../../docs/configuration.md#operator-approvals).
 
@@ -286,8 +311,16 @@ path and independent efficacy evaluation are available.
 
 | Variable | Purpose |
 |---|---|
-| `AIDR_THREATS_DIR` | Override the threat-rule directory |
-| `AIDR_ALLOWLISTS_DIR` | Override the allowlist directory |
+| `AIDR_THREATS_DIR` | Override the threat-rule directory (development builds only) |
+| `AIDR_ALLOWLISTS_DIR` | Override the allowlist directory (development builds only) |
+
+A commercial (release) build ignores both overrides and loads only its bundled,
+manifest-checked resources. In every build a set override is reported: it is
+appended to every block reason, logged on each call and listed by
+`aidr-codex-hook --health` (`rule_dir_override_warning`). An override that a
+development build honours goes through the same artifact-manifest check as the
+bundled directory. An agent cannot set either variable: CLT-SELF-007 denies the
+command forms and CLT-SELF-004 the settings, env-file and start-up-file forms.
 
 Without an override the connector resolves rules next to its own installed
 location (`dist/resources/threats`), then falls back through the repository and user
@@ -323,9 +356,21 @@ verified on the endpoint.
 
 ## Scope
 
-The packaged matcher covers `Bash` and `apply_patch` tool calls before
-execution. It does not inspect or quarantine their output before the model
-consumes it. MCP and other local function tools are outside this matcher;
-hosted tools such as `WebSearch` do not pass through the tool-hook path, and
-some specialized paths may opt out. Only the named, tested tool and host
-versions belong in an enforcement claim.
+The shipped matchers (`CODEX_SHIPPED_MATCHERS` in `src/coverage.ts`, reported by
+`--health` as `toolMatchers`):
+
+| Event | Matcher | Covers |
+|---|---|---|
+| `PreToolUse` | `^(Bash\|apply_patch\|mcp__.+)$` | shell commands (incl. unified exec), `apply_patch`, MCP tool calls, before they run |
+| `PostToolUse` | `^(Bash\|mcp__.+)$` | `Bash` and MCP results, after the tool ran (observation; see above) |
+
+Enforcement evidence differs per path. A real host (`codex-cli` 0.141.0) refused a
+`Bash` call; MCP tool names reaching the hook follow the 0.141.0 source and
+reference (`mcp__<server>__<tool>`) and the connector's own tests, not a real-host
+record. Not covered, and listed by `--health` as `uncoveredToolPaths`: other local
+function tools such as `update_plan` (outside the matcher), hosted tools such as
+`WebSearch` (never hooked by the host), specialized paths that opt out of the
+hook path, `write_stdin` polls (they do not re-run `PreToolUse`) and `apply_patch`
+output. Tool output is not withheld from the model on a proven basis (see
+"Tool-output inspection"). Only the named, tested tool and host versions belong in
+an enforcement claim.

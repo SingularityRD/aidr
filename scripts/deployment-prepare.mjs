@@ -6,7 +6,10 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
+import { createInterface } from "node:readline/promises";
 import { cpSync } from "./lib/deployment-input-copy.mjs";
+import { DEFAULT_PUBLIC_KEYS_PATH, loadPublicKeyRegistry } from "./license-verify.mjs";
+import { applySsoCompose, generateSamlSigningKey, IDP_CA_RELATIVE, normalizeInternalIdpHosts, validateIdpCaBundle } from "./lib/onprem-sso.mjs";
 import { isIP } from "node:net";
 import {
 	PRIVACY_GATEWAY_LAYOUT, PRIVACY_GATEWAY_PROFILE, PRIVACY_GATEWAY_SERVICE, PRIVACY_GATEWAY_UID,
@@ -33,6 +36,26 @@ const STUDIO_ADMIN_LISTENER_PORT = 8001;
 // the PostgREST pool timeouts keep their defaults. Operators override the whole
 // parameter string with AIDR_POSTGREST_DB_URI_PARAMS in `.env`.
 const POSTGREST_DB_URI_PARAMS = "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3&tcp_user_timeout=20000";
+// Auth relay settings the Edge Functions mailer reuses (SMTP provider).
+const SMTP_PASSTHROUGH = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_ADMIN_EMAIL", "SMTP_SENDER_NAME"];
+// The Compose SIEM forwarder scheduler loop (node -e). It prints counts only,
+// never the token, a destination or a payload, and keeps running on failures.
+const SIEM_FORWARDER_LOOP = [
+	"const token = process.env.AIDR_NOTIFICATION_DISPATCH_TOKEN ?? '';",
+	"const every = Math.min(3600, Math.max(15, Number(process.env.AIDR_SIEM_FORWARD_INTERVAL_SECONDS) || 60)) * 1000;",
+	"const tick = async () => {",
+	"  if (token.length < 32) { console.error('siem-forwarder: AIDR_NOTIFICATION_DISPATCH_TOKEN is missing from .env (same value as .env.functions)'); return; }",
+	"  try {",
+	"    const r = await fetch(process.env.AIDR_SIEM_FORWARDER_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: '{}', redirect: 'error', signal: AbortSignal.timeout(90000) });",
+	"    const b = await r.json().catch(() => null);",
+	"    if (!r.ok || !b || b.ok !== true) { console.error('siem-forwarder: run failed (HTTP ' + r.status + (b && typeof b.error === 'string' ? ', ' + b.error : '') + ')'); return; }",
+	"    const { claimed, delivered, retrying, dead, lease_lost, pruned } = b;",
+	"    if (claimed || dead || pruned) console.log(JSON.stringify({ claimed, delivered, retrying, dead, lease_lost, pruned }));",
+	"    require('node:fs').writeFileSync('/tmp/siem-forwarder.ok', String(Date.now()));",
+	"  } catch { console.error('siem-forwarder: functions unreachable'); }",
+	"};",
+	"(async () => { for (;;) { await tick(); await new Promise((done) => setTimeout(done, every)); } })();",
+].join("\n");
 const ENVOY_ROUTES = ["filter_chains", 0, "filters", 0, "typed_config", "route_config", "virtual_hosts", 0, "routes"];
 function isolateStudioListener(path) {
 	const doc = parseDocument(readFileSync(path, "utf8"));
@@ -155,6 +178,13 @@ const { values } = parseArgs({ options: {
 	"privacy-gateway-client-ca-file": { type: "string" }, "privacy-gateway-egress-cidrs": { type: "string" },
 	"privacy-gateway-dns-cidrs": { type: "string" }, "privacy-gateway-subnet": { type: "string" },
 	"privacy-gateway-bind-address": { type: "string" },
+	// What enrolled endpoints do when this control plane is unreachable: an
+	// explicit install-time choice (asked on a terminal, required otherwise).
+	"offline-policy": { type: "string" },
+	// Optional on-prem SSO (docs/operations/onprem-sso.md): internal IdP CA for the
+	// functions runtime, internal IdP hosts the OIDC fetches may reach, GoTrue SAML.
+	"idp-ca-file": { type: "string" }, "oidc-internal-idp-hosts": { type: "string" },
+	"with-saml": { type: "boolean", default: false },
 	// Deprecated spellings kept so existing runbooks keep working; not documented.
 	"with-aig": { type: "boolean", default: false },
 	"aig-signing-public-key-file": { type: "string" }, "aig-signing-key-id": { type: "string" },
@@ -305,6 +335,17 @@ for (const name of Object.keys(overlay.services)) {
 }
 const output = resolve(values.output);
 if (existsSync(output)) throw new Error("Output already exists; reuse its secrets and data. Choose a new output for a separate installation.");
+// SSO inputs are validated before anything is written.
+if (values.mode === "cloud" && (values["idp-ca-file"] || values["with-saml"])) {
+	throw new Error("--idp-ca-file and --with-saml apply to the self-hosted stack only; configure the hosted project instead");
+}
+let idpCa = null;
+if (values["idp-ca-file"]) {
+	let text;
+	try { text = readFileSync(resolve(values["idp-ca-file"]), "utf8"); } catch { throw new Error("--idp-ca-file is missing or unreadable"); }
+	idpCa = validateIdpCaBundle(text);
+}
+const internalIdpHosts = normalizeInternalIdpHosts(values["oidc-internal-idp-hosts"]);
 const runtimeCapabilitiesRaw = process.env.AIDR_RUNTIME_CAPABILITIES_BY_TENANT?.trim() || "{}";
 let runtimeCapabilitiesConfig;
 try {
@@ -350,6 +391,36 @@ if (telemetryQueueRoot && (
 	(telemetryQueueRoot !== "/var/lib/aidr-telemetry" && !telemetryQueueRoot.startsWith("/var/lib/aidr-telemetry/")) ||
 	telemetryQueueRoot.split("/").includes("..") || /[\0\r\n,=]/.test(telemetryQueueRoot)
 )) throw new Error("--telemetry-queue-root must be a single absolute path under /var/lib/aidr-telemetry");
+const OFFLINE_POLICIES = {
+	keep_enforcing_local: "keep enforcing locally: AI tools keep working under local detection; central policy changes arrive when the control plane is back",
+	block_after_grace: "block after grace: once the last central policy is older than the offline grace (1 hour), every AI tool call on every endpoint is denied until the control plane is back",
+};
+async function chooseOfflinePolicy() {
+	const given = values["offline-policy"]?.trim();
+	if (given) {
+		if (!Object.hasOwn(OFFLINE_POLICIES, given)) throw new Error(`--offline-policy must be one of: ${Object.keys(OFFLINE_POLICIES).join(", ")}`);
+		return given;
+	}
+	if (process.stdin.isTTY && process.stderr.isTTY) {
+		const ask = createInterface({ input: process.stdin, output: process.stderr });
+		try {
+			process.stderr.write(`\nIf this control plane is unreachable (outage, maintenance, network), what should enrolled endpoints do?\n  1) ${OFFLINE_POLICIES.keep_enforcing_local}\n  2) ${OFFLINE_POLICIES.block_after_grace}\nThe Compose deployment is single-host (no HA): option 2 stops AI tools fleet-wide during any outage longer than the grace.\n`);
+			for (;;) {
+				const answer = (await ask.question("Choose 1 or 2: ")).trim();
+				if (answer === "1" || answer === "keep_enforcing_local") return "keep_enforcing_local";
+				if (answer === "2" || answer === "block_after_grace") return "block_after_grace";
+			}
+		} finally {
+			ask.close();
+		}
+	}
+	// A development install keeps its earlier behaviour; a production one must choose.
+	if (values.development) {
+		console.error("NOTE: --offline-policy not given; development uses block_after_grace (pass --offline-policy to choose).");
+		return "block_after_grace";
+	}
+	throw new Error(`Production deployment requires --offline-policy ${Object.keys(OFFLINE_POLICIES).join("|")}: what enrolled endpoints do when the control plane is unreachable (${Object.entries(OFFLINE_POLICIES).map(([name, text]) => `${name} = ${text}`).join("; ")})`);
+}
 function origin(value, fallback) {
 	const url = new URL(value || (values.development ? fallback : ""));
 	if (url.username || url.password || url.search || url.hash || url.pathname !== "/") throw new Error("Deployment URLs must be origins without credentials or paths");
@@ -434,6 +505,7 @@ if (values["device-start-upstream-url"]) {
 		throw new Error("Cloud device-start upstream must use a provider HTTPS origin distinct from the public API proxy and the exact /functions/v1/device-start path");
 	}
 }
+const offlinePolicy = await chooseOfflinePolicy();
 if (!existsSync(join(root, "packages/dashboard/dist/index.html"))) throw new Error("Build the dashboard before preparing deployment");
 const upstreamSha = "8c7a4d9dbbaf8b552893822e89d7bf06f33f9220";
 const bundledUpstream = !values["upstream-dir"] && existsSync(join(root, "deploy/upstream-manifest.json"));
@@ -527,13 +599,22 @@ const jwt = (role) => {
 	return `${unsigned}.${createHmac("sha256", env.JWT_SECRET).update(unsigned).digest("base64url")}`;
 };
 env.ANON_KEY = values.mode === "cloud" ? "REPLACE_WITH_PROJECT_ANON_KEY" : jwt("anon");
+// Self-hosted GoTrue SAML: the signing key is generated here, on the target host.
+if (values["with-saml"]) Object.assign(env, { GOTRUE_SAML_ENABLED: "true", GOTRUE_SAML_PRIVATE_KEY: generateSamlSigningKey() });
 env.SERVICE_ROLE_KEY = values.mode === "cloud" ? "REPLACE_WITH_PROJECT_SERVICE_ROLE_KEY" : jwt("service_role");
+// The license trust registry shipped with this kit becomes the Edge runtime's
+// trust root for dashboard license imports (supabase/functions/_shared/license.ts).
+// A malformed registry stops preparation; an empty one is valid and makes the
+// import refuse every license until the vendor registry is installed.
+loadPublicKeyRegistry(DEFAULT_PUBLIC_KEYS_PATH);
+const licensePublicKeysB64 = readFileSync(DEFAULT_PUBLIC_KEYS_PATH).toString("base64");
 const functionEnv = {
 	AIDR_ALLOWED_ORIGINS: dashboardUrl, AIDR_DASHBOARD_URL: dashboardUrl, AIDR_DASHBOARD_VERIFY_URL: `${dashboardUrl}/verify`,
 	AIDR_PUBLIC_API_ORIGIN: supabaseUrl,
 	AIDR_DEVELOPMENT_MODE: String(values.development),
 	AIDR_ENTITLEMENT_SIGNING_KEY_ID: keyId, AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPrivateKeyDer.toString("base64"),
 	AIDR_RUNTIME_CAPABILITIES_BY_TENANT: runtimeCapabilitiesConfig,
+	AIDR_OIDC_INTERNAL_IDP_HOSTS: internalIdpHosts,
 	AIDR_REVOCATION_SIGNING_KEY_ID: keyId, AIDR_REVOCATION_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPrivateKeyDer.toString("base64"),
 	AIDR_DELEGATION_ISSUER: supabaseUrl, AIDR_DELEGATION_SIGNING_KEY_ID: delegationKeyId,
 	AIDR_DELEGATION_SIGNING_PRIVATE_KEY_PKCS8_B64: delegationPrivateKeyDer.toString("base64"),
@@ -544,6 +625,7 @@ const functionEnv = {
 	AIDR_COMPLIANCE_SIGNING_KEY_ID: complianceKeyId,
 	AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64: complianceSigning.privateKey.export({ type: "pkcs8", format: "der" }).toString("base64"),
 	AIDR_BILLING_PROVIDER: "",
+	AIDR_LICENSE_PUBLIC_KEYS_B64: licensePublicKeysB64,
 	AIDR_DEVICE_START_INGRESS_SECRET: deviceIngressSecret,
 	// Alert integrations: channel destinations are encrypted with this keyring
 	// (`<key id>:<base64 32 bytes>`, first entry encrypts) and the dispatcher
@@ -551,6 +633,9 @@ const functionEnv = {
 	AIDR_NOTIFICATION_ENCRYPTION_KEYS: `k1:${randomBytes(32).toString("base64")}`,
 	AIDR_NOTIFICATION_DISPATCH_TOKEN: randomBytes(32).toString("base64url"),
 };
+// The Compose `siem-forwarder` scheduler reads the same token through `.env`
+// interpolation, so it never needs the whole `.env.functions` keyring.
+if (values.mode === "self-hosted") env.AIDR_NOTIFICATION_DISPATCH_TOKEN = functionEnv.AIDR_NOTIFICATION_DISPATCH_TOKEN;
 for (const service of Object.values(compose.services)) {
 	delete service.container_name; delete service.ports;
 	service.logging = { driver: "json-file", options: { "max-size": "20m", "max-file": "3" } };
@@ -578,6 +663,32 @@ if (values.mode === "self-hosted") {
 		`${loopbackBinding(supabaseUrl)}:${studioAdminHostPort}:${STUDIO_ADMIN_LISTENER_PORT}`,
 	];
 	compose.services.functions.env_file = [".env.functions"];
+	// AIDR mail (alerts, invitations, digest) reuses the Auth relay in `.env`;
+	// supabase/functions/_shared/mailer.ts selects SMTP once SMTP_HOST is set.
+	compose.services.functions.environment = {
+		...(compose.services.functions.environment ?? {}),
+		...Object.fromEntries(SMTP_PASSTHROUGH.map((name) => [name, `\${${name}:-}`])),
+	};
+	// Central SIEM forwarding scheduler: a tiny loop in the dashboard image that
+	// POSTs to the in-network `siem-forwarder` function with the dispatcher token.
+	// It never sees any other secret; forwarding itself leaves from `functions`.
+	compose.services["siem-forwarder"] = {
+		image: `aidr-dashboard:${aidrVersion}`, build: "./dashboard", read_only: true,
+		cap_drop: ["ALL"], security_opt: ["no-new-privileges:true"],
+		command: ["node", "-e", SIEM_FORWARDER_LOOP],
+		tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=1m"],
+		// Healthy only while runs succeed: a missing token, a broken keyring or an
+		// unreachable functions service turns the container unhealthy.
+		healthcheck: {
+			test: ["CMD", "node", "-e", "const t = Number(require('node:fs').readFileSync('/tmp/siem-forwarder.ok', 'utf8')); const every = Math.min(3600, Math.max(15, Number(process.env.AIDR_SIEM_FORWARD_INTERVAL_SECONDS) || 60)); process.exit(Date.now() - t < (every * 3 + 60) * 1000 ? 0 : 1)"],
+			interval: "60s", timeout: "5s", retries: 3, start_period: "180s",
+		},
+		environment: {
+			AIDR_NOTIFICATION_DISPATCH_TOKEN: "${AIDR_NOTIFICATION_DISPATCH_TOKEN:-}",
+			AIDR_SIEM_FORWARDER_URL: "http://functions:9000/siem-forwarder",
+			AIDR_SIEM_FORWARD_INTERVAL_SECONDS: "${AIDR_SIEM_FORWARD_INTERVAL_SECONDS:-60}",
+		},
+	};
 	const restDbUri = compose.services.rest.environment.PGRST_DB_URI;
 	if (typeof restDbUri !== "string" || !restDbUri.startsWith("postgres://authenticator:") || restDbUri.includes("?")) {
 		throw new Error("The reviewed upstream PostgREST database URI changed; refusing to prepare it without connection keepalives");
@@ -622,6 +733,7 @@ compose.services.dashboard = {
 		AIDR_SIGNING_HEALTH_FILE: "/run/aidr-health/signing.json",
 		AIDR_BACKUP_HEALTH_FILE: "/run/aidr-health/backup.json",
 		AIDR_QUEUE_HEALTH_FILE: "/run/aidr-health/queue.json",
+		AIDR_LICENSE_HEALTH_FILE: "/run/aidr-health/license.json",
 		...(!values.development ? { AIDR_PUBLIC_HTTPS_URL: dashboardUrl } : {}),
 		AIDR_METRICS_TOKEN: "${AIDR_METRICS_TOKEN:?AIDR_METRICS_TOKEN is required}",
 		AIDR_READINESS_REQUIRED_CHECKS: "database,storage,functions,signing,backup,queue,certificate",
@@ -705,6 +817,7 @@ if (privacyGateway) {
 		ipam: { config: [{ subnet: privacyGateway.subnet }] },
 	};
 }
+applySsoCompose(compose, { idpCa: idpCa !== null });
 // Apply the on-prem overlay and resource budgets to every generated service.
 for (const [name, service] of Object.entries(compose.services)) {
 	deepMerge(service, overlay["x-aidr-onprem"].defaults);
@@ -764,6 +877,11 @@ if (privacyGateway) {
 	secretFile(PRIVACY_GATEWAY_LAYOUT.tlsKeyRef, privacyGateway.tls.key);
 	writeFileSync(join(base, "egress-firewall.sh"), renderPrivacyGatewayFirewall(privacyGateway), { mode: 0o700, flag: "wx" });
 }
+if (idpCa) {
+	// Public CA certificates: readable by the functions container user.
+	mkdirSync(join(output, dirname(IDP_CA_RELATIVE)), { recursive: true });
+	writeFileSync(join(output, IDP_CA_RELATIVE), idpCa.pem, { mode: 0o644, flag: "wx" });
+}
 const write = (path, content) => writeFileSync(join(output, path), content, { mode: 0o600, flag: "wx" });
 const envText = (items) => Object.entries(items).map(([name, value]) => `${name}=${value}`).join("\n") + "\n";
 write(".env", envText(env));
@@ -787,7 +905,43 @@ write(".env.ingress", envText({
 }));
 write("compose.yml", stringify(compose));
 const insecureDevelopmentLoopback = values.development && new URL(supabaseUrl).protocol === "http:";
-write("agent-config.json", JSON.stringify({ mode: "managed", control_plane: { enabled: true, endpoint: `${supabaseUrl}/functions/v1`, ...(insecureDevelopmentLoopback ? { allow_insecure_loopback: true } : {}), timeout_seconds: 5, remote_policy_required: true, remote_policy_offline_grace_seconds: 3600 }, ...(artifactVerificationPublicKeyPem ? { integrity: { enabled: true, verify_on_start: true, public_keys_pem: [artifactVerificationPublicKeyPem] } } : {}), licensing: { require_signed_entitlements: true, public_keys_pem: [signing.publicKey.export({ type: "spki", format: "pem" })] } }, null, 2));
+const licensingPublicKeyPem = signing.publicKey.export({ type: "spki", format: "pem" });
+const controlPlaneEndpoint = `${supabaseUrl}/functions/v1`;
+write("agent-config.json", JSON.stringify({ mode: "managed", control_plane: { enabled: true, endpoint: controlPlaneEndpoint, ...(insecureDevelopmentLoopback ? { allow_insecure_loopback: true } : {}), timeout_seconds: 5, offline_policy: offlinePolicy, remote_policy_required: offlinePolicy === "block_after_grace", remote_policy_offline_grace_seconds: 3600 }, ...(artifactVerificationPublicKeyPem ? { integrity: { enabled: true, verify_on_start: true, public_keys_pem: [artifactVerificationPublicKeyPem] } } : {}), licensing: { require_signed_entitlements: true, public_keys_pem: [licensingPublicKeyPem] } }, null, 2));
+// Endpoint machine policy (packages/core/src/machine-policy.ts): what the MSI
+// (AIDR_POLICY_* properties), the Linux packages (AIDR_POLICY_* variables), GPO
+// or configuration management put on every endpoint so that every user
+// connects without a prompt and trusts this deployment's signing key. Public
+// values only: the fleet enrollment key is created later in the dashboard.
+const licensingKeyBase64 = signing.publicKey.export({ type: "spki", format: "der" }).toString("base64");
+const endpointPolicy = {
+	...(insecureDevelopmentLoopback ? {} : { control_plane_url: controlPlaneEndpoint }),
+	licensing_public_keys_pem: [licensingKeyBase64],
+	offline_policy: offlinePolicy,
+};
+mkdirSync(join(output, "endpoint-policy"), { mode: 0o700 });
+write("endpoint-policy/managed.json", `${JSON.stringify(endpointPolicy, null, 2)}\n`);
+write("endpoint-policy/licensing-public-keys.pem", licensingPublicKeyPem);
+const regText = (value) => value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+write("endpoint-policy/aidr-machine-policy.reg", ["Windows Registry Editor Version 5.00", "", "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Singularity AIDR]", ...Object.entries(endpointPolicy).map(([name, value]) => `"${name}"="${regText(Array.isArray(value) ? value.join(" ") : String(value))}"`), ""].join("\r\n"));
+write("endpoint-policy/README.txt", [
+	"Singularity AIDR endpoint machine policy for this deployment (no secrets).",
+	"",
+	`Offline policy chosen at preparation: ${offlinePolicy} (${OFFLINE_POLICIES[offlinePolicy]}).`,
+	"",
+	"Windows (per-machine MSI, e.g. Intune/SCCM/GPO in the SYSTEM context):",
+	`  msiexec /i SingularityAIDR.msi ALLUSERS=1 /qn ${insecureDevelopmentLoopback ? "" : `AIDR_POLICY_CONTROL_PLANE_URL="${controlPlaneEndpoint}" `}AIDR_POLICY_LICENSING_PUBLIC_KEYS="${licensingKeyBase64}" AIDR_POLICY_OFFLINE_POLICY=${offlinePolicy} AIDR_POLICY_ENROLLMENT_KEY=<fleet key from the dashboard>`,
+	"  or import aidr-machine-policy.reg (Group Policy Preferences > Registry), then add enrollment_key.",
+	"",
+	"Linux (.deb / .rpm, as root):",
+	`  sudo env ${insecureDevelopmentLoopback ? "" : `AIDR_POLICY_CONTROL_PLANE_URL="${controlPlaneEndpoint}" `}AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE=licensing-public-keys.pem AIDR_POLICY_OFFLINE_POLICY=${offlinePolicy} AIDR_POLICY_ENROLLMENT_KEY=<fleet key> apt install ./SingularityAIDR.deb`,
+	"  or install managed.json as /etc/singularity-aidr/managed.json (root:root, 0644) and add enrollment_key.",
+	"",
+	"Corporate proxy / internal CA: add AIDR_POLICY_HTTPS_PROXY, AIDR_POLICY_NO_PROXY, AIDR_POLICY_CA_FILE",
+	"(or use_os_trust_store=1). Vendor customer packet: give licensing-public-keys.pem to the vendor",
+	"to embed with customer-packet-issue.mjs --licensing-public-key-file. See docs/installation/desktop-installers.md.",
+	"",
+].join("\n"));
 const migrations = readdirSync(join(output, "migrations")).filter((name) => name.endsWith(".sql")).sort().map((name) => ({ name, sha256: createHash("sha256").update(readFileSync(join(output, "migrations", name))).digest("hex") }));
 function inventory(dir, prefix = "") {
 	return readdirSync(dir).sort().flatMap((name) => {
@@ -796,7 +950,7 @@ function inventory(dir, prefix = "") {
 		return statSync(path).isDirectory() ? inventory(path, relative) : [{ path: relative, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") }];
 	});
 }
-const artifacts = [...(privacyGateway ? ["image", "tls", "trust"].map((path) => `${PRIVACY_GATEWAY_SERVICE}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...(postureScanner ? ["bridge", "egress", "generated"].map((path) => `${postureScannerDir}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...inventory(join(output, "dashboard"), "dashboard"), ...inventory(join(output, "ingress"), "ingress"), ...inventory(join(output, "backup"), "backup"), ...inventory(join(output, "maintenance"), "maintenance"), ...inventory(join(output, "auth-templates"), "auth-templates"), ...inventory(join(output, "volumes/functions"), "volumes/functions")];
+const artifacts = [...(privacyGateway ? ["image", "tls", "trust"].map((path) => `${PRIVACY_GATEWAY_SERVICE}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...(postureScanner ? ["bridge", "egress", "generated"].map((path) => `${postureScannerDir}/${path}`).flatMap((path) => inventory(join(output, path), path)) : []), ...inventory(join(output, "dashboard"), "dashboard"), ...inventory(join(output, "ingress"), "ingress"), ...inventory(join(output, "backup"), "backup"), ...inventory(join(output, "maintenance"), "maintenance"), ...inventory(join(output, "auth-templates"), "auth-templates"), ...inventory(join(output, "volumes/functions"), "volumes/functions"), ...(idpCa ? inventory(join(output, dirname(IDP_CA_RELATIVE)), dirname(IDP_CA_RELATIVE)) : [])];
 const source = existsSync(join(root, "release-source.json")) ? JSON.parse(readFileSync(join(root, "release-source.json"), "utf8")) : { commit: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), dirty: !!execFileSync("git", ["-C", root, "status", "--porcelain"], { encoding: "utf8" }).trim() };
-write("deployment.json", JSON.stringify({ schema_version: 1, project_name: compose.name, mode: values.mode, development: values.development, prepared_at: preparedAt.toISOString(), source_commit: source.commit, source_has_changes: source.dirty, upstream_sha: values.mode === "self-hosted" ? upstreamSha : null, dashboard_url: dashboardUrl, supabase_url: supabaseUrl, region: regionId, tenant_region: tenantRegionId, regions, resource_profile: profileName, dashboard_image: compose.services.dashboard.image, compliance_signing: { key_id: complianceKeyId, public_key_pem: compliancePublicKeyPem, public_key_sha256: createHash("sha256").update(complianceSigning.publicKey.export({ type: "spki", format: "der" })).digest("hex") }, posture_scanner: postureScanner ? { enabled: true, source_version: postureScanner.sourceVersion, source_commit: postureScanner.sourceCommit, bundle_id: postureScanner.bundleId, data_manifest_signed: postureScanner.signed, signing_key_id: postureScanner.keyId, signing_public_key_sha256: postureScanner.publicKeySha256, images: Object.fromEntries(postureScannerServices.map((name) => [name, compose.services[name].image])), task_backend: "sqlite", ha_required: false, egress: `aig-egress deny-by-default allowlist (${postureScannerDir}/egress/allowlist.txt)` } : { enabled: false }, privacy_gateway: privacyGateway ? { enabled: true, compose_profile: PRIVACY_GATEWAY_PROFILE, image: compose.services[PRIVACY_GATEWAY_SERVICE].image, interface: "explicit egress API: POST /v1/egress over mutual TLS; not transparent interception", listen: compose.services[PRIVACY_GATEWAY_SERVICE].ports[0], mtls: { required: true, server_certificate_sha256: privacyGateway.tlsSummary.serverFingerprint256, client_ca_sha256: privacyGateway.tlsSummary.clientCaFingerprint256, server_not_after: privacyGateway.tlsSummary.serverNotAfter }, destination: { kind: privacyGateway.config.destination.kind, origin: privacyGateway.config.destination.origin, model: privacyGateway.config.destination.model }, ner_manifest_sha256: privacyGateway.config.ner.manifestSha256, egress: { subnet: privacyGateway.subnet, allowed_cidrs: privacyGateway.egressCidrs, dns_cidrs: privacyGateway.dnsCidrs, enforcement: `prepared, not applied: run ${PRIVACY_GATEWAY_SERVICE}/egress-firewall.sh as root` } } : { enabled: false }, migrations, artifacts, note: "Prepared configuration, not a deployment acceptance record. Region and residency fields are operator declarations, not evidence of provider placement. The readiness, TLS renewal and backup timer units are prepared but not installed or enabled. TLS, authentication, backups and live smoke evidence required." }, null, 2));
+write("deployment.json", JSON.stringify({ schema_version: 1, project_name: compose.name, mode: values.mode, development: values.development, offline_policy: offlinePolicy, prepared_at: preparedAt.toISOString(), source_commit: source.commit, source_has_changes: source.dirty, upstream_sha: values.mode === "self-hosted" ? upstreamSha : null, dashboard_url: dashboardUrl, supabase_url: supabaseUrl, region: regionId, tenant_region: tenantRegionId, regions, resource_profile: profileName, dashboard_image: compose.services.dashboard.image, compliance_signing: { key_id: complianceKeyId, public_key_pem: compliancePublicKeyPem, public_key_sha256: createHash("sha256").update(complianceSigning.publicKey.export({ type: "spki", format: "der" })).digest("hex") }, posture_scanner: postureScanner ? { enabled: true, source_version: postureScanner.sourceVersion, source_commit: postureScanner.sourceCommit, bundle_id: postureScanner.bundleId, data_manifest_signed: postureScanner.signed, signing_key_id: postureScanner.keyId, signing_public_key_sha256: postureScanner.publicKeySha256, images: Object.fromEntries(postureScannerServices.map((name) => [name, compose.services[name].image])), task_backend: "sqlite", ha_required: false, egress: `aig-egress deny-by-default allowlist (${postureScannerDir}/egress/allowlist.txt)` } : { enabled: false }, identity: { oidc_internal_idp_hosts: internalIdpHosts ? internalIdpHosts.split(",") : [], idp_ca: idpCa ? { file: IDP_CA_RELATIVE, ...idpCa.summary } : null, gotrue_saml: values["with-saml"] }, privacy_gateway: privacyGateway ? { enabled: true, compose_profile: PRIVACY_GATEWAY_PROFILE, image: compose.services[PRIVACY_GATEWAY_SERVICE].image, interface: "explicit egress API: POST /v1/egress over mutual TLS; not transparent interception", listen: compose.services[PRIVACY_GATEWAY_SERVICE].ports[0], mtls: { required: true, server_certificate_sha256: privacyGateway.tlsSummary.serverFingerprint256, client_ca_sha256: privacyGateway.tlsSummary.clientCaFingerprint256, server_not_after: privacyGateway.tlsSummary.serverNotAfter }, destination: { kind: privacyGateway.config.destination.kind, origin: privacyGateway.config.destination.origin, model: privacyGateway.config.destination.model }, ner_manifest_sha256: privacyGateway.config.ner.manifestSha256, egress: { subnet: privacyGateway.subnet, allowed_cidrs: privacyGateway.egressCidrs, dns_cidrs: privacyGateway.dnsCidrs, enforcement: `prepared, not applied: run ${PRIVACY_GATEWAY_SERVICE}/egress-firewall.sh as root` } } : { enabled: false }, migrations, artifacts, note: "Prepared configuration, not a deployment acceptance record. Region and residency fields are operator declarations, not evidence of provider placement. The readiness, TLS renewal and backup timer units are prepared but not installed or enabled. TLS, authentication, backups and live smoke evidence required." }, null, 2));
 console.log(`Prepared ${values.mode} installation at ${output}. Secrets written to private .env files; none printed.`);

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Singularity AIDR Browser Guard - Privacy Policy</title>
+<style>
+	:root { color-scheme: light dark; --fg: #1d2330; --muted: #5a6475; --bg: #ffffff; --rule: #d9dee7; }
+	@media (prefers-color-scheme: dark) { :root { --fg: #e6e9ef; --muted: #a3acbb; --bg: #12151b; --rule: #2c3340; } }
+	body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+	main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+	h1 { font-size: 1.75rem; line-height: 1.25; margin: 0 0 4px; }
+	h2 { font-size: 1.2rem; margin: 32px 0 8px; border-top: 1px solid var(--rule); padding-top: 24px; }
+	.meta { color: var(--muted); margin: 0 0 24px; }
+	table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+	th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid var(--rule); }
+	code { font-size: 0.9em; }
+</style>
+</head>
+<body>
+<main>
+<h1>Singularity AIDR Browser Guard: Privacy Policy</h1>
+<p class="meta">Applies to the Browser Guard extension for Chrome, Microsoft Edge and Firefox. Last updated: 2026-10-13. <a href="privacy-policy.tr.html" hreflang="tr">Türkçe</a></p>
+
+<h2>Summary</h2>
+<p>Browser Guard checks what you send to supported AI chat services for personal and confidential data and replaces it with placeholders before it leaves your browser. All checks run on your device. By default the extension sends nothing anywhere. It never sends the text you type, the values it finds, file names or the addresses of pages you visit, to us or to anyone else.</p>
+
+<h2>Data processed on your device</h2>
+<ul>
+	<li><strong>Prompts, pasted text and uploaded files</strong> on the supported AI chat sites (and on company-internal AI portals your organisation adds) are read in the page when you send, paste or upload, so that sensitive values can be found and masked. They are not stored or transmitted by the extension.</li>
+	<li><strong>The mapping between placeholders and original values</strong> is kept in memory for the tab (page memory and the browser's session storage, which is not written to disk) so that answers can show the original values. It is deleted when the tab closes, after 4 hours without use, or when the browser exits.</li>
+	<li><strong>Settings and counters</strong> (for example how many items were masked) are stored in the browser's extension storage on your device.</li>
+	<li><strong>Optional native host.</strong> If you or your organisation turn on the separately installed AIDR Privacy native host, the text or image being checked is passed to that program on the same computer for name, address and text recognition. The extension does not send it over the network.</li>
+</ul>
+
+<h2>Data that leaves your device</h2>
+<p>Only if a reporting target (an AIDR control plane) has been configured, by your organisation's administrator through browser policy or by you on the options page, the extension sends the following to that control plane:</p>
+<table>
+	<thead><tr><th>Event</th><th>Contents</th></tr></thead>
+	<tbody>
+		<tr><td>Privacy check</td><td>a random installation identifier, browser family and major version, extension version, the AI site (from a fixed list), what the extension did (masked, blocked, warned, allowed), whether it was a prompt, paste or file, the number of findings per data type, and an optional policy identifier. No prompt text, masked text, values, file names or URLs.</td></tr>
+		<tr><td>Shadow AI usage (only if your organisation turned it on)</td><td>the identifier of a catalogued AI service, whether it was visited or blocked, a count, and whether your organisation approved that service. No URL, host name, path or page title.</td></tr>
+		<tr><td>Acceptable-use acknowledgement (only if your organisation shows a notice)</td><td>the AI site, the notice identifier and version. No user identity.</td></tr>
+		<tr><td>Policy download (only if your organisation configured it)</td><td>a request for your organisation's signed policy, authenticated with the reporting key. No browsing data.</td></tr>
+	</tbody>
+</table>
+<p>The control plane belongs to your organisation. Your organisation decides how long these counts are kept and who can see them; contact your administrator for its policy. If you installed the extension yourself and configured no reporting target, nothing is sent.</p>
+
+<h2>What we do not do</h2>
+<ul>
+	<li>We do not receive, sell or share your prompts, the values found in them, or your browsing history.</li>
+	<li>The extension contains no advertising, analytics or tracking code and loads no remote code.</li>
+	<li>Data is not used or transferred for purposes unrelated to protecting what you send to AI services, and not used to determine creditworthiness or for lending.</li>
+</ul>
+
+<h2>Permissions</h2>
+<p>The extension runs its scripts only on the supported AI chat sites. Other permissions are used to store settings, block AI services your administrator does not allow, and, only after you allow it, to protect company-internal AI portals or talk to the optional native host. A full list with reasons is published with the extension's store listing.</p>
+
+<h2>Your choices</h2>
+<ul>
+	<li>Remove the extension at any time from your browser's extensions page; this deletes its local data. If your organisation installed it by policy, ask your administrator.</li>
+	<li>On an unmanaged installation, you can clear the reporting target on the options page to stop all reporting.</li>
+</ul>
+
+<h2>Changes and contact</h2>
+<p>We will update this page and its date when the extension's data handling changes. Questions: <a href="mailto:&lt;PRIVACY_CONTACT_EMAIL&gt;">&lt;PRIVACY_CONTACT_EMAIL&gt;</a>, Singularity R&amp;D.</p>
+</main>
+</body>
+</html>

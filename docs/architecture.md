@@ -2,6 +2,13 @@
 
 Singularity AIDR is a TypeScript monorepo with a shared core library and platform-specific connectors.
 
+**One control plane.** The product control plane, for on-prem and for the
+hosted service alike, is the Supabase stack and the Vite dashboard in this
+repository (`supabase/`, `packages/dashboard`, `deploy/`). The separate
+`aidr-landing` application is the marketing website and SingularityRD's vendor
+`/admin` panel (customer records, licence issuing, installer builds); it is not
+a customer control plane and runs nothing at the customer.
+
 ## Packages
 
 ```
@@ -20,6 +27,7 @@ The core library contains all detection logic. It has no platform dependencies a
 | Module | Purpose |
 |--------|---------|
 | `extractors.ts` | Extracts URLs, commands, file paths from tool inputs |
+| `credential-reads.ts` | Resolves credential-file reads that avoid the literal path (`cd` + relative name, globs, recursive grep/find, Grep/Glob/list tools) to canonical paths |
 | `heuristics.ts` | Matches artifacts against YAML threat patterns |
 | `engine.ts` | Decision engine - combines signals into a Verdict |
 | `threat-loader.ts` | Loads YAML threat definitions |
@@ -106,6 +114,8 @@ Extension hooks (Cursor / VS Code) always exit with code `0`; the host reads the
 - **All patterns are data.** Detection rules live in `threats/*.yaml`, not in code. This makes rules easy to review, contribute, and update independently.
 - **Failure policy is scoped.** Connector entry points return a deny on their own parse or evaluation failures; mandatory identity, tenant, and rate-limit controls also reject unavailable state. Optional detection legs report unavailability instead of claiming a clean scan. A host that never invokes a hook, kills it before it emits a verdict, or permits a bypass remains outside the connector's enforcement guarantee; Codex has an explicit host-owned fail-open boundary.
 - **Inspection limits fail closed.** Extraction never silently stops part-way. Free text (file content of `Write`/`Edit`/`Read`, and free-text strings of MCP/unknown tools) longer than 64 KiB is scanned in full as overlapping 64 KiB windows. Anything the extractor cannot cover is denied with category `input_not_fully_inspected` (`POL-INPUT-003`): MCP/unknown tool input nested deeper than 16 levels, with more than 1024 strings or 2048 artifacts, a command/URL/path field over 64 KiB, or more than 4 MiB of text in one call (including file content over 4 MiB). A `Bash` command over 64 KiB is denied as `input_truncated`. MCP tool input is re-walked by the evaluator, so a connector that builds its own artifact list cannot drop the signal.
+- **MCP/unknown tools are inspected like shell when they carry commands.** String fields named `command`, `cmd`, `script`, `code` (and similar) are extracted as commands, and argv arrays are rebuilt into the command line they run (`command: ["bash", "-c", "…"]`, `cmd: "bash"` + `args: [...]`, nested at any depth), so the same command rules apply as for `Bash`.
+- **Credential reads are judged by the path they reach, not the path they spell.** `cd ~/.ssh && cat id_rsa`, `cat ~/.ss?/id_*`, `grep -r . ~/.aws`, `find ~/.ssh -exec cat {} +`, `cmd < file`, and Grep/Glob/list tools (Claude Code `Grep`/`Glob`, OpenCode `grep`/`glob`/`list`, MCP filesystem search/list) whose root or filename filter reaches `~/.ssh`, `~/.aws`, `~/.config/gcloud`, keychains, browser profiles or `.env` files produce the canonical `file_path` artifacts that the file rules in `threats/` (including `credential-reads.yaml`) judge. A project's own `.env.example` or a `grep -r` over `src/` produces nothing.
 - **Shared core.** All platforms use the same `@singularityrd/aidr-core` library, ensuring consistent detection regardless of connector.
 - **Packaged runtime dependencies are connector-specific.** The core uses native `fetch`, `yaml` for YAML parsing, and `zod` for validation. JavaScript connector code is bundled; Windows AMSI may also need a packaged native Koffi module or the slower PowerShell fallback. Inspect the exact released artifact and host before claiming a standalone installation.
 

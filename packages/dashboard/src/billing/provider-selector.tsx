@@ -30,6 +30,7 @@ export function buildProviderList(_userLocation: string): ProviderOption[] {
  * Get payment button text - invoice-first unless self-service is explicitly enabled
  */
 export function getPaymentButtonText(_provider: ProviderType, _userLocation: string): string {
+	// i18n-exempt: legacy helper that no page renders (kept for its tests).
 	if (!selfServiceCheckoutEnabled) return "Request enterprise invoice";
 	return "Subscribe with Stripe";
 }

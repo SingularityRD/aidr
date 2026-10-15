@@ -203,7 +203,10 @@ try {
 	const device = expect(await signedDeviceStart(), 200, "signed ingress device bootstrap");
 	const pending = expect(await edge("device-poll", alice.token, { device_code: device.device_code }), 200, "browser JWT does not replace device code");
 	assert.equal(pending.status, "pending");
-	expect(await request("/functions/v1/device-verify", { token: alice.token, method: "POST", headers: billingHeaders, body: { user_code: device.user_code } }), 200, "authorize device for licensed tenant");
+	expect(await request("/functions/v1/device-verify", { token: alice.token, method: "POST", headers: billingHeaders, body: { user_code: device.user_code } }), 400, "one-shot device binding refused (CP-1)");
+	const deviceLookup = expect(await request("/functions/v1/device-verify", { token: alice.token, method: "POST", headers: billingHeaders, body: { action: "lookup", user_code: device.user_code } }), 200, "device lookup shows requester context");
+	assert.equal(deviceLookup.device.user_code, device.user_code);
+	expect(await request("/functions/v1/device-verify", { token: alice.token, method: "POST", headers: billingHeaders, body: { action: "authorize", user_code: device.user_code, device_session_id: deviceLookup.device.device_session_id, confirmed: true } }), 200, "authorize device for licensed tenant");
 	await new Promise((done) => setTimeout(done, (device.interval_seconds + 1) * 1000));
 	const exchange = expect(await edge("device-poll", alice.token, { device_code: device.device_code }), 200, "exchange authorized device");
 	assert.equal(exchange.status, "approved");

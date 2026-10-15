@@ -12,7 +12,7 @@ export async function sha512Integrity(file) {
 	return `sha512-${hash.digest("base64")}`;
 }
 
-export async function queryNpmIntegrity(name, version, registry) {
+async function queryNpmIntegrity(name, version, registry) {
 	try {
 		const { stdout } = await execFile(
 			"npm",

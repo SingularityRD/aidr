@@ -42,8 +42,9 @@ Related documents: [product overview](../../overview.md) ·
     - [13a. Shadow AI discovery and control](#13a-shadow-ai-discovery-and-control)
     - [13b. Custom internal AI sites](#13b-custom-internal-ai-sites)
     - [13c. AI acceptable-use notice](#13c-ai-acceptable-use-notice)
+    - [13d. Personal vs company AI accounts](#13d-personal-vs-company-ai-accounts)
 14. [Enterprise managed policy and deployment](#14-enterprise-managed-policy-and-deployment)
-15. [Counts-only telemetry and the Browser Privacy dashboard](#15-counts-only-telemetry-and-the-browser-privacy-dashboard)
+15. [Counts-only telemetry and the Browser Guard dashboard page](#15-counts-only-telemetry-and-the-browser-guard-dashboard-page)
 16. [Optional native host for NER and OCR](#16-optional-native-host-for-ner-and-ocr)
 17. [What data leaves the device](#17-what-data-leaves-the-device)
 
@@ -61,7 +62,7 @@ Related documents: [product overview](../../overview.md) ·
 
 ## Availability at a glance
 
-The plan catalog (`packages/dashboard/src/billing/plans.ts`) lists **Browser Privacy Guard** (`browser_privacy_guard`) for **Team,
+The plan catalog (`packages/dashboard/src/billing/plans.ts`) lists **Browser Guard** (`browser_privacy_guard`) for **Team,
 Business and Enterprise**, not for Free. The extension itself does not check a plan or an
 account: detection, masking and restore run in the browser whether or not it is enrolled.
 Enrollment adds reporting to the control plane (feature 15). The dashboard describes each
@@ -92,7 +93,7 @@ the prompt box, the send button, the answers and the file inputs are.
 | `chatgpt` | ChatGPT | `chatgpt.com`, `chat.openai.com` |
 | `gemini` | Gemini | `gemini.google.com` |
 | `claude` | Claude | `claude.ai` |
-| `copilot` | Microsoft Copilot | `copilot.microsoft.com` |
+| `copilot` | Microsoft Copilot (consumer) and Microsoft 365 Copilot Chat | `copilot.microsoft.com`, `m365.cloud.microsoft`, `copilot.cloud.microsoft` |
 | `perplexity` | Perplexity | `www.perplexity.ai`, `perplexity.ai` |
 | `deepseek` | DeepSeek | `chat.deepseek.com` |
 | `mistral` | Mistral Le Chat | `chat.mistral.ai` |
@@ -109,7 +110,11 @@ after them (`textarea`, `[contenteditable="true"]`, `[role="textbox"]`,
 `button[type="submit"]`, a button whose label contains "send"). This keeps interception
 working through small redesigns. Supported editors: plain `textarea`, ProseMirror, Quill
 and generic `contenteditable`. The content script runs at `document_start` in the top frame
-only (`all_frames: false`). It does not run in private windows (`incognito: not_allowed`).
+only (`all_frames: false`), with one exception: on the two Microsoft 365 Copilot hosts
+(`m365.cloud.microsoft`, `copilot.cloud.microsoft`) it also runs in subframes
+(`all_frames: true`), because the Office web apps (Word, Excel, PowerPoint, Outlook on the
+web) embed the Copilot pane as a cross-origin iframe. The Office pages themselves get no
+script and no extra permission. It does not run in private windows (`incognito: not_allowed`).
 
 **How to use** — Install the extension (feature 14). No per-site setup is needed. To build it
 yourself: `pnpm build:browser-guard` (development) or `pnpm package:browser-guard` (release
@@ -130,14 +135,25 @@ zips plus `SHA256SUMS`). To load an unpacked build: `chrome://extensions` → De
 | Platforms | Chrome 120+, Edge 120+, Firefox 140+ (ESR); Windows, macOS, Linux |
 
 **Limitations**
-- Only the eight products above are protected. Other AI websites, desktop and mobile apps,
-  API clients and other browsers are not covered. The manifest declares an optional
-  `https://*/*` host permission, but this build has no code path that uses it to protect
-  other sites.
+- Only the eight products above are protected out of the box. Other AI websites, desktop
+  and mobile apps, API clients and other browsers are not covered. The manifest declares an
+  optional `https://*/*` host permission. It is never requested at install: the options page
+  asks each user, from a click, for the exact `https://<host>/*` origins the managed policy
+  configures (the hosts of `customSites`, feature 13b, and the Shadow AI catalog origins,
+  feature 13a), so users see a browser permission prompt for those sites.
 - Site DOMs change without notice, and a redesign can break interception until the adapter
   is updated. The real-browser suite runs against recorded page structures (fixtures) for
   ChatGPT, Gemini, Claude, Copilot and Perplexity, not against the live sites. DeepSeek,
   Mistral and Grok adapters are covered by unit tests only.
+- The Copilot pane inside the Office web apps is guarded when it is served from a
+  Microsoft 365 Copilot host: masking, paste and file checks, local restore and fail-closed
+  sends work as on the top-level page, and its counts are reported as site `copilot` (taken
+  from the frame's own URL). It keeps its own vault record and is counted once per send.
+  Which origin a live tenant uses for the pane, and its markup, are **not verified**
+  (BG-LIVE): a pane served from another host is not covered. The real-browser scenario
+  `frame-copilot-office` proves the frame coverage against a fixture, not against
+  Microsoft 365. A pane in a tab that was open before the extension started is guarded
+  after a reload.
 - Private (incognito) windows are not protected. Restrict them with browser management
   where that matters.
 - The automated real-browser tests run in Chromium. Firefox builds are checked with
@@ -156,22 +172,37 @@ why", not "sent unchecked".
 
 **How it works** — The content script listens in the capture phase for Enter (not
 Shift+Enter, and not while an input method is composing text; Ctrl/Cmd+Enter is also
-treated as send), for clicks on the send button and for form submits. After the decision
-it replays the send exactly once, and only if the editor still holds the checked text.
-Text is pre-scanned in the background while the user types. A prompt already known to be
-clean then passes with the original, trusted event untouched.
+treated as send), for clicks on send controls and for form submits. A click counts as a
+send when the site adapter names the button, when it is the composer's send button, or
+when the control submits its form or is labelled as a send action ("Send", "Save",
+"Update", "Gönder", "Kaydet", "Güncelle"...) and sits in the same form, message turn or
+panel as an editor. That last rule covers the edit-and-resend forms on sent messages
+(ChatGPT, Claude, Gemini, Copilot). The text that is checked is the editor the gesture
+belongs to: the editor the key was pressed in (also inside an open shadow root), or the
+editor in the clicked button's or submitted form's container. It is never taken from
+whichever field has focus, so a focused search box cannot stand in for the composer. When
+several editors in that container hold text, the send is refused because it is not clear
+which one the site sends.
+
+After the decision the send is replayed exactly once, and only if the editor still holds
+the checked text. An Enter is replayed as an Enter. If the site does not handle it (sites
+or layouts where Enter only starts a new line), a multi-line editor gets the new line the
+user asked for and nothing is sent; a single-line input gets the browser's implicit form
+submission (its form's default button), and no other send button is ever clicked for an
+Enter. Text is pre-scanned in the background while the user types. A prompt already known to be clean then passes with the
+original, trusted event untouched.
 
 ```
 Enter / click / submit
    │  (capture phase, before the site)
    ▼
-policy loaded? ──no──► block: "AIDR protection is still loading…"
+policy loaded? ──no──► block: "Protection is still loading…"
    │ yes
 site blocked? ──yes──► block: "Your organisation has blocked this AI service…"
    │
 prompt box found? ──no──► block (monitor mode: pass)
    │
-scan complete? ──no──► block: "AIDR could not finish checking this prompt…"
+scan complete? ──no──► block: "Singularity AIDR could not finish checking this message…"
    │
 findings / signals ──► mode decides (feature 5) ──► replay the send once
 ```
@@ -180,25 +211,48 @@ Fail-closed cases and the exact messages (English / Turkish, from `src/content/s
 
 | Situation | English | Turkish |
 |---|---|---|
-| Policy not received yet | AIDR protection is still loading. Nothing was sent; try again in a moment. | AIDR koruması henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. |
-| Scan failed or incomplete | AIDR could not finish checking this prompt, so it was not sent. | AIDR bu istemi kontrol etmeyi tamamlayamadı; gönderilmedi. |
-| Prompt box not found | AIDR could not find the prompt box on this page, so nothing was sent. | AIDR bu sayfadaki istem alanını bulamadı; hiçbir şey gönderilmedi. |
-| Rewrite could not be verified | AIDR could not safely rewrite the prompt. Nothing was sent. | AIDR istemi güvenli biçimde yeniden yazamadı. Hiçbir şey gönderilmedi. |
-| Text changed during the check | The prompt changed while it was being checked. Press send again. | İstem kontrol edilirken değişti. Yeniden gönderin. |
-| Previous check still running | AIDR is still checking the previous action. | AIDR önceki işlemi kontrol etmeye devam ediyor. |
+| Policy not received yet | Protection is still loading. Nothing was sent; try again in a moment. | Koruma henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. |
+| Scan failed or incomplete | Singularity AIDR could not finish checking this message, so it was not sent. | Singularity AIDR bu mesajı kontrol etmeyi tamamlayamadı; mesaj gönderilmedi. |
+| Message box not found | The message box on this page could not be found, so nothing was sent. | Bu sayfadaki mesaj alanı bulunamadı; hiçbir şey gönderilmedi. |
+| Several text boxes hold text | Several text boxes hold text and it is unclear which one is being sent, so nothing was sent. | Birden fazla metin alanında yazı var ve hangisinin gönderildiği anlaşılamadı; hiçbir şey gönderilmedi. |
+| Rewrite could not be verified | The message could not be masked safely. Nothing was sent. | Mesaj güvenli biçimde maskelenemedi. Hiçbir şey gönderilmedi. |
+| Text changed during the check | The message changed while it was being checked. Press send again. | Mesaj kontrol edilirken değişti. Yeniden gönderin. |
+| Previous check still running | Still checking the previous action. | Önceki işlem hâlâ kontrol ediliyor. |
 | Site blocked by policy | Your organisation has blocked this AI service. Nothing was sent. | Kurumunuz bu yapay zekâ hizmetini engelledi. Hiçbir şey gönderilmedi. |
 
 A scan is marked incomplete when the prompt exceeds 200,000 characters, when the internal
 time budget runs out, or when encoded content is nested deeper than the decoder unwraps.
 Findings gathered so far are kept, but the result is never reported as clean.
 
-**How to use** — Always on. The only ways to let text through unmasked are `monitor` mode,
-which never blocks, and a site in `disabledSites`, which is monitored the same way (the
-text is still scanned and counted).
+**How to use** — Always on for the send gestures described above. It is not a guarantee
+that nothing leaves the browser unmasked. In this build text reaches the AI service without
+masking through:
+- `monitor` mode, and a site in `disabledSites` (scanned and counted, never blocked);
+- **Send original** in `confirm` mode while `allowSendAnyway` is `true` (the default without a managed
+  policy; under a managed policy it is off unless the administrator sets it);
+- a user pause (up to 60 minutes) while `allowUserPause` is `true` (the default without a managed
+  policy; under a managed policy it is off unless the administrator sets it);
+- a send the adapter does not recognise: a new button, shortcut or gesture after a site
+  redesign, or a request the page makes by itself (see Limitations and feature 1);
+- voice input, dictation and voice mode: the site sends the audio to the provider for
+  transcription, so it never passes the guard; only text that ends up in the editor and is
+  sent with a recognised gesture is checked;
+- text before it is sent: the prompt editor belongs to the site, so the site's own scripts
+  (drafts, autosave, typing telemetry) can read what is typed, dropped or dictated into it
+  before the guard checks it at send;
+- tabs in which the content script is not running, for example an already-open tab the
+  extension could not inject into when it started, until the tab is reloaded;
+- private windows, guest profiles, other browser profiles and other browsers, where the
+  extension does not run.
+
+Administrators close the policy-controlled paths with `allowSendAnyway: false`,
+`allowUserPause: false` and a managed `mode`, and the browser-level ones with the hardening
+policies in `deploy/browser-guard/README.md` (private browsing, guest mode, other profiles
+and browsers, developer tools, other extensions).
 
 **Example** — A user pastes a 300,000-character log and presses Enter in `auto` mode. The site
-receives nothing. A red bubble titled **Sending blocked** says "AIDR could not finish
-checking this prompt, so it was not sent."
+receives nothing. A red bubble titled **Sending blocked** says "Singularity AIDR could not
+finish checking this message, so it was not sent."
 
 **Availability**
 
@@ -211,7 +265,14 @@ checking this prompt, so it was not sent."
 **Limitations**
 - In `monitor` mode a missing prompt box does not block the send.
 - Interception depends on the site's DOM and event handling (see feature 1). A site that
-  sends through a path the adapter does not recognise is not intercepted.
+  sends through a path the guard does not recognise is not intercepted: an icon-only or
+  unlabelled button outside the adapter's selectors that does not submit a form, a send
+  triggered by a key other than Enter, or an editor inside a closed shadow root. The
+  edit-and-resend forms are recognised by their labels and position in a modelled DOM
+  (jsdom tests and the ChatGPT fixture); they are not yet verified on the live sites.
+- On a site where Enter only starts a new line, an Enter in a prompt that holds findings
+  is still checked first: in `confirm` mode the user is asked before the new line is
+  inserted.
 - Very large prompts (over 200,000 characters) cannot be sent in any blocking mode. Split
   them, or send them through an approved channel.
 
@@ -348,7 +409,7 @@ useful answers. Reversible placeholders keep answers usable ("Draft an email to
 **Example** — The user sends `Please email ayse.yilmaz@example.com about the refund, deploy key sk-proj-…`.
 The site receives `Please email [EMAIL_1] about the refund, deploy key [SECRET_1]`. The
 answer "I emailed `[EMAIL_1]`; rotate `[SECRET_1]`" is shown to the user as "I emailed
-ayse.yilmaz@example.com; rotate `[SECRET_1]`", with the tooltip "Restored locally by AIDR".
+ayse.yilmaz@example.com; rotate `[SECRET_1]`", with the tooltip "Shown only on this computer. The AI service received [EMAIL_1]."
 
 **Availability**
 
@@ -383,20 +444,28 @@ to measure exposure, moves to `auto` or `confirm` for everyday use, and uses `bl
 teams where no personal data may reach external AI at all.
 
 **How it works** — What the user sees in each mode (exact texts from `src/content/strings.ts`
-and `_locales/*/messages.json`; counts are shown as "1 EMAIL, 1 TCKN" using the placeholder
-prefixes):
+and `_locales/*/messages.json`; data is named the way the popup names it, e.g. "1 email
+address, 1 Turkish ID number (TCKN)" / "1 e-posta adresi, 1 T.C. kimlik numarası"):
 
 | Mode (popup label EN / TR) | What happens when findings exist | What the user sees |
 |---|---|---|
-| `auto`, **Auto-mask** / **Otomatik maskele** (default) | Values are replaced in the prompt box, then the send is replayed once | Toast: "2 items masked: 1 EMAIL, 1 TCKN" / "2 öğe maskelendi: 1 EMAIL, 1 TCKN". If the site does not accept the replayed send: "The prompt was masked. Press send to continue." / "İstem maskelendi. Devam etmek için gönderin." |
-| `confirm`, **Confirm** / **Onayla** | Nothing is sent until the user decides | Bubble **Sensitive data in your prompt** / **İsteminizde hassas veri var**: "2 sensitive items were found: 1 EMAIL, 1 TCKN. They can be replaced with placeholders and restored locally in the answer." Buttons: **Send masked** / **Maskeli gönder** (default), **Edit** / **Düzenle**, and **Send original** / **Orijinali gönder** only when `allowSendAnyway` is true |
-| `block`, **Block** / **Engelle** | The send is stopped and the prompt stays in the box | Bubble **Sending blocked** / **Gönderim engellendi**: "2 sensitive items were found: 1 EMAIL, 1 TCKN." + "Your organisation does not allow this data to be sent to AI services. Remove it or describe it in general terms, then try again." / "Kurumunuz bu verinin yapay zekâ hizmetlerine gönderilmesine izin vermiyor. Veriyi çıkarın veya genel ifadelerle anlatıp yeniden deneyin." Button **Close** / **Kapat** |
-| `monitor`, **Monitor** / **İzle** | The original text is sent unchanged; findings are counted | Nothing in the page. The popup shows **Monitoring only**: "Sensitive data sent to ChatGPT is counted but not masked or blocked." |
+| `auto`, **Auto-mask** / **Otomatik maskele** (default) | Values are replaced in the prompt box, then the send is replayed once | Toast: "Masked before sending: 1 email address, 1 Turkish ID number (TCKN)." / "Gönderilmeden önce maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." If the site does not accept the replayed send: "The message was masked. Press send to continue." / "Mesaj maskelendi. Devam etmek için gönder düğmesine basın." |
+| `confirm`, **Ask me** / **Bana sor** | Nothing is sent until the user decides | Bubble **Your message contains personal or confidential data** / **Mesajınızda kişisel veya gizli bilgi var**: "Found: 1 email address, 1 Turkish ID number (TCKN). "Send masked" replaces them with labels such as [EMAIL_1] before the message leaves your computer; the answer shows your original values again, only on this computer." Buttons: **Send masked** / **Maskeli gönder** (default), **Edit** / **Düzenle**, and **Send original** / **Orijinali gönder** only when `allowSendAnyway` is true, with the note ""Send original" sends the real values to ChatGPT. This choice is counted; the message itself is never reported." under the buttons |
+| `block`, **Block** / **Engelle** | The send is stopped and the prompt stays in the box | Bubble **Sending blocked** / **Gönderim engellendi**: "Found: 1 email address, 1 Turkish ID number (TCKN)." + "Your organisation does not allow this data to be sent to AI services. Remove it or describe it in general terms, then try again." / "Kurumunuz bu verinin yapay zekâ hizmetlerine gönderilmesine izin vermiyor. Veriyi çıkarın veya genel ifadelerle anlatıp yeniden deneyin." Button **Close** / **Kapat** |
+| `monitor`, **Count only (no masking)** / **Yalnızca say (maskeleme yok)** | The original text is sent unchanged; findings are counted | Nothing in the page. The popup shows **Counting only (no masking)**: "Sensitive data sent to ChatGPT is counted but not masked or blocked." |
 
-The popup help texts are: Auto-mask, "Sensitive data is replaced with placeholders such as
-[EMAIL_1] before sending."; Confirm, "You review what was found and choose to send it masked
-or edit your message."; Block, "Messages that contain sensitive data are not sent.";
-Monitor, "Nothing is changed or blocked; findings are only counted."
+The popup help texts are: Auto-mask, "Sensitive data is replaced with labels such as
+[EMAIL_1] before sending."; Ask me, "You see what was found and choose: send it masked or
+edit your message."; Block, "Messages that contain sensitive data are not sent.";
+Count only, "Nothing is masked or blocked; findings are only counted."
+
+When advanced name detection (the AIDR Privacy helper app) is off, toasts and bubbles about
+findings add "Person names were not checked: advanced name detection is off." and the popup
+shows "Names and addresses are not checked: advanced detection is off. Built-in rules are
+active." Values restored in answers carry the tooltip "Shown only on this computer. The AI
+service received [EMAIL_1].", and the first restore on a page shows a one-time legend toast.
+Toasts stay up 60 ms per character (5 s minimum, 20 s maximum), pause while hovered or
+focused, and have a close button (Escape closes them too).
 
 Bubbles and toasts are rendered in a closed shadow root at the bottom right of the page. The
 host page cannot read or restyle them. Bubbles use `role=alertdialog` with keyboard focus
@@ -406,8 +475,9 @@ findings and no active signals is sent without any interruption in every mode.
 **How to use** — Popup → *Protection mode* segmented control, or Options → **Protection**.
 Managed key `mode` (`auto` | `confirm` | `block` | `monitor`, default `auto`). When `mode`
 is managed, the control shows a lock and **Managed by your organization**, and users can
-no longer turn individual sites off. `allowSendAnyway` (default `true`) controls the
-**Send original** button.
+no longer turn individual sites off. `allowSendAnyway` controls the **Send original**
+button (default `true` without a managed policy, `false` under any managed policy unless
+the administrator sets it).
 
 **Example** — In `confirm` mode a user types `IBAN TR33 0006 1005 1978 6457 8413 26` and
 presses Enter. The bubble appears and nothing reaches the site. The user clicks **Send
@@ -424,8 +494,8 @@ checks that exactly one request is made and that it contains only placeholders.
 
 **Limitations**
 - `monitor` sends the original data. Use it for measurement, not protection.
-- With `allowSendAnyway: true` (the default), a user in `confirm` mode can send the original
-  values. Set it to `false` where that must not be possible.
+- With `allowSendAnyway: true` (the default only on unmanaged installs; a managed policy
+  must set it explicitly), a user in `confirm` mode can send the original values.
 - In `auto` mode, a prompt that also triggers a risk signal at `warn` level shows the
   confirmation bubble instead of masking silently (feature 10).
 
@@ -444,10 +514,10 @@ at send time). The result is inserted at the cursor.
 
 | Mode | Paste outcome | Message |
 |---|---|---|
-| `auto`, `confirm` | Masked text is inserted | "Pasted text masked (2 items): 1 EMAIL, 1 TCKN" / "Yapıştırılan metin maskelendi (2 öğe): 1 EMAIL, 1 TCKN" |
+| `auto`, `confirm` | Masked text is inserted | "Pasted text masked: 1 email address, 1 Turkish ID number (TCKN)." / "Yapıştırılan metin maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." |
 | `block` | Nothing is inserted | "The pasted text contains sensitive data and was not inserted." / "Yapıştırılan metin hassas veri içerdiği için eklenmedi." plus the organisation coaching line |
 | `monitor` | Original is inserted; findings counted | — |
-| Scan failed | Nothing is inserted | "AIDR could not check the pasted text, so it was not inserted." / "AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
+| Scan failed | Nothing is inserted | "Singularity AIDR could not check the pasted text, so it was not inserted." / "Singularity AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
 
 Clean text is inserted unchanged. Pasted files are handled by file protection (feature 7).
 
@@ -469,8 +539,10 @@ Covered by the real-browser `paste-*` scenarios.
 
 **Limitations**
 - Only pastes into the recognised prompt editor are handled.
-- Text inserted by other means (drag-and-drop of text, browser autofill, voice input) is
-  checked at send time, not on insertion.
+- Text inserted by other means (drag-and-drop of text, browser autofill) is checked at send
+  time, not on insertion; until then it sits in the site's editor, readable by the page.
+- Voice input, dictation and voice mode are not covered: the audio goes to the provider for
+  transcription without passing the guard (feature 2).
 
 ### 7. File and upload protection
 
@@ -633,19 +705,24 @@ while paused) files pass unchanged and are only counted. Blocked sites and
 
 | Situation | Message (EN / TR) |
 |---|---|
-| Sanitised | "1 file sanitized before upload: 2 EMAIL" / "1 dosya yüklenmeden önce temizlendi: 2 EMAIL" |
-| Binary, not blocked | `"report.pdf" could not be scanned (binary file). Check it before sending.` / `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
-| Legacy Office not fully read, not blocked | `"old.doc" is a legacy Office file (.doc/.xls/.ppt) that AIDR could not fully check. Save it as .docx/.xlsx/.pptx to have it masked, or check it before sending.` / `"old.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu dosyayı tam olarak denetleyemedi. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
-| Legacy Office with sensitive data | `"contract.doc" was not uploaded (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Legacy Office files (.doc/.xls/.ppt) cannot be masked. Save the file as .docx/.xlsx/.pptx and upload that instead: AIDR masks those.` / `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: AIDR bu biçimleri maskeler.` |
-| Image not inspected | `"screen.png" is an image and its content was not inspected (the local OCR helper is not available or could not read it). Check it before sending.` / `"screen.png" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.` |
-| Pictures in a document not inspected | `Pictures inside "report.docx" were not inspected. Check them before sending.` / `"report.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
-| Image with sensitive data | `"screen.png" was not uploaded (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). The image shows sensitive data and images cannot be masked. Crop or redact it before uploading.` / `"screen.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
-| Blocked | **Upload blocked** / **Yükleme engellendi**: `"big.csv" was not uploaded (FILE_TOO_LARGE).` / `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
+| Sanitised | "1 file masked before upload: 2 email addresses." / "1 dosya yüklenmeden önce maskelendi: 2 e-posta adresi." |
+| Binary, not blocked | `"report.pdf" could not be checked (binary file). Check it before sending.` / `"report.pdf" denetlenemedi (ikili dosya). Göndermeden önce kontrol edin.` |
+| Legacy Office not fully read, not blocked | `"old.doc" (old .doc/.xls/.ppt format) could not be fully checked. Save it as .docx/.xlsx/.pptx, or check it before sending.` / `"old.doc" (eski .doc/.xls/.ppt biçimi) tam olarak denetlenemedi. .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Legacy Office with sensitive data | `"contract.doc" contains personal or confidential data (1 email address), so it was not uploaded. Old Office files (.doc/.xls/.ppt) cannot be masked: save it as .docx/.xlsx/.pptx and upload that instead (those are masked), or ask your IT team.` / `"sozlesme.doc" kişisel veya gizli bilgi içeriyor (1 e-posta adresi), bu yüzden yüklenmedi. Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez: dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin (bu biçimler maskelenir) ya da BT ekibinize başvurun.` |
+| Image not inspected | `"screen.png" was not checked: images need the AIDR Privacy helper app. Check it before sending.` / `"screen.png" denetlenmedi: görseller için AIDR Privacy yardımcı uygulaması gerekir. Göndermeden önce kontrol edin.` |
+| Pictures in a document not inspected | `Pictures inside "report.docx" were not checked. Check them before sending.` / `"report.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
+| Image with sensitive data | `A picture shows personal or confidential data (1 email address), so "screen.png" was not uploaded. Pictures cannot be masked: crop or black out that part before uploading, or ask your IT team.` / `Bir görselde kişisel veya gizli bilgi görünüyor (1 e-posta adresi), bu yüzden "screen.png" yüklenmedi. Görseller maskelenemez: yüklemeden önce o bölümü kırpın ya da karartın veya BT ekibinize başvurun.` |
+| Blocked (too large) | **Upload blocked** / **Yükleme engellendi**: `"big.csv" was not uploaded: it is larger than your organisation allows for AI services. Upload a smaller file or only the part you need.` / `"big.csv" yüklenmedi: dosya, kurumunuzun yapay zekâ hizmetleri için izin verdiği boyuttan büyük. Daha küçük bir dosya ya da yalnızca gereken bölümü yükleyin.` |
 | Uploads disabled by policy | "Your organisation does not allow file uploads to AI services." / "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
 | Documents disabled by policy | "Your organisation does not allow Office or PDF documents to be uploaded to AI services." / "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
-| PDF with sensitive data | `"contract.pdf" was not uploaded (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDFs cannot be masked. Copy the text you need and paste it instead: AIDR masks pasted text.` / `"contract.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.` |
-| File could not be checked | "AIDR could not check the file, so it was not uploaded." / "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
-| Browser cannot swap the file | "This browser cannot replace the file with a sanitized copy, so it was not uploaded." / "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
+| PDF with sensitive data | `"contract.pdf" contains personal or confidential data (1 email address), so it was not uploaded. PDFs cannot be masked: copy the text you need and paste it into the message instead (pasted text is masked), or ask your IT team.` / `"contract.pdf" kişisel veya gizli bilgi içeriyor (1 e-posta adresi), bu yüzden yüklenmedi. PDF dosyaları maskelenemez: gereken metni kopyalayıp mesaja yapıştırın (yapıştırılan metin maskelenir) ya da BT ekibinize başvurun.` |
+| File could not be checked | "The file could not be checked, so it was not uploaded." / "Dosya kontrol edilemedi; yüklenmedi." |
+| Browser cannot swap the file | "This browser cannot replace the file with a masked copy, so it was not uploaded." / "Bu tarayıcı dosyayı maskelenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
+
+Every reason that can stop an upload has its own plain sentence like the ones above (what
+happened to the file and what to do), in English and Turkish. The internal reason codes
+(`SENSITIVE_DATA_IN_PDF`, `FILE_TOO_LARGE`...) stay in the decision and are never shown in
+the message.
 
 **How to use** — Managed keys `fileHandling` (`scan` | `block` | `allow`, default `scan`),
 `documentHandling` (`mask` | `block` | `allow`, default `mask`; applies when `fileHandling` is
@@ -765,73 +842,99 @@ confidential terms. They are not listed here."
 
 ### 9. Exact data match
 
-**What it does** — Flags an organisation's own records (customer names, account numbers,
-employee IDs) without shipping the values to the browser. The browser receives only keyed
-fingerprints.
+**What it does** — Flags an organisation's own records (customer records, account numbers
+combined with names, employee IDs) without shipping the values to the browser. The
+browser receives only keyed fingerprints; the key never travels in browser policy.
 
 **Why it matters** — Rules find anything that looks like an IBAN. Exact data match finds
-*your* customers, including names that no rule can recognise, while the list itself never
-leaves the administrator's hands in readable form.
+*your* customers' records, while the list itself never leaves the administrator's hands in
+readable form.
 
 **How it works**
-1. The administrator builds a dataset from a CSV with
-   `packages/browser-guard/scripts/fingerprint-dataset.mjs`. Each value is normalised
-   (NFKC, lower-case, zero-width marks removed, Turkish `ı` and `i̇` folded to `i`) and split
-   into letter/digit tokens. The fingerprint is `HMAC-SHA256(key, JSON.stringify(tokens))`
+1. The administrator creates the organisation's EDM secret once
+   (`fingerprint-dataset.mjs --new-secret edm-secret.b64`) and installs that file in the
+   AIDR Privacy native host configuration (`"exactData": {"secretFile": ...}`).
+2. A dataset is built from a CSV with the same secret. Each dataset has its own key,
+   `HMAC-SHA256(secret, "aidr-edm-v2" 0x00 datasetId)`. Each value is normalised (NFKC,
+   lower-case, zero-width marks removed, Turkish `ı` and `i̇` folded to `i`) and split into
+   letter/digit tokens; the fingerprint is `HMAC-SHA256(datasetKey, JSON.stringify(tokens))`
    in lowercase hex. A value must give 1–16 tokens and at least 3 characters.
-2. The dataset `{ datasetId, keyB64, fingerprints, type }` is delivered by managed policy
-   (`exactData`).
-3. In the page, the same normalisation is applied to the prompt. Every window of up to 16
-   consecutive tokens is fingerprinted with WebCrypto (at most 65,536 HMACs per scan) and
-   compared with the dataset. A hit is masked as the dataset's type and also raises the
-   `EXACT_DATA_MATCH` signal.
+3. The tool estimates every value's entropy and refuses the dataset when any value is below
+   64 bits (`LOW_ENTROPY`), because a holder of the dataset key could enumerate such values
+   offline (a 7-digit customer number is about 23 bits, a TCKN about 30, a name about 20).
+   Combine columns into one value per row with `--composite` (for example name + account
+   number), or leave guessable values out with `--drop-low-entropy`.
+4. The dataset `{ datasetId, keySource: "native-host", minEntropyBits, fingerprints, type }`
+   is delivered by managed policy (`exactData`). It contains no key. The extension refuses a
+   dataset that carries a `keyB64` or declares less than 64 bits, and forces `useNativeHost`
+   on.
+5. The background worker asks the native host for the dataset keys, keeps them in memory
+   and gives them to the content scripts only. In the page, the prompt is normalised the
+   same way, every window of up to 16 consecutive tokens is fingerprinted with WebCrypto (at
+   most 65,536 HMACs per scan) and compared with the dataset. A hit is masked as the
+   dataset's type and also raises the `EXACT_DATA_MATCH` signal. Until the host has supplied
+   a dataset's key, scans with it are reported incomplete (not checked), never clean.
 
 **How to use**
 
 ```bash
+node packages/browser-guard/scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
 node packages/browser-guard/scripts/fingerprint-dataset.mjs \
-  --in customers.csv --header --columns full_name \
+  --in customers.csv --header --columns full_name,account_no --composite \
   --dataset-id crm-customers --type PERSON \
-  --key-file crm.key.b64 --out crm-customers.json
+  --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
 Options: `--in <file.csv|->`, `--dataset-id`, `--type <ENTITY_TYPE>`, `--header`,
-`--columns a,b`, `--key-b64 <base64>` or `--key-file <file>`, `--out <file.json>`. Without a
-key option a fresh 32-byte key is generated. Keep it so that regenerated datasets produce
-the same fingerprints. The output file is written with mode `0600`, and fingerprints are
-sorted so the file order reveals nothing about the source rows. Put the JSON object into
-the managed `exactData` array. The policy accepts at most 16 datasets and 100,000
-fingerprints in total. The tool itself accepts up to 250,000 per dataset, but a policy over
-the limit is rejected.
+`--columns a,b`, `--composite`, `--secret-file <file>`, `--min-entropy-bits <n>` (64 or
+more), `--drop-low-entropy`, `--out <file.json>`. `--key-b64` / `--key-file` are refused. Keep
+the secret: the same secret and dataset id reproduce the same fingerprints. The output file
+is written with mode `0600`, and fingerprints are sorted so the file order reveals nothing
+about the source rows. Put the JSON object into the managed `exactData` array. The policy
+accepts at most 16 datasets and 100,000 fingerprints in total. The tool itself accepts up to
+250,000 per dataset, but a policy over the limit is rejected.
 
-**Privacy of fingerprints** — Only fingerprints and the HMAC key are in the dataset. Source
-values are never written or logged. Fingerprints are keyed hashes, not encryption: anyone
-holding the dataset (which includes the key) can test guesses against it. Treat the
-dataset as confidential, distribute it only through managed policy, and never commit it to
-a repository. The example dataset in `deploy/browser-guard/` holds `REPLACE_WITH_...`
-placeholders instead of a key and fingerprints; the extension refuses it until it is
-replaced with real `fingerprint-dataset.mjs` output.
+**Privacy of fingerprints** — Source values are never written or logged, and the dataset
+holds no key. What this protects against and what it does not:
+- The secret and the dataset keys are not in browser policy, so a user can no longer read
+  them from `chrome://policy`, the policy registry keys or `policies.json`, and a leaked
+  dataset key exposes only its own dataset.
+- The native host runs as the signed-in user, so its secret file must be readable by that
+  user. A user who reads that file, or attaches a debugger to the browser, can still obtain
+  the keys and test guesses against the fingerprints. The 64-bit entropy floor is what keeps
+  that from recovering the list: it is an estimate (letters count as dictionary words,
+  structured identifiers are capped at their real entropy), not a guarantee, and a column
+  that looks random but is sequential is weaker than estimated.
+- Fingerprints are keyed hashes, not encryption; keep datasets out of repositories.
 
-**Example** — Dataset `crm-customers` (type `PERSON`) contains the fingerprint of "Ahmet
-Kaya". The prompt `Ahmet Kaya called about his order` is found even though no rule
-recognises the name. With default settings (`detectSignals: true`, `signalAction: "warn"`),
-the user sees the confirmation bubble with the coaching line "This text matches records from
-a protected company dataset. Remove them before sending, or use an approved channel."
+The example dataset in `deploy/browser-guard/` holds `REPLACE_WITH_...` placeholder
+fingerprints; the extension refuses it until it is replaced with real
+`fingerprint-dataset.mjs` output.
+
+**Example** — Dataset `crm-customers` (type `PERSON`, composite of name and 16-digit
+account number) contains the fingerprint of "Ahmet Kaya 4000123412341234". The prompt
+`Ahmet Kaya 4000123412341234 called about his order` is found. With default settings
+(`detectSignals: true`, `signalAction: "warn"`), the user sees the confirmation bubble with
+the coaching line "This text matches records from a protected company dataset. Remove them
+before sending, or use an approved channel."
 
 **Availability**
 
 | | |
 |---|---|
 | Plan | Team, Business, Enterprise (catalog) |
-| Deployment | Local / Cloud / On-prem / Air-gapped (dataset delivered by browser policy; the tool runs offline on Node.js) |
-| Platforms | Chrome, Edge, Firefox (desktop); the tool needs Node.js 22.12+ |
+| Deployment | Local / Cloud / On-prem / Air-gapped (dataset delivered by browser policy, secret installed with the native host; the tool runs offline on Node.js) |
+| Platforms | Chrome, Edge (desktop, with the native host); the tool needs Node.js 22.12+. Not Firefox: the native host does not support it, so datasets are never checked there |
 
 **Limitations**
+- Needs the native host from this release with the EDM secret installed. Without it every
+  prompt scan with a dataset is incomplete, which the guard treats as not checked.
 - Matching is on exact token sequences after normalisation. Typos, reordered names and
-  partial values do not match.
+  partial values do not match; a composite value matches only when its parts appear
+  together and in column order.
+- Names, short account numbers, phone numbers and national ids on their own are refused as
+  guessable. The built-in rules still find TCKN, IBAN, card and phone numbers by shape.
 - Policy size limits (100,000 fingerprints in total) cap the dataset size.
-- Browser policy is readable on the endpoint, so the key and fingerprints are exposed to
-  local users (see above).
 
 ### 10. Prompt-injection and risk signals with coaching
 
@@ -856,8 +959,8 @@ into public AI tools is a common IP leak.
 | `EXACT_DATA_MATCH` | an exact-data hit (feature 9) |
 
 `signalAction` decides the response:
-- `warn` (default): bubble **Check your prompt before sending** / **Göndermeden önce
-  isteminizi kontrol edin** with the coaching text and the buttons **Edit** (default) and
+- `warn` (default): bubble **Check your message before sending** / **Göndermeden önce
+  mesajınızı kontrol edin** with the coaching text and the buttons **Edit** (default) and
   **Send anyway** / **Yine de gönder**. If personal data was also found, the confirmation
   bubble (feature 5) is shown with the coaching lines added.
 - `block`: **Sending blocked** with the coaching text. Files with signals are blocked with
@@ -903,11 +1006,13 @@ need locked settings to be visible as locked, so users do not file tickets about
 **How it works**
 - **Toolbar popup**: current-tab status (**Protected**, **Not a supported AI site**,
   **Paused until hh:mm**, **Disabled by policy**, **Turned off for this site**, **Blocked by
-  your organization**, **Monitoring only**). It also has the mode control, session
+  your organization**, **Counting only (no masking)**). It also has the mode control, session
   statistics (**Protected messages**, **Items masked**, **Sends blocked**, **Most found**),
   the toggle **Show original values in responses**, **Pause for 15 min** / **Resume
-  protection** and **Settings**. When the native host is enabled it shows "Advanced
-  detection is connected" or "Advanced detection is unavailable; built-in rules are active".
+  protection** and **Settings**. It shows "Advanced detection is connected" when the native
+  host is in use, otherwise "Names and addresses are not checked: the AIDR Privacy helper app
+  is not available. Built-in rules are active." (enabled but not responding) or "Names and
+  addresses are not checked: advanced detection is off. Built-in rules are active."
   The toolbar badge shows the number of masked items on the tab.
 - **Options page** sections: **Protection** (mode, what to detect, mask pasted text, restore
   responses, **Advanced name and address detection**: the native-host switch, the
@@ -953,7 +1058,7 @@ honest, and easier to audit, than users uninstalling the extension.
 
 **How it works** — **Pause** switches every tab to `monitor` behaviour until the pause ends.
 Nothing is masked, sends are still counted, and the popup shows **Paused until hh:mm**
-("Messages to ChatGPT are only monitored until then. Nothing is masked."). The background
+("Until then, messages to ChatGPT are only counted. Nothing is masked."). The background
 accepts pauses of 1–60 minutes; the popup offers 15. The pause ends on a timer or with
 **Resume protection**. **Per-site switch** (Options → **Sites**) puts that site in the same
 monitor behaviour permanently: prompts, pastes and files are sent unchanged, but they are
@@ -962,7 +1067,9 @@ dashboard keep seeing usage. The popup then shows **Turned off for this site** (
 turned off masking on ChatGPT: nothing is masked there, only counts of sensitive items are
 recorded.").
 
-**How to use** — Managed keys `allowUserPause` (default `true`) and `disabledSites` (site ids).
+**How to use** — Managed keys `allowUserPause` (default `true` without a managed policy,
+`false` under any managed policy unless set; sends during a pause are reported with
+`reason: "paused"`) and `disabledSites` (site ids).
 When pausing is disallowed, the popup hides the pause button, and a pause request is
 refused ("Your organization does not allow pausing protection."). When `mode` is managed, users can no longer disable individual sites (the list
 is locked, empty unless the administrator sets `disabledSites`).
@@ -1061,7 +1168,7 @@ access is never shown as "no usage".
 **How to use** — Managed key `shadowAi`:
 `{ "mode": "monitor" | "block-unsanctioned" | "off", "sanctioned": [ids], "blocked": [ids] }`.
 Ids in `blocked` are blocked in every mode; an id in both lists is blocked. The dashboard's
-**Browser Privacy** page has a **Shadow AI** panel (top services, sanctioned vs
+**Browser Guard** page has a **Shadow AI** panel (top services, sanctioned vs
 unsanctioned visits, blocked attempts, daily trend) and a policy snippet generator.
 
 **Example** — `{"mode": "block-unsanctioned", "sanctioned": ["chatgpt", "copilot"]}`. A user
@@ -1081,8 +1188,14 @@ a sanctioned visit. Covered by the real-browser `shadow-ai` scenario.
   a managed policy cannot grant it silently. Without it blocks still apply, but the user
   sees the browser's own blocked page and nothing is counted.
 - Services that live on a path of a general-purpose site (Notion AI, GitHub Copilot, Copilot
-  in Bing, Microsoft 365 Copilot) are not in the catalog; blocking by host would break the
-  whole product.
+  in Bing) are not in the catalog; blocking by host would break the whole product. Microsoft
+  365 Copilot Chat is the one path-scoped entry (`m365-copilot`): its dedicated host
+  `copilot.cloud.microsoft` and only the `/chat` path of `m365.cloud.microsoft` are counted
+  and blocked, so the rest of the Microsoft 365 home keeps working. The Copilot pane inside
+  the Office web apps is not a separate catalog entry and its visits are not counted (only
+  top-level tab URLs are). A block of `m365-copilot` (or `blockedSites: ["copilot"]`) stops
+  the pane's own frame when it loads from a Copilot host (on `m365.cloud.microsoft` only
+  `/chat`); the Office app itself is never blocked or redirected.
 - Hugging Face, DeepL and Grammarly are catalogued by host, so blocking them blocks the whole
   site (model hub, translator, marketing pages).
 
@@ -1123,6 +1236,10 @@ email to the user.
 
 **Limitations**
 - Each user grants host access once; tabs already open need a reload afterwards.
+- The content script runs in the portal's top frame only (`allFrames: false`). A chat widget
+  embedded in an iframe (an internal portal that loads its assistant from another page or
+  host) is not protected, and the policy cannot detect that case: point `hosts` and the
+  selectors at the page that hosts the editor itself, and test the portal before rollout.
 - Selectors follow the portal's markup; a redesign can require an update of the policy.
 
 ### 13c. AI acceptable-use notice
@@ -1137,7 +1254,7 @@ Article 4 of the EU AI Act (awareness, not training).
 
 **How it works** — Administrators publish the notice in the managed policy key
 `acceptableUse` (id, version, title, plain text up to 4,000 characters, optional `https://`
-link); the **Browser Privacy** page builds the JSON. Browser Guard shows it in its own dialog
+link); the **Browser Guard** page builds the JSON. Browser Guard shows it in its own dialog
 with **I understand** and **Remind me later**. The text is rendered as plain text, never as
 markup, and the notice informs: it never blocks sending. **I understand** is remembered per
 browser profile; raising `version` shows the notice again to everyone. Each acknowledgement
@@ -1148,7 +1265,7 @@ ignored as a whole.
 **How to use** — Example entry:
 `{"acceptableUse": {"id": "acme-ai-use", "version": 2, "title": "Using AI at Acme", "text":
 "Do not paste customer records.", "url": "https://intranet.example.com/ai-policy"}}`.
-Coverage per notice version appears on the dashboard **Governance** scorecard.
+Coverage per notice version appears on the dashboard **AI governance** scorecard.
 
 **Example** — After version 2 is published, a user opening ChatGPT sees "Using AI at Acme"
 once, clicks **I understand**, and the scorecard counts one more acknowledging browser
@@ -1166,11 +1283,80 @@ install for version 2.
 - Coding-agent connectors do not show the notice; it is a Browser Guard feature.
 - An acknowledgement made while telemetry is not configured is not reported later.
 
+### 13d. Personal vs company AI accounts
+
+**What it does** — Checks, on ChatGPT, Claude, Gemini and Copilot, whether the user is signed
+in with the organisation's account, and warns, blocks sending, or allows masked sends only
+when it is not.
+
+**Why it matters** — The company products (ChatGPT Team/Enterprise, Claude Team/Enterprise,
+Gemini with Google Workspace, Microsoft 365 Copilot Chat) keep prompts under the company's
+contract, retention and audit settings; a personal account on the same website does not.
+
+**How it works** — Administrators list, per site, the allowed workspace ids (`workspaceIds`:
+ChatGPT workspace, Claude organisation UUID) and email domains (`emailDomains`) in the
+managed key `workAccounts`, and pick the action for every other account: `warn` (the first
+send on the page asks **Continue** / **Cancel**), `block` (sends and uploads refused) or
+`mask-only` (sends always masked; monitor mode, pause and **Send original** do not apply on
+that account). An account the page does not identify is treated like a personal one unless
+`unverified: "allow"`. Browser Guard reads only the page's URL, its non-HttpOnly cookies and
+its DOM; ids and domains never leave the content script. Telemetry carries only an
+`account_type` enum (company, personal, other, unverified).
+
+**How to use** — Example: `{"workAccounts": {"action": "block", "sites": {"gemini":
+{"emailDomains": ["acme.com.tr"]}, "copilot": {"emailDomains": ["acme.com.tr"]}}}}`. What each
+site exposes and what cannot be detected:
+[`packages/browser-guard/docs/work-accounts.md`](../../../../packages/browser-guard/docs/work-accounts.md).
+
+**Example** — A user signed in to Gemini with a gmail.com account cannot send: "Nothing was
+sent. Your organisation allows Gemini only with its company account. Switch to your company
+account and try again." After switching to the acme.com.tr account in the same tab, the next
+send is masked as usual.
+
+**Availability**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (catalog) |
+| Deployment | Local / Cloud / On-prem / Air-gapped |
+| Platforms | Chrome, Edge, Firefox (desktop) |
+
+**Limitations**
+- Desktop and mobile apps (ChatGPT, Claude, Copilot), Safari and browsers without the
+  extension are not covered. Pair it with Entra ID Tenant Restrictions v2, the
+  `X-GoogApps-Allowed-Domains` header at the proxy, ChatGPT/Claude domain verification with
+  SSO enforcement, and application control (Intune, AppLocker, WDAC).
+- The signals are observed page markup and cookies, not vendor APIs, and are not yet verified
+  against live tenants (BG-LIVE). When a signal disappears, the account counts as unverified.
+- A personal Google account created with a company email address looks like a company account
+  on Gemini.
+- The control plane does not store `account_type` yet; dashboard reporting is a follow-up.
+
 ### 14. Enterprise managed policy and deployment
 
 **What it does** — Lets administrators force-install the extension and lock its
 configuration centrally, through Group Policy, Microsoft Intune, Jamf or the Firefox policy
 file.
+
+**Install and update channels** — Two channels, each updating the extension by itself:
+
+- **Browser stores**: unlisted Chrome Web Store and Microsoft Edge Add-ons listings (not
+  found by store search; installed from the link or by policy). The browser updates a
+  store install automatically; the stores serve only the latest version. Store links and
+  extension IDs are on the dashboard **Downloads** page when the deployment is configured
+  with them.
+- **Self-hosted**: for networks without store access, or to decide when each version
+  rolls out, a Singularity-signed CRX3 for Chrome and Edge (its own fixed extension ID)
+  served from your own HTTPS server. `packages/browser-guard/scripts/update-feed.mjs`
+  builds the `update.xml` feed: it checks the CRX signature and the pinned extension ID and
+  refuses a version that is not higher than the hosted one, so a feed never moves
+  backwards. Firefox uses the Mozilla-signed XPI, which updates from the `updates.json`
+  address built into it.
+
+Release packages are built with `pnpm package:browser-guard` (store zips, source archive,
+`SHA256SUMS`, store validation). Step-by-step:
+[Deploying Browser Guard in an organisation](../../../installation/browser-guard-enterprise.md),
+section 10 for internal hosting.
 
 **Why it matters** — A privacy control that each user configures alone is not a control. With
 managed policy the organisation decides the mode, the data types and the upload rules, and
@@ -1191,13 +1377,13 @@ All managed keys (from `static/managed_schema.json` and `src/background/policy.t
 | `enabledEntities` | array of entity types | all except `USERNAME`, `LOCATION` | Types detected and masked by the built-in rules |
 | `neverRestore` | array of entity types | `SECRET`, `PRIVATE_KEY` | Masked but never restored in answers |
 | `literals` | array of `{ value, type }`, ≤ 1,024, 2–256 chars each | none | Organisation terms (feature 8) |
-| `exactData` | array of `{ datasetId, keyB64, fingerprints, type }`, ≤ 16 sets, ≤ 100,000 fingerprints in total | none | Exact data match (feature 9) |
+| `exactData` | array of `{ datasetId, keySource: "native-host", minEntropyBits (≥ 64), fingerprints, type }`, ≤ 16 sets, ≤ 100,000 fingerprints in total; no key (a dataset with `keyB64` is refused) | none | Exact data match (feature 9) |
 | `detectSignals` | boolean | `true` | Detect prompt-injection and source-code signals |
 | `signalAction` | `off` \| `warn` \| `block` | `warn` | What a signal does (feature 10) |
 | `blockedSites` | array of site ids | none | Sites whose pages are blocked from loading (feature 13) |
 | `disabledSites` | array of site ids | none | Sites that are only monitored: nothing is masked or blocked by the guard, sends are counted (feature 12) |
-| `allowUserPause` | boolean | `true` | Users may pause for up to 60 minutes |
-| `allowSendAnyway` | boolean | `true` | Users may send unmasked after a warning |
+| `allowUserPause` | boolean | `true`; `false` under any managed policy unless set | Users may pause for up to 60 minutes |
+| `allowSendAnyway` | boolean | `true`; `false` under any managed policy unless set | Users may send unmasked after a warning |
 | `maskPaste` | boolean | `true` | Mask pasted text (feature 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Upload handling (feature 7) |
 | `documentHandling` | `mask` \| `block` \| `allow` | `mask` | Office, OpenDocument, legacy Office and PDF uploads when `fileHandling` is `scan` (feature 7) |
@@ -1261,11 +1447,11 @@ New-ItemProperty -Path $key -Name neverRestore -PropertyType String -Value '["SE
 - Managed-policy locking cannot be exercised in the real-browser suite (managed storage
   cannot be written from a test). It is covered by unit tests.
 
-### 15. Counts-only telemetry and the Browser Privacy dashboard
+### 15. Counts-only telemetry and the Browser Guard dashboard page
 
 **What it does** — Enrolled browsers report how many items of each type were masked, warned,
 blocked or allowed on each AI site. The control plane shows these counts on its **Browser
-Privacy** page (`/privacy-guard`).
+Guard** page (`/privacy-guard`).
 
 **Why it matters** — Security teams need to show where personal data exposure happens and
 whether it is falling, without building a second copy of that personal data in a
@@ -1286,7 +1472,7 @@ Each event contains exactly (per [`privacy-telemetry.md`](../../../contracts/pri
 "browser_guard"`, the browser family and major version (for example `chrome-126`) and the
 extension version. Content scripts never receive the API key.
 
-The dashboard page **Browser Privacy Guard** shows, for a 7- or 30-day window: **Prompts
+The dashboard page **Browser Guard** (`/privacy-guard`, under **Protection**) shows, for a 7- or 30-day window: **Prompts
 protected**, **Items masked**, **Blocked sends**, **Active browser installs**, **By entity
 type**, **By AI site**, **Daily activity** and **Recent privacy events**. An **Enroll browsers**
 panel generates a managed-policy JSON snippet for a chosen mode, with the control-plane URL
@@ -1294,7 +1480,7 @@ filled in and a placeholder for the tenant API key. Events are stored under the 
 telemetry retention class and read only by tenant members.
 
 **How to use**
-1. Create a write-capable tenant API key on the dashboard's **API Keys** page.
+1. Create a write-capable tenant API key on the dashboard's **API keys** page.
 2. Put `telemetry: { "controlPlaneUrl": "https://…", "apiKey": "…" }` into managed policy,
    or let a user enter it under Options → **Organization connection** (**Save connection**,
    **Disconnect**).
@@ -1336,14 +1522,17 @@ without sending text off the machine.
 **How it works** — When `useNativeHost` is on, every prompt and paste scan asks the
 background worker for NER (`NATIVE_SCAN`) in parallel with the built-in rules. The worker's
 bridge speaks the privacy host's native-messaging protocol over the browser's stdio pipe.
-There is no socket and no localhost HTTP endpoint. Each scan uses a fresh host process and
-a 2-second budget (the page waits at most 2.5 seconds). Text over 200,000 characters is not
-sent. After three consecutive failures the host is considered unavailable for 60 seconds.
+There is no socket and no localhost HTTP endpoint. The bridge keeps one host process for all
+scans (the NER model is loaded once) and starts it before the first prompt, allowing 15
+seconds for that start. Scans are queued on it, each with a 2-second budget (the page waits
+at most 2.5 seconds); an idle host exits after 15 minutes and is restarted on demand. A host
+from an earlier release is used one process per scan, as before. Text over 200,000
+characters is not sent. After three consecutive failures the host is considered unavailable for 60 seconds.
 The host's `PERSON`, `ADDRESS` and `LOCATION` spans (only types enabled in
 `enabledEntities`) are tagged `source: "native-ner"` with a fixed score of 0.9 and merged
 with the rule findings before masking. When the host gives no usable answer the prompt is
-checked with the rules only, and the in-page toast or bubble says "Advanced name and
-address detection (native host) is unavailable: checked with built-in rules only." (once
+checked with the rules only, and the in-page toast or bubble says "Names and addresses
+were checked with built-in rules only: the AIDR Privacy helper app could not be used." (once
 per page for prompts that turn out clean). Nothing is persisted, and only the text itself
 is sent (no URL, site, tab or user data).
 Uploaded images (and pictures inside Office/OpenDocument files) are sent the same way as an
@@ -1365,8 +1554,8 @@ most 65 seconds per image.
 
 **Example** — With the host installed and enabled, the popup and the options page show
 "Advanced detection is connected", and "Write to Ahmet Kaya" is sent as "Write to
-`[PERSON_1]`". Otherwise they show "Advanced detection is unavailable; built-in rules are
-active", protection continues with the built-in rules, and the in-page message says the
+`[PERSON_1]`". Otherwise they say that names and addresses are not checked and the built-in
+rules are active, protection continues with the built-in rules, and the in-page message says the
 check was rules-only.
 
 **Availability**
@@ -1391,8 +1580,11 @@ check was rules-only.
   included) are extracted by Browser Guard and sent through the same path. OCR needs
   the host's optional Python/Tesseract stack; the protocol is tested with fake OCR workers,
   and real OCR accuracy must be measured on your own images.
-- A heavy model plus a large prompt can exceed the 2-second budget, and the bridge then
-  backs off to rules only.
+- A heavy model plus a large prompt can exceed the 2-second budget on a warm host; the
+  bridge then backs off to rules only (or, with `requireNativeNer`, blocks the send). No
+  cold-start or scan latency has been measured on target Windows or macOS hardware for this
+  release, and the Windows launcher is not validated: measure p95 latency with your model
+  before requiring NER. Firefox is not supported, so `requireNativeNer` blocks there.
 
 ### 17. What data leaves the device
 

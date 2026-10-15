@@ -15,12 +15,13 @@ if (!existsSync(resolve(packageRoot, "node_modules/@singularityrd/aidr-core/dist
   throw new Error("Build aidr-core before the MCP gateway");
 const distDir = resolve(packageRoot, "dist");
 if (relative(packageRoot, distDir) !== "dist") throw new Error("Unsafe gateway output directory");
+const release = process.argv.includes("--release") || process.env.npm_lifecycle_event === "build:release";
 const ruleSets = await readRuleSets();
 await rm(distDir, { recursive: true, force: true });
 await mkdir(distDir, { recursive: true });
 await Promise.all(GATEWAY_ENTRIES.map(async ([entry, output]) => {
   await build({
-    ...gatewayBundleOptions({ ruleSets }),
+    ...gatewayBundleOptions({ ruleSets, release }),
     entryPoints: [resolve(packageRoot, "src", entry)],
     outfile: resolve(distDir, output),
   });

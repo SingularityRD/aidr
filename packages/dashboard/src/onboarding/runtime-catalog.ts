@@ -7,6 +7,8 @@
  * a download source: links come only from the manifest.
  */
 
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import { artifactFileName, type ReleaseArtifact, type ReleaseArtifactId } from "./release-manifest";
 
 type InstallStep = { text: string; command?: string };
@@ -22,14 +24,22 @@ type EnrollmentKind = "device" | "managed-config" | "api-key" | "none";
 
 export type RuntimeCatalogEntry = {
 	id: ReleaseArtifactId;
+	/** English name; product names are shown as-is in every language. */
 	label: string;
-	summary: string;
+	/** Translated name when the label is not a product name ("MCP gateway"). */
+	labelKey?: DashboardMessageKey;
+	summary: DashboardMessageKey;
 	guide: string;
 	enrollment: EnrollmentKind;
 	/** agents.agent_runtime values (and optional version prefixes) that prove a check-in. */
 	detection: { runtimes: string[]; versionPrefixes?: string[] } | null;
-	installSteps: (artifact: ReleaseArtifact | null) => InstallStep[];
+	installSteps: (artifact: ReleaseArtifact | null, t?: Translate) => InstallStep[];
 };
+
+/** The entry's name in the current language. */
+export function runtimeLabel(entry: RuntimeCatalogEntry, t: Translate): string {
+	return entry.labelKey ? t(entry.labelKey) : entry.label;
+}
 
 function fileOf(artifact: ReleaseArtifact | null, fallback: string): string {
 	return artifact ? artifactFileName(artifact) : fallback;
@@ -39,211 +49,218 @@ function versionOf(artifact: ReleaseArtifact | null): string {
 	return artifact?.version ?? "VERSION";
 }
 
-const REGISTRY_STEP: InstallStep = {
-	text: "Your administrator configures read access to the private @singularityrd registry through a secret manager (NODE_AUTH_TOKEN). Never paste the token into a command.",
-};
+const registryStep = (t: Translate): InstallStep => ({ text: t("rc.registry") });
+
+/**
+ * Codex hook registration, identical (comments aside) to the TOML in
+ * packages/codex/README.md and docs/platform-guides/codex.md. All three events
+ * are required: PreToolUse (tool calls), UserPromptSubmit (prompt protection)
+ * and PostToolUse (tool-output inspection). A drift test compares them.
+ */
+export const CODEX_HOOKS_TOML = [
+	"[[hooks.PreToolUse]]",
+	'matcher = "^(Bash|apply_patch|mcp__.+)$"',
+	"",
+	"[[hooks.PreToolUse.hooks]]",
+	'type = "command"',
+	'command = "aidr-codex-hook"',
+	"timeout = 10",
+	"",
+	"# Prompt protection. No matcher: Codex ignores matchers for this event.",
+	"[[hooks.UserPromptSubmit]]",
+	"",
+	"[[hooks.UserPromptSubmit.hooks]]",
+	'type = "command"',
+	'command = "aidr-codex-hook"',
+	"timeout = 10",
+	"",
+	"# Tool-output inspection.",
+	"[[hooks.PostToolUse]]",
+	'matcher = "^(Bash|mcp__.+)$"',
+	"",
+	"[[hooks.PostToolUse.hooks]]",
+	'type = "command"',
+	'command = "aidr-codex-hook"',
+	"timeout = 10",
+].join("\n");
 
 export const RUNTIME_CATALOG: readonly RuntimeCatalogEntry[] = [
 	{
 		id: "claude-code",
 		label: "Claude Code",
-		summary: "Hook plugin that inspects every Claude Code tool call before it runs.",
+		summary: "rc.claude.summary",
 		guide: "docs/platform-guides/claude-code.md",
 		enrollment: "device",
 		detection: { runtimes: ["claude-code"] },
-		installSteps: (artifact) => [
-			{ text: "Requires Node.js 22.12 or later on PATH." },
+		installSteps: (artifact, t = englishT) => [
+			{ text: t("rc.claude.node") },
 			{
-				text: "After the digest check passes, extract the plugin archive:",
+				text: t("rc.claude.extract"),
 				command: `mkdir aidr-claude-plugin && tar -xzf ${fileOf(artifact, "aidr-claude-plugin-VERSION.tar.gz")} -C aidr-claude-plugin`,
 			},
 			{
-				text: "From the Claude Code prompt, add the extracted directory as a local marketplace and install the plugin:",
+				text: t("rc.claude.marketplace"),
 				command:
 					"/plugin marketplace add /absolute/path/to/aidr-claude-plugin\n/plugin install aidr@aidr",
 			},
-			{ text: "Restart Claude Code. AIDR loads automatically on every session." },
+			{ text: t("rc.claude.restart") },
 		],
 	},
 	{
 		id: "cursor",
 		label: "Cursor",
-		summary: "Cursor extension that installs and monitors AIDR's managed agent hooks.",
+		summary: "rc.cursor.summary",
 		guide: "docs/platform-guides/cursor.md",
 		enrollment: "device",
 		detection: { runtimes: ["cursor"] },
-		installSteps: (artifact) => [
+		installSteps: (artifact, t = englishT) => [
 			{
-				text: "Install the verified VSIX (or use Extensions > Install from VSIX):",
+				text: t("rc.vsix"),
 				command: `cursor --install-extension ./${fileOf(artifact, "aidr-cursor.vsix")}`,
 			},
-			{ text: "Open the command palette and run “Singularity AIDR: Enable protection”." },
-			{
-				text: "Run “Singularity AIDR: Show hook health” and confirm the reported extension version.",
-			},
+			{ text: t("rc.cursor.enable") },
+			{ text: t("rc.cursor.health") },
 		],
 	},
 	{
 		id: "vscode",
 		label: "VS Code",
-		summary: "VS Code extension for local agent hooks.",
+		summary: "rc.vscode.summary",
 		guide: "docs/platform-guides/cursor.md",
 		enrollment: "device",
 		detection: { runtimes: ["vscode"] },
-		installSteps: (artifact) => [
+		installSteps: (artifact, t = englishT) => [
+			{ text: t("rc.vscode.setting") },
 			{
-				text: "Enable chat.useClaudeHooks in VS Code User Settings. The extension checks this prerequisite but does not change it.",
-			},
-			{
-				text: "Install the verified VSIX (or use Extensions > Install from VSIX):",
+				text: t("rc.vsix"),
 				command: `code --install-extension ./${fileOf(artifact, "aidr-vscode.vsix")}`,
 			},
-			{ text: "Run “Singularity AIDR: Enable protection”, then “Show hook health”." },
+			{ text: t("rc.vscode.enable") },
 		],
 	},
 	{
 		id: "openclaw",
 		label: "OpenClaw",
-		summary: "In-process OpenClaw plugin that blocks unsafe tool calls.",
+		summary: "rc.openclaw.summary",
 		guide: "docs/platform-guides/openclaw.md",
 		enrollment: "device",
 		detection: { runtimes: ["openclaw"] },
-		installSteps: (artifact) => [
-			REGISTRY_STEP,
+		installSteps: (artifact, t = englishT) => [
+			registryStep(t),
 			{
-				text: "Install the exact release version. Its digest must match the verified package above:",
+				text: t("rc.openclaw.install"),
 				command: `openclaw plugins install npm:@singularityrd/aidr-openclaw@${versionOf(artifact)}`,
 			},
-			{ text: "Restart the OpenClaw gateway and confirm the installed plugin version." },
+			{ text: t("rc.openclaw.restart") },
 		],
 	},
 	{
 		id: "opencode",
 		label: "OpenCode",
-		summary: "OpenCode plugin that checks tool calls before they run.",
+		summary: "rc.opencode.summary",
 		guide: "docs/platform-guides/opencode.md",
 		enrollment: "device",
 		detection: { runtimes: ["opencode"] },
-		installSteps: (artifact) => [
-			REGISTRY_STEP,
+		installSteps: (artifact, t = englishT) => [
+			registryStep(t),
 			{
-				text: "Pin the exact version in ~/.config/opencode/package.json:",
+				text: t("rc.opencode.pin"),
 				command: `{\n  "dependencies": {\n    "@singularityrd/aidr-opencode": "${versionOf(artifact)}"\n  }\n}`,
 			},
 			{
-				text: "Enable the plugin in ~/.config/opencode/opencode.json:",
+				text: t("rc.opencode.enable"),
 				command: `{\n  "plugin": ["@singularityrd/aidr-opencode"]\n}`,
 			},
-			{ text: "Restart OpenCode and confirm the installed plugin version." },
+			{ text: t("rc.opencode.restart") },
 		],
 	},
 	{
 		id: "codex",
 		label: "Codex CLI",
-		summary: "Native Codex PreToolUse hook. It denies on ask and on internal errors.",
+		summary: "rc.codex.summary",
 		guide: "packages/codex/README.md",
 		enrollment: "managed-config",
 		detection: { runtimes: ["codex"] },
-		installSteps: (artifact) => [
-			REGISTRY_STEP,
+		installSteps: (artifact, t = englishT) => [
+			registryStep(t),
 			{
-				text: "Install the exact release version:",
+				text: t("rc.exact"),
 				command: `npm install --global @singularityrd/aidr-codex@${versionOf(artifact)}`,
 			},
-			{
-				text: "Deploy the operator-generated runtime configuration (scripts/deployment-prepare.mjs) as ~/.singularity-aidr/config.json. Without it the hook refuses to start.",
-			},
-			{
-				text: "Register the hook in ~/.codex/config.toml:",
-				command:
-					'[[hooks.PreToolUse]]\nmatcher = "^(Bash|apply_patch)$"\n\n[[hooks.PreToolUse.hooks]]\ntype = "command"\ncommand = "aidr-codex-hook"\ntimeout = 10',
-			},
-			{ text: "In Codex, review and trust the registered hook with /hooks." },
+			{ text: t("rc.codex.config") },
+			{ text: t("rc.codex.hooks"), command: CODEX_HOOKS_TOML },
+			{ text: t("rc.codex.trust") },
 		],
 	},
 	{
 		id: "cli",
 		label: "AIDR CLI",
-		summary: "Local setup and diagnostics. It does not install or activate connectors.",
+		labelKey: "rc.cli.label",
+		summary: "rc.cli.summary",
 		guide: "packages/cli/README.md",
 		enrollment: "none",
 		detection: null,
-		installSteps: (artifact) => [
+		installSteps: (artifact, t = englishT) => [
 			...(artifact && !artifactFileName(artifact).endsWith(".tgz")
 				? [
 						{
-							text: "Put the verified binary on PATH as aidr and mark it executable:",
+							text: t("rc.cli.binary"),
 							command: `install -m 0755 ./${artifactFileName(artifact)} /usr/local/bin/aidr`,
 						},
 					]
 				: [
-						REGISTRY_STEP,
+						registryStep(t),
 						{
-							text: "Install the exact release version:",
+							text: t("rc.exact"),
 							command: `npm install --global @singularityrd/aidr-cli@${versionOf(artifact)}`,
 						},
 					]),
-			{ text: "Inspect the available commands:", command: "aidr --help" },
-			{
-				text: "Run aidr setup only after your operator supplies the approved runtime configuration.",
-			},
+			{ text: t("rc.cli.help"), command: "aidr --help" },
+			{ text: t("rc.cli.setup") },
 		],
 	},
 	{
 		id: "browser-guard-chrome",
 		label: "Browser Guard for Chrome and Edge",
-		summary:
-			"Masks sensitive data in prompts, pastes and files before they reach AI chat products.",
+		labelKey: "rc.bgChrome.label",
+		summary: "rc.bg.summary",
 		guide: "packages/browser-guard/README.md",
 		enrollment: "api-key",
 		detection: { runtimes: ["browser_guard"], versionPrefixes: ["chrome-", "edge-"] },
-		installSteps: (artifact) => [
-			{
-				text: "For fleet rollout, your administrator deploys the extension through managed browser policy.",
-			},
-			{
-				text: `For an evaluation on one browser, extract ${fileOf(artifact, "the verified archive")}, open chrome://extensions (or edge://extensions), turn on Developer mode, and choose Load unpacked.`,
-			},
+		installSteps: (artifact, t = englishT) => [
+			{ text: t("rc.bgChrome.fleet") },
+			{ text: t("rc.bgChrome.eval", { file: fileOf(artifact, t("rc.bgChrome.archive")) }) },
 		],
 	},
 	{
 		id: "browser-guard-firefox",
 		label: "Browser Guard for Firefox",
-		summary:
-			"Masks sensitive data in prompts, pastes and files before they reach AI chat products.",
+		labelKey: "rc.bgFirefox.label",
+		summary: "rc.bg.summary",
 		guide: "packages/browser-guard/README.md",
 		enrollment: "api-key",
 		detection: { runtimes: ["browser_guard"], versionPrefixes: ["firefox-"] },
-		installSteps: (artifact) => [
-			{
-				text: "For fleet rollout, your administrator installs the signed add-on through Firefox enterprise policy (ExtensionSettings).",
-			},
-			{
-				text: `For an evaluation, open about:debugging, choose This Firefox, then Load Temporary Add-on and select ${fileOf(artifact, "the verified package")}.`,
-			},
+		installSteps: (artifact, t = englishT) => [
+			{ text: t("rc.bgFirefox.fleet") },
+			{ text: t("rc.bgFirefox.eval", { file: fileOf(artifact, t("rc.package")) }) },
 		],
 	},
 	{
 		id: "mcp-gateway",
 		label: "MCP gateway",
-		summary: "Loopback gateway that inspects MCP tool results before they reach the model.",
+		labelKey: "rc.mcp.label",
+		summary: "rc.mcp.summary",
 		guide: "packages/mcp-gateway/README.md",
 		enrollment: "none",
 		detection: null,
-		installSteps: (artifact) => [
+		installSteps: (artifact, t = englishT) => [
+			{ text: t("rc.mcp.unpack", { file: fileOf(artifact, t("rc.package")) }) },
+			{ text: t("rc.mcp.config") },
 			{
-				text: `Unpack ${fileOf(artifact, "the verified package")} on the host that runs the MCP client.`,
-			},
-			{
-				text: "Write the gateway configuration with the tenant, client token SHA-256, tool allowlist, signed manifest and trusted signer keys. Keep this file private.",
-			},
-			{
-				text: "Start the gateway. It listens on 127.0.0.1 only:",
+				text: t("rc.mcp.start"),
 				command: "node dist/aidr-mcp-gateway.mjs /secure/path/gateway.json",
 			},
-			{
-				text: "Point the MCP client at http://127.0.0.1:7789/mcp/<serverId> and send its bearer token on every request. Remove any direct route to the upstream server.",
-			},
+			{ text: t("rc.mcp.point") },
 		],
 	},
 ];

@@ -6,6 +6,8 @@
 import { statfsSync } from "node:fs";
 import { join } from "node:path";
 import { VerdictCache } from "./cache.js";
+import { isAmsiSupported } from "./clients/amsi.js";
+import { readAmsiHostRecord } from "./clients/amsi-availability.js";
 import { resolveEndpoint } from "./clients/url-check.js";
 import { AIDR_DIR, loadConfig, resolvePath } from "./config.js";
 import { inspectLocalDlpPolicy } from "./local-dlp-policy.js";
@@ -372,6 +374,47 @@ async function checkLocalDlpPolicyHealth(): Promise<HealthCheck> {
 }
 
 /**
+ * AMSI availability as last recorded on this host (no probe is run here). A
+ * host where AMSI cannot be established is degraded: the AMSI signal is
+ * skipped on every call until it is fixed.
+ */
+async function checkAmsiHealth(): Promise<HealthCheck> {
+	const start = Date.now();
+	const done = (status: HealthStatusValue, message: string, details?: Record<string, unknown>) => ({
+		name: "amsi",
+		status,
+		latencyMs: Date.now() - start,
+		message,
+		...(details ? { details } : {}),
+	});
+	if (!isAmsiSupported()) return done("not_configured", "AMSI is not available on this platform.");
+	try {
+		const config = await loadConfig();
+		if (!config.amsi_check.enabled) {
+			return done("not_configured", "AMSI scanning is turned off (amsi_check.enabled: false).");
+		}
+		const record = await readAmsiHostRecord();
+		if (!record) return done("not_configured", "AMSI has not been probed on this host yet.");
+		if (record.state === "available") {
+			return done("healthy", `AMSI available (${record.backend}).`, {
+				backend: record.backend,
+				checkedAt: record.checkedAt,
+			});
+		}
+		return done(
+			"degraded",
+			`AMSI unavailable: ${record.reason}. Content is NOT scanned by AMSI (local rules still apply).`,
+			{ kind: record.kind, checkedAt: record.checkedAt },
+		);
+	} catch (error) {
+		return done(
+			"degraded",
+			`AMSI status unavailable: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+}
+
+/**
  * Run all required health checks (core, cache, threat_rules)
  */
 export async function runHealthChecks(): Promise<HealthCheck[]> {
@@ -396,6 +439,7 @@ export async function runExtendedHealthChecks(): Promise<HealthCheck[]> {
 		checkEndpointHealth(),
 		checkDiskHealth(),
 		checkLocalDlpPolicyHealth(),
+		checkAmsiHealth(),
 	]);
 
 	return checks;

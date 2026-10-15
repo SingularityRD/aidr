@@ -44,8 +44,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { readErrorMessage } from "../lib/errors";
+import type { DashboardMessageKey } from "../i18n/en";
+import { useRichT, useT } from "../i18n/I18nProvider";
 import { pendingPolicyChangeNotice } from "../lib/ai-governance";
+import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import { EnterpriseAuth } from "./auth";
 import { DlpPolicyHistory } from "./dlp-history";
@@ -175,7 +177,14 @@ const POLICY_KEYS = [
 	"rules",
 	"exceptions",
 ] as const;
-const LABEL_KEYS = ["id", "tenantId", "name", "description", "sensitivity", "redactionToken"] as const;
+const LABEL_KEYS = [
+	"id",
+	"tenantId",
+	"name",
+	"description",
+	"sensitivity",
+	"redactionToken",
+] as const;
 const KEYWORD_MATCHER_KEYS = ["type", "values", "caseSensitive", "wholeWord"] as const;
 const REGEX_MATCHER_KEYS = ["type", "pattern", "flags"] as const;
 const RULE_KEYS = [
@@ -207,7 +216,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function unknownKey(value: Record<string, unknown>, allowed: readonly string[]): string | undefined {
+function unknownKey(
+	value: Record<string, unknown>,
+	allowed: readonly string[],
+): string | undefined {
 	return Object.keys(value).find((key) => !allowed.includes(key));
 }
 
@@ -244,7 +256,12 @@ function readIdentifier(
 	issues: DlpValidationIssue[],
 	label: string,
 ): string | null {
-	if (typeof value !== "string" || value.length < 1 || value.length > 128 || !IDENTIFIER_PATTERN.test(value)) {
+	if (
+		typeof value !== "string" ||
+		value.length < 1 ||
+		value.length > 128 ||
+		!IDENTIFIER_PATTERN.test(value)
+	) {
 		issues.push({
 			path: formatPath(path),
 			message: `${label} must be 1-128 characters matching ${IDENTIFIER_PATTERN.source} (letters, digits, . _ : -)`,
@@ -304,6 +321,7 @@ function isUnsafeRegex(pattern: string): boolean {
 	);
 }
 
+// i18n-exempt: schema diagnostics name the JSON fields of the DLP document.
 function normalizeMatcher(
 	value: unknown,
 	path: (string | number)[],
@@ -347,7 +365,10 @@ function normalizeMatcher(
 			return null;
 		}
 		if (typeof wholeWord !== "boolean") {
-			issues.push({ path: formatPath([...path, "wholeWord"]), message: "wholeWord must be a boolean" });
+			issues.push({
+				path: formatPath([...path, "wholeWord"]),
+				message: "wholeWord must be a boolean",
+			});
 			return null;
 		}
 		return { type: "keyword", values, caseSensitive, wholeWord };
@@ -355,7 +376,11 @@ function normalizeMatcher(
 	if (value.type === "regex") {
 		const record = readStrictRecord(value, REGEX_MATCHER_KEYS, path, issues, "regex matcher");
 		if (!record) return null;
-		if (typeof record.pattern !== "string" || record.pattern.length < 1 || record.pattern.length > 512) {
+		if (
+			typeof record.pattern !== "string" ||
+			record.pattern.length < 1 ||
+			record.pattern.length > 512
+		) {
 			issues.push({
 				path: formatPath([...path, "pattern"]),
 				message: "regex pattern must be 1-512 characters",
@@ -402,6 +427,7 @@ function normalizeMatcher(
 	return null;
 }
 
+// i18n-exempt: schema diagnostics name the JSON fields of the DLP document.
 function normalizeLabel(
 	value: unknown,
 	tenantId: string,
@@ -411,7 +437,12 @@ function normalizeLabel(
 	const record = readStrictRecord(value, LABEL_KEYS, path, issues, "label");
 	if (!record) return null;
 	const id = readIdentifier(record.id, [...path, "id"], issues, "label id");
-	const labelTenantId = readIdentifier(record.tenantId, [...path, "tenantId"], issues, "label tenantId");
+	const labelTenantId = readIdentifier(
+		record.tenantId,
+		[...path, "tenantId"],
+		issues,
+		"label tenantId",
+	);
 	const name = readTrimmedString(record.name, [...path, "name"], issues, "label name", 100);
 	const sensitivity = readEnum(
 		record.sensitivity,
@@ -422,13 +453,14 @@ function normalizeLabel(
 	);
 	let description: string | undefined;
 	if (record.description !== undefined) {
-		description = readTrimmedString(
-			record.description,
-			[...path, "description"],
-			issues,
-			"label description",
-			500,
-		) ?? undefined;
+		description =
+			readTrimmedString(
+				record.description,
+				[...path, "description"],
+				issues,
+				"label description",
+				500,
+			) ?? undefined;
 	}
 	let redactionToken: string | null = DEFAULT_REDACTION_TOKEN;
 	if (record.redactionToken !== undefined) {
@@ -460,6 +492,7 @@ function normalizeLabel(
 	};
 }
 
+// i18n-exempt: schema diagnostics name the JSON fields of the DLP document.
 function normalizeRule(
 	value: unknown,
 	tenantId: string,
@@ -469,7 +502,12 @@ function normalizeRule(
 	const record = readStrictRecord(value, RULE_KEYS, path, issues, "rule");
 	if (!record) return null;
 	const id = readIdentifier(record.id, [...path, "id"], issues, "rule id");
-	const ruleTenantId = readIdentifier(record.tenantId, [...path, "tenantId"], issues, "rule tenantId");
+	const ruleTenantId = readIdentifier(
+		record.tenantId,
+		[...path, "tenantId"],
+		issues,
+		"rule tenantId",
+	);
 	const labelId = readIdentifier(record.labelId, [...path, "labelId"], issues, "rule labelId");
 	const name = readTrimmedString(record.name, [...path, "name"], issues, "rule name", 120);
 	const action = readEnum(record.action, RULE_ACTIONS, [...path, "action"], issues, "rule action");
@@ -486,7 +524,12 @@ function normalizeRule(
 		return null;
 	}
 	const priority = record.priority === undefined ? 100 : record.priority;
-	if (typeof priority !== "number" || !Number.isInteger(priority) || priority < 0 || priority > 10_000) {
+	if (
+		typeof priority !== "number" ||
+		!Number.isInteger(priority) ||
+		priority < 0 ||
+		priority > 10_000
+	) {
 		issues.push({
 			path: formatPath([...path, "priority"]),
 			message: "priority must be an integer from 0 to 10000",
@@ -561,6 +604,7 @@ function normalizeRule(
 	};
 }
 
+// i18n-exempt: schema diagnostics name the JSON fields of the DLP document.
 function normalizeException(
 	value: unknown,
 	tenantId: string,
@@ -593,7 +637,11 @@ function normalizeException(
 		"exception scope",
 	);
 	let expiresAt: string | null = null;
-	if (typeof record.expiresAt !== "string" || !DATETIME_PATTERN.test(record.expiresAt) || Number.isNaN(Date.parse(record.expiresAt))) {
+	if (
+		typeof record.expiresAt !== "string" ||
+		!DATETIME_PATTERN.test(record.expiresAt) ||
+		Number.isNaN(Date.parse(record.expiresAt))
+	) {
 		issues.push({
 			path: formatPath([...path, "expiresAt"]),
 			message: "expiresAt must be an ISO-8601 timestamp with an offset",
@@ -675,10 +723,8 @@ function normalizeException(
 	};
 }
 
-function readSupportedFormats(
-	value: unknown,
-	issues: DlpValidationIssue[],
-): string[] | null {
+// i18n-exempt: schema diagnostics name the JSON fields of the DLP document.
+function readSupportedFormats(value: unknown, issues: DlpValidationIssue[]): string[] | null {
 	if (!Array.isArray(value) || value.length < 1 || value.length > 50) {
 		issues.push({
 			path: "supportedFormats",
@@ -709,6 +755,7 @@ function readSupportedFormats(
 }
 
 /** Collect tenant ownership and id uniqueness. Returns the ids seen so far. */
+// i18n-exempt: schema diagnostics name the JSON fields of the DLP document.
 function readTenantOwnedIds<Item extends { id: string; tenantId: string }>(
 	items: Item[],
 	tenantId: string,
@@ -735,10 +782,16 @@ function readTenantOwnedIds<Item extends { id: string; tenantId: string }>(
 }
 
 function isExpiredExceptionDominance(issue: DlpValidationIssue): boolean {
-	return issue.path === "exceptions" && issue.message.startsWith(`${DLP_EXPIRED_EXCEPTION_DOMINANCE}:`);
+	return (
+		issue.path === "exceptions" && issue.message.startsWith(`${DLP_EXPIRED_EXCEPTION_DOMINANCE}:`)
+	);
 }
 
-function normalizePolicy(input: unknown): { policy: DlpPolicyDocument | null; issues: DlpValidationIssue[] } {
+// i18n-exempt: schema diagnostics name the JSON fields of the DLP document.
+function normalizePolicy(input: unknown): {
+	policy: DlpPolicyDocument | null;
+	issues: DlpValidationIssue[];
+} {
 	const issues: DlpValidationIssue[] = [];
 	const record = readStrictRecord(input, POLICY_KEYS, [], issues, "DLP policy");
 	if (!record) return { policy: null, issues };
@@ -821,7 +874,10 @@ function normalizePolicy(input: unknown): { policy: DlpPolicyDocument | null; is
 
 	const rawExceptions = record.exceptions === undefined ? [] : record.exceptions;
 	if (!Array.isArray(rawExceptions) || rawExceptions.length > 10_000) {
-		issues.push({ path: "exceptions", message: "exceptions must be a list of at most 10000 records" });
+		issues.push({
+			path: "exceptions",
+			message: "exceptions must be a list of at most 10000 records",
+		});
 		return { policy: null, issues };
 	}
 	const exceptions: DlpExceptionDocument[] = [];
@@ -982,9 +1038,7 @@ export function createStarterDlpPolicy(tenantId: string): DlpPolicyDocument {
 		directions: ["input", "output"],
 		action: "redact",
 		matchMode: "any",
-		matchers: [
-			{ type: "keyword", values: ["customer_id"], caseSensitive: false, wholeWord: true },
-		],
+		matchers: [{ type: "keyword", values: ["customer_id"], caseSensitive: false, wholeWord: true }],
 	};
 	return {
 		version: 1,
@@ -1014,7 +1068,9 @@ async function isMfaRequired(error: unknown): Promise<boolean> {
 	if (!(context instanceof Response) || context.status !== 403) return false;
 	try {
 		const body: unknown = await context.clone().json();
-		return Boolean(body && typeof body === "object" && "error" in body && body.error === "mfa_required");
+		return Boolean(
+			body && typeof body === "object" && "error" in body && body.error === "mfa_required",
+		);
 	} catch {
 		return false;
 	}
@@ -1076,7 +1132,28 @@ function exceptionWithoutCreatedAt(exception: DlpExceptionDocument): DlpExceptio
 
 /* ── Component ──────────────────────────────────────────────────────────── */
 
+const SENSITIVITY_LABEL: Record<DlpSensitivity, DashboardMessageKey> = {
+	public: "dlp.sens.public",
+	internal: "dlp.sens.internal",
+	confidential: "dlp.sens.confidential",
+	restricted: "dlp.sens.restricted",
+};
+const DIRECTION_LABEL: Record<DlpDirection, DashboardMessageKey> = {
+	input: "dlp.dir.input",
+	output: "dlp.dir.output",
+};
+const SCOPE_LABEL: Record<DlpExceptionScope, DashboardMessageKey> = {
+	rule: "dlp.scope.rule",
+	content: "dlp.scope.content",
+	match: "dlp.scope.match",
+};
+
 export function DlpPolicyEditor() {
+	const t = useT();
+	const richT = useRichT();
+	// The loader reads the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const { currentTeam, canManageTeam, isLoading: teamLoading, error: teamError } = useTeam();
 	const teamId = currentTeam?.id ?? null;
 	const [draft, setDraft] = useState<DlpPolicyDocument | null>(null);
@@ -1087,6 +1164,7 @@ export function DlpPolicyEditor() {
 
 	useEffect(() => {
 		tenantGeneration.current += 1;
+		const t = translator.current;
 		let cancelled = false;
 		setOutcome(null);
 		setDraft(null);
@@ -1117,7 +1195,7 @@ export function DlpPolicyEditor() {
 					// surface says outright that nothing here is stored, and publishing
 					// stays disabled rather than reporting a save that did not happen.
 					setDraft(createStarterDlpPolicy(teamId));
-					setStore({ kind: "unavailable", detail: readErrorMessage(error, "unknown error") });
+					setStore({ kind: "unavailable", detail: readErrorMessage(error, t("dlp.unknownError")) });
 					return;
 				}
 				const payload = (data ?? null) as DlpReadResponse | null;
@@ -1125,12 +1203,12 @@ export function DlpPolicyEditor() {
 					setDraft(createStarterDlpPolicy(teamId));
 					setStore({
 						kind: "unavailable",
-						detail: "the function did not confirm a DLP policy store",
+						detail: t("dlp.noStore"),
 					});
 					return;
 				}
 				if (!Number.isSafeInteger(payload.version) || Number(payload.version) < 0) {
-					setStore({ kind: "unreadable", detail: "The stored version was not confirmed." });
+					setStore({ kind: "unreadable", detail: t("dlp.notConfirmedVersion") });
 					return;
 				}
 				const version = payload.version as number;
@@ -1140,12 +1218,16 @@ export function DlpPolicyEditor() {
 					return;
 				}
 				const candidate = normalizePolicy(payload.policy);
-				if (!candidate.policy || candidate.policy.tenantId !== teamId || candidate.policy.version !== version) {
+				if (
+					!candidate.policy ||
+					candidate.policy.tenantId !== teamId ||
+					candidate.policy.version !== version
+				) {
 					// Only an expired-majority document can be loaded for repair.
 					// Structural/reference/tenant errors never become an editable guess.
 					setStore({
 						kind: "unreadable",
-						detail: formatDlpIssues(candidate.issues) || "The stored tenant or version does not match.",
+						detail: formatDlpIssues(candidate.issues) || t("dlp.mismatch"),
 					});
 					return;
 				}
@@ -1153,7 +1235,7 @@ export function DlpPolicyEditor() {
 				setStore({ kind: "loaded", version });
 			} catch (error) {
 				if (!cancelled) {
-					setStore({ kind: "unavailable", detail: readErrorMessage(error, "unknown error") });
+					setStore({ kind: "unavailable", detail: readErrorMessage(error, t("dlp.unknownError")) });
 				}
 			}
 		})();
@@ -1163,10 +1245,7 @@ export function DlpPolicyEditor() {
 		};
 	}, [teamId]);
 
-	const validation = useMemo(
-		() => (draft ? validateDlpPolicyDocument(draft) : null),
-		[draft],
-	);
+	const validation = useMemo(() => (draft ? validateDlpPolicyDocument(draft) : null), [draft]);
 	const isPublishable = store.kind === "loaded" && validation?.ok === true;
 
 	// Transient edits are allowed to be invalid; only a validated document is
@@ -1213,7 +1292,7 @@ export function DlpPolicyEditor() {
 		if (!validated.ok) {
 			setOutcome({
 				tone: "error",
-				message: `DLP policy save was not confirmed: ${formatDlpIssues(validated.issues)}`,
+				message: t("dlp.saveNotConfirmed", { detail: formatDlpIssues(validated.issues) }),
 			});
 			return;
 		}
@@ -1230,34 +1309,46 @@ export function DlpPolicyEditor() {
 			});
 			if (tenantGeneration.current !== generation) return;
 			if (error) throw error;
-			const pendingChange = pendingPolicyChangeNotice(data);
+			const pendingChange = pendingPolicyChangeNotice(data, t);
 			if (pendingChange) {
-				setOutcome({ tone: "success", message: `DLP policy change filed for approval. ${pendingChange}` });
+				setOutcome({ tone: "success", message: t("dlp.filed", { pending: pendingChange }) });
 				return;
 			}
 			const payload = (data ?? null) as DlpPublishResponse | null;
 			// A 200 or an echoed version alone proves neither storage nor delivery.
 			// This endpoint saves only; reject missing or contradictory evidence.
 			const savedPolicy = validateDlpPolicyDocument(payload?.policy);
-			if (!payload || payload.ok !== true || payload.saved !== true ||
-				payload.delivered !== false || payload.delivery_status !== "not_delivered" ||
-				!Number.isSafeInteger(payload.version) || payload.version !== expectedVersion + 1 ||
-				!savedPolicy.ok || savedPolicy.policy.tenantId !== teamId ||
+			if (
+				!payload ||
+				payload.ok !== true ||
+				payload.saved !== true ||
+				payload.delivered !== false ||
+				payload.delivery_status !== "not_delivered" ||
+				!Number.isSafeInteger(payload.version) ||
+				payload.version !== expectedVersion + 1 ||
+				!savedPolicy.ok ||
+				savedPolicy.policy.tenantId !== teamId ||
 				savedPolicy.policy.version !== payload.version ||
-				serializeDlpPolicy(savedPolicy.policy) !== serializeDlpPolicy({ ...validated.policy, version: expectedVersion + 1 })) {
-				throw new Error("the function did not confirm a stored DLP policy version and its not-delivered status");
+				serializeDlpPolicy(savedPolicy.policy) !==
+					serializeDlpPolicy({ ...validated.policy, version: expectedVersion + 1 })
+			) {
+				throw new Error(
+					"the function did not confirm a stored DLP policy version and its not-delivered status",
+				);
 			}
 			setDraft(savedPolicy.policy);
 			setStore({ kind: "loaded", version: payload.version as number });
 			setOutcome({
 				tone: "success",
-				message: `DLP policy version ${payload.version} saved for this tenant. Not delivered: signed provisioning must distribute it separately.`,
+				message: t("dlp.saved", { version: String(payload.version) }),
 			});
 		} catch (error) {
 			if (tenantGeneration.current !== generation) return;
 			setOutcome({
 				tone: "error",
-				message: `DLP policy save was not confirmed: ${readErrorMessage(error, "unknown error")}`,
+				message: t("dlp.saveNotConfirmed", {
+					detail: readErrorMessage(error, t("dlp.unknownError")),
+				}),
 			});
 		} finally {
 			if (tenantGeneration.current === generation) setIsPublishing(false);
@@ -1269,72 +1360,60 @@ export function DlpPolicyEditor() {
 	return (
 		<div className="stack">
 			<section className="card">
-				<h2 style={{ margin: 0 }}>DLP policy editor</h2>
+				<h2 style={{ margin: 0 }}>{t("dlp.title")}</h2>
 				<p className="muted" style={{ margin: "6px 0 0", maxWidth: 760 }}>
-					Author a tenant data-loss-prevention document: labels, matching rules and time-bounded
-					exceptions. The server validates the engine schema and tenant ownership before saving.
-					Saving is not delivery or enforcement: the existing signed provisioning path must
-					distribute a saved revision separately. Reads and saves require MFA (AAL2); only an
-					owner or administrator can save. Current managed connector hooks inspect tool input
-					before execution only; output-direction rules are not enforced there, and a redact
-					match is blocked rather than rewriting the original input.
+					{t("dlp.lead")}
 				</p>
 			</section>
 
 			<div className="notice notice-warning" role="status">
-				<b>ask is resolved out of band.</b>
+				<b>{t("dlp.askTitle")}</b>
 				<div className="muted small" style={{ marginTop: 6 }}>
-					A rule action of <span className="mono">ask</span> blocks the action pending approval by a
-					human operator through your existing out-of-band approval channel. This editor has no
-					approve, resolve, allow or dismiss control and cannot resolve an <span className="mono">ask</span>
-					: the agent receives only the block reason, and an agent-callable approval would let a
-					prompt-injected agent approve its own block.
+					{richT("dlp.askBody", {
+						ask: <span className="mono">ask</span>,
+						ask2: <span className="mono">ask</span>,
+					})}
 				</div>
 			</div>
 
 			{teamLoading ? (
 				<section className="card">
-					<p className="muted">Loading DLP policy...</p>
+					<p className="muted">{t("dlp.loading")}</p>
 				</section>
 			) : !currentTeam ? (
 				<section className="card">
 					{teamError ? (
 						<>
 							<div className="notice notice-danger" role="alert" aria-live="assertive">
-								<b>Your team could not be loaded.</b>
+								<b>{t("dlp.teamFailed")}</b>
 								<div className="muted small" style={{ marginTop: 6 }}>
 									{teamError}
 								</div>
 							</div>
-							<p className="muted">
-								There is no confirmed &quot;no team&quot; state, so no DLP policy is shown.
-							</p>
+							<p className="muted">{t("dlp.noTeamState")}</p>
 						</>
 					) : (
-						<p className="muted">
-							You are not part of a team yet, so there is no tenant DLP policy to author.
-						</p>
+						<p className="muted">{t("dlp.noTeam")}</p>
 					)}
 				</section>
 			) : !canManageTeam ? (
 				<section className="card">
-					<p className="muted">
-						You don&apos;t have permission to manage tenant security policy. An owner or
-						administrator can author and save the DLP policy for {currentTeam.name}; members and
-						viewers have read-only access.
-					</p>
+					<p className="muted">{t("dlp.readOnly", { team: currentTeam.name })}</p>
 					{draft && store.kind === "loaded" && store.version > 0 ? (
 						<textarea
 							className="input mono"
 							rows={12}
 							readOnly
-							aria-label="DLP policy document (JSON)"
+							aria-label={t("dlp.documentLabel")}
 							value={serializeDlpPolicy(draft)}
 						/>
 					) : (
 						<p className="muted">
-							{store.kind === "loading" ? "Loading DLP policy..." : store.kind === "loaded"
-								? "No DLP policy has been saved for this tenant." : "The DLP policy could not be loaded."}
+							{store.kind === "loading"
+								? t("dlp.loading")
+								: store.kind === "loaded"
+									? t("dlp.notSaved")
+									: t("dlp.notLoaded")}
 						</p>
 					)}
 				</section>
@@ -1342,19 +1421,16 @@ export function DlpPolicyEditor() {
 				<>
 					{store.kind === "loading" ? (
 						<section className="card">
-							<p className="muted">Loading DLP policy...</p>
+							<p className="muted">{t("dlp.loading")}</p>
 						</section>
 					) : null}
 
 					{store.kind === "unavailable" ? (
 						<section className="card">
 							<div className="notice notice-danger" role="status" aria-live="polite">
-								<b>DLP policy storage is not available in this deployment.</b>
+								<b>{t("dlp.storeUnavailable")}</b>
 								<div className="muted small" style={{ marginTop: 6 }}>
-									The &quot;policy-management&quot; function did not confirm a DLP policy store ({store.detail}).
-									Nothing authored below is stored or delivered: saving is disabled rather
-									than reporting a save that did not happen. The validated JSON document is the
-									only artifact this page can produce.
+									{t("dlp.storeUnavailableBody", { detail: store.detail })}
 								</div>
 							</div>
 						</section>
@@ -1363,12 +1439,15 @@ export function DlpPolicyEditor() {
 					{store.kind === "mfa_required" ? (
 						<section className="card">
 							<div className="notice notice-warning" role="alert">
-								<b>Multi-factor authentication is required to read or save this DLP policy.</b>
+								<b>{t("dlp.mfa")}</b>
 								<div className="muted small" style={{ marginTop: 6 }}>
-									No policy document was read or saved. Complete verification, then return to this team.
+									{t("dlp.mfaBody")}
 								</div>
-								<Link className="button" to={`/auth/dlp-step-up?tenant=${encodeURIComponent(currentTeam.id)}`}>
-									Verify with authenticator
+								<Link
+									className="button"
+									to={`/auth/dlp-step-up?tenant=${encodeURIComponent(currentTeam.id)}`}
+								>
+									{t("common.verifyMfa")}
 								</Link>
 							</div>
 						</section>
@@ -1377,13 +1456,12 @@ export function DlpPolicyEditor() {
 					{store.kind === "unreadable" ? (
 						<section className="card">
 							<div className="notice notice-danger" role="alert" aria-live="assertive">
-								<b>The stored DLP policy could not be read.</b>
+								<b>{t("dlp.unreadable")}</b>
 								<div className="muted small" style={{ marginTop: 6 }}>
 									{store.detail}
 								</div>
 								<div className="muted small" style={{ marginTop: 6 }}>
-									The editor is not showing a draft because the stored document does not satisfy
-									the policy schema. Saving stays disabled so this cannot overwrite it.
+									{t("dlp.unreadableBody")}
 								</div>
 							</div>
 						</section>
@@ -1391,38 +1469,43 @@ export function DlpPolicyEditor() {
 
 					{issues.some(isExpiredExceptionDominance) ? (
 						<section className="card">
-							<p className="muted">
-								The stored exception list has expired. This is an invalid draft for repair,
-								not a new save. Remove expired exceptions before saving; nothing is removed automatically.
-							</p>
+							<p className="muted">{t("dlp.expired")}</p>
 							<button
 								type="button"
 								className="btn"
-								onClick={() => editDraft((current) => ({
-									...current,
-									exceptions: current.exceptions.filter((exception) => Date.parse(exception.expiresAt) > Date.now()),
-								}))}
+								onClick={() =>
+									editDraft((current) => ({
+										...current,
+										exceptions: current.exceptions.filter(
+											(exception) => Date.parse(exception.expiresAt) > Date.now(),
+										),
+									}))
+								}
 							>
-								Remove expired exceptions
+								{t("dlp.removeExpired")}
 							</button>
 						</section>
 					) : null}
 
 					{draft ? (
-						<fieldset disabled={isPublishing} className="stack" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+						<fieldset
+							disabled={isPublishing}
+							className="stack"
+							style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+						>
 							<section className="card">
 								<div className="row space-between">
 									<div>
-										<h3 style={{ margin: 0 }}>Policy document</h3>
+										<h3 style={{ margin: 0 }}>{t("dlp.document")}</h3>
 										<p className="muted small" style={{ margin: "6px 0 0" }}>
 											{store.kind === "loaded"
-												? `Tenant ${draft.tenantId} • stored version ${store.version}`
-												: `Tenant ${draft.tenantId} • not stored`}
+												? t("dlp.storedVersion", { tenant: draft.tenantId, version: store.version })
+												: t("dlp.notStored", { tenant: draft.tenantId })}
 										</p>
 									</div>
 									<div className="row">
 										<span className={`pill ${validation?.ok ? "" : "notice-danger"}`}>
-											{validation?.ok ? "✓ Valid DLP policy" : "✗ Invalid DLP policy"}
+											{validation?.ok ? t("dlp.valid") : t("dlp.invalid")}
 										</span>
 										<button
 											type="button"
@@ -1430,30 +1513,30 @@ export function DlpPolicyEditor() {
 											onClick={() => void publish()}
 											disabled={!isPublishable || isPublishing}
 										>
-											{isPublishing ? "Saving..." : "Save DLP policy"}
+											{isPublishing ? t("dlp.saving") : t("dlp.save")}
 										</button>
 									</div>
 								</div>
 								<div className="grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
 									<label className="label">
-										Document version (assigned on save)
+										{t("dlp.docVersion")}
 										<input
 											className="input"
 											type="number"
 											min={1}
 											value={draft.version}
-											aria-label="Policy version"
+											aria-label={t("dlp.versionLabel")}
 											readOnly
 										/>
 									</label>
 									<label className="label">
-										Max content bytes
+										{t("dlp.maxBytes")}
 										<input
 											className="input"
 											type="number"
 											min={1}
 											max={MAX_CONTENT_BYTES_CEILING}
-											aria-label="Max content bytes"
+											aria-label={t("dlp.maxBytes")}
 											value={draft.maxContentBytes}
 											onChange={(event) =>
 												editDraft((current) => ({
@@ -1464,10 +1547,10 @@ export function DlpPolicyEditor() {
 										/>
 									</label>
 									<label className="label">
-										Action when content cannot be inspected
+										{t("dlp.uninspectable")}
 										<select
 											className="input"
-											aria-label="Uninspectable content action"
+											aria-label={t("dlp.uninspectableLabel")}
 											value={draft.unavailableAction}
 											onChange={(event) =>
 												editDraft((current) => ({
@@ -1476,17 +1559,17 @@ export function DlpPolicyEditor() {
 												}))
 											}
 										>
-											<option value="block">block</option>
-											<option value="ask">ask</option>
+											<option value="block">{t("dlp.action.block")}</option>
+											<option value="ask">{t("dlp.action.ask")}</option>
 										</select>
 									</label>
 								</div>
 								<label className="label">
-									Supported media types (comma separated)
+									{t("dlp.formats")}
 									<textarea
 										className="input mono"
 										rows={2}
-										aria-label="Supported media types"
+										aria-label={t("dlp.formatsLabel")}
 										value={draft.supportedFormats.join(", ")}
 										onChange={(event) =>
 											editDraft((current) => ({
@@ -1503,7 +1586,7 @@ export function DlpPolicyEditor() {
 
 							<section className="card stack">
 								<div className="row space-between">
-									<h3 style={{ margin: 0 }}>Labels ({draft.labels.length})</h3>
+									<h3 style={{ margin: 0 }}>{t("dlp.labels", { count: draft.labels.length })}</h3>
 									<button
 										type="button"
 										className="btn"
@@ -1520,13 +1603,13 @@ export function DlpPolicyEditor() {
 											}))
 										}
 									>
-										Add label
+										{t("dlp.addLabel")}
 									</button>
 								</div>
 								{draft.labels.map((label, index) => (
 									<div key={`label-${index}`} className="card">
 										<div className="row space-between">
-											<b>Label {index + 1}</b>
+											<b>{t("dlp.label", { n: index + 1 })}</b>
 											<button
 												type="button"
 												className="button button-secondary button-sm"
@@ -1537,63 +1620,66 @@ export function DlpPolicyEditor() {
 													}))
 												}
 											>
-												Remove label {index + 1}
+												{t("dlp.removeLabel", { n: index + 1 })}
 											</button>
 										</div>
 										<div className="grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
 											<label className="label">
-												Id
+												{t("dlp.id")}
 												<input
 													className="input mono"
-													aria-label={`Label ${index + 1} id`}
+													aria-label={t("dlp.labelId", { n: index + 1 })}
 													value={label.id}
 													onChange={(event) => updateLabel(index, { id: event.target.value })}
 												/>
 											</label>
 											<label className="label">
-												Name
+												{t("dlp.name")}
 												<input
 													className="input"
-													aria-label={`Label ${index + 1} name`}
+													aria-label={t("dlp.labelName", { n: index + 1 })}
 													value={label.name}
 													onChange={(event) => updateLabel(index, { name: event.target.value })}
 												/>
 											</label>
 											<label className="label">
-												Description
+												{t("dlp.description")}
 												<input
 													className="input"
-													aria-label={`Label ${index + 1} description`}
+													aria-label={t("dlp.labelDescription", { n: index + 1 })}
 													value={label.description ?? ""}
 													onChange={(event) =>
 														updateLabel(index, {
-															description: event.target.value === "" ? undefined : event.target.value,
+															description:
+																event.target.value === "" ? undefined : event.target.value,
 														})
 													}
 												/>
 											</label>
 											<label className="label">
-												Sensitivity
+												{t("dlp.sensitivity")}
 												<select
 													className="input"
-													aria-label={`Label ${index + 1} sensitivity`}
+													aria-label={t("dlp.labelSensitivity", { n: index + 1 })}
 													value={label.sensitivity}
 													onChange={(event) =>
-														updateLabel(index, { sensitivity: event.target.value as DlpSensitivity })
+														updateLabel(index, {
+															sensitivity: event.target.value as DlpSensitivity,
+														})
 													}
 												>
 													{SENSITIVITIES.map((sensitivity) => (
 														<option key={sensitivity} value={sensitivity}>
-															{sensitivity}
+															{t(SENSITIVITY_LABEL[sensitivity])}
 														</option>
 													))}
 												</select>
 											</label>
 											<label className="label">
-												Redaction token
+												{t("dlp.redactionToken")}
 												<input
 													className="input mono"
-													aria-label={`Label ${index + 1} redaction token`}
+													aria-label={t("dlp.labelToken", { n: index + 1 })}
 													value={label.redactionToken}
 													onChange={(event) =>
 														updateLabel(index, { redactionToken: event.target.value })
@@ -1607,7 +1693,7 @@ export function DlpPolicyEditor() {
 
 							<section className="card stack">
 								<div className="row space-between">
-									<h3 style={{ margin: 0 }}>Rules ({draft.rules.length})</h3>
+									<h3 style={{ margin: 0 }}>{t("dlp.rules", { count: draft.rules.length })}</h3>
 									<button
 										type="button"
 										className="btn"
@@ -1625,13 +1711,13 @@ export function DlpPolicyEditor() {
 											}))
 										}
 									>
-										Add rule
+										{t("dlp.addRule")}
 									</button>
 								</div>
 								{draft.rules.map((rule, index) => (
 									<div key={`rule-${index}`} className="card">
 										<div className="row space-between">
-											<b>Rule {index + 1}</b>
+											<b>{t("dlp.rule", { n: index + 1 })}</b>
 											<button
 												type="button"
 												className="button button-secondary button-sm"
@@ -1642,33 +1728,33 @@ export function DlpPolicyEditor() {
 													}))
 												}
 											>
-												Remove rule {index + 1}
+												{t("dlp.removeRule", { n: index + 1 })}
 											</button>
 										</div>
 										<div className="grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
 											<label className="label">
-												Id
+												{t("dlp.id")}
 												<input
 													className="input mono"
-													aria-label={`Rule ${index + 1} id`}
+													aria-label={t("dlp.ruleId", { n: index + 1 })}
 													value={rule.id}
 													onChange={(event) => updateRule(index, { id: event.target.value })}
 												/>
 											</label>
 											<label className="label">
-												Name
+												{t("dlp.name")}
 												<input
 													className="input"
-													aria-label={`Rule ${index + 1} name`}
+													aria-label={t("dlp.ruleName", { n: index + 1 })}
 													value={rule.name}
 													onChange={(event) => updateRule(index, { name: event.target.value })}
 												/>
 											</label>
 											<label className="label">
-												Label
+												{t("dlp.labelField")}
 												<select
 													className="input"
-													aria-label={`Rule ${index + 1} label`}
+													aria-label={t("dlp.ruleLabel", { n: index + 1 })}
 													value={rule.labelId}
 													onChange={(event) => updateRule(index, { labelId: event.target.value })}
 												>
@@ -1680,13 +1766,13 @@ export function DlpPolicyEditor() {
 												</select>
 											</label>
 											<label className="label">
-												Priority (0-10000, highest wins)
+												{t("dlp.priority")}
 												<input
 													className="input"
 													type="number"
 													min={0}
 													max={10_000}
-													aria-label={`Rule ${index + 1} priority`}
+													aria-label={t("dlp.rulePriority", { n: index + 1 })}
 													value={rule.priority}
 													onChange={(event) =>
 														updateRule(index, { priority: Number(event.target.value) })
@@ -1694,25 +1780,25 @@ export function DlpPolicyEditor() {
 												/>
 											</label>
 											<label className="label">
-												Action
+												{t("dlp.action")}
 												<select
 													className="input"
-													aria-label={`Rule ${index + 1} action`}
+													aria-label={t("dlp.ruleAction", { n: index + 1 })}
 													value={rule.action}
 													onChange={(event) =>
 														updateRule(index, { action: event.target.value as DlpRuleAction })
 													}
 												>
-													<option value="redact">redact</option>
-													<option value="block">block</option>
-													<option value="ask">ask (block pending out-of-band operator approval)</option>
+													<option value="redact">{t("dlp.action.redact")}</option>
+													<option value="block">{t("dlp.action.block")}</option>
+													<option value="ask">{t("dlp.action.askLong")}</option>
 												</select>
 											</label>
 											<label className="label">
-												Match mode
+												{t("dlp.matchMode")}
 												<select
 													className="input"
-													aria-label={`Rule ${index + 1} match mode`}
+													aria-label={t("dlp.ruleMatchMode", { n: index + 1 })}
 													value={rule.matchMode}
 													onChange={(event) =>
 														updateRule(index, {
@@ -1720,28 +1806,29 @@ export function DlpPolicyEditor() {
 														})
 													}
 												>
-													<option value="any">any matcher matches</option>
-													<option value="all">all matchers match</option>
+													<option value="any">{t("dlp.matchAny")}</option>
+													<option value="all">{t("dlp.matchAll")}</option>
 												</select>
 											</label>
 											<label className="label">
-												Replacement (optional; defaults to the label token)
+												{t("dlp.replacement")}
 												<input
 													className="input mono"
-													aria-label={`Rule ${index + 1} replacement`}
+													aria-label={t("dlp.ruleReplacement", { n: index + 1 })}
 													value={rule.replacement ?? ""}
 													onChange={(event) =>
 														updateRule(index, {
-															replacement: event.target.value === "" ? undefined : event.target.value,
+															replacement:
+																event.target.value === "" ? undefined : event.target.value,
 														})
 													}
 												/>
 											</label>
 											<label className="label">
-												Enabled
+												{t("dlp.enabled")}
 												<input
 													type="checkbox"
-													aria-label={`Rule ${index + 1} enabled`}
+													aria-label={t("dlp.ruleEnabled", { n: index + 1 })}
 													checked={rule.enabled}
 													onChange={(event) => updateRule(index, { enabled: event.target.checked })}
 												/>
@@ -1752,7 +1839,7 @@ export function DlpPolicyEditor() {
 												<label key={direction} className="label">
 													<input
 														type="checkbox"
-														aria-label={`Rule ${index + 1} direction ${direction}`}
+														aria-label={t("dlp.ruleDirection", { n: index + 1, direction })}
 														checked={rule.directions.includes(direction)}
 														onChange={(event) => {
 															const next = event.target.checked
@@ -1761,17 +1848,17 @@ export function DlpPolicyEditor() {
 															updateRule(index, { directions: next });
 														}}
 													/>{" "}
-													{direction}
+													{t(DIRECTION_LABEL[direction])}
 												</label>
 											))}
 										</div>
 
-										<h4>Matchers ({rule.matchers.length})</h4>
+										<h4>{t("dlp.matchers", { count: rule.matchers.length })}</h4>
 										{rule.matchers.map((matcher, matcherIndex) => (
 											<div key={`rule-${index}-matcher-${matcherIndex}`} className="card">
 												<div className="row space-between">
 													<span className="muted small">
-														Matcher {matcherIndex + 1} of rule {index + 1}
+														{t("dlp.matcherOf", { m: matcherIndex + 1, n: index + 1 })}
 													</span>
 													<button
 														type="button"
@@ -1784,14 +1871,14 @@ export function DlpPolicyEditor() {
 															})
 														}
 													>
-														Remove matcher {matcherIndex + 1} from rule {index + 1}
+														{t("dlp.removeMatcher", { m: matcherIndex + 1, n: index + 1 })}
 													</button>
 												</div>
 												<label className="label">
-													Type
+													{t("dlp.type")}
 													<select
 														className="input"
-														aria-label={`Rule ${index + 1} matcher ${matcherIndex + 1} type`}
+														aria-label={t("dlp.matcherType", { n: index + 1, m: matcherIndex + 1 })}
 														value={matcher.type}
 														onChange={(event) => {
 															const type = event.target.value;
@@ -1811,18 +1898,21 @@ export function DlpPolicyEditor() {
 															});
 														}}
 													>
-														<option value="keyword">keyword</option>
-														<option value="regex">regex</option>
+														<option value="keyword">{t("dlp.keyword")}</option>
+														<option value="regex">{t("dlp.regex")}</option>
 													</select>
 												</label>
 												{matcher.type === "keyword" ? (
 													<>
 														<label className="label">
-															Keywords (one per line)
+															{t("dlp.keywords")}
 															<textarea
 																className="input mono"
 																rows={3}
-																aria-label={`Rule ${index + 1} matcher ${matcherIndex + 1} keywords`}
+																aria-label={t("dlp.matcherKeywords", {
+																	n: index + 1,
+																	m: matcherIndex + 1,
+																})}
 																value={matcher.values.join("\n")}
 																onChange={(event) =>
 																	updateRule(index, {
@@ -1845,7 +1935,10 @@ export function DlpPolicyEditor() {
 															<label className="label">
 																<input
 																	type="checkbox"
-																	aria-label={`Rule ${index + 1} matcher ${matcherIndex + 1} case sensitive`}
+																	aria-label={t("dlp.matcherCase", {
+																		n: index + 1,
+																		m: matcherIndex + 1,
+																	})}
 																	checked={matcher.caseSensitive}
 																	onChange={(event) =>
 																		updateRule(index, {
@@ -1857,12 +1950,15 @@ export function DlpPolicyEditor() {
 																		})
 																	}
 																/>{" "}
-																case sensitive
+																{t("dlp.caseSensitive")}
 															</label>
 															<label className="label">
 																<input
 																	type="checkbox"
-																	aria-label={`Rule ${index + 1} matcher ${matcherIndex + 1} whole word`}
+																	aria-label={t("dlp.matcherWhole", {
+																		n: index + 1,
+																		m: matcherIndex + 1,
+																	})}
 																	checked={matcher.wholeWord}
 																	onChange={(event) =>
 																		updateRule(index, {
@@ -1874,17 +1970,20 @@ export function DlpPolicyEditor() {
 																		})
 																	}
 																/>{" "}
-																whole word
+																{t("dlp.wholeWord")}
 															</label>
 														</div>
 													</>
 												) : (
 													<div className="grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
 														<label className="label">
-															Pattern
+															{t("dlp.pattern")}
 															<input
 																className="input mono"
-																aria-label={`Rule ${index + 1} matcher ${matcherIndex + 1} pattern`}
+																aria-label={t("dlp.matcherPattern", {
+																	n: index + 1,
+																	m: matcherIndex + 1,
+																})}
 																value={matcher.pattern}
 																onChange={(event) =>
 																	updateRule(index, {
@@ -1898,10 +1997,13 @@ export function DlpPolicyEditor() {
 															/>
 														</label>
 														<label className="label">
-															Flags (i, m, s, u)
+															{t("dlp.flags")}
 															<input
 																className="input mono"
-																aria-label={`Rule ${index + 1} matcher ${matcherIndex + 1} flags`}
+																aria-label={t("dlp.matcherFlags", {
+																	n: index + 1,
+																	m: matcherIndex + 1,
+																})}
 																value={matcher.flags}
 																onChange={(event) =>
 																	updateRule(index, {
@@ -1930,7 +2032,7 @@ export function DlpPolicyEditor() {
 												})
 											}
 										>
-											Add matcher to rule {index + 1}
+											{t("dlp.addMatcher", { n: index + 1 })}
 										</button>
 									</div>
 								))}
@@ -1938,7 +2040,9 @@ export function DlpPolicyEditor() {
 
 							<section className="card stack">
 								<div className="row space-between">
-									<h3 style={{ margin: 0 }}>Exceptions ({draft.exceptions.length})</h3>
+									<h3 style={{ margin: 0 }}>
+										{t("dlp.exceptions", { count: draft.exceptions.length })}
+									</h3>
 									<button
 										type="button"
 										className="btn"
@@ -1957,18 +2061,14 @@ export function DlpPolicyEditor() {
 											}))
 										}
 									>
-										Add exception
+										{t("dlp.addException")}
 									</button>
 								</div>
-								<p className="muted small">
-									An exception suppresses a known false positive until it expires. Content and
-									match scopes bind a SHA-256 fingerprint so the sensitive value is never stored;
-									a rule scope suppresses the whole rule and must carry no fingerprint.
-								</p>
+								<p className="muted small">{t("dlp.exceptionsLead")}</p>
 								{draft.exceptions.map((exception, index) => (
 									<div key={`exception-${index}`} className="card">
 										<div className="row space-between">
-											<b>Exception {index + 1}</b>
+											<b>{t("dlp.exception", { n: index + 1 })}</b>
 											<button
 												type="button"
 												className="button button-secondary button-sm"
@@ -1981,15 +2081,15 @@ export function DlpPolicyEditor() {
 													}))
 												}
 											>
-												Remove exception {index + 1}
+												{t("dlp.removeException", { n: index + 1 })}
 											</button>
 										</div>
 										<div className="grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
 											<label className="label">
-												Id
+												{t("dlp.id")}
 												<input
 													className="input mono"
-													aria-label={`Exception ${index + 1} id`}
+													aria-label={t("dlp.exceptionId", { n: index + 1 })}
 													value={exception.id}
 													onChange={(event) =>
 														updateException(index, { ...exception, id: event.target.value })
@@ -1997,10 +2097,10 @@ export function DlpPolicyEditor() {
 												/>
 											</label>
 											<label className="label">
-												Rule
+												{t("dlp.ruleField")}
 												<select
 													className="input"
-													aria-label={`Exception ${index + 1} rule`}
+													aria-label={t("dlp.exceptionRule", { n: index + 1 })}
 													value={exception.ruleId}
 													onChange={(event) =>
 														updateException(index, { ...exception, ruleId: event.target.value })
@@ -2014,10 +2114,10 @@ export function DlpPolicyEditor() {
 												</select>
 											</label>
 											<label className="label">
-												Owner
+												{t("dlp.owner")}
 												<input
 													className="input mono"
-													aria-label={`Exception ${index + 1} owner`}
+													aria-label={t("dlp.exceptionOwner", { n: index + 1 })}
 													value={exception.ownerId}
 													onChange={(event) =>
 														updateException(index, { ...exception, ownerId: event.target.value })
@@ -2025,10 +2125,10 @@ export function DlpPolicyEditor() {
 												/>
 											</label>
 											<label className="label">
-												Scope
+												{t("dlp.scope")}
 												<select
 													className="input"
-													aria-label={`Exception ${index + 1} scope`}
+													aria-label={t("dlp.exceptionScope", { n: index + 1 })}
 													value={exception.scope}
 													onChange={(event) => {
 														const scope = event.target.value as DlpExceptionScope;
@@ -2056,17 +2156,17 @@ export function DlpPolicyEditor() {
 												>
 													{EXCEPTION_SCOPES.map((scope) => (
 														<option key={scope} value={scope}>
-															{scope}
+															{t(SCOPE_LABEL[scope])}
 														</option>
 													))}
 												</select>
 											</label>
 											<label className="label">
-												Expires at (local time)
+												{t("dlp.expiresAt")}
 												<input
 													className="input"
 													type="datetime-local"
-													aria-label={`Exception ${index + 1} expiry`}
+													aria-label={t("dlp.exceptionExpiry", { n: index + 1 })}
 													value={toDatetimeLocalValue(exception.expiresAt)}
 													onChange={(event) =>
 														updateException(index, {
@@ -2077,11 +2177,11 @@ export function DlpPolicyEditor() {
 												/>
 											</label>
 											<label className="label">
-												Created at (optional, local time)
+												{t("dlp.createdAt")}
 												<input
 													className="input"
 													type="datetime-local"
-													aria-label={`Exception ${index + 1} created at`}
+													aria-label={t("dlp.exceptionCreated", { n: index + 1 })}
 													value={
 														exception.createdAt === undefined
 															? ""
@@ -2098,11 +2198,11 @@ export function DlpPolicyEditor() {
 												/>
 											</label>
 											<label className="label">
-												Justification
+												{t("dlp.justification")}
 												<textarea
 													className="input"
 													rows={2}
-													aria-label={`Exception ${index + 1} justification`}
+													aria-label={t("dlp.exceptionJustification", { n: index + 1 })}
 													value={exception.justification}
 													onChange={(event) =>
 														updateException(index, {
@@ -2114,10 +2214,10 @@ export function DlpPolicyEditor() {
 											</label>
 											{exception.scope !== "rule" ? (
 												<label className="label">
-													SHA-256 fingerprint of the {exception.scope} value
+													{t("dlp.fingerprint", { scope: t(SCOPE_LABEL[exception.scope]) })}
 													<input
 														className="input mono"
-														aria-label={`Exception ${index + 1} fingerprint`}
+														aria-label={t("dlp.exceptionFingerprint", { n: index + 1 })}
 														value={exception.fingerprint ?? ""}
 														onChange={(event) =>
 															updateException(index, {
@@ -2134,20 +2234,18 @@ export function DlpPolicyEditor() {
 							</section>
 
 							<section className="card">
-								<h3 style={{ marginTop: 0 }}>{validation?.ok ? "Validated" : "Invalid draft"} policy document (JSON)</h3>
+								<h3 style={{ marginTop: 0 }}>
+									{validation?.ok ? t("dlp.validatedDoc") : t("dlp.invalidDoc")}
+								</h3>
 								<p className="muted small">
-									{validation?.ok
-										? "Schema defaults are applied. The server assigns the next version on save; this JSON is not signed delivery."
-										: "This draft does not satisfy the engine schema and cannot be saved until repaired."}
+									{validation?.ok ? t("dlp.validatedHint") : t("dlp.invalidHint")}
 								</p>
 								<textarea
 									className="input mono"
 									rows={12}
 									readOnly
-									aria-label="DLP policy document (JSON)"
-									value={serializeDlpPolicy(
-										validation?.ok ? validation.policy : draft,
-									)}
+									aria-label={t("dlp.documentLabel")}
+									value={serializeDlpPolicy(validation?.ok ? validation.policy : draft)}
 								/>
 							</section>
 						</fieldset>
@@ -2156,7 +2254,7 @@ export function DlpPolicyEditor() {
 					{issues.length > 0 ? (
 						<section className="card">
 							<div className="notice notice-danger" role="alert" aria-live="assertive">
-								<b>The DLP policy is not valid, so it cannot be saved.</b>
+								<b>{t("dlp.notValid")}</b>
 								<ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
 									{issues.map((issue) => (
 										<li key={`${issue.path}:${issue.message}`} className="small">
@@ -2192,7 +2290,7 @@ export function DlpPolicyEditor() {
 									setDraft(restored.policy);
 									setStore({ kind: "loaded", version });
 								} else {
-									setStore({ kind: "unreadable", detail: "The restored revision could not be verified." });
+									setStore({ kind: "unreadable", detail: t("dlp.restoreFailed") });
 								}
 							}}
 						/>
@@ -2205,6 +2303,8 @@ export function DlpPolicyEditor() {
 
 /** AAL2 is obtained by the existing server-verified MFA flow, never by the DLP editor. */
 export function DlpStepUpPage() {
+	const t = useT();
+	const richT = useRichT();
 	const [params] = useSearchParams();
 	const tenantId = params.get("tenant");
 	// Only fixed in-app destinations; never an arbitrary return URL.
@@ -2213,14 +2313,18 @@ export function DlpStepUpPage() {
 	const toApprovals = returnTo === "approvals";
 	const toGovernance = returnTo === "governance";
 	if (!tenantId || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(tenantId)) {
-		return <div role="alert">Select a team from <Link to="/policies">Policies</Link> before verifying.</div>;
+		return (
+			<div role="alert">
+				{richT("dlp.selectTeam", { link: <Link to="/policies">{t("nav.policies")}</Link> })}
+			</div>
+		);
 	}
 	return (
 		<main className="stack" style={{ maxWidth: 720, margin: "48px auto" }}>
 			<EnterpriseAuth tenantId={tenantId} forceMfa>
 				<div className="card">
-					<h1>Multi-factor authentication verified</h1>
-					<p>The control plane confirmed this session at AAL2 for the selected tenant.</p>
+					<h1>{t("dlp.verified")}</h1>
+					<p>{t("dlp.verifiedBody")}</p>
 					<Link
 						className="button"
 						to={
@@ -2234,12 +2338,12 @@ export function DlpStepUpPage() {
 						}
 					>
 						{toSettings
-							? "Return to settings"
+							? t("dlp.returnSettings")
 							: toApprovals
-								? "Return to approvals"
+								? t("dlp.returnApprovals")
 								: toGovernance
-									? "Return to AI governance"
-									: "Return to DLP policy"}
+									? t("dlp.returnGovernance")
+									: t("dlp.returnPolicy")}
 					</Link>
 				</div>
 			</EnterpriseAuth>

@@ -44,7 +44,7 @@ export const GOVERNANCE_MAPPING: {
 	readonly frameworks: readonly GovernanceFramework[];
 } = {
 	"source": "governance/frameworks",
-	"source_sha256": "aea5733d805d194bb65eef2294f2cd7f2b1ad160c8b001b21565b343544ef048",
+	"source_sha256": "69f4c146590a5546947732464f5fd7dae8962cee8c8b54d31ea3d479932c6d7f",
 	"capabilities": [
 		{
 			"id": "runtime-enforcement",
@@ -137,6 +137,12 @@ export const GOVERNANCE_MAPPING: {
 			"signal": "agents_reporting"
 		},
 		{
+			"id": "incident-triage",
+			"title": "Incident triage with owner, resolution note, snooze and audit trail",
+			"description": "Owners and admins move each incident through open, acknowledged, resolved or false positive, assign it to a workspace member, record a resolution note and snooze it. Every change is kept in an append-only history and the administrative audit log. Triage never changes enforcement.",
+			"signal": "always"
+		},
+		{
 			"id": "siem-export",
 			"title": "SIEM export of incidents",
 			"description": "Incidents are delivered to the organisation's SIEM from a durable local queue.",
@@ -192,8 +198,8 @@ export const GOVERNANCE_MAPPING: {
 		},
 		{
 			"id": "governance-digest",
-			"title": "Scheduled governance summary by email",
-			"description": "Weekly or monthly counts-only summary sent to the workspace owners (and admins).",
+			"title": "Scheduled governance summary and executive report by email (English or Turkish)",
+			"description": "Weekly or monthly counts-only summary with an executive summary sent to the workspace owners (and admins), with the printable executive report attached; a team rollup for administrators of several workspaces in the dashboard.",
 			"signal": "governance_digest_enabled"
 		}
 	],
@@ -239,6 +245,18 @@ export const GOVERNANCE_MAPPING: {
 			"kind": "table",
 			"ref": "admin_audit_logs",
 			"detail": "Append-only administrative audit log."
+		},
+		{
+			"id": "incident_triage",
+			"kind": "table",
+			"ref": "incident_triage",
+			"detail": "Current triage state of each incident (status, owner, resolution note, snooze)."
+		},
+		{
+			"id": "incident_triage_history",
+			"kind": "table",
+			"ref": "incident_triage_history",
+			"detail": "Append-only history of incident triage changes (who, when, from and to status, note)."
 		},
 		{
 			"id": "posture_findings",
@@ -365,6 +383,12 @@ export const GOVERNANCE_MAPPING: {
 			"kind": "function",
 			"ref": "governance-digest",
 			"detail": "Scheduled governance summary dispatch and test sends."
+		},
+		{
+			"id": "executive-report",
+			"kind": "function",
+			"ref": "reports",
+			"detail": "Executive summary, team rollup and printable executive report (English or Turkish)."
 		},
 		{
 			"id": "governance-scorecard",
@@ -1326,6 +1350,907 @@ export const GOVERNANCE_MAPPING: {
 					],
 					"coverage": "partial",
 					"note": "Technical measures to prevent unlawful disclosure of personal data through AI tools, with access control and audit evidence. Administrative measures and audits are the controller's."
+				}
+			]
+		},
+		{
+			"id": "iso-iec-27001",
+			"name": "ISO/IEC 27001 Annex A",
+			"version": "ISO/IEC 27001:2022, Annex A",
+			"reference": "https://www.iso.org/standard/27001",
+			"scope": "Annex A controls where Singularity AIDR provides a technical measure or evidence for AI tool use (coding agents, AI chat sites, MCP servers). Vendor mapping only: the organisation decides applicability and implementation in its own ISMS, and an accredited certification body, not this mapping, assesses conformity.",
+			"controls": [
+				{
+					"id": "A.5.1",
+					"group": "A.5 Organizational controls",
+					"title": "Policies for information security",
+					"capabilities": [
+						"runtime-policy-management",
+						"acceptable-use-notice"
+					],
+					"evidence": [
+						"tenant_runtime_policies",
+						"runtime_policy_revisions",
+						"events.aup_acknowledgement"
+					],
+					"coverage": "partial",
+					"note": "Runtime policy enforces the technical part of the AI-use rules for coding agents and the acceptable-use notice distributes the written rule to browser users. Writing, approving and reviewing the policy is the organisation's."
+				},
+				{
+					"id": "A.5.7",
+					"group": "A.5 Organizational controls",
+					"title": "Threat intelligence",
+					"capabilities": [
+						"threat-rule-library",
+						"ai-posture-scanning"
+					],
+					"evidence": [
+						"threat-rules",
+						"posture_findings"
+					],
+					"coverage": "partial",
+					"note": "Versioned threat rules and CVE/MCP/skill findings bring threat information about AI tool chains into enforcement and reporting. Collecting and analysing threat intelligence for the wider estate is outside the product."
+				},
+				{
+					"id": "A.5.9",
+					"group": "A.5 Organizational controls",
+					"title": "Inventory of information and other associated assets",
+					"capabilities": [
+						"ai-asset-inventory",
+						"mcp-inventory"
+					],
+					"evidence": [
+						"agents",
+						"posture_findings",
+						"compliance-report.protection_coverage"
+					],
+					"coverage": "partial",
+					"note": "Enrolled coding agents, browser installs, AI sites in use and reported MCP servers are inventoried. Only endpoints with an AIDR connector or Browser Guard are visible."
+				},
+				{
+					"id": "A.5.10",
+					"group": "A.5 Organizational controls",
+					"title": "Acceptable use of information and other associated assets",
+					"capabilities": [
+						"acceptable-use-notice",
+						"browser-guard-masking"
+					],
+					"evidence": [
+						"events.aup_acknowledgement",
+						"events.privacy_scan"
+					],
+					"coverage": "partial",
+					"note": "The acceptable-use notice is shown once per version on protected AI sites and acknowledgements are counted; masking enforces the data rule at the moment of use."
+				},
+				{
+					"id": "A.5.12",
+					"group": "A.5 Organizational controls",
+					"title": "Classification of information",
+					"capabilities": [
+						"prompt-dlp-protection"
+					],
+					"evidence": [
+						"tenant_dlp_policies",
+						"dlp_policy_revisions"
+					],
+					"coverage": "customer-responsibility",
+					"note": "DLP policy labels and rules can carry the organisation's classification scheme into AI prompts and tool inputs. The classification scheme itself is the organisation's."
+				},
+				{
+					"id": "A.5.14",
+					"group": "A.5 Organizational controls",
+					"title": "Information transfer",
+					"capabilities": [
+						"browser-guard-masking",
+						"prompt-dlp-protection",
+						"output-inspection"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"compliance-report.data_protection_activity"
+					],
+					"coverage": "partial",
+					"note": "Personal data and secrets are masked, warned on or blocked before a prompt, paste or file reaches an AI service. A masked send still transfers the redacted text, and monitor-mode or allowed sends go unchanged."
+				},
+				{
+					"id": "A.5.15",
+					"group": "A.5 Organizational controls",
+					"title": "Access control",
+					"capabilities": [
+						"identity-access-control",
+						"tenant-isolation"
+					],
+					"evidence": [
+						"tenant_identity_policies",
+						"compliance-report.access_identity"
+					],
+					"coverage": "partial",
+					"note": "Role-based access to the control plane with owner, admin, member and viewer roles, enforced by row-level security and the tenant identity barrier. Access control for the organisation's other systems is outside the product."
+				},
+				{
+					"id": "A.5.16",
+					"group": "A.5 Organizational controls",
+					"title": "Identity management",
+					"capabilities": [
+						"identity-access-control"
+					],
+					"evidence": [
+						"tenant_identity_policies",
+						"compliance-report.access_identity"
+					],
+					"coverage": "partial",
+					"note": "SCIM provisioning and SAML/OIDC single sign-on tie control-plane accounts to the organisation's directory. The directory and its joiner-mover-leaver process remain the organisation's."
+				},
+				{
+					"id": "A.5.19",
+					"group": "A.5 Organizational controls",
+					"title": "Information security in supplier relationships",
+					"capabilities": [
+						"data-flow-inventory"
+					],
+					"evidence": [
+						"privacy-data-flow-matrix",
+						"compliance-report.data_flows"
+					],
+					"coverage": "customer-responsibility",
+					"note": "The product's data-flow and subprocessor inventory is input for the supplier assessment of Singularity AIDR itself. Assessing AI service providers is the organisation's."
+				},
+				{
+					"id": "A.5.23",
+					"group": "A.5 Organizational controls",
+					"title": "Information security for use of cloud services",
+					"capabilities": [
+						"browser-guard-masking",
+						"ai-asset-inventory"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"compliance-report.data_protection_activity"
+					],
+					"coverage": "partial",
+					"note": "AI chat sites in use are counted and personal data is masked before it reaches them. Contracting, configuring and exiting cloud AI services is the organisation's."
+				},
+				{
+					"id": "A.5.24",
+					"group": "A.5 Organizational controls",
+					"title": "Information security incident management planning and preparation",
+					"capabilities": [
+						"incident-triage",
+						"siem-export"
+					],
+					"evidence": [
+						"incident_triage",
+						"siem-export"
+					],
+					"coverage": "partial",
+					"note": "Incident triage with owners and SIEM export give the AI tool-use part of the incident process its tooling. The incident management plan and roles are the organisation's."
+				},
+				{
+					"id": "A.5.25",
+					"group": "A.5 Organizational controls",
+					"title": "Assessment and decision on information security events",
+					"capabilities": [
+						"incident-management",
+						"incident-triage"
+					],
+					"evidence": [
+						"events.incident",
+						"incident_triage",
+						"incident_triage_history"
+					],
+					"coverage": "partial",
+					"note": "Blocked and flagged actions are listed as incidents; analysts acknowledge, resolve or mark each one a false positive with a recorded note. Deciding what is a reportable incident is the organisation's."
+				},
+				{
+					"id": "A.5.26",
+					"group": "A.5 Organizational controls",
+					"title": "Response to information security incidents",
+					"capabilities": [
+						"runtime-enforcement",
+						"incident-triage",
+						"human-approval"
+					],
+					"evidence": [
+						"events.runtime_verdict",
+						"incident_triage_history",
+						"approval_requests"
+					],
+					"coverage": "partial",
+					"note": "Deny decisions stop the action before it runs and ask decisions hold it for out-of-band human approval. Containment and recovery beyond the blocked action are the organisation's."
+				},
+				{
+					"id": "A.5.27",
+					"group": "A.5 Organizational controls",
+					"title": "Learning from information security incidents",
+					"capabilities": [
+						"incident-triage",
+						"governance-digest"
+					],
+					"evidence": [
+						"incident_triage_history",
+						"executive-report"
+					],
+					"coverage": "partial",
+					"note": "Resolution notes, false-positive decisions and the executive report's incident figures feed lessons learned. Running the review is the organisation's."
+				},
+				{
+					"id": "A.5.28",
+					"group": "A.5 Organizational controls",
+					"title": "Collection of evidence",
+					"capabilities": [
+						"audit-logging",
+						"audit-export",
+						"compliance-evidence-report"
+					],
+					"evidence": [
+						"admin_audit_logs",
+						"audit-export",
+						"compliance-report.incidents"
+					],
+					"coverage": "partial",
+					"note": "Append-only audit logs, paginated export and the signed evidence report preserve records of decisions. Forensic evidence handling procedures are the organisation's."
+				},
+				{
+					"id": "A.5.33",
+					"group": "A.5 Organizational controls",
+					"title": "Protection of records",
+					"capabilities": [
+						"audit-logging",
+						"retention-legal-hold"
+					],
+					"evidence": [
+						"admin_audit_logs",
+						"tenant_legal_holds",
+						"tenant_data_retention_policies"
+					],
+					"coverage": "partial",
+					"note": "Audit records are append-only, retention is configured per data class and legal holds pause deletion. Backup copies need separate expiry evidence."
+				},
+				{
+					"id": "A.5.34",
+					"group": "A.5 Organizational controls",
+					"title": "Privacy and protection of PII",
+					"capabilities": [
+						"browser-guard-masking",
+						"prompt-dlp-protection",
+						"data-flow-inventory"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"compliance-report.data_protection_activity",
+						"compliance-report.data_flows"
+					],
+					"coverage": "partial",
+					"note": "TR/EN personal data is masked before AI services receive it and telemetry is counts only. Obligations under KVKK or GDPR as a whole remain the controller's."
+				},
+				{
+					"id": "A.5.36",
+					"group": "A.5 Organizational controls",
+					"title": "Compliance with policies, rules and standards for information security",
+					"capabilities": [
+						"governance-scorecard",
+						"compliance-evidence-report",
+						"governance-digest"
+					],
+					"evidence": [
+						"governance-scorecard",
+						"compliance-report.policy_inventory",
+						"executive-report"
+					],
+					"coverage": "partial",
+					"note": "The scorecard, evidence report and scheduled executive report show whether the AI tool-use controls are deployed and used. Reviewing compliance is the organisation's."
+				},
+				{
+					"id": "A.6.3",
+					"group": "A.6 People controls",
+					"title": "Information security awareness, education and training",
+					"capabilities": [
+						"acceptable-use-notice"
+					],
+					"evidence": [
+						"events.aup_acknowledgement"
+					],
+					"coverage": "customer-responsibility",
+					"note": "The acceptable-use notice reaches browser users at the point of AI use and records acknowledgement. Awareness and training programmes are the organisation's."
+				},
+				{
+					"id": "A.8.2",
+					"group": "A.8 Technological controls",
+					"title": "Privileged access rights",
+					"capabilities": [
+						"identity-access-control",
+						"audit-logging"
+					],
+					"evidence": [
+						"compliance-report.access_identity",
+						"admin_audit_logs"
+					],
+					"coverage": "partial",
+					"note": "Owner and admin roles are listed in the evidence report with MFA status and every administrative change is audited. Privileged access elsewhere is outside the product."
+				},
+				{
+					"id": "A.8.5",
+					"group": "A.8 Technological controls",
+					"title": "Secure authentication",
+					"capabilities": [
+						"identity-access-control"
+					],
+					"evidence": [
+						"tenant_identity_policies"
+					],
+					"coverage": "partial",
+					"note": "Workspace MFA and SSO requirements are enforced on every tenant table, and sensitive administrative actions require a second factor. Authentication to other systems is outside the product."
+				},
+				{
+					"id": "A.8.7",
+					"group": "A.8 Technological controls",
+					"title": "Protection against malware",
+					"capabilities": [
+						"runtime-enforcement",
+						"plugin-skill-scanning",
+						"mcp-gateway"
+					],
+					"evidence": [
+						"events.runtime_verdict",
+						"threat-rules"
+					],
+					"coverage": "partial",
+					"note": "Malicious commands, downloads, plugins, skills and MCP results are detected and blocked on the coding-agent path. The product is not an endpoint anti-malware agent."
+				},
+				{
+					"id": "A.8.8",
+					"group": "A.8 Technological controls",
+					"title": "Management of technical vulnerabilities",
+					"capabilities": [
+						"ai-posture-scanning",
+						"mcp-inventory"
+					],
+					"evidence": [
+						"posture_findings",
+						"compliance-report.ai_security_posture"
+					],
+					"coverage": "partial",
+					"note": "CVE and exposed-component findings for the AI tool chain are reported by severity. Patching and vulnerability management for the estate are the organisation's."
+				},
+				{
+					"id": "A.8.11",
+					"group": "A.8 Technological controls",
+					"title": "Data masking",
+					"capabilities": [
+						"browser-guard-masking",
+						"prompt-dlp-protection"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"compliance-report.data_protection_activity"
+					],
+					"coverage": "full",
+					"note": "Masking of TR/EN personal data and secrets with reversible placeholders on AI chat sites, and DLP handling of agent prompts and tool inputs, is a core product function."
+				},
+				{
+					"id": "A.8.12",
+					"group": "A.8 Technological controls",
+					"title": "Data leakage prevention",
+					"capabilities": [
+						"browser-guard-masking",
+						"prompt-dlp-protection",
+						"output-inspection",
+						"runtime-enforcement"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"events.runtime_verdict",
+						"compliance-report.data_protection_activity"
+					],
+					"coverage": "partial",
+					"note": "Leakage of personal data and secrets through AI prompts, uploads, agent tool calls and MCP results is prevented on protected channels. Other channels (mail, removable media, unprotected sites) are outside the product."
+				},
+				{
+					"id": "A.8.15",
+					"group": "A.8 Technological controls",
+					"title": "Logging",
+					"capabilities": [
+						"audit-logging",
+						"audit-export",
+						"siem-export"
+					],
+					"evidence": [
+						"local-audit-log",
+						"admin_audit_logs",
+						"siem-export"
+					],
+					"coverage": "partial",
+					"note": "Decisions are logged on the endpoint and, in managed mode, in the control plane; logs can be exported to a SIEM. Logs hold decisions and digests, not prompt text."
+				},
+				{
+					"id": "A.8.16",
+					"group": "A.8 Technological controls",
+					"title": "Monitoring activities",
+					"capabilities": [
+						"incident-management",
+						"governance-scorecard",
+						"oversight-analytics"
+					],
+					"evidence": [
+						"events.runtime_verdict",
+						"governance-scorecard",
+						"governance_digest_deliveries"
+					],
+					"coverage": "partial",
+					"note": "Agent decisions, incidents and approval patterns are monitored in the dashboard and the scheduled summary. Only telemetry that reached the control plane is visible."
+				},
+				{
+					"id": "A.8.19",
+					"group": "A.8 Technological controls",
+					"title": "Installation of software on operational systems",
+					"capabilities": [
+						"runtime-enforcement",
+						"plugin-skill-scanning"
+					],
+					"evidence": [
+						"events.runtime_verdict",
+						"threat-rules"
+					],
+					"coverage": "partial",
+					"note": "Package installs and agent plugins are checked before they run on the coding-agent path. Software installed by other means is outside the product."
+				},
+				{
+					"id": "A.8.23",
+					"group": "A.8 Technological controls",
+					"title": "Web filtering",
+					"capabilities": [
+						"runtime-enforcement",
+						"browser-guard-masking"
+					],
+					"evidence": [
+						"events.runtime_verdict",
+						"events.privacy_scan"
+					],
+					"coverage": "partial",
+					"note": "Agent web requests are checked against threat rules and reputation, and Browser Guard can block AI sites by policy. It is not a general web proxy."
+				},
+				{
+					"id": "A.8.28",
+					"group": "A.8 Technological controls",
+					"title": "Secure coding",
+					"capabilities": [
+						"runtime-enforcement",
+						"output-inspection"
+					],
+					"evidence": [
+						"events.runtime_verdict"
+					],
+					"coverage": "customer-responsibility",
+					"note": "Dangerous commands and secret exposure by AI coding agents are blocked while code is written. Secure coding practice and code review remain the organisation's."
+				},
+				{
+					"id": "A.8.32",
+					"group": "A.8 Technological controls",
+					"title": "Change management",
+					"capabilities": [
+						"runtime-policy-management"
+					],
+					"evidence": [
+						"runtime_policy_revisions",
+						"dlp_policy_revisions"
+					],
+					"coverage": "partial",
+					"note": "Policy changes are versioned with digests and can require four-eyes change control. Change management for other systems is outside the product."
+				}
+			]
+		},
+		{
+			"id": "bddk-bsebh",
+			"name": "BDDK Bilgi Sistemleri ve Elektronik Bankacılık Hizmetleri Yönetmeliği",
+			"version": "Resmî Gazete 15.03.2020, No. 31069 (topic-level mapping)",
+			"reference": "https://www.mevzuat.gov.tr",
+			"scope": "Requirement topics of the BDDK information systems and electronic banking regulation where Singularity AIDR provides a technical measure or evidence for the bank's use of AI coding agents, AI chat sites and MCP servers. Topic codes are this mapping's own; article references, applicability and the bank's other information systems are the bank's to determine. Vendor mapping only, not a regulatory approval.",
+			"controls": [
+				{
+					"id": "BSEBY-BGYS",
+					"group": "Bilgi güvenliği yönetimi",
+					"title": "Bilgi güvenliği politikası ve yönetimi (information security policy and management)",
+					"capabilities": [
+						"runtime-policy-management",
+						"acceptable-use-notice",
+						"governance-scorecard"
+					],
+					"evidence": [
+						"tenant_runtime_policies",
+						"runtime_policy_revisions",
+						"governance-scorecard"
+					],
+					"coverage": "partial",
+					"note": "Versioned runtime and DLP policy carry the bank's AI-use rules into enforcement and the scorecard shows whether they are deployed. The bank's information security management system, policy approval and committees are outside the product."
+				},
+				{
+					"id": "BSEBY-VARLIK",
+					"group": "Bilgi güvenliği yönetimi",
+					"title": "Bilgi varlıkları envanteri (information asset inventory)",
+					"capabilities": [
+						"ai-asset-inventory",
+						"mcp-inventory"
+					],
+					"evidence": [
+						"agents",
+						"posture_findings",
+						"compliance-report.protection_coverage"
+					],
+					"coverage": "partial",
+					"note": "AI coding agents, browser installs, AI sites in use and MCP servers are inventoried for the endpoints that run an AIDR connector or Browser Guard. The bank's full asset inventory and classification remain the bank's."
+				},
+				{
+					"id": "BSEBY-ERISIM",
+					"group": "Bilgi güvenliği yönetimi",
+					"title": "Kimlik doğrulama ve erişim yönetimi (authentication and access management)",
+					"capabilities": [
+						"identity-access-control",
+						"tenant-isolation"
+					],
+					"evidence": [
+						"tenant_identity_policies",
+						"compliance-report.access_identity"
+					],
+					"coverage": "partial",
+					"note": "Control-plane access uses roles, MFA, SAML/OIDC single sign-on and SCIM, enforced on every tenant table; administrators and their MFA status appear in the evidence report. Access to banking systems is outside the product."
+				},
+				{
+					"id": "BSEBY-IZKAYDI",
+					"group": "Bilgi güvenliği yönetimi",
+					"title": "İz kayıtları (audit trails)",
+					"capabilities": [
+						"audit-logging",
+						"audit-export",
+						"siem-export"
+					],
+					"evidence": [
+						"admin_audit_logs",
+						"local-audit-log",
+						"audit-export",
+						"siem-export"
+					],
+					"coverage": "partial",
+					"note": "Decisions on agent actions and administrative changes are kept in append-only logs, exportable to the bank's SIEM. Integrity protection and retention periods of the bank's central log store are the bank's."
+				},
+				{
+					"id": "BSEBY-OLAY",
+					"group": "Siber olay yönetimi",
+					"title": "Siber olay yönetimi ve müdahale (cyber incident management and response)",
+					"capabilities": [
+						"incident-management",
+						"incident-triage",
+						"siem-export"
+					],
+					"evidence": [
+						"events.incident",
+						"incident_triage",
+						"incident_triage_history"
+					],
+					"coverage": "partial",
+					"note": "Blocked and flagged AI tool actions are listed as incidents with owner, status, resolution note and an append-only history, and can be sent to the SIEM. Notifying the regulator and running the bank's incident response team are the bank's."
+				},
+				{
+					"id": "BSEBY-GIZLILIK",
+					"group": "Veri güvenliği",
+					"title": "Gizli ve müşteri sırrı niteliğindeki verilerin korunması (protection of confidential and customer-secret data)",
+					"capabilities": [
+						"browser-guard-masking",
+						"prompt-dlp-protection",
+						"output-inspection"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"compliance-report.data_protection_activity",
+						"tenant_dlp_policies"
+					],
+					"coverage": "partial",
+					"note": "TCKN, IBAN, card numbers, other personal data and secrets are masked or blocked before they reach AI services, and DLP rules apply to agent prompts and tool inputs. Other leakage channels and the bank's data classification are outside the product."
+				},
+				{
+					"id": "BSEBY-ZARARLI",
+					"group": "Bilgi güvenliği yönetimi",
+					"title": "Zararlı yazılımlara karşı koruma (protection against malicious software)",
+					"capabilities": [
+						"runtime-enforcement",
+						"plugin-skill-scanning",
+						"mcp-gateway"
+					],
+					"evidence": [
+						"events.runtime_verdict",
+						"threat-rules"
+					],
+					"coverage": "partial",
+					"note": "Malicious commands, packages, plugins, skills and MCP results are blocked on the coding-agent path before they run. The product does not replace endpoint protection."
+				},
+				{
+					"id": "BSEBY-ZAFIYET",
+					"group": "Bilgi güvenliği yönetimi",
+					"title": "Güvenlik açığı yönetimi ve sızma testleri (vulnerability management and penetration tests)",
+					"capabilities": [
+						"ai-posture-scanning"
+					],
+					"evidence": [
+						"posture_findings",
+						"compliance-report.ai_security_posture"
+					],
+					"coverage": "customer-responsibility",
+					"note": "CVE and exposed-component findings of the AI tool chain are reported by severity. Penetration tests, their scope and remediation tracking are the bank's."
+				},
+				{
+					"id": "BSEBY-DEGISIKLIK",
+					"group": "Bilgi sistemleri yönetimi",
+					"title": "Değişiklik yönetimi (change management)",
+					"capabilities": [
+						"runtime-policy-management"
+					],
+					"evidence": [
+						"runtime_policy_revisions",
+						"dlp_policy_revisions"
+					],
+					"coverage": "partial",
+					"note": "Security policy changes are versioned with digests, can be staged in rings and can require four-eyes approval. Change management for banking systems is the bank's."
+				},
+				{
+					"id": "BSEBY-SAKLAMA",
+					"group": "Bilgi sistemleri yönetimi",
+					"title": "Kayıtların saklanması ve imhası (retention and disposal of records)",
+					"capabilities": [
+						"retention-legal-hold",
+						"audit-logging"
+					],
+					"evidence": [
+						"tenant_data_retention_policies",
+						"tenant_legal_holds",
+						"compliance-report.retention_deletion"
+					],
+					"coverage": "partial",
+					"note": "Retention days per data class, legal holds and offboarding receipts are recorded. Statutory retention periods are set by the bank; backup copies need separate evidence."
+				},
+				{
+					"id": "BSEBY-YONETIM",
+					"group": "Bilgi sistemleri yönetimi",
+					"title": "Üst yönetime raporlama ve gözetim (reporting to and oversight by senior management)",
+					"capabilities": [
+						"governance-digest",
+						"governance-scorecard",
+						"human-approval",
+						"oversight-analytics"
+					],
+					"evidence": [
+						"executive-report",
+						"governance_digest_deliveries",
+						"approval_requests"
+					],
+					"coverage": "partial",
+					"note": "A scheduled executive report in Turkish or English, the scorecard and human-approval analytics give management a counts-only view of AI tool use. Board and committee oversight duties are the bank's."
+				},
+				{
+					"id": "BSEBY-DISHIZMET",
+					"group": "Bilgi sistemleri yönetimi",
+					"title": "Dış hizmet ve tedarikçi riskleri (outsourcing and supplier risk)",
+					"capabilities": [
+						"data-flow-inventory"
+					],
+					"evidence": [
+						"privacy-data-flow-matrix",
+						"compliance-report.data_flows"
+					],
+					"coverage": "customer-responsibility",
+					"note": "The data-flow and subprocessor inventory supports the bank's assessment of Singularity AIDR as a supplier. Assessing AI service providers and any support service obligations are the bank's."
+				}
+			]
+		},
+		{
+			"id": "cbddo-big",
+			"name": "Cumhurbaşkanlığı Bilgi ve İletişim Güvenliği Rehberi",
+			"version": "Dijital Dönüşüm Ofisi BİG Rehberi (topic-level mapping)",
+			"reference": "https://cbddo.gov.tr/bilgi-ve-iletisim-guvenligi-rehberi",
+			"scope": "Measure topics of the Information and Communication Security Guide where Singularity AIDR provides a technical measure or evidence for an institution's use of AI coding agents, AI chat sites and MCP servers. Topic codes are this mapping's own; measure numbers, the institution's asset criticality level and its other systems are the institution's to determine. Vendor mapping only, not an audit result.",
+			"controls": [
+				{
+					"id": "BIG-VARLIK",
+					"group": "Varlık yönetimi",
+					"title": "Varlık envanteri ve sınıflandırma (asset inventory and classification)",
+					"capabilities": [
+						"ai-asset-inventory",
+						"mcp-inventory"
+					],
+					"evidence": [
+						"agents",
+						"posture_findings",
+						"compliance-report.protection_coverage"
+					],
+					"coverage": "partial",
+					"note": "AI coding agents, browser installs, AI sites in use and MCP servers are inventoried for endpoints that run an AIDR connector or Browser Guard. Criticality grading of assets is the institution's."
+				},
+				{
+					"id": "BIG-ERISIM",
+					"group": "Ağ ve sistem güvenliği",
+					"title": "Kimlik doğrulama ve erişim yönetimi (authentication and access management)",
+					"capabilities": [
+						"identity-access-control",
+						"tenant-isolation"
+					],
+					"evidence": [
+						"tenant_identity_policies",
+						"compliance-report.access_identity"
+					],
+					"coverage": "partial",
+					"note": "Control-plane access uses roles, MFA, SSO and SCIM enforced on every tenant table. Access management for the institution's other systems is outside the product."
+				},
+				{
+					"id": "BIG-KAYIT",
+					"group": "Ağ ve sistem güvenliği",
+					"title": "Kayıt yönetimi ve izleme (log management and monitoring)",
+					"capabilities": [
+						"audit-logging",
+						"audit-export",
+						"siem-export"
+					],
+					"evidence": [
+						"admin_audit_logs",
+						"local-audit-log",
+						"siem-export"
+					],
+					"coverage": "partial",
+					"note": "Agent decisions and administrative changes are logged append-only and can be sent to the institution's SIEM. Central log retention and time synchronisation are the institution's."
+				},
+				{
+					"id": "BIG-OLAY",
+					"group": "Siber olay yönetimi",
+					"title": "Siber olaylara müdahale (cyber incident response)",
+					"capabilities": [
+						"incident-management",
+						"incident-triage"
+					],
+					"evidence": [
+						"events.incident",
+						"incident_triage",
+						"incident_triage_history"
+					],
+					"coverage": "partial",
+					"note": "Incidents from blocked or flagged AI tool actions are triaged with owner, status, resolution note and an append-only history. Reporting to the national CERT (USOM/SOME) and the institution's response team are the institution's."
+				},
+				{
+					"id": "BIG-KISISEL",
+					"group": "Uygulama ve veri güvenliği",
+					"title": "Kişisel verilerin güvenliği (security of personal data)",
+					"capabilities": [
+						"browser-guard-masking",
+						"prompt-dlp-protection",
+						"data-flow-inventory"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"compliance-report.data_protection_activity",
+						"compliance-report.data_flows"
+					],
+					"coverage": "partial",
+					"note": "TR/EN personal data is masked before AI services receive it, telemetry is counts only and the data-flow inventory documents the product's own processing. KVKK obligations as a whole remain the controller's."
+				},
+				{
+					"id": "BIG-SIZINTI",
+					"group": "Uygulama ve veri güvenliği",
+					"title": "Veri sızıntısının önlenmesi (data leakage prevention)",
+					"capabilities": [
+						"browser-guard-masking",
+						"prompt-dlp-protection",
+						"output-inspection",
+						"runtime-enforcement"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"events.runtime_verdict",
+						"tenant_dlp_policies"
+					],
+					"coverage": "partial",
+					"note": "Secrets and personal data are kept out of AI prompts, uploads, agent tool calls and MCP results on protected channels. Mail, removable media and unprotected sites are outside the product."
+				},
+				{
+					"id": "BIG-BULUT",
+					"group": "Uygulama ve veri güvenliği",
+					"title": "Bulut ve yapay zekâ hizmetlerinin güvenli kullanımı (secure use of cloud and AI services)",
+					"capabilities": [
+						"browser-guard-masking",
+						"acceptable-use-notice",
+						"ai-asset-inventory"
+					],
+					"evidence": [
+						"events.privacy_scan",
+						"events.aup_acknowledgement"
+					],
+					"coverage": "partial",
+					"note": "AI sites in use are counted, can be blocked by policy, show the acceptable-use notice and receive masked prompts. Choosing and contracting cloud services is the institution's."
+				},
+				{
+					"id": "BIG-YERELLESTIRME",
+					"group": "Uygulama ve veri güvenliği",
+					"title": "Veri yerelleştirme (data localisation)",
+					"capabilities": [
+						"data-flow-inventory"
+					],
+					"evidence": [
+						"privacy-data-flow-matrix",
+						"compliance-report.data_flows"
+					],
+					"coverage": "customer-responsibility",
+					"note": "The control plane can run on the institution's own premises and the data-flow inventory lists every destination of product data. Deciding where data may be processed is the institution's."
+				},
+				{
+					"id": "BIG-YAZILIM",
+					"group": "Uygulama ve veri güvenliği",
+					"title": "Güvenli yazılım geliştirme (secure software development)",
+					"capabilities": [
+						"runtime-enforcement",
+						"plugin-skill-scanning",
+						"output-inspection"
+					],
+					"evidence": [
+						"events.runtime_verdict",
+						"threat-rules"
+					],
+					"coverage": "customer-responsibility",
+					"note": "Dangerous commands, packages and secret exposure by AI coding agents are blocked during development. The institution's secure development process stays its own."
+				},
+				{
+					"id": "BIG-ZARARLI",
+					"group": "Ağ ve sistem güvenliği",
+					"title": "Zararlı yazılımlardan korunma (protection against malware)",
+					"capabilities": [
+						"runtime-enforcement",
+						"plugin-skill-scanning",
+						"mcp-gateway"
+					],
+					"evidence": [
+						"events.runtime_verdict",
+						"threat-rules"
+					],
+					"coverage": "partial",
+					"note": "Malicious commands, downloads, plugins, skills and MCP results are blocked on the coding-agent path. The product does not replace endpoint protection."
+				},
+				{
+					"id": "BIG-ZAFIYET",
+					"group": "Ağ ve sistem güvenliği",
+					"title": "Zafiyet yönetimi (vulnerability management)",
+					"capabilities": [
+						"ai-posture-scanning"
+					],
+					"evidence": [
+						"posture_findings",
+						"compliance-report.ai_security_posture"
+					],
+					"coverage": "customer-responsibility",
+					"note": "CVE and exposed-component findings of the AI tool chain are reported by severity. Scanning and patching the institution's systems are the institution's."
+				},
+				{
+					"id": "BIG-FARKINDALIK",
+					"group": "Personel güvenliği",
+					"title": "Personel farkındalığı (staff awareness)",
+					"capabilities": [
+						"acceptable-use-notice"
+					],
+					"evidence": [
+						"events.aup_acknowledgement"
+					],
+					"coverage": "customer-responsibility",
+					"note": "The acceptable-use notice reaches staff at the moment they use an AI site and records acknowledgement. Awareness training is the institution's."
+				},
+				{
+					"id": "BIG-DENETIM",
+					"group": "Uygulama süreci",
+					"title": "Uyum denetimi ve yönetime raporlama (compliance audit and reporting to management)",
+					"capabilities": [
+						"compliance-evidence-report",
+						"governance-digest",
+						"governance-scorecard"
+					],
+					"evidence": [
+						"compliance-report.policy_inventory",
+						"executive-report",
+						"governance-scorecard"
+					],
+					"coverage": "partial",
+					"note": "A signed evidence report, the scorecard and a scheduled executive report in Turkish or English support the institution's audit. The conformity audit itself is the institution's."
 				}
 			]
 		}

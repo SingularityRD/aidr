@@ -24,9 +24,11 @@ const MANAGED_MARKER = "Singularity AIDR managed installation";
 const BUNDLES = ["pre-tool-use.cjs", "post-tool-use.cjs", "session-start.cjs"];
 const CUSTOMER_HOOK_A = { type: "command", command: "customer-command-a", timeout: 9 };
 const CUSTOMER_HOOK_B = { type: "command", command: "customer-command-b" };
+// The current hook wording, in Turkish: the canary keys on the decision, the
+// product prefix and the rule id, so a localized or reworded message still passes.
 const CANARY_VERDICT = {
-	hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "🛡️ Singularity AIDR: Threat Blocked" },
-	systemMessage: "Remote code execution via curl pipe to shell",
+	hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "🛡️ Singularity AIDR bu işlemi engelledi: Uzaktan kod çalıştırma (kural CLT-CMD-001). Yeniden deneme ve engeli aşmaya çalışma; ayrıntılar kullanıcıya gösterildi." },
+	systemMessage: "🛡️ Singularity AIDR bu işlemi engelledi.\nNeden: Uzaktan kod çalıştırma (kritik, kural CLT-CMD-001).",
 };
 const bundleWithVerdict = (verdict) =>
 	`process.stdin.resume();process.stdin.on("end",()=>{process.stdout.write(${JSON.stringify(JSON.stringify(verdict))});});\n`;
@@ -395,6 +397,8 @@ test("generic or internal-error deny output cannot pass the local canary, includ
 		{ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny" } },
 		{ ...CANARY_VERDICT, hookSpecificOutput: { ...CANARY_VERDICT.hookSpecificOutput, permissionDecisionReason: "Internal error: scanner unavailable" } },
 		{ ...CANARY_VERDICT, systemMessage: "No detector initialized" },
+		// A release-integrity or inspection failure denies everything; it is not a working canary.
+		{ ...CANARY_VERDICT, systemMessage: "Singularity AIDR blocked this action because it cannot verify its own installation (release verification key missing)." },
 		{ ...CANARY_VERDICT, hookSpecificOutput: { ...CANARY_VERDICT.hookSpecificOutput, hookEventName: "PostToolUse" } },
 	];
 	for (const verdict of invalid) {

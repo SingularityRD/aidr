@@ -216,6 +216,10 @@ function rpcFor(command: GovernanceCommand, tenantId: string, userId: string): {
 			return { name: "update_browser_guard_settings", args: {
 				p_tenant_id: tenantId, p_actor_user_id: userId, p_require_native_ner: command.requireNativeNer,
 			} };
+		case "update_approval_settings":
+			return { name: "update_approval_settings", args: {
+				p_tenant_id: tenantId, p_actor_user_id: userId, p_require_distinct_approver: command.requireDistinctApprover,
+			} };
 		case "decide_policy_change":
 			return { name: "decide_policy_change_request", args: {
 				p_tenant_id: tenantId, p_actor_user_id: userId, p_request_id: command.requestId,

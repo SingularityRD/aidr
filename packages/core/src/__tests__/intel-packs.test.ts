@@ -1,11 +1,8 @@
 import { createCipheriv, createHash, generateKeyPairSync, sign } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-	activatePackVersion,
-	loadMergedIntelFromDisk,
-} from "../intel/loader.js";
+import { activatePackVersion, loadMergedIntelFromDisk } from "../intel/loader.js";
 import { evaluatePolicy } from "../policy.js";
 import { ConfigSchema } from "../types.js";
 import { makeTmpDir } from "./test-utils.js";
@@ -77,7 +74,11 @@ describe("intel packs", () => {
 		const manifestJson = `${JSON.stringify(manifestObj, null, 2)}\n`;
 		await writeFile(join(packsDir, "manifest.json"), manifestJson, "utf8");
 
-		const sig = sign(null, Buffer.from(manifestJson, "utf8"), params.signWith ?? params.privateKey).toString("base64");
+		const sig = sign(
+			null,
+			Buffer.from(manifestJson, "utf8"),
+			params.signWith ?? params.privateKey,
+		).toString("base64");
 		await writeFile(join(packsDir, "manifest.sig"), `${sig}\n`, "utf8");
 	}
 
@@ -275,7 +276,11 @@ describe("intel packs", () => {
 
 		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 		const publicPem = publicKey.export({ format: "pem", type: "spki" }).toString();
-		await writeFile(join(base, "trusted-keys.json"), `${JSON.stringify({ k1: publicPem })}\n`, "utf8");
+		await writeFile(
+			join(base, "trusted-keys.json"),
+			`${JSON.stringify({ k1: publicPem })}\n`,
+			"utf8",
+		);
 		await writeSignedPackVersion({
 			base,
 			packId: "revocation-source-required",
@@ -289,7 +294,7 @@ describe("intel packs", () => {
 		expect(Object.getOwnPropertyDescriptor(merged, "availability")?.value).toBe("unavailable");
 	});
 
-	it("supports grace verification for expired packs", async () => {
+	it("keeps enforcing an installed pack past its expiry and reports it stale", async () => {
 		const base = join(dir, ".singularity-aidr", "intel");
 		await mkdir(base, { recursive: true });
 
@@ -311,20 +316,98 @@ describe("intel packs", () => {
 			files: [{ kind: "plugin_signature_denylist", name: "plugin-sig.txt", content: "deadbeef\n" }],
 		});
 
+		// Hard constraint: a clock passing expires_at never removes installed detection.
 		const strictMerged = await loadMergedIntelFromDisk({ verificationMode: "strict" });
-		expect(strictMerged.pluginSignatureDeny.has("deadbeef")).toBe(false);
+		expect(strictMerged.pluginSignatureDeny.has("deadbeef")).toBe(true);
+		expect(strictMerged.availability).toBe("available");
+		expect(strictMerged.stalePacks).toEqual([
+			{ packId: "exp-pack", version: "1.0.0", expiresAt: expired },
+		]);
+		expect(strictMerged.detail).toMatch(/past expiry still enforcing.*exp-pack@1\.0\.0/);
+
 		const zeroGraceMerged = await loadMergedIntelFromDisk({
 			verificationMode: "grace",
 			graceHours: 0,
 		});
-		expect(zeroGraceMerged.pluginSignatureDeny.has("deadbeef")).toBe(false);
-		expect(Object.getOwnPropertyDescriptor(zeroGraceMerged, "availability")?.value).toBe("unavailable");
+		expect(zeroGraceMerged.pluginSignatureDeny.has("deadbeef")).toBe(true);
+		expect(zeroGraceMerged.stalePacks).toHaveLength(1);
 
+		// Inside the grace window the pack is not yet reported stale.
 		const graceMerged = await loadMergedIntelFromDisk({
 			verificationMode: "grace",
 			graceHours: 48,
 		});
 		expect(graceMerged.pluginSignatureDeny.has("deadbeef")).toBe(true);
+		expect(graceMerged.stalePacks).toEqual([]);
+
+		// Revocation is still what removes a pack.
+		const revoked = await loadMergedIntelFromDisk({ revocations: { pack_ids: ["exp-pack"] } });
+		expect(revoked.pluginSignatureDeny.has("deadbeef")).toBe(false);
+	});
+
+	it("keeps decrypting an activated pack version after the keyring empties, but not a new version", async () => {
+		const base = join(dir, ".singularity-aidr", "intel");
+		await mkdir(base, { recursive: true });
+		const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+		await writeFile(
+			join(base, "trusted-keys.json"),
+			JSON.stringify({ k1: publicKey.export({ format: "pem", type: "spki" }).toString() }),
+			"utf8",
+		);
+		const key = new Uint8Array(32).fill(5);
+		const entitlementPath = join(dir, ".singularity-aidr", "entitlement.json");
+		await writeFile(
+			entitlementPath,
+			JSON.stringify({ intel_keys: { ek1: Buffer.from(key).toString("base64") } }),
+			"utf8",
+		);
+		await writeSignedEncryptedPackVersion({
+			base,
+			packId: "enc-retained",
+			version: "1.0.0",
+			privateKey,
+			kind: "url_denylist",
+			name: "url-deny.bin",
+			plaintext: "retained.bad.example\n",
+			keyId: "ek1",
+			key,
+		});
+		expect((await loadMergedIntelFromDisk()).urlDenyHosts.has("retained.bad.example")).toBe(true);
+
+		const retainedPath = join(base, "retained", "pack-keys.json");
+		if (process.platform !== "win32") {
+			expect((await stat(retainedPath)).mode & 0o777).toBe(0o600);
+			expect((await stat(join(base, "retained"))).mode & 0o777).toBe(0o700);
+		}
+		const retained = JSON.parse(await readFile(retainedPath, "utf8"));
+		expect(Object.keys(retained.versions)).toEqual(["enc-retained@1.0.0"]);
+
+		// The entitlement ends: the live keyring is empty from now on.
+		await rm(entitlementPath);
+		const afterExpiry = await loadMergedIntelFromDisk();
+		expect(afterExpiry.urlDenyHosts.has("retained.bad.example")).toBe(true);
+		expect(afterExpiry.availability).toBe("available");
+
+		// A revoked key id is still refused even though it was retained.
+		const keyRevoked = await loadMergedIntelFromDisk({ revocations: { key_ids: ["ek1"] } });
+		expect(keyRevoked.urlDenyHosts.has("retained.bad.example")).toBe(false);
+
+		// A new version does not inherit the retained key of another version.
+		await writeSignedEncryptedPackVersion({
+			base,
+			packId: "enc-retained",
+			version: "1.1.0",
+			privateKey,
+			kind: "url_denylist",
+			name: "url-deny.bin",
+			plaintext: "newer.bad.example\n",
+			keyId: "ek1",
+			key,
+		});
+		await activatePackVersion({ packId: "enc-retained", version: "1.1.0" });
+		const newer = await loadMergedIntelFromDisk();
+		expect(newer.urlDenyHosts.has("newer.bad.example")).toBe(false);
+		expect(newer.availability).toBe("unavailable");
 	});
 
 	it("loads encrypted pack files using entitlement keyring and verifies ciphertext sha256", async () => {

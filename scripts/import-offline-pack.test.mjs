@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { canonicalJson } from "./license-verify.mjs";
 
 const importScript = fileURLToPath(new URL("./import-offline-pack.mjs", import.meta.url));
 const signScript = fileURLToPath(new URL("./sign-intel-pack-manifest.mjs", import.meta.url));
@@ -278,3 +279,107 @@ test("storage target uploads the verified bundle to the private bucket and regis
 	assert.equal(state.calls.length, before, "a pack that fails verification never reaches the deployment");
 });
 
+
+// ─── license-bound updates (--license) ───────────────────────────────────
+
+const licenseSigner = generateKeyPairSync("ed25519");
+
+/** A DEV aidr-license-v1 for customer_id "example-co", signed per run, plus its registry. */
+function licenseFiles(root, { expiresAt = "2026-12-01T00:00:00Z", graceDays = 14 } = {}) {
+	const payload = {
+		license_id: "LIC-OFFLINE-1",
+		customer: "Example Customer AG",
+		customer_id: "example-co",
+		plan_id: "enterprise",
+		seats: 10,
+		features: ["premium_intel"],
+		deployment: "airgap",
+		issued_at: "2026-09-01T00:00:00Z",
+		not_before: "2026-09-01T00:00:00Z",
+		expires_at: expiresAt,
+		grace_days: graceDays,
+	};
+	const message = Buffer.from(`aidr-license-v1\n${canonicalJson(payload)}`, "utf8");
+	const license = { format: "aidr-license-v1", key_id: "aidr-license-dev-1", payload, sig: sign(null, message, licenseSigner.privateKey).toString("base64") };
+	const registry = {
+		format: "aidr-license-public-keys-v1",
+		schema_version: 1,
+		keys: [{ key_id: "aidr-license-dev-1", algorithm: "ed25519", public_key_pem: licenseSigner.publicKey.export({ type: "spki", format: "pem" }).toString(), not_before: "2026-01-01T00:00:00Z", not_after: null, status: "active" }],
+	};
+	const licensePath = join(root, "license.json");
+	const registryPath = join(root, "license-public-keys.json");
+	writeFileSync(licensePath, JSON.stringify(license));
+	writeFileSync(registryPath, JSON.stringify(registry));
+	return { licensePath, registryPath, license };
+}
+
+test("--license gates new packs on the signed license term and the pack audience", (t) => {
+	const root = workdir(t);
+	const keys = trustedKeys(root);
+	const env = { HOME: join(root, "home") };
+	const { licensePath, registryPath } = licenseFiles(root);
+	const packsDir = join(root, "packs");
+	const local = (pack, extra = []) => runImport(["--pack", pack, "--trusted-keys", keys, "--target", "local", "--packs-dir", packsDir, ...extra], env);
+	const licensed = ["--license", licensePath, "--license-public-keys", registryPath];
+
+	// Addressed to this customer and issued inside expires_at + grace_days: installed.
+	const ours = buildPack(root, { version: "1.0.0", name: "ours", manifestOverrides: { audience: { customer_ids: ["other-co", "example-co"] } } });
+	const noLicense = local(ours);
+	assert.notEqual(noLicense.status, 0);
+	assert.match(noLicense.stderr, /pack_audience_requires_license/);
+	assert.ok(!existsSync(join(packsDir, "aidr-offline-intel")), "a refused pack writes nothing");
+	const accepted = local(ours, licensed);
+	assert.equal(accepted.status, 0, accepted.stderr);
+	assert.equal(accepted.json.outcome, "installed");
+	assert.equal(accepted.json.license.customer_id, "example-co");
+	assert.equal(accepted.json.license.updates_until, "2026-12-15T00:00:00.000Z");
+
+	// Someone else's pack, and a pack signed after the term ended, are refused.
+	const theirs = buildPack(root, { version: "1.1.0", name: "theirs", manifestOverrides: { audience: { customer_ids: ["other-co"] } } });
+	assert.match(local(theirs, licensed).stderr, /pack_audience_mismatch/);
+	const late = buildPack(root, { version: "1.2.0", name: "late", manifestOverrides: { issued_at: "2026-12-15T00:00:01Z" } });
+	const lateResult = local(late, licensed);
+	assert.notEqual(lateResult.status, 0);
+	assert.match(lateResult.stderr, /license_term_ended/);
+	assert.deepEqual(JSON.parse(readFileSync(join(packsDir, "aidr-offline-intel", "active.json"), "utf8")), { version: "1.0.0" }, "the installed pack stays active");
+
+	// A pack issued at the very end of grace is still accepted.
+	const lastDay = buildPack(root, { version: "1.3.0", name: "last-day", manifestOverrides: { issued_at: "2026-12-15T00:00:00Z" } });
+	assert.equal(local(lastDay, licensed).status, 0);
+
+	// A tampered license or a missing trust root is refused (fail closed).
+	const tampered = join(root, "tampered-license.json");
+	const document = JSON.parse(readFileSync(licensePath, "utf8"));
+	writeFileSync(tampered, JSON.stringify({ ...document, payload: { ...document.payload, expires_at: "2030-01-01T00:00:00Z" } }));
+	const forged = local(buildPack(root, { version: "1.4.0", name: "forged" }), ["--license", tampered, "--license-public-keys", registryPath]);
+	assert.notEqual(forged.status, 0);
+	assert.match(forged.stderr, /is not valid: .*does not verify/);
+	const unconfigured = local(buildPack(root, { version: "1.4.0", name: "unconfigured" }), ["--license", licensePath]);
+	assert.notEqual(unconfigured.status, 0);
+	assert.match(unconfigured.stderr, /no license public keys are configured/);
+});
+
+test("the local target applies the endpoint's installed license without --license", (t) => {
+	const root = workdir(t);
+	const keys = trustedKeys(root);
+	const home = join(root, "home");
+	mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
+	const { license, registryPath } = licenseFiles(root, { expiresAt: "2026-10-01T00:00:00Z", graceDays: 0 });
+	writeFileSync(join(home, ".singularity-aidr", "license.json"), JSON.stringify(license));
+	const late = buildPack(root, { version: "2.0.0", name: "late", manifestOverrides: { issued_at: "2026-10-02T00:00:00Z" } });
+	const result = runImport(["--pack", late, "--trusted-keys", keys, "--target", "local", "--packs-dir", join(root, "packs"), "--license-public-keys", registryPath], { HOME: home });
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /license_term_ended/);
+});
+
+test("the storage target is gated by --license before the deployment is contacted", (t) => {
+	const root = workdir(t);
+	const keys = trustedKeys(root);
+	const { licensePath, registryPath } = licenseFiles(root);
+	const pack = buildPack(root, { version: "3.0.0", manifestOverrides: { audience: { customer_ids: ["other-co"] } } });
+	const base = ["--pack", pack, "--trusted-keys", keys, "--target", "storage", "--deployment", join(root, "no-deployment")];
+	const unlicensed = runImport(base, { HOME: join(root, "home") });
+	assert.match(unlicensed.stderr, /pack_audience_requires_license/);
+	const mismatched = runImport([...base, "--license", licensePath, "--license-public-keys", registryPath], { HOME: join(root, "home") });
+	assert.match(mismatched.stderr, /pack_audience_mismatch/);
+});

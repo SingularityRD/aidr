@@ -1,0 +1,320 @@
+#!/bin/sh
+# Singularity AIDR — Linux package maintainer hook (shared by .deb, .rpm and
+# the tarball's install.sh / uninstall.sh).
+#
+#   package-hook.sh postinstall           as root: deploy the hooks through each
+#                                         AI tool's system-wide policy
+#                                         (`aidr machine-hooks install --heartbeat`);
+#                                         then run `aidr setup` for the invoking user
+#   package-hook.sh preremove <final>     on final removal (final=1) run
+#                                         `aidr uninstall --yes --keep-data` for
+#                                         EVERY local account that ran `aidr setup`,
+#                                         then `aidr machine-hooks remove --heartbeat`;
+#                                         an upgrade (0) keeps every registration
+#   package-hook.sh deregister-all        the same machine-wide removal without
+#                                         removing the package (fleet removal:
+#                                         run it as root from configuration
+#                                         management, then remove the package)
+#
+# Machine-wide removal: an account is included when its home holds a
+# ~/.singularity-aidr directory it owns (not a link). `aidr uninstall` then runs
+# AS THAT USER (runuser), never as root on a user's files, so a user cannot make
+# root write through a planted link. Accounts the passwd database does not
+# enumerate (some LDAP/SSSD setups) are not seen: run `aidr uninstall` for them,
+# or `deregister-all` with AIDR_PACKAGE_HOOK_PASSWD naming a passwd-format list.
+#
+# The invoking user is SUDO_USER (`sudo apt install ./aidr.deb`). Setup never
+# runs for root or with root's HOME: without a non-root SUDO_USER the hook only
+# prints the one command each user runs. A failed setup does not fail the
+# package transaction; it prints the command to rerun.
+#
+# Environment:
+#   AIDR_INSTALL_SKIP_SETUP=1            install files only (images, MDM pre-staging)
+#   AIDR_MDM_MANAGED=1                   device-managed install: writes the marker
+#                                        `aidr update` reads, so updates are left to
+#                                        the MDM / configuration-management tool
+#   AIDR_MDM_MARKER                      marker path (default /etc/singularity-aidr/mdm-managed)
+#   AIDR_PREFIX                          install prefix (default /opt/singularity-aidr)
+#   AIDR_MACHINE_HOOKS=0                 do not deploy system-wide hooks (default: deploy
+#                                        when run as root): Claude Code managed-settings.d,
+#                                        Codex /etc/codex/hooks.json, hourly heartbeat
+#   AIDR_LOCK_OTHER_HOOKS=1              also make the hosts run only managed hooks
+#   AIDR_PACKAGE_HOOK_TARGET_HOME        home to configure instead of the user's
+#                                        passwd entry (fleet tooling and tests)
+#
+# Machine policy (packages/core/src/machine-policy.ts): when any AIDR_POLICY_*
+# variable is set, postinstall (as root) writes /etc/singularity-aidr/managed.json
+# from them, replacing an earlier one; with none set an existing file is kept
+# (an upgrade never drops it). Every user's `aidr setup` then connects to the
+# company without asking, and every hook reads it:
+#   AIDR_POLICY_CONTROL_PLANE_URL         https://... company control plane
+#   AIDR_POLICY_ENROLLMENT_KEY            aidr_fleet_... fleet enrollment key
+#   AIDR_POLICY_LICENSING_PUBLIC_KEYS     base64 SPKI keys, space/comma separated
+#   AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE  PEM file with the deployment's public keys
+#                                        (endpoint-policy/licensing-public-keys.pem)
+#   AIDR_POLICY_CA_FILE                   PEM bundle of an internal / TLS-inspection CA
+#   AIDR_POLICY_USE_OS_TRUST_STORE        1 | 0: also trust the OS store (/etc/ssl)
+#   AIDR_POLICY_HTTPS_PROXY               http://proxy:port
+#   AIDR_POLICY_NO_PROXY                  hosts / domain suffixes that go direct
+#   AIDR_POLICY_SUPPORT_CONTACT_URL       https:// or mailto: shown to users
+#   AIDR_POLICY_PRIVACY_NOTICE_URL        https:// privacy notice shown to users
+#   AIDR_POLICY_APPROVALS_MODE            dashboard_only | host_dialog
+#   AIDR_POLICY_OFFLINE_POLICY            keep_enforcing_local | block_after_grace
+#   AIDR_MACHINE_POLICY                   policy path (default /etc/singularity-aidr/managed.json; tests)
+# sudo resets the environment: pass them as `sudo env AIDR_POLICY_...=... apt install ./aidr.deb`.
+#   AIDR_PACKAGE_HOOK_PASSWD             passwd-format account list for the
+#                                        machine-wide removal (default: getent passwd)
+set -u
+
+PREFIX=${AIDR_PREFIX:-/opt/singularity-aidr}
+AIDR="$PREFIX/bundle/bin/aidr"
+MDM_MARKER=${AIDR_MDM_MARKER:-/etc/singularity-aidr/mdm-managed}
+MACHINE_POLICY=${AIDR_MACHINE_POLICY:-/etc/singularity-aidr/managed.json}
+action=${1:-}
+
+say() { printf '%s\n' "Singularity AIDR: $*"; }
+
+# A JSON string from a value that needs no escaping; anything else is refused.
+json_text() {
+	case "$2" in
+	*'"'* | *'\'* | *"$(printf '\t')"* | *"$(printf '\r')"*)
+		say "$1 contains a quote, backslash or control character; the machine policy was not written" >&2
+		return 1
+		;;
+	esac
+	if [ "$(printf '%s' "$2" | wc -l)" -ne 0 ]; then
+		say "$1 contains a line break; the machine policy was not written" >&2
+		return 1
+	fi
+	printf '"%s"' "$2"
+}
+
+# The deployment's public keys as a JSON array of base64 SPKI strings.
+policy_keys() {
+	keys=${AIDR_POLICY_LICENSING_PUBLIC_KEYS:-}
+	if [ -n "${AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE:-}" ]; then
+		if [ ! -r "$AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE" ]; then
+			say "AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE cannot be read; the machine policy was not written" >&2
+			return 1
+		fi
+		keys="$keys $(awk '/-----BEGIN PUBLIC KEY-----/{k="";on=1;next} /-----END PUBLIC KEY-----/{if(on)printf "%s ",k;on=0;next} on{gsub(/[ \t\r]/,"");k=k $0}' "$AIDR_POLICY_LICENSING_PUBLIC_KEYS_FILE")"
+	fi
+	out=""
+	for key in $(printf '%s' "$keys" | tr ',;' '  '); do
+		case "$key" in *[!A-Za-z0-9+/=]*)
+			say "AIDR_POLICY_LICENSING_PUBLIC_KEYS holds something that is not a base64 public key; the machine policy was not written" >&2
+			return 1
+			;;
+		esac
+		out="$out${out:+,}\"$key\""
+	done
+	[ -z "$out" ] || printf '[%s]' "$out"
+}
+
+# Write the machine policy from the AIDR_POLICY_* variables (root only).
+write_machine_policy() {
+	fields=""
+	for pair in control_plane_url:CONTROL_PLANE_URL enrollment_key:ENROLLMENT_KEY ca_file:CA_FILE \
+		https_proxy:HTTPS_PROXY no_proxy:NO_PROXY support_contact_url:SUPPORT_CONTACT_URL \
+		privacy_notice_url:PRIVACY_NOTICE_URL approvals_mode:APPROVALS_MODE offline_policy:OFFLINE_POLICY; do
+		name=AIDR_POLICY_${pair#*:}
+		value=$(printenv "$name" || true)
+		[ -n "$value" ] || continue
+		text=$(json_text "$name" "$value") || return 1
+		fields="$fields${fields:+,}
+  \"${pair%%:*}\": $text"
+	done
+	case "${AIDR_POLICY_USE_OS_TRUST_STORE:-}" in
+	"") ;;
+	1 | true | yes) fields="$fields${fields:+,}
+  \"use_os_trust_store\": true" ;;
+	0 | false | no) fields="$fields${fields:+,}
+  \"use_os_trust_store\": false" ;;
+	*)
+		say "AIDR_POLICY_USE_OS_TRUST_STORE must be 1 or 0; the machine policy was not written" >&2
+		return 1
+		;;
+	esac
+	keys=$(policy_keys) || return 1
+	[ -z "$keys" ] || fields="$fields${fields:+,}
+  \"licensing_public_keys_pem\": $keys"
+	[ -n "$fields" ] || return 0
+	if [ "$(id -u)" -ne 0 ] && [ -z "${AIDR_MACHINE_POLICY:-}" ]; then
+		say "the machine policy needs root; it was not written" >&2
+		return 1
+	fi
+	dir=$(dirname "$MACHINE_POLICY")
+	umask 022
+	mkdir -p "$dir" && chmod 755 "$dir" || return 1
+	tmp="$MACHINE_POLICY.tmp.$$"
+	if ! { printf '{%s\n}\n' "$fields" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$MACHINE_POLICY"; }; then
+		rm -f "$tmp"
+		return 1
+	fi
+	say "machine policy written to $MACHINE_POLICY (every user's 'aidr setup' applies it)"
+}
+
+target_user() {
+	user=${SUDO_USER:-}
+	[ -n "$user" ] || return 1
+	[ "$user" != "root" ] || return 1
+	case "$user" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+	getent passwd "$user" >/dev/null 2>&1 || id "$user" >/dev/null 2>&1 || return 1
+	printf '%s' "$user"
+}
+
+user_home() {
+	if [ -n "${AIDR_PACKAGE_HOOK_TARGET_HOME:-}" ]; then
+		printf '%s' "$AIDR_PACKAGE_HOOK_TARGET_HOME"
+		return 0
+	fi
+	getent passwd "$1" 2>/dev/null | cut -d: -f6
+}
+
+# Run the bundle's aidr as <user> with that user's HOME, never root's.
+run_as() {
+	user=$1; home=$2; shift 2
+	if [ "$(id -u)" -ne 0 ]; then
+		env HOME="$home" "$@"
+	elif command -v runuser >/dev/null 2>&1; then
+		runuser -u "$user" -- env HOME="$home" "$@"
+	else
+		su -s /bin/sh "$user" -c 'HOME="$0"; export HOME; shift; exec "$@"' "$home" "$@"
+	fi
+}
+
+# System-wide hooks need root and never block the package transaction.
+machine_hooks() {
+	[ "${AIDR_MACHINE_HOOKS:-1}" != "0" ] || return 0
+	if [ "$(id -u)" -ne 0 ]; then
+		say "system-wide hooks not deployed (not root). An administrator runs: aidr machine-hooks $1 --heartbeat"
+		return 0
+	fi
+	lock=""
+	[ "$1" != "install" ] || [ "${AIDR_LOCK_OTHER_HOOKS:-}" != "1" ] || lock="--lock-other-hooks"
+	# shellcheck disable=SC2086 # $lock is one optional flag
+	if ! "$AIDR" machine-hooks "$1" --heartbeat $lock; then
+		say "system-wide hooks: 'aidr machine-hooks $1' did not finish (see above); per-user hooks still apply." >&2
+	fi
+}
+
+# name:home of every account that ran `aidr setup`: it owns ~/.singularity-aidr.
+registered_users() {
+	if [ -n "${AIDR_PACKAGE_HOOK_PASSWD:-}" ]; then
+		cat "$AIDR_PACKAGE_HOOK_PASSWD"
+	else
+		getent passwd 2>/dev/null || cat /etc/passwd
+	fi | while IFS=: read -r name _ uid _ _ home _; do
+		case "$name" in '' | *[!A-Za-z0-9._-]*) continue ;; esac
+		case "$uid" in '' | *[!0-9]*) continue ;; esac
+		case "$home" in /*) ;; *) continue ;; esac
+		# Without root only the caller's own account can be changed.
+		[ "$(id -u)" -eq 0 ] || [ "$uid" = "$(id -u)" ] || continue
+		state="$home/.singularity-aidr"
+		[ -d "$state" ] && [ ! -L "$state" ] && [ ! -L "$home" ] || continue
+		[ "$(stat -c %u "$state" 2>/dev/null)" = "$uid" ] || continue
+		printf '%s:%s\n' "$name" "$home"
+	done
+}
+
+# `aidr uninstall --yes --keep-data` for every registered account, as that account.
+deregister_all() {
+	count=0
+	failed=0
+	list=$(mktemp) || return 1
+	registered_users | sort -u > "$list"
+	exec 3< "$list"
+	rm -f "$list"
+	while IFS= read -r entry <&3; do
+		user=${entry%%:*}
+		home=${entry#*:}
+		count=$((count + 1))
+		say "removing the AIDR connectors of $user ($home; local data kept)"
+		if ! run_as "$user" "$home" env AIDR_OPERATOR_NONINTERACTIVE=1 "$AIDR" uninstall --yes --keep-data < /dev/null; then
+			failed=$((failed + 1))
+			say "uninstall for $user was incomplete; see the lines above. As $user: aidr uninstall" >&2
+		fi
+	done
+	exec 3<&-
+	if [ "$count" -eq 0 ]; then
+		say "no account on this machine has AIDR connectors registered"
+	else
+		say "connectors removed for $((count - failed)) of $count account(s)"
+	fi
+	[ "$failed" -eq 0 ]
+}
+
+case "$action" in
+postinstall)
+	if [ ! -x "$AIDR" ]; then
+		say "$AIDR is missing; the package is incomplete. Reinstall it." >&2
+		exit 1
+	fi
+	# Before any setup runs: setup reads it.
+	if ! write_machine_policy; then
+		say "fix the AIDR_POLICY_* values and reinstall, or write $MACHINE_POLICY by hand (docs/installation/desktop-installers.md)" >&2
+	fi
+	machine_hooks install
+	if [ "${AIDR_MDM_MANAGED:-}" = "1" ]; then
+		if mkdir -p "$(dirname "$MDM_MARKER")" && : > "$MDM_MARKER"; then
+			say "device-managed install: update it with your device management tool ('aidr update' only checks)"
+		else
+			say "could not write $MDM_MARKER; automatic updates stay on" >&2
+		fi
+	fi
+	if [ "${AIDR_INSTALL_SKIP_SETUP:-}" = "1" ]; then
+		say "installed (setup skipped: AIDR_INSTALL_SKIP_SETUP=1). Each user runs once: aidr setup"
+		exit 0
+	fi
+	if ! user=$(target_user); then
+		say "installed. Each user runs once (as themselves, not root): aidr setup, or opens 'Singularity AIDR Setup Assistant' from the applications menu"
+		exit 0
+	fi
+	home=$(user_home "$user")
+	if [ -z "$home" ] || [ ! -d "$home" ]; then
+		say "installed, but the home of $user was not found. Run as $user: aidr setup"
+		exit 0
+	fi
+	say "running 'aidr setup' for $user ($home)"
+	# aidr setup exits 3 when it found no supported AI tool to protect yet:
+	# that is not a failure, and the package install still succeeds.
+	run_as "$user" "$home" "$AIDR" setup
+	rc=$?
+	case "$rc" in
+	0)
+		run_as "$user" "$home" "$AIDR" status >/dev/null 2>&1 || true
+		say "done. Restart your AI tools, then run: aidr status && aidr verify"
+		say "to check or change it step by step, open 'Singularity AIDR Setup Assistant' from the applications menu, or run: aidr assistant"
+		;;
+	3)
+		say "installed. No AI tool (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw) was found for $user yet."
+		say "after installing one, $user runs once: aidr setup (or opens 'Singularity AIDR Setup Assistant' from the applications menu)"
+		;;
+	*)
+		say "setup did not finish for $user (see the lines above). Run as $user: aidr setup, or open 'Singularity AIDR Setup Assistant' from the applications menu" >&2
+		;;
+	esac
+	exit 0
+	;;
+preremove)
+	final=${2:-1}
+	[ "$final" = "1" ] || exit 0
+	rm -f "$MDM_MARKER"
+	[ -x "$AIDR" ] || exit 0
+	# A failed account never fails the package transaction; it is named above.
+	deregister_all || true
+	machine_hooks remove
+	exit 0
+	;;
+deregister-all)
+	if [ ! -x "$AIDR" ]; then
+		say "$AIDR is missing; reinstall the package, then run this again." >&2
+		exit 1
+	fi
+	deregister_all
+	;;
+*)
+	say "usage: package-hook.sh postinstall | preremove <final:1|0> | deregister-all" >&2
+	exit 64
+	;;
+esac

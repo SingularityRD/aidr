@@ -1,0 +1,82 @@
+{{- if .Values.maintenance.enabled }}
+{{- $component := "maintenance" -}}
+{{- $name := include "aidr.component" (dict "root" . "component" $component) -}}
+{{- $values := .Values.maintenance -}}
+# Retention, erasure and digest maintenance (docs/control-plane.md, "Retention
+# maintenance"): the same scripts/deployment-maintenance.mjs the Compose
+# systemd timer runs, shipped in this ConfigMap (files/ is a byte-identical
+# copy, checked by deploy/helm/chart.test.mjs). It calls the retention RPCs,
+# deletes expired temporary audit-export objects through the Storage API and
+# dispatches due governance digests through the in-cluster API gateway with
+# the service-role key, which is read from the environment, never argv.
+# The evidence JSON is printed to the pod log. Exit code 2 means the run was
+# incomplete (legal hold, missing tenant policy, contention), 1 means it failed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+data:
+  deployment-maintenance.mjs: |-
+{{ .Files.Get "files/deployment-maintenance.mjs" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  schedule: {{ $values.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ $values.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "aidr.labels" (dict "root" . "component" $component) | nindent 12 }}
+          annotations:
+            checksum/script: {{ .Files.Get "files/deployment-maintenance.mjs" | sha256sum }}
+        spec:
+          restartPolicy: Never
+          {{- include "aidr.podCommon" (dict "root" . "values" (dict)) | nindent 10 }}
+          {{- include "aidr.podSecurityContext" (dict "root" . "runAsUser" $values.runAsUser "fsGroup" $values.runAsUser) | nindent 10 }}
+          containers:
+            - name: maintenance
+              image: {{ include "aidr.image" (dict "root" . "image" $values.image "name" "maintenance.image" "defaultTag" true) }}
+              imagePullPolicy: {{ $values.image.pullPolicy }}
+              command:
+                - node
+                - /opt/aidr-maintenance/deployment-maintenance.mjs
+                - /tmp/maintenance
+                - --from-env
+                {{- if $values.apply }}
+                - --apply
+                {{- end }}
+              {{- include "aidr.containerSecurityContext" (dict "root" .) | nindent 14 }}
+              env:
+                - name: AIDR_MAINTENANCE_API_URL
+                  value: {{ include "aidr.gatewayUrl" . | quote }}
+                {{- include "aidr.secretEnv" (dict "root" . "env" "SERVICE_ROLE_KEY" "key" "service-role-key") | nindent 16 }}
+              {{- include "aidr.resources" (dict "root" . "component" "maintenance" "override" $values.resources) | nindent 14 }}
+              volumeMounts:
+                - name: script
+                  mountPath: /opt/aidr-maintenance
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: script
+              configMap:
+                name: {{ $name }}
+                defaultMode: 0444
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
+{{- end }}

@@ -12,6 +12,29 @@ export const CODEX_SHIPPED_EVENTS: readonly CodexHookEventName[] = [
 	"PostToolUse",
 ];
 
+/**
+ * Matchers of the shipped registration (README, `aidr setup` guidance). Codex
+ * 0.141.0 names MCP tools `mcp__<server>__<tool>` for `PreToolUse` and
+ * `PostToolUse`, so MCP calls are inspected before they run and their results
+ * after; `apply_patch` output carries no third-party content and is not matched.
+ */
+export const CODEX_SHIPPED_MATCHERS = {
+	PreToolUse: "^(Bash|apply_patch|mcp__.+)$",
+	PostToolUse: "^(Bash|mcp__.+)$",
+} as const;
+
+/**
+ * Tool paths outside the shipped matchers or outside the host's tool-hook path
+ * (CODEX_HOOKS_0.141.0_REFERENCE.md, "Tool coverage"). Reported, never hidden.
+ */
+export const CODEX_UNCOVERED_TOOL_PATHS = [
+	"other_local_function_tools_outside_matcher",
+	"hosted_tools_not_hooked_by_host",
+	"specialized_tool_paths_that_opt_out_of_hooks",
+	"write_stdin_polls_do_not_rerun_pre_tool_use",
+	"apply_patch_output_not_matched",
+] as const;
+
 export interface CodexEventInspectionCoverage {
 	eventVisibility: {
 		toolInput: boolean;
@@ -32,6 +55,9 @@ export interface CodexConnectorCoverageEvidence {
 	connector: typeof CODEX_CONNECTOR;
 	basis: "declared_connector_contract_not_runtime_registration";
 	configuredEvents: CodexHookEventName[];
+	/** Matchers the shipped registration uses; not read from the endpoint. */
+	toolMatchers: { PreToolUse?: string; PostToolUse?: string };
+	uncoveredToolPaths: readonly string[];
 	eventCoverage: {
 		preToolUse: boolean;
 		postToolUse: boolean;
@@ -111,6 +137,11 @@ export function getCodexConnectorCoverageEvidence(
 		connector: CODEX_CONNECTOR,
 		basis: "declared_connector_contract_not_runtime_registration",
 		configuredEvents: events,
+		toolMatchers: {
+			...(preToolUse ? { PreToolUse: CODEX_SHIPPED_MATCHERS.PreToolUse } : {}),
+			...(postToolUse ? { PostToolUse: CODEX_SHIPPED_MATCHERS.PostToolUse } : {}),
+		},
+		uncoveredToolPaths: CODEX_UNCOVERED_TOOL_PATHS,
 		eventCoverage: { preToolUse, postToolUse, userPromptSubmit },
 		capabilities: {
 			toolInputInspection: preToolUse ? "inline_blocking" : "unavailable",

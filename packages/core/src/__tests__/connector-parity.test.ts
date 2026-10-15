@@ -107,7 +107,9 @@ const MATRIX: ParityCase[] = [
 	},
 	{
 		id: "read-dotenv",
-		call: { kind: "read", field: "file_path", path: "/srv/app/.env" },
+		// Outside the connectors' working directory (/srv): a project's own
+		// .env inside it is not prompted (docs/project-env-files.md).
+		call: { kind: "read", field: "file_path", path: "/opt/app/.env" },
 		expect: "blocked",
 		threatId: "CLT-FILE-008",
 	},
@@ -200,7 +202,7 @@ const HOST_DIALECT_NOTES = {
 	pluginSingleBlockVerb:
 		"OpenCode (throw) and OpenClaw ({ block: true }) have one block verb; an `ask` blocks with the actionId in the reason for out-of-band approval.",
 	codexToolRouting:
-		"Codex only routes `^(Bash|apply_patch)$` to the hook in practice; Read/MCP rows exercise the hook's enforcement for completeness.",
+		"Codex routes only `^(Bash|apply_patch|mcp__.+)$` to the hook in practice; Read rows exercise the hook's enforcement for completeness.",
 	cursorShellAlias:
 		"Cursor's beforeShellExecution always carries `command`; the `cmd` alias row uses the generic preToolUse `Shell` tool.",
 	cursorReadAlias:

@@ -35,6 +35,20 @@ NOTE: backup.enabled=false. Configure database backups before storing production
 WARNING: backup.storage.acknowledgeNotBackedUp=true. Backups hold the database only;
          a restore loses every object on the storage volume.
 {{- end }}
+{{- if and .Values.backup.enabled (empty .Values.backup.encryption.ageRecipients) }}
+
+WARNING: backup.encryption.allowPlaintext=true. Backups are written UNENCRYPTED (dev only).
+{{- else if and .Values.backup.enabled (not .Values.backup.offsite.enabled) }}
+
+NOTE: backups stay on a volume in this cluster. Enable backup.offsite or replicate the
+      volume off-cluster; keep the age identity and pgsodium key export off-cluster too.
+{{- end }}
+{{- if not .Values.maintenance.enabled }}
+
+WARNING: maintenance.enabled=false. Retention is not enforced: telemetry, approval
+         requests, invitations, waitlist sign-ups and other personal data are kept
+         indefinitely and governance digests are not sent.
+{{- end }}
 {{- if eq .Values.storage.backend "s3" }}
 
 NOTE: storage.backend=s3. The chart does not back up the bucket; enable versioning or replication.

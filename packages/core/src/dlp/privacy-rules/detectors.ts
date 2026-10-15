@@ -1,7 +1,7 @@
 // GENERATED from packages/privacy/src/detectors.ts by scripts/sync-privacy-rules.mjs — do not edit
 // Regenerate: pnpm sync:privacy-rules (verify: pnpm verify:privacy-rules)
 import { isIP } from './ip.js';
-import { validTckn, validIban, validLuhn, validSsn, IBAN_LENGTHS } from './validators.js';
+import { validTckn, validIban, validLuhn, validSsn, validVkn, IBAN_LENGTHS } from './validators.js';
 import { fail } from './errors.js';
 import type { EntityType, Evidence } from './types.js';
 export type Emit=(start:number,end:number,type:EntityType,score:number,evidence:Evidence)=>void;
@@ -29,7 +29,7 @@ const FIELD_LABELS:readonly (readonly [string,EntityType])[]=[
   ['(?:(?:home|postal)[ \\t]+address|address|adres|ikametg[aâ]h)','ADDRESS'],
 ];
 /** Labels of the `key=value` credential detector, used only to find where a SECRET value's label starts. */
-const SECRET_LABEL='(?:api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|passwd|pwd|secret|şifre|sifre|bearer|basic)';
+const SECRET_LABEL='(?:api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|passwd|pwd|secret|şifre(?:si)?|sifre(?:si)?|parola(?:s[ıi])?|token|access[_ -]?key|account[_ -]?key|bearer|basic)';
 /** JS /i is not Turkish-locale-aware; labels are matched against a length-preserving view with İ/ı folded to i. */
 const foldLabel=(text:string):string=>text.replace(/[İı]/g,'i');
 /** Protect complete explicitly labeled fields, including malformed identifiers/check digits.
@@ -129,13 +129,18 @@ function narrowFields(text:string,spans:readonly Span[],enabled:(type:EntityType
   }
   return out;
 }
+const TYPE_PLACEHOLDER=/^(?:string|str|number|int|integer|float|double|bool|boolean|any|null|undefined|none|nil|object|text|varchar(?:\([0-9]+\))?|char|date|true|false|unknown|void)\??$/i;
 /** Every TR/EN rule over `text`. Spans are buffered so labelled fields can be narrowed; a detector that
  * aborts (PrivacyError) still hands over everything found before it. `enabled` names the types the caller
  * reports: a value of a type it drops does not end a field, so the field keeps covering it.
  */
 export function detectRules(text:string,emit:Emit,enabled:(type:EntityType)=>boolean=()=>true):void {
   const spans:Span[]=[];
-  try{collectRules(text,(start,end,type,score,evidence)=>{spans.push({start,end,type,score,evidence});});}
+  try{collectRules(text,(start,end,type,score,evidence)=>{
+    // `name: string`, `email: string;`: a schema or type annotation, not a value.
+    if(evidence==='context'&&type!=='SECRET'&&TYPE_PLACEHOLDER.test(text.slice(start,end)))return;
+    spans.push({start,end,type,score,evidence});
+  });}
   finally{for(const s of narrowFields(text,spans,enabled))emit(s.start,s.end,s.type,s.score,s.evidence);}
 }
 function collectRules(text:string,emit:Emit):void {
@@ -170,24 +175,35 @@ function collectRules(text:string,emit:Emit):void {
   run(text,/(?<![\p{L}\p{N}])\+[1-9][0-9]{0,2}[ .-]?(?:\([0-9]{1,4}\)[ .-]?)?[0-9](?:[ .-]?[0-9]){5,11}(?:[ \t]{0,3}(?:ext\.?|x)[ \t]{0,3}[0-9]{1,6})?(?![0-9])/giu,'PHONE',emit,.9);
   run(text,/(?<![0-9])\([2-9][0-9]{2}\)[ .-]?[2-9][0-9]{2}[ .-]?[0-9]{4}(?:[ \t]{0,3}(?:ext\.?|x)[ \t]{0,3}[0-9]{1,6})?(?![0-9])/giu,'PHONE',emit,.9);
   run(text,/(?<![0-9])[2-9][0-9]{2}[-.][2-9][0-9]{2}[-.][0-9]{4}(?![0-9])/g,'PHONE',emit,.88);
+  // TR numbers written 3-3-2-2 without the trunk 0 (`532 123 45 67`, `212 555 66 77`).
+  run(text,/(?<![\p{L}\p{N}+])[2-5][0-9]{2} [0-9]{3} [0-9]{2} [0-9]{2}(?![0-9])/gu,'PHONE',emit,.85);
+  // Labels written in a sentence, without a `:` (`vergi numarası 1234567890`, `pasaport no U1234567`).
+  for(const m of text.matchAll(/(?<![\p{L}\p{N}])(?:vergi\s*(?:kimlik\s*)?(?:no(?:su)?|numaras[ıi])|vkn|tax\s*(?:id|number))\s*[:=#]?\s*([0-9]{10})(?![0-9])/giu)) {
+    const v=m[1]!; if(validVkn(v)){const at=m.index+m[0].length-v.length;emit(at,at+v.length,'TAX_ID',.95,'checksum');}
+  }
+  run(text,/(?<![\p{L}\p{N}])(?:passport|pasaport)(?:\s*(?:number|no|numaras[ıi]))?\s*[:=#]?\s*([A-Z]{1,2}[0-9]{6,8})(?![\p{L}\p{N}])/giu,'PASSPORT',emit,.85,'context',1);
+  run(text,/(?<![\p{L}\p{N}])(?:cvv2?|cvc2?|güvenlik\s+kodu|security\s+code)\s*[:=#]?\s*([0-9]{3,4})(?![0-9])/giu,'CREDIT_CARD',emit,.85,'context',1);
+  const date='([0-9]{1,2}[./ -](?:[0-9]{1,2}|\\p{L}{3,9})[./ -](?:19|20)[0-9]{2}|(?:19|20)[0-9]{2}-[0-9]{2}-[0-9]{2})';
+  run(text,new RegExp('(?<![\\p{L}\\p{N}])'+date+'(?![0-9])[ \\t]*(?:doğumlu|tarihinde doğ)','giu'),'DATE_OF_BIRTH',emit,.88,'context',1);
+  run(text,new RegExp('(?<![\\p{L}\\p{N}])(?:born(?:\\s+on)?|doğum\\s+tarihi(?:si)?|d\\.\\s?t\\.)\\s+'+date+'(?![0-9])','giu'),'DATE_OF_BIRTH',emit,.88,'context',1);
   // A failed checksum is NOT a safe-data exemption when context says the value is sensitive.
   run(text,/(?:\bT\.?C\.?\s*(?:kimlik\s*(?:no(?:su)?|numarası)?|no(?:su)?)?|\bTCKN|\bTurkish\s+ID)\s*[:=#]\s*([0-9][0-9 -]{4,30}[0-9])/giu,'TC_KIMLIK',emit,.9,'context',1);
   run(text,/(?:\bSSN|social security(?: number)?)\s*[:=#]\s*([0-9][0-9 -]{4,20}[0-9])/giu,'US_SSN',emit,.9,'context',1);
   run(text,/(?:\bIBAN)\s*[:=#]\s*([A-Za-z]{2}[0-9][A-Za-z0-9 -]{10,38})/giu,'IBAN',emit,.85,'context',1);
-  run(text,/(?:credit\s*card(?:\s*(?:number|no))?|card\s*(?:number|no)|kredi\s*kartı(?:\s*(?:numarası|no))?|kart\s*no)\s*[:=#]\s*([0-9][0-9 -]{10,26}[0-9])/giu,'CREDIT_CARD',emit,.88,'context',1);
-  run(text,/(?:phone|telephone|mobile|telefon|tel|gsm|cep(?:\s*telefonu)?)[ \t]*(?:number|no)?[ \t]*[:=][ \t]*(\+?[0-9(][0-9 ().-]{4,27}[0-9](?:[ \t]{0,3}(?:ext\.?|x|dahili)[ \t]{0,3}[0-9]{1,6})?)/giu,'PHONE',emit,.87,'context',1);
-  run(text,/(?:date\s*of\s*birth|birth\s*date|dob|doğum\s*tarihi)[ \t]*[:=][ \t]*([0-9][\p{L}0-9 /.,-]{3,29})/giu,'DATE_OF_BIRTH',emit,.9,'context',1);
+  run(text,/(?<![\p{L}\p{N}])(?:credit\s*card(?:\s*(?:number|no))?|card\s*(?:number|no)|kredi\s*kartı(?:\s*(?:numarası|no))?|kart\s*no)\s*[:=#]\s*([0-9][0-9 -]{10,26}[0-9])/giu,'CREDIT_CARD',emit,.88,'context',1);
+  run(text,/(?<![\p{L}\p{N}])(?:phone|telephone|mobile|telefon|tel|gsm|cep(?:\s*telefonu)?)[ \t]*(?:number|no)?[ \t]*[:=][ \t]*(\+?[0-9(][0-9 ().-]{4,27}[0-9](?:[ \t]{0,3}(?:ext\.?|x|dahili)[ \t]{0,3}[0-9]{1,6})?)/giu,'PHONE',emit,.87,'context',1);
+  run(text,/(?<![\p{L}\p{N}])(?:date\s*of\s*birth|birth\s*date|dob|doğum\s*tarihi)[ \t]*[:=][ \t]*([0-9][\p{L}0-9 /.,-]{3,29})/giu,'DATE_OF_BIRTH',emit,.9,'context',1);
   const ids:[RegExp,EntityType][]=[
-    [/(?:passport(?:\s*(?:number|no))?|pasaport(?:\s*(?:numarası|no))?)[ \t]*[:=#][ \t]*([A-Z0-9][A-Z0-9 -]{3,24})/giu,'PASSPORT'],
-    [/(?:tax\s*(?:id|number)|vergi\s*(?:no(?:su)?|numarası)|vkn)[ \t]*[:=#][ \t]*([A-Z0-9][A-Z0-9 -]{3,24})/giu,'TAX_ID'],
-    [/(?:bank\s*account(?:\s*(?:number|no))?|account\s*(?:number|no)|hesap\s*(?:no(?:su)?|numarası))[ \t]*[:=#][ \t]*([A-Z0-9][A-Z0-9 -]{3,34})/giu,'BANK_ACCOUNT'],
-    [/(?:national\s*id|identity\s*number|kimlik\s*(?:no(?:su)?|numarası))[ \t]*[:=#][ \t]*([A-Z0-9][A-Z0-9 -]{3,24})/giu,'NATIONAL_ID'],
+    [/(?<![\p{L}\p{N}])(?:passport(?:\s*(?:number|no))?|pasaport(?:\s*(?:numarası|no))?)[ \t]*[:=#][ \t]*([A-Z0-9][A-Z0-9 -]{3,24})/giu,'PASSPORT'],
+    [/(?<![\p{L}\p{N}])(?:tax\s*(?:id|number)|vergi\s*(?:no(?:su)?|numarası)|vkn)[ \t]*[:=#][ \t]*([A-Z0-9][A-Z0-9 -]{3,24})/giu,'TAX_ID'],
+    [/(?<![\p{L}\p{N}])(?:bank\s*account(?:\s*(?:number|no))?|account\s*(?:number|no)|hesap\s*(?:no(?:su)?|numarası))[ \t]*[:=#][ \t]*([A-Z0-9][A-Z0-9 -]{3,34})/giu,'BANK_ACCOUNT'],
+    [/(?<![\p{L}\p{N}])(?:national\s*id|identity\s*number|kimlik\s*(?:no(?:su)?|numarası))[ \t]*[:=#][ \t]*([A-Z0-9][A-Z0-9 -]{3,24})/giu,'NATIONAL_ID'],
   ];
   for(const [re,type]of ids)run(text,re,type,emit,.85,'context',1);
   // Explicitly contextual name heuristics. Never advertise these as general NER.
   const name='([\\p{L}][\\p{L}\\p{M}’\'’-]{0,39}(?:[ \\t]+[\\p{Lu}][\\p{L}\\p{M}’\'’-]{0,39}){0,4})';
-  run(text,new RegExp('(?:ad[ıi]?\\s*soyad[ıi]?|full\\s*name|first\\s*name|last\\s*name|name|isim|adı)[ \\t]*[:=][ \\t]*'+name,'gu'),'PERSON',emit,.8,'context',1);
-  run(text,new RegExp('(?:Ad Soyad|Adı Soyadı|Name|Full Name)[ \\t]*[:=][ \\t]*'+name,'gu'),'PERSON',emit,.8,'context',1);
+  run(text,new RegExp('(?<![\\p{L}\\p{N}])(?:ad[ıi]?\\s*soyad[ıi]?|full\\s*name|first\\s*name|last\\s*name|name|isim|adı)[ \\t]*[:=][ \\t]*'+name,'gu'),'PERSON',emit,.8,'context',1);
+  run(text,new RegExp('(?<![\\p{L}\\p{N}])(?:Ad Soyad|Adı Soyadı|Name|Full Name)[ \\t]*[:=][ \\t]*'+name,'gu'),'PERSON',emit,.8,'context',1);
   run(text,new RegExp('(?:[Mm]y name is|[Aa]dım|[Mm]erhaba,? ben|[Mm]erhaba,? benim adım)[ \\t]+'+name,'gu'),'PERSON',emit,.8,'context',1);
   run(text,new RegExp('(?:[Dd]r\\.|[Mm]r\\.|[Mm]rs\\.|[Mm]s\\.|[Ss]ayın)[ \\t]+'+name,'gu'),'PERSON',emit,.78,'context',1);
   // Address labels consume the remainder of their field/line; contextual and intentionally conservative.
@@ -202,11 +218,21 @@ function collectRules(text:string,emit:Emit):void {
   // Consume complete credential tokens, not only a prefix or last-four mask.
   run(text,/(?<![A-Za-z0-9_])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9_])/g,'SECRET',emit,.99);
   run(text,/(?<![A-Za-z0-9_])(?:gh[pousr]_|github_pat_|glpat-|sk-(?:proj-|ant-api[0-9]{2}-)?)[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])/g,'SECRET',emit,.98);
+  // Vendor formats with a fixed prefix: Slack, Stripe secret/restricted, Google API, npm, Hugging Face, SendGrid.
+  run(text,/(?<![A-Za-z0-9_-])(?:xox[abposr]-[A-Za-z0-9-]{10,}|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}|AIza[A-Za-z0-9_-]{35}|npm_[A-Za-z0-9]{36}|hf_[A-Za-z]{30,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,})(?![A-Za-z0-9_-])/g,'SECRET',emit,.98);
   run(text,/\b(?:Bearer|Basic)[ \t]+([A-Za-z0-9_+/.=~-]{8,})/gi,'SECRET',emit,.98,'context',1);
   // Same boundary class on both sides: starting after `-` too let `eyJ-eyJ-…` rescan the rest of
   // the run from every `eyJ`, which is quadratic in the input length.
   run(text,/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}(?![A-Za-z0-9_-])/g,'SECRET',emit,.97);
-  for(const m of text.replace(/[İı]/g,'i').matchAll(/(?:api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|passwd|pwd|secret|şifre|sifre)["']?[ \t]*[:=][ \t]*/giu)) {
+  const labelled=foldLabel(text);
+  const credentials:[RegExp,boolean][]=[
+    // Explicit credential words: any value is protected.
+    [/(?:api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|password|passwd|pwd|secret|şifre(?:si)?|sifre(?:si)?|parola(?:s[ıi])?)["']?[ \t]*[:=][ \t]*/giu,false],
+    // Weaker labels (`token`, `AccountKey`, `MY_SERVICE_KEY`): only values that look like credentials, not code.
+    [/(?<![\p{L}\p{N}])(?:(?:auth[_ -]?)?token|(?:secret[_ -]?)?access[_ -]?key|account[_ -]?key|shared[_ -]?access[_ -]?key|private[_ -]?key)["']?[ \t]*[:=][ \t]*/giu,true],
+    [/(?<![\p{L}\p{N}_])[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_(?:KEY|TOKEN|SECRET|PASS)["']?[ \t]*[:=][ \t]*/gu,true],
+  ];
+  for(const [re,guarded]of credentials)for(const m of labelled.matchAll(re)) {
     let start=m.index+m[0].length, end=start;
     const quote=text[start];
     if(quote==='"'||quote==="'") {
@@ -220,7 +246,8 @@ function collectRules(text:string,emit:Emit):void {
     } else {
       while(end<text.length&&!/[\s,;"'<>]/u.test(text[end]!))end++;
     }
-    if(end>start)emit(start,end,'SECRET',.98,'context');
+    const value=text.slice(start,end);
+    if(end>start&&!codeReference(value)&&(!guarded||credentialLike(value)))emit(start,end,'SECRET',.98,'context');
   }
   run(text,/[A-Za-z][A-Za-z0-9+.-]{1,20}:\/\/([^\s/?#]+@)/g,'SECRET',emit,.98,'context',1);
   for(const m of text.matchAll(/-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----/g)) {
@@ -229,6 +256,16 @@ function collectRules(text:string,emit:Emit):void {
     if(!end)fail('INCOMPLETE_PRIVATE_KEY');emit(m.index,end.index+end[0].length,'PRIVATE_KEY',1,'pattern');
   }
   run(text,/(?:^|\n)[ \t]*(?:TOP SECRET|NATO SECRET|NATO CONFIDENTIAL|SECRET|CONFIDENTIAL|ÇOK GİZLİ|GİZLİ|HİZMETE ÖZEL)(?=$|[ \t\r\n:/-])/gu,'CLASSIFIED',emit,1);
+}
+/** `getToken()`, `process.env.API_KEY`, `config.password`: code that reads a credential, not the credential. */
+function codeReference(value:string):boolean {
+  return /^[A-Za-z_$][\w$.]*\(/.test(value)||/^(?:process\.env|os\.environ|import\.meta\.env|this|self|config|settings|env|ENV)[.[]/.test(value);
+}
+/** A value after a weak credential label: long enough, and not a call, member path or plain word. */
+function credentialLike(value:string):boolean {
+  if(value.length<8||/[()]/.test(value))return false;
+  if(/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(value))return false;
+  return /[0-9]/.test(value)&&/[A-Za-z]/.test(value)||value.length>=16;
 }
 export function hasOpaqueEncoding(text:string):boolean {
   // Deliberately conservative. We do NOT claim arbitrary binary/base64 is safe after a regex scan.

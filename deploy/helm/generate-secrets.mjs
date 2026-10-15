@@ -27,10 +27,14 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { DEFAULT_PUBLIC_KEYS_PATH as LICENSE_PUBLIC_KEYS_PATH, loadPublicKeyRegistry } from "../../scripts/license-verify.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
-const { stringify } = createRequire(join(root, "packages/core/package.json"))("yaml");
+// In the customer kit there is no packages/core/node_modules: the kit carries the
+// bundled YAML runtime at deploy/vendor/yaml.cjs (scripts/customer-kit.mjs).
+const vendoredYaml = join(root, "deploy/vendor/yaml.cjs");
+const { stringify } = createRequire(join(root, "packages/core/package.json"))(existsSync(vendoredYaml) ? vendoredYaml : "yaml");
 
 const hex = (bytes) => randomBytes(bytes).toString("hex");
 const KEY_LIFETIME_SECONDS = 365 * 86400;
@@ -143,6 +147,8 @@ export function main(argv = process.argv.slice(2)) {
 		"service-role-key": serviceRoleKey,
 		"metrics-token": hex(32),
 	}, "platform-credentials"));
+	// A malformed license registry stops here; an empty one is valid (imports are refused).
+	loadPublicKeyRegistry(LICENSE_PUBLIC_KEYS_PATH);
 	write("functions-secret.yaml", secretManifest(functionsName, namespace, {
 		AIDR_ENTITLEMENT_SIGNING_KEY_ID: keyId,
 		AIDR_ENTITLEMENT_SIGNING_PRIVATE_KEY_PKCS8_B64: signingPkcs8,
@@ -159,6 +165,9 @@ export function main(argv = process.argv.slice(2)) {
 		AIDR_DEVICE_START_INGRESS_SECRET: hex(32),
 		AIDR_NOTIFICATION_ENCRYPTION_KEYS: `k1:${randomBytes(32).toString("base64")}`,
 		AIDR_NOTIFICATION_DISPATCH_TOKEN: randomBytes(32).toString("base64url"),
+		// Trust root for dashboard license imports: the kit's license registry
+		// (deploy/onprem/license-public-keys.json), byte for byte.
+		AIDR_LICENSE_PUBLIC_KEYS_B64: readFileSync(LICENSE_PUBLIC_KEYS_PATH).toString("base64"),
 	}, "functions-credentials"));
 	write(".env", `ANON_KEY=${anonKey}\nSERVICE_ROLE_KEY=${serviceRoleKey}\n`);
 	write("deployment.json", `${JSON.stringify({

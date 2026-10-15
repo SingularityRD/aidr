@@ -1,3 +1,5 @@
+import type { DashboardMessageKey } from "../i18n/en";
+import { englishT, type Translate } from "../i18n/I18nProvider";
 import { supabase } from "./supabase";
 import { errorCode } from "./workspace-settings";
 
@@ -25,6 +27,7 @@ export const COMPLIANCE_SECTION_KEYS = [
 	"ai_security_posture",
 	"data_flows",
 	"retention_deletion",
+	"control_mappings",
 ] as const;
 export type ComplianceSectionKey = (typeof COMPLIANCE_SECTION_KEYS)[number];
 
@@ -209,30 +212,23 @@ export async function generateComplianceReport(
 	}
 }
 
-const ERROR_TEXT: Readonly<Record<string, string>> = {
-	mfa_required:
-		"Compliance reports need a multi-factor (AAL2) session. Sign in again with your second factor and retry.",
-	sso_required:
-		"This workspace requires single sign-on. Sign in with your organization's identity provider.",
-	session_revoked: "Your session was revoked. Sign in again.",
-	compliance_role_insufficient: "Only workspace owners and admins can generate compliance reports.",
-	compliance_forbidden:
-		"Only active owners and admins of this workspace can generate compliance reports.",
-	workspace_forbidden: "You are not an active member of this workspace.",
-	workspace_not_active: "Reports can only be generated for an active workspace.",
-	rate_limited: "Too many reports were requested. Wait a minute and try again.",
-	invalid_period: "Choose a valid period: the end must be after the start and not in the future.",
-	period_too_long: "A report can cover at most 366 days.",
-	period_in_future: "The period cannot end in the future.",
-	compliance_report_hash_mismatch:
-		"The report received does not match its own SHA-256, so it is not shown. Generate it again.",
-	compliance_report_malformed:
-		"The report received is incomplete, so it is not shown. Generate it again.",
+const ERROR_TEXT: Readonly<Record<string, DashboardMessageKey>> = {
+	mfa_required: "ce.mfa",
+	sso_required: "ge.sso",
+	session_revoked: "ce.revoked",
+	compliance_role_insufficient: "cmp.ownersOnly",
+	compliance_forbidden: "ce.forbidden",
+	workspace_forbidden: "gov.err.notMember",
+	workspace_not_active: "ce.inactive",
+	rate_limited: "ce.rateLimited",
+	invalid_period: "ce.invalidPeriod",
+	period_too_long: "ce.tooLong",
+	period_in_future: "ce.future",
+	compliance_report_hash_mismatch: "ce.hash",
+	compliance_report_malformed: "ce.malformed",
 };
 
-export function complianceErrorText(code: string): string {
-	return (
-		ERROR_TEXT[code] ??
-		"The compliance report could not be generated. No partial report was produced; try again later."
-	);
+export function complianceErrorText(code: string, t: Translate = englishT): string {
+	const key = Object.hasOwn(ERROR_TEXT, code) ? ERROR_TEXT[code] : undefined;
+	return t(key ?? "ce.unavailable");
 }

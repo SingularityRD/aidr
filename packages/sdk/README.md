@@ -144,7 +144,8 @@ verdict stays blocking, which is the correct (and safe) outcome.
 ```ts
 import { AIDRClient, createMiddleware } from "@singularityrd/aidr-sdk";
 
-const client = new AIDRClient({ apiKey: process.env.AIDR_API_KEY! });
+// Local enforcement: rules run in-process; no account, API key or network.
+const client = new AIDRClient({});
 
 // 1. Wrap a function. `ask` blocks unless a human approves it.
 const middleware = createMiddleware(client, {
@@ -156,10 +157,59 @@ const safeRun = middleware.wrap(runShellCommand, (cmd) => ({
   resource: cmd,
 }));
 
-// 2. Express / Next.js: non-allow results become HTTP 403 with an explicit
-//    `reason` (including "requires explicit human approval" for `ask`).
+// 2. Express / Next.js: non-allow results become a generic HTTP 403
+//    `{ error, requestId }`; the verdict goes to your server-side `onBlocked`.
 app.use(middleware.express());
 ```
+
+`apiKey` is optional. It is the bearer credential for the remote URL-reputation
+leg only, so it is required when (and only when) `urlReputationEnabled: true`;
+a key that is given but blank is rejected as a misconfiguration.
+
+### What the HTTP caller sees
+
+The remote caller of an Express/Next.js route is untrusted, so a block never
+tells it which rule fired or why (that would be an oracle for evading
+detection). By default:
+
+| Situation | Express | Next.js |
+| --------- | ------- | ------- |
+| Not an explicit allow (deny, unapproved `ask`, indeterminate) | `403 {"error":"Request blocked by security policy","requestId":"<uuid>"}` | same body, status 403 |
+| The check itself cannot run (rule data missing, invalid config, ...) | `next(err)` with an `AIDRSecurityCheckUnavailableError` (status 503, fixed message and stack; never the original error, which can name filesystem paths) | `503 {"error":"Security check unavailable","requestId":"<uuid>"}` |
+
+The full verdict (`reason`, `threatId`, `CheckResult`) or the original error is
+delivered to the optional server-side `onBlocked(event)` hook together with the
+same `requestId`, so you can join the client-visible id to your own logs. A
+throwing hook is ignored and the request stays blocked; the hook is suppressed
+while installed mandatory privacy routing is on. `exposeDecisionDetails: true`
+restores `reason` and `details` in the 403 body; use it only for trusted
+internal callers.
+
+```ts
+const middleware = createMiddleware(client, {
+  onBlocked: (event) => logger.warn({ requestId: event.requestId, event }, "AIDR blocked"),
+});
+```
+
+### Request headers
+
+Header values are inspected like the body: each non-credential header is walked
+by the generic extractor and also parsed as a shell command, so a payload such
+as `X-Cmd: curl … | bash` is blocked. A header set larger than
+`MAX_INSPECTED_HEADER_CHARS` (64 KiB) is denied as not fully inspected.
+
+Credential headers are **withheld**: `Authorization`, `Proxy-Authorization`,
+`Cookie`, `Set-Cookie`, `X-API-Key` and the other names in
+`CREDENTIAL_HEADER_NAMES`, plus any header whose name contains `auth`, `token`,
+`secret`, `password`, `api-key`, `cookie`, `session`, `signature`,
+`credential`, `bearer` or `jwt`. Their values are not inspected (they are
+opaque secrets, and the secret rules would block every authenticated request)
+and are not copied into `CheckRequest.context`, so they never reach decision
+events, `.use()` callbacks or `onBlocked`; only their names appear, under
+`context.withheldHeaders`. Add application-specific names with
+`sensitiveHeaders: ["x-tenant-key"]`, or turn header inspection off with
+`inspectHeaders: false`. If your backend executes or fetches a value from a
+credential-named header, map it into the check explicitly.
 
 ### Input coverage is chosen by the caller
 
@@ -183,7 +233,8 @@ The Express/Next.js helpers check each request as action `http_request`
 (`HTTP_REQUEST_ACTION`): the route (path + query) is inspected as content with
 embedded URLs extracted — it is not treated as a local file path. Express
 inspects `req.body` (mount a body parser first); Next.js reads a bounded copy
-of the body from a clone, leaving the original stream for the handler.
+of the body from a clone, leaving the original stream for the handler. Both
+inspect non-credential request headers (see "Request headers" above).
 
 `createGenericMiddleware()` maps the tool name to a check type: shell and
 code-running tools (`bash`, `run_code`, `python`, `code_interpreter`, …) are
@@ -210,10 +261,24 @@ snapshot with a different value before the tool runs.
 ### URL reputation and data sharing
 
 The SDK keeps URL reputation requests **off by default**. Fetch URLs are still
-checked by local heuristics; because remote reputation was not consulted, a
-fetch that would otherwise be allowed returns `ask` and requires review. To
-share eligible URLs with the configured reputation provider, explicitly enable
-it:
+checked by local heuristics, the same way the core evaluator handles
+`url_check.enabled: false`:
+
+- A local rule hit still denies or asks as usual.
+- A fetch the local rules found nothing in is **allowed but not presented as
+  clean**: `result.metadata.category` is `"reputation_not_checked"`
+  (`metadata.leg: "url_reputation"`, `metadata.uncheckedUrls` lists the URLs) and
+  the reason says "Not checked by a reputation service ... this is not a clean
+  reputation result". Such results are not cached.
+- `urlReputationUncheckedAction: "ask"` (default `"allow"`) restores the strict
+  behaviour: every such fetch returns an indeterminate `ask` and requires review.
+  An installed AIDR config with `url_check.unchecked_action: "ask"` has the same
+  effect; the stricter setting wins.
+
+An **enabled** leg that cannot answer (unreachable endpoint, error, more than 16
+URLs) is never treated as not-checked-and-allowed: the fetch returns an
+indeterminate `ask` ("was NOT verified"). To share eligible URLs with the
+configured reputation provider, explicitly enable it:
 
 ```ts
 const client = new AIDRClient({
@@ -238,7 +303,7 @@ Both middleware surfaces accept the same `onAsk` /
 
 | Adapter              | Entry point                                    | Blocking behaviour for `ask` / indeterminate                                             |
 | -------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Core middleware      | `createMiddleware(client, options)`            | `wrap()` throws; `express()`/`nextjs()` return 403 with the enforcement message.          |
+| Core middleware      | `createMiddleware(client, options)`            | `wrap()` throws the enforcement message; `express()`/`nextjs()` return a generic 403 (message via `onBlocked`). |
 | Generic middleware   | `createGenericMiddleware(client, options)`     | Throws `AIDRMiddlewareError` (also used by the sync-compatible variant).                  |
 
 ## Tool output inspection before model consumption
@@ -344,6 +409,11 @@ instead of silently disabling behaviour. `updateConfig()` re-validates too.
 above for both retained middleware surfaces, including "the wrapped function is
 not called for `ask`", "a failed check never executes", and "an `onAsk`
 approval still works".
+
+`packages/sdk/src/__tests__/http-middleware-hardening.test.ts` covers the
+generic 403/503 bodies, the fixed-message `next(err)` on an initialisation
+failure, header inspection with credential headers withheld, and local use
+without an API key.
 
 `packages/sdk/src/__tests__/data-dir-resolution.test.ts` covers rule-data
 resolution from the monorepo source tree, the documented fallback order, the

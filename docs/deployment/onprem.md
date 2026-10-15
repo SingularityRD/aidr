@@ -85,8 +85,24 @@ same redacted, counts-only data described in [privacy.md](../privacy.md) and
 the customer's network, that telemetry does not go to SingularityRD. Verify the
 effective egress in the customer environment.
 
+### Enrolling the fleet
+
+For more than a handful of machines, an owner or admin creates a
+[fleet enrollment key](../installation/fleet-enrollment.md) in the dashboard
+and the customer's endpoint team distributes it through machine policy
+(`control_plane_url` and `enrollment_key` in
+`HKLM\SOFTWARE\Policies\Singularity AIDR` or
+`/etc/singularity-aidr/managed.json`) with Intune, GPO, SCCM or Ansible. The
+key is multi-use within its machine limit and lifetime, revocable and audited;
+licensed seats still bound every enrollment. Tune the per-key enrollment rate
+with `AIDR_ENROLL_FLEET_RL_PER_MIN` (default `600` per minute) on the Edge
+Functions.
+
 ## Related
 
+- [End-to-end on-prem runbook](../operations/onprem-runbook.md) (prerequisites, NTP, TLS with an internal CA, install, acceptance)
+- [Data residency](data-residency.md) · [KVKK guide](../operations/kvkk.md)
+- [Install recipes for VDI, devcontainers, Remote-SSH, WSL and CI](../installation/special-environments.md)
 - [SaaS deployment](saas.md)
 - [Security FAQ](../sales/security-faq.md)
 - [Upgrade guide](../../deploy/UPGRADE.md)

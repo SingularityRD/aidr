@@ -7,6 +7,8 @@ gate is open; see [Support operations](support-v7.md). Do not present this
 procedure as an available customer support channel.
 
 The bundle is a directory of JSON metadata rather than a general log archive.
+For an endpoint (connector) problem use `aidr support-bundle` instead; see
+[Support and endpoint diagnostics](../support-diagnostics.md).
 
 ## Collection boundary
 

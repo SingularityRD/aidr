@@ -13,7 +13,11 @@ SingularityRD fork (`https://github.com/SingularityRD/ai-infra-guard`) at tag
 `v4.6.1-aidr.1`, commit `809e23df94ff9a9dfe336e3d120abe9a20ea66bf` (Git tree
 `2a024a74a5d3255cab7890e6673d8954980c6038`). That fork is based on Tencent
 AI-Infra-Guard `v4.6.1` and carries the AIDR hardening changes as committed
-source. The pin is recorded in `config/aig-release-sequence.json` and in the
+source. The current pin, `v4.6.1-aidr.2`, is that tree plus the dependency
+patches and Go 1.27 move committed in this repository (commit
+`816fc8ddd7358f76dfa6e35b501a07fe0bc685ea`, Git tree
+`1bf7e0bae135e48028d1c3664bee13279f8f77dc`); push the same change to the fork
+and tag it there so both sources agree. The pin is recorded in `config/aig-release-sequence.json` and in the
 generated `packages/core/src/generated/aig-data-manifest.json`;
 `pnpm aig:verify` fails when the vendored tree no longer matches it. Run
 `pnpm aig:verify` from the repository root before a demo or release. The bridge maps AIDR's `targets`
@@ -37,6 +41,7 @@ are safe; any dependency change must rerun the bridge and MCP contract tests.
 | `GET` | `/api/v1/health` | **Authenticated** detailed readiness report (gate reasons, dataset provenance, `scan_ready`) |
 | `GET` | `/api/v1/livez` | Process liveness (public; does not contact AIG or any store) |
 | `GET` | `/api/v1/readyz` | Public readiness probe: `{"status":"ready"}` (200) or `{"status":"not_ready"}` (503) only |
+| `GET` | `/metrics` | Prometheus metrics; Bearer `BRIDGE_METRICS_TOKEN` (`404` when unset or equal to `BRIDGE_API_KEY`, `401` otherwise). See [deploy/monitoring](../../deploy/monitoring/README.md) |
 | `POST` | `/api/v1/uploads` | Store a validated tenant-scoped ZIP or tar.gz archive; return an opaque upload ID |
 | `POST` | `/api/v1/scan/infra` | Submit AI infrastructure CVE scan |
 | `GET` | `/api/v1/scan/infra/{task_id}` | Poll infra scan results |
@@ -325,7 +330,7 @@ separately before release.
 
 ### Vendored AIDR hardening
 
-The vendored `v4.6.1-aidr.1` source carries committed AIDR hardening over Tencent
+The vendored `v4.6.1-aidr.2` source carries committed AIDR hardening over Tencent
 v4.6.1: authenticated worker registration/readiness, redaction of persisted
 task secrets, and a dedicated worker scratch directory. Source uploads remain read-only in the
 worker and are extracted only below `/work`. Re-run the Go worker/WebSocket

@@ -12,6 +12,9 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
 const { parse } = createRequire(join(root, "packages/core/package.json"))("yaml");
+// build-images.mjs tags images with the chart appVersion unless --tag is given.
+const APP_VERSION = String(parse(readFileSync(join(here, "aidr/Chart.yaml"), "utf8")).appVersion);
+const APP_TAG = APP_VERSION.replaceAll(".", "\\.");
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function scratch(t) {
@@ -114,7 +117,7 @@ test("build-images stages the dashboard context the Dockerfile expects", { skip:
 		assert.ok(existsSync(join(output, "dashboard", file)), file);
 	}
 	assert.ok(existsSync(join(output, "posture-scanner-agent/aig_compat")));
-	assert.match(result.stdout, /--build-arg AIG_AGENT_BASE=<registry>\/aidr\/posture-scanner-agent-base:0\.6\.0/);
+	assert.match(result.stdout, new RegExp(`--build-arg AIG_AGENT_BASE=<registry>/aidr/posture-scanner-agent-base:${APP_TAG}`));
 	assert.doesNotMatch(result.stderr, /deprecated/);
 });
 
@@ -129,9 +132,9 @@ test("build-images stages the optional privacy gateway image only on request, fr
 		assert.ok(existsSync(join(context, file)), file);
 	}
 	const manifest = JSON.parse(readFileSync(join(output, "images.json"), "utf8"));
-	assert.deepEqual(manifest.images.map((image) => image.ref), ["registry.example.internal/aidr/privacy-gateway:0.6.0"]);
+	assert.deepEqual(manifest.images.map((image) => image.ref), [`registry.example.internal/aidr/privacy-gateway:${APP_VERSION}`]);
 	assert.ok(!manifest.images[0].context_inventory.some((entry) => /\.(map|ts)$/.test(entry.path) || entry.path.startsWith("package/src/")));
-	assert.match(result.stdout, /docker build -f \S+Dockerfile -t registry\.example\.internal\/aidr\/privacy-gateway:0\.6\.0/);
+	assert.match(result.stdout, new RegExp(`docker build -f \\S+Dockerfile -t registry\\.example\\.internal/aidr/privacy-gateway:${APP_TAG}`));
 	// The default image set does not include the optional gateway.
 	const defaults = node("build-images.mjs", ["--output", join(dir, "defaults"), "--only", "migrations"]);
 	assert.equal(defaults.status, 0, defaults.stderr);
@@ -185,6 +188,8 @@ test("generate-secrets writes strong, private Kubernetes Secrets without printin
 	assert.match(env.AIDR_NOTIFICATION_ENCRYPTION_KEYS, /^k1:[A-Za-z0-9+/]{43}=$/);
 	assert.equal(Buffer.from(env.AIDR_NOTIFICATION_ENCRYPTION_KEYS.slice(3), "base64").length, 32);
 	assert.match(env.AIDR_NOTIFICATION_DISPATCH_TOKEN, /^[A-Za-z0-9_-]{43}$/);
+	assert.equal(Buffer.from(env.AIDR_LICENSE_PUBLIC_KEYS_B64, "base64").toString("utf8"),
+		readFileSync(join(root, "deploy", "onprem", "license-public-keys.json"), "utf8"));
 	assert.equal(Buffer.from(env.AIDR_APPROVAL_SIGNING_WRAP_KEY_B64, "base64").length, 32);
 	assert.match(env.AIDR_COMPLIANCE_SIGNING_KEY_ID, /^aidr-compliance-[a-f0-9]{12}$/);
 	const complianceKey = createPrivateKey({ key: Buffer.from(env.AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64, "base64"), format: "der", type: "pkcs8" });
@@ -235,5 +240,5 @@ test("build-images accepts the pre-rename posture scanner component names with a
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stderr, /NOTE: component "aig-agent" is deprecated; use "posture-scanner-agent"\./);
 	assert.ok(existsSync(join(output, "posture-scanner-agent/Dockerfile")));
-	assert.match(result.stdout, /<registry>\/aidr\/posture-scanner-agent:0\.6\.0/);
+	assert.match(result.stdout, new RegExp(`<registry>/aidr/posture-scanner-agent:${APP_TAG}`));
 });

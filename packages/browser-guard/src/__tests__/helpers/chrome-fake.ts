@@ -11,6 +11,7 @@ import type {
 	MessageSender,
 	PermissionsListener,
 	RegisteredContentScript,
+	ScriptInjection,
 	StorageAreaApi,
 	StorageChange,
 	TabInfo,
@@ -123,6 +124,8 @@ class FakeStorageArea implements StorageAreaApi {
 interface SentTabMessage {
 	readonly tabId: number;
 	readonly message: unknown;
+	/** `options.frameId` when the worker addressed one frame. */
+	readonly frameId?: number;
 }
 
 export interface ChromeFake {
@@ -141,6 +144,8 @@ export interface ChromeFake {
 	readonly grantedOrigins: Set<string>;
 	/** Dynamically registered content scripts by id (chrome.scripting). */
 	readonly contentScripts: Map<string, RegisteredContentScript>;
+	/** Every chrome.scripting.executeScript call (injection into an open tab). */
+	readonly executedScripts: ScriptInjection[];
 	/** Grants (or revokes) host access and fires permissions.onAdded/onRemoved. */
 	setOriginsGranted(origins: readonly string[], granted: boolean): void;
 	readonly events: {
@@ -186,6 +191,7 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 	const dnrRules = new Map<number, DnrRule>();
 	const grantedOrigins = new Set<string>();
 	const contentScripts = new Map<string, RegisteredContentScript>();
+	const executedScripts: ScriptInjection[] = [];
 	const onPermissionsAdded = new FakeEvent<PermissionsListener>();
 	const onPermissionsRemoved = new FakeEvent<PermissionsListener>();
 
@@ -212,6 +218,12 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 					.filter((s) => !filter?.ids || filter.ids.includes(s.id))
 					.map(clone);
 			},
+			async executeScript(injection) {
+				if (!tabs.some((t) => t.id === injection.target.tabId))
+					throw new Error(`No tab with id: ${injection.target.tabId}`);
+				executedScripts.push(clone(injection));
+				return [];
+			},
 		},
 		runtime: {
 			id: EXTENSION_ID,
@@ -228,10 +240,19 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 					.filter((t) => (query.active === true ? t.active === true : true))
 					.map((t) => ({ ...t }));
 			},
-			async sendMessage(tabId: number, message: unknown) {
+			async get(tabId: number) {
+				const tab = tabs.find((t) => t.id === tabId);
+				if (!tab) throw new Error(`No tab with id: ${tabId}`);
+				return { ...tab };
+			},
+			async sendMessage(tabId: number, message: unknown, options?: { frameId?: number }) {
 				if (!tabs.some((t) => t.id === tabId))
 					throw new Error("Could not establish connection. Receiving end does not exist.");
-				tabMessages.push({ tabId, message: clone(message) });
+				tabMessages.push({
+					tabId,
+					message: clone(message),
+					...(options?.frameId === undefined ? {} : { frameId: options.frameId }),
+				});
 				return undefined;
 			},
 			async update(tabId: number, properties: { url: string }) {
@@ -288,6 +309,7 @@ export function createChromeFake(options: { version?: string } = {}): ChromeFake
 		dnrRules,
 		grantedOrigins,
 		contentScripts,
+		executedScripts,
 		setOriginsGranted(origins, granted) {
 			for (const origin of origins) {
 				if (granted) grantedOrigins.add(origin);

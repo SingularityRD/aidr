@@ -38,9 +38,11 @@
 import { toBase64 } from "../../../privacy/src/browser/transport.js";
 import { type Counts, countFindings } from "../engine/counts.js";
 import { MAX_OCR_IMAGE_BYTES } from "../engine/office/images.js";
+import { type AccountProbe, type AccountVerdict, accountVerdict } from "../sites/accounts.js";
 import {
 	type DetectionEngine,
 	type EditorAccess,
+	type EditorMatch,
 	ENTITY_TYPES,
 	type EntityType,
 	type Finding,
@@ -62,6 +64,7 @@ import {
 } from "./file-guard.js";
 import { RELAY_SCAN } from "./file-relay.js";
 import {
+	exampleLabel,
 	formatCounts,
 	type Lang,
 	resolveLanguage,
@@ -90,6 +93,13 @@ export interface ContentGuardDeps {
 		root: Document,
 		editor: EditorAccess | null,
 	): HTMLElement | null;
+	/**
+	 * The editor a send gesture belongs to, resolved from the gesture's element (clicked
+	 * button, submitted form, key target) rather than from focus (dom/editor.ts
+	 * `findEditorNear`). Without it the guard falls back to `findEditor` with that element
+	 * as the focus hint, and only buttons the adapter names are treated as send buttons.
+	 */
+	findEditorNear?(adapter: SiteAdapter, anchor: Element): EditorMatch | null;
 	/** Inserts text at the caret; defaults to execCommand/setRangeText with an editor.write fallback. */
 	insertAtSelection?(editor: EditorAccess, text: string): Promise<void> | void;
 	/**
@@ -112,6 +122,11 @@ export interface ContentGuardDeps {
 	readonly nativeTimeoutMs?: number;
 	/** Upper bound for waiting on NATIVE_IMAGE_SCAN (ms); defaults to NATIVE_IMAGE_REPLY_TIMEOUT_MS. */
 	readonly nativeImageTimeoutMs?: number;
+	/**
+	 * What the page exposes about the signed-in account (policy.workAccounts); defaults to
+	 * this window's URL, `document.cookie` and document.
+	 */
+	accountProbe?(): AccountProbe;
 }
 
 export interface ContentGuard {
@@ -313,6 +328,56 @@ const contains = (outer: Element, inner: Element): boolean =>
 const isDisabled = (el: HTMLElement): boolean =>
 	el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true";
 
+const isSingleLineInput = (el: Element): boolean => el.tagName === "INPUT";
+
+/** Clickable controls a send can start from. */
+const BUTTON_SELECTOR = 'button, [role="button"], input[type="submit"], input[type="button"]';
+
+/**
+ * Labels of the actions that send a prompt: the composer's send button and the
+ * "Send"/"Save"/"Update" buttons of a sent message's edit form (ChatGPT, Claude,
+ * Gemini, Copilot), in English and Turkish.
+ */
+const SEND_LABEL =
+	/^(?:send|submit|save|update|resend|regenerate|gönder|yeniden gönder|kaydet|güncelle)(?![\p{L}\p{N}])/iu;
+
+/** The closest ancestor-or-self of `el` matching `selector` (null for an unusable selector). */
+function closestMatch(el: Element, selector: string): HTMLElement | null {
+	if (!selector) return null;
+	try {
+		return el.closest<HTMLElement>(selector);
+	} catch {
+		return null;
+	}
+}
+
+/** A control that submits its form, or whose accessible label names a send action. */
+function looksLikeSend(control: HTMLElement): boolean {
+	const submit = control as HTMLButtonElement;
+	if (submit.type === "submit" && submit.form) return true;
+	const label =
+		control.getAttribute("aria-label") ||
+		control.textContent ||
+		control.getAttribute("title") ||
+		(control as HTMLInputElement).value ||
+		"";
+	return SEND_LABEL.test(label.replace(/\s+/g, " ").trim());
+}
+
+/**
+ * True when an editor was found in a container below the page body: the control sits
+ * in a form, message turn or panel together with that editor. A send-labelled button
+ * elsewhere (a settings dialog's "Save") is not a prompt send.
+ */
+function sharesContainer(match: EditorMatch | null): boolean {
+	const container = match?.container;
+	if (!container) return false;
+	if (container.nodeType === 11) return true; // a shadow root (web component)
+	if (container.nodeType !== 1) return false;
+	const tag = (container as Element).tagName;
+	return tag !== "BODY" && tag !== "HTML";
+}
+
 export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const { document: doc, adapter, engine, vault } = deps;
 	const win = deps.window as Win;
@@ -330,6 +395,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const cache = new Map<string, { policy: GuardPolicy; result: GuardScan; at: number }>();
 	/** Set once the user was told that native NER is unavailable; cleared when it works again. */
 	let nativeNoticeShown = false;
+	/** Set once this page explained what highlighted (restored) values in answers are. */
+	let legendShown = false;
 	let lastFocused: Element | null = null;
 	/** Re-entrancy token: set only while our own replayed send is being dispatched. */
 	let replayText: string | null = null;
@@ -348,6 +415,73 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const monitoring = (p: GuardPolicy): boolean =>
 		p.mode === "monitor" || p.disabledSites.includes(adapter.id);
 
+	// ---- personal vs company account (policy.workAccounts, ../sites/accounts.ts) ----------
+
+	const accountProbe = (): AccountProbe => {
+		if (deps.accountProbe) return deps.accountProbe();
+		let cookie = "";
+		try {
+			cookie = doc.cookie;
+		} catch {
+			// A sandboxed document has no cookie access: the signal is simply absent.
+		}
+		return { url: win.location?.href ?? "", cookie, root: doc };
+	};
+	/** The account check on this page, or null when the site is not account-checked. */
+	const accountCheck = (policy: GuardPolicy | null): AccountVerdict | null => {
+		if (!policy?.workAccounts) return null;
+		try {
+			return accountVerdict(policy.workAccounts, adapter.id, accountProbe());
+		} catch {
+			// Fail closed: an account that cannot be checked is not confirmed.
+			return { type: "unverified", enforce: true, action: policy.workAccounts.action, key: "" };
+		}
+	};
+	/** The `warn` acknowledgement given on this page (verdict key), if any. */
+	let accountAcknowledged: string | null = null;
+	/** Verdict keys already explained once on this page (mask-only notice, upload warning). */
+	const accountNoticed = new Set<string>();
+	/** mask-only: the explanation still to show with this send, if not shown yet. */
+	let accountNotice: { key: string; text: string } | null = null;
+	/** The pending mask-only explanation as extra message lines (consumed once). */
+	const takeAccountNotice = (): string[] => {
+		const notice = accountNotice;
+		accountNotice = null;
+		if (!notice || accountNoticed.has(notice.key)) return [];
+		accountNoticed.add(notice.key);
+		return [notice.text];
+	};
+	let maskOnlyBase: GuardPolicy | null = null;
+	let maskOnlyDerived: GuardPolicy | null = null;
+	/**
+	 * `mask-only` on an account that is not the organisation's: sends are masked whatever the
+	 * mode (monitor, a user pause and a user-disabled site do not apply) and "Send original" is
+	 * not offered. Memoised per base policy so the scan cache keeps working.
+	 */
+	const maskOnly = (policy: GuardPolicy): GuardPolicy => {
+		if (maskOnlyBase !== policy || !maskOnlyDerived) {
+			maskOnlyBase = policy;
+			maskOnlyDerived = Object.freeze({
+				...policy,
+				mode: policy.mode === "monitor" ? "auto" : policy.mode,
+				allowSendAnyway: false,
+				disabledSites: policy.disabledSites.filter((site) => site !== adapter.id),
+			});
+		}
+		return maskOnlyDerived;
+	};
+	/** The policy in force on this page: the worker's, tightened by a mask-only account check. */
+	const currentPolicy = (): GuardPolicy | null => {
+		const policy = deps.getPolicy();
+		if (!policy) return null;
+		const verdict = accountCheck(policy);
+		return verdict?.enforce && verdict.action === "mask-only" ? maskOnly(policy) : policy;
+	};
+	const accountLines = (verdict: AccountVerdict): string[] => {
+		const s = strings();
+		return verdict.type === "company" ? [] : [s.accountReason(verdict.type, adapter.label)];
+	};
+
 	const record = (
 		action: PrivacyScanEvent["action"],
 		channel: PrivacyScanEvent["channel"],
@@ -360,6 +494,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 		const use = recordedNative(native);
 		try {
+			const account = accountCheck(deps.getPolicy())?.type;
 			void Promise.resolve(
 				deps.send({
 					type: "RECORD",
@@ -368,6 +503,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 					channel,
 					counts: safe,
 					...(use ? { native: use } : {}),
+					...(account ? { account } : {}),
 				}),
 			).catch(() => undefined);
 		} catch {
@@ -495,9 +631,25 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		return nativeNerRequired(policy) && result.native !== "used";
 	}
 
-	/** The "rules only" note for messages about a scan native NER should have been part of. */
-	const nativeLines = (result: GuardScan | null): string[] =>
-		result?.native === "unavailable" ? [strings().nativeUnavailable] : [];
+	/**
+	 * What a scan with findings did not cover: the "rules only" note when native NER should
+	 * have taken part, or that person names were not looked for when it is off.
+	 */
+	const nativeLines = (result: GuardScan | null): string[] => {
+		if (result?.native === "unavailable") return [strings().nativeUnavailable];
+		if (result?.native === "off") return [strings().namesNotChecked];
+		return [];
+	};
+
+	/** Whether answers will show any of these values again (restore on, not all never-restore). */
+	const restoresAny = (policy: GuardPolicy, counts: Readonly<Counts>): boolean =>
+		policy.restoreResponses &&
+		(Object.keys(counts) as EntityType[]).some(
+			(type) => (counts[type] ?? 0) > 0 && !policy.neverRestore.includes(type),
+		);
+
+	/** Counts in plain words in the page's language ("1 email address, 2 IBANs"). */
+	const summarize = (counts: Readonly<Counts>): string => formatCounts(counts, lang());
 
 	/** Tells the user once (until NER works again) that a clean prompt was checked rules-only. */
 	const noticeNativeOnce = (result: GuardScan): void => {
@@ -569,6 +721,65 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		return false;
 	};
 
+	/**
+	 * The browser's implicit submission for an Enter in a single-line input: its form's
+	 * default button is clicked (nothing when that button is disabled), or the form is
+	 * submitted when it has none. An input outside a form submits nothing.
+	 */
+	const submitImplicitly = (input: HTMLInputElement, text: string): void => {
+		const form = input.form;
+		if (!form) return;
+		const submitter = form.querySelector<HTMLElement>(
+			'button:not([type]), button[type="submit"], input[type="submit"], input[type="image"]',
+		);
+		perform(text, () => {
+			if (submitter) {
+				if (!isDisabled(submitter)) submitter.click();
+			} else if (typeof form.requestSubmit === "function") form.requestSubmit();
+			else form.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+		});
+	};
+
+	/**
+	 * Replays an Enter as an Enter. Sites that send on Enter handle it (preventDefault).
+	 * When nobody does, the original Enter would not have been a send either, so its
+	 * default action is reproduced instead of clicking a send button: implicit form
+	 * submission in a single-line input, a new line in a multi-line editor (mobile
+	 * layouts, Enter-as-newline sites). Ctrl/Cmd+Enter has no default action.
+	 */
+	const replayEnter = async (
+		origin: Extract<SendOrigin, { kind: "key" }>,
+		editor: EditorAccess,
+		text: string,
+	): Promise<void> => {
+		const target = origin.target.isConnected ? origin.target : editor.element;
+		let handled = false;
+		perform(text, () => {
+			const event = new win.KeyboardEvent("keydown", {
+				key: "Enter",
+				code: "Enter",
+				keyCode: 13,
+				which: 13,
+				bubbles: true,
+				cancelable: true,
+				composed: true,
+				ctrlKey: origin.ctrlKey,
+				metaKey: origin.metaKey,
+			});
+			handled = !target.dispatchEvent(event);
+		});
+		if (handled || origin.ctrlKey || origin.metaKey) return;
+		if (isSingleLineInput(editor.element)) {
+			submitImplicitly(editor.element as HTMLInputElement, text);
+			return;
+		}
+		try {
+			await insertText(editor, "\n");
+		} catch {
+			// Best effort: nothing was sent, the user can press Enter again.
+		}
+	};
+
 	/** Re-sends exactly once; the capture listeners let it through only while `text` is in the editor. */
 	const replay = async (origin: SendOrigin, editor: EditorAccess, text: string): Promise<void> => {
 		if (!stillHolds(editor, text)) {
@@ -585,24 +796,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			return;
 		}
 		if (origin.kind === "key") {
-			const target = origin.target.isConnected ? origin.target : editor.element;
-			let handled = false;
-			perform(text, () => {
-				const event = new win.KeyboardEvent("keydown", {
-					key: "Enter",
-					code: "Enter",
-					keyCode: 13,
-					which: 13,
-					bubbles: true,
-					cancelable: true,
-					composed: true,
-					ctrlKey: origin.ctrlKey,
-					metaKey: origin.metaKey,
-				});
-				handled = !target.dispatchEvent(event);
-			});
-			// Sites that handle Enter call preventDefault; otherwise fall back to the button.
-			if (handled) return;
+			await replayEnter(origin, editor, text);
+			return;
 		}
 		if (!(await clickSend(origin, editor, text)) && stillHolds(editor, text)) {
 			ui.toast(strings().pressSendAgain, "info");
@@ -640,7 +835,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			return;
 		}
 		ui.toast(
-			[s.maskedToast(totalCount(counts), formatCounts(counts)), ...nativeLines(scanned)].join(" "),
+			[s.maskedToast(summarize(counts)), ...nativeLines(scanned), ...takeAccountNotice()].join(" "),
 			"info",
 		);
 		record("masked", "prompt", counts, scanned.native);
@@ -705,13 +900,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		coaching: readonly string[],
 	): string[] | null => {
 		const s = strings();
-		const total = totalCount(counts);
-		const summary = formatCounts(counts);
+		const summary = summarize(counts);
 		if (hasSignals && policy.signalAction === "block") {
-			return [...(total > 0 ? [s.blockedBody(total, summary)] : []), ...coaching];
+			return [...(totalCount(counts) > 0 ? [s.blockedBody(summary)] : []), ...coaching];
 		}
 		if (hasFindings && policy.mode === "block") {
-			return [s.blockedBody(total, summary), s.blockedCoaching, ...coaching];
+			return [s.blockedBody(summary), s.blockedCoaching, ...coaching];
 		}
 		return null;
 	};
@@ -745,9 +939,17 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		if (policy.allowSendAnyway) actions.push({ id: "send-original", label: s.sendOriginal });
 		return {
 			title: s.confirmTitle,
-			lines: [s.confirmBody(totalCount(counts), formatCounts(counts)), ...coaching],
+			lines: [
+				s.confirmBody(summarize(counts), exampleLabel(counts), restoresAny(policy, counts)),
+				...coaching,
+				...takeAccountNotice(),
+			],
 			actions,
 			tone: "warn",
+			// The consequence of "Send original", right under the button that has it.
+			...(policy.allowSendAnyway
+				? { footnote: s.sendOriginalNote(adapter.id === "other" ? null : adapter.label) }
+				: {}),
 		};
 	};
 
@@ -862,16 +1064,91 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			refuseSend(event, strings().siteBlocked);
 			return null;
 		}
-		return policy;
+		return accountAllowsSend(event, policy) ? currentPolicy() : null;
 	};
 
-	const onSendAttempt = (event: Event, origin: SendOrigin, editor: EditorAccess | null): void => {
+	/**
+	 * policy.workAccounts on a send: `block` refuses it, `warn` holds the first one on the page
+	 * (per account) until the user presses Continue, `mask-only` explains once that originals
+	 * cannot be sent. An organisation rule: applies in every mode, like a site block.
+	 */
+	const accountAllowsSend = (event: Event, policy: GuardPolicy): boolean => {
+		const verdict = accountCheck(policy);
+		if (!verdict?.enforce) return true;
+		const s = strings();
+		if (verdict.action === "block") {
+			stopEvent(event);
+			showBlocked([...accountLines(verdict), s.accountBlocked(adapter.label)], s.accountTitle);
+			record("blocked", "prompt", {});
+			return false;
+		}
+		if (verdict.action === "mask-only") {
+			// Explained with the first masked send (or confirm bubble) of this account.
+			accountNotice = accountNoticed.has(verdict.key)
+				? null
+				: { key: verdict.key, text: [...accountLines(verdict), s.accountMaskOnly].join(" ") };
+			return true;
+		}
+		if (accountAcknowledged === verdict.key) return true;
+		stopEvent(event);
+		record("warned", "prompt", {});
+		void ui
+			.bubble({
+				title: s.accountTitle,
+				lines: [...accountLines(verdict), s.accountWarn],
+				actions: [
+					{ id: "account-cancel", label: s.accountCancel, primary: true },
+					{ id: "account-continue", label: s.accountContinue },
+				],
+				tone: "warn",
+			})
+			.then((choice) => {
+				if (choice !== "account-continue") return;
+				accountAcknowledged = verdict.key;
+				ui.toast(strings().accountSendAgain, "info");
+			})
+			.catch(() => undefined);
+		return false;
+	};
+
+	/**
+	 * policy.workAccounts on an upload: the block message under `block`, otherwise null (under
+	 * `warn` the upload goes on with the usual checks after a one-time warning).
+	 */
+	const accountUploadBlock = (): string | null => {
+		const verdict = accountCheck(deps.getPolicy());
+		if (!verdict?.enforce) return null;
+		const s = strings();
+		const reason = accountLines(verdict);
+		if (verdict.action === "block")
+			return [...reason, s.accountUploadBlocked(adapter.label)].join(" ");
+		if (verdict.action === "warn" && accountAcknowledged !== verdict.key) {
+			const key = `upload:${verdict.key}`;
+			if (!accountNoticed.has(key)) {
+				accountNoticed.add(key);
+				ui.toast([...reason, s.accountUploadWarn].join(" "), "warn");
+			}
+		}
+		return null;
+	};
+
+	/**
+	 * A recognised send gesture. `editor` is the editor the gesture belongs to; null means
+	 * none could be resolved (or several candidates held text), and in enforcing modes the
+	 * send is refused with `missing` (fail closed).
+	 */
+	const onSendAttempt = (
+		event: Event,
+		origin: SendOrigin,
+		editor: EditorAccess | null,
+		missing: string = strings().editorMissing,
+	): void => {
 		const text = readEditor(editor);
 		if (isReplay(text)) return; // our own replay of an already-checked prompt
 		const policy = sendPolicy(event);
 		if (!policy) return;
 		if (!editor || text === null) {
-			if (!monitoring(policy)) refuseSend(event, strings().editorMissing);
+			if (!monitoring(policy)) refuseSend(event, missing);
 			return;
 		}
 		if (normalizeText(text) === "") return;
@@ -918,11 +1195,28 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		}
 	};
 
-	/** The event's innermost target and the editor containing it; null outside the editor. */
+	/**
+	 * The editor a send gesture at `anchor` belongs to (see ContentGuardDeps.findEditorNear);
+	 * null when there is none or the lookup failed.
+	 */
+	const editorNear = (anchor: Element): EditorMatch | null => {
+		try {
+			if (deps.findEditorNear) return deps.findEditorNear(adapter, anchor);
+			const editor = deps.findEditor(adapter, doc, anchor);
+			return editor ? { editor, container: doc } : null;
+		} catch {
+			return null;
+		}
+	};
+
+	/**
+	 * The event's innermost target (inside open shadow roots too) and the editor containing
+	 * it; null outside an editor.
+	 */
 	const editorTargetOf = (event: Event): { target: Element; editor: EditorAccess } | null => {
 		const target = asElement(event.composedPath()[0] ?? event.target);
 		if (!target) return null;
-		const editor = editorFor(target);
+		const editor = deps.findEditorNear ? editorNear(target)?.editor : editorFor(target);
 		return editor && contains(editor.element, target) ? { target, editor } : null;
 	};
 
@@ -945,20 +1239,33 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		);
 	};
 
+	/**
+	 * The send control a click landed on and the editor it sends, or null when the click is
+	 * not a send. A control is a send when the adapter names it, when it is the composer's
+	 * send button, or when it submits its form / carries a send label ("Send", "Save",
+	 * "Update", ...) and shares a container with an editor (edit-and-resend forms on sent
+	 * messages). The editor is resolved from the control's position, never from focus.
+	 */
 	const resolveSendButton = (
 		target: Element,
-	): { button: HTMLElement; editor: EditorAccess | null } | null => {
-		const selector = sendSelector();
-		let bySelector: HTMLElement | null = null;
-		try {
-			bySelector = selector ? target.closest<HTMLElement>(selector) : null;
-		} catch {
-			bySelector = null;
+	): { button: HTMLElement; match: EditorMatch | null } | null => {
+		let button = closestMatch(target, sendSelector());
+		let known = button !== null;
+		if (!button) {
+			const found = deps.findSendButton(adapter, doc, editorFor(null));
+			if (found && contains(found, target)) {
+				button = found;
+				known = true;
+			}
 		}
-		if (bySelector) return { button: bySelector, editor: editorFor(null) };
-		const editor = editorFor(null);
-		const found = deps.findSendButton(adapter, doc, editor);
-		return found && contains(found, target) ? { button: found, editor } : null;
+		if (!button) {
+			const control = closestMatch(target, BUTTON_SELECTOR);
+			if (!control || isDisabled(control) || !looksLikeSend(control)) return null;
+			button = control;
+		}
+		const match = editorNear(button);
+		if (!known && !sharesContainer(match)) return null;
+		return { button, match };
 	};
 
 	const onClick = (event: MouseEvent): void => {
@@ -967,27 +1274,37 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		if (!target) return;
 		const hit = resolveSendButton(target);
 		if (!hit) return;
-		onSendAttempt(event, { kind: "click", button: hit.button }, hit.editor);
+		const editor = hit.match?.editor ?? null;
+		const missing = hit.match && !editor ? strings().editorAmbiguous : strings().editorMissing;
+		onSendAttempt(event, { kind: "click", button: hit.button }, editor, missing);
 	};
 
 	const onSubmit = (event: Event): void => {
 		if (ignored(event)) return;
 		const form = asElement(event.target);
 		if (!form || form.tagName !== "FORM") return;
-		const editor = editorFor(null);
-		if (!editor || !form.contains(editor.element)) return;
-		onSendAttempt(event, { kind: "submit", form: form as HTMLFormElement }, editor);
+		const match = editorNear(form);
+		if (!match) return;
+		const origin: SendOrigin = { kind: "submit", form: form as HTMLFormElement };
+		if (match.editor) {
+			if (form.contains(match.editor.element)) onSendAttempt(event, origin, match.editor);
+			return;
+		}
+		// Several editors in the form hold text: which one is sent is unknown.
+		if (match.container === form || form.contains(match.container)) {
+			onSendAttempt(event, origin, null, strings().editorAmbiguous);
+		}
 	};
 
 	// ---- pre-scan while typing --------------------------------------------------------
 
 	const schedulePrescan = (): void => {
-		const policy = deps.getPolicy();
+		const policy = currentPolicy();
 		if (!policy || monitoring(policy) || siteBlocked(policy)) return;
 		if (prescanTimer !== undefined) win.clearTimeout(prescanTimer);
 		prescanTimer = win.setTimeout(() => {
 			prescanTimer = undefined;
-			const current = deps.getPolicy();
+			const current = currentPolicy();
 			const editor = editorFor(null);
 			if (!current || !editor) return;
 			let text: string;
@@ -1008,7 +1325,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 			fileGuard.onInputEvent(event);
 			return;
 		}
-		const target = asElement(event.target);
+		const target = inner ?? asElement(event.target);
 		if (event.type !== "input" || !target || ignored(event)) return;
 		const editor = editorFor(target);
 		if (editor && contains(editor.element, target)) schedulePrescan();
@@ -1041,7 +1358,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	const maskText = async (
 		text: string,
 	): Promise<{ text: string; counts: Counts } | typeof NATIVE_UNAVAILABLE | null> => {
-		const policy = deps.getPolicy();
+		const policy = currentPolicy();
 		const result = await scan(text, policy);
 		if (!result) return null;
 		if (policy && nativeMissing(policy, result)) return NATIVE_UNAVAILABLE;
@@ -1083,10 +1400,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		const masked = vault.mask(text, findings);
 		await insertText(editor, masked.masked);
 		ui.toast(
-			[
-				s.pasteMaskedToast(totalCount(masked.counts), formatCounts(masked.counts)),
-				...nativeLines(result),
-			].join(" "),
+			[s.pasteMaskedToast(summarize(masked.counts)), ...nativeLines(result)].join(" "),
 			"info",
 		);
 		record("masked", "paste", masked.counts, result.native);
@@ -1097,7 +1411,7 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 	 * refused (no policy, blocked site) or left to the page (maskPaste off).
 	 */
 	const pastePolicy = (event: Event): GuardPolicy | null => {
-		const policy = deps.getPolicy();
+		const policy = currentPolicy();
 		if (!policy) {
 			stopEvent(event);
 			ui.toast(strings().policyMissing, "error");
@@ -1201,7 +1515,8 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		vault: fileVault,
 		ui,
 		sanitizeFile: deps.sanitizeFile,
-		getPolicy: deps.getPolicy,
+		getPolicy: currentPolicy,
+		accountUploadBlock,
 		strings,
 		record,
 		maskText,
@@ -1215,7 +1530,12 @@ export function createContentGuard(deps: ContentGuardDeps): ContentGuard {
 		adapter,
 		vault,
 		editorElement: () => editorFor(null)?.element ?? null,
-		title: () => strings().restoredTitle,
+		title: (placeholder) => strings().restoredTitle(placeholder),
+		onRestored: (placeholder) => {
+			if (legendShown) return;
+			legendShown = true;
+			ui.toastWhenIdle(strings().restoredLegend(placeholder));
+		},
 		schedule: deps.schedule,
 	});
 

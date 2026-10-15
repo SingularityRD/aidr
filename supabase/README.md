@@ -25,7 +25,7 @@ This folder contains a reference **Supabase** schema + edge function for running
 2. Run `pnpm supabase:check`, then apply migrations in `supabase/migrations/`.
 3. Deploy the edge functions you need:
    - Required for telemetry + seats: `supabase/functions/ingest`
-   - Recommended for dashboard UX: `supabase/functions/api-keys`, `supabase/functions/enrollment-tokens`
+   - Recommended for dashboard UX: `supabase/functions/api-keys`, `supabase/functions/enrollment-tokens`, `supabase/functions/fleet-keys` (multi-use fleet enrollment keys; see `docs/installation/fleet-enrollment.md`)
    - Enrollment exchange (agent bootstrap): `supabase/functions/enroll`
    - Device auth (prompt-install bootstrap): `supabase/functions/device-start`, `supabase/functions/device-poll`, `supabase/functions/device-verify`
    - Pilot gate: `supabase/functions/pilot-apply`, `supabase/functions/pilot-status`, `supabase/functions/pilot-admin`
@@ -34,6 +34,8 @@ This folder contains a reference **Supabase** schema + edge function for running
    - Legacy billing functions (do not deploy or advertise for direct GA): `supabase/functions/billing-checkout`, `supabase/functions/paddle-webhook`, `supabase/functions/stripe-webhook`
    - Optional reputation: `supabase/functions/url-check`, `supabase/functions/file-check`
    - Optional premium intel delivery: `supabase/functions/packs-manifest`, `supabase/functions/packs-download`
+   - Dashboard installer downloads: `supabase/functions/installer-download` — see `docs/installation/download-portal.md`
+   - Endpoint self-update (`aidr update`, device API key): `supabase/functions/installer-update` — see `docs/installation/desktop-installers.md#updating`
    - Optional revocations feed: `supabase/functions/revocations`
 4. Set `control_plane.endpoint` to `https://YOUR_PROJECT.supabase.co/functions` and set `auth.api_key` in the agent config.
 
@@ -91,7 +93,17 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
     policy public keys reject it. A dedicated key is recommended.
 - `AIDR_POLICY_SIGNATURE_TTL_HOURS` (default `24`; `1..720`)
 - `AIDR_PACK_MASTER_KEY_B64`
-  - Base64 of a 32-byte master key used to derive per-tenant AES-256-GCM pack keys (HKDF-SHA256).
+  - Base64 of a 32-byte master key used to derive per-tenant AES-256-GCM pack keys (HKDF-SHA256,
+    key id `aidr-tenant-pack-v2.<tenant id>.<master fingerprint>`). A tenant key only opens packs
+    registered for that tenant (`import-offline-pack.mjs --tenant-id`). Rotating the master key
+    changes every tenant key id; re-encrypt and re-register tenant packs.
+- `AIDR_SHARED_PACK_KEYS` (optional)
+  - Keys of shared packs (`pack_versions.tenant_id IS NULL`, e.g. vendor packs):
+    `aidr-shared-pack-<label>=<base64 32-byte key>[,...]`. Every premium_intel tenant receives all of
+    them. A malformed value delivers no shared key. Keep the previous key listed while a rotation is
+    in progress.
+  - Encrypt packs with `node scripts/intel-pack-keys.mjs encrypt-pack` (tenant or shared key), then
+    sign the manifest with `scripts/sign-intel-pack-manifest.mjs`.
 - `AIDR_COMPLIANCE_SIGNING_KEY_ID` and `AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64` (optional pair)
   - Ed25519 key that signs compliance evidence reports (`compliance-report`), same format as the
     entitlement key. Use a dedicated key. Unset: reports carry a SHA-256 only. Setting only one of
@@ -106,8 +118,16 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
     schema-1 lists are rejected with no compatibility window, so upgrade the control plane before (or
     together with) runtimes: an older runtime cannot verify a schema-2 list and keeps running without
     revocations until it is upgraded.
-- `AIDR_REVOCATION_EPOCH` (default `1`)
-- `AIDR_REVOCATION_TTL_HOURS` (default `24`)
+- `AIDR_REVOCATION_EPOCH` (default `1`; integer `1`..`2147483647`)
+- `AIDR_REVOCATION_TTL_HOURS` (default `24`; integer `1`..`168`). A malformed or
+  out-of-range epoch/TTL makes `GET /v1/revocations` answer `500
+  server_misconfigured` naming the variable instead of signing a list.
+- `AIDR_APIKEY_DEFAULT_TTL_DAYS` (default `365`; integer `1`..`730`): lifetime of a key issued or
+  rotated through `/v1/api-keys` without an explicit `expires_in_days` (`null` asks for a
+  non-expiring key). Every API-key guard refuses a key whose `expires_at` has passed, an expired
+  key cannot be rotated, renewed keys keep their type prefix (`aidr_live_` tenant,
+  `aidr_ingest_` Browser Guard), and labels are limited to 1..100 characters without control
+  characters. A malformed value answers `500 server_misconfigured`.
 - `AIDR_ENTITLEMENT_TTL_HOURS` (default `168`)
 - `AIDR_ENTITLEMENT_GRACE_HOURS` (default `72`)
 - `AIDR_RUNTIME_CAPABILITIES_BY_TENANT` (default `{}`): deployment/operator-only
@@ -122,7 +142,12 @@ Commercial v1 (managed-first) requires additional secrets for signing and premiu
 - `AIDR_PACK_URL_TTL_SECONDS` (default `600`; clamped to `60..3600`)
 - `AIDR_PACK_DOWNLOAD_GRANT_SECRET` (required by `packs-manifest` and `packs-download`; use an independently generated random secret of at least 32 bytes and set the same value on both functions)
 - `AIDR_APPROVAL_SIGNING_WRAP_KEY_B64` (required by `approval-requests`; 32 random bytes, standard base64. Derives the per-tenant key that seals each tenant's Ed25519 dashboard-approval signing key; without it the function answers `server_misconfigured` and asks stay blocked. Changing it makes existing sealed keys unusable until owners rotate them from the Approvals page)
-- `AIDR_PUBLIC_API_ORIGIN` (the customer/agent-reachable API origin for pack grant links; required when `SUPABASE_URL` is an internal HTTP service name; HTTPS except for explicit loopback development)
+- `AIDR_INSTALLER_MANIFEST_PUBLIC_KEY_B64` (required by `installer-download` and `installer-update`; base64 Ed25519 public key of the installer-catalog signing key used by `scripts/publish-installers.mjs`. Missing or invalid answers `server_misconfigured`; a catalog that does not verify is never served)
+- `AIDR_INSTALLERS_BUCKET` (default `aidr-installers`) and `AIDR_INSTALLER_URL_TTL_SECONDS` (default `300`; clamped to `30..900`) for `installer-download`
+- `AIDR_ENROLL_FLEET_RL_PER_MIN` (default `600`, range `1..100000`) for `enroll`: per-minute exchange budget of each fleet enrollment key (`aidr_fleet_`); an invalid value answers `503 enrollment_rate_limit_config_invalid`. `AIDR_FLEETKEY_CREATE_RL_PER_MIN` (default `10`) bounds fleet-key creation per admin per minute in `fleet-keys`
+- `AIDR_PUBLIC_API_ORIGIN` (the customer/agent-reachable API origin for pack grant links and installer download URLs; required when `SUPABASE_URL` is an internal HTTP service name; HTTPS except for explicit loopback development)
+
+The canonical migrations also create a private `aidr-installers` bucket, written only by `scripts/publish-installers.mjs` (signed catalog, signed `latest.json`, immutable versioned installers); `installer-download` lists the verified catalog to active members of a tenant with an active admission and returns a short-lived signed URL per file after writing an `installer.download` audit row.
 
 The canonical migrations create a private `aidr-packs` Storage bucket; publish pack bytes through a service-role-only process. Pack manifests return at most 50 pack versions per request. Each `download_url` is a short-lived scoped AIDR URL, not a Storage URL; the Edge Function rechecks key, membership, entitlement and pack expiry on each GET/HEAD, then streams the object with range support. Treat the URL as a temporary bearer capability and redact its `grant` query parameter from any application/proxy logs. It contains neither the API key nor a Storage signed URL.
 SCIM collection pages contain at most 200 resources, and a group request or response contains at most 1,000 member references.
@@ -130,7 +155,7 @@ SCIM collection pages contain at most 200 resources, and a group request or resp
 Operationally:
 
 - Rotate signing keys by rolling `*_KEY_ID` and updating client `licensing.public_keys_pem` / `intel_packs.trusted_keys_path`.
-- Treat `AIDR_PACK_MASTER_KEY_B64` as a crown-jewel secret; leaking it effectively leaks premium pack encryption for all tenants.
+- Treat `AIDR_PACK_MASTER_KEY_B64` and `AIDR_SHARED_PACK_KEYS` as crown-jewel secrets; leaking the master key exposes every tenant pack, leaking a shared key exposes every shared pack encrypted with it.
 - For an explicitly authorized tenant, set the same server-only
   `AIDR_RUNTIME_CAPABILITIES_BY_TENANT={"TENANT_ID":["runtime_detectors","behavioral_learning_v1"]}`
   on both `enroll` and `ingest`; keep the mapping in the operator change record.
@@ -295,7 +320,7 @@ all of the following:
 
 ## Abuse limits and database hardening (2026-10-05)
 
-- Public endpoints apply fixed one-minute windows through `increment_rate_limit` (shared helper `functions/_shared/rate-limit.ts`) and fail closed (429/503 with `Retry-After`). `device-poll`: `AIDR_DEVICE_POLL_RL_PER_MIN` (per device-code hash, default 60), `AIDR_DEVICE_POLL_CLIENT_RL_PER_MIN` (per trusted-ingress client IP, default 120) and `AIDR_DEVICE_POLL_GLOBAL_RL_PER_MIN` (aggregate, default 6000). `scim`: `AIDR_SCIM_TOKEN_RL_PER_MIN` (per SCIM token, default 600) and `AIDR_SCIM_GLOBAL_RL_PER_MIN` (deployment-wide budget of failed bearer authentications, counted only after a token is rejected so it never throttles a valid tenant token; default 6000). `enroll`: `AIDR_ENROLL_UNRESOLVED_RL_PER_MIN` (deployment-wide budget of bearer values that resolve to no enrollment token, checked before the lookup, default 300). Machine API-key endpoints (`ingest`, `file-check`, `url-check`, `policy`, `policy-ack`, `packs-manifest`, `packs-download`, `GET revocations`): `AIDR_UNRESOLVED_API_KEY_RL_PER_MIN` (per-endpoint, deployment-wide budget of bearer values that resolve to no API key, read before the credential lookup and charged only on a miss, so valid keys never consume it; default 6000, `1..1000000`, an invalid value answers 503). `packs-download` additionally limits each API key to 120 requests per minute (3000 per tenant) across both grant minting and byte streaming. Invalid values answer 500/503. Raw caller IP headers are never trusted. When `AIDR_DEVICE_START_INGRESS_SECRET` is set, `device-poll` and the public `identity-security` recovery actions also accept the trusted-ingress HMAC proof (`device-poll:v1` / `identity-security:v1` contexts, signed by `deploy/cloudflare/worker.mjs`; `oidc-sso` uses `oidc-sso:v1` for its public start/callback/break-glass actions): an attested client IP is limited by its own bucket first and then a signed aggregate, while unsigned callers share a separate unsigned aggregate, so a direct caller cannot exhaust the budget of clients arriving through the ingress. A distributed attacker with many real IPs can still exhaust an aggregate budget, which is the documented availability trade-off. `pnpm verify:endpoint-auth` fails a public route that does not call the limiter.
+- Public endpoints apply fixed one-minute windows through `increment_rate_limit` (shared helper `functions/_shared/rate-limit.ts`) and fail closed (429/503 with `Retry-After`). `device-poll`: `AIDR_DEVICE_POLL_RL_PER_MIN` (per device-code hash, default 60), `AIDR_DEVICE_POLL_CLIENT_RL_PER_MIN` (per trusted-ingress client IP, default 120) and `AIDR_DEVICE_POLL_GLOBAL_RL_PER_MIN` (aggregate, default 6000). `scim`: `AIDR_SCIM_TOKEN_RL_PER_MIN` (per SCIM token, default 600) and `AIDR_SCIM_GLOBAL_RL_PER_MIN` (deployment-wide budget of failed bearer authentications, counted only after a token is rejected so it never throttles a valid tenant token; default 6000). `enroll`: `AIDR_ENROLL_UNRESOLVED_RL_PER_MIN` (deployment-wide budget of bearer values that resolve to no enrollment token, checked before the lookup, default 300). Machine API-key endpoints (`ingest`, `file-check`, `url-check`, `policy`, `policy-ack`, `packs-manifest`, `packs-download`, `GET revocations`): `AIDR_UNRESOLVED_API_KEY_RL_PER_MIN` (per-endpoint, deployment-wide budget of bearer values that resolve to no API key, read before the credential lookup and charged only on a miss, so valid keys never consume it; default 6000, `1..1000000`, an invalid value answers 503). `packs-download` additionally limits each API key to 120 requests per minute (3000 per tenant) across both grant minting and byte streaming. Invalid values answer 500/503. Raw caller IP headers are never trusted. When `AIDR_DEVICE_START_INGRESS_SECRET` is set, `device-poll`, `version-check` and the public `identity-security` recovery actions also accept the trusted-ingress HMAC proof (`device-poll:v1` / `version-check:v1` / `identity-security:v1` contexts, signed by `deploy/cloudflare/worker.mjs`; `oidc-sso` uses `oidc-sso:v1` for its public start/callback/break-glass actions): an attested client IP is limited by its own bucket first and then a signed aggregate, while unsigned callers share a separate unsigned aggregate, so a direct caller cannot exhaust the budget of clients arriving through the ingress. A distributed attacker with many real IPs can still exhaust an aggregate budget, which is the documented availability trade-off. `pnpm verify:endpoint-auth` fails a public route that does not call the limiter.
 - `waitlist-signup` is insert-only and answers a duplicate email exactly like a first signup.
 - Every SECURITY DEFINER function in `public`/`app` pins `search_path` with an explicit `pg_temp` (migration `20261005101001`; guarded by `pnpm supabase:check` for new migrations and `pnpm verify:security-definer` against a real PostgreSQL). `app.tenant_admission_config` has deny-by-default RLS.
 - Migration `20261007120000_security_review_hardening.sql` (static contract `scripts/security-review-hardening.test.mjs`, run by `pnpm supabase:check`): functions created by `postgres` no longer receive PUBLIC EXECUTE through the global default privileges, and every function created after `20260922000002` must carry an explicit revoke from PUBLIC; `tenant_identity_access_allowed` returns no tenant identity-policy metadata to a caller without a membership row; the `aidr-audit-exports` bucket is forced private; `create_team_tenant` limits each user to `app.team_creation_quota.max_per_day` new workspaces per rolling 24 hours (default 10, `1..1000`; operators change it with SQL, e.g. `update app.team_creation_quota set max_per_day = 25;`), answering SQLSTATE `54000` when exceeded; tenant membership helpers resolve `pg_catalog, public, pg_temp`; audit export objects are readable only by an active owner/admin of the tenant in the object path, behind the identity barrier.

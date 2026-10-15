@@ -3,7 +3,9 @@
  * arrive (or are re-rendered) after a page reload can still be restored locally.
  *
  * Storage: chrome.storage.session only (memory-backed, cleared when the browser
- * closes), under `vault:<tabId>:<origin>`. The worker restricts session storage to
+ * closes), under `vault:<tabId>:<origin>` (top frame) or `vault:<tabId>:frame:<origin>` (a
+ * subframe guard, the Microsoft 365 Copilot pane inside an Office web app: one record per
+ * tab and frame origin, so it never overwrites the top frame's). The worker restricts session storage to
  * TRUSTED_CONTEXTS at start-up, so neither page scripts nor content scripts can read
  * it directly; content scripts reach it only through VAULT_SAVE / VAULT_LOAD, and the
  * worker derives the tab id and origin from the message sender, never from the

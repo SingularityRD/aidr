@@ -1,10 +1,12 @@
-import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { atomicWriteJson } from "@singularityrd/aidr-core";
 
 import * as vscode from "vscode";
 
+import { forgetConfigPath, removeHookShims } from "./hook-runtime.js";
+import { describeManagedHooks, prepareManagedHookCommand } from "./installer_common.js";
 import {
 	inRegistrationOrder,
 	type ManagedHookHealth,
@@ -13,58 +15,106 @@ import {
 } from "./managedHooks.js";
 
 const MANAGED_MARKER = "--managed-by aidr-vscode";
-const UNSAFE_SHIM_PATH_PATTERN = /["`$;&|<>\r\n\0%!]/;
+/** Copy of the settings file as it was before AIDR last changed it. */
+export const SETTINGS_BACKUP_SUFFIX = ".aidr-backup";
 
 type HookCommandEntry = Record<string, unknown> & { command?: string };
 type HookMatcherEntry = Record<string, unknown> & { hooks?: HookCommandEntry[] };
 type HookMap = Record<string, HookMatcherEntry[]>;
 type SettingsObject = Record<string, unknown>;
 
+/*
+ * VS Code Local hooks (chat.useClaudeHooks) are read from the Claude settings
+ * files, so the user scope is `~/.claude/settings.json`, which the Claude Code
+ * CLI shares. Every write therefore merges: only entries carrying
+ * MANAGED_MARKER are added or removed, every other key and hook is kept as
+ * read, the previous file is backed up next to it, and a file changed by
+ * another writer between read and write is re-read and merged again.
+ */
+
 export async function installManagedHooks(
 	options: ManagedHookInstallOptions,
 ): Promise<ManagedHookHealth> {
 	const configPath = await resolveSettingsPath(options.scope);
-	await mkdir(path.dirname(configPath), { recursive: true });
-
-	const runnerPath = await resolveRunnerPath(options.context);
-	const nodePath = resolveNodeRuntimePath();
-	const settings = await readSettingsFile(configPath);
-	const command = await buildHookCommand(configPath, nodePath, runnerPath);
-
-	const updated = upsertManagedHooks(settings, command);
-	await writeSettingsFile(configPath, updated);
-
-	const hooks = normalizeHookMap(updated.hooks);
-	return {
+	await readSettingsFile(configPath);
+	const { command } = await prepareManagedHookCommand(
+		options.context,
+		"vscode",
 		configPath,
-		runnerPath,
-		installedEvents: collectInstalledEvents(hooks),
-		managedCommands: collectManagedCommands(hooks),
-	};
+		MANAGED_MARKER,
+	);
+	const updated = await updateSettingsFile(configPath, (settings) =>
+		upsertManagedHooks(settings, command),
+	);
+	return healthOf(configPath, updated);
 }
 
 export async function removeManagedHooks(scope: ManagedHookScope): Promise<string> {
 	const configPath = await resolveSettingsPath(scope);
-	const settings = await readSettingsFile(configPath);
-	const updated = removeManagedEntries(settings);
-	await writeSettingsFile(configPath, updated);
+	await removeManagedHooksFromFile(configPath);
 	return configPath;
 }
 
+/**
+ * Remove only this extension's entries (and its shims) from a Claude settings
+ * file. vscode-free: the uninstall script calls it too.
+ */
+export async function removeManagedHooksFromFile(configPath: string): Promise<void> {
+	await updateSettingsFile(configPath, removeManagedEntries);
+	await removeHookShims(path.join(path.dirname(configPath), "hooks"));
+	await forgetConfigPath("vscode", configPath);
+}
+
+/** @public Called through the installer interface (shared_extension.ts). */
 export async function getHookHealth(
 	options: ManagedHookInstallOptions,
 ): Promise<ManagedHookHealth> {
 	const configPath = await resolveSettingsPath(options.scope);
-	const settings = await readSettingsFile(configPath);
-	const hooks = normalizeHookMap(settings.hooks);
-	const runnerPath = await resolveRunnerPath(options.context).catch(() => undefined);
+	return healthOf(configPath, await readSettingsFile(configPath));
+}
 
-	return {
+/**
+ * Re-point every installed managed hook at this extension version (run on
+ * activation). Scopes without managed entries are left untouched, so this
+ * never enables protection on its own.
+ * @public Called through the installer interface (shared_extension.ts).
+ */
+export async function repairManagedHooks(
+	context: vscode.ExtensionContext,
+): Promise<ManagedHookHealth[]> {
+	const results: ManagedHookHealth[] = [];
+	const seen = new Set<string>();
+	for (const scope of ["user", "workspace"] as const) {
+		const configPath = await resolveSettingsPath(scope).catch(() => undefined);
+		if (!configPath || seen.has(configPath)) continue;
+		seen.add(configPath);
+		const settings = await readSettingsFile(configPath).catch(() => undefined);
+		if (!settings) continue;
+		const managed = collectManagedCommands(normalizeHookMap(settings.hooks));
+		if (managed.length === 0) continue;
+		const { command } = await prepareManagedHookCommand(
+			context,
+			"vscode",
+			configPath,
+			MANAGED_MARKER,
+		);
+		let current = settings;
+		if (managed.some((existing) => existing !== command)) {
+			current = await updateSettingsFile(configPath, (value) => upsertManagedHooks(value, command));
+		}
+		results.push(await healthOf(configPath, current));
+	}
+	return results;
+}
+
+function healthOf(configPath: string, settings: SettingsObject): Promise<ManagedHookHealth> {
+	const hooks = normalizeHookMap(settings.hooks);
+	return describeManagedHooks(
+		"vscode",
 		configPath,
-		runnerPath,
-		installedEvents: collectInstalledEvents(hooks),
-		managedCommands: collectManagedCommands(hooks),
-	};
+		collectInstalledEvents(hooks),
+		collectManagedCommands(hooks),
+	);
 }
 
 async function resolveSettingsPath(scope: ManagedHookScope): Promise<string> {
@@ -77,90 +127,6 @@ async function resolveSettingsPath(scope: ManagedHookScope): Promise<string> {
 		throw new Error("Open a workspace folder to install workspace hooks.");
 	}
 	return path.join(workspace, ".claude", "settings.json");
-}
-
-async function resolveRunnerPath(context: vscode.ExtensionContext): Promise<string> {
-	const configured =
-		vscode.workspace.getConfiguration().get<string>("aidr.hookRunnerPath")?.trim() ?? "";
-	if (configured) {
-		await access(configured);
-		return configured;
-	}
-
-	const candidates = [
-		context.asAbsolutePath(path.join("dist", "aidr-hook.cjs")),
-		context.asAbsolutePath(path.join("resources", "aidr-hook.cjs")),
-	];
-
-	for (const candidate of candidates) {
-		try {
-			await access(candidate);
-			return candidate;
-		} catch {
-			// Try next candidate.
-		}
-	}
-
-	throw new Error(
-		"Unable to locate aidr-hook runner. Build packages/extension or set aidr.hookRunnerPath.",
-	);
-}
-
-function resolveNodeRuntimePath(): string {
-	return process.env.VSCODE_NODE_EXEC_PATH?.trim() || process.execPath;
-}
-
-async function buildHookCommand(
-	configPath: string,
-	nodePath: string,
-	runnerPath: string,
-): Promise<string> {
-	const claudeConfigDir = path.dirname(configPath);
-	const shimPath = await createHookShim(claudeConfigDir, nodePath, runnerPath);
-	if (process.platform === "win32") {
-		// Claude hook commands can execute in PowerShell contexts on Windows.
-		// A quoted script path must be invoked with `&` to avoid parser errors.
-		return `& ${quote(shimPath)} vscode ${MANAGED_MARKER}`;
-	}
-	return `${quote(shimPath)} vscode ${MANAGED_MARKER}`;
-}
-
-async function createHookShim(
-	claudeConfigDir: string,
-	nodePath: string,
-	runnerPath: string,
-): Promise<string> {
-	assertSafePathForShim(nodePath, "Node runtime");
-	assertSafePathForShim(runnerPath, "Hook runner");
-
-	const hooksDir = path.join(claudeConfigDir, "hooks");
-	const posixShim = path.join(hooksDir, "aidr-hook");
-	const windowsShim = path.join(hooksDir, "aidr-hook.cmd");
-
-	await mkdir(hooksDir, { recursive: true });
-	await writeFile(
-		posixShim,
-		`#!/usr/bin/env sh\nexport ELECTRON_RUN_AS_NODE=1\n"${nodePath}" "${runnerPath}" "$@"\n`,
-		"utf8",
-	);
-	await chmod(posixShim, 0o755);
-
-	await writeFile(
-		windowsShim,
-		`@echo off\r\nsetlocal\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${nodePath}" "${runnerPath}" %*\r\n`,
-		"utf8",
-	);
-
-	return process.platform === "win32" ? windowsShim : posixShim;
-}
-
-function assertSafePathForShim(pathValue: string, label: string): void {
-	if (!pathValue) {
-		throw new Error(`${label} path is empty.`);
-	}
-	if (UNSAFE_SHIM_PATH_PATTERN.test(pathValue)) {
-		throw new Error(`${label} path contains unsupported characters for generated hook shims.`);
-	}
 }
 
 function upsertManagedHooks(existing: SettingsObject, command: string): SettingsObject {
@@ -281,14 +247,17 @@ function isManagedCommandHook(entry: HookCommandEntry): boolean {
 	return typeof entry.command === "string" && entry.command.includes(MANAGED_MARKER);
 }
 
-async function readSettingsFile(filePath: string): Promise<SettingsObject> {
-	let contents: string;
+async function readSettingsText(filePath: string): Promise<string | undefined> {
 	try {
-		contents = await readFile(filePath, "utf8");
+		return await readFile(filePath, "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw error;
 	}
+}
+
+function parseSettings(contents: string | undefined): SettingsObject {
+	if (contents === undefined) return {};
 	const parsed: unknown = JSON.parse(contents);
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 		throw new Error("Invalid VS Code hook settings.");
@@ -306,8 +275,40 @@ async function readSettingsFile(filePath: string): Promise<SettingsObject> {
 	return settings;
 }
 
-async function writeSettingsFile(filePath: string, data: SettingsObject): Promise<void> {
-	await atomicWriteJson(filePath, data);
+async function readSettingsFile(filePath: string): Promise<SettingsObject> {
+	return parseSettings(await readSettingsText(filePath));
+}
+
+const MAX_MERGE_ATTEMPTS = 3;
+
+/**
+ * Read-merge-write of a (possibly shared) settings file. A no-op merge does not
+ * touch the file; otherwise the previous bytes are kept at
+ * `<file>.aidr-backup`, and a file another writer changed since it was read is
+ * merged again from its new contents instead of being overwritten.
+ */
+async function updateSettingsFile(
+	filePath: string,
+	merge: (settings: SettingsObject) => SettingsObject,
+): Promise<SettingsObject> {
+	for (let attempt = 0; attempt < MAX_MERGE_ATTEMPTS; attempt++) {
+		const original = await readSettingsText(filePath);
+		const current = parseSettings(original);
+		const next = merge(current);
+		if (JSON.stringify(next) === JSON.stringify(current)) return current;
+		if ((await readSettingsText(filePath)) !== original) continue;
+		if (original !== undefined) {
+			await writeFile(`${filePath}${SETTINGS_BACKUP_SUFFIX}`, original, {
+				encoding: "utf8",
+				mode: 0o600,
+			});
+		}
+		await atomicWriteJson(filePath, next);
+		return next;
+	}
+	throw new Error(
+		`${filePath} kept changing while Singularity AIDR updated it; no changes were made. Try again.`,
+	);
 }
 
 function normalizeHookMap(input: unknown): HookMap {
@@ -352,8 +353,4 @@ function asCommandEntries(entries: unknown): HookCommandEntry[] {
 		(entry): entry is HookCommandEntry =>
 			!!entry && typeof entry === "object" && !Array.isArray(entry),
 	);
-}
-
-function quote(value: string): string {
-	return `"${value.replace(/"/g, '\\"')}"`;
 }

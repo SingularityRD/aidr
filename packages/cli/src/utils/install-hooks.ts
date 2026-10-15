@@ -83,7 +83,7 @@ export async function installHooks(env: Environment): Promise<HookInstallResult>
 				`  Codex:        install @singularityrd/aidr-codex@${VERSION} from private GitHub Packages.`,
 				"                Add to ~/.codex/config.toml:",
 				"                [[hooks.PreToolUse]]",
-				'                matcher = "^(Bash|apply_patch)$"',
+				'                matcher = "^(Bash|apply_patch|mcp__.+)$"',
 				"                [[hooks.PreToolUse.hooks]]",
 				'                type = "command"',
 				'                command = "aidr-codex-hook"',

@@ -4,6 +4,8 @@
  * depend on the engine package at runtime, so this is a display mirror; the
  * `agent-profiles-panel` test fails if it drifts from the shipped templates.
  */
+import type { DashboardMessageKey } from "../i18n/en";
+
 type ProfileAction = "allow" | "ask" | "deny";
 
 export const PROFILE_TOOL_CLASSES = [
@@ -82,13 +84,33 @@ export const PROFILE_TEMPLATE_SUMMARIES: readonly ProfileTemplateSummary[] = [
 	},
 ];
 
-/** Stable rule-family identifiers the engine reports as `matched_threat_id`. */
-export const PROFILE_CHECK_LABELS: Readonly<Record<string, string>> = {
-	"AGENT-PROFILE-TOOL": "Tool not allowed",
-	"AGENT-PROFILE-COMMAND": "Command prefix",
-	"AGENT-PROFILE-FILE": "File scope",
-	"AGENT-PROFILE-NETWORK": "Network destination",
-	"AGENT-PROFILE-MCP": "MCP server / tool",
-	"AGENT-PROFILE-SELECTION": "Profile assignment",
-	"AGENT-PROFILE-INVALID": "Invalid managed profile",
+/**
+ * Stable rule-family identifiers the engine reports as `matched_threat_id`,
+ * mapped to catalog keys (render with `t(...)`).
+ */
+export const PROFILE_CHECK_LABELS: Readonly<Record<string, DashboardMessageKey>> = {
+	"AGENT-PROFILE-TOOL": "ap.check.tool",
+	"AGENT-PROFILE-COMMAND": "ap.check.command",
+	"AGENT-PROFILE-FILE": "ap.check.file",
+	"AGENT-PROFILE-NETWORK": "ap.check.network",
+	"AGENT-PROFILE-MCP": "ap.check.mcp",
+	"AGENT-PROFILE-SELECTION": "ap.check.selection",
+	"AGENT-PROFILE-INVALID": "ap.check.invalid",
+};
+
+/** Translated template descriptions; the English text equals the engine mirror above. */
+export const PROFILE_TEMPLATE_DESCRIPTIONS: Readonly<Record<string, DashboardMessageKey>> = {
+	"read-only-reviewer": "ap.tpl.readOnlyReviewer",
+	"standard-developer": "ap.tpl.standardDeveloper",
+	"ci-agent": "ap.tpl.ciAgent",
+	"locked-down": "ap.tpl.lockedDown",
+};
+
+export const PROFILE_TOOL_CLASS_LABELS: Readonly<Record<ProfileToolClass, DashboardMessageKey>> = {
+	shell: "ap.tool.shell",
+	file_read: "ap.tool.fileRead",
+	file_write: "ap.tool.fileWrite",
+	web_fetch: "ap.tool.webFetch",
+	mcp: "ap.tool.mcp",
+	other: "ap.tool.other",
 };

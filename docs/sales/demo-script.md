@@ -25,11 +25,15 @@ session that uses a connected control plane. The 13 September 2026 script is kep
 ## 0. Pre-flight (30 minutes before, every time)
 
 ```bash
-pnpm build                                   # do not demo a stale bundle
-node scripts/verify-enforcement.mjs          # must end with ALL PASS
+pnpm build:release                           # the checks below need the release artifact manifest
+node scripts/verify-enforcement.mjs          # must end with ALL PASS (checks both build flavours)
 node scripts/verify-codex-hook.mjs           # if you will mention Codex
+pnpm build                                   # the development bundle the steps below pipe into
 pnpm test:e2e:browser-guard                  # builds the extension, runs the hermetic browser suite
 ```
+
+A plain `pnpm build` writes no artifact manifest, so both verifiers refuse to run after
+it; build the release flavour first and return to the development build afterwards.
 
 If any of these fails, **do not run that part of the demo.**
 
@@ -207,8 +211,11 @@ Read from the appendix of the [one-pager](one-pager.md):
 - Cloud and on-prem are not accepted; real-host and real-site acceptance is open.
 - Hooks can be bypassed by the host (disabled, untrusted, killed); Codex fails open in
   those cases.
-- Browser Guard: binary files are not inspected in the browser; site redesigns can need
-  adapter updates; names without cue words need the optional NER host.
+- Cursor and VS Code are a preview — no real-host acceptance evidence yet; demo on Claude Code, OpenClaw, OpenCode or Codex.
+- Browser Guard: Word, Excel, PowerPoint and OpenDocument files are masked in place, but
+  PDFs are only scanned (a PDF with findings is blocked) and pictures or scanned pages
+  need the optional OCR host; site redesigns can need adapter updates; names without cue
+  words need the optional NER host.
 
 ---
 

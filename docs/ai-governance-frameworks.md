@@ -7,9 +7,11 @@ what the **Governance** scorecard shows, how the scheduled summary is delivered,
 how the AI acceptable-use notice works.
 
 > **What this is and is not.** The mapping and the scorecard *support* your obligations
-> under the NIST AI Risk Management Framework, ISO/IEC 42001, the EU AI Act and
-> KVKK/GDPR by showing which technical controls are in place for the AI tools AIDR
-> guards, with evidence from your own records. They are not a certification, an audit
+> under the NIST AI Risk Management Framework, ISO/IEC 42001, the EU AI Act,
+> KVKK/GDPR, ISO/IEC 27001:2022 Annex A, the BDDK information systems and electronic
+> banking regulation and the Presidency's Information and Communication Security Guide
+> by showing which technical controls are in place for the AI tools AIDR guards, with
+> evidence from your own records. They are vendor mappings. They are not a certification, an audit
 > opinion or legal advice. Coverage percentages describe product controls, not whether
 > your organisation meets any framework or law.
 
@@ -24,6 +26,9 @@ The mapping is data, kept in the repository and embedded in the dashboard:
 | `governance/frameworks/iso-iec-42001.yaml` | ISO/IEC 42001:2023 Annex A controls |
 | `governance/frameworks/eu-ai-act.yaml` | EU AI Act (Regulation (EU) 2024/1689) deployer-side articles |
 | `governance/frameworks/kvkk-gdpr.yaml` | KVKK and GDPR articles the compliance evidence report already covers |
+| `governance/frameworks/iso-iec-27001.yaml` | ISO/IEC 27001:2022 Annex A controls (identifier and title only) |
+| `governance/frameworks/bddk-bsebh.yaml` | BDDK *Bankaların Bilgi Sistemleri ve Elektronik Bankacılık Hizmetleri Hakkında Yönetmelik* (Resmî Gazete 15.03.2020, No. 31069), by requirement topic |
+| `governance/frameworks/cbddo-big.yaml` | Presidency Digital Transformation Office *Bilgi ve İletişim Güvenliği Rehberi*, by measure topic |
 
 Each control lists the capabilities that support it, the evidence source that proves
 it, a coverage level and a note that states the limit of the support:
@@ -36,6 +41,14 @@ it, a coverage level and a note that states the limit of the support:
 
 Only controls to which the product contributes, or that customers commonly ask about
 for AI tool use, are listed; the rest of each framework is out of the product's scope.
+
+**BDDK and the Presidency guide are mapped by topic.** Their rows use this mapping's own
+topic codes (`BSEBY-*`, `BIG-*`: for example `BSEBY-IZKAYDI` for audit trails, `BIG-OLAY`
+for cyber incident response) rather than article or measure numbers, because article
+numbering and the guide's measure numbering change between consolidated texts and
+versions. The institution's compliance function maps each topic to the article or
+measure of the text it applies. None of these rows is a regulatory approval, an audit
+result or a statement that an institution meets the regulation or the guide.
 NIST AI RMF titles quote the subcategory's first sentence; ISO/IEC 42001 rows give the
 Annex A identifier and control title only (the standard's text is not reproduced).
 
@@ -63,8 +76,10 @@ good-practice reference. The mapping does not classify any AI system.
 **Integrity checks.** `node scripts/sync-governance-frameworks.mjs` validates the
 mapping (every capability path, table, report section, function and file it
 references must exist; identifiers follow each framework's scheme; every control has
-a note) and fails when the dashboard embed has drifted. `--write` regenerates the
-embed. The dashboard test suite runs the same checks.
+a note) and fails when either embed has drifted: the dashboard's
+(`packages/dashboard/src/lib/governance-frameworks.generated.ts`) and the compliance
+report's control-mapping section (`supabase/functions/_shared/governance-frameworks.generated.ts`).
+`--write` regenerates both. The dashboard test suite runs the same checks.
 
 ## 2. Governance scorecard (dashboard → Governance)
 
@@ -135,14 +150,54 @@ maintenance evidence file (`maintenance-evidence.json`) records the dispatch cou
 under `governance_digest`; a dispatch failure keeps the run incomplete (exit code 2)
 without discarding the retention results.
 
+**Language, executive summary and attachment.** Each workspace chooses the e-mail
+language (**English** or **Turkish**, default English) and whether the printable
+executive report is attached (default on) under **Executive reports** (`/reports`);
+the change needs an AAL2 owner/admin session and is audited as
+`governance_report_options.updated`. The message opens with an executive summary
+(*Needs attention* or *No action needed*, and up to eight headlines: open critical or
+high incidents, incidents without an owner, approvals that expired undecided,
+approvers to review, MCP servers not approved, a runtime policy unchanged for more than
+180 days, blocked and held actions, masked AI sends) and adds the incident triage
+counts (open, acknowledged, resolved, false positive, snoozed, without owner, median
+time to close; see `docs/incidents.md`). The function reads them with
+`governance_report_context`; when they cannot be read nothing is sent and the period is
+retried, as for the summary itself.
+
+The attachment is a **self-contained HTML document** (inline CSS, no scripts or
+external resources, `default-src 'none'` content security policy), not a PDF. The
+reader opens it in a browser and prints it to PDF. A server-side PDF is not generated:
+the standard PDF fonts cannot show Turkish letters (ğ, ş, ı, İ) and the Edge runtime
+has no font to embed. Delivery uses the same deployment mailer as before; a mail
+transport that does not support attachments must still deliver the message body.
+
 Settings changes are recorded in the admin audit log (`governance_settings.updated`).
 When a workspace is offboarded, the summary stops at the offboarding request and the
 settings and receipts are deleted with the telemetry phase.
 
+## 3a. Executive reports and team rollup (dashboard → Executive reports)
+
+Owners and admins open **Executive reports** (`/reports`), served by the `reports` Edge
+Function (`supabase/functions/reports/index.ts`; shared builder
+`supabase/functions/_shared/executive-report.ts`; migration
+`supabase/migrations/20261014000200_executive_reports.sql`):
+
+| Part | What it shows |
+| --- | --- |
+| Executive summary | The same headlines and figures as the scheduled e-mail, for a 7, 30 or 90 day window of whole UTC days, in English or Turkish. |
+| Team rollup | One row per workspace where the signed-in user is an active owner or admin (at most 50): agents active, allowed / held / denied actions, masked AI sends, incidents to handle, critical, without owner, approvals pending. Each workspace's sign-in policy (MFA, SSO, session revocation) is checked against the current session; a workspace whose policy the session does not meet is listed by name only, without figures. |
+| Printable report | The executive report as a downloadable HTML file (optionally with the team rollup), the same document the e-mail attaches. |
+| Scheduled e-mail | Language and attachment choice, the current schedule (set on **Governance**) and *Send a test now*. |
+
+Everything is counts, enums and workspace names: no prompt text, matched values, page
+addresses, incident notes or approver identities. A summary that cannot be read or
+validated is shown as an error, never as zeros. The executive report is not a
+certification or an audit opinion.
+
 ## 4. AI acceptable-use notice (AI literacy)
 
 Administrators publish an acceptable-use notice in the Browser Guard managed policy
-(key `acceptableUse`; the **Browser Privacy** page builds the JSON):
+(key `acceptableUse`; the **Browser Guard** page builds the JSON):
 
 ```json
 {

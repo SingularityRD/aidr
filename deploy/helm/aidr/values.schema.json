@@ -111,6 +111,7 @@
         "resources": { "$ref": "#/definitions/resources" },
         "runAsUser": { "$ref": "#/definitions/uid" },
         "authMethods": { "type": "string", "pattern": "^(password|magic-link|google|github|azure)(,(password|magic-link|google|github|azure))*$" },
+        "oidcSso": { "type": "boolean" },
         "readinessProbePath": { "type": "string", "enum": ["/livez", "/readyz"] },
         "sentry": {
           "type": "object",
@@ -154,6 +155,14 @@
             "passwordKey": { "type": "string" },
             "adminEmail": { "type": "string" },
             "senderName": { "type": "string" }
+          }
+        },
+        "saml": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "privateKeyKey": { "type": "string" }
           }
         },
         "pdb": { "$ref": "#/definitions/pdb" }
@@ -209,7 +218,36 @@
         "resources": { "$ref": "#/definitions/resources" },
         "runAsUser": { "$ref": "#/definitions/uid" },
         "npmRegistry": { "type": "string", "pattern": "^(|https?://.+)$" },
+        "identityProvider": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "caBundle": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "existingConfigMap": { "type": "string" },
+                "key": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,253}$" }
+              }
+            },
+            "internalHosts": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?(:[0-9]{1,5})?$" }
+            }
+          }
+        },
         "billingProvider": { "type": "string", "enum": ["", "stripe", "paddle"] },
+        "mail": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string", "enum": ["", "smtp", "resend", "none"] },
+            "smtpSecurity": { "type": "string", "enum": ["", "starttls", "tls", "none"] },
+            "smtpCaSecretKey": { "type": "string" }
+          }
+        },
         "pdb": { "$ref": "#/definitions/pdb" },
         "autoscaling": { "$ref": "#/definitions/autoscaling" }
       }
@@ -276,6 +314,30 @@
             "acknowledgeNotBackedUp": { "type": "boolean" }
           }
         },
+        "encryption": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ageRecipients": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^age1[02-9ac-hj-np-z]{58}$" }
+            },
+            "allowPlaintext": { "type": "boolean" }
+          }
+        },
+        "offsite": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "endpoint": { "type": "string", "pattern": "^(|https://[^/?#@]+)$" },
+            "bucket": { "type": "string" },
+            "region": { "type": "string" },
+            "prefix": { "type": "string", "pattern": "^([A-Za-z0-9._-]+/)*$" },
+            "existingSecret": { "type": "string" },
+            "egressCIDRs": { "$ref": "#/definitions/cidrList" }
+          }
+        },
         "image": { "$ref": "#/definitions/image" },
         "resources": { "$ref": "#/definitions/resources" },
         "runAsUser": { "$ref": "#/definitions/uid" },
@@ -289,10 +351,38 @@
         }
       }
     },
+    "maintenance": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "schedule": { "type": "string", "minLength": 9 },
+        "apply": { "type": "boolean" },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 60 },
+        "image": { "$ref": "#/definitions/image" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "runAsUser": { "$ref": "#/definitions/uid" }
+      }
+    },
     "notifications": {
       "type": "object",
       "properties": {
         "dispatcher": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "schedule": { "type": "string", "minLength": 9 },
+            "image": { "$ref": "#/definitions/image" },
+            "resources": { "$ref": "#/definitions/resources" },
+            "runAsUser": { "$ref": "#/definitions/uid" }
+          }
+        }
+      }
+    },
+    "siem": {
+      "type": "object",
+      "properties": {
+        "allowPrivateNetworks": { "type": "boolean" },
+        "forwarder": {
           "type": "object",
           "properties": {
             "enabled": { "type": "boolean" },
@@ -330,7 +420,32 @@
         "dnsNamespaceSelector": { "type": "object" },
         "dnsPodSelector": { "type": "object" },
         "functionsEgressCIDRs": { "$ref": "#/definitions/cidrList" },
+        "identityProviderEgress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cidr", "port"],
+            "properties": {
+              "cidr": { "type": "string", "pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$" },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          }
+        },
         "smtpEgressCIDRs": { "$ref": "#/definitions/cidrList" },
+        "siemEgress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cidr", "port"],
+            "properties": {
+              "cidr": { "type": "string", "pattern": "^[0-9a-fA-F:.]+/[0-9]{1,3}$" },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "protocol": { "type": "string", "enum": ["TCP", "UDP"] }
+            }
+          }
+        },
         "dashboardEgressCIDRs": { "$ref": "#/definitions/cidrList" },
         "storageEgressCIDRs": { "$ref": "#/definitions/cidrList" }
       }
@@ -376,7 +491,7 @@
           "properties": {
             "image": { "$ref": "#/definitions/image" },
             "resources": { "$ref": "#/definitions/resources" },
-            "authMode": { "type": "string", "enum": ["broker", "api_key"] },
+            "authMode": { "type": "string", "enum": ["broker"] },
             "minWorkers": { "type": "integer", "minimum": 1 },
             "clientPodLabel": { "type": "object", "minProperties": 1 }
           }

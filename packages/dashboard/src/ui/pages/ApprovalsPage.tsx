@@ -1,52 +1,70 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import type { DashboardMessageKey } from "../../i18n/en";
+import {
+	type DashboardLocale,
+	englishT,
+	type Translate,
+	useDashboardLocale,
+	useT,
+} from "../../i18n/I18nProvider";
 import {
 	APPROVAL_REASON_MAX,
 	type ApprovalDecision,
 	type ApprovalQueue,
 	type ApprovalRequest,
+	type ApprovalSeparation,
 	type ApprovalStatus,
 	decideApproval,
 	formatCountdown,
+	loadApprovalSeparation,
 	loadApprovals,
 	rotateApprovalSigningKey,
+	updateApprovalSeparation,
 } from "../../lib/approvals";
+import { describeRule, type RuleDescription } from "../../lib/rule-titles";
 
 export const APPROVALS_REFRESH_MS = 15_000;
 const CONTROL = /\p{Cc}/u;
 
 /** Operator copy for the service's machine-readable approval errors. */
-export function approvalErrorMessage(code: string): string {
+export function approvalErrorMessage(code: string, t: Translate = englishT): string {
 	switch (code) {
 		case "mfa_required":
-			return "Multi-factor verification (AAL2) is required to decide approvals. Verify with your authenticator, then try again.";
+			return t("approvals.error.mfaRequired");
 		case "sso_required":
-			return "This workspace requires single sign-on. Sign in with your identity provider, then try again.";
+			return t("approvals.error.ssoRequired");
 		case "approval_role_insufficient":
 		case "approval_forbidden":
-			return "Only owners and administrators can decide approvals.";
+			return t("approvals.error.forbidden");
+		case "approval_self_approval_forbidden":
+			return t("approvals.error.selfApproval");
+		case "approval_separation_four_eyes_required":
+			return t("approvals.error.fourEyes");
+		case "approval_settings_failed":
+			return t("approvals.error.settingsFailed");
 		case "approval_request_final":
-			return "This request was already decided.";
+			return t("approvals.error.final");
 		case "approval_request_expired":
-			return "This request expired before it was decided. The agent's action stays blocked.";
+			return t("approvals.error.expired");
 		case "approval_request_not_found":
-			return "This request is no longer available in this workspace.";
+			return t("approvals.error.notFound");
 		case "approval_signing_key_changed":
-			return "The signing key changed while deciding. Try again.";
+			return t("approvals.error.keyChanged");
 		case "approval_signing_unavailable":
-			return "The approval could not be signed. Nothing was approved; contact your platform operator.";
+			return t("approvals.error.signingUnavailable");
 		case "invalid_reason":
-			return `Enter a reason of 1 to ${APPROVAL_REASON_MAX} characters without control characters.`;
+			return t("approvals.error.invalidReason", { max: APPROVAL_REASON_MAX });
 		case "rate_limited":
-			return "Too many decisions. Wait a minute and try again.";
+			return t("approvals.error.rateLimited");
 		case "session_revoked":
 		case "invalid_access_token":
-			return "Your session is no longer valid. Sign in again.";
+			return t("approvals.error.session");
 		case "approvals_unavailable":
-			return "Approval requests could not be loaded.";
+			return t("approvals.error.unavailable");
 		default:
-			return "The approval service did not confirm the request. Nothing changed.";
+			return t("approvals.error.generic");
 	}
 }
 
@@ -61,6 +79,27 @@ const STATUS_BADGE: Record<ApprovalStatus, string> = {
 	expired: "badge badge-neutral",
 };
 
+const STATUS_LABEL: Record<ApprovalStatus, DashboardMessageKey> = {
+	pending: "approvals.status.pending",
+	approved: "approvals.status.approved",
+	denied: "approvals.status.denied",
+	expired: "approvals.status.expired",
+};
+
+const SEVERITY_LABEL: Record<string, DashboardMessageKey> = {
+	critical: "common.severity.critical",
+	high: "common.severity.high",
+	medium: "common.severity.medium",
+	low: "common.severity.low",
+};
+
+const SEVERITY_BADGE: Record<string, string> = {
+	critical: "badge badge-critical",
+	high: "badge badge-high",
+	medium: "badge badge-medium",
+	low: "badge badge-low",
+};
+
 function useClock(intervalMs: number): number {
 	const [now, setNow] = useState(() => Date.now());
 	useEffect(() => {
@@ -70,20 +109,59 @@ function useClock(intervalMs: number): number {
 	return now;
 }
 
-function formatTime(value: string | null): string {
+function formatTime(value: string | null, locale?: DashboardLocale): string {
 	if (!value) return "—";
 	const parsed = Date.parse(value);
-	return Number.isFinite(parsed) ? new Date(parsed).toLocaleString() : "—";
+	return Number.isFinite(parsed)
+		? new Date(parsed).toLocaleString(locale === "tr" ? "tr-TR" : undefined)
+		: "—";
 }
 
 function agentLabel(request: ApprovalRequest): string {
 	return request.agentRuntime ? `${request.iid} (${request.agentRuntime})` : request.iid;
 }
 
+/**
+ * The card heading: the first rule's title, else its category, else a
+ * generic "held for review". Rule ids stay visible under "Why it was held".
+ */
+function cardTitle(rules: RuleDescription[], t: Translate): string {
+	const first = rules[0];
+	const name = first?.title ?? first?.category ?? t("approvals.card.fallbackTitle");
+	return rules.length > 1
+		? `${name} (${t("approvals.card.moreRules", { count: rules.length - 1 })})`
+		: name;
+}
+
+/** The highest severity among the rules, for the heading badge. */
+function topSeverity(rules: RuleDescription[]): string | null {
+	const order = ["critical", "high", "medium", "low"];
+	const found = rules
+		.map((rule) => rule.severity)
+		.filter((severity): severity is string => severity !== null && order.includes(severity))
+		.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+	return found[0] ?? null;
+}
+
 interface Notice {
 	tone: "success" | "error";
 	message: string;
 	code?: string;
+}
+
+function RuleList({ rules }: { rules: RuleDescription[] }) {
+	const t = useT();
+	if (rules.length === 0) return <span className="muted">{t("approvals.card.noRules")}</span>;
+	return (
+		<ul className="approval-rules">
+			{rules.map((rule) => (
+				<li key={rule.id}>
+					<span>{rule.title ?? rule.category ?? t("approvals.card.unknownRule")}</span>{" "}
+					<span className="badge badge-neutral badge-plain mono">{rule.id}</span>
+				</li>
+			))}
+		</ul>
+	);
 }
 
 function PendingCard({
@@ -99,6 +177,8 @@ function PendingCard({
 	busy: boolean;
 	onDecide: (request: ApprovalRequest, decision: ApprovalDecision, reason: string) => void;
 }) {
+	const t = useT();
+	const locale = useDashboardLocale();
 	const [reason, setReason] = useState("");
 	const countdown = formatCountdown(request.expiresAt, now);
 	const lapsed = countdown === "expired";
@@ -106,59 +186,66 @@ function PendingCard({
 	const reasonValid =
 		trimmed.length >= 1 && trimmed.length <= APPROVAL_REASON_MAX && !CONTROL.test(trimmed);
 	const reasonId = `approval-reason-${request.id}`;
+	const rules = request.threatIds.map((id) => describeRule(id, locale, t));
+	const title = cardTitle(rules, t);
+	const severity = topSeverity(rules);
+	const severityLabel = severity ? SEVERITY_LABEL[severity] : undefined;
 
 	return (
 		<li
 			className="card"
+			id={`approval-${request.id}`}
+			tabIndex={-1}
 			data-testid="approval-pending"
-			aria-label={`Approval request for ${request.tool}`}
+			aria-label={t("approvals.card.label", { title })}
 		>
 			<div
 				className="row"
 				style={{ justifyContent: "space-between", alignItems: "baseline", gap: 12 }}
 			>
-				<h3 style={{ margin: 0 }}>
-					<span className="mono">{request.tool}</span>
-				</h3>
-				<span
-					className={lapsed ? "badge badge-neutral" : "badge badge-warning"}
-					data-testid="approval-countdown"
-				>
-					{lapsed ? "Expired" : `Expires in ${countdown}`}
+				<h3 style={{ margin: 0 }}>{title}</h3>
+				<span className="row" style={{ gap: 6 }}>
+					{severity && severityLabel ? (
+						<span className={SEVERITY_BADGE[severity]}>{t(severityLabel)}</span>
+					) : null}
+					<span
+						className={lapsed ? "badge badge-neutral" : "badge badge-warning"}
+						data-testid="approval-countdown"
+					>
+						{lapsed
+							? t("approvals.status.expired")
+							: t("approvals.card.expiresIn", { time: countdown })}
+					</span>
 				</span>
 			</div>
 			<dl className="stack" style={{ gap: 4, marginTop: 8 }}>
 				<div>
-					<dt className="muted small">Agent</dt>
+					<dt className="muted small">{t("approvals.card.what")}</dt>
+					<dd>
+						<span className="muted small">
+							{t("approvals.history.tool")}: <span className="mono">{request.tool}</span>
+						</span>
+						<p className="approval-summary">{request.summary || t("approvals.card.noSummary")}</p>
+						<span className="muted small">{t("approvals.card.summaryNote")}</span>
+					</dd>
+				</div>
+				<div>
+					<dt className="muted small">{t("approvals.card.why")}</dt>
+					<dd>
+						<RuleList rules={rules} />
+					</dd>
+				</div>
+				<div>
+					<dt className="muted small">{t("approvals.card.agent")}</dt>
 					<dd className="mono">{agentLabel(request)}</dd>
 				</div>
 				<div>
-					<dt className="muted small">Threats</dt>
-					<dd>
-						{request.threatIds.length === 0 ? (
-							<span className="muted">None reported</span>
-						) : (
-							request.threatIds.map((id) => (
-								<span
-									key={id}
-									className="badge badge-high badge-plain mono"
-									style={{ marginRight: 6 }}
-								>
-									{id}
-								</span>
-							))
-						)}
-					</dd>
+					<dt className="muted small">{t("approvals.card.requested")}</dt>
+					<dd>{formatTime(request.createdAt, locale)}</dd>
 				</div>
 				<div>
-					<dt className="muted small">Summary (redacted by the connector)</dt>
-					<dd>
-						<p className="approval-summary">{request.summary || "No summary provided."}</p>
-					</dd>
-				</div>
-				<div>
-					<dt className="muted small">Requested</dt>
-					<dd>{formatTime(request.createdAt)}</dd>
+					<dt className="muted small">{t("approvals.card.next")}</dt>
+					<dd>{t("approvals.card.nextBody", { agent: request.iid })}</dd>
 				</div>
 			</dl>
 			{canDecide && !lapsed ? (
@@ -168,7 +255,7 @@ function PendingCard({
 					onSubmit={(event) => event.preventDefault()}
 				>
 					<label className="label" htmlFor={reasonId}>
-						Reason (recorded in the audit log)
+						{t("approvals.card.reason")}
 					</label>
 					<textarea
 						id={reasonId}
@@ -186,7 +273,7 @@ function PendingCard({
 							disabled={busy || !reasonValid}
 							onClick={() => onDecide(request, "approve", trimmed)}
 						>
-							Approve
+							{t("approvals.card.approve")}
 						</button>
 						<button
 							className="button button-danger"
@@ -194,18 +281,14 @@ function PendingCard({
 							disabled={busy || !reasonValid}
 							onClick={() => onDecide(request, "deny", trimmed)}
 						>
-							Deny
+							{t("approvals.card.deny")}
 						</button>
 					</div>
-					<p className="muted small">
-						An approval releases exactly one identical retry of this action on the requesting agent,
-						and only within 15 minutes.
-					</p>
 				</form>
 			) : null}
 			{!canDecide ? (
 				<p className="muted small" style={{ marginTop: 8 }}>
-					Only owners and administrators can decide approvals.
+					{t("approvals.error.forbidden")}
 				</p>
 			) : null}
 		</li>
@@ -213,32 +296,41 @@ function PendingCard({
 }
 
 function HistoryTable({ rows }: { rows: ApprovalRequest[] }) {
-	if (rows.length === 0) return <p className="muted">No decided or expired requests yet.</p>;
+	const t = useT();
+	const locale = useDashboardLocale();
+	if (rows.length === 0) return <p className="muted">{t("approvals.history.empty")}</p>;
 	return (
 		<div className="table-wrap">
 			<table className="table" data-testid="approval-history">
 				<thead>
 					<tr>
-						<th scope="col">Requested</th>
-						<th scope="col">Tool</th>
-						<th scope="col">Agent</th>
-						<th scope="col">Threats</th>
-						<th scope="col">Outcome</th>
-						<th scope="col">Decided</th>
-						<th scope="col">Reason</th>
+						<th scope="col">{t("approvals.history.requested")}</th>
+						<th scope="col">{t("approvals.history.action")}</th>
+						<th scope="col">{t("approvals.history.tool")}</th>
+						<th scope="col">{t("approvals.history.agent")}</th>
+						<th scope="col">{t("approvals.history.rules")}</th>
+						<th scope="col">{t("approvals.history.outcome")}</th>
+						<th scope="col">{t("approvals.history.decided")}</th>
+						<th scope="col">{t("approvals.history.reason")}</th>
 					</tr>
 				</thead>
 				<tbody>
 					{rows.map((row) => (
 						<tr key={row.id}>
-							<td>{formatTime(row.createdAt)}</td>
+							<td>{formatTime(row.createdAt, locale)}</td>
+							<td>
+								{cardTitle(
+									row.threatIds.map((id) => describeRule(id, locale, t)),
+									t,
+								)}
+							</td>
 							<td className="mono">{row.tool}</td>
 							<td className="mono">{agentLabel(row)}</td>
 							<td className="mono">{row.threatIds.join(", ") || "—"}</td>
 							<td>
-								<span className={STATUS_BADGE[row.status]}>{row.status}</span>
+								<span className={STATUS_BADGE[row.status]}>{t(STATUS_LABEL[row.status])}</span>
 							</td>
-							<td>{formatTime(row.decidedAt)}</td>
+							<td>{formatTime(row.decidedAt, locale)}</td>
 							<td>{row.reason ?? "—"}</td>
 						</tr>
 					))}
@@ -255,6 +347,7 @@ function SigningKeySection({
 	tenantId: string;
 	onNotice: (notice: Notice) => void;
 }) {
+	const t = useT();
 	const [confirming, setConfirming] = useState(false);
 	const [busy, setBusy] = useState(false);
 
@@ -264,23 +357,23 @@ function SigningKeySection({
 		setBusy(false);
 		setConfirming(false);
 		if (!result.ok) {
-			onNotice({ tone: "error", message: approvalErrorMessage(result.error), code: result.error });
+			onNotice({
+				tone: "error",
+				message: approvalErrorMessage(result.error, t),
+				code: result.error,
+			});
 			return;
 		}
 		onNotice({
 			tone: "success",
-			message: `Approval signing key rotated. New key ${result.value.keyId}; the previous key stays published only for the lifetime of tokens it already signed.`,
+			message: t("approvals.key.rotated", { keyId: result.value.keyId }),
 		});
 	}
 
 	return (
 		<div className="card">
-			<h2>Approval signing key</h2>
-			<p className="muted small">
-				Approval tokens are signed with a per-workspace Ed25519 key held encrypted by the control
-				plane. Connectors verify them with the public key delivered in their signed entitlement.
-				Rotate the key if you suspect it was exposed.
-			</p>
+			<h2>{t("approvals.key.title")}</h2>
+			<p className="muted small">{t("approvals.key.body")}</p>
 			{confirming ? (
 				<div className="row" style={{ gap: 8 }}>
 					<button
@@ -289,7 +382,7 @@ function SigningKeySection({
 						disabled={busy}
 						onClick={() => void rotate()}
 					>
-						Confirm rotation
+						{t("approvals.key.confirm")}
 					</button>
 					<button
 						className="button button-secondary"
@@ -297,7 +390,7 @@ function SigningKeySection({
 						disabled={busy}
 						onClick={() => setConfirming(false)}
 					>
-						Cancel
+						{t("approvals.key.cancel")}
 					</button>
 				</div>
 			) : (
@@ -306,14 +399,102 @@ function SigningKeySection({
 					type="button"
 					onClick={() => setConfirming(true)}
 				>
-					Rotate signing key
+					{t("approvals.key.rotate")}
 				</button>
 			)}
 		</div>
 	);
 }
 
+const SEPARATION_OPTIONS = [
+	{ value: "plan", label: "approvals.separation.plan", setting: null },
+	{ value: "required", label: "approvals.separation.required", setting: true },
+	{ value: "allowed", label: "approvals.separation.allowed", setting: false },
+] as const;
+
+function separationValue(configured: boolean | null): string {
+	return configured === null ? "plan" : configured ? "required" : "allowed";
+}
+
+/** Separation of duties: whether the requester may approve their own block. */
+function SeparationOfDutiesSection({
+	tenantId,
+	onNotice,
+}: {
+	tenantId: string;
+	onNotice: (notice: Notice) => void;
+}) {
+	const t = useT();
+	const [state, setState] = useState<ApprovalSeparation | null>(null);
+	const [failed, setFailed] = useState(false);
+	const [busy, setBusy] = useState(false);
+
+	useEffect(() => {
+		let current = true;
+		void loadApprovalSeparation(tenantId).then((result) => {
+			if (!current) return;
+			setFailed(!result.ok);
+			setState(result.ok ? result.value : null);
+		});
+		return () => {
+			current = false;
+		};
+	}, [tenantId]);
+
+	async function change(value: string) {
+		const option = SEPARATION_OPTIONS.find((candidate) => candidate.value === value);
+		if (!option) return;
+		setBusy(true);
+		const result = await updateApprovalSeparation(tenantId, option.setting);
+		setBusy(false);
+		if (!result.ok) {
+			onNotice({
+				tone: "error",
+				message: approvalErrorMessage(result.error, t),
+				code: result.error,
+			});
+			return;
+		}
+		setState(result.value);
+		onNotice({ tone: "success", message: t("approvals.separation.saved") });
+	}
+
+	return (
+		<div className="card">
+			<h2>{t("approvals.separation.title")}</h2>
+			<p className="muted small">{t("approvals.separation.body")}</p>
+			{failed ? (
+				<p className="muted small">{t("approvals.separation.loadFailed")}</p>
+			) : state ? (
+				<>
+					<label className="label">
+						{t("approvals.separation.approver")}
+						<select
+							className="input"
+							value={separationValue(state.configured)}
+							disabled={busy}
+							onChange={(e) => void change(e.target.value)}
+						>
+							{SEPARATION_OPTIONS.map((option) => (
+								<option key={option.value} value={option.value}>
+									{t(option.label)}
+								</option>
+							))}
+						</select>
+					</label>
+					<p className="muted small" data-testid="approval-separation-effective">
+						{state.effective
+							? t("approvals.separation.effectiveRequired")
+							: t("approvals.separation.effectiveAllowed")}
+					</p>
+				</>
+			) : null}
+		</div>
+	);
+}
+
 function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: string }) {
+	const t = useT();
 	const error = notice.tone === "error";
 	return (
 		<div
@@ -324,7 +505,7 @@ function NoticeBanner({ notice, tenantId }: { notice: Notice; tenantId: string }
 			{notice.code === "mfa_required" ? (
 				<div style={{ marginTop: 8 }}>
 					<Link className="button button-sm" to={stepUpPath(tenantId)}>
-						Verify with authenticator
+						{t("approvals.verifyMfa")}
 					</Link>
 				</div>
 			) : null}
@@ -372,10 +553,11 @@ function PendingList({
 	busy: boolean;
 	onDecide: (request: ApprovalRequest, decision: ApprovalDecision, reason: string) => void;
 }) {
+	const t = useT();
 	if (rows.length === 0) {
 		return (
 			<div className="card">
-				<p className="muted">No pending approval requests.</p>
+				<p className="muted">{t("approvals.empty")}</p>
 			</div>
 		);
 	}
@@ -427,11 +609,14 @@ export function ApprovalsPage() {
 
 function TenantApprovalsPage() {
 	const { currentTeam, currentRole, roleResolved } = useTeam();
+	const t = useT();
+	const locale = useDashboardLocale();
 	const tenantId = currentTeam?.id ?? null;
 	const canDecide = roleResolved && (currentRole === "owner" || currentRole === "admin");
 	const now = useClock(1000);
 	const [tab, setTab] = useState<Tab>("pending");
 	const [rows, setRows] = useState<ApprovalQueue | null>(null);
+	// The error code, not its text, so a language switch re-renders it.
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<Notice | null>(null);
 	const [busyId, setBusyId] = useState<string | null>(null);
@@ -446,9 +631,22 @@ function TenantApprovalsPage() {
 			setRows(result.value);
 			setLoadError(null);
 		} else {
-			setLoadError(approvalErrorMessage(result.error));
+			setLoadError(result.error);
 		}
 	}, [tenantId]);
+
+	// A connector's block message links `/approvals?request=<id>`: bring that
+	// request into view once the queue has loaded. The id only selects a card.
+	const focusedRequest = useRef(false);
+	useEffect(() => {
+		if (!rows || focusedRequest.current) return;
+		focusedRequest.current = true;
+		const id = new URLSearchParams(window.location.search).get("request") ?? "";
+		if (!/^[0-9a-f-]{36}$/i.test(id)) return;
+		const card = document.getElementById(`approval-${id.toLowerCase()}`);
+		card?.scrollIntoView?.({ block: "center" });
+		card?.focus?.();
+	}, [rows]);
 
 	useEffect(() => {
 		setRows(null);
@@ -473,11 +671,19 @@ function TenantApprovalsPage() {
 				tone: "success",
 				message:
 					result.value.status === "approved"
-						? `Approved ${target.tool} on ${target.iid}. The connector can retry the identical action until ${formatTime(result.value.tokenExpiresAt)}.`
-						: `Denied ${target.tool} on ${target.iid}. The action stays blocked.`,
+						? t("approvals.decided.approved", {
+								tool: target.tool,
+								agent: target.iid,
+								time: formatTime(result.value.tokenExpiresAt, locale),
+							})
+						: t("approvals.decided.denied", { tool: target.tool, agent: target.iid }),
 			});
 		} else {
-			setNotice({ tone: "error", message: approvalErrorMessage(result.error), code: result.error });
+			setNotice({
+				tone: "error",
+				message: approvalErrorMessage(result.error, t),
+				code: result.error,
+			});
 		}
 		await load();
 	}
@@ -485,8 +691,8 @@ function TenantApprovalsPage() {
 	if (!tenantId) {
 		return (
 			<div className="stack">
-				<h1>Approvals</h1>
-				<div className="card">Select a team to review approval requests.</div>
+				<h1>{t("nav.approvals")}</h1>
+				<div className="card">{t("approvals.noTeam")}</div>
 			</div>
 		);
 	}
@@ -499,46 +705,47 @@ function TenantApprovalsPage() {
 	return (
 		<div className="stack">
 			<div>
-				<h1>Approvals</h1>
-				<p className="muted">
-					In managed mode a connector files a request here when a tool call is held for approval (an
-					<span className="mono"> ask </span>verdict). The agent itself can never approve: decisions
-					are made here by an owner or administrator with multi-factor verification, signed, and
-					collected by the requesting connector.
-				</p>
+				<h1>{t("nav.approvals")}</h1>
+				<p className="muted">{t("approvals.intro")}</p>
 			</div>
 
 			{notice ? <NoticeBanner notice={notice} tenantId={tenantId} /> : null}
 
-			<div className="row" role="tablist" aria-label="Approval requests" style={{ gap: 8 }}>
+			<div className="row" role="tablist" aria-label={t("approvals.tabs")} style={{ gap: 8 }}>
 				<TabButton
 					id="pending"
 					current={tab}
-					label={`Pending (${rows ? pending.length : "…"})`}
+					label={t("approvals.tab.pending", { count: rows ? pending.length : "…" })}
 					onSelect={setTab}
 				/>
-				<TabButton id="history" current={tab} label="History" onSelect={setTab} />
+				<TabButton
+					id="history"
+					current={tab}
+					label={t("approvals.tab.history")}
+					onSelect={setTab}
+				/>
 				<button
 					className="button button-secondary button-sm"
 					type="button"
 					onClick={() => void load()}
 				>
-					Refresh
+					{t("approvals.refresh")}
 				</button>
 			</div>
 
 			{loadError ? (
 				<div className="notice notice-danger" role="alert">
-					{loadError}
+					{approvalErrorMessage(loadError, t)}
 				</div>
 			) : null}
-			{!rows && !loadError ? <p className="muted">Loading approval requests…</p> : null}
+			{!rows && !loadError ? <p className="muted">{t("approvals.loading")}</p> : null}
 
 			{rows && tab === "pending" && pendingHidden > 0 ? (
 				<div className="notice notice-warning" role="note" data-testid="approval-pending-truncated">
-					Showing the {rows.pending.length} requests that expire soonest; {pendingHidden} more
-					pending {pendingHidden === 1 ? "request is" : "requests are"} not shown. Decide or let
-					these expire, then refresh.
+					{t(pendingHidden === 1 ? "approvals.truncated.one" : "approvals.truncated.other", {
+						shown: rows.pending.length,
+						hidden: pendingHidden,
+					})}
 				</div>
 			) : null}
 			{rows && tab === "pending" ? (
@@ -552,18 +759,18 @@ function TenantApprovalsPage() {
 			) : null}
 			{rows && tab === "history" ? (
 				<div className="card">
-					<h2>History</h2>
+					<h2>{t("approvals.tab.history")}</h2>
 					<HistoryTable rows={history} />
 					{rows.historyTruncated ? (
 						<p className="muted small" data-testid="approval-history-truncated">
-							Showing the newest {rows.history.length} decided or expired requests; older entries
-							are not listed here.
+							{t("approvals.historyTruncated", { count: rows.history.length })}
 						</p>
 					) : null}
 				</div>
 			) : null}
 
 			{canDecide ? <SigningKeySection tenantId={tenantId} onNotice={setNotice} /> : null}
+			{canDecide ? <SeparationOfDutiesSection tenantId={tenantId} onNotice={setNotice} /> : null}
 		</div>
 	);
 }

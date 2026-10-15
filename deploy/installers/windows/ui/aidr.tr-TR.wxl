@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Türkçe metinler: Singularity AIDR kurulum sihirbazı (ui/AidrUI.wxs, aidr.wxs).
+  Her Id'nin aidr.en-US.wxl içinde İngilizce karşılığı vardır (installers.test.mjs
+  iki yönde de denetler). Düğmeler ve yardımcı pencereler WixToolset.UI.wixext'ten gelir.
+  "Singularity AIDR" marka adıdır; çevrilmez ve Türkçe büyük harfe çevrilmez.
+-->
+<WixLocalization Culture="tr-TR" Codepage="1254" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="AidrPackageLanguage" Value="1055" />
+  <String Id="AidrDowngradeError" Value="Singularity AIDR'nin daha yeni bir sürümü zaten kurulu." />
+  <String Id="AidrDialogTitle" Value="[ProductName] Kurulumu" />
+
+  <String Id="AidrWelcomeTitle" Value="{\WixUI_Font_Bigger}Singularity AIDR'ye hoş geldiniz" />
+  <String Id="AidrWelcomeValue" Value="Singularity AIDR, yapay zekâ kodlama araçlarınızın yaptıklarını (komutlar, dosyalar ve web istekleri) denetler ve zararlı işlemleri çalışmadan önce durdurur." />
+  <String Id="AidrWelcomeVersion" Value="Sürüm [ProductVersion]" />
+  <String Id="AidrWelcomeCustomer" Value="[AidrCustomerName] için hazırlanmıştır" />
+  <String Id="AidrWelcomeContinue" Value="Devam etmek için İleri'ye, kurulumdan çıkmak için İptal'e tıklayın." />
+
+  <String Id="AidrLicenseTitle" Value="{\WixUI_Font_Title}Lisans sözleşmesi" />
+  <String Id="AidrLicenseDescription" Value="Lütfen lisans sözleşmesini dikkatlice okuyun." />
+  <String Id="AidrLicenseAccept" Value="Lisans sözleşmesinin koşullarını &amp;kabul ediyorum" />
+
+  <String Id="AidrScopeTitle" Value="{\WixUI_Font_Title}Kimler korunsun?" />
+  <String Id="AidrScopeDescription" Value="Bu bilgisayarda Singularity AIDR'yi kimlerin kullanacağını seçin." />
+  <String Id="AidrScopeUser" Value="&amp;Yalnızca benim için" />
+  <String Id="AidrScopeUserHelp" Value="Kullanıcı klasörünüze kurulur ve yalnızca sizin yapay zekâ araçlarınızı korur. Yönetici yetkisi gerekmez." />
+  <String Id="AidrScopeMachine" Value="Bu bilgisayarın &amp;tüm kullanıcıları için" />
+  <String Id="AidrScopeMachineHelp" Value="Program Files klasörüne kurulur ve bu bilgisayarın tüm kullanıcılarını korur (diğer kullanıcılar bir sonraki oturum açışlarında). Windows yönetici onayı ister." />
+
+  <String Id="AidrCompanyTitle" Value="{\WixUI_Font_Title}Şirket bağlantısı (isteğe bağlı)" />
+  <String Id="AidrCompanyDescription" Value="Koruma her iki durumda da bu bilgisayarda çalışır." />
+  <String Id="AidrCompanyLocal" Value="Yalnızca &amp;yerel koruma (hesap gerekmez)" />
+  <String Id="AidrCompanyLocalHelp" Value="Şirketiniz size bağlantı bilgisi vermediyse bunu seçin." />
+  <String Id="AidrCompanyConnect" Value="Şirketime &amp;bağlan" />
+  <String Id="AidrCompanyUrlLabel" Value="Şirket adresi (BT ekibinizden):" />
+  <String Id="AidrCompanyCodeLabel" Value="Kayıt kodu (isteğe bağlı):" />
+  <String Id="AidrCompanyHelp" Value="Kod girmezseniz yapay zekâ aracınız ilk açılışında kısa bir kod ve bir bağlantı gösterir; bu bilgisayar orada onaylanır. Kurulum kodu yalnızca sizin hesabınızın açabildiği bir dosyada tutar ve kullanıldıktan sonra siler." />
+  
+  <String Id="AidrCustomerCompanyTitle" Value="{\WixUI_Font_Title}Şirket bağlantısı" />
+  <String Id="AidrCustomerCompanyDescription" Value="Bu kurulum [AidrCustomerName] sunucusuna bağlanır." />
+  <String Id="AidrCustomerCompanyServer" Value="Şirket adresi: [AidrCustomerServer]" />
+  <String Id="AidrCustomerCompanyHelp" Value="Koruma, sunucuya ulaşılsa da ulaşılmasa da bu bilgisayarda çalışır. Kod girmezseniz yapay zekâ aracınız ilk açılışında kısa bir kod ve bir bağlantı gösterir; bu bilgisayar orada onaylanır. Kurulum kodu yalnızca sizin hesabınızın açabildiği bir dosyada tutar ve kullanıldıktan sonra siler." />
+
+  <String Id="AidrInvalidUrl" Value="Şirket adresi https:// ile başlamalı ve yalnızca bir sunucu adı ile yol içermelidir; örneğin https://aidr.example.com." />
+  <String Id="AidrInvalidCode" Value="Kayıt kodu eksik. Tek kullanımlık kod aidr_enroll_ ile başlar ve 55 karakterdir; filo anahtarı aidr_fleet_ ile başlar. Şirketinizin konsolundan yeniden kopyalayın." />
+
+  <String Id="AidrReadyTitle" Value="{\WixUI_Font_Title}Kuruluma hazır" />
+  <String Id="AidrReadyDescription" Value="Seçimlerinizi kontrol edin, ardından Kur'a tıklayın." />
+  <String Id="AidrReadyScopeUser" Value="Korunan: yalnızca sizin hesabınız" />
+  <String Id="AidrReadyScopeMachine" Value="Korunan: bu bilgisayarın tüm kullanıcıları (yönetici onayı gerekir)" />
+  <String Id="AidrReadyFolder" Value="Klasör: [INSTALLFOLDER]" />
+  <String Id="AidrReadyLocal" Value="Şirket bağlantısı: yok (yalnızca yerel koruma)" />
+  <String Id="AidrReadyCompany" Value="Şirket bağlantısı: [ENROLLMENT_URL]" />
+  <String Id="AidrReadySetup" Value="Kurulumdan sonra yapay zekâ araçlarınız (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw) bulunur ve Singularity AIDR onlara bağlanır." />
+  <String Id="AidrReadyCustomer" Value="Lisans sahibi: [AidrCustomerName]" />
+  <String Id="AidrReadyUpdatesUntil" Value="Kural ve tehdit güncellemeleri şu tarihe kadar: [AidrUpdatesUntil]. Koruma bu tarihten sonra da çalışmaya devam eder." />
+  <String Id="AidrReadyInstall" Value="&amp;Kur" />
+
+  <String Id="AidrExitTitleInstalled" Value="{\WixUI_Font_Bigger}Singularity AIDR kuruldu" />
+  <String Id="AidrExitTextInstalled" Value="Korumanın devreye girmesi için yapay zekâ araçlarınızı yeniden başlatın. Denetlemek için yeni bir terminal açıp şunu çalıştırın: aidr status" />
+  <String Id="AidrExitTitleRepaired" Value="{\WixUI_Font_Bigger}Singularity AIDR onarıldı" />
+  <String Id="AidrExitTextRepaired" Value="Onarılan dosyaların kullanılması için yapay zekâ araçlarınızı yeniden başlatın." />
+  <String Id="AidrExitTitleRemoved" Value="{\WixUI_Font_Bigger}Singularity AIDR kaldırıldı" />
+  <String Id="AidrExitTextRemoved" Value="Yapay zekâ araçlarınız artık Singularity AIDR'yi kullanmıyor. Ayarlarınız ve denetim günlüğünüz kullanıcı klasörünüzdeki .singularity-aidr klasöründe kalır." />
+  <String Id="AidrExitLaunchAssistant" Value="Singularity AIDR Kurulum &amp;Yardımcısını aç" />
+  <String Id="AidrExitElevatedHint" Value="Kurulum yönetici olarak çalıştığı için Kurulum Yardımcısı buradan açılmaz. Daha sonra normal bir terminalde açın: aidr assistant. Hızlı başlangıç kılavuzu [INSTALLFOLDER]docs klasöründedir." />
+  <String Id="AidrExitQuickStart" Value="&lt;a href=&quot;[#AidrQuickStartTr]&quot;&gt;Hızlı başlangıç kılavuzunu görüntüle&lt;/a&gt;" />
+</WixLocalization>

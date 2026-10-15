@@ -1,6 +1,8 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { readFunctionError } from "../../auth/oidc-sso";
 import { EnterpriseAuth } from "../../enterprise/auth";
+import type { DashboardMessageKey } from "../../i18n/en";
+import { englishT, type Translate, useRichT, useT } from "../../i18n/I18nProvider";
 import { supabase } from "../../lib/supabase";
 
 type SamlChange = {
@@ -18,33 +20,28 @@ type SamlChange = {
 };
 type Props = { tenantId: string; currentUserId: string };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SAFE_ERRORS: Record<string, string> = {
-	owner_required: "Only an active tenant owner can manage SAML enforcement.",
-	mfa_required: "Complete multi-factor verification, then try again.",
-	sso_required: "Sign in through this workspace's required identity provider, then try again.",
-	saml_policy_owner_required: "Only an active tenant owner can manage SAML enforcement.",
-	saml_policy_aal2_required: "Complete multi-factor verification, then try again.",
-	saml_policy_session_invalid: "Sign in again before changing SAML enforcement.",
-	saml_policy_session_revoked: "This session was revoked. Sign in again.",
-	saml_policy_provider_session_required:
-		"Sign in through the SAML provider being enabled or currently required, then try again.",
-	saml_policy_provider_unavailable: "The selected SAML provider is unavailable.",
-	saml_policy_owners_not_verified:
-		"At least two active owners are required. Every active owner must first verify their account through this SAML provider.",
-	saml_policy_scim_identity_conflict:
-		"A provisioned identity conflicts with an owner account. Resolve the identity before retrying.",
-	saml_policy_unsupported_transition:
-		"Disable the current SAML provider with two-owner approval before enabling another provider.",
-	saml_policy_policy_conflict: "The identity policy changed. Refresh and create a new request.",
-	saml_policy_request_expired: "This request expired. Create a new request for review.",
-	saml_policy_request_consumed: "This request was already approved. Refresh its status.",
-	saml_policy_distinct_owner_required: "A different active owner must approve this request.",
-	saml_policy_request_not_found: "This request was not found in the selected workspace.",
-	saml_policy_request_pending_limit:
-		"Too many requests are pending. Wait for them to expire before creating another.",
-	saml_policy_invalid_request: "Check the provider ID, change reason, and change reference.",
-	invalid_request: "Check the provider ID, change reason, and change reference.",
-	rate_limited: "Too many attempts. Wait a moment before retrying.",
+const SAFE_ERRORS: Record<string, DashboardMessageKey> = {
+	owner_required: "saml.err.owner",
+	mfa_required: "saml.err.mfa",
+	sso_required: "saml.err.sso",
+	saml_policy_owner_required: "saml.err.owner",
+	saml_policy_aal2_required: "saml.err.mfa",
+	saml_policy_session_invalid: "saml.err.sessionInvalid",
+	saml_policy_session_revoked: "saml.err.sessionRevoked",
+	saml_policy_provider_session_required: "saml.err.providerSession",
+	saml_policy_provider_unavailable: "saml.err.providerUnavailable",
+	saml_policy_owners_not_verified: "saml.err.ownersNotVerified",
+	saml_policy_scim_identity_conflict: "saml.err.scimConflict",
+	saml_policy_unsupported_transition: "saml.err.transition",
+	saml_policy_policy_conflict: "saml.err.policyConflict",
+	saml_policy_request_expired: "saml.err.expired",
+	saml_policy_request_consumed: "saml.err.consumed",
+	saml_policy_distinct_owner_required: "saml.err.distinctOwner",
+	saml_policy_request_not_found: "saml.err.notFound",
+	saml_policy_request_pending_limit: "saml.err.pendingLimit",
+	saml_policy_invalid_request: "saml.err.invalid",
+	invalid_request: "saml.err.invalid",
+	rate_limited: "saml.err.rateLimited",
 };
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -62,7 +59,7 @@ function auditText(value: unknown, min: number, max: number): value is string {
 		!/[\u0000-\u001f\u007f]/.test(value)
 	);
 }
-function parseChange(value: unknown, tenantId: string): SamlChange {
+function parseChange(value: unknown, tenantId: string, t: Translate = englishT): SamlChange {
 	if (
 		!record(value) ||
 		value.tenant_id !== tenantId ||
@@ -90,9 +87,7 @@ function parseChange(value: unknown, tenantId: string): SamlChange {
 		(value.approved_by === null) !== (value.approved_at === null) ||
 		value.approved_by === value.requested_by
 	) {
-		throw new Error(
-			"SAML enforcement returned an invalid change request. No change was confirmed.",
-		);
+		throw new Error(t("saml.err.invalidChange"));
 	}
 	return value as SamlChange;
 }
@@ -106,6 +101,11 @@ export function SamlPolicyPanel(props: Props) {
 }
 
 function SamlPolicyControls({ tenantId, currentUserId }: Props) {
+	const t = useT();
+	const richT = useRichT();
+	// Loaders read the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const [policy, setPolicy] = useState<{ providerId: string | null } | null>(null);
 	const [providerId, setProviderId] = useState("");
 	const [reason, setReason] = useState("");
@@ -138,10 +138,9 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 			);
 			if (invokeError || !record(data) || data.ok !== true) {
 				const details = await readFunctionError(invokeError, data);
-				throw new Error(
-					SAFE_ERRORS[details.error ?? ""] ??
-						"SAML enforcement is unavailable. No change was confirmed.",
-				);
+				const code = details.error ?? "";
+				const key = Object.hasOwn(SAFE_ERRORS, code) ? SAFE_ERRORS[code] : undefined;
+				throw new Error(translator.current(key ?? "saml.err.unavailable"));
 			}
 			return data;
 		},
@@ -161,14 +160,12 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 				data.access_allowed !== true ||
 				!nullableUuid(data.required_saml_provider_id)
 			) {
-				throw new Error("SAML enforcement status could not be verified. Changes are disabled.");
+				throw new Error(translator.current("saml.err.statusDisabled"));
 			}
 			setPolicy({ providerId: data.required_saml_provider_id });
 		} catch (cause) {
 			if (active.current && generation === loadGeneration.current)
-				setError(
-					cause instanceof Error ? cause.message : "SAML enforcement status could not be verified.",
-				);
+				setError(cause instanceof Error ? cause.message : translator.current("saml.err.status"));
 		}
 	}, [invoke, tenantId]);
 
@@ -193,9 +190,7 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 			await action();
 		} catch (cause) {
 			if (active.current)
-				setError(
-					cause instanceof Error ? cause.message : "The SAML policy change was not confirmed.",
-				);
+				setError(cause instanceof Error ? cause.message : t("saml.err.notConfirmed"));
 		} finally {
 			if (active.current) setBusy(false);
 		}
@@ -209,9 +204,7 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 			!auditText(reason.trim(), 12, 500) ||
 			!auditText(changeRef.trim(), 1, 200)
 		) {
-			setError(
-				"Enter a valid provider ID, a change reason of 12–500 characters, and a change reference.",
-			);
+			setError(t("saml.err.form"));
 			return;
 		}
 		void run(async () => {
@@ -221,7 +214,7 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 				reason: reason.trim(),
 				change_ref: changeRef.trim(),
 			});
-			const requested = parseChange(data.request, tenantId);
+			const requested = parseChange(data.request, tenantId, t);
 			if (
 				requested.old_provider_id !== policy.providerId ||
 				requested.new_provider_id !== nextProvider ||
@@ -230,30 +223,25 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 				requested.reason !== reason.trim() ||
 				requested.change_ref !== changeRef.trim()
 			)
-				throw new Error(
-					"The returned request does not match this change. No change was confirmed.",
-				);
+				throw new Error(t("saml.err.mismatch"));
 			if (!active.current) return;
 			setChange(requested);
 			setReviewId(requested.request_id);
-			setNotice(
-				"Request created. SAML enforcement is unchanged until another owner reviews and approves it.",
-			);
+			setNotice(t("saml.requested"));
 		});
 	}
 	function reviewChange(event: FormEvent) {
 		event.preventDefault();
 		const requestId = reviewId.trim().toLowerCase();
 		if (!UUID.test(requestId)) {
-			setError("Enter the complete change request ID.");
+			setError(t("saml.err.requestId"));
 			return;
 		}
 		setChange(null);
 		void run(async () => {
 			const data = await invoke({ action: "get_saml_policy_change", request_id: requestId });
-			const reviewed = parseChange(data.request, tenantId);
-			if (reviewed.request_id !== requestId)
-				throw new Error("The returned request does not match the selected change.");
+			const reviewed = parseChange(data.request, tenantId, t);
+			if (reviewed.request_id !== requestId) throw new Error(t("saml.err.selectedMismatch"));
 			if (active.current) setChange(reviewed);
 		});
 	}
@@ -262,16 +250,9 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 	const approved = Boolean(change?.approved_at);
 	return (
 		<section className="card" aria-labelledby="saml-policy-heading">
-			<h2 id="saml-policy-heading">SAML sign-in enforcement</h2>
-			<p className="muted">
-				Enabling or disabling required SAML sign-in needs two active owners, each signed in through
-				the relevant provider with multi-factor verification. Review requests expire after five
-				minutes.
-			</p>
-			<p className="muted small">
-				To replace a provider, first disable the current requirement with two-owner approval, then
-				request the new provider. Recovery sessions cannot approve these changes.
-			</p>
+			<h2 id="saml-policy-heading">{t("saml.title")}</h2>
+			<p className="muted">{t("saml.lead")}</p>
+			<p className="muted small">{t("saml.replace")}</p>
 			{error ? (
 				<div className="notice notice-danger" role="alert">
 					{error}
@@ -283,21 +264,19 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 				</div>
 			) : null}
 			<p>
-				{policy ? (
-					<>
-						Current requirement: <strong>{policy.providerId ?? "Off"}</strong>
-					</>
-				) : error ? (
-					"SAML enforcement status is unavailable."
-				) : (
-					"Verifying SAML enforcement status…"
-				)}
+				{policy
+					? richT("saml.current", {
+							provider: <strong>{policy.providerId ?? t("saml.off")}</strong>,
+						})
+					: error
+						? t("saml.statusUnavailable")
+						: t("saml.verifying")}
 			</p>
 			<form onSubmit={requestChange}>
 				{!policy?.providerId ? (
 					<>
 						<label className="label" htmlFor="saml-provider-id">
-							SAML provider ID
+							{t("saml.providerId")}
 						</label>
 						<input
 							id="saml-provider-id"
@@ -311,7 +290,7 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 					</>
 				) : null}
 				<label className="label" htmlFor="saml-change-reason">
-					Change reason
+					{t("saml.reason")}
 				</label>
 				<textarea
 					id="saml-change-reason"
@@ -323,7 +302,7 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 					disabled={busy}
 				/>
 				<label className="label" htmlFor="saml-change-ref">
-					Change reference
+					{t("saml.ref")}
 				</label>
 				<input
 					id="saml-change-ref"
@@ -334,12 +313,12 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 					disabled={busy}
 				/>
 				<button className="button" type="submit" disabled={busy || !policy || !currentUserId}>
-					{policy?.providerId ? "Request disabling SAML" : "Request enabling SAML"}
+					{policy?.providerId ? t("saml.requestDisable") : t("saml.requestEnable")}
 				</button>
 			</form>
 			<form onSubmit={reviewChange} style={{ marginTop: 16 }}>
 				<label className="label" htmlFor="saml-review-id">
-					Change request ID
+					{t("saml.requestId")}
 				</label>
 				<input
 					id="saml-review-id"
@@ -353,46 +332,40 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 					disabled={busy}
 					autoComplete="off"
 				/>
-				<p className="muted small">
-					Share this ID with a different owner. That owner can paste it here to review the exact
-					change.
-				</p>
+				<p className="muted small">{t("saml.share")}</p>
 				<button className="button button-secondary" type="submit" disabled={busy}>
-					Review request
+					{t("saml.review")}
 				</button>
 			</form>
 			{change ? (
 				<div
 					className="notice notice-warning"
 					role="region"
-					aria-label="SAML change review"
+					aria-label={t("saml.reviewLabel")}
 					style={{ marginTop: 16 }}
 				>
 					<dl>
-						<dt>Requested by</dt>
+						<dt>{t("saml.requestedBy")}</dt>
 						<dd>{change.requested_by}</dd>
-						<dt>Current provider</dt>
-						<dd>{change.old_provider_id ?? "Off"}</dd>
-						<dt>Requested provider</dt>
-						<dd>{change.new_provider_id ?? "Off"}</dd>
-						<dt>Reason</dt>
+						<dt>{t("saml.currentProvider")}</dt>
+						<dd>{change.old_provider_id ?? t("saml.off")}</dd>
+						<dt>{t("saml.requestedProvider")}</dt>
+						<dd>{change.new_provider_id ?? t("saml.off")}</dd>
+						<dt>{t("saml.reason")}</dt>
 						<dd>{change.reason}</dd>
-						<dt>Change reference</dt>
+						<dt>{t("saml.ref")}</dt>
 						<dd>{change.change_ref}</dd>
-						<dt>Expires</dt>
+						<dt>{t("saml.expires")}</dt>
 						<dd>{new Date(change.expires_at).toLocaleString()}</dd>
 					</dl>
 					{approved ? (
-						<p role="status">Approved by {change.approved_by}. The policy change was applied.</p>
+						<p role="status">{t("saml.approvedBy", { owner: change.approved_by ?? "" })}</p>
 					) : expired ? (
-						<p role="status">This request expired. Create a new request for review.</p>
+						<p role="status">{t("saml.err.expired")}</p>
 					) : selfRequested ? (
-						<p role="status">A different owner must approve your request.</p>
+						<p role="status">{t("saml.self")}</p>
 					) : (
-						<p className="small">
-							Review the provider and change details before approving. Approval applies this exact
-							change.
-						</p>
+						<p className="small">{t("saml.reviewHint")}</p>
 					)}
 					<button
 						className="button"
@@ -408,7 +381,7 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 									action: "approve_saml_policy_change",
 									request_id: change.request_id,
 								});
-								const result = parseChange(data.request, tenantId);
+								const result = parseChange(data.request, tenantId, t);
 								if (
 									result.request_id !== change.request_id ||
 									result.approved_by !== currentUserId ||
@@ -421,17 +394,15 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 									result.created_at !== change.created_at ||
 									result.expires_at !== change.expires_at
 								)
-									throw new Error(
-										"Approval was not confirmed for this exact request. Refresh its status before retrying.",
-									);
+									throw new Error(t("saml.err.approvalMismatch"));
 								if (!active.current) return;
 								setChange(result);
-								setNotice("The second owner approved the change. SAML enforcement was updated.");
+								setNotice(t("saml.applied"));
 								await loadPolicy();
 							});
 						}}
 					>
-						Approve as a second owner
+						{t("saml.approve")}
 					</button>
 				</div>
 			) : null}
@@ -445,7 +416,7 @@ function SamlPolicyControls({ tenantId, currentUserId }: Props) {
 					void loadPolicy();
 				}}
 			>
-				Refresh SAML status
+				{t("saml.refresh")}
 			</button>
 		</section>
 	);

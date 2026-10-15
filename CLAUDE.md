@@ -18,6 +18,7 @@ and the **AIDR Privacy** engine that Browser Guard's detection reuses. See
 ```bash
 pnpm install                               # Install all dependencies
 pnpm ci:local --keep-going                   # Run every .github/workflows/ci.yml gate locally (CI is disabled); ci:local:quick for the fast subset, --list for steps
+pnpm ci:local:release                        # Release profile: strict, every selected step must PASS, adds the full-history secret scan
 pnpm test                                    # Run all tests (builds automatically, E2E excluded)
 pnpm test -- --reporter=verbose              # Verbose test output
 pnpm test -- packages/core/src/__tests__/extractors.test.ts  # Single test file
@@ -76,7 +77,7 @@ TypeScript monorepo. Connector packages and their shared core:
   gateway (`/platform`). Tests run with `node --test` via `pnpm test:privacy`, not vitest.
 - `services/aig-bridge/` — Python/FastAPI bridge for the SingularityRD-owned AI Infra Guard source, tracked directly under `vendor/ai-infra-guard/` (not a submodule)
 - `supabase/` — canonical migrations + Edge Functions (all Edge Functions, including the dashboard's, live here)
-- `threats/` — YAML threat definitions (data, not code); 507 rules across 29 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
+- `threats/` — YAML threat definitions (data, not code); 519 rules across 31 files (`grep -h '^- id:' threats/*.yaml | wc -l`)
 - `allowlists/` — Trusted domain allowlists
 - `hooks/` — `hooks.json` registering hooks with Claude Code
 - `skills/` — `security-awareness/SKILL.md`, synced into connector `resources/`
@@ -167,7 +168,7 @@ OpenClaw, OpenCode and Codex; the CLI and SDK consume the same core.
 - Merge precedence when multiple signals fire: `deny > ask > allow`
 - URL/file/package reputation checks require a deployed first-party endpoint; with
   none configured those legs are inert and must not be presented as "clean"
-- Standalone binary via Node.js SEA for distribution (no runtime deps)
+- Standalone binaries via Node.js SEA (`pnpm build:sea`): a relocatable, unsigned `bin/aidr-sea/` directory with the rules and an artifact manifest; no release workflow ships it as-is
 - Naming: YAML/JSON data uses `snake_case` (`threat_id`, `source_file`); TypeScript interfaces use `camelCase` (`threatId`, `sourceFile`). Conversion functions bridge the two at serialization boundaries.
 
 ## Pre-PR Checklist

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Singularity AIDR Browser Guard - Gizlilik Politikası</title>
+<style>
+	:root { color-scheme: light dark; --fg: #1d2330; --muted: #5a6475; --bg: #ffffff; --rule: #d9dee7; }
+	@media (prefers-color-scheme: dark) { :root { --fg: #e6e9ef; --muted: #a3acbb; --bg: #12151b; --rule: #2c3340; } }
+	body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+	main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+	h1 { font-size: 1.75rem; line-height: 1.25; margin: 0 0 4px; }
+	h2 { font-size: 1.2rem; margin: 32px 0 8px; border-top: 1px solid var(--rule); padding-top: 24px; }
+	.meta { color: var(--muted); margin: 0 0 24px; }
+	table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+	th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid var(--rule); }
+</style>
+</head>
+<body>
+<main>
+<h1>Singularity AIDR Browser Guard: Gizlilik Politikası</h1>
+<p class="meta">Chrome, Microsoft Edge ve Firefox için Browser Guard uzantısı için geçerlidir. Son güncelleme: 2026-10-13. <a href="privacy-policy.en.html" hreflang="en">English</a></p>
+
+<h2>Özet</h2>
+<p>Browser Guard, desteklenen yapay zekâ sohbet hizmetlerine gönderdiklerinizi kişisel ve gizli veriler için denetler ve bu verileri tarayıcınızdan çıkmadan önce yer tutucularla değiştirir. Tüm denetimler cihazınızda çalışır. Varsayılan olarak uzantı hiçbir yere hiçbir şey göndermez. Yazdığınız metni, bulduğu değerleri, dosya adlarını veya ziyaret ettiğiniz sayfaların adreslerini bize ya da başka birine asla göndermez.</p>
+
+<h2>Cihazınızda işlenen veriler</h2>
+<ul>
+	<li><strong>İstemler, yapıştırılan metinler ve yüklenen dosyalar</strong>, desteklenen yapay zekâ sohbet sitelerinde (ve kurumunuzun eklediği şirket içi yapay zekâ portallarında) gönderme, yapıştırma veya yükleme anında hassas değerlerin bulunup maskelenmesi için sayfada okunur. Uzantı bunları saklamaz ve iletmez.</li>
+	<li><strong>Yer tutucular ile özgün değerler arasındaki eşleme</strong>, yanıtlarda özgün değerlerin gösterilebilmesi için sekme boyunca bellekte (sayfa belleği ve tarayıcının diske yazılmayan oturum depolaması) tutulur. Sekme kapanınca, 4 saat kullanılmayınca veya tarayıcı kapanınca silinir.</li>
+	<li><strong>Ayarlar ve sayaçlar</strong> (ör. kaç öğenin maskelendiği) cihazınızdaki tarayıcı uzantı depolamasında saklanır.</li>
+	<li><strong>İsteğe bağlı yerel ana bilgisayar.</strong> Siz veya kurumunuz ayrıca kurulan AIDR Privacy yerel ana bilgisayarını açarsanız, denetlenen metin veya görüntü ad, adres ve metin tanıma için aynı bilgisayardaki bu programa iletilir. Uzantı bunu ağ üzerinden göndermez.</li>
+</ul>
+
+<h2>Cihazınızdan çıkan veriler</h2>
+<p>Yalnızca kurumunuzun yöneticisi tarayıcı politikasıyla veya siz seçenekler sayfasında bir raporlama hedefi (AIDR kontrol düzlemi) yapılandırdıysanız, uzantı bu kontrol düzlemine şunları gönderir:</p>
+<table>
+	<thead><tr><th>Olay</th><th>İçerik</th></tr></thead>
+	<tbody>
+		<tr><td>Gizlilik denetimi</td><td>rastgele bir kurulum kimliği, tarayıcı ailesi ve ana sürümü, uzantı sürümü, yapay zekâ sitesi (sabit bir listeden), uzantının ne yaptığı (maskeledi, engelledi, uyardı, izin verdi), istem, yapıştırma veya dosya olduğu, veri türü başına bulgu sayısı ve isteğe bağlı bir politika kimliği. İstem metni, maskeli metin, değerler, dosya adları veya URL'ler yoktur.</td></tr>
+		<tr><td>Gölge Yapay Zekâ kullanımı (yalnızca kurumunuz açtıysa)</td><td>katalogdaki bir yapay zekâ hizmetinin kimliği, ziyaret edilip edilmediği veya engellenip engellenmediği, bir sayı ve kurumunuzun bu hizmeti onaylayıp onaylamadığı. URL, alan adı, yol veya sayfa başlığı yoktur.</td></tr>
+		<tr><td>Kabul edilebilir kullanım onayı (yalnızca kurumunuz bir bildirim gösteriyorsa)</td><td>yapay zekâ sitesi, bildirim kimliği ve sürümü. Kullanıcı kimliği yoktur.</td></tr>
+		<tr><td>Politika indirme (yalnızca kurumunuz yapılandırdıysa)</td><td>kurumunuzun imzalı politikası için raporlama anahtarıyla kimliği doğrulanmış bir istek. Gezinme verisi yoktur.</td></tr>
+	</tbody>
+</table>
+<p>Kontrol düzlemi kurumunuza aittir. Bu sayıların ne kadar süre tutulacağına ve kimlerin görebileceğine kurumunuz karar verir; politikası için yöneticinize başvurun. Uzantıyı kendiniz kurduysanız ve bir raporlama hedefi yapılandırmadıysanız hiçbir şey gönderilmez.</p>
+
+<h2>Yapmadıklarımız</h2>
+<ul>
+	<li>İstemlerinizi, içlerinde bulunan değerleri veya gezinme geçmişinizi almayız, satmayız, paylaşmayız.</li>
+	<li>Uzantı reklam, analiz veya izleme kodu içermez ve uzak kod yüklemez.</li>
+	<li>Veriler, yapay zekâ hizmetlerine gönderdiklerinizi korumak dışındaki amaçlar için kullanılmaz veya aktarılmaz; kredi değerliliğini belirlemek veya borç vermek için kullanılmaz.</li>
+</ul>
+
+<h2>İzinler</h2>
+<p>Uzantı betiklerini yalnızca desteklenen yapay zekâ sohbet sitelerinde çalıştırır. Diğer izinler ayarları saklamak, yöneticinizin izin vermediği yapay zekâ hizmetlerini engellemek ve yalnızca siz izin verdikten sonra şirket içi yapay zekâ portallarını korumak veya isteğe bağlı yerel ana bilgisayarla iletişim kurmak için kullanılır. Gerekçeleriyle tam liste uzantının mağaza sayfasında yayımlanır.</p>
+
+<h2>Seçenekleriniz</h2>
+<ul>
+	<li>Uzantıyı istediğiniz zaman tarayıcınızın uzantılar sayfasından kaldırabilirsiniz; bu, yerel verilerini siler. Kurumunuz politikayla kurduysa yöneticinize başvurun.</li>
+	<li>Yönetilmeyen bir kurulumda, tüm raporlamayı durdurmak için seçenekler sayfasında raporlama hedefini temizleyebilirsiniz.</li>
+</ul>
+
+<h2>Değişiklikler ve iletişim</h2>
+<p>Uzantının veri işleme biçimi değiştiğinde bu sayfayı ve tarihini güncelleriz. Sorular için: <a href="mailto:&lt;PRIVACY_CONTACT_EMAIL&gt;">&lt;PRIVACY_CONTACT_EMAIL&gt;</a>, Singularity R&amp;D.</p>
+</main>
+</body>
+</html>

@@ -21,6 +21,30 @@ backups silently miss data or whose upgrades migrate the schema without one.
 {{- if and $backup.enabled $storageBackup (has "ReadWriteOncePod" $storage.persistence.accessModes) -}}
 {{- fail "backup.storage.enabled cannot mount a ReadWriteOncePod storage volume from the backup pod; use ReadWriteOnce (backup is scheduled next to the storage pod) or ReadWriteMany" -}}
 {{- end -}}
+{{- $encryption := $backup.encryption -}}
+{{- if and $backup.enabled (empty $encryption.ageRecipients) (not $encryption.allowPlaintext) -}}
+{{- fail "backup.enabled requires backup.encryption.ageRecipients (age public keys, age1...): dumps hold audit logs and tenant data and are never written in plaintext. Keep the matching identity OFF the cluster (README \"Backups\"). backup.encryption.allowPlaintext=true accepts plaintext dumps (dev only)" -}}
+{{- end -}}
+{{- range $encryption.ageRecipients -}}
+{{- if not (regexMatch "^age1[02-9ac-hj-np-z]{58}$" (toString .)) -}}
+{{- fail (printf "backup.encryption.ageRecipients: %q is not an age X25519 recipient (age1 + 58 bech32 characters)" (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- $offsite := $backup.offsite -}}
+{{- if and $backup.enabled $offsite.enabled -}}
+{{- if empty $encryption.ageRecipients -}}
+{{- fail "backup.offsite.enabled uploads backups off the cluster and requires backup.encryption.ageRecipients; plaintext dumps are never uploaded" -}}
+{{- end -}}
+{{- if not (regexMatch "^https://[^/?#@]+$" (toString $offsite.endpoint)) -}}
+{{- fail "backup.offsite.endpoint must be an https:// origin without a path (S3-compatible, path-style)" -}}
+{{- end -}}
+{{- if or (empty $offsite.bucket) (empty $offsite.region) (empty $offsite.existingSecret) -}}
+{{- fail "backup.offsite needs bucket, region and existingSecret (keys access-key-id, secret-access-key)" -}}
+{{- end -}}
+{{- if and .Values.networkPolicy.enabled (empty $offsite.egressCIDRs) -}}
+{{- fail "backup.offsite.egressCIDRs is required when networkPolicy.enabled: list the object store's address ranges (TCP 443)" -}}
+{{- end -}}
+{{- end -}}
 {{- if and .Release.IsUpgrade .Values.migrations.enabled (not (and $backup.enabled $backup.preUpgrade.enabled)) (not .Values.migrations.allowWithoutBackup) -}}
 {{- fail "refusing to upgrade: the pre-upgrade migrations hook would change the schema without a fresh backup. Enable backup.enabled and backup.preUpgrade.enabled, or set migrations.allowWithoutBackup=true after taking your own backup (e.g. a provider snapshot)" -}}
 {{- end -}}
@@ -32,6 +56,11 @@ Backup pod: pg_dump (always) then, with backup.storage.enabled, a tar.gz of the
 file storage volume mounted read-only. Each artifact is written as *.partial,
 checksummed (SHA-256 sidecar) and only then renamed, so a file without the
 .partial suffix is complete. "suffix" tags the file names (e.g. "-pre-upgrade").
+With backup.encryption.ageRecipients every artifact is streamed through age
+(X25519 recipients; no plaintext touches the volume) and named *.age; the
+cluster holds only public recipients, never the identity that decrypts. With
+backup.offsite.enabled the finished artifacts are then uploaded (HTTPS,
+SigV4) to an S3-compatible bucket; a failed upload fails the run.
 */}}
 {{- define "aidr.backup.podSpec" -}}
 {{- $root := .root -}}
@@ -39,6 +68,11 @@ checksummed (SHA-256 sidecar) and only then renamed, so a file without the
 {{- $name := include "aidr.component" (dict "root" $root "component" "backup") -}}
 {{- $storageBackup := and $values.storage.enabled (eq $root.Values.storage.backend "file") -}}
 {{- $storageName := include "aidr.component" (dict "root" $root "component" "storage") -}}
+{{- $recipients := $values.encryption.ageRecipients -}}
+{{- $encrypt := not (empty $recipients) -}}
+{{- $offsite := and $encrypt $values.offsite.enabled -}}
+{{- $sealArgs := list -}}
+{{- range $recipients }}{{ $sealArgs = append $sealArgs (printf "-r %s" (squote (toString .))) }}{{ end -}}
 {{- $common := dict -}}
 {{- if and $storageBackup (not (has "ReadWriteMany" $root.Values.storage.persistence.accessModes)) -}}
 {{- /* A ReadWriteOnce volume can only be mounted on the node that already has it attached: run next to the storage pod. */ -}}
@@ -61,9 +95,50 @@ containers:
       - /bin/sh
       - -ec
       - |
+        set -o pipefail
         umask 077
         cd /backups
         base="aidr-$(date -u +%Y%m%dT%H%M%SZ){{ default "" .suffix }}"
+        {{- if $encrypt }}
+        command -v age > /dev/null || { echo "backup image has no age binary; encrypted backups are required (backup.encryption)" >&2; exit 1; }
+        # 1. Database (logical, custom format), sealed to the age recipients
+        #    while it streams: no plaintext dump is written to the volume.
+        pg_dump --format=custom --no-owner | age {{ join " " $sealArgs }} -o "${base}.dump.age.partial"
+        sha256sum "${base}.dump.age.partial" | sed 's/\.partial$//' > "${base}.dump.age.sha256"
+        mv "${base}.dump.age.partial" "${base}.dump.age"
+        echo "encrypted database backup written: ${base}.dump.age"
+        {{- if $storageBackup }}
+        # 2. Stored objects, sealed the same way (see the plaintext branch below
+        #    for ordering and xattr notes). pipefail fails the run on a tar error.
+        xattrs=not-preserved
+        if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+          xattrs=preserved
+          tar --xattrs --xattrs-include='user.*' --exclude=./lost+found -C /storage-data -czf - . | age {{ join " " $sealArgs }} -o "${base}.storage.tar.gz.age.partial"
+        else
+          echo "warning: GNU tar not found; storage extended attributes are not archived" >&2
+          tar --exclude=./lost+found -C /storage-data -czf - . | age {{ join " " $sealArgs }} -o "${base}.storage.tar.gz.age.partial"
+        fi
+        sha256sum "${base}.storage.tar.gz.age.partial" | sed 's/\.partial$//' > "${base}.storage.tar.gz.age.sha256"
+        mv "${base}.storage.tar.gz.age.partial" "${base}.storage.tar.gz.age"
+        printf 'database=%s\nstorage=%s\nstorage_xattrs=%s\nencryption=age\nrecipients=%s\n' "${base}.dump.age" "${base}.storage.tar.gz.age" "${xattrs}" "{{ len $recipients }}" > "${base}.manifest"
+        echo "encrypted storage backup written: ${base}.storage.tar.gz.age (xattrs ${xattrs})"
+        {{- else }}
+        printf 'database=%s\nencryption=age\nrecipients=%s\n' "${base}.dump.age" "{{ len $recipients }}" > "${base}.manifest"
+        {{- end }}
+        {{- if $offsite }}
+        # 3. Off-cluster copy: S3-compatible PUT (path-style, SigV4). The
+        #    credentials go to curl on stdin, never into its arguments.
+        upload() {
+          printf 'user = "%s:%s"\n' "${AWS_ACCESS_KEY_ID}" "${AWS_SECRET_ACCESS_KEY}" | curl -K - --fail --silent --show-error --proto =https --max-time 3600 --aws-sigv4 "aws:amz:${AIDR_OFFSITE_REGION}:s3" -T "$1" "${AIDR_OFFSITE_ENDPOINT}/${AIDR_OFFSITE_BUCKET}/${AIDR_OFFSITE_PREFIX}$1"
+        }
+        command -v curl > /dev/null || { echo "backup image has no curl binary; backup.offsite needs it" >&2; exit 1; }
+        for artifact in "${base}.dump.age" "${base}.dump.age.sha256"{{ if $storageBackup }} "${base}.storage.tar.gz.age" "${base}.storage.tar.gz.age.sha256"{{ end }} "${base}.manifest"; do
+          upload "${artifact}"
+        done
+        echo "off-cluster copy uploaded: ${AIDR_OFFSITE_BUCKET}/${AIDR_OFFSITE_PREFIX}${base}.*"
+        {{- end }}
+        {{- else }}
+        # PLAINTEXT (backup.encryption.allowPlaintext=true, dev only).
         # 1. Database (logical, custom format).
         pg_dump --format=custom --no-owner --file="${base}.dump.partial"
         sha256sum "${base}.dump.partial" | sed 's/\.partial$//' > "${base}.dump.sha256"
@@ -89,6 +164,7 @@ containers:
         mv "${base}.storage.tar.gz.partial" "${base}.storage.tar.gz"
         echo "storage backup written: ${base}.storage.tar.gz (xattrs ${xattrs})"
         {{- end }}
+        {{- end }}
         find /backups -maxdepth 1 -name 'aidr-*' -type f -mtime +{{ int $values.retentionDays }} -delete
     {{- include "aidr.containerSecurityContext" (dict "root" $root) | nindent 4 }}
     env:
@@ -105,6 +181,26 @@ containers:
         value: postgres
       - name: PGSSLMODE
         value: {{ include "aidr.dbSslMode" $root | quote }}
+      {{- if $offsite }}
+      - name: AIDR_OFFSITE_ENDPOINT
+        value: {{ $values.offsite.endpoint | quote }}
+      - name: AIDR_OFFSITE_BUCKET
+        value: {{ $values.offsite.bucket | quote }}
+      - name: AIDR_OFFSITE_REGION
+        value: {{ $values.offsite.region | quote }}
+      - name: AIDR_OFFSITE_PREFIX
+        value: {{ $values.offsite.prefix | quote }}
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: {{ $values.offsite.existingSecret }}
+            key: access-key-id
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: {{ $values.offsite.existingSecret }}
+            key: secret-access-key
+      {{- end }}
     {{- include "aidr.resources" (dict "root" $root "component" "backup" "override" $values.resources) | nindent 4 }}
     volumeMounts:
       - name: backups

@@ -21,7 +21,7 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code/dist/post-tool-use.cjs\"",
             "timeout": 5,
-            "statusMessage": "Singularity AIDR: Recording approval..."
+            "statusMessage": "Singularity AIDR: Inspecting tool output..."
           }
         ]
       }

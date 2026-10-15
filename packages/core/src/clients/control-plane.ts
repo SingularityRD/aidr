@@ -196,6 +196,39 @@ export class ControlPlaneClient {
 	}
 
 	/**
+	 * Per-connector heartbeat (`aidr heartbeat`): the measured hook state of every
+	 * agent host on this device. Enums and counts only; the control plane raises
+	 * `agent.unprotected` when a protected connector stops being protected.
+	 */
+	async sendConnectorHeartbeat(payload: {
+		iid: string;
+		connectors: ReadonlyArray<Record<string, string | number | boolean>>;
+	}): Promise<{ ok: boolean; status?: number; error?: string }> {
+		if (!this.baseUrl) return { ok: false, error: "missing_endpoint" };
+		if (isDegradedSafeMode()) return { ok: false, error: "degraded_safe_mode" };
+		try {
+			const response = await fetch(controlPlaneUrl(this.baseUrl, "connector-heartbeat"), {
+				method: "POST",
+				signal: AbortSignal.timeout(this.timeoutMs),
+				headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			if (response.ok) return { ok: true, status: response.status };
+			let error = `http_${response.status}`;
+			try {
+				const body = (await response.json()) as { error?: unknown };
+				if (typeof body?.error === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(body.error))
+					error = body.error;
+			} catch {
+				// Keep the status-derived code.
+			}
+			return { ok: false, status: response.status, error };
+		} catch {
+			return { ok: false, error: "network_error" };
+		}
+	}
+
+	/**
 	 * Device-code bootstrap: start a login session without requiring an API key.
 	 * Intended for first-time setup in managed-only commercial builds.
 	 */
@@ -203,6 +236,9 @@ export class ControlPlaneClient {
 		iid?: string;
 		agent_runtime?: string;
 		agent_runtime_version?: string;
+		/** Shown to the approving user on /verify (CP-1); never used for authorization. */
+		os?: string;
+		hostname?: string;
 	}): Promise<{ ok: boolean; status?: number; error?: string; body?: Record<string, unknown> }> {
 		if (!this.baseUrl) return { ok: false, error: "missing_endpoint" };
 		if (isDegradedSafeMode()) return { ok: false, error: "degraded_safe_mode" };

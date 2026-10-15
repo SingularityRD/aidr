@@ -89,6 +89,12 @@ export {
 	isInconsistent,
 	isIndeterminate,
 } from "./enforcement.js";
+// HTTP header inspection policy (credential headers are withheld)
+export {
+	CREDENTIAL_HEADER_NAMES,
+	isCredentialHeader,
+	MAX_INSPECTED_HEADER_CHARS,
+} from "./http-headers.js";
 // Licence/entitlement types (provider-agnostic).
 //
 // There is deliberately no payment-provider client in the SDK. Lemon Squeezy was
@@ -96,9 +102,14 @@ export {
 // billing/entitlement issuance is a server-side concern handled by the
 // signature-verified Stripe webhook Edge Function.
 export type { LicenseValidationResult, UsageInfo } from "./license.js";
-export type { MiddlewareEnforcementOptions } from "./middleware.js";
+export type { BlockedRequestEvent, MiddlewareEnforcementOptions } from "./middleware.js";
 // Middleware exports
-export { createMiddleware } from "./middleware.js";
+export {
+	AIDRSecurityCheckUnavailableError,
+	BLOCKED_RESPONSE_ERROR,
+	CHECK_UNAVAILABLE_ERROR,
+	createMiddleware,
+} from "./middleware.js";
 export type {
 	ToolOutputDelivery,
 	ToolOutputFinding,

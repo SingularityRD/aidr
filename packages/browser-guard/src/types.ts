@@ -107,11 +107,24 @@ export interface LiteralRule {
 	readonly type: EntityType;
 }
 
-/** Exact-data-match dataset shipped by an administrator: HMAC-SHA256 fingerprints only. */
+/**
+ * Exact-data-match dataset shipped by an administrator: HMAC-SHA256 fingerprints only, built by
+ * scripts/fingerprint-dataset.mjs. Managed policy carries no key: `keySource: "native-host"` means
+ * the per-dataset key is derived by the AIDR Privacy native host from a secret in its own
+ * configuration, and the background worker fills in `keyB64` at runtime (never persisted, never
+ * shown in the options page). A dataset in policy that carries `keyB64` is refused.
+ */
 export interface ExactDataSet {
 	readonly datasetId: string;
-	/** base64 HMAC key distributed with managed policy; never user-visible. */
-	readonly keyB64: string;
+	/** Where the dataset key comes from; the only accepted source is the native host. */
+	readonly keySource?: "native-host";
+	/**
+	 * Lowest estimated entropy (bits) of any fingerprinted value, recorded by the dataset tool.
+	 * The policy refuses a dataset below EXACT_DATA_MIN_ENTROPY_BITS.
+	 */
+	readonly minEntropyBits?: number;
+	/** Runtime only: base64 per-dataset key from the native host. Absent: the dataset cannot be checked (scans are incomplete). */
+	readonly keyB64?: string;
 	/** hex HMAC-SHA256 of normalised token sequences (see engine/detect.ts for the normalisation). */
 	readonly fingerprints: readonly string[];
 	readonly type: EntityType;
@@ -219,6 +232,55 @@ export interface ShadowAiPolicy {
 	readonly blocked: readonly string[];
 }
 
+/**
+ * Sites where Browser Guard can tell a company workspace from a personal account
+ * (src/sites/accounts.ts). Other sites expose no usable signal and are never account-checked.
+ */
+export const ACCOUNT_SITE_IDS = ["chatgpt", "claude", "gemini", "copilot"] as const;
+export type AccountSiteId = (typeof ACCOUNT_SITE_IDS)[number];
+
+/**
+ * What the guard does on a configured site when the signed-in account is not confirmed as one
+ * of the organisation's (managed key `workAccounts`):
+ *   warn       the first send on the page asks the user to confirm (Continue / Cancel); uploads
+ *              show a warning; masking runs as usual
+ *   block      prompt sends and file uploads are refused
+ *   mask-only  sends are allowed, but only masked: monitor mode, a user pause, a site the user
+ *              disabled and "Send original" do not apply there
+ */
+export type WorkAccountAction = "warn" | "block" | "mask-only";
+
+/** Organisation identifiers accepted on one site; both empty = any recognised work account. */
+export interface WorkAccountSiteRule {
+	/** ChatGPT workspace account ids, Claude organisation UUIDs (compared case-insensitively). */
+	readonly workspaceIds: readonly string[];
+	/** Email domains of the signed-in account; subdomains of a listed domain match too. */
+	readonly emailDomains: readonly string[];
+}
+
+/** Managed key `workAccounts` (managed only). */
+export interface WorkAccountPolicy {
+	readonly action: WorkAccountAction;
+	/**
+	 * `enforce` (default): an account the page does not identify is treated like a personal
+	 * one (fail closed). `allow`: only an account positively recognised as personal or as
+	 * another organisation's gets the action.
+	 */
+	readonly unverified: "enforce" | "allow";
+	/** Only the sites listed here are account-checked. */
+	readonly sites: Readonly<Partial<Record<AccountSiteId, WorkAccountSiteRule>>>;
+}
+
+/**
+ * Result of the account check (telemetry `account_type`, an enum only):
+ *   company     an allowed workspace / email domain (or any work account when the site lists none)
+ *   personal    a recognised personal / consumer account
+ *   other       an identified account that is not on the allowed list
+ *   unverified  the page exposed no usable account signal
+ */
+export const ACCOUNT_TYPES = ["company", "personal", "other", "unverified"] as const;
+export type AccountType = (typeof ACCOUNT_TYPES)[number];
+
 export interface SiteAdapter {
 	readonly id: SiteId;
 	readonly label: string;
@@ -241,6 +303,23 @@ export interface EditorAccess {
 	read(): string;
 	/** Replace the whole editor content so the site's framework state observes it. */
 	write(text: string): Promise<void>;
+}
+
+/**
+ * The editor a send gesture belongs to, resolved from where the gesture happened (the
+ * clicked button, the submitted form, the key target), never from focus.
+ */
+export interface EditorMatch {
+	/**
+	 * The editor; null when several editors in the same container hold text, so which one
+	 * the site sends is ambiguous (the guard then refuses the send).
+	 */
+	readonly editor: EditorAccess | null;
+	/**
+	 * The smallest container (element, shadow root or document) above the anchor in which
+	 * an editor was found; the editor itself when the anchor is inside an editor.
+	 */
+	readonly container: Node;
 }
 
 /** Effective policy after merging managed (admin) over user settings. */
@@ -291,6 +370,14 @@ export interface GuardPolicy {
 	readonly language: "auto" | "en" | "tr";
 	/** Keys locked by managed policy (UI renders them read-only). */
 	readonly managedKeys: readonly string[];
+	/**
+	 * Managed keys whose value was invalid ("*": the whole managed policy was malformed or
+	 * could not be read). Each fell back to a fail-safe value, never the permissive default
+	 * (src/background/policy.ts FAIL_SAFE); the popup and options page show a policy error and
+	 * telemetry reports the count. Key names only, never values. Optional so policies built
+	 * before the field existed stay valid; the worker always sets it.
+	 */
+	readonly policyErrors?: readonly string[];
 	readonly policyId: string;
 	/**
 	 * Administrator-published AI acceptable-use notice (managed policy key `acceptableUse`),
@@ -304,6 +391,11 @@ export interface GuardPolicy {
 	 * decisions are never fetched or applied. Optional for the same reason as `acceptableUse`.
 	 */
 	readonly dashboardPolicy?: DashboardPolicyTrust | null;
+	/**
+	 * Personal vs company AI accounts (managed-only key `workAccounts`). Absent or null: no
+	 * account check. Optional for the same reason as `acceptableUse`.
+	 */
+	readonly workAccounts?: WorkAccountPolicy | null;
 }
 
 /**
@@ -366,7 +458,22 @@ export interface PrivacyScanEvent {
 	 * by policy but no NER answer: never a clean check). Absent: native NER was off.
 	 */
 	readonly native_ner?: NativeNerUse;
+	/** "paused": the send happened while the user had paused protection (monitor mode). */
+	readonly reason?: PrivacyScanReason;
+	/**
+	 * Number of managed policy keys whose value was invalid and fell back to a fail-safe value
+	 * (1..64; "*" counts as one). Absent: the managed policy was valid (or there is none).
+	 */
+	readonly policy_errors?: number;
+	/**
+	 * Account check result on a site listed in the managed `workAccounts` (an enum only: never
+	 * a workspace id, email or domain). Absent: the site is not account-checked.
+	 */
+	readonly account_type?: AccountType;
 }
+
+/** Why a privacy_scan event was not enforced as the policy mode says (optional). */
+export type PrivacyScanReason = "paused";
 
 /** Native NER outcome a RECORD / privacy_scan event may carry (absent: NER was off). */
 export type NativeNerUse = "used" | "unavailable";
@@ -442,6 +549,8 @@ export type GuardMessage =
 			readonly channel: PrivacyScanEvent["channel"];
 			readonly counts: Readonly<Partial<Record<EntityType, number>>>;
 			readonly native?: NativeNerUse;
+			/** Account check result when the site is listed in `workAccounts` (enum only). */
+			readonly account?: AccountType;
 	  }
 	| { readonly type: "GET_STATS"; readonly tabId?: number }
 	| { readonly type: "SET_USER_SETTINGS"; readonly settings: Partial<UserSettings> }
@@ -552,6 +661,13 @@ export interface GuardStats {
 	readonly byType: Readonly<Partial<Record<EntityType, number>>>;
 	readonly pausedUntil: number | null;
 	readonly nativeHost: NativeHostStatus;
+	/**
+	 * For a tab (GET_STATS with a tab id): whether a Browser Guard content script fetched its
+	 * policy in this tab's current page origin since the extension (re)started. False for a tab
+	 * that was open before install/update/enable and has not been injected or reloaded: the
+	 * popup then shows "Not protected - reload" instead of "Protected". Absent for global stats.
+	 */
+	readonly contentActive?: boolean;
 }
 
 export type NativeHostStatus = "connected" | "unavailable" | "disabled";
@@ -570,6 +686,66 @@ export interface FileDecision {
 	 */
 	readonly reasons: readonly string[];
 }
+
+/**
+ * Reason codes that can stop an upload (`FileDecision.reasons` of a "block", or added by the
+ * content script), in the order the upload bubble explains them: the first one present picks
+ * the sentence the user reads. Every code has an EN and TR message in content/strings.ts
+ * (`fileReasons`); codes stay out of the visible text. Families not listed here are explained
+ * by their prefix: `SIGNAL_<SignalCode>` (risk-signal coaching) and `ARCHIVE_<code>` (a broken
+ * ZIP container, explained like DOCUMENT_MALFORMED); host `IMAGE_*` / `NATIVE_*` details always
+ * accompany IMAGE_NOT_INSPECTED or PDF_IMAGES_NOT_INSPECTED.
+ */
+export const FILE_BLOCK_REASONS = [
+	"FILE_BLOCKED_BY_POLICY",
+	"DOCUMENT_BLOCKED_BY_POLICY",
+	"NATIVE_NER_UNAVAILABLE",
+	"FILE_TOO_LARGE",
+	"SENSITIVE_DATA_IN_PDF",
+	"SENSITIVE_DATA_IN_LEGACY_OFFICE",
+	"SENSITIVE_DATA_IN_IMAGE",
+	"DOCUMENT_ENCRYPTED",
+	"PDF_ENCRYPTED",
+	"DOCUMENT_MACROS",
+	"DOCUMENT_EMBEDDED_OBJECT",
+	"DOCUMENT_EXTERNAL_LINKS",
+	"DOCUMENT_LIMIT_EXCEEDED",
+	"DOCUMENT_MALFORMED",
+	"TEXT_FILE_NOT_DECODABLE",
+	"SCAN_INCOMPLETE",
+	"FILE_SCAN_ERROR",
+	"PDF_IMAGE_OCR_UNAVAILABLE",
+	"PDF_IMAGES_NOT_INSPECTED",
+	"PDF_IMAGE_LIMIT",
+	"PDF_IMAGE_UNSUPPORTED",
+	"PDF_IMAGE_UNDECODABLE",
+	"PDF_IMAGE_OCR_INCOMPLETE",
+	"PDF_NO_TEXT",
+	"PDF_PARTIAL",
+	"PDF_EMBEDDED_FILES_NOT_INSPECTED",
+	"PDF_UNPARSEABLE",
+	"LEGACY_OFFICE_PARTIAL",
+	"LEGACY_OFFICE_UNSUPPORTED",
+	"LEGACY_OFFICE_FORMAT",
+	"DOCUMENT_UNPARSEABLE",
+	"IMAGE_NOT_INSPECTED",
+	"BINARY_FILE_UNSCANNABLE",
+] as const;
+
+export type FileBlockReason = (typeof FILE_BLOCK_REASONS)[number];
+
+/**
+ * Reason codes that only accompany an allowed or masked file (or a monitor-mode record); they
+ * never decide a block. Pass-through warnings for them are chosen in content/file-guard.ts.
+ */
+export const FILE_PASS_REASONS = [
+	"SENSITIVE_DATA",
+	"FORMULA_CELL",
+	"BINARY_FILE_UNSCANNED",
+	"DOCUMENT_IMAGES_NOT_INSPECTED",
+	"IMAGE_OCR_CLEAN",
+	"PDF_IMAGES_OCR_CLEAN",
+] as const;
 
 /**
  * Native-host OCR verdict for one image (packages/privacy `image-scan`): whether its text shows
@@ -604,6 +780,11 @@ export interface NativeBridge {
 	 * `requireNer`, a "clean" verdict without `rules-and-ner` coverage becomes "incomplete".
 	 */
 	scanImage?(bytes: Uint8Array, options?: NativeScanOptions): Promise<ImageInspection | null>;
+	/**
+	 * Per-dataset exact-data keys (base64) the host derives from its EDM secret, by dataset id;
+	 * null when the host is unavailable, too old, or has no secret configured.
+	 */
+	exactDataKeys?(datasetIds: readonly string[]): Promise<Readonly<Record<string, string>> | null>;
 }
 
 /*
@@ -617,6 +798,7 @@ export interface NativeBridge {
  *   dom/editor.ts      export function findEditor(adapter: SiteAdapter, root: Document, lastFocused?: Element | null): EditorAccess | null
  *                      export function editorAccess(element: HTMLElement): EditorAccess
  *                      export function findSendButton(adapter: SiteAdapter, root: Document, editor: EditorAccess | null): HTMLElement | null
+ *                      export function findEditorNear(adapter: SiteAdapter, anchor: Element): EditorMatch | null
  *   background/policy.ts export const DEFAULT_POLICY: GuardPolicy; export function mergePolicy(managed: unknown, user: Partial<UserSettings> | undefined): GuardPolicy
  *   background/native.ts export function createNativeBridge(enabled: boolean): NativeBridge
  *   content/acceptable-use.ts export function createAcceptableUseNotice(deps): AcceptableUseController

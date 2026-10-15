@@ -10,8 +10,11 @@
   confidence: 0.95
   action: block
   pattern: "curl\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Remote code execution via curl pipe to shell"
+  title_tr: "Uzaktan kod çalıştırma: curl ile indirilen içerik doğrudan kabuğa aktarılıyor"
   expires_at: null
   revoked: false
 
@@ -21,8 +24,11 @@
   confidence: 0.95
   action: block
   pattern: "wget\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Remote code execution via wget pipe to shell"
+  title_tr: "Uzaktan kod çalıştırma: wget ile indirilen içerik doğrudan kabuğa aktarılıyor"
   expires_at: null
   revoked: false
 
@@ -33,8 +39,11 @@
   confidence: 0.90
   action: block
   pattern: "/dev/tcp/"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Reverse shell via /dev/tcp"
+  title_tr: "/dev/tcp üzerinden ters kabuk (reverse shell)"
   expires_at: null
   revoked: false
 
@@ -43,9 +52,12 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bnc\\b.{0,300}\\s-e\\s"
-  match_on: command
-  title: "Reverse shell via netcat -e"
+  pattern: "\\b(nc|ncat|netcat)\\b.{0,300}\\s(-e|-c|--exec|--sh-exec|--lua-exec)[\\s=]"
+  match_on:
+    - command
+    - command_normalized
+  title: "Reverse shell via netcat command execution (-e, -c, --exec, --sh-exec)"
+  title_tr: "netcat ile komut çalıştıran ters kabuk (-e, -c, --exec, --sh-exec)"
   expires_at: null
   revoked: false
 
@@ -55,8 +67,11 @@
   confidence: 0.85
   action: block
   pattern: "bash\\s+-i\\s+>\\s*&\\s*/dev/"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Interactive reverse shell via bash"
+  title_tr: "bash ile etkileşimli ters kabuk"
   expires_at: null
   revoked: false
 
@@ -67,8 +82,11 @@
   confidence: 0.95
   action: block
   pattern: "\\brm\\s+(-[a-zA-Z]{0,300}f[a-zA-Z]{0,300}\\s+)?(-[a-zA-Z]{0,300}r[a-zA-Z]{0,300}\\s+)?/(\\s|$|[;&|*'\"])|\\brm\\s+(-[a-zA-Z]{0,300}r[a-zA-Z]{0,300}\\s+)?(-[a-zA-Z]{0,300}f[a-zA-Z]{0,300}\\s+)?/(\\s|$|[;&|*'\"])|\\brm\\s+-[a-zA-Z]{0,300}rf[a-zA-Z]{0,300}\\s+/(\\s|$|[;&|*'\"])"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Recursive forced deletion from root"
+  title_tr: "Kök dizinden (/) başlayarak zorla ve özyinelemeli silme"
   expires_at: null
   revoked: false
 
@@ -78,8 +96,11 @@
   confidence: 0.95
   action: block
   pattern: "\\bmkfs\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Filesystem format command"
+  title_tr: "Dosya sistemini biçimlendirme komutu"
   expires_at: null
   revoked: false
 
@@ -91,6 +112,7 @@
   pattern: "\\bdd\\s+if=.{0,300}of=/dev/"
   match_on: command
   title: "Direct disk write via dd"
+  title_tr: "dd ile diske doğrudan yazma"
   expires_at: null
   revoked: false
 
@@ -100,8 +122,11 @@
   confidence: 0.90
   action: block
   pattern: "\\bshred\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Secure file destruction via shred"
+  title_tr: "shred ile dosyaları geri getirilemez biçimde yok etme"
   expires_at: null
   revoked: false
 
@@ -116,8 +141,11 @@
   confidence: 0.90
   action: block
   pattern: "(curl|wget)\\s[^&]{0,300}&&\\s*chmod\\s+\\+x"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Download and execute chain"
+  title_tr: "İndirip hemen çalıştırma zinciri"
   expires_at: null
   revoked: false
 
@@ -130,6 +158,7 @@
   pattern: "\\bchmod\\s+(?:-{1,2}[\\w-]+\\s+){0,6}(?:a=rwx|=?0?777)\\b"
   match_on: command
   title: "Overly permissive file permissions"
+  title_tr: "Aşırı geniş dosya izinleri"
   expires_at: null
   revoked: false
 
@@ -141,6 +170,7 @@
   pattern: "NOPASSWD"
   match_on: command
   title: "Passwordless sudo configuration"
+  title_tr: "Parolasız sudo yapılandırması"
   expires_at: null
   revoked: false
 
@@ -157,6 +187,7 @@
   pattern: "curl\\s[^|;]{0,300}(-d|--data|--data-binary)\\s\\S{0,300}(/etc/passwd|/etc/shadow|\\.ssh/|id_rsa|credentials|secrets)"
   match_on: command
   title: "Possible data exfiltration of sensitive files"
+  title_tr: "Hassas dosyaların dışarı sızdırılması olasılığı"
   expires_at: null
   revoked: false
 
@@ -167,8 +198,11 @@
   confidence: 0.95
   action: block
   pattern: "\\bsudo\\s+(curl|wget)\\s[^|]{0,300}\\|\\s*(bash|sh|zsh|ksh|dash)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Privileged pipe-to-shell (sudo curl/wget piped to shell)"
+  title_tr: "Yönetici yetkisiyle indirilen içeriği kabuğa aktarma (sudo curl/wget | sh)"
   expires_at: null
   revoked: false
 
@@ -181,6 +215,7 @@
   pattern: "python[3]?\\s+-c\\s+[\"'][^\"']{0,300}\\b(os\\.system|subprocess|os\\.exec|os\\.popen|__import__)\\b"
   match_on: command
   title: "Python one-liner with dangerous imports"
+  title_tr: "Tehlikeli modüller içeren tek satırlık Python komutu"
   expires_at: null
   revoked: false
 
@@ -191,8 +226,11 @@
   confidence: 0.90
   action: block
   pattern: "\\bbash\\s+<\\(\\s*(curl|wget)\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Process substitution executing remote content"
+  title_tr: "Süreç ikamesiyle (process substitution) uzaktaki içeriği çalıştırma"
   expires_at: null
   revoked: false
 
@@ -204,6 +242,7 @@
   pattern: "\\beval\\b[^;|]{0,300}\\b(curl|wget)\\b"
   match_on: command
   title: "Eval executing remote download command"
+  title_tr: "eval ile uzaktan indirilen komutu çalıştırma"
   expires_at: null
   revoked: false
 
@@ -215,6 +254,7 @@
   pattern: "\\bxargs\\b[^|;]{0,300}\\b(curl|wget|bash|sh)\\b"
   match_on: command
   title: "xargs dispatching download or shell execution"
+  title_tr: "xargs ile indirme ya da kabuk komutu çalıştırma"
   expires_at: null
   revoked: false
 
@@ -226,6 +266,7 @@
   pattern: "\\bfind\\b[^|;]{0,300}-exec\\s+(bash|sh|curl|wget)\\b"
   match_on: command
   title: "find -exec executing shell or download commands"
+  title_tr: "find -exec ile kabuk ya da indirme komutu çalıştırma"
   expires_at: null
   revoked: false
 
@@ -238,6 +279,7 @@
   pattern: "\\b(nslookup|dig|host|drill|ping|ping6|getent)\\b[^|;]{0,300}\\$\\([^)]{1,300}\\)\\.[a-zA-Z]"
   match_on: command
   title: "DNS exfiltration via command substitution as subdomain label"
+  title_tr: "Komut çıktısını alt alan adı olarak kullanarak DNS üzerinden veri sızdırma"
   expires_at: null
   revoked: false
 
@@ -249,6 +291,7 @@
   pattern: "(?:\\b(nslookup|dig|host)\\b[^|;]{0,300}`[^`]{1,300}`\\.[a-zA-Z])|(?:\\b(?:base64|base32|basenc|xxd|od|hexdump)\\b[^;&]{0,300}\\|[^&|]{0,300}?(?<![\\w./-])(?:nslookup|dig|host|drill)\\b[^;&]{0,200}(?:\\{\\}|%s|\\$\\{?[A-Za-z_][A-Za-z0-9_]{0,60}\\}?)[A-Za-z0-9._-]{0,40}\\.[A-Za-z])"
   match_on: command
   title: "DNS exfiltration via backtick substitution or encoded data piped into a lookup as a subdomain label"
+  title_tr: "Ters tırnakla ya da kodlanmış veriyle alt alan adı oluşturarak DNS üzerinden veri sızdırma"
   expires_at: null
   revoked: false
 
@@ -261,6 +304,7 @@
   pattern: "\\b(while|for)\\b[^;]{0,300};\\s*do[^;]{0,300}(\\b(bash|sh)\\s+-c\\b|\\b(curl|wget)\\b[^;]{0,300}\\|\\s*(?:sudo\\s+)?(?:env\\s+)?(?:[^\\s\"']{0,300}[\\\\/])?(bash|sh|zsh|ksh|dash)\\b|\\b(curl|wget)\\b[^;]{0,300}(?:(-d|--data|--data-binary)\\s+['\\\"]?@\\S{1,300}|(--upload-file|-T)\\s+['\\\"]?\\S{1,300}))"
   match_on: command
   title: "Loop executing shell or download commands"
+  title_tr: "Döngü içinde kabuk ya da indirme komutu çalıştırma"
   expires_at: null
   revoked: false
 
@@ -273,8 +317,11 @@
   confidence: 0.90
   action: block
   pattern: "python[23]?\\s+-c.{0,300}socket.{0,300}connect.{0,300}(\\/bin\\/zsh|\\/bin\\/sh|\\/bin\\/bash)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Python reverse shell via socket"
+  title_tr: "Python soketiyle ters kabuk"
   expires_at: null
   revoked: false
 
@@ -285,8 +332,11 @@
   confidence: 0.90
   action: block
   pattern: "ruby\\s+-e.{0,300}TCPSocket.{0,300}exec.{0,300}(\\/bin\\/zsh|\\/bin\\/sh)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Ruby reverse shell via TCPSocket"
+  title_tr: "Ruby TCPSocket ile ters kabuk"
   expires_at: null
   revoked: false
 
@@ -297,8 +347,11 @@
   confidence: 0.90
   action: block
   pattern: "\\bzsh\\s+-c\\b.{0,300}\\b(exec|socket|/dev/tcp)\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Zsh reverse shell pattern"
+  title_tr: "Zsh ters kabuk kalıbı"
   expires_at: null
   revoked: false
 
@@ -309,8 +362,11 @@
   confidence: 0.95
   action: block
   pattern: "\\brm\\s+(-[a-zA-Z]+\\s+)*-[a-zA-Z]{0,300}[rR][a-zA-Z]{0,300}(\\s+-[a-zA-Z]+)*\\s+/(home|Users|etc|usr|var|boot|bin|sbin|lib|lib64|opt|root|System|Applications|Library|Volumes|private|mnt)\\b/?(\\s|$|[;&|])"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Recursive deletion of critical system directory"
+  title_tr: "Kritik bir sistem dizininin özyinelemeli silinmesi"
   expires_at: null
   revoked: false
 
@@ -325,8 +381,11 @@
   confidence: 0.95
   action: block
   pattern: "\\brm(?=(?:\\s+--?[a-zA-Z][\\w-]{0,40}){0,19}\\s+(?:-[a-zA-Z]{0,40}[rR]|--recursive\\b))(?:\\s+--?[a-zA-Z][\\w-]{0,40}){1,20}\\s+['\"]?(?:~|\\$HOME|\\$\\{HOME\\})['\"]?/?\\*?['\"]?(?:\\s|$|[;&|])"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Recursive deletion of the user's home directory"
+  title_tr: "Kullanıcının ev dizininin özyinelemeli silinmesi"
   expires_at: null
   revoked: false
 
@@ -339,6 +398,7 @@
   pattern: "\\brm\\s+((--|-{1,2}\\w[\\w-]*(=\\S{1,300})?)\\s+)*(\\S{1,300}[\\\\/])?\\.env(?!\\S{0,300}\\.(example|sample|template|dist)\\b)(\\.(local|production|prod|staging|stage|development|dev|test))?\\b"
   match_on: command
   title: "Deletion of .env file"
+  title_tr: ".env dosyasının silinmesi"
   expires_at: null
   revoked: false
 
@@ -351,6 +411,7 @@
   pattern: "\\brm\\s+((--|-{1,2}\\w[\\w-]*(=\\S{1,300})?)\\s+)*\\S{1,300}\\.(db|sqlite|sqlite3)\\b"
   match_on: command
   title: "Deletion of database file"
+  title_tr: "Veritabanı dosyasının silinmesi"
   expires_at: null
   revoked: false
 
@@ -371,6 +432,7 @@
   case_insensitive: true
   match_on: command
   title: "Deletion of .git directory"
+  title_tr: ".git dizininin silinmesi"
   expires_at: null
   revoked: false
 
@@ -382,8 +444,11 @@
   action: block
   pattern: "(?:\\bsocat\\b.{0,200}\\bTCP(?:4|6)?:[^\\s]{1,120}.{0,120}\\bEXEC:/bin/(?:ba)?sh\\b|\\bncat\\b.{0,200}(?:\\s-e\\s|\\s--exec(?:=|\\s))\\s*/bin/(?:ba)?sh\\b|\\bopenssl\\s+s_client\\b.{0,200}\\|\\s*(?:/bin/)?(?:ba)?sh\\b)"
   case_insensitive: true
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Outbound socket attached to an interactive shell"
+  title_tr: "Etkileşimli kabuğa bağlanan dış ağ soketi"
   expires_at: null
   revoked: false
 
@@ -394,8 +459,11 @@
   confidence: 0.90
   action: block
   pattern: "ruby\\b.{0,300}TCPSocket.{0,300}(exec|system|spawn|IO\\.popen|%x|`)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Ruby reverse shell via TCPSocket and command execution"
+  title_tr: "Ruby TCPSocket ve komut çalıştırma ile ters kabuk"
   expires_at: null
   revoked: false
 
@@ -405,8 +473,11 @@
   confidence: 0.90
   action: block
   pattern: "perl\\b.{0,300}(Socket|IO::Socket).{0,300}(exec|system)\\s*\\(?[\"']?/bin/(sh|bash|zsh)"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Perl reverse shell via socket and exec"
+  title_tr: "Perl soketi ve exec ile ters kabuk"
   expires_at: null
   revoked: false
 
@@ -416,8 +487,11 @@
   confidence: 0.90
   action: block
   pattern: "\\bmkfifo\\b[^\\n]{0,300}\\|\\s*(?:/[^\\s|]{1,80}/)?(?:sh|bash|zsh|ksh|dash)\\b[^\\n]{0,200}\\|\\s*(?:nc|ncat|netcat)\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Named-pipe (FIFO) back-pipe reverse shell via netcat"
+  title_tr: "netcat ve adlandırılmış kanal (FIFO) ile ters kabuk"
   expires_at: null
   revoked: false
 
@@ -431,8 +505,11 @@
   confidence: 0.90
   action: block
   pattern: "\\b(curl|wget|fetch)\\b[^|]{0,300}\\|\\s*(?:(?:sudo|timeout|xargs|env|command|nohup|stdbuf|nice|setsid|doas)\\b[^|]{0,60}\\s+){1,3}(?:/[^\\s|]{1,80}/)?(bash|sh|zsh|ksh|dash)\\b"
-  match_on: command
+  match_on:
+    - command
+    - command_normalized
   title: "Remote code execution via download piped to a wrapped shell"
+  title_tr: "Uzaktan kod çalıştırma: indirilen içerik sarmalanmış bir kabuğa aktarılıyor"
   expires_at: null
   revoked: false
 
@@ -445,5 +522,51 @@
   pattern: "\\b(?:ufw\\s+disable|iptables\\s+-F\\b|ip6tables\\s+-F\\b|nft\\s+flush\\s+ruleset|systemctl\\s+(?:stop|disable|mask)\\s+(?:--now\\s+)?(?:firewalld|ufw|nftables)\\b|service\\s+(?:firewalld|ufw|iptables)\\s+stop|setenforce\\s+0)\\b"
   match_on: command
   title: "Host firewall or packet filter disabled"
+  title_tr: "Bilgisayarın güvenlik duvarı ya da paket filtresi kapatılıyor"
   expires_at: null
   revoked: false
+
+# Inline JavaScript/Perl/PHP that starts processes (counterparts of CLT-CMD-015 for Python)
+- id: "CLT-CMD-037"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "\\b(node|nodejs|bun|deno)\\b\\s+(?:[^\\s]{1,200}\\s+){0,3}(-e|--eval|-p|--print|eval)\\b.{0,400}\\b(child_process|Deno\\.(run|Command)|Bun\\.spawn)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "JavaScript one-liner that spawns processes"
+  title_tr: "Süreç başlatan tek satırlık JavaScript komutu"
+  expires_at: null
+  revoked: false
+
+- id: "CLT-CMD-038"
+  category: tool
+  severity: high
+  confidence: 0.80
+  action: require_approval
+  pattern: "\\b(perl|php)\\b\\s+(?:[^\\s]{1,200}\\s+){0,3}(-e|-E|-r)\\b.{0,300}\\b(system|exec|shell_exec|passthru|popen|proc_open)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "Perl/PHP one-liner that runs shell commands"
+  title_tr: "Kabuk komutu çalıştıran tek satırlık Perl/PHP komutu"
+  expires_at: null
+  revoked: false
+
+# JavaScript socket reverse shell (counterpart of CLT-CMD-023 for Python)
+- id: "CLT-CMD-039"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\b(node|nodejs|bun|deno)\\b.{0,400}\\b(net|tls|node:net|node:tls)\\b.{0,400}\\b(connect|createConnection)\\b.{0,400}\\b(child_process|spawn|exec)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "JavaScript reverse shell via socket"
+  title_tr: "JavaScript soketiyle ters kabuk"
+  expires_at: null
+  revoked: false
+

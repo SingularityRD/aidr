@@ -14,6 +14,11 @@
 //   active workspace and a tenant rate limit apply. Sends the summary for the
 //   last cadence window to the configured recipients and records a receipt.
 //
+// Each message is in the workspace's chosen language (English or Turkish),
+// opens with the executive summary (incident triage counts included) and, when
+// the workspace keeps the default, carries the printable executive report as
+// a self-contained HTML attachment (governance_report_context).
+//
 // Recipients are always the workspace's own owners (and admins): addresses
 // are resolved server-side and never accepted from a request. Every step
 // fails closed; a summary that cannot be read is never mailed as zeros.
@@ -22,6 +27,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, type EnvReader, loadConfig } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
+import { ExecutiveReportError, parseReportContext, type ReportContext } from "../_shared/executive-report.ts";
 import {
 	dashboardLinkBase,
 	deliveryStatus,
@@ -52,10 +58,10 @@ const readRuntimeEnv: EnvReader = (name) => {
 	} catch {
 		// Node contract tests use process.env when Deno is unavailable.
 	}
-	return globalThis.process?.env?.[name];
+	return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
 };
 
-type DatabaseClient = ReturnType<typeof createClient>;
+type DatabaseClient = ReturnType<typeof createClient<any, "public">>;
 
 export interface GovernanceDigestDeps {
 	env?: EnvReader;
@@ -89,6 +95,24 @@ function parseRequest(value: unknown): Request_ | null {
 	return null;
 }
 
+/** Language, attachment choice and triage counts; null when unreadable (no send). */
+async function readReportContext(
+	db: DatabaseClient,
+	tenantId: string,
+	from: string,
+	to: string,
+): Promise<ReportContext | null> {
+	const read = await db.rpc("governance_report_context", { p_tenant_id: tenantId, p_from: from, p_to: to });
+	if (read.error) return null;
+	try {
+		return parseReportContext(read.data);
+	} catch (cause) {
+		if (!(cause instanceof ExecutiveReportError)) throw cause;
+		console.error("[governance-digest] report context rejected", JSON.stringify({ path: cause.path }));
+		return null;
+	}
+}
+
 /** Sends to each recipient in turn; returns how many the provider accepted. */
 async function sendAll(
 	mailer: Mailer,
@@ -104,6 +128,7 @@ async function sendAll(
 }
 
 async function dispatch(
+	now: () => number,
 	req: Request,
 	db: DatabaseClient,
 	mailer: Mailer,
@@ -143,9 +168,13 @@ async function dispatch(
 				if (!(cause instanceof GovernanceDigestError)) throw cause;
 				console.error("[governance-digest] summary rejected", JSON.stringify({ path: cause.path }));
 			}
-			if (summary) {
+			// A summary is never mailed without its triage counts: an unreadable
+			// context fails the send (retried by a later run) like the summary.
+			const context = summary ? await readReportContext(db, claim.tenantId, claim.periodFrom, claim.periodTo) : null;
+			if (summary && context) {
 				const scope = `${claim.tenantId}/${Date.parse(claim.periodFrom)}`;
 				const current = summary;
+				const generatedAt = new Date(now()).toISOString();
 				delivered = await sendAll(mailer, claim.recipients, async (to) =>
 					governanceDigestEmail({
 						to,
@@ -155,6 +184,10 @@ async function dispatch(
 						dashboardUrl,
 						idempotencyKey: await digestIdempotencyKey(scope, to),
 						test: false,
+						language: context.language,
+						triage: context.triage,
+						attachReport: context.attachment,
+						generatedAt,
 					}),
 				);
 			}
@@ -251,7 +284,10 @@ async function sendTest(
 			if (cause instanceof GovernanceDigestError) return corsJson(req, 503, { error: "governance_digest_invalid" }, headers);
 			throw cause;
 		}
+		const report = await readReportContext(db, tenantId, context.periodFrom, context.periodTo);
+		if (!report) return corsJson(req, 503, { error: "governance_digest_unavailable" }, headers);
 		const scope = `test/${tenantId}/${Math.floor(now() / 60_000)}`;
+		const generatedAt = new Date(now()).toISOString();
 		delivered = await sendAll(mailer, context.recipients, async (to) =>
 			governanceDigestEmail({
 				to,
@@ -261,6 +297,10 @@ async function sendTest(
 				dashboardUrl,
 				idempotencyKey: await digestIdempotencyKey(scope, to),
 				test: true,
+				language: report.language,
+				triage: report.triage,
+				attachReport: report.attachment,
+				generatedAt,
 			}),
 		);
 		status = deliveryStatus(context.recipients.length, delivered);
@@ -320,7 +360,7 @@ export function createGovernanceDigestHandler(deps: GovernanceDigestDeps = {}) {
 			const db = makeClient(config.values.SUPABASE_URL, config.values.SUPABASE_SERVICE_ROLE_KEY);
 			const mailer = deps.mailer ?? createMailer(runtimeEnv);
 			const dashboardUrl = dashboardLinkBase(runtimeEnv("AIDR_DASHBOARD_URL"));
-			if (request.action === "dispatch") return await dispatch(req, db, mailer, dashboardUrl, request);
+			if (request.action === "dispatch") return await dispatch(now, req, db, mailer, dashboardUrl, request);
 			return await sendTest(now, req, db, mailer, dashboardUrl, token, request.tenantId);
 		} catch {
 			return corsJson(req, 503, { error: "governance_digest_unavailable" });

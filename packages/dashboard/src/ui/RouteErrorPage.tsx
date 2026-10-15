@@ -1,16 +1,11 @@
 import { isRouteErrorResponse, Link, useRouteError } from "react-router-dom";
-
-function errorMessage(error: unknown): string {
-	if (isRouteErrorResponse(error)) {
-		if (error.status === 404) return "This dashboard page does not exist.";
-		return "The dashboard could not complete this request.";
-	}
-	return "The dashboard could not complete this request.";
-}
+import { useT } from "../i18n/I18nProvider";
 
 export function RouteErrorPage() {
 	const error = useRouteError();
-	const message = errorMessage(error);
+	const t = useT();
+	const message =
+		isRouteErrorResponse(error) && error.status === 404 ? t("error.notFound") : t("error.generic");
 
 	return (
 		<div
@@ -19,17 +14,17 @@ export function RouteErrorPage() {
 			aria-live="assertive"
 			style={{ maxWidth: 560, margin: "48px auto" }}
 		>
-			<p className="eyebrow">Error</p>
-			<h1>Something went wrong</h1>
+			<p className="eyebrow">{t("error.eyebrow")}</p>
+			<h1>{t("error.title")}</h1>
 			<div className="notice notice-danger" style={{ marginTop: 10 }}>
 				{message}
 			</div>
 			<div className="row" style={{ marginTop: 16, flexWrap: "wrap" }}>
 				<button className="button" type="button" onClick={() => window.location.reload()}>
-					Retry
+					{t("error.retry")}
 				</button>
 				<Link className="button button-secondary" to="/">
-					Back to home
+					{t("common.backHome")}
 				</Link>
 			</div>
 		</div>

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	linkSync,
@@ -13,7 +14,6 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -34,7 +34,9 @@ vi.mock("node:os", async (importOriginal) => {
  */
 process.env.AIDR_SECRET_STORE = "file-acl";
 
-const { createConfig, getConfig, replaceConfig, updateConfig } = await import("../utils/config-manager.js");
+const { createConfig, getConfig, replaceConfig, updateConfig } = await import(
+	"../utils/config-manager.js"
+);
 type Environment = import("../utils/config-manager.js").Environment;
 const configDir = join(testHome, ".singularity-aidr");
 const configFile = join(configDir, "config.json");
@@ -68,15 +70,23 @@ afterAll(() => {
 
 describe("private local config store", () => {
 	// AIDR-SKIP: AIDR-063 qa-owner - requires the Windows ACL utility and Windows security semantics
-	it.skipIf(process.platform !== "win32")("writes a config without inherited read ACLs on Windows", async () => {
-		await createConfig(env, false);
-		expect((await createConfig(env, false)).outcome).toBe("reused");
-		for (const path of [configDir, configFile]) {
-			const acl = spawnSync("icacls.exe", [path], { encoding: "utf8", windowsHide: true, timeout: 10_000 });
-			expect(acl.status).toBe(0);
-			expect(acl.stdout).not.toMatch(/CodexSandboxUsers|\(RX\)/);
-		}
-	}, 120_000);
+	it.skipIf(process.platform !== "win32")(
+		"writes a config without inherited read ACLs on Windows",
+		async () => {
+			await createConfig(env, false);
+			expect((await createConfig(env, false)).outcome).toBe("reused");
+			for (const path of [configDir, configFile]) {
+				const acl = spawnSync("icacls.exe", [path], {
+					encoding: "utf8",
+					windowsHide: true,
+					timeout: 10_000,
+				});
+				expect(acl.status).toBe(0);
+				expect(acl.stdout).not.toMatch(/CodexSandboxUsers|\(RX\)/);
+			}
+		},
+		120_000,
+	);
 
 	it("creates and atomically updates a private credential file without rotating it", async () => {
 		const created = await createConfig(env, false);
@@ -112,11 +122,12 @@ describe("private local config store", () => {
 	});
 
 	it("rotates the credential only for a forced setup", async () => {
-		await createConfig(env, false);
+		const explicit = { secretStoreSelection: "file-acl" };
+		await createConfig(env, false, explicit);
 		const originalKey = getConfig()?.apiKey;
-		expect((await createConfig(env, false)).outcome).toBe("reused");
+		expect((await createConfig(env, false, explicit)).outcome).toBe("reused");
 		expect(getConfig()?.apiKey).toBe(originalKey);
-		expect((await createConfig(env, true)).outcome).toBe("created");
+		expect((await createConfig(env, true, explicit)).outcome).toBe("created");
 		expect(getConfig()?.apiKey).not.toBe(originalKey);
 	});
 

@@ -54,6 +54,7 @@ const STATS: GuardStats = {
 	byType: {},
 	pausedUntil: null,
 	nativeHost: "disabled",
+	contentActive: true,
 };
 
 describe("validateLiteral", () => {
@@ -182,6 +183,26 @@ describe("protectionStatus", () => {
 
 	it("reports unsupported pages", () => {
 		expect(protectionStatus(POLICY, STATS, null, now)).toEqual({ kind: "unsupported" });
+	});
+
+	it("reports a tab without a live content script as not protected (BG-7)", () => {
+		// The GA audit probe: a ChatGPT tab open since before install, no script, no stats.
+		const fresh = { ...STATS, site: null, contentActive: false };
+		expect(protectionStatus(POLICY, fresh, "chatgpt", now)).toEqual({
+			kind: "inactive",
+			site: "chatgpt",
+		});
+		const { contentActive: _unknown, ...noField } = STATS;
+		expect(protectionStatus(POLICY, noField, "chatgpt", now).kind).toBe("inactive");
+		// Monitoring and a pause also need a live script; a block or a disable does not.
+		const monitor = { ...POLICY, mode: "monitor" as const };
+		expect(protectionStatus(monitor, fresh, "chatgpt", now).kind).toBe("inactive");
+		expect(
+			protectionStatus({ ...POLICY, blockedSites: ["chatgpt"] }, fresh, "chatgpt", now).kind,
+		).toBe("blocked");
+		expect(
+			protectionStatus({ ...POLICY, disabledSites: ["chatgpt"] }, fresh, "chatgpt", now).kind,
+		).toBe("disabled-user");
 	});
 
 	it("prefers the site reported by the worker over the URL", () => {

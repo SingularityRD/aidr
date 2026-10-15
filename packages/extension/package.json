@@ -1,7 +1,7 @@
 {
   "name": "aidr-cursor",
   "displayName": "Singularity AIDR",
-  "description": "Singularity AIDR — protects AI agent tool calls against dangerous commands, malicious URLs, and harmful file writes.",
+  "description": "%extension.description%",
   "version": "0.6.0",
   "private": true,
   "publisher": "SingularityRD",
@@ -18,6 +18,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:aidr.enableProtection",
     "onCommand:aidr.disableProtection",
     "onCommand:aidr.openConfig",
@@ -29,6 +30,8 @@
     "dist/vscode_extension.js",
     "dist/aidr-hook.cjs",
     "dist/aidr-hook.bundle.cjs",
+    "dist/aidr-hook-launcher.cjs",
+    "dist/aidr-uninstall.cjs",
     "dist/aidr-artifact.manifest.json",
     "dist/aidr-artifact.manifest.sig",
     "dist/aidr-sbom.cdx.json",
@@ -36,34 +39,46 @@
     "dist/resources/**",
     "dist/vendor/**",
     "aidr-icon.png",
+    "package.nls.json",
+    "package.nls.tr.json",
+    "l10n/**",
     "package.json",
     "README.md",
     "LICENSE"
   ],
   "main": "./dist/cursor_extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "commands": [
       {
         "command": "aidr.enableProtection",
-        "title": "Singularity AIDR: Enable protection"
+        "title": "%command.enableProtection.title%"
       },
       {
         "command": "aidr.disableProtection",
-        "title": "Singularity AIDR: Disable protection"
+        "title": "%command.disableProtection.title%"
       },
       {
         "command": "aidr.openConfig",
-        "title": "Singularity AIDR: Open config"
+        "title": "%command.openConfig.title%"
       },
       {
         "command": "aidr.openAuditLog",
-        "title": "Singularity AIDR: Open audit log"
+        "title": "%command.openAuditLog.title%"
       },
       {
         "command": "aidr.showHookHealth",
-        "title": "Singularity AIDR: Show hook health"
+        "title": "%command.showHookHealth.title%"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "aidr.disableProtection",
+          "when": "!aidr.protectionLocked"
+        }
+      ]
+    },
     "configuration": {
       "title": "Singularity AIDR",
       "properties": {
@@ -74,7 +89,7 @@
             "workspace",
             "user"
           ],
-          "description": "Where Singularity AIDR installs Cursor hooks."
+          "description": "%config.cursorScope.description%"
         },
         "aidr.vscode.scope": {
           "type": "string",
@@ -83,18 +98,19 @@
             "workspace",
             "user"
           ],
-          "description": "Where Singularity AIDR installs VS Code hooks."
+          "description": "%config.vscodeScope.description%"
         },
         "aidr.hookRunnerPath": {
           "type": "string",
           "scope": "application",
           "default": "",
-          "description": "Optional absolute path to an aidr-hook runner script."
+          "description": "%config.hookRunnerPath.description%"
         }
       }
     }
   },
   "scripts": {
+    "vscode:uninstall": "node ./dist/aidr-uninstall.cjs",
     "build": "node ../../scripts/ensure-core-build.mjs && npm run clean && npm run sync:assets && node esbuild.config.cjs",
     "build:release": "npm run clean && npm run sync:assets && node esbuild.config.cjs --release && node ../../scripts/generate-artifact-manifest.mjs --dir dist --artifact-id extension/dist && node ../../scripts/check-no-sourcemaps.mjs dist",
     "clean": "node ../../scripts/rmrf.mjs dist resources .vsce",

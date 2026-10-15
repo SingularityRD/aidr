@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
-import { THREAT_PARSE_CACHE } from "../generated/threat-parse-cache.js";
+import { DATA_PARSE_CACHE, THREAT_PARSE_CACHE } from "../generated/threat-parse-cache.js";
 import {
 	loadThreats,
 	loadThreatsFromDirs,
@@ -11,13 +11,14 @@ import {
 	threatContentHash,
 } from "../threat-loader.js";
 import type { Logger } from "../types.js";
+import { parseShippedYaml } from "../yaml-parse-cache.js";
 import { makeTmpDir } from "./test-utils.js";
 
 const THREATS_DIR = resolve(__dirname, "..", "..", "..", "..", "threats");
 const yamlFiles = readdirSync(THREATS_DIR).filter((f) => f.endsWith(".yaml"));
 
 /** The shipped rule count; update deliberately when rules are added or removed. */
-const SHIPPED_RULE_COUNT = 507;
+const SHIPPED_RULE_COUNT = 519;
 
 function recordingLogger() {
 	const errors: string[] = [];
@@ -69,6 +70,32 @@ describe("pre-parsed threat cache", () => {
 	it("treats CRLF and LF checkouts of the same file identically", () => {
 		const content = readFileSync(join(THREATS_DIR, "urls.yaml"), "utf-8").replace(/\r\n/g, "\n");
 		expect(threatContentHash(content.replace(/\n/g, "\r\n"))).toBe(threatContentHash(content));
+	});
+});
+
+describe("pre-parsed shipped YAML data files (D7)", () => {
+	const ROOT = resolve(THREATS_DIR, "..");
+	const dataFiles = [
+		"threats/mappings/frameworks.yaml",
+		"threats/flow/capabilities.yaml",
+		"allowlists/trusted-installer-domains.yaml",
+		"allowlists/model-sources/trusted-model-sources.yaml",
+	];
+
+	it.each(dataFiles)("serves %s from the cache, equal to the YAML parser", (file) => {
+		const content = readFileSync(join(ROOT, file), "utf-8");
+		expect(DATA_PARSE_CACHE[threatContentHash(content)], `${file} missing`).toBeDefined();
+		expect(parseShippedYaml(content)).toEqual(parseYaml(content));
+	});
+
+	it("parses edited content from the text and never shares the cached object", () => {
+		const content = readFileSync(join(ROOT, dataFiles[2] as string), "utf-8");
+		const first = parseShippedYaml(content) as Array<Record<string, unknown>>;
+		(first[0] as Record<string, unknown>).domain = "mutated.example";
+		expect(parseShippedYaml(content)).toEqual(parseYaml(content));
+		const edited = `${content}\n- domain: added.example\n  reason: edited on disk\n`;
+		expect(parseShippedYaml(edited)).toEqual(parseYaml(edited));
+		expect(() => parseShippedYaml("key: [unclosed")).toThrow();
 	});
 });
 

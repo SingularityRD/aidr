@@ -155,13 +155,39 @@ describe("PreToolUse hook integration", () => {
 		expect(BLOCKED).toContain(permissionDecision(parseResponse(stdout)));
 	}, 30_000);
 
-	it("denies installation of nonexistent npm package", async () => {
+	// Registry existence needs `package_check.enabled`; on a default install the
+	// offline typosquat check is the package signal that runs.
+	it("holds a typosquatted npm package for review on a default install", async () => {
 		const { stdout, code } = await runHook(PRE_TOOL_USE, {
 			tool_name: "Bash",
-			tool_input: { command: "npm install qqq-aidr-test-nonexistent-pkg" },
+			tool_input: { command: "npm install lodahs" },
 		});
 		expect(code).toBe(0);
 		expect(BLOCKED).toContain(permissionDecision(parseResponse(stdout)));
+	}, 30_000);
+
+	it("holds an unchecked npm package for review when package_check.unchecked_action is ask", async () => {
+		const home = mkdtempSync(join(tmpdir(), "aidr-pkg-unchecked-ask-"));
+		try {
+			mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
+			writeFileSync(
+				join(home, ".singularity-aidr", "config.json"),
+				JSON.stringify({
+					version_check: { enabled: false },
+					package_check: { enabled: false, unchecked_action: "ask" },
+				}),
+				"utf8",
+			);
+			const { stdout, code } = await runHook(
+				PRE_TOOL_USE,
+				{ tool_name: "Bash", tool_input: { command: "npm install qqq-aidr-test-nonexistent-pkg" } },
+				{ HOME: home, USERPROFILE: home },
+			);
+			expect(code).toBe(0);
+			expect(BLOCKED).toContain(permissionDecision(parseResponse(stdout)));
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
 	}, 30_000);
 
 	// The URL-reputation leg calls a first-party reputation endpoint. No external
@@ -213,6 +239,7 @@ describe("PreToolUse hook integration", () => {
 					url_check: {
 						endpoint: `http://127.0.0.1:${address.port}/url-check`,
 						allow_insecure_loopback: true,
+						enabled: true,
 					},
 				}),
 				"utf8",
@@ -231,10 +258,11 @@ describe("PreToolUse hook integration", () => {
 		}
 	}, 30_000);
 
-	// A URL is not clean merely because reputation sharing is disabled. Local
-	// heuristics still run, but the unverified external reputation leg requires review.
-	it("asks for review for a benign URL when reputation is disabled", async () => {
-		const home = mkdtempSync(join(tmpdir(), "aidr-url-off-"));
+	// A disabled reputation leg is coverage information, not a block (GA audit
+	// PRD-2/CON-8): local heuristics decide, and the verdict records the URL as
+	// not checked. The call goes through the user's normal permission flow.
+	it("leaves a benign URL to local detection when reputation is disabled", async () => {
+		const home = mkdtempSync(join(tmpdir(), "aidr-url-off-default-"));
 		try {
 			mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
 			writeFileSync(
@@ -242,6 +270,32 @@ describe("PreToolUse hook integration", () => {
 				JSON.stringify({
 					version_check: { enabled: false },
 					url_check: { enabled: false },
+				}),
+				"utf8",
+			);
+			const { stdout, code } = await runHook(
+				PRE_TOOL_USE,
+				{ tool_name: "WebFetch", tool_input: { url: "https://example.com" } },
+				{ HOME: home, USERPROFILE: home },
+			);
+			expect(code).toBe(0);
+			expect(permissionDecision(parseResponse(stdout))).toBeUndefined();
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	}, 30_000);
+
+	// `url_check.unchecked_action: ask` keeps the strict behaviour: a URL is not
+	// clean merely because reputation sharing is disabled.
+	it("asks for review for a benign URL when reputation is disabled and unchecked_action is ask", async () => {
+		const home = mkdtempSync(join(tmpdir(), "aidr-url-off-"));
+		try {
+			mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
+			writeFileSync(
+				join(home, ".singularity-aidr", "config.json"),
+				JSON.stringify({
+					version_check: { enabled: false },
+					url_check: { enabled: false, unchecked_action: "ask" },
 				}),
 				"utf8",
 			);
@@ -281,6 +335,7 @@ describe("PreToolUse hook integration", () => {
 					url_check: {
 						endpoint: `http://127.0.0.1:${address.port}/url-check`,
 						allow_insecure_loopback: true,
+						enabled: true,
 						timeout_seconds: 1,
 					},
 				}),
@@ -461,7 +516,7 @@ describe("PostToolUse hook integration", () => {
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
 		expect(response.decision).toBe("block");
-		expect(response.reason).toContain("original output may remain available to the host");
+		expect(response.reason).toContain("its output was not inspected; it is withheld where the host accepts a replacement");
 	});
 
 	it("reports unavailable coverage for malformed JSON stdin", async () => {
@@ -469,7 +524,7 @@ describe("PostToolUse hook integration", () => {
 		expect(code).toBe(0);
 		const response = parseResponse(stdout);
 		expect(response.decision).toBe("block");
-		expect(response.reason).toContain("original output may remain available to the host");
+		expect(response.reason).toContain("its output was not inspected; it is withheld where the host accepts a replacement");
 	});
 
 	it("returns {} when tool_use_id is missing from an otherwise valid result", async () => {

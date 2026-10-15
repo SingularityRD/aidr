@@ -34,6 +34,7 @@ import {
 	type Logger,
 	loadProvisionedDetectorContext,
 	nullLogger,
+	t,
 } from "@singularityrd/aidr-core";
 import { resolveAssetDir } from "./assets.js";
 import { extractFromCodexTool } from "./extractors.js";
@@ -76,13 +77,34 @@ export interface CodexEnforcementResult {
 	wire: CodexWireResult;
 }
 
-export const DENY_HEADLINE = "🛡️ Singularity AIDR: Threat Blocked";
+/** English block headline; {@link denyHeadline} is the one shown, in the display locale. */
+export const DENY_HEADLINE = "🛡️ Singularity AIDR blocked this action.";
+
+/** The block headline in the display locale. */
+function denyHeadline(): string {
+	return t("block.deny.headline");
+}
+
+/**
+ * A block for something other than a rule: the headline, what happened and
+ * what to do, then the line that tells the agent not to retry.
+ */
+export function internalBlockMessage(message: string): string {
+	return [denyHeadline(), message, t("block.agent.deny")].join("\n");
+}
 
 function validPreToolUseInput(input: Record<string, unknown>): boolean {
-	return input !== null && typeof input === "object" && !Array.isArray(input)
-		&& typeof input.tool_name === "string" && input.tool_name.trim() !== ""
-		&& (input.hook_event_name === undefined || input.hook_event_name === "PreToolUse")
-		&& input.tool_input !== null && typeof input.tool_input === "object" && !Array.isArray(input.tool_input);
+	return (
+		input !== null &&
+		typeof input === "object" &&
+		!Array.isArray(input) &&
+		typeof input.tool_name === "string" &&
+		input.tool_name.trim() !== "" &&
+		(input.hook_event_name === undefined || input.hook_event_name === "PreToolUse") &&
+		input.tool_input !== null &&
+		typeof input.tool_input === "object" &&
+		!Array.isArray(input.tool_input)
+	);
 }
 
 /**
@@ -103,7 +125,7 @@ export function toWireOutput(decision: "allow" | "deny" | "ask", message: string
 	// sending it would let the call through. The approval reference travels in
 	// the reason instead, which is the only channel Codex gives us. The model
 	// cannot act on that reference — approval is operator-held and out-of-band.
-	const reason = message.trim() || DENY_HEADLINE;
+	const reason = message.trim() || denyHeadline();
 	return {
 		hookSpecificOutput: {
 			hookEventName: "PreToolUse",
@@ -122,10 +144,7 @@ function resultForGuard(guard: GuardResult, artifacts: Artifact[]): CodexEnforce
 		return {
 			decision: "deny",
 			reasonCode: "dlp",
-			wire: toWireOutput(
-				"deny",
-				`${DENY_HEADLINE}\nDLP redaction required; Codex cannot safely rewrite tool input.`,
-			),
+			wire: toWireOutput("deny", internalBlockMessage(t("codex.dlpRewrite"))),
 		};
 	}
 
@@ -141,7 +160,7 @@ function resultForGuard(guard: GuardResult, artifacts: Artifact[]): CodexEnforce
 		return {
 			decision: "deny",
 			reasonCode: verdict.category || "aidr_denied",
-			wire: toWireOutput("deny", formatDenyMessage(verdict, responseActions)),
+			wire: toWireOutput("deny", formatDenyMessage(verdict, responseActions, artifacts, actionId)),
 		};
 	}
 
@@ -231,10 +250,7 @@ export async function enforceCodexPreToolUse(
 		return {
 			decision: "deny",
 			reasonCode: "aidr_internal_error",
-			wire: toWireOutput(
-				"deny",
-				`${DENY_HEADLINE}\nSingularity AIDR could not evaluate this tool call, so it was blocked.`,
-			),
+			wire: toWireOutput("deny", internalBlockMessage(t("hook.inspectionFailed.message"))),
 		};
 	}
 }

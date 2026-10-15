@@ -347,14 +347,31 @@
 # --- PowerShell Destructive Operations ---
 
 # Remove-Item -Recurse -Force
+# Parity with the POSIX rules (D1): `rm -rf node_modules` is not a finding, so the
+# PowerShell equivalent on a project-local build output directory is not one
+# either. The negative lookahead exempts ONE narrow statement shape only:
+#   Remove-Item [flags] <path>[, <path>...] [flags]   followed by end/;/|/&/}/)/quote
+# where every <path> is relative to the working directory (optional .\ or ./,
+# no drive, no leading \ or /, no .., no ~, no $variable, no wildcard) and ends
+# in a well-known build/cache directory name (node_modules, dist, build, out,
+# target, bin, obj, coverage, .next, .nuxt, .turbo, .svelte-kit, __pycache__).
+# The only flags accepted are -Recurse, -Force, -Verbose, -Path, -LiteralPath,
+# -Confirm:$false and -ErrorAction/-ea with a literal value. The exemption is
+# withdrawn when a directory change (cd, chdir, sl, Set-Location, Push-Location,
+# pushd) appears within the preceding 4 KB, because the relative path would then
+# no longer be inside the project. Everything else (drive roots, profile/home,
+# system paths, UNC, parent traversal, wildcards, variables, extra arguments,
+# pipeline input) still matches and stays a hard block.
 - id: "CLT-WIN-CMD-028"
   category: tool
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "\\bRemove-Item\\b.{0,300}-Recurse.{0,300}-Force|\\bRemove-Item\\b.{0,300}-Force.{0,300}-Recurse"
+  pattern: "\\bRemove-Item\\b(?!(?:\\s{1,20}(?:-(?:Recurse|Force|Verbose)(?::\\$true)?|-Confirm:\\$false|-(?:Path|LiteralPath)|-(?:ErrorAction|ea)(?:\\s{1,20}|:)(?:SilentlyContinue|Ignore|Continue|Stop|0))){0,8}\\s{1,20}[\"']?(?:\\.[\\\\/])?(?:\\w[\\w.-]{0,100}[\\\\/]){0,16}(?:node_modules|dist|build|out|target|bin|obj|coverage|\\.next|\\.nuxt|\\.turbo|\\.svelte-kit|__pycache__)[\\\\/]?[\"']?(?=[\\s,;|&})\"']|$)(?:\\s{0,20},\\s{0,20}[\"']?(?:\\.[\\\\/])?(?:\\w[\\w.-]{0,100}[\\\\/]){0,16}(?:node_modules|dist|build|out|target|bin|obj|coverage|\\.next|\\.nuxt|\\.turbo|\\.svelte-kit|__pycache__)[\\\\/]?[\"']?(?=[\\s,;|&})\"']|$)){0,16}(?:\\s{1,20}(?:-(?:Recurse|Force|Verbose)(?::\\$true)?|-Confirm:\\$false|-(?:Path|LiteralPath)|-(?:ErrorAction|ea)(?:\\s{1,20}|:)(?:SilentlyContinue|Ignore|Continue|Stop|0))){0,8}\\s{0,20}(?:$|[;|&\\r\\n})\"'])(?<!(?:^|[\\s;&|({])(?:cd|chdir|sl|Set-Location|Push-Location|pushd)\\s[\\s\\S]{0,4096}))(?:.{0,300}-Recurse.{0,300}-Force|.{0,300}-Force.{0,300}-Recurse)"
+  case_insensitive: true
   match_on: command
   title: "PowerShell recursive forced deletion (Remove-Item -Recurse -Force)"
+  title_tr: "PowerShell ile zorla ve özyinelemeli silme (Remove-Item -Recurse -Force)"
   expires_at: null
   revoked: false
 

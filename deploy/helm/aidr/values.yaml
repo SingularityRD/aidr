@@ -36,7 +36,8 @@ secrets:
   # functions runtime (AIDR_ENTITLEMENT_SIGNING_*, AIDR_REVOCATION_SIGNING_*,
   # AIDR_DELEGATION_SIGNING_*, AIDR_PACK_MASTER_KEY_B64,
   # AIDR_PACK_DOWNLOAD_GRANT_SECRET, AIDR_DEVICE_START_INGRESS_SECRET,
-  # AIDR_NOTIFICATION_ENCRYPTION_KEYS, AIDR_NOTIFICATION_DISPATCH_TOKEN).
+  # AIDR_NOTIFICATION_ENCRYPTION_KEYS, AIDR_NOTIFICATION_DISPATCH_TOKEN; optional
+  # AIDR_SHARED_PACK_KEYS for shared/vendor premium intel packs).
   functionsExistingSecret: ""
 
 serviceAccount:
@@ -74,6 +75,9 @@ dashboard:
   resources: {}
   runAsUser: 1000      # "node" user of node:24-alpine
   authMethods: password
+  # Show the work-email OIDC single sign-on form on the sign-in page
+  # (tenant owners configure the provider in the dashboard; docs/operations/onprem-sso.md).
+  oidcSso: false
   saml:
     providers: ""
     providerId: ""
@@ -157,6 +161,12 @@ auth:
     passwordKey: ""
     adminEmail: ""
     senderName: AIDR
+  # SAML 2.0 single sign-on in GoTrue (docs/operations/onprem-sso.md). The
+  # signing key (RSA-2048, PKCS#1 DER, base64) lives in secrets.existingSecret
+  # under privateKeyKey; generate it on an administrator host, never in values.
+  saml:
+    enabled: false
+    privateKeyKey: ""
   pdb:
     enabled: true
     minAvailable: 1
@@ -246,7 +256,29 @@ functions:
   runAsUser: 1000      # set by images/edge-functions.Dockerfile (upstream runs as root)
   # npm registry mirror for the functions' npm: imports (air-gapped installs).
   npmRegistry: ""
+  # On-prem identity provider (Keycloak, ADFS) for tenant OIDC SSO
+  # (docs/operations/onprem-sso.md).
+  identityProvider:
+    # Internal CA that signed the IdP's TLS certificate: a ConfigMap holding PEM
+    # CA certificates. It is ADDED to the public roots (DENO_TLS_CA_STORE=
+    # mozilla,system with SSL_CERT_FILE), never substituted for them.
+    caBundle:
+      existingConfigMap: ""
+      key: ca.crt
+    # Exact host[:port] names the oidc-sso function may reach on private
+    # (RFC 1918 / CGNAT / ULA) addresses, e.g. ["keycloak.corp.example:8443"].
+    # Empty keeps the public-only egress policy. Also allow the traffic in
+    # networkPolicy.identityProviderEgress.
+    internalHosts: []
   billingProvider: ""
+  # Outbound AIDR mail (alert channels, invitations, governance digest).
+  # With auth.smtp.host set, the functions reuse that relay (SMTP provider).
+  mail:
+    provider: ""          # "" (automatic) | smtp | resend | none
+    smtpSecurity: ""      # "" (465 => tls, else starttls) | starttls | tls | none
+    # Key in secrets.existingSecret holding base64 of the relay's internal CA
+    # PEM bundle ("" = system roots).
+    smtpCaSecretKey: ""
   pdb:
     enabled: true
     minAvailable: 1
@@ -326,10 +358,17 @@ migrations:
 # Optional backups: pg_dump (+ file storage archive) CronJob and pre-upgrade hook
 # ---------------------------------------------------------------------------
 # Backed up: the database (custom-format pg_dump) and, with storage.enabled,
-# the storage.backend=file object volume (tar.gz). NOT backed up: an S3 bucket
-# (use bucket versioning/replication), the Secrets the chart consumes (keep
-# the credential directory from generate-secrets.mjs), and the backup volume
-# itself (replicate it off-cluster). Every artifact has a .sha256 sidecar.
+# the storage.backend=file object volume (tar.gz), each sealed with age to
+# backup.encryption.ageRecipients and optionally copied off-cluster
+# (backup.offsite). NOT backed up: an S3 bucket (use bucket versioning/
+# replication), the Secrets the chart consumes (keep the credential directory
+# from generate-secrets.mjs), the in-cluster Postgres pgsodium root key (export
+# it once, README "Key material") and the age identity (keep it off-cluster).
+# Every artifact has a .sha256 sidecar.
+#
+# Off by default because it needs an operator decision the chart cannot make
+# (where the decryption identity lives, which bucket holds the off-cluster
+# copy). With externalDatabase, the provider's PITR is the primary backup.
 backup:
   enabled: false
   schedule: "17 2 * * *"
@@ -357,6 +396,30 @@ backup:
     # storage.enabled or this acknowledgement is set (dev/evaluation only:
     # a restore then loses every stored object).
     acknowledgeNotBackedUp: false
+  encryption:
+    # REQUIRED with backup.enabled: age X25519 recipients (public keys,
+    # "age1..."; `age-keygen -o backup-identity.txt` prints one). Every dump
+    # and archive is streamed through age, so no plaintext reaches the volume.
+    # Keep the identity (private key) OFF the cluster, e.g. in your password
+    # vault or HSM-backed escrow; list two recipients to split custody.
+    ageRecipients: []
+    # Dev/evaluation only: write plaintext dumps when no recipient is set.
+    allowPlaintext: false
+  offsite:
+    # Copy every finished artifact to an S3-compatible bucket outside the
+    # cluster (HTTPS PUT, SigV4, path-style). Requires encryption. Use a bucket
+    # with object lock/versioning and a lifecycle rule for retention; the
+    # backup.retentionDays pruning applies to the in-cluster volume only.
+    enabled: false
+    endpoint: ""        # https://s3.eu-central-1.amazonaws.com
+    bucket: ""
+    region: ""
+    prefix: "aidr/"
+    # Secret with keys access-key-id and secret-access-key (write-only
+    # credentials: PutObject on the prefix is enough).
+    existingSecret: ""
+    # CIDRs (TCP 443) of the object store, required when networkPolicy.enabled.
+    egressCIDRs: []
   image:
     registry: ""
     repository: aidr/migrations   # ships pg_dump matching the server major version
@@ -371,6 +434,32 @@ backup:
     existingClaim: ""
 
 # ---------------------------------------------------------------------------
+# Retention maintenance CronJob (docs/control-plane.md, "Retention maintenance")
+# ---------------------------------------------------------------------------
+# Hourly run of scripts/deployment-maintenance.mjs (shipped in a ConfigMap):
+# deletes data past each tenant's retention (telemetry, approval requests,
+# expired invitations, billing webhooks, AI governance records), GA trial
+# subjects, public waitlist sign-ups after 365 days, expired temporary audit
+# exports and rate-limit counters, honouring legal holds, then dispatches due
+# governance digests. It reaches only the in-cluster API gateway, with the
+# service-role key from secrets.existingSecret. Keep it on: without it data is
+# kept indefinitely regardless of the retention owners configure.
+maintenance:
+  enabled: true
+  schedule: "11 * * * *"
+  # false = dry run (counts only, deletes nothing).
+  apply: true
+  activeDeadlineSeconds: 1800
+  image:
+    registry: ""
+    repository: aidr/dashboard   # ships Node.js 24
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  resources: {}
+  runAsUser: 1000
+
+# ---------------------------------------------------------------------------
 # Alert notifications (Settings -> Notifications; docs/control-plane.md)
 # ---------------------------------------------------------------------------
 # Channels are encrypted with AIDR_NOTIFICATION_ENCRYPTION_KEYS and the
@@ -383,6 +472,28 @@ notifications:
   dispatcher:
     # Off by default so an upgrade whose functions Secret predates alert
     # integrations does not start failing jobs. Enable after adding the keys.
+    enabled: false
+    schedule: "* * * * *"
+    image:
+      registry: ""
+      repository: aidr/dashboard   # ships Node.js; runs a one-shot fetch
+      tag: ""
+      digest: ""
+      pullPolicy: IfNotPresent
+    resources: {}
+    runAsUser: 1000
+
+# ---------------------------------------------------------------------------
+# Central SIEM forwarding (docs/contracts/siem-forwarding.md)
+# ---------------------------------------------------------------------------
+siem:
+  # Let destinations opt in to RFC 1918 / ULA collectors (typical on-prem
+  # QRadar, Wazuh, Splunk). Loopback and link-local stay refused.
+  allowPrivateNetworks: false
+  forwarder:
+    # Off by default for the same reason as the alert dispatcher: it needs
+    # AIDR_NOTIFICATION_DISPATCH_TOKEN and AIDR_NOTIFICATION_ENCRYPTION_KEYS in
+    # the functions Secret. Collector egress: networkPolicy.siemEgress.
     enabled: false
     schedule: "* * * * *"
     image:
@@ -429,8 +540,15 @@ networkPolicy:
   # Extra egress CIDRs (port 443) for the functions runtime, e.g. an npm mirror,
   # identity provider or billing provider. Empty = no Internet egress.
   functionsEgressCIDRs: []
-  # Egress CIDRs (auth.smtp.port) for the SMTP relay used by auth e-mails.
+  # Internal identity provider endpoints for the functions runtime on any port,
+  # e.g. [{cidr: 10.20.30.40/32, port: 8443}] for Keycloak.
+  identityProviderEgress: []
+  # Egress CIDRs (auth.smtp.port) for the SMTP relay used by auth e-mails and,
+  # when auth.smtp.host is set, by the functions' alert and invitation mail.
   smtpEgressCIDRs: []
+  # SIEM collectors the functions forward to: [{ cidr: 10.20.0.0/24, port: 6514 }].
+  # Syslog UDP needs protocol: UDP. Empty = no collector reachable.
+  siemEgress: []
   # CIDRs (port 443) the dashboard may reach for the public certificate probe
   # and Sentry. Empty = none (the certificate check then reports failed).
   dashboardEgressCIDRs: []
@@ -443,10 +561,10 @@ networkPolicy:
 # ---------------------------------------------------------------------------
 postureScanner:
   enabled: false
-  sourceVersion: v4.6.1-aidr.1
+  sourceVersion: v4.6.1-aidr.2
   timezone: UTC
-  # REQUIRED when enabled. Secret keys: agent-shared-secret, bridge-api-key
-  # (api_key mode) or bridge-jwt-secret (broker mode), task-postgres-dsn.
+  # REQUIRED when enabled. Secret keys: agent-shared-secret, bridge-jwt-secret,
+  # task-postgres-dsn.
   existingSecret: ""
   # REQUIRED when enabled. Secret with key signing-public.pem (Ed25519 SPKI PEM).
   signingPublicKeySecret: ""
@@ -491,6 +609,8 @@ postureScanner:
       digest: ""
       pullPolicy: IfNotPresent
     resources: {}
+    # Only "broker" (tenant-bound, scoped JWTs). The bridge's api_key mode takes
+    # the tenant from a caller header, so the chart refuses it.
     authMode: broker
     jwtIssuer: ""
     jwtAudience: ""

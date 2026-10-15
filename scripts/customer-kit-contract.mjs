@@ -101,6 +101,41 @@ export function privacyGatewayKitFailures(paths, read, source) {
 // SHA inventory remains the authority for the complete set and catches any
 // unlisted extra file; this list catches an assembler that silently omits a
 // newly required delivery artifact.
+// Kubernetes delivery: the Helm chart and its credential generator ship in every
+// kit, so a Helm installation needs no source checkout.
+export const CUSTOMER_KIT_HELM_FILES = Object.freeze([
+	"deploy/helm/aidr/Chart.yaml",
+	"deploy/helm/aidr/values.yaml",
+	"deploy/helm/aidr/values.schema.json",
+	"deploy/helm/aidr/README.md",
+	"deploy/helm/generate-secrets.mjs",
+	"KUBERNETES.md",
+]);
+
+// Optional vendor-signed air-gap image bundle (release-images.yml, job
+// airgap-bundle): the transfer archive, its cosign bundle, the vendor
+// offline-bundle public key and their SHA256SUMS, under airgap/.
+const CUSTOMER_KIT_AIRGAP_PUBLIC_KEY = "airgap/offline-bundle-signing-public.pem";
+const AIRGAP_ARCHIVE = /^airgap\/aidr-offline-bundle-[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.tar$/;
+
+/**
+ * The air-gap bundle is all there or not there: when release-source.json says it
+ * is bundled, exactly one signed archive, its cosign bundle, the public key and
+ * SHA256SUMS; otherwise nothing under airgap/. Returns failure messages.
+ */
+export function airgapBundleKitFailures(paths, declared) {
+	const present = [...paths].filter((path) => path.startsWith("airgap/"));
+	if (declared === undefined && present.length === 0) return [];
+	if (declared !== true) return present.length ? ["Air-gap bundle files are present but release-source.json does not declare them"] : [];
+	const archives = present.filter((path) => AIRGAP_ARCHIVE.test(path));
+	if (archives.length !== 1) return ["The kit must carry exactly one signed air-gap transfer archive"];
+	const expected = new Set([archives[0], `${archives[0]}.cosign.bundle`, CUSTOMER_KIT_AIRGAP_PUBLIC_KEY, "airgap/SHA256SUMS"]);
+	const missing = [...expected].filter((path) => !paths.has(path));
+	if (missing.length) return [`Air-gap bundle is incomplete: ${missing.join(", ")}`];
+	const extra = present.filter((path) => !expected.has(path));
+	return extra.length ? [`Unexpected files in airgap/: ${extra.join(", ")}`] : [];
+}
+
 export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"START-HERE.md",
 	"INSTALLATION.md",
@@ -112,6 +147,11 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"scripts/deployment-bootstrap.mjs",
 	"scripts/license-verify.mjs",
 	"scripts/import-offline-pack.mjs",
+	"scripts/onprem-upgrade.mjs",
+	"scripts/lib/onprem-language.mjs",
+	"scripts/onprem-offline-bundle.mjs",
+	"scripts/publish-installers.mjs",
+	"scripts/lib/tar-path.mjs",
 	"deploy/onprem/license-public-keys.json",
 	"scripts/deployment-doctor.mjs",
 	"scripts/release-signing-lib.mjs",
@@ -125,6 +165,7 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"scripts/lib/atomic-write.mjs",
 	"scripts/lib/deployment-credentials.mjs",
 	"scripts/lib/deployment-input-copy.mjs",
+	"scripts/lib/onprem-sso.mjs",
 	"scripts/lib/node-helper-image.mjs",
 	"scripts/lib/node-helper.Dockerfile",
 	"scripts/readiness-evidence-worker.mjs",
@@ -181,6 +222,7 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	...Object.values(CUSTOMER_KIT_DELIVERY_FILES),
 	...CUSTOMER_KIT_BENCHMARK_FILES,
 	...CUSTOMER_KIT_PRIVACY_GATEWAY_FILES,
+	...CUSTOMER_KIT_HELM_FILES,
 ]);
 
 // Top-level guides are renamed in the portable kit. Keep their local links
@@ -201,8 +243,14 @@ const docRewrites = {
     ["[Codex connector guide](../packages/codex/README.md)", "[Codex connector guide](CODEX-CONNECTOR.md)"],
     ["[first-customer runbook](../deploy/FIRST_CUSTOMER.md)", "[first-customer runbook](START-HERE.md)"],
     ["[production-readiness decision](production-readiness/first-customer-ready.md)", "[production-readiness decision](CANDIDATE-STATUS.md)"],
+    // The integrity guide is a source-tree document (two references).
+    ["[Integrity verification](integrity.md)", "Integrity verification, `docs/integrity.md` in the source release"],
+    ["[Integrity verification](integrity.md)", "Integrity verification, `docs/integrity.md` in the source release"],
+    ["[compatibility matrix](compatibility-matrix.md)", "compatibility matrix (`docs/compatibility-matrix.md` in the source release)"],
+    ["See the [CLI README](../packages/cli/README.md#setup).", "See the Setup section of the CLI README (`packages/cli/README.md` in the source release, and `aidr setup --help`)."],
   ],
   "CODEX-CONNECTOR.md": [
+    ["[docs/operations/hook-tamper-resistance.md](../../docs/operations/hook-tamper-resistance.md)", "`docs/operations/hook-tamper-resistance.md` in the source release (not shipped in this kit)"],
     ["[Package Installation](../../docs/package-installation.md)", "[Package Installation](PACKAGE-INSTALLATION.md)"],
     // The real-host record is source-tree evidence; it does not ship in the kit.
     ["([`docs/evidence/real-host/codex.json`](../../docs/evidence/real-host/codex.json):", "(`docs/evidence/real-host/codex.json` in the source release, not shipped in this kit:"],
@@ -215,6 +263,9 @@ const docRewrites = {
     ["[Secret custody](secrets-management.md)", "[Secret custody](SECRETS-RUNBOOK.md)"],
   ],
 	"START-HERE.md": [
+		// Source-tree guides that do not ship in the kit: name them without a dead link.
+		["[on-prem runbook'una](../docs/operations/onprem-runbook.md)", "on-prem runbook'una (kaynak sürümde `docs/operations/onprem-runbook.md`; bu kitte yoktur)"],
+		["[masaüstü kurulum kılavuzu](../docs/installation/desktop-installers.md#machine-policy-every-user-of-a-computer)", "masaüstü kurulum kılavuzu (kaynak sürümde `docs/installation/desktop-installers.md`, \"Machine policy\" bölümü; bu kitte yoktur)"],
 		["../docs/production-readiness/retention-holds.md#releasing-a-hold-after-offboarding-starts", "RETENTION-HOLDS.md#releasing-a-hold-after-offboarding-starts"],
 		["[deployment kılavuzuna](README.md)", "[deployment kılavuzuna](INSTALLATION.md)"],
 		["[Supabase dağıtım rehberine](../supabase/README.md)", "[bulut hazırlığına](INSTALLATION.md)"],
@@ -225,6 +276,7 @@ const docRewrites = {
 	],
 	"INSTALLATION.md": [
 		["[the issuance and revocation contract](../supabase/README.md#configuration-is-validated-not-assumed)", "[the issuance and revocation contract](CONTROL-PLANE.md#configuration-is-validated-not-assumed)"],
+		["[first-customer guide](FIRST_CUSTOMER.md)", "[first-customer guide](START-HERE.md)"],
 		["[first-customer guide](FIRST_CUSTOMER.md)", "[first-customer guide](START-HERE.md)"],
 		["[on-prem guide](onprem/README.md)", "[on-prem guide](deploy/onprem/README.md)"],
 		["[on-prem sizing and posture scanner guide](onprem/README.md)", "[on-prem sizing and posture scanner guide](deploy/onprem/README.md)"],

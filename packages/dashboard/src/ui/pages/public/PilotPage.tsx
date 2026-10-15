@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getSalesContactHref } from "../../../billing/commercial";
+import type { DashboardMessageKey } from "../../../i18n/en";
+import { englishT, type Translate, useRichT, useT } from "../../../i18n/I18nProvider";
 import { readErrorMessage } from "../../../lib/errors";
 import { supabase } from "../../../lib/supabase";
 import { getSession } from "../../session";
@@ -25,12 +27,19 @@ interface PilotWorkspace {
 	teamId: string | null;
 }
 
-async function loadWorkspaces(): Promise<PilotWorkspace[]> {
+const PILOT_STATUS_LABEL: Record<PilotStatus["status"], DashboardMessageKey> = {
+	none: "pl.status.none",
+	pending: "pl.status.pending",
+	approved: "pl.status.approved",
+	denied: "pl.status.denied",
+};
+
+async function loadWorkspaces(t: Translate = englishT): Promise<PilotWorkspace[]> {
 	const { data, error } = await supabase.functions.invoke("identity-security", {
 		body: { action: "bootstrap" },
 	});
 	if (error || data?.ok !== true || !Array.isArray(data.memberships)) {
-		throw new Error(readErrorMessage(error, "Unable to verify an active workspace."));
+		throw new Error(readErrorMessage(error, t("pl.workspaceUnverified")));
 	}
 	const memberships = data.memberships as unknown[];
 	if (
@@ -45,7 +54,7 @@ async function loadWorkspaces(): Promise<PilotWorkspace[]> {
 					!UUID.test(String((entry as Record<string, unknown>).team_id))),
 		)
 	) {
-		throw new Error("The active workspace response is invalid.");
+		throw new Error(t("pl.workspaceInvalid"));
 	}
 	return memberships.map((entry) => {
 		const membership = entry as Record<string, unknown>;
@@ -56,10 +65,10 @@ async function loadWorkspaces(): Promise<PilotWorkspace[]> {
 	});
 }
 
-function pilotStatusFrom(data: Record<string, unknown>): PilotStatus {
+function pilotStatusFrom(data: Record<string, unknown>, t: Translate = englishT): PilotStatus {
 	const status = data.status;
 	if (status !== "none" && status !== "pending" && status !== "approved" && status !== "denied") {
-		throw new Error("Pilot status response is invalid.");
+		throw new Error(t("pl.statusInvalid"));
 	}
 	return {
 		status,
@@ -75,6 +84,7 @@ async function applyForPilot(
 	_org: string,
 	useCase: string,
 	tenantId: string,
+	t: Translate = englishT,
 ): Promise<PilotStatus> {
 	const res = await supabase.functions.invoke("pilot-apply", {
 		method: "POST",
@@ -82,14 +92,17 @@ async function applyForPilot(
 		body: { email, org: _org, useCase },
 	});
 	if (res.error || res.data?.ok !== true) {
-		throw new Error(
-			readErrorMessage(res.error, "The pilot service did not confirm the application."),
-		);
+		throw new Error(readErrorMessage(res.error, t("pl.notConfirmed")));
 	}
-	return pilotStatusFrom(res.data as Record<string, unknown>);
+	return pilotStatusFrom(res.data as Record<string, unknown>, t);
 }
 
 export function PilotPage() {
+	const t = useT();
+	const richT = useRichT();
+	// Loaders read the translator through a ref so a language switch does not refetch.
+	const translator = useRef(t);
+	translator.current = t;
 	const navigate = useNavigate();
 	const [sessionReady, setSessionReady] = useState(false);
 	const [hasSession, setHasSession] = useState(false);
@@ -119,6 +132,7 @@ export function PilotPage() {
 
 	useEffect(() => {
 		let cancelled = false;
+		const t = translator.current;
 		async function load() {
 			try {
 				const sess = await getSession();
@@ -131,15 +145,15 @@ export function PilotPage() {
 				const userEmail = sess.user?.email || "";
 				setEmail(userEmail);
 
-				const availableWorkspaces = await loadWorkspaces();
+				const availableWorkspaces = await loadWorkspaces(t);
 				if (cancelled) return;
 				const firstWorkspace = availableWorkspaces[0];
-				if (!firstWorkspace) throw new Error("No active workspace is available for this account.");
+				if (!firstWorkspace) throw new Error(t("pl.noWorkspace"));
 				setWorkspaces(availableWorkspaces);
 				setPilotTenantId(firstWorkspace.tenantId);
 			} catch (cause) {
 				if (!cancelled) {
-					setError(readErrorMessage(cause, "Unable to load pilot status."));
+					setError(readErrorMessage(cause, t("pl.loadFailed")));
 					setSessionReady(true);
 				}
 			}
@@ -154,6 +168,7 @@ export function PilotPage() {
 		const tenantId = pilotTenantId;
 		if (!hasSession || !tenantId) return;
 		let cancelled = false;
+		const t = translator.current;
 		const request = ++statusRequest.current;
 		setStatus({ status: "none" });
 		setAdmission(null);
@@ -167,17 +182,17 @@ export function PilotPage() {
 				});
 				if (cancelled || request !== statusRequest.current) return;
 				if (res.error || res.data?.ok !== true) {
-					setError(readErrorMessage(res.error, "Pilot status response is invalid."));
+					setError(readErrorMessage(res.error, t("pl.statusInvalid")));
 					return;
 				}
 				const nextAdmission = readTenantAdmission(res.data.admission);
-				if (!nextAdmission) throw new Error("Workspace access response is invalid.");
+				if (!nextAdmission) throw new Error(t("pl.accessInvalid"));
 				setAdmission(nextAdmission);
 				setLegal(readGaLegal(res.data.legal));
-				setStatus(pilotStatusFrom(res.data as Record<string, unknown>));
+				setStatus(pilotStatusFrom(res.data as Record<string, unknown>, t));
 			} catch (cause) {
 				if (!cancelled && request === statusRequest.current)
-					setError(readErrorMessage(cause, "Pilot status response is invalid."));
+					setError(readErrorMessage(cause, t("pl.statusInvalid")));
 			}
 		}
 		void loadStatus(tenantId);
@@ -189,7 +204,7 @@ export function PilotPage() {
 	if (!sessionReady) {
 		return (
 			<div className="card">
-				<div className="muted">Loading…</div>
+				<div className="muted">{t("common.loading")}</div>
 			</div>
 		);
 	}
@@ -197,34 +212,28 @@ export function PilotPage() {
 	return (
 		<div className="stack">
 			<div className="card">
-				<h1>{admission?.mode === "pilot" ? "Pilot program" : "Workspace access"}</h1>
+				<h1>{admission?.mode === "pilot" ? t("pl.titlePilot") : t("pl.titleAccess")}</h1>
 				{admission?.mode === "pilot" ? (
-					<p className="muted">
-						Pilot access is approval-gated. Scope, pricing, support, and data-retention terms are
-						confirmed in writing before enrollment. An application requests review; it does not
-						grant access or authorize production use.
-					</p>
+					<p className="muted">{t("pl.leadPilot")}</p>
 				) : (
-					<p className="muted">
-						Sign in to check your workspace access and available setup options.
-					</p>
+					<p className="muted">{t("pl.leadAccess")}</p>
 				)}
 
 				{!hasSession ? (
 					<>
 						<div className="row" style={{ marginTop: 12 }}>
 							<Link className="button" to="/login?returnTo=/pilot">
-								Sign in to check access
+								{t("pl.signIn")}
 							</Link>
 							{salesContactHref ? (
 								<a className="button" href={salesContactHref}>
-									Contact sales
+									{t("pl.contactSales")}
 								</a>
 							) : null}
 						</div>
 						{!salesContactHref ? (
 							<div className="notice" role="status">
-								A sales contact route is not configured.
+								{t("pl.noSales")}
 							</div>
 						) : null}
 					</>
@@ -232,7 +241,7 @@ export function PilotPage() {
 					<div className="notice">
 						{workspaces.length > 1 ? (
 							<label className="label">
-								Workspace
+								{t("pl.workspace")}
 								<select
 									className="input"
 									value={pilotTenantId ?? ""}
@@ -241,16 +250,19 @@ export function PilotPage() {
 								>
 									{workspaces.map((workspace) => (
 										<option key={workspace.tenantId} value={workspace.tenantId}>
-											{workspace.teamId ? "Team" : "Personal"} workspace ·{" "}
-											{workspace.tenantId.slice(0, 8)}
+											{workspace.teamId
+												? t("pl.teamWorkspace", { id: workspace.tenantId.slice(0, 8) })
+												: t("pl.personalWorkspace", { id: workspace.tenantId.slice(0, 8) })}
 										</option>
 									))}
 								</select>
 							</label>
 						) : null}
-						<div className="muted small">Your status</div>
+						<div className="muted small">{t("pl.yourStatus")}</div>
 						<div className="mono">
-							{admission?.mode === "pilot" ? status.status : (admission?.status ?? "checking")}
+							{admission?.mode === "pilot"
+								? t(PILOT_STATUS_LABEL[status.status])
+								: (admission?.status ?? t("pl.checking"))}
 							{admission?.mode === "pilot" && status.status === "approved" && status.cohort
 								? ` (${status.cohort})`
 								: ""}
@@ -268,37 +280,38 @@ export function PilotPage() {
 									}
 								>
 									{admission?.mode === "cloud" && admission.trial_available
-										? "Set up 14-day trial"
-										: "Start onboarding"}
+										? t("pl.setUpTrial")
+										: t("pl.startOnboarding")}
 								</button>
 							</div>
 						) : null}
 						{admission?.status === "active" && selectedWorkspace && !selectedWorkspace.teamId ? (
 							<div className="notice notice-warning" role="status">
-								Agent enrollment requires a team workspace. Select an approved team workspace above.
+								{t("pl.needTeam")}
 							</div>
 						) : null}
 						{admission?.mode === "cloud" && admission.access_kind === "trial" ? (
 							<p className="muted small">
-								Trial: {admission.allowed_agents} agent; ends{" "}
-								{admission.expires_at ? new Date(admission.expires_at).toLocaleString() : "unknown"}
-								.
+								{t("pl.trial", {
+									count: admission.allowed_agents,
+									time: admission.expires_at
+										? new Date(admission.expires_at).toLocaleString()
+										: t("common.unknown"),
+								})}
 							</p>
 						) : null}
 						{admission?.mode === "cloud" &&
 						admission.status !== "active" &&
 						(!admission.trial_available || !legal?.configured) ? (
 							<div className="notice notice-warning" role="status">
-								{legal?.configured === false
-									? "Trial setup awaits published Terms and Privacy. Contact your administrator."
-									: "No self-service trial is available for this workspace. Contact your administrator or sales."}
+								{legal?.configured === false ? t("pl.legalPending") : t("pl.noTrial")}
 							</div>
 						) : null}
 						{admission &&
 						(admission.mode === "onprem" || admission.mode === "unconfigured") &&
 						admission.status !== "active" ? (
 							<div className="notice notice-warning" role="status">
-								Workspace access is not active. Contact your deployment administrator.
+								{t("pl.inactive")}
 							</div>
 						) : null}
 					</div>
@@ -312,18 +325,16 @@ export function PilotPage() {
 
 			{hasSession && admission?.mode === "pilot" ? (
 				<div className="card">
-					<h2>Apply</h2>
-					<p className="muted">
-						Describe the runtime and tools you want to protect. Do not include credentials, tokens,
-						customer content, or other sensitive data.
-					</p>
+					<h2>{t("pl.apply")}</h2>
+					<p className="muted">{t("pl.applyLead")}</p>
 					<label className="label">
-						Use case
+						{t("pl.useCase")}
 						<textarea
 							className="input"
 							style={{ minHeight: 140, resize: "vertical" }}
 							value={useCase}
 							onChange={(e) => setUseCase(e.target.value)}
+							// i18n-exempt: example list of product names
 							placeholder="Claude Code/Cursor/OpenClaw/OpenCode, tools, constraints, risks…"
 						/>
 					</label>
@@ -335,13 +346,14 @@ export function PilotPage() {
 								checked={reviewedLegalDocs}
 								onChange={(event) => setReviewedLegalDocs(event.target.checked)}
 							/>{" "}
-							I have reviewed the <a href={privacyUrl}>privacy notice</a> and{" "}
-							<a href={termsUrl}>pilot terms</a>.
+							{richT("pl.reviewed", {
+								privacy: <a href={privacyUrl}>{t("pl.privacy")}</a>,
+								terms: <a href={termsUrl}>{t("pl.terms")}</a>,
+							})}
 						</label>
 					) : (
 						<div className="notice notice-danger" role="alert">
-							Pilot applications are disabled until safe HTTPS privacy and terms documents are
-							configured.
+							{t("pl.legalMissing")}
 						</div>
 					)}
 
@@ -356,17 +368,16 @@ export function PilotPage() {
 								setError(null);
 								++statusRequest.current;
 								try {
-									if (!pilotTenantId)
-										throw new Error("No active workspace is available for this account.");
-									setStatus(await applyForPilot(email, "", useCase, pilotTenantId));
+									if (!pilotTenantId) throw new Error(t("pl.noWorkspace"));
+									setStatus(await applyForPilot(email, "", useCase, pilotTenantId, t));
 								} catch (e) {
-									setError(readErrorMessage(e, "Failed to submit"));
+									setError(readErrorMessage(e, t("pl.submitFailed")));
 								} finally {
 									setBusy(false);
 								}
 							}}
 						>
-							Submit application
+							{t("pl.submit")}
 						</button>
 					</div>
 				</div>

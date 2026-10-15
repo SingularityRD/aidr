@@ -27,14 +27,19 @@
  *
  * ## Key custody (fail closed)
  *
- * Every record carries an HMAC-SHA256 under a per-install key. By default the key
- * lives ONLY in the OS credential vault (Windows DPAPI, macOS Keychain, libsecret);
- * when no vault is available, operator approvals are DISABLED — asks stay blocked
- * and `aidr approve` / `aidr doctor` say why. A plain key file is used only when
- * the operator opts in explicitly (`operator_approvals.key_storage: "file"` in the
- * config, or `AIDR_OPERATOR_APPROVAL_KEY_STORAGE=file`); `aidr doctor` warns about
- * it. There is no silent fallback: an agent that can read a file in the AIDR
- * directory must not thereby be able to mint approvals.
+ * Every record carries an HMAC-SHA256 under a per-install key. With the default
+ * `auto` storage the key lives in the OS credential vault (Windows DPAPI, macOS
+ * Keychain, libsecret) whenever one answers. On a Linux/POSIX host with NO vault
+ * (headless servers, WSL, containers) it lives in the machine-bound encrypted
+ * file store instead (`createEncryptedFileStore`: AES-256-GCM, owner-only files,
+ * key derived from the machine id) — the same-user exposure libsecret already
+ * has there, without a plaintext key. Windows and macOS always have a vault, so
+ * `auto` never leaves it on those platforms, and a host whose key was created in
+ * a vault never falls back to a file when that vault later stops answering:
+ * approvals are then DISABLED (asks stay blocked) and `aidr approve` / `aidr
+ * doctor` say why. `os-vault` makes the vault mandatory everywhere;
+ * `encrypted-file` selects the file store explicitly; `file` is the legacy plain
+ * key file, an explicit opt-in `aidr doctor` warns about.
  *
  * ## What the HMAC does and does not prove
  *
@@ -74,7 +79,12 @@ import { z } from "zod";
 import { toolInputSummaryText } from "./audit-log.js";
 import { AIDR_DIR, resolvePath } from "./config.js";
 import { atomicWriteJson, getFileContent, getFileContentSync } from "./file-utils.js";
-import { resolveSecretStore, type SecretStore, type SecretStoreKind } from "./secret-store.js";
+import {
+	createEncryptedFileStore,
+	resolveSecretStore,
+	type SecretStore,
+	type SecretStoreKind,
+} from "./secret-store.js";
 import { redactTelemetryString } from "./telemetry-redaction.js";
 import { boundTerminalText } from "./terminal-text.js";
 import type { Artifact, Logger, Verdict } from "./types.js";
@@ -105,7 +115,7 @@ const DIGEST = /^[a-f0-9]{64}$/;
 export const OPERATOR_APPROVAL_KEY_ID = "aidr-operator-approval-key";
 /** Vault account/id of the consumption ledger (the single-use anchor). */
 export const OPERATOR_APPROVAL_LEDGER_ID = "aidr-operator-approval-ledger";
-/** Selects the key storage explicitly: `os-vault` (default) or `file` (opt-in). */
+/** Selects the key storage explicitly: `auto` (default), `os-vault`, `encrypted-file` or `file`. */
 export const OPERATOR_APPROVAL_KEY_STORAGE_ENV = "AIDR_OPERATOR_APPROVAL_KEY_STORAGE";
 const KEY_FILE = "operator-approval.key";
 const KEY_META_FILE = "operator-approval-key.json";
@@ -116,12 +126,19 @@ const LEDGER_ID = /^[a-f0-9]{32}$/;
 
 /**
  * Where the approval key lives.
- * - `os-vault` (default): the platform vault only. No vault means approvals are
- *   disabled — never a silent fallback to a file.
- * - `file`: an owner-only key file in the AIDR directory. Explicit opt-in only;
- *   any process running as the same user can read it.
+ * - `auto` (default): the platform vault when one answers; on a Linux/POSIX
+ *   host with no vault, the machine-bound encrypted file store. Never a
+ *   plaintext file, never a fallback on Windows/macOS, and never a fallback once
+ *   the key was created in a vault.
+ * - `os-vault`: the platform vault only. No vault means approvals are disabled.
+ * - `encrypted-file`: the machine-bound encrypted file store, explicitly.
+ * - `file`: an owner-only PLAIN key file in the AIDR directory. Legacy explicit
+ *   opt-in; any process running as the same user can read it.
  */
-export type OperatorKeyStorage = "os-vault" | "file";
+export type OperatorKeyStorage = "auto" | "os-vault" | "encrypted-file" | "file";
+
+/** Where a key or ledger actually lives. */
+type OperatorKeyLocation = "os-vault" | "encrypted-file" | "file";
 
 // ── Errors ─────────────────────────────────────────────────────────
 
@@ -215,7 +232,7 @@ export interface OperatorConsumeResult {
 
 export interface OperatorKeyMaterial {
 	key: Buffer;
-	location: "os-vault" | "file";
+	location: OperatorKeyLocation;
 	store: SecretStoreKind | "file";
 }
 
@@ -228,7 +245,7 @@ export interface OperatorKeyMaterial {
  * methods throw when the anchor cannot be used, which keeps the call blocked.
  */
 export interface OperatorConsumptionAnchor {
-	readonly location: "os-vault" | "file";
+	readonly location: OperatorKeyLocation;
 	read(): string | null;
 	write(value: string): void;
 }
@@ -419,6 +436,10 @@ interface DefaultKeyProviderOptions {
 	resolveVault?: (selection?: string) => SecretStore;
 	/** The config's `operator_approvals.key_storage`; the env variable overrides it. */
 	keyStorage?: OperatorKeyStorage;
+	/** Platform deciding whether `auto` may use the file store (tests). */
+	platform?: NodeJS.Platform;
+	/** Encrypted-file store factory (tests); defaults to `<directory>/sealed`. */
+	encryptedStore?: (directory: string) => SecretStore;
 }
 
 function writePrivateFileExclusive(path: string, content: string): void {
@@ -454,8 +475,14 @@ function assertRegularFile(path: string): boolean {
 function parseKeyStorage(value: unknown): OperatorKeyStorage | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "file") return "file";
-	if (normalized === "os-vault") return "os-vault";
+	if (
+		normalized === "auto" ||
+		normalized === "os-vault" ||
+		normalized === "encrypted-file" ||
+		normalized === "file"
+	) {
+		return normalized;
+	}
 	return undefined;
 }
 
@@ -475,9 +502,8 @@ function keyStorageFromConfig(directory: string): OperatorKeyStorage | undefined
 }
 
 /**
- * The effective key storage. The env variable wins over the config, and anything
- * but an explicit `file` means the OS vault: the weaker storage is never chosen
- * by default or by a malformed setting.
+ * The configured key storage. The env variable wins over the config; unset or
+ * malformed means `auto`, which never selects the plaintext key file.
  */
 export function resolveOperatorKeyStorage(
 	options: { keyStorage?: OperatorKeyStorage; env?: NodeJS.ProcessEnv; directory?: string } = {},
@@ -485,9 +511,9 @@ export function resolveOperatorKeyStorage(
 	const env = options.env ?? process.env;
 	return (
 		parseKeyStorage(env[OPERATOR_APPROVAL_KEY_STORAGE_ENV]) ??
-		options.keyStorage ??
+		parseKeyStorage(options.keyStorage) ??
 		keyStorageFromConfig(options.directory ?? resolvePath(AIDR_DIR)) ??
-		"os-vault"
+		"auto"
 	);
 }
 
@@ -496,10 +522,15 @@ function approvalsDisabled(detail: string): OperatorApprovalError {
 		"approvals_disabled",
 		`Operator approvals are disabled: ${detail} Asks stay blocked until this is fixed. ` +
 			"Install or unlock an OS credential vault (Windows DPAPI, macOS Keychain, or libsecret's " +
-			"secret-tool), or explicitly accept a plain key file readable by every process of this " +
-			'user with operator_approvals.key_storage = "file" in the config (or ' +
-			`${OPERATOR_APPROVAL_KEY_STORAGE_ENV}=file).`,
+			"secret-tool), or, on a host without one, select the machine-bound encrypted file store " +
+			'with operator_approvals.key_storage = "encrypted-file" in the config (or ' +
+			`${OPERATOR_APPROVAL_KEY_STORAGE_ENV}=encrypted-file).`,
 	);
+}
+
+/** Platforms where `auto` never leaves the OS vault: one always exists there. */
+function platformHasMandatoryVault(platform: NodeJS.Platform): boolean {
+	return platform === "win32" || platform === "darwin";
 }
 
 function fileAnchor(dir: string): OperatorConsumptionAnchor {
@@ -514,13 +545,17 @@ function fileAnchor(dir: string): OperatorConsumptionAnchor {
 /**
  * The default key provider.
  *
- * With the default `os-vault` storage the key and the consumption ledger live in
- * the platform vault only; if there is none, `load` throws `approvals_disabled`
- * and nothing can be approved. The key file is used only under the explicit
- * `file` storage. `operator-approval-key.json` records where the key lives for
- * `aidr doctor`; it is informational and never makes the provider read a key
- * file under the vault storage (a hand-written `{"store":"file"}` plus a key file
- * of the agent's choosing must not become a signing key).
+ * The key and the consumption ledger live together: in the platform vault, in
+ * the machine-bound encrypted file store (`encrypted-file`, or `auto` on a
+ * Linux/POSIX host with no vault), or in plain owner-only files (`file`, explicit
+ * legacy opt-in). When the selected storage is unusable, `load` and `anchor`
+ * throw `approvals_disabled` and nothing can be approved.
+ *
+ * `operator-approval-key.json` records where the key was created. It never makes
+ * the provider read a plain key file (a hand-written `{"store":"file"}` plus a
+ * key file of the agent's choosing must not become a signing key); under `auto`
+ * it only ever makes the provider STRICTER: a key created in a vault is never
+ * replaced by a file-store key when that vault stops answering.
  */
 export function createDefaultOperatorKeyProvider(
 	options: DefaultKeyProviderOptions = {},
@@ -561,6 +596,44 @@ export function createDefaultOperatorKeyProvider(
 		return store;
 	};
 
+	const sealed = (dir: string): SecretStore =>
+		options.encryptedStore
+			? options.encryptedStore(dir)
+			: createEncryptedFileStore({ directory: join(dir, "sealed") });
+
+	/** The vault kind the key was created in, from the informational record. */
+	const recordedVaultKind = (dir: string): string | null => {
+		try {
+			const path = join(dir, KEY_META_FILE);
+			if (!assertRegularFile(path)) return null;
+			const meta = JSON.parse(getFileContentSync(path)) as { store?: unknown };
+			const store = typeof meta?.store === "string" ? meta.store : null;
+			return store && store !== "file" && store !== "encrypted-file" ? store : null;
+		} catch {
+			return null;
+		}
+	};
+
+	/** The store that holds the key and ledger for the vault-backed storages. */
+	const keyStore = (dir: string): { store: SecretStore; location: OperatorKeyLocation } => {
+		const selected = storage();
+		if (selected === "encrypted-file") return { store: sealed(dir), location: "encrypted-file" };
+		try {
+			return { store: vault(), location: "os-vault" };
+		} catch (error) {
+			if (selected !== "auto" || !(error instanceof OperatorApprovalError)) throw error;
+			if (platformHasMandatoryVault(options.platform ?? process.platform)) throw error;
+			const recorded = recordedVaultKind(dir);
+			if (recorded) {
+				throw approvalsDisabled(
+					`the approval key was created in the ${recorded} vault, which is not answering now; ` +
+						"refusing to replace it with a file-store key.",
+				);
+			}
+			return { store: sealed(dir), location: "encrypted-file" };
+		}
+	};
+
 	const loadFromFile = (dir: string, create: boolean): OperatorKeyMaterial | null => {
 		const existing = readKeyFile(dir);
 		if (existing || !create) return existing;
@@ -577,24 +650,24 @@ export function createDefaultOperatorKeyProvider(
 		return { key: Buffer.from(hex, "hex"), location: "file", store: "file" };
 	};
 
-	const loadFromVault = (dir: string, create: boolean): OperatorKeyMaterial | null => {
-		const store = vault();
+	const loadFromStore = (dir: string, create: boolean): OperatorKeyMaterial | null => {
+		const { store, location } = keyStore(dir);
 		const hex = store.get(OPERATOR_APPROVAL_KEY_ID);
 		if (hex && /^[a-f0-9]{64}$/.test(hex)) {
-			return { key: Buffer.from(hex, "hex"), location: "os-vault", store: store.kind };
+			return { key: Buffer.from(hex, "hex"), location, store: store.kind };
 		}
 		if (!create) return null;
 		const fresh = randomBytes(32).toString("hex");
 		store.put(OPERATOR_APPROVAL_KEY_ID, fresh);
 		writeMeta(dir, store.kind);
 		// A key file left by an earlier file-storage install is never read under
-		// the vault storage and only exposes an old key; remove it.
+		// this storage and only exposes an old key; remove it.
 		try {
 			unlinkSync(join(dir, KEY_FILE));
 		} catch {
 			// Absent, or not removable: either way it is not used.
 		}
-		return { key: Buffer.from(fresh, "hex"), location: "os-vault", store: store.kind };
+		return { key: Buffer.from(fresh, "hex"), location, store: store.kind };
 	};
 
 	return {
@@ -604,14 +677,14 @@ export function createDefaultOperatorKeyProvider(
 		load({ create }) {
 			const dir = directory();
 			mkdirSync(dir, { recursive: true, mode: 0o700 });
-			return storage() === "file" ? loadFromFile(dir, create) : loadFromVault(dir, create);
+			return storage() === "file" ? loadFromFile(dir, create) : loadFromStore(dir, create);
 		},
 		anchor() {
 			const dir = directory();
 			if (storage() === "file") return fileAnchor(dir);
-			const store = vault();
+			const { store, location } = keyStore(dir);
 			return {
-				location: "os-vault",
+				location,
 				read: () => store.get(OPERATOR_APPROVAL_LEDGER_ID),
 				write: (value) => store.put(OPERATOR_APPROVAL_LEDGER_ID, value),
 			};
@@ -704,7 +777,7 @@ export function clearOperatorApprovalKeyCache(): void {
 export interface OperatorApprovalKeyStatus {
 	/** Whether a key exists (never the key itself). */
 	present: boolean;
-	location?: "os-vault" | "file";
+	location?: OperatorKeyLocation;
 	store?: string;
 	/** Configured storage; undefined for an injected provider that does not say. */
 	storage?: OperatorKeyStorage;
@@ -713,7 +786,7 @@ export interface OperatorApprovalKeyStatus {
 	/** Why approvals are unavailable. */
 	reason?: string;
 	/** Where the single-use ledger lives, when it is usable. */
-	anchor?: "os-vault" | "file";
+	anchor?: OperatorKeyLocation;
 }
 
 /**
@@ -998,7 +1071,7 @@ export interface RecordPendingAskInput {
 	toolInput: Record<string, unknown>;
 	artifacts: readonly Artifact[];
 	sessionId: string;
-	verdict: Pick<Verdict, "severity" | "category" | "reasons" | "matchedThreatId">;
+	verdict: Pick<Verdict, "severity" | "category" | "reasons" | "matchedThreatId" | "ruleSeverity">;
 	connector?: string;
 }
 
@@ -1034,7 +1107,10 @@ function pendingAskFields(input: RecordPendingAskInput, now: number): Omit<Pendi
 			preview: operatorText(a.value, 160),
 		})),
 		artifact_count: input.artifacts.length,
-		severity: operatorText(String(input.verdict.severity), 32),
+		// The matched rule's own severity is what the hook message shows the user
+		// ("high" for `cat .env`); the decision-level severity ("warning") is only
+		// the fallback, so `aidr pending` names the same severity as the block.
+		severity: operatorText(String(input.verdict.ruleSeverity ?? input.verdict.severity), 32),
 		category: operatorText(String(input.verdict.category), 100),
 		reasons: input.verdict.reasons.slice(0, 3).map((r) => operatorText(r, 300)),
 		threat_id: input.verdict.matchedThreatId

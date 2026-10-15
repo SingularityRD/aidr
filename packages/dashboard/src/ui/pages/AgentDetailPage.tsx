@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTeam } from "../../enterprise/team-provider";
+import { useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { RetireAgentControl } from "../RetireAgentControl";
 
 type AgentRow = {
 	id: string;
@@ -13,6 +15,8 @@ type AgentRow = {
 	agent_runtime_version: string | null;
 	first_seen: string;
 	last_seen: string;
+	retired_at?: string | null;
+	retired_reason?: "manual" | "offline" | null;
 };
 
 type EventRow = {
@@ -44,14 +48,16 @@ function verdictBadgeClass(verdict: string): string {
 
 export function AgentDetailPage() {
 	const { agentId } = useParams();
-	const { currentTeam, isLoading } = useTeam();
-	if (isLoading) return <div role="status">Resolving the managed tenant…</div>;
+	const { currentTeam, isLoading, canManageTeam } = useTeam();
+	const t = useT();
+	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
 	const tenantId = currentTeam?.id;
 	return (
 		<AgentDetailForId
 			key={`${tenantId ?? ""}:${agentId ?? ""}`}
 			agentId={agentId}
 			tenantId={tenantId}
+			canManage={canManageTeam}
 		/>
 	);
 }
@@ -59,10 +65,13 @@ export function AgentDetailPage() {
 function AgentDetailForId({
 	agentId,
 	tenantId,
+	canManage,
 }: {
 	agentId: string | undefined;
 	tenantId: string | undefined;
+	canManage: boolean;
 }) {
+	const t = useT();
 	const [agent, setAgent] = useState<AgentRow | null>(null);
 	const [events, setEvents] = useState<EventRow[] | null>(null);
 	const [entitlementSnapshot, setEntitlementSnapshot] = useState<EntitlementSnapshotRow | null>(
@@ -74,12 +83,12 @@ function AgentDetailForId({
 	useEffect(() => {
 		let cancelled = false;
 		if (typeof agentId !== "string" || agentId.length === 0) {
-			setError("Agent identifier is missing.");
+			setError(t("agent.missingId"));
 			setLoaded(true);
 			return;
 		}
 		if (!tenantId) {
-			setError("Select a team to view this agent.");
+			setError(t("agent.noTeam"));
 			setLoaded(true);
 			return;
 		}
@@ -95,7 +104,7 @@ function AgentDetailForId({
 					supabase
 						.from("agents")
 						.select(
-							"id,tenant_id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen",
+							"id,tenant_id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen,retired_at,retired_reason",
 						)
 						.eq("id", currentAgentId)
 						.eq("tenant_id", currentTenantId)
@@ -114,7 +123,7 @@ function AgentDetailForId({
 				const returnedAgent = (agentRes.data ?? null) as AgentRow | null;
 				const scopedAgent = returnedAgent?.tenant_id === currentTenantId ? returnedAgent : null;
 				if (agentRes.error) {
-					problems.push(readErrorMessage(agentRes.error, "Failed to load agent"));
+					problems.push(readErrorMessage(agentRes.error, t("agent.loadFailed")));
 					setAgent(null);
 					setEntitlementSnapshot(null);
 				} else {
@@ -132,7 +141,7 @@ function AgentDetailForId({
 						if (snapRes.error) {
 							// Back-compat: ignore only when the optional table is genuinely absent.
 							if (!isMissingTableError(snapRes.error, "entitlement_snapshots")) {
-								problems.push(readErrorMessage(snapRes.error, "Failed to load agent entitlement"));
+								problems.push(readErrorMessage(snapRes.error, t("agent.entitlementFailed")));
 							}
 							setEntitlementSnapshot(null);
 						} else {
@@ -146,9 +155,9 @@ function AgentDetailForId({
 
 				if (eventsRes.error || agentRes.error || (scopedAgent && !Array.isArray(eventsRes.data))) {
 					if (eventsRes.error)
-						problems.push(readErrorMessage(eventsRes.error, "Failed to load agent events"));
+						problems.push(readErrorMessage(eventsRes.error, t("agent.eventsFailed")));
 					else if (scopedAgent && !Array.isArray(eventsRes.data))
-						problems.push("Failed to load agent events");
+						problems.push(t("agent.eventsFailed"));
 					setEvents(null);
 				} else setEvents(scopedAgent ? (eventsRes.data as EventRow[]) : []);
 				setError(problems.length > 0 ? problems.join(" ") : null);
@@ -157,7 +166,7 @@ function AgentDetailForId({
 				setAgent(null);
 				setEvents(null);
 				setEntitlementSnapshot(null);
-				setError("Failed to load agent");
+				setError(t("agent.loadFailed"));
 			} finally {
 				inFlight = false;
 				if (!cancelled) setLoaded(true);
@@ -165,10 +174,10 @@ function AgentDetailForId({
 		}
 
 		load();
-		const t = setInterval(load, 3000);
+		const timer = setInterval(load, 3000);
 		return () => {
 			cancelled = true;
-			clearInterval(t);
+			clearInterval(timer);
 		};
 	}, [agentId, tenantId]);
 
@@ -179,17 +188,17 @@ function AgentDetailForId({
 					<div>
 						<p className="eyebrow">
 							<Link to="/agents" style={{ textDecoration: "none" }}>
-								← Agents
+								{t("agent.back")}
 							</Link>
 						</p>
-						<h1>Agent</h1>
+						<h1>{t("agent.title")}</h1>
 					</div>
 					<button
 						className="button button-secondary button-sm"
 						type="button"
 						onClick={() => location.reload()}
 					>
-						Refresh
+						{t("common.refresh")}
 					</button>
 				</div>
 
@@ -201,24 +210,43 @@ function AgentDetailForId({
 
 				{agent ? (
 					<>
+						{agent.retired_at ? (
+							<div className="notice notice-warning" role="status" style={{ marginTop: 14 }}>
+								{t("agent.retired", {
+									date: new Date(agent.retired_at).toLocaleString(),
+									reason:
+										agent.retired_reason === "offline"
+											? t("agent.retiredReason.offline")
+											: t("agent.retiredReason.manual"),
+								})}
+							</div>
+						) : canManage && tenantId ? (
+							<div style={{ marginTop: 14 }}>
+								<RetireAgentControl
+									tenantId={tenantId}
+									agentId={agent.id}
+									onRetired={() => undefined}
+								/>
+							</div>
+						) : null}
 						<div className="grid" style={{ marginTop: 14 }}>
 							<div className="stat-card">
-								<div className="stat-label">Name</div>
+								<div className="stat-label">{t("common.name")}</div>
 								<div className="mono" style={{ fontSize: 15 }}>
 									{agent.display_name ?? agent.iid}
 								</div>
 							</div>
 							<div className="stat-card">
-								<div className="stat-label">Runtime</div>
+								<div className="stat-label">{t("agents.runtime")}</div>
 								<div>
 									<span className="badge badge-neutral badge-plain">
-										{agent.agent_runtime ?? "unknown"}
+										{agent.agent_runtime ?? t("common.unknown")}
 									</span>{" "}
 									<span className="mono muted small">{agent.agent_runtime_version ?? ""}</span>
 								</div>
 							</div>
 							<div className="stat-card">
-								<div className="stat-label">Last seen</div>
+								<div className="stat-label">{t("agents.lastSeen")}</div>
 								<div className="mono" style={{ fontSize: 15 }}>
 									{new Date(agent.last_seen).toLocaleString()}
 								</div>
@@ -227,48 +255,55 @@ function AgentDetailForId({
 
 						{entitlementSnapshot ? (
 							<div className="notice" style={{ marginTop: 14 }}>
-								<div className="muted small">Entitlement snapshot</div>
+								<div className="muted small">{t("agent.entitlement")}</div>
 								<div className="mono">
-									{typeof entitlementSnapshot.entitlement.subscription_tier === "string"
-										? String(entitlementSnapshot.entitlement.subscription_tier)
-										: "unknown"}{" "}
-									| allowed: {Number(entitlementSnapshot.entitlement.allowed_agents ?? 0) || 0} |
-									expires:{" "}
-									{typeof entitlementSnapshot.entitlement.expires_at === "string"
-										? new Date(String(entitlementSnapshot.entitlement.expires_at)).toLocaleString()
-										: "unknown"}
+									{t("agent.entitlementLine", {
+										tier:
+											typeof entitlementSnapshot.entitlement.subscription_tier === "string"
+												? String(entitlementSnapshot.entitlement.subscription_tier)
+												: t("common.unknown"),
+										allowed: Number(entitlementSnapshot.entitlement.allowed_agents ?? 0) || 0,
+										expires:
+											typeof entitlementSnapshot.entitlement.expires_at === "string"
+												? new Date(
+														String(entitlementSnapshot.entitlement.expires_at),
+													).toLocaleString()
+												: t("common.unknown"),
+									})}
 								</div>
 								<div className="muted small" style={{ marginTop: 6 }}>
-									Updated: {new Date(entitlementSnapshot.updated_at).toLocaleString()}
+									{t("agent.updated", {
+										time: new Date(entitlementSnapshot.updated_at).toLocaleString(),
+									})}
 								</div>
 							</div>
 						) : (
 							<div className="muted small" style={{ marginTop: 12 }}>
-								No entitlement snapshot yet.
+								{t("agent.noEntitlement")}
 							</div>
 						)}
 					</>
 				) : !loaded ? (
 					<div className="row" style={{ marginTop: 14 }}>
 						<span className="spinner" aria-hidden="true" />
-						<span className="muted">Loading…</span>
+						<span className="muted">{t("common.loading")}</span>
 					</div>
 				) : (
 					<div className="muted" style={{ marginTop: 14 }}>
-						{error ? "Agent data is unavailable right now." : "Agent not found."}
+						{error ? t("agent.unavailableNow") : t("agent.notFound")}
 					</div>
 				)}
 			</div>
 
 			<div className="card">
-				<h2>Recent events</h2>
+				<h2>{t("agent.recentEvents")}</h2>
 				<div className="table-wrap">
 					<table className="table">
 						<thead>
 							<tr>
-								<th>Time</th>
-								<th>Type</th>
-								<th>Summary</th>
+								<th>{t("agent.time")}</th>
+								<th>{t("notify.table.type")}</th>
+								<th>{t("agent.summary")}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -288,7 +323,7 @@ function AgentDetailForId({
 											) : null}
 											{e.type === "runtime_verdict" && typeof e.payload?.tool_name === "string"
 												? `${String(e.payload.tool_name)}: ${String(e.payload.verdict ?? "")}`
-												: "Additional event details are not shown."}
+												: t("agent.noDetails")}
 										</td>
 									</tr>
 								);
@@ -298,9 +333,9 @@ function AgentDetailForId({
 									<td colSpan={3} className="muted">
 										{events === null
 											? loaded
-												? "Event data is unavailable right now."
-												: "Loading events…"
-											: "No events yet."}
+												? t("agent.eventsUnavailable")
+												: t("agent.loadingEvents")
+											: t("agent.noEvents")}
 									</td>
 								</tr>
 							) : null}

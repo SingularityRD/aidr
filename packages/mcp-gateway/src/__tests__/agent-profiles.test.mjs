@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 import { GatewayConfigError, validateGatewayConfig } from "../config.mjs";
+import { TEST_APPROVAL_KEYS } from "./helpers/approval-key.mjs";
 import { fixture, rpc } from "./helpers/gateway-fixture.mjs";
 
 function profiles(mcp, extra = {}) {
@@ -72,6 +73,7 @@ describe("MCP gateway agent profile configuration", () => {
 	function baseConfig(overrides = {}) {
 		return {
 			stateDir: "/tmp/aidr-gateway-profile-config",
+			approvalKeys: TEST_APPROVAL_KEYS,
 			clients: [
 				{
 					id: "client-a",

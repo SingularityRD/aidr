@@ -25,7 +25,7 @@
 services:
   # ── AIG Go Backend Server ────────────────────────────────────────────────
   aig-server:
-    image: aidr-aig-server:${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}}
+    image: aidr-aig-server:${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.2}}
     build:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile
@@ -111,14 +111,14 @@ services:
 
   # ── AIG Agent Worker ─────────────────────────────────────────────────────
   aig-agent:
-    image: aidr-aig-agent:${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}}
+    image: aidr-aig-agent:${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.2}}
     build:
       context: ./vendor/ai-infra-guard
       dockerfile: Dockerfile_Agent
     environment:
       - TZ=${POSTURE_SCANNER_TZ:-${AIG_TZ:-Asia/Shanghai}}
       - AIG_SERVER=aig-server:8088
-      - AIG_AGENT_VERSION=${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}}
+      - AIG_AGENT_VERSION=${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.2}}
       - AIG_AGENT_SHARED_SECRET=${POSTURE_SCANNER_AGENT_SHARED_SECRET:-${AIG_AGENT_SHARED_SECRET:?set POSTURE_SCANNER_AGENT_SHARED_SECRET}}
       - AIG_UPLOAD_ROOT=/app/uploads
       - AIG_WORK_DIR=/work
@@ -195,7 +195,7 @@ services:
       - BRIDGE_LOG_LEVEL=${BRIDGE_LOG_LEVEL:-INFO}
       - TZ=${POSTURE_SCANNER_TZ:-${AIG_TZ:-Asia/Shanghai}}
       - BRIDGE_AIG_URL=http://aig-server:8088
-      - AIG_SOURCE_VERSION=${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.1}}
+      - AIG_SOURCE_VERSION=${POSTURE_SCANNER_SOURCE_VERSION:-${AIG_SOURCE_VERSION:-v4.6.1-aidr.2}}
       - AIG_AGENT_SHARED_SECRET=${POSTURE_SCANNER_AGENT_SHARED_SECRET:-${AIG_AGENT_SHARED_SECRET:?set POSTURE_SCANNER_AGENT_SHARED_SECRET}}
       - AIG_MIN_WORKERS=${POSTURE_SCANNER_MIN_WORKERS:-${AIG_MIN_WORKERS:-1}}
       - AIG_DATA_MANIFEST_PATH=/app/aig-data/aig-data-manifest.json
@@ -229,6 +229,8 @@ services:
       - BRIDGE_CORS_ORIGINS=${BRIDGE_CORS_ORIGINS:-}
       - BRIDGE_DOCS_ENABLED=${BRIDGE_DOCS_ENABLED:-false}
       - BRIDGE_MAX_BODY_BYTES=${BRIDGE_MAX_BODY_BYTES:-52428800}
+      # Monitoring-only bearer token; empty keeps GET /metrics disabled (404).
+      - BRIDGE_METRICS_TOKEN=${BRIDGE_METRICS_TOKEN:-}
       - BRIDGE_ALLOW_PRIVATE_TARGETS=${BRIDGE_ALLOW_PRIVATE_TARGETS:-false}
       - BRIDGE_VALIDATE_DNS=${BRIDGE_VALIDATE_DNS:-true}
       - BRIDGE_SOURCE_ROOT=${BRIDGE_SOURCE_ROOT:-/app/uploads}

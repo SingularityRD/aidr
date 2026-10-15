@@ -69,7 +69,37 @@ export function sectionBlocks(section: { [key: string]: JsonValue }): SectionBlo
 	const tables: SectionBlock[] = [];
 	const walk = (value: JsonValue, path: string) => {
 		if (isTable(value)) {
-			tables.push(recordTable(path, value));
+			// A column that is itself a list of records (framework -> controls)
+			// becomes its own table per row; the parent keeps the row count.
+			const nested = [
+				...new Set(
+					value.flatMap((row) =>
+						Object.keys(row).filter(
+							(key) => row[key] !== undefined && isTable(row[key] as JsonValue),
+						),
+					),
+				),
+			];
+			tables.push(
+				recordTable(
+					path,
+					value.map((row) =>
+						Object.fromEntries(
+							Object.entries(row).map(([key, item]) => [
+								key,
+								nested.includes(key) && Array.isArray(item) ? item.length : item,
+							]),
+						),
+					),
+				),
+			);
+			value.forEach((row, index) => {
+				for (const key of nested) {
+					const child = row[key];
+					if (child !== undefined)
+						walk(child, `${path}[${typeof row.id === "string" ? row.id : index}].${key}`);
+				}
+			});
 			return;
 		}
 		if (isObject(value) && Object.keys(value).length > 0) {
@@ -149,7 +179,7 @@ export function csvBundleFiles(report: ComplianceReport): Array<{ name: string; 
 		const prefix = `${String(index + 1).padStart(2, "0")}_${key}`;
 		for (const block of sectionBlocks(report.sections[key])) {
 			const name = block.path
-				? `${prefix}__${block.path.replaceAll(".", "_")}.csv`
+				? `${prefix}__${block.path.replace(/[^A-Za-z0-9_-]+/g, "_")}.csv`
 				: `${prefix}.csv`;
 			files.push({ name, content: toCsv(block.headers, block.rows) });
 		}
@@ -190,10 +220,7 @@ function dosDateTime(date: Date): { time: number; date: number } {
  * Minimal ZIP writer (stored entries, UTF-8 names). CSV bundles are small, so
  * compression is not worth a dependency; every archive tool reads stored entries.
  */
-function zipFiles(
-	files: Array<{ name: string; content: string }>,
-	modified: Date,
-): Uint8Array {
+function zipFiles(files: Array<{ name: string; content: string }>, modified: Date): Uint8Array {
 	const encoder = new TextEncoder();
 	const stamp = dosDateTime(modified);
 	const locals: Uint8Array[] = [];

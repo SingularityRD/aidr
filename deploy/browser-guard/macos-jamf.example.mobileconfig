@@ -13,7 +13,7 @@
 	<key>PayloadDisplayName</key>
 	<string>Singularity AIDR Browser Guard</string>
 	<key>PayloadDescription</key>
-	<string>Installs Singularity AIDR Browser Guard in Google Chrome and Microsoft Edge and sets its managed policy. Example: replace the REPLACE_WITH_* placeholders before upload.</string>
+	<string>Installs Singularity AIDR Browser Guard in Google Chrome and Microsoft Edge and sets its managed policy. Example: replace &lt;CHROME_WEB_STORE_ID&gt;, &lt;EDGE_ADDONS_ID&gt; and the REPLACE_WITH_* values before upload.</string>
 	<key>PayloadOrganization</key>
 	<string>Singularity R&amp;D</string>
 	<key>PayloadScope</key>
@@ -35,11 +35,25 @@
 			<true/>
 			<key>ExtensionInstallForcelist</key>
 			<array>
-				<string>REPLACE_WITH_CHROME_EXTENSION_ID;https://clients2.google.com/service/update2/crx</string>
+				<string>&lt;CHROME_WEB_STORE_ID&gt;;https://clients2.google.com/service/update2/crx</string>
+			</array>
+			<key>IncognitoModeAvailability</key>
+			<integer>1</integer>
+			<key>BrowserGuestModeEnabled</key>
+			<false/>
+			<key>DeveloperToolsAvailability</key>
+			<integer>2</integer>
+			<key>ExtensionInstallBlocklist</key>
+			<array>
+				<string>*</string>
+			</array>
+			<key>ExtensionInstallAllowlist</key>
+			<array>
+				<string>&lt;CHROME_WEB_STORE_ID&gt;</string>
 			</array>
 			<key>ExtensionSettings</key>
 			<dict>
-				<key>REPLACE_WITH_CHROME_EXTENSION_ID</key>
+				<key>&lt;CHROME_WEB_STORE_ID&gt;</key>
 				<dict>
 					<key>installation_mode</key>
 					<string>force_installed</string>
@@ -52,7 +66,7 @@
 		</dict>
 		<dict>
 			<key>PayloadType</key>
-			<string>com.google.Chrome.extensions.REPLACE_WITH_CHROME_EXTENSION_ID</string>
+			<string>com.google.Chrome.extensions.&lt;CHROME_WEB_STORE_ID&gt;</string>
 			<key>PayloadIdentifier</key>
 			<string>com.singularityrd.aidr.browser-guard.chrome.policy</string>
 			<key>PayloadUUID</key>
@@ -116,8 +130,10 @@
 				<dict>
 					<key>datasetId</key>
 					<string>crm-customers-example</string>
-					<key>keyB64</key>
-					<string>REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET</string>
+					<key>keySource</key>
+					<string>native-host</string>
+					<key>minEntropyBits</key>
+					<integer>64</integer>
 					<key>fingerprints</key>
 					<array>
 						<string>REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET</string>
@@ -219,12 +235,26 @@
 			<true/>
 			<key>ExtensionInstallForcelist</key>
 			<array>
-				<string>REPLACE_WITH_EDGE_EXTENSION_ID;https://edge.microsoft.com/extensionwebstorebase/v1/crx</string>
+				<string>&lt;EDGE_ADDONS_ID&gt;;https://edge.microsoft.com/extensionwebstorebase/v1/crx</string>
+			</array>
+			<key>InPrivateModeAvailability</key>
+			<integer>1</integer>
+			<key>BrowserGuestModeEnabled</key>
+			<false/>
+			<key>DeveloperToolsAvailability</key>
+			<integer>2</integer>
+			<key>ExtensionInstallBlocklist</key>
+			<array>
+				<string>*</string>
+			</array>
+			<key>ExtensionInstallAllowlist</key>
+			<array>
+				<string>&lt;EDGE_ADDONS_ID&gt;</string>
 			</array>
 		</dict>
 		<dict>
 			<key>PayloadType</key>
-			<string>com.microsoft.Edge.extensions.REPLACE_WITH_EDGE_EXTENSION_ID</string>
+			<string>com.microsoft.Edge.extensions.&lt;EDGE_ADDONS_ID&gt;</string>
 			<key>PayloadIdentifier</key>
 			<string>com.singularityrd.aidr.browser-guard.edge.policy</string>
 			<key>PayloadUUID</key>
@@ -288,8 +318,10 @@
 				<dict>
 					<key>datasetId</key>
 					<string>crm-customers-example</string>
-					<key>keyB64</key>
-					<string>REPLACE_WITH_DATASET_KEY_FROM_FINGERPRINT_DATASET</string>
+					<key>keySource</key>
+					<string>native-host</string>
+					<key>minEntropyBits</key>
+					<integer>64</integer>
 					<key>fingerprints</key>
 					<array>
 						<string>REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET</string>

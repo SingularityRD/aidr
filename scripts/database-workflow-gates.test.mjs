@@ -41,8 +41,8 @@ test("CI and RC block on isolated identity, offboarding and retention PostgreSQL
 test("the workflow contract is itself part of the required migration check", () => {
 	const scripts = JSON.parse(read("package.json")).scripts;
 	assert.match(scripts["supabase:check"], /scripts\/database-workflow-gates\.test\.mjs/);
-	assert.match(scripts["supabase:check:edge-typed-slice"], /supabase\/functions\/response-playbooks\/index\.ts/);
-	assert.match(scripts["supabase:check:edge-typed-slice"], /supabase\/functions\/delegated-credentials\/index\.ts/);
+	assert.equal(scripts["supabase:check:edge-typed-slice"], "node scripts/check-edge-functions-typed.mjs");
+	assert.match(scripts["supabase:check"], /scripts\/check-edge-functions-typed\.test\.mjs/);
 	assert.match(scripts["supabase:check"], /scripts\/tenant-identity-barrier\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/billing-offboarding-postgres\.test\.mjs/);
 	assert.match(scripts["verify:offboarding"], /scripts\/pack-offboarding-guard-postgres\.test\.mjs/);

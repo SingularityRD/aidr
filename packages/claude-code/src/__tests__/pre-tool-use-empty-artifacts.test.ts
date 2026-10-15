@@ -2,10 +2,16 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import {
+	ApprovalStore,
+	ArtifactIntegrityError,
 	createHookResponder,
+	formatAgentBlockReason,
+	formatBlockMessage,
 	type HookResponderOptions,
+	integrityFailureMessage,
 	isWellFormedToolCall,
 	malformedShellCommandReason,
+	t,
 } from "@singularityrd/aidr-core";
 import { transformSync } from "esbuild";
 import { describe, expect, it, vi } from "vitest";
@@ -43,6 +49,8 @@ async function runHook(
 		hangEvaluation?: boolean;
 		env?: Record<string, string>;
 		verdictOverride?: Record<string, unknown>;
+		overrideNotice?: string;
+		integrityError?: Error;
 	} = {},
 ) {
 	const output: string[] = [];
@@ -66,6 +74,8 @@ async function runHook(
 	const addPendingApproval = vi.fn();
 	const core = {
 		allowVerdict: () => verdict("allow"),
+		// The real action id: block messages name it for `aidr report-fp`.
+		ApprovalStore,
 		// The hook reads the native-host acceptance contract at module load. This
 		// sandbox runs an ordinary session, so the contract is absent and the hook
 		// must behave exactly as before: createHostObservation returns null and
@@ -99,8 +109,17 @@ async function runHook(
 			}),
 		isWellFormedToolCall,
 		malformedShellCommandReason,
+		// The real message catalog and message builders (the suite pins AIDR_LOCALE=en).
+		t,
+		formatAgentBlockReason,
+		formatBlockMessage,
+		integrityFailureMessage,
 		initSentry: vi.fn(),
-		verifyArtifactIntegrityAndLog: vi.fn().mockResolvedValue({ status: "skipped" }),
+		// Only a standalone release bundle without its release key answers this true.
+		isReleaseKeyMissing: () => false,
+		verifyArtifactIntegrityAndLog: options.integrityError
+			? vi.fn().mockRejectedValue(options.integrityError)
+			: vi.fn().mockResolvedValue({ status: "skipped" }),
 	};
 	const pino = Object.assign(() => ({}), { destination: () => ({}) });
 	const modules: Record<string, unknown> = {
@@ -112,7 +131,10 @@ async function runHook(
 		"@singularityrd/aidr-core": core,
 		pino,
 		"./approval-tracker.js": { addPendingApproval },
-		"./assets.js": { resolveAssetDir: (name: string) => `/test/${name}` },
+		"./assets.js": {
+			resolveAssetDir: (name: string) => `/test/${name}`,
+			assetOverrideNotice: () => options.overrideNotice ?? null,
+		},
 		"./detector-provisioning.js": {
 			loadProvisionedDetectorContext: options.provisionError
 				? async () => {
@@ -155,6 +177,29 @@ async function runHook(
 		addPendingApproval,
 	};
 }
+
+describe("PreToolUse rule directory override warning (CON-7)", () => {
+	const notice = "⚠️ Singularity AIDR ignored AIDR_THREATS_DIR=/tmp/rules";
+	const input = JSON.stringify({ tool_name: "OpaqueNativeTool", tool_input: { a: 1 } });
+
+	it("adds the warning to an allowed call", async () => {
+		const { response } = await runHook(input, "allow", { overrideNotice: notice });
+		expect(response.systemMessage).toBe(notice);
+	});
+
+	it("adds the warning under the block banner of a denied call", async () => {
+		const { response } = await runHook(input, "deny", { overrideNotice: notice });
+		expect(response).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+		expect(String(response.systemMessage)).toMatch(
+			/Inspected tool input[\s\S]*ignored AIDR_THREATS_DIR/,
+		);
+	});
+
+	it("adds nothing when no override is set", async () => {
+		const { response } = await runHook(input, "allow");
+		expect(response.systemMessage).toBeUndefined();
+	});
+});
 
 describe("PreToolUse empty-artifact inspection", () => {
 	it("passes provisioned detector context through to the evaluator", async () => {
@@ -315,6 +360,23 @@ describe("PreToolUse input and runtime failures", () => {
 		expect(evaluate).toHaveBeenCalledOnce();
 		expect(response.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
 		expect(JSON.stringify(response)).not.toMatch(/secret-tool-input|secret-evaluator-failure/);
+	});
+
+	it("explains a missing release key instead of an unexplained inspection failure", async () => {
+		const input = JSON.stringify({ tool_name: "Bash", tool_input: { command: "git status" } });
+		const { response, evaluate } = await runHook(input, "allow", {
+			integrityError: new ArtifactIntegrityError("claude-code/dist", { status: "no_public_keys" }),
+		});
+		expect(evaluate).not.toHaveBeenCalled();
+		expect(response.hookSpecificOutput).toMatchObject({
+			permissionDecision: "deny",
+			permissionDecisionReason:
+				"Singularity AIDR cannot verify its own installation; every action is blocked",
+		});
+		expect(String(response.systemMessage)).toContain(
+			"Singularity AIDR blocked this action because it cannot verify its own installation (release verification key missing). Nothing runs until this is fixed. Ask your IT admin to run: aidr setup --release-key <key.pem> (details: aidr doctor)",
+		);
+		expect(String(response.systemMessage)).not.toContain("could not inspect");
 	});
 });
 

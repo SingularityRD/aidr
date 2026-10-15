@@ -5,13 +5,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { deriveEdmKey, EDM_KEY_LABEL } from "../../../privacy/src/native/edm";
 // @ts-expect-error -- plain ESM build script without type declarations
 import * as fingerprint from "../../scripts/fingerprint-dataset.mjs";
 // @ts-expect-error -- plain ESM build script without type declarations
 import { decodePng, ICON_SIZES, MASTER_ICON, renderIcons } from "../../scripts/icons.mjs";
 // @ts-expect-error -- plain ESM build script without type declarations
 import { crc32, createZip, readZip } from "../../scripts/zip.mjs";
-import { EXACT_DATA_PLACEHOLDER_KEY, evaluatePolicy } from "../background/policy";
+import { EXACT_DATA_MIN_ENTROPY_BITS, evaluatePolicy } from "../background/policy";
 import { createExactDataMatcher, ExactDataConfigError } from "../engine/exact-data";
 import { ENTITY_TYPES, type ExactDataSet } from "../types";
 
@@ -48,6 +49,10 @@ async function webCryptoFingerprint(keyB64: string, tokens: readonly string[]): 
 }
 
 const KEY = Buffer.alloc(32, 7);
+/** The organisation's EDM secret (test bytes); dataset keys are derived from it. */
+const SECRET = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 11 + 5) & 0xff));
+const NATIVE_FORCED =
+	'"useNativeHost" forced on because managed "exactData" needs the native host for its keys';
 
 describe("fingerprint-dataset", () => {
 	it("keeps its entity list in sync with src/types.ts", () => {
@@ -78,36 +83,106 @@ describe("fingerprint-dataset", () => {
 		expect(() => fingerprint.parseCsv('"open')).toThrow("CSV_UNTERMINATED_QUOTE");
 	});
 
-	it("builds a sorted, de-duplicated ExactDataSet from selected columns", () => {
-		const rows = fingerprint.parseCsv("id,name\n1,Ayşe Yılmaz\n2,AYŞE YILMAZ\n3,Al\n4,\n");
+	it("builds a sorted, de-duplicated, keyless ExactDataSet from composite columns", () => {
+		const rows = fingerprint.parseCsv(
+			"id,name,account\n1,Ayşe Yılmaz,1234567890123456\n2,AYŞE YILMAZ,1234567890123456\n3,Al,\n",
+		);
 		const { dataset, stats } = fingerprint.buildDataset({
 			rows,
 			datasetId: "crm.customers",
 			type: "PERSON",
-			key: KEY,
-			columns: ["name"],
+			secret: SECRET,
+			columns: ["name", "account"],
+			composite: true,
 		});
-		expect(dataset.datasetId).toBe("crm.customers");
-		expect(dataset.type).toBe("PERSON");
-		expect(dataset.keyB64).toBe(KEY.toString("base64"));
-		expect(dataset.fingerprints).toEqual([fingerprint.fingerprintTokens(KEY, ["ayşe", "yilmaz"])]);
+		const key = fingerprint.deriveDatasetKey(SECRET, "crm.customers");
+		expect(dataset).toEqual({
+			datasetId: "crm.customers",
+			keySource: "native-host",
+			// ayşe (8) + yilmaz (12) + 16 digits (53.2)
+			minEntropyBits: 73,
+			fingerprints: [fingerprint.fingerprintTokens(key, ["ayşe", "yilmaz", "1234567890123456"])],
+			type: "PERSON",
+		});
 		expect(stats).toEqual({
-			values: 3,
+			values: 2,
 			fingerprints: 1,
-			skipped: { tooShort: 1, tooManyTokens: 0 },
+			skipped: { tooShort: 0, tooManyTokens: 0, lowEntropy: 0 },
 		});
-		expect(JSON.stringify(dataset)).not.toMatch(/ay[sş]e/i);
+		// No value, no key and no secret in the output.
+		const json = JSON.stringify(dataset);
+		expect(json).not.toMatch(/ay[sş]e|1234567890/i);
+		expect(json).not.toContain(key.toString("base64"));
+		expect(json).not.toContain(SECRET.toString("base64"));
+		expect(json).not.toContain("keyB64");
+	});
+
+	it("derives the dataset key exactly like the native host (BG-8)", () => {
+		expect(fingerprint.EDM_KEY_LABEL).toBe(EDM_KEY_LABEL);
+		expect(fingerprint.MIN_ENTROPY_BITS).toBe(EXACT_DATA_MIN_ENTROPY_BITS);
+		for (const id of ["crm.customers", "a", "x".repeat(64)]) {
+			expect(fingerprint.deriveDatasetKey(SECRET, id).equals(deriveEdmKey(SECRET, id))).toBe(true);
+		}
+		expect(
+			fingerprint.deriveDatasetKey(SECRET, "a").equals(fingerprint.deriveDatasetKey(SECRET, "b")),
+		).toBe(false);
+	});
+
+	it("estimates entropy conservatively and caps structured identifiers", () => {
+		const bits = (value: string, type: string) =>
+			fingerprint.estimateEntropyBits(fingerprint.normaliseTokens(value), type);
+		expect(bits("4829173", "BANK_ACCOUNT")).toBeCloseTo(7 * Math.log2(10));
+		expect(bits("10000000146", "TC_KIMLIK")).toBe(30);
+		expect(bits("10000000146", "PERSON")).toBeCloseTo(11 * Math.log2(10));
+		expect(bits("Ayşe Yılmaz", "PERSON")).toBe(20);
+		expect(bits("Muhammedmustafa Abdurrahmanoğlu", "PERSON")).toBe(32);
+		expect(bits("4111 1111 1111 1111", "CREDIT_CARD")).toBe(30);
+		expect(bits("TR33 0006 1005 1978 6457 8413 26", "IBAN")).toBe(56);
+		expect(bits("ACME42", "INTERNAL")).toBeCloseTo(8 + 2 * Math.log2(10));
+	});
+
+	it("refuses a dataset of enumerable values, the auditor's brute-force case (BG-8)", () => {
+		// 7-digit account numbers: about 23 bits, recovered in ~30 s on one core when the key leaks.
+		const accounts = [["4829173"], ["7710452"]];
+		const base = { rows: accounts, datasetId: "crm-acct", type: "BANK_ACCOUNT", secret: SECRET };
+		expect(() => fingerprint.buildDataset(base)).toThrow(/^LOW_ENTROPY: 2 of 2 value\(s\)/);
+		for (const [rows, type] of [
+			[[["10000000146"]], "TC_KIMLIK"],
+			[[["Ayşe Yılmaz"]], "PERSON"],
+			[[["+90 532 123 45 67"]], "PHONE"],
+			[[["ayse.yilmaz@example.com"]], "EMAIL"],
+		] as const)
+			expect(() => fingerprint.buildDataset({ ...base, rows, type })).toThrow("LOW_ENTROPY");
+		expect(() => fingerprint.buildDataset({ ...base, dropLowEntropy: true })).toThrow(
+			"DATASET_EMPTY",
+		);
+		const mixed = fingerprint.buildDataset({
+			...base,
+			type: "INTERNAL",
+			rows: [["4829173"], ["7f3k9q2m8x4w1z6p5r2t9y4u8i3o7a1s"]],
+			dropLowEntropy: true,
+		});
+		expect(mixed.stats.skipped.lowEntropy).toBe(1);
+		expect(mixed.dataset.fingerprints).toHaveLength(1);
+		expect(mixed.dataset.minEntropyBits).toBeGreaterThanOrEqual(EXACT_DATA_MIN_ENTROPY_BITS);
 	});
 
 	it("rejects invalid inputs", () => {
-		const rows = [["Ayşe Yılmaz"]];
-		const base = { rows, datasetId: "ds", type: "PERSON", key: KEY };
+		const rows = [["Ayşe Yılmaz 1234567890123456"]];
+		const base = { rows, datasetId: "ds", type: "PERSON", secret: SECRET };
+		expect(fingerprint.buildDataset(base).dataset.fingerprints).toHaveLength(1);
 		expect(() => fingerprint.buildDataset({ ...base, datasetId: "bad id" })).toThrow(
 			"DATASET_ID_INVALID",
 		);
 		expect(() => fingerprint.buildDataset({ ...base, type: "SHOE_SIZE" })).toThrow("TYPE_INVALID");
-		expect(() => fingerprint.buildDataset({ ...base, key: Buffer.alloc(16) })).toThrow(
-			"KEY_TOO_SHORT",
+		expect(() => fingerprint.buildDataset({ ...base, secret: Buffer.alloc(16) })).toThrow(
+			"SECRET_TOO_SHORT",
+		);
+		expect(() => fingerprint.buildDataset({ ...base, minEntropyBits: 32 })).toThrow(
+			"MIN_ENTROPY_INVALID",
+		);
+		expect(() => fingerprint.buildDataset({ ...base, composite: true, columns: ["a"] })).toThrow(
+			"COMPOSITE_NEEDS_COLUMNS",
 		);
 		expect(() => fingerprint.buildDataset({ ...base, rows: [["a"]] })).toThrow("DATASET_EMPTY");
 		expect(() =>
@@ -117,36 +192,67 @@ describe("fingerprint-dataset", () => {
 		expect(() => fingerprint.buildDataset({ ...base, rows: [[long]] })).toThrow("DATASET_EMPTY");
 	});
 
-	it("CLI writes the dataset with owner-only permissions and never echoes values", () => {
+	it("CLI makes a secret, writes a keyless dataset owner-only and never echoes values", () => {
 		const dir = tempDir();
-		writeFileSync(join(dir, "in.csv"), "name\nİsmail Işık\n");
-		writeFileSync(join(dir, "key.b64"), `${KEY.toString("base64")}\n`);
+		writeFileSync(join(dir, "in.csv"), "name,no\nİsmail Işık,90412233445566778\n");
+		const secretFile = join(dir, "edm.b64");
+		const made = spawnSync(process.execPath, [FINGERPRINT_SCRIPT, "--new-secret", secretFile], {
+			encoding: "utf8",
+		});
+		expect(made.status).toBe(0);
+		const secret = fingerprint.decodeSecret(readFileSync(secretFile, "utf8"));
+		expect(secret).toHaveLength(32);
+		if (process.platform !== "win32") expect(statSync(secretFile).mode & 0o777).toBe(0o600);
+		// Never overwrites an existing secret.
+		expect(
+			spawnSync(process.execPath, [FINGERPRINT_SCRIPT, "--new-secret", secretFile]).status,
+		).toBe(1);
 		const out = join(dir, "dataset.json");
+		const args = (...extra: string[]) => [
+			FINGERPRINT_SCRIPT,
+			"--in",
+			join(dir, "in.csv"),
+			"--dataset-id",
+			"hr",
+			"--type",
+			"PERSON",
+			"--header",
+			...extra,
+		];
 		const run = spawnSync(
 			process.execPath,
-			[
-				FINGERPRINT_SCRIPT,
-				"--in",
-				join(dir, "in.csv"),
-				"--dataset-id",
-				"hr",
-				"--type",
-				"PERSON",
-				"--header",
-				"--key-file",
-				join(dir, "key.b64"),
-				"--out",
-				out,
-			],
+			args("--columns", "name,no", "--composite", "--secret-file", secretFile, "--out", out),
 			{ encoding: "utf8" },
 		);
 		expect(run.status).toBe(0);
 		expect(run.stdout).toBe("");
 		expect(run.stderr).toContain("1 value(s) -> 1 fingerprint(s)");
-		expect(run.stderr).not.toMatch(/smail|ş[iı]k/i);
-		const dataset = JSON.parse(readFileSync(out, "utf8"));
-		expect(dataset.fingerprints).toEqual([fingerprint.fingerprintTokens(KEY, ["ismail", "işik"])]);
+		expect(run.stderr).not.toMatch(/smail|ş[iı]k|9041223/i);
+		const text = readFileSync(out, "utf8");
+		const dataset = JSON.parse(text);
+		const key = fingerprint.deriveDatasetKey(secret, "hr");
+		expect(dataset.fingerprints).toEqual([
+			fingerprint.fingerprintTokens(key, ["ismail", "işik", "90412233445566778"]),
+		]);
+		expect(text).not.toContain(secret.toString("base64"));
+		expect(dataset.keyB64).toBeUndefined();
 		if (process.platform !== "win32") expect(statSync(out).mode & 0o777).toBe(0o600);
+
+		// A name column alone is refused, without echoing a value.
+		const weak = spawnSync(
+			process.execPath,
+			args("--columns", "name", "--secret-file", secretFile),
+			{ encoding: "utf8" },
+		);
+		expect(weak.status).toBe(1);
+		expect(weak.stderr).toContain("LOW_ENTROPY");
+		expect(weak.stderr).not.toMatch(/smail|ş[iı]k/i);
+		// The old key options are refused: a dataset must not carry its key any more.
+		const legacy = spawnSync(process.execPath, args("--key-b64", KEY.toString("base64")), {
+			encoding: "utf8",
+		});
+		expect(legacy.status).toBe(1);
+		expect(legacy.stderr).toContain("--key-b64 is no longer supported");
 
 		const usage = spawnSync(process.execPath, [FINGERPRINT_SCRIPT], { encoding: "utf8" });
 		expect(usage.status).toBe(2);
@@ -154,13 +260,17 @@ describe("fingerprint-dataset", () => {
 	});
 
 	const exactDataModule = join(PACKAGE_ROOT, "src", "engine", "exact-data.ts");
-	it("matches the engine's fingerprintValue()", async () => {
+	it("matches the engine's fingerprintValue() with the host-derived key", async () => {
 		const engine = (await import(/* @vite-ignore */ exactDataModule)) as {
 			fingerprintValue(keyB64: string, value: string): Promise<string>;
 		};
+		const key = deriveEdmKey(SECRET, "crm");
 		for (const value of ["İsmail Işık", "Jane Q. Doe", "TR33 0006 1005 1978 6457 8413 26"]) {
-			expect(await engine.fingerprintValue(KEY.toString("base64"), value)).toBe(
-				fingerprint.fingerprintTokens(KEY, fingerprint.normaliseTokens(value)),
+			expect(await engine.fingerprintValue(key.toString("base64"), value)).toBe(
+				fingerprint.fingerprintTokens(
+					fingerprint.deriveDatasetKey(SECRET, "crm"),
+					fingerprint.normaliseTokens(value),
+				),
 			);
 		}
 	});
@@ -278,8 +388,17 @@ const SITE_IDS = [
 ];
 const EXACT_DATA_PLACEHOLDER_WARNING =
 	'managed: "exactData" still holds the example placeholder key; ignored. Build each dataset with fingerprint-dataset.mjs';
-const CHROME_ID = "REPLACE_WITH_CHROME_EXTENSION_ID";
-const EDGE_ID = "REPLACE_WITH_EDGE_EXTENSION_ID";
+/** Store-listing placeholders: force-install from the Chrome Web Store / Edge Add-ons by store id. */
+const CHROME_ID = "<CHROME_WEB_STORE_ID>";
+const EDGE_ID = "<EDGE_ADDONS_ID>";
+const GECKO_ID = "browser-guard@singularityrd.com";
+const DEPLOY_FILES = [
+	"chrome-managed-policy.example.json",
+	"firefox-policies.example.json",
+	"edge-intune.example.json",
+	"macos-jamf.example.mobileconfig",
+	"windows-registry.example.reg",
+];
 
 function readDeploy(name: string): string {
 	return readFileSync(join(DEPLOY, name), "utf8");
@@ -404,69 +523,83 @@ describe("deployment examples", () => {
 		assertValidPolicy(canonical);
 	});
 
-	it("the example exact-data set is a placeholder, never a usable key", () => {
-		const [dataset] = canonical.exactData as unknown as ExactDataSet[];
-		expect(dataset.keyB64).toBe(EXACT_DATA_PLACEHOLDER_KEY);
-		expect(dataset.fingerprints).toEqual(["REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"]);
-		// Not base64: it cannot be decoded into HMAC key bytes by the tool or the extension.
-		const csv = join(tempDir(), "rows.csv");
-		writeFileSync(csv, "Jane Q. Doe\n");
-		const refused = spawnSync(
-			process.execPath,
-			[
-				FINGERPRINT_SCRIPT,
-				"--in",
-				csv,
-				"--dataset-id",
-				"x",
-				"--type",
-				"PERSON",
-				"--key-b64",
-				dataset.keyB64,
-			],
-			{ encoding: "utf8" },
-		);
-		expect(refused.status).not.toBe(0);
-		expect(refused.stderr).toContain("KEY_NOT_BASE64");
-		expect(() => createExactDataMatcher([dataset])).toThrow(ExactDataConfigError);
-		// The managed schema rejects it too, so a browser flags the copied example.
-		const schema = JSON.parse(
-			readFileSync(join(PACKAGE_ROOT, "static", "managed_schema.json"), "utf8"),
-		);
-		const keyPattern = new RegExp(schema.properties.exactData.items.properties.keyB64.pattern);
-		expect(keyPattern.test(dataset.keyB64)).toBe(false);
-		// The retired example key is gone from every example file.
-		for (const file of [
-			"chrome-managed-policy.example.json",
-			"firefox-policies.example.json",
-			"edge-intune.example.json",
-			"macos-jamf.example.mobileconfig",
-			"windows-registry.example.reg",
-		]) {
+	it("installs from the stores by store id: clearly marked placeholders, store update URLs, the AMO id", () => {
+		for (const file of DEPLOY_FILES) {
 			const text = readDeploy(file);
-			expect(text).toContain(EXACT_DATA_PLACEHOLDER_KEY);
-			expect(text).not.toMatch(
-				/"keyB64"\s*:\s*"[A-Za-z0-9+/]{16,}={0,2}"|keyB64\\":\\"[A-Za-z0-9+/]{16,}/,
-			);
+			// The pre-store placeholders are gone everywhere.
+			expect(text).not.toMatch(/REPLACE_WITH_(?:CHROME|EDGE)_EXTENSION_ID/);
+			// Every Chrome/Edge id use is the store placeholder (XML-escaped in the plist).
+			const decoded = text.replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+			if (
+				[
+					"edge-intune.example.json",
+					"macos-jamf.example.mobileconfig",
+					"windows-registry.example.reg",
+				].includes(file)
+			) {
+				expect(decoded).toContain(EDGE_ID);
+				expect(decoded).toContain("https://edge.microsoft.com/extensionwebstorebase/v1/crx");
+			}
+			if (
+				[
+					"chrome-managed-policy.example.json",
+					"macos-jamf.example.mobileconfig",
+					"windows-registry.example.reg",
+				].includes(file)
+			) {
+				expect(decoded).toContain(CHROME_ID);
+				expect(decoded).toContain("https://clients2.google.com/service/update2/crx");
+			}
+		}
+		const firefox = JSON.parse(readDeploy("firefox-policies.example.json")).policies;
+		expect(Object.keys(firefox["3rdparty"].Extensions)).toEqual([GECKO_ID]);
+		expect(firefox.ExtensionSettings[GECKO_ID].install_url).toContain("<FIREFOX_XPI_HOST>");
+		// A forcelist entry is "<id>;<update url>": the placeholder must not swallow the separator.
+		const chrome = JSON.parse(readDeploy("chrome-managed-policy.example.json"));
+		expect(chrome.ExtensionInstallForcelist[0].split(";")).toEqual([
+			CHROME_ID,
+			"https://clients2.google.com/service/update2/crx",
+		]);
+	});
+
+	it("the example exact-data set is a keyless placeholder (BG-8)", () => {
+		const [dataset] = canonical.exactData as unknown as ExactDataSet[];
+		expect(dataset.keyB64).toBeUndefined();
+		expect(dataset.keySource).toBe("native-host");
+		expect(dataset.minEntropyBits).toBe(EXACT_DATA_MIN_ENTROPY_BITS);
+		expect(dataset.fingerprints).toEqual(["REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET"]);
+		expect(() => createExactDataMatcher([dataset])).toThrow(ExactDataConfigError);
+		// No example file carries a key any more (managed policy is readable by every user).
+		for (const file of DEPLOY_FILES) {
+			const text = readDeploy(file);
+			expect(text).toContain("REPLACE_WITH_FINGERPRINTS_FROM_FINGERPRINT_DATASET");
+			expect(text).not.toContain("keyB64");
 		}
 	});
 
 	it("a dataset built with fingerprint-dataset replaces the placeholder and is accepted", async () => {
 		const [example] = canonical.exactData as unknown as ExactDataSet[];
-		const key = Buffer.alloc(32, 7);
 		const { dataset } = fingerprint.buildDataset({
-			rows: [["Ayşe Yılmaz"], ["İsmail Işık"], ["Jane Q. Doe"]],
+			rows: [["Ayşe Yılmaz 4111111111111111"], ["Jane Q. Doe 99887766554433221"]],
 			datasetId: example.datasetId,
 			type: example.type,
-			key,
+			secret: SECRET,
 		});
-		expect(dataset.fingerprints).toHaveLength(3);
-		expect(await webCryptoFingerprint(dataset.keyB64, ["jane", "q", "doe"])).toBe(
-			fingerprint.fingerprintTokens(key, ["jane", "q", "doe"]),
+		expect(dataset.fingerprints).toHaveLength(2);
+		// The extension fingerprints with the key the native host derives for this dataset.
+		const hostKey = deriveEdmKey(SECRET, example.datasetId).toString("base64");
+		expect(await webCryptoFingerprint(hostKey, ["jane", "q", "doe", "99887766554433221"])).toBe(
+			fingerprint.fingerprintTokens(fingerprint.deriveDatasetKey(SECRET, example.datasetId), [
+				"jane",
+				"q",
+				"doe",
+				"99887766554433221",
+			]),
 		);
 		const evaluation = evaluatePolicy({ ...canonical, exactData: [dataset] }, undefined);
-		expect(evaluation.warnings).toEqual([]);
+		expect(evaluation.warnings).toEqual([NATIVE_FORCED]);
 		expect(evaluation.policy.exactData).toEqual([dataset]);
+		expect(evaluation.policy.useNativeHost).toBe(true);
 	});
 
 	it("Firefox policies.json carries the same policy for the gecko id", () => {
@@ -546,6 +679,140 @@ describe("deployment examples", () => {
 			for (const key of Object.keys(payload)) if (key.startsWith("Payload")) delete payload[key];
 			expect(payload).toEqual(canonical);
 		}
+	});
+
+	// GA audit BG-5: without these a private window, a Guest profile, the page console or
+	// another extension gives an unprotected path to the same AI sites.
+	const hardening = (privateMode: string, id: string) => ({
+		[privateMode]: 1,
+		BrowserGuestModeEnabled: false,
+		DeveloperToolsAvailability: 2,
+		ExtensionInstallBlocklist: ["*"],
+		ExtensionInstallAllowlist: [id],
+	});
+
+	it("every example carries the browser hardening policies (private mode, Guest, DevTools, extensions)", () => {
+		expect(chrome).toMatchObject(hardening("IncognitoModeAvailability", CHROME_ID));
+
+		const firefox = JSON.parse(readDeploy("firefox-policies.example.json")).policies;
+		expect(firefox.DisablePrivateBrowsing).toBe(true);
+		expect(firefox.DisableDeveloperTools).toBe(true);
+		expect(firefox.ExtensionSettings["*"].installation_mode).toBe("blocked");
+
+		const intune = JSON.parse(readDeploy("edge-intune.example.json"));
+		const catalog = Object.fromEntries(
+			(intune.settingsCatalog as { policy: string; value: Json }[]).map((s) => [s.policy, s.value]),
+		);
+		expect(catalog).toMatchObject(hardening("InPrivateModeAvailability", EDGE_ID));
+
+		const reg = parseReg(readDeploy("windows-registry.example.reg"));
+		for (const [base, privateMode, id] of [
+			[
+				"HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome",
+				"IncognitoModeAvailability",
+				CHROME_ID,
+			],
+			[
+				"HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+				"InPrivateModeAvailability",
+				EDGE_ID,
+			],
+		]) {
+			expect(reg[base]).toEqual({
+				[privateMode]: 1,
+				BrowserGuestModeEnabled: 0,
+				DeveloperToolsAvailability: 2,
+			});
+			expect(reg[`${base}\\ExtensionInstallBlocklist`]).toEqual({ "1": "*" });
+			expect(reg[`${base}\\ExtensionInstallAllowlist`]).toEqual({ "1": id });
+		}
+
+		const profile = parsePlist(readDeploy("macos-jamf.example.mobileconfig")) as Record<
+			string,
+			Json
+		>;
+		const byType = new Map(
+			(profile.PayloadContent as Record<string, Json>[]).map((p) => [p.PayloadType as string, p]),
+		);
+		expect(byType.get("com.google.Chrome")).toMatchObject(
+			hardening("IncognitoModeAvailability", CHROME_ID),
+		);
+		expect(byType.get("com.microsoft.Edge")).toMatchObject(
+			hardening("InPrivateModeAvailability", EDGE_ID),
+		);
+	});
+
+	describe("self-hosted (internal update URL) templates", () => {
+		const ID = "<SELF_HOSTED_EXTENSION_ID>";
+		const URL = "https://<INTERNAL_HOST>/browser-guard/update.xml";
+		const settings = (pin: Record<string, string>) => ({
+			[ID]: {
+				installation_mode: "force_installed",
+				update_url: URL,
+				override_update_url: true,
+				...pin,
+			},
+		});
+
+		it("Chrome: force-installs the pinned self-hosted ID from the internal update.xml, same policy and hardening", () => {
+			const policy = JSON.parse(readDeploy("chrome-self-hosted-policy.example.json"));
+			expect(policy.ExtensionSettings).toEqual(settings({ toolbar_pin: "force_pinned" }));
+			expect(policy.ExtensionInstallForcelist).toEqual([`${ID};${URL}`]);
+			expect(policy.ExtensionInstallForcelist[0].split(";")).toEqual([ID, URL]);
+			expect(policy).toMatchObject(hardening("IncognitoModeAvailability", ID));
+			expect(Object.keys(policy["3rdparty"].extensions)).toEqual([ID]);
+			expect(policy["3rdparty"].extensions[ID]).toEqual(canonical);
+		});
+
+		it("Windows: Chrome and Edge both use the self-hosted ID, the internal URL and override_update_url", () => {
+			const text = readDeploy("windows-self-hosted-registry.example.reg");
+			expect(text).toMatch(/^Windows Registry Editor Version 5\.00\r?\n/);
+			const keys = parseReg(text);
+			for (const [base, privateMode, pin] of [
+				[
+					"HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome",
+					"IncognitoModeAvailability",
+					{ toolbar_pin: "force_pinned" },
+				],
+				[
+					"HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge",
+					"InPrivateModeAvailability",
+					{ toolbar_state: "force_shown" },
+				],
+			] as const) {
+				const { ExtensionSettings, ...rest } = keys[base];
+				expect(rest).toEqual({
+					[privateMode]: 1,
+					BrowserGuestModeEnabled: 0,
+					DeveloperToolsAvailability: 2,
+				});
+				expect(JSON.parse(String(ExtensionSettings))).toEqual(settings(pin));
+				expect(keys[`${base}\\ExtensionInstallForcelist`]).toEqual({ "1": `${ID};${URL}` });
+				expect(keys[`${base}\\ExtensionInstallBlocklist`]).toEqual({ "1": "*" });
+				expect(keys[`${base}\\ExtensionInstallAllowlist`]).toEqual({ "1": ID });
+				expect(fromRegistry(keys[`${base}\\3rdparty\\extensions\\${ID}\\policy`])).toEqual(
+					canonical,
+				);
+			}
+		});
+
+		it("never mixes in a store ID or a store update URL", () => {
+			for (const file of [
+				"chrome-self-hosted-policy.example.json",
+				"windows-self-hosted-registry.example.reg",
+			]) {
+				const text = readDeploy(file);
+				for (const store of [
+					CHROME_ID,
+					EDGE_ID,
+					"clients2.google.com",
+					"edge.microsoft.com/extensionwebstorebase",
+				]) {
+					expect(text, `${file} mentions ${store}`).not.toContain(store);
+				}
+				expect(text).not.toMatch(/http:\/\//);
+			}
+		});
 	});
 
 	const schemaFile = join(PACKAGE_ROOT, "static", "managed_schema.json");

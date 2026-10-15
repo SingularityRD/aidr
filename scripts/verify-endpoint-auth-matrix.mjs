@@ -57,9 +57,9 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 	{
 		route: "supabase/functions/enroll/index.ts",
 		rateLimited: true,
-		mechanism: "one-time enrollment token",
+		mechanism: "one-time enrollment token or fleet enrollment key",
 		justification:
-			"Exchanges a one-time enrollment token (Bearer) for an API key; the caller has neither an account JWT nor an API key by definition.",
+			"Exchanges a one-time enrollment token or a seat-capped, expiring, revocable fleet enrollment key (Bearer) for a per-machine API key; the caller has neither an account JWT nor an API key by definition.",
 	},
 	{
 		route: "supabase/functions/waitlist-signup/index.ts",
@@ -105,6 +105,15 @@ export const PUBLIC_ROUTE_ALLOWLIST = Object.freeze([
 		mechanism: "dedicated dispatcher bearer token",
 		justification:
 			"Scheduler-only outbox dispatcher: POST with `Authorization: Bearer <AIDR_NOTIFICATION_DISPATCH_TOKEN>` (at least 32 chars, compared in constant time) before any row is read; it has no user or tenant caller, fails closed when the token or keyring is unset, and never accepts the service-role key.",
+	},
+	{
+		route: "supabase/functions/siem-forwarder/index.ts",
+		// Same scheduler credential as the alert dispatcher: no anonymous caller to
+		// rate limit, so not application rate limited (declared honestly).
+		rateLimited: false,
+		mechanism: "dedicated dispatcher bearer token",
+		justification:
+			"Scheduler-only SIEM outbox forwarder: POST with `Authorization: Bearer <AIDR_NOTIFICATION_DISPATCH_TOKEN>` (at least 32 chars, compared in constant time) before any row is read; it has no user or tenant caller, fails closed when the token or keyring is unset, and never accepts the service-role key.",
 	},
 ]);
 

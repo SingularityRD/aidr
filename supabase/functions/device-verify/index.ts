@@ -4,6 +4,17 @@
 //
 // Attaches an authenticated user to a device session (by user_code).
 // Requires an active tenant admission (licensed, trial, or explicit pilot).
+//
+// Remote-phishing hardening (CP-1, RFC 8628 §5.4): binding is a two-step flow.
+//   { action: "lookup", user_code }   -> the requester context device-start
+//                                        recorded (attested IP, reported
+//                                        runtime/OS/hostname, requested access,
+//                                        request time); nothing is bound.
+//   { action: "authorize", user_code, device_session_id, confirmed: true }
+//                                     -> binds only the session the lookup
+//                                        returned, after explicit confirmation.
+// A one-shot { user_code } request is refused (device_confirmation_required).
+// AIDR_DEVICE_VERIFY_REQUIRE_AAL2=true additionally requires an AAL2 session.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
@@ -11,7 +22,7 @@ import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
-import { evaluateDeviceVerifyState } from "../_shared/device-auth.ts";
+import { booleanSetting, deviceSessionDetails, type DeviceSessionDetailsRow, evaluateDeviceVerifyState, parseDeviceVerifyCommand } from "../_shared/device-auth.ts";
 import { jwtIssuedAtMs } from "../identity-security/logic.ts";
 
 // Required configuration. Validated per request, before any auth or DB work, so
@@ -21,11 +32,12 @@ const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 16 * 1024;
 const VERIFY_RATE_LIMIT_PER_MIN = Number(Deno.env.get("AIDR_DEVICE_VERIFY_RL_PER_MIN") ?? "30");
 const VERIFY_RATE_LIMIT_PREFIX = "device_start:verify:v1:user:";
+const REQUIRE_AAL2 = booleanSetting(Deno.env.get("AIDR_DEVICE_VERIFY_REQUIRE_AAL2"));
+const SESSION_COLUMNS = "id,user_code,created_at,authorized_at,expires_at,user_id,tenant_id," +
+	"requested_ip,requested_runtime,requested_runtime_version,requested_os,requested_hostname,requested_scope";
 
-type DeviceSessionRow = {
-	id: string;
+type DeviceSessionRow = DeviceSessionDetailsRow & {
 	authorized_at: string | null;
-	expires_at: string;
 	user_id: string | null;
 	tenant_id: string | null;
 };
@@ -93,6 +105,9 @@ Deno.serve(async (req) => {
 	if (!Number.isSafeInteger(VERIFY_RATE_LIMIT_PER_MIN) || VERIFY_RATE_LIMIT_PER_MIN < 1 || VERIFY_RATE_LIMIT_PER_MIN > 10_000) {
 		return corsJson(req, 500, { error: "server_misconfigured", invalid: ["AIDR_DEVICE_VERIFY_RL_PER_MIN"] });
 	}
+	if (REQUIRE_AAL2 === null) {
+		return corsJson(req, 500, { error: "server_misconfigured", invalid: ["AIDR_DEVICE_VERIFY_REQUIRE_AAL2"] });
+	}
 
 	const accessToken = getBearerToken(req.headers.get("Authorization"));
 	if (!accessToken) return corsJson(req, 401, { error: "missing_access_token" });
@@ -120,16 +135,22 @@ Deno.serve(async (req) => {
 	if (!parsed.ok) return corsJson(req, parsed.status, { error: parsed.error });
 	if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) return corsJson(req, 400, { error: "invalid_json" });
 	const body = parsed.value as Record<string, unknown>;
-	const userCode = typeof body.user_code === "string" ? body.user_code.trim().toUpperCase() : "";
-	if (!userCode) return corsJson(req, 400, { error: "missing_user_code" });
+	const verifyCommand = parseDeviceVerifyCommand(body);
+	if (!verifyCommand.ok) return corsJson(req, verifyCommand.status, { error: verifyCommand.error });
+	const command = verifyCommand.command;
+	const userCode = command.userCode;
 
 	const { data: row, error } = await supabase
 		.from("device_sessions")
-		.select("id,authorized_at,expires_at,user_id,tenant_id")
+		.select(SESSION_COLUMNS)
 		.eq("user_code", userCode)
 		.maybeSingle();
 	if (error || !row) return corsJson(req, 404, { error: "device_code_invalid" });
-	const session = row as DeviceSessionRow;
+	const session = row as unknown as DeviceSessionRow;
+	// The confirmation must be for the session the user was shown.
+	if (command.action === "authorize" && String(session.id).toLowerCase() !== command.deviceSessionId) {
+		return corsJson(req, 409, { error: "device_confirmation_mismatch" });
+	}
 	const requested = req.headers.get("X-AIDR-Tenant-ID")?.trim();
 	if (requested && !/^[a-f0-9-]{36}$/i.test(requested)) return corsJson(req, 400, { error: "invalid_tenant" });
 	if (session.tenant_id && requested && session.tenant_id !== requested) return corsJson(req, 403, { error: "device_tenant_mismatch" });
@@ -154,6 +175,16 @@ Deno.serve(async (req) => {
 		pilotApproved: true,
 	});
 	if (state.status !== "ok") return corsJson(req, state.httpStatus, { error: state.error });
+
+	// Step 1: show who asked for this code before anything is bound.
+	if (command.action === "lookup") {
+		return corsJson(req, 200, { ok: true, device: deviceSessionDetails(session) });
+	}
+	if (REQUIRE_AAL2) {
+		const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel(accessToken);
+		if (assuranceError || !assurance) return corsJson(req, 503, { error: "assurance_unavailable" });
+		if (assurance.currentLevel !== "aal2") return corsJson(req, 403, { error: "mfa_required" });
+	}
 
 	const { data: authorizedRows, error: authorizeErr } = await supabase.rpc(
 		"authorize_device_session",

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { readDeviceCode } from "../_shared/auth.ts";
-import { evaluateDeviceVerifyState } from "../_shared/device-auth.ts";
+import * as deviceAuth from "../_shared/device-auth.ts";
 import { readBoundedJson } from "../_shared/request-limits.ts";
 
 const functionsDir = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -12,17 +12,30 @@ const verifySource = readFileSync(join(functionsDir, "device-verify", "index.ts"
 const onboardingSource = readFileSync(join(functionsDir, "..", "..", "scripts", "verify-customer-onboarding.mjs"), "utf8");
 
 type VerifyHandler = (request: Request) => Promise<Response>;
+const DEVICE_ID = "d0000000-0000-4000-8000-000000000001";
 
-function deviceVerifyHarness(approvalError: boolean, approved: boolean, sessionTenantId: string | null = "tenant-1") {
+function deviceVerifyHarness(
+	approvalError: boolean,
+	approved: boolean,
+	sessionTenantId: string | null = "tenant-1",
+	options: { env?: Record<string, string>; aal?: "aal1" | "aal2" } = {},
+) {
 	const compiled = ts.transpileModule(verifySource.replace(/^import .*;\r?\n/gm, ""), {
 		compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 	}).outputText;
 	let handler: VerifyHandler | undefined;
 	let admissionTenantId: string | undefined;
 	let rateLimitCount = 0;
+	const rpcCalls: string[] = [];
 	const client = {
-		auth: { getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }) },
+		auth: {
+			getUser: async () => ({ data: { user: { id: "user-1" } }, error: null }),
+			mfa: {
+				getAuthenticatorAssuranceLevel: async () => ({ data: { currentLevel: options.aal ?? "aal1" }, error: null }),
+			},
+		},
 		async rpc(name: string, args: Record<string, unknown>) {
+			rpcCalls.push(name);
 			if (name === "increment_rate_limit") {
 				rateLimitCount += Number(args.p_delta ?? 0);
 				return { data: null, error: null };
@@ -45,11 +58,19 @@ function deviceVerifyHarness(approvalError: boolean, approved: boolean, sessionT
 					if (table === "device_sessions") {
 						return {
 							data: {
-								id: "device-1",
+								id: DEVICE_ID,
+								user_code: "ABCDEFGH",
+								created_at: new Date(Date.now() - 30_000).toISOString(),
 								authorized_at: null,
 								expires_at: new Date(Date.now() + 60_000).toISOString(),
 								user_id: null,
 								tenant_id: sessionTenantId,
+								requested_ip: "203.0.113.9",
+								requested_runtime: "claude-code",
+								requested_runtime_version: "2.1.0",
+								requested_os: "darwin",
+								requested_hostname: "build-mac",
+								requested_scope: "tenant",
 							},
 							error: null,
 						};
@@ -73,12 +94,15 @@ function deviceVerifyHarness(approvalError: boolean, approved: boolean, sessionT
 		"runtimeEnv",
 		"corsJson",
 		"handleCors",
+		"booleanSetting",
+		"deviceSessionDetails",
 		"evaluateDeviceVerifyState",
+		"parseDeviceVerifyCommand",
 		"readBoundedJson",
 		"jwtIssuedAtMs",
 		compiled,
 	)(
-		{ env: { get: () => undefined }, serve: (fn: VerifyHandler) => { handler = fn; } },
+		{ env: { get: (name: string) => options.env?.[name] }, serve: (fn: VerifyHandler) => { handler = fn; } },
 		() => client,
 		async () => ({ ok: true }),
 		(header: string | null) => header?.replace(/^Bearer\s+/i, "") ?? null,
@@ -87,24 +111,117 @@ function deviceVerifyHarness(approvalError: boolean, approved: boolean, sessionT
 		{},
 		(_request: Request, status: number, body: unknown) => Response.json(body, { status }),
 		() => null,
-		evaluateDeviceVerifyState,
+		deviceAuth.booleanSetting,
+		deviceAuth.deviceSessionDetails,
+		deviceAuth.evaluateDeviceVerifyState,
+		deviceAuth.parseDeviceVerifyCommand,
 		readBoundedJson,
 		() => Date.now(),
 	);
 	if (!handler) throw new Error("device-verify handler was not registered");
-	const run = async (tenantHeader?: string) => {
+	const send = async (body: Record<string, unknown>, tenantHeader?: string) => {
 		const response = await handler!(new Request("https://test.invalid/device-verify", {
 			method: "POST",
 			headers: {
 				Authorization: "Bearer test-session",
 				...(tenantHeader ? { "X-AIDR-Tenant-ID": tenantHeader } : {}),
 			},
-			body: JSON.stringify({ user_code: "ABCD-EFGH" }),
+			body: JSON.stringify(body),
 		}));
 		return { status: response.status, body: await response.json() as Record<string, unknown> };
 	};
-	return { run, get admissionTenantId() { return admissionTenantId; } };
+	const run = (tenantHeader?: string) =>
+		send({ action: "authorize", user_code: "ABCD-EFGH", device_session_id: DEVICE_ID, confirmed: true }, tenantHeader);
+	return { run, send, rpcCalls, get admissionTenantId() { return admissionTenantId; } };
 }
+
+describe("device verification against remote phishing (CP-1)", () => {
+	it("refuses to bind a code in one request: lookup and an explicit confirmation come first", async () => {
+		const harness = deviceVerifyHarness(false, true);
+		await expect(harness.send({ user_code: "ABCD-EFGH" })).resolves.toEqual({
+			status: 400,
+			body: { error: "device_confirmation_required" },
+		});
+		await expect(
+			harness.send({ action: "authorize", user_code: "ABCD-EFGH", device_session_id: DEVICE_ID }),
+		).resolves.toMatchObject({ status: 400, body: { error: "device_confirmation_required" } });
+		expect(harness.rpcCalls).not.toContain("authorize_device_session");
+	});
+
+	it("shows the requester context on lookup without binding the session", async () => {
+		const harness = deviceVerifyHarness(false, true);
+		const looked = await harness.send({ action: "lookup", user_code: "abcd-efgh" });
+		expect(looked.status).toBe(200);
+		expect(looked.body.device).toMatchObject({
+			device_session_id: DEVICE_ID,
+			user_code: "ABCDEFGH",
+			requester_ip: "203.0.113.9",
+			runtime: "claude-code",
+			runtime_version: "2.1.0",
+			os: "darwin",
+			hostname: "build-mac",
+			requested_scope: "tenant",
+		});
+		expect(typeof (looked.body.device as Record<string, unknown>).requested_at).toBe("string");
+		expect(harness.rpcCalls).not.toContain("authorize_device_session");
+	});
+
+	it("binds only the session the user was shown, after confirmation", async () => {
+		const harness = deviceVerifyHarness(false, true);
+		await expect(
+			harness.send({
+				action: "authorize", user_code: "ABCD-EFGH", confirmed: true,
+				device_session_id: "d0000000-0000-4000-8000-000000000002",
+			}),
+		).resolves.toEqual({ status: 409, body: { error: "device_confirmation_mismatch" } });
+		expect(harness.rpcCalls).not.toContain("authorize_device_session");
+		await expect(harness.run()).resolves.toMatchObject({ status: 200, body: { ok: true } });
+		expect(harness.rpcCalls).toContain("authorize_device_session");
+	});
+
+	it("can require an AAL2 session for enrollment and fails closed on a malformed switch", async () => {
+		const aal1 = deviceVerifyHarness(false, true, "tenant-1", { env: { AIDR_DEVICE_VERIFY_REQUIRE_AAL2: "true" } });
+		await expect(aal1.run()).resolves.toEqual({ status: 403, body: { error: "mfa_required" } });
+		expect(aal1.rpcCalls).not.toContain("authorize_device_session");
+		const aal2 = deviceVerifyHarness(false, true, "tenant-1", { env: { AIDR_DEVICE_VERIFY_REQUIRE_AAL2: "true" }, aal: "aal2" });
+		await expect(aal2.run()).resolves.toMatchObject({ status: 200 });
+		const broken = deviceVerifyHarness(false, true, "tenant-1", { env: { AIDR_DEVICE_VERIFY_REQUIRE_AAL2: "yes" } });
+		await expect(broken.run()).resolves.toEqual({
+			status: 500,
+			body: { error: "server_misconfigured", invalid: ["AIDR_DEVICE_VERIFY_REQUIRE_AAL2"] },
+		});
+	});
+
+	it("parses device-reported context strictly and bounds the code lifetime", () => {
+		expect(deviceAuth.parseDeviceStartContext({
+			agent_runtime: "codex", agent_runtime_version: "0.141.0", os: "linux", hostname: "ci-runner-7",
+		})).toEqual({ runtime: "codex", runtime_version: "0.141.0", os: "linux", hostname: "ci-runner-7" });
+		expect(deviceAuth.parseDeviceStartContext({
+			agent_runtime: "Codex\u202e", agent_runtime_version: "x".repeat(65), os: "linux\nINFO", hostname: "evil host",
+		})).toEqual({ runtime: null, runtime_version: null, os: null, hostname: null });
+		expect(deviceAuth.parseDeviceStartContext(null)).toEqual({ runtime: null, runtime_version: null, os: null, hostname: null });
+		expect(deviceAuth.deviceTtlMinutes(undefined)).toBe(10);
+		expect(deviceAuth.deviceTtlMinutes("15")).toBe(15);
+		for (const bad of ["0", "16", "60", "ten", ""]) expect(deviceAuth.deviceTtlMinutes(bad)).toBeNull();
+		expect(deviceAuth.normalizeUserCode("abcd-efgh")).toBe("ABCDEFGH");
+		expect(deviceAuth.normalizeUserCode("ABCD-EFG")).toBeNull();
+	});
+
+	it("records the requester context at device-start and in the binding audit", () => {
+		const start = readFileSync(join(functionsDir, "device-start", "index.ts"), "utf8");
+		for (const field of ["requested_ip: ip", "requested_runtime: reported.runtime", "requested_os: reported.os",
+			"requested_hostname: reported.hostname", "requested_scope: DEVICE_REQUESTED_SCOPE"]) {
+			expect(start).toContain(field);
+		}
+		expect(start).toContain('invalid.push("AIDR_DEVICE_TTL_MINUTES")');
+		const migration = readFileSync(
+			join(functionsDir, "..", "migrations", "20261013000530_device_session_requester_context.sql"), "utf8",
+		);
+		expect(migration).toContain("add column if not exists requested_ip text");
+		expect(migration).toMatch(/'requester_ip', v_session\.requested_ip/);
+		expect(migration).toMatch(/d\.authorized_at is null\s+and d\.expires_at > clock_timestamp\(\)/);
+	});
+});
 
 describe("device poll credential selection", () => {
 	it("uses the device code when the browser SDK sends a session JWT", async () => {
@@ -163,7 +280,10 @@ describe("device authorization revocation binding", () => {
 
 	it("customer onboarding carries its provisioned tenant into device verification", () => {
 		expect(onboardingSource).toContain(
-			`request("/functions/v1/device-verify", token, { user_code: device.user_code }, { "X-AIDR-Tenant-ID": receipt.tenant_id })`,
+			`request("/functions/v1/device-verify", token, { action: "lookup", user_code: device.user_code }, { "X-AIDR-Tenant-ID": receipt.tenant_id })`,
+		);
+		expect(onboardingSource).toContain(
+			`{ action: "authorize", user_code: device.user_code, device_session_id: lookup.data.device.device_session_id, confirmed: true }, { "X-AIDR-Tenant-ID": receipt.tenant_id }`,
 		);
 	});
 

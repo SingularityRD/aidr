@@ -24,9 +24,9 @@ is the approval template.
 
 Singularity AIDR has four product lines that share one control plane:
 
-- **AIDR for AI coding agents** — connectors for Claude Code, Cursor, VS Code, OpenClaw,
-  OpenCode and Codex CLI, plus the MCP Gateway, SDK and CLI. The local engine evaluates
-  tool calls against 507 YAML threat rules and returns `allow` / `deny` / `ask`.
+- **AIDR for AI coding agents** — connectors for Claude Code, OpenClaw, OpenCode and
+  Codex CLI, Cursor and VS Code as a preview — no real-host acceptance evidence yet, plus the MCP Gateway, SDK and CLI. The local engine evaluates
+  tool calls against 519 YAML threat rules and returns `allow` / `deny` / `ask`.
 - **AIDR Browser Guard** — Chrome/Edge/Firefox extension that masks TR/EN personal data,
   secrets, custom terms and exact-data-match records before prompts reach AI chat
   products, and restores them locally in responses.
@@ -68,12 +68,12 @@ reference in §4 is not.
 | Minimum | 1 protected agent | 3 developers | 25 developers | By agreement |
 | Deployment | Local mode; cloud dashboard | Cloud | Cloud or on-prem (Docker Compose) | On-prem (Docker Compose or Helm) or air-gapped |
 | Event retention | 7 days | 90 days | 365 days | Contractual |
-| Catalog features | Local detection, dashboard | + Browser Privacy Guard, Entra ID SSO | + SIEM export, SCIM, AI security posture | + air-gapped deployment, dedicated support |
+| Catalog features | Local detection, dashboard | + Browser Guard, Entra ID SSO | + SIEM export, SCIM, AI security posture | + air-gapped deployment, dedicated support |
 | Motion | Download | Quote now; self-serve once checkout is accepted | Founder-led | Founder-led |
 
 ### Free — one protected agent
 
-- Agent connectors with the full local engine: 507 threat rules, obfuscation and
+- Agent connectors with the full local engine: 519 threat rules, obfuscation and
   command-chain analysis, package and plugin checks, local allowlist and JSONL audit log.
   Local detection needs no account, signup or email.
 - Browser Guard with local settings: masking and local restore on the supported AI
@@ -183,12 +183,12 @@ Binding on any quote, deck or email:
 - **No certification or audit claims.** No SOC 2, ISO 27001, penetration test or
   third-party assessment has been completed. Say so plainly and give no date.
 - **No customer names, logos, testimonials or case studies.** There are none.
-- **No efficacy numbers.** "507 rules" is a countable fact; "blocks 99% of attacks" is a
+- **No efficacy numbers.** "519 rules" is a countable fact; "blocks 99% of attacks" is a
   fabrication. Browser Guard masking accuracy has not been measured on customer data.
 - **Failure behaviour is per layer**, not blanket "fail-open" or "fail-closed": connector
   entry points and Browser Guard's content script fail closed, detection internals skip
   a failing signal visibly, security controls fail closed, and the host decides what
-  happens when a hook is disabled or killed.
+  happens when a hook is disabled, untrusted or killed.
 - **Reputation checks are optional** and need a configured endpoint; an unavailable
   check is never "clean".
 - **Compliance wording:** "designed to support KVKK/GDPR obligations", never
@@ -207,4 +207,8 @@ Open questions for the founder:
 1. Separate Browser Guard-only seat for non-developer users (support, finance, HR)?
 2. Annual-only Team for the first ten customers, or a 90-day paid pilot credited to
    annual?
-3. Quote currency: USD only at launch, or TRY for Turkish customers?
+3. Quote currency: USD only at launch, or TRY for Turkish customers? A TRY quote
+   template with the on-prem SKU structure (seat tiers, editions, support levels,
+   air-gap add-on) and placeholder amounts is drafted in
+   [onprem-teklif-sablonu.tr.md](onprem-teklif-sablonu.tr.md), with the
+   [e-Fatura / e-Arşiv checklist](e-fatura-kontrol-listesi.tr.md).

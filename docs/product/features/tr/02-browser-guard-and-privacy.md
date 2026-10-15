@@ -44,8 +44,9 @@ belirtilmiştir.
     - [13a. Gölge Yapay Zekâ (Shadow AI) keşfi ve denetimi](#13a-gölge-yapay-zekâ-shadow-ai-keşfi-ve-denetimi)
     - [13b. Kurum içi özel yapay zekâ siteleri](#13b-kurum-içi-özel-yapay-zekâ-siteleri)
     - [13c. Yapay zekâ kabul edilebilir kullanım bildirimi](#13c-yapay-zekâ-kabul-edilebilir-kullanım-bildirimi)
+    - [13d. Kişisel ve kurumsal yapay zekâ hesapları](#13d-kişisel-ve-kurumsal-yapay-zekâ-hesapları)
 14. [Kurumsal yönetilen politika ve dağıtım](#14-kurumsal-yönetilen-politika-ve-dağıtım)
-15. [Yalnızca sayım içeren telemetri ve Browser Privacy paneli](#15-yalnızca-sayım-içeren-telemetri-ve-browser-privacy-paneli)
+15. [Yalnızca sayım içeren telemetri ve Browser Guard panel sayfası](#15-yalnızca-sayım-içeren-telemetri-ve-browser-guard-panel-sayfası)
 16. [NER ve OCR için isteğe bağlı native host](#16-ner-ve-ocr-için-isteğe-bağlı-native-host)
 17. [Cihazdan hangi veriler çıkar](#17-cihazdan-hangi-veriler-çıkar)
 
@@ -63,7 +64,7 @@ belirtilmiştir.
 
 ## Kapsam özeti
 
-Plan kataloğu (`packages/dashboard/src/billing/plans.ts`) **Browser Privacy Guard** özelliğini (`browser_privacy_guard`)
+Plan kataloğu (`packages/dashboard/src/billing/plans.ts`) **Browser Guard** özelliğini (`browser_privacy_guard`)
 **Team, Business ve Enterprise** planlarında listeler; Free planda bu özellik yer almaz.
 Eklentinin kendisi plan ya da hesap denetimi yapmaz. Algılama, maskeleme ve geri yükleme,
 eklenti kontrol düzlemine kayıtlı olsun ya da olmasın tarayıcıda çalışır. Kayıt, kontrol
@@ -96,7 +97,7 @@ alanlarının sayfada nerede olduğunu bilir.
 | `chatgpt` | ChatGPT | `chatgpt.com`, `chat.openai.com` |
 | `gemini` | Gemini | `gemini.google.com` |
 | `claude` | Claude | `claude.ai` |
-| `copilot` | Microsoft Copilot | `copilot.microsoft.com` |
+| `copilot` | Microsoft Copilot (bireysel) ve Microsoft 365 Copilot Chat | `copilot.microsoft.com`, `m365.cloud.microsoft`, `copilot.cloud.microsoft` |
 | `perplexity` | Perplexity | `www.perplexity.ai`, `perplexity.ai` |
 | `deepseek` | DeepSeek | `chat.deepseek.com` |
 | `mistral` | Mistral Le Chat | `chat.mistral.ai` |
@@ -115,7 +116,11 @@ eşleştirmesi, açık port ya da adrese gömülü kimlik bilgisi kabul edilmez.
 geçen düğme). Böylece küçük tasarım değişikliklerinde denetim çalışmaya devam eder.
 Desteklenen düzenleyiciler: düz `textarea`, ProseMirror, Quill ve genel `contenteditable`.
 İçerik betiği `document_start` aşamasında ve yalnızca üst çerçevede (`all_frames: false`)
-çalışır. Gizli pencerelerde çalışmaz (`incognito: not_allowed`).
+çalışır; tek istisna iki Microsoft 365 Copilot alan adıdır (`m365.cloud.microsoft`,
+`copilot.cloud.microsoft`): Office web uygulamaları (web için Word, Excel, PowerPoint,
+Outlook) Copilot bölmesini farklı kökenli bir iframe olarak gömdüğü için betik bu alan
+adlarında alt çerçevelerde de çalışır (`all_frames: true`). Office sayfalarının kendisine
+betik eklenmez ve ek izin istenmez. Gizli pencerelerde çalışmaz (`incognito: not_allowed`).
 
 **Nasıl kullanılır** — Eklentiyi kurun (özellik 14); site bazında ayar gerekmez. Kendiniz
 derlemek için: `pnpm build:browser-guard` (geliştirme) veya `pnpm package:browser-guard`
@@ -140,13 +145,25 @@ Firefox'ta `about:debugging#/runtime/this-firefox` → *Geçici Eklenti Yükle* 
 **Sınırlamalar**
 - Yalnızca yukarıdaki sekiz ürün korunur. Diğer yapay zekâ siteleri, masaüstü ve mobil
   uygulamalar, API istemcileri ve başka tarayıcılar kapsam dışıdır. Manifest isteğe bağlı
-  bir `https://*/*` izni tanımlar, ancak bu sürümde başka siteleri korumak için bu izni
-  kullanan bir kod yolu yoktur.
+  bir `https://*/*` izni tanımlar. Bu izin kurulumda istenmez: seçenekler sayfası her
+  kullanıcıdan, bir tıklamayla, yalnızca yönetilen politikanın yapılandırdığı
+  `https://<alan adı>/*` kökenlerini ister (`customSites` alan adları, özellik 13b, ve
+  Gölge yapay zekâ kataloğu kökenleri, özellik 13a); kullanıcılar bu siteler için tarayıcının
+  izin istemini görür.
 - Sitelerin sayfa yapısı habersiz değişebilir. Bir yeniden tasarım, bağdaştırıcı
   güncellenene kadar denetimi bozabilir. Gerçek tarayıcı test paketi; ChatGPT, Gemini,
   Claude, Copilot ve Perplexity için canlı sitelere değil, kaydedilmiş sayfa yapılarına
   (fixture) karşı çalışır. DeepSeek, Mistral ve Grok bağdaştırıcıları yalnızca birim
   testleriyle doğrulanır.
+- Office web uygulamalarının içindeki Copilot bölmesi, bir Microsoft 365 Copilot alan
+  adından sunulduğunda korunur: maskeleme, yapıştırma ve dosya denetimi, yerel geri yükleme
+  ve politika gelene kadar gönderimi engelleme üst düzey sayfadaki gibi çalışır; sayımlar
+  `copilot` sitesi olarak raporlanır (site, çerçevenin kendi adresinden alınır). Bölmenin
+  kasası ayrı tutulur ve her gönderim bir kez sayılır. Canlı bir kiracıda bölmenin hangi
+  kökenden sunulduğu ve sayfa yapısı **doğrulanmamıştır** (BG-LIVE): başka bir alan
+  adından sunulan bölme kapsam dışıdır. Gerçek tarayıcı senaryosu `frame-copilot-office`
+  çerçeve kapsamını Microsoft 365'e değil, bir fixture'a karşı doğrular. Eklenti
+  başlamadan önce açık olan bir sekmedeki bölme, sekme yenilendikten sonra korunur.
 - Gizli (incognito) pencereler korunmaz. Gerekiyorsa tarayıcı yönetimiyle kısıtlayın.
 - Otomatik gerçek tarayıcı testleri Chromium'da çalışır. Firefox paketleri `addons-linter`
   ile denetlenir, ancak uçtan uca test edilmez.
@@ -165,22 +182,38 @@ bir yapıştırma tarama sınırını aşıyor olabilir. Bu durumların hepsinde
 
 **Nasıl çalışır** — İçerik betiği, olayları sitenin dinleyicilerinden önce (capture
 aşamasında) yakalar: Enter tuşu (Shift+Enter ve giriş yöntemi yazımı sürerken hariç;
-Ctrl/Cmd+Enter da gönderim sayılır), gönder düğmesine tıklama ve form gönderimi. Karardan
-sonra gönderim yalnızca bir kez ve yalnızca düzenleyicide hâlâ denetlenen metin duruyorsa
-yeniden tetiklenir. Kullanıcı yazarken metin arka planda önceden taranır. Temiz olduğu
-bilinen bir istem, kullanıcının orijinal olayına dokunulmadan gönderilir.
+Ctrl/Cmd+Enter da gönderim sayılır), gönderim denetimlerine tıklama ve form gönderimi. Bir
+tıklama şu durumlarda gönderim sayılır: düğmeyi site bağdaştırıcısı tanımlıyorsa, düğme
+istem kutusunun gönder düğmesiyse ya da denetim formunu gönderiyorsa veya bir gönderim
+eylemiyle etiketliyse ("Send", "Save", "Update", "Gönder", "Kaydet", "Güncelle"...) ve bir
+düzenleyiciyle aynı formda, mesaj bloğunda ya da panelde duruyorsa. Son kural, gönderilmiş
+mesajlardaki düzenle-ve-yeniden-gönder formlarını (ChatGPT, Claude, Gemini, Copilot)
+kapsar. Denetlenen metin, hareketin ait olduğu düzenleyicidir: tuşa basılan düzenleyici
+(açık bir shadow root içinde de olsa) ya da tıklanan düğmenin veya gönderilen formun
+bulunduğu kaptaki düzenleyici. Metin hiçbir zaman odaktaki alandan alınmaz; odaktaki bir
+arama kutusu istem kutusunun yerine geçemez. O kapta birden fazla düzenleyicide metin
+varsa, sitenin hangisini göndereceği belli olmadığı için gönderim engellenir.
+
+Karardan sonra gönderim yalnızca bir kez ve yalnızca düzenleyicide hâlâ denetlenen metin
+duruyorsa yeniden tetiklenir. Enter, Enter olarak yeniden tetiklenir. Site bunu işlemezse
+(Enter'ın yalnızca yeni satır açtığı siteler ya da yerleşimler), çok satırlı düzenleyiciye
+kullanıcının istediği yeni satır eklenir ve hiçbir şey gönderilmez; tek satırlı bir giriş
+alanında tarayıcının örtük form gönderimi (formun varsayılan düğmesi) uygulanır. Bir Enter
+için başka hiçbir gönder düğmesine tıklanmaz.
+Kullanıcı yazarken metin arka planda önceden taranır. Temiz olduğu bilinen bir istem,
+kullanıcının orijinal olayına dokunulmadan gönderilir.
 
 ```
 Enter / tıklama / form gönderimi
    │  (capture aşaması, siteden önce)
    ▼
-politika yüklü mü? ──hayır──► engelle: "AIDR koruması henüz yükleniyor…"
+politika yüklü mü? ──hayır──► engelle: "Koruma henüz yükleniyor…"
    │ evet
 site engelli mi? ──evet──► engelle: "Kurumunuz bu yapay zekâ hizmetini engelledi…"
    │
 istem kutusu bulundu mu? ──hayır──► engelle (monitor modunda geçir)
    │
-tarama tamamlandı mı? ──hayır──► engelle: "AIDR bu istemi kontrol etmeyi tamamlayamadı…"
+tarama tamamlandı mı? ──hayır──► engelle: "Singularity AIDR bu mesajı kontrol etmeyi tamamlayamadı…"
    │
 bulgular / sinyaller ──► kararı mod verir (özellik 5) ──► gönderim bir kez tetiklenir
 ```
@@ -189,12 +222,13 @@ Hata durumunda engelleme halleri ve ekranda görünen metinler (`src/content/str
 
 | Durum | Türkçe | İngilizce |
 |---|---|---|
-| Politika henüz alınmadı | AIDR koruması henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. | AIDR protection is still loading. Nothing was sent; try again in a moment. |
-| Tarama başarısız ya da eksik | AIDR bu istemi kontrol etmeyi tamamlayamadı; gönderilmedi. | AIDR could not finish checking this prompt, so it was not sent. |
-| İstem kutusu bulunamadı | AIDR bu sayfadaki istem alanını bulamadı; hiçbir şey gönderilmedi. | AIDR could not find the prompt box on this page, so nothing was sent. |
-| Yeniden yazma doğrulanamadı | AIDR istemi güvenli biçimde yeniden yazamadı. Hiçbir şey gönderilmedi. | AIDR could not safely rewrite the prompt. Nothing was sent. |
-| Metin denetim sırasında değişti | İstem kontrol edilirken değişti. Yeniden gönderin. | The prompt changed while it was being checked. Press send again. |
-| Önceki denetim sürüyor | AIDR önceki işlemi kontrol etmeye devam ediyor. | AIDR is still checking the previous action. |
+| Politika henüz alınmadı | Koruma henüz yükleniyor. Hiçbir şey gönderilmedi; birazdan tekrar deneyin. | Protection is still loading. Nothing was sent; try again in a moment. |
+| Tarama başarısız ya da eksik | Singularity AIDR bu mesajı kontrol etmeyi tamamlayamadı; mesaj gönderilmedi. | Singularity AIDR could not finish checking this message, so it was not sent. |
+| Mesaj kutusu bulunamadı | Bu sayfadaki mesaj alanı bulunamadı; hiçbir şey gönderilmedi. | The message box on this page could not be found, so nothing was sent. |
+| Birden fazla metin alanında metin var | Birden fazla metin alanında yazı var ve hangisinin gönderildiği anlaşılamadı; hiçbir şey gönderilmedi. | Several text boxes hold text and it is unclear which one is being sent, so nothing was sent. |
+| Yeniden yazma doğrulanamadı | Mesaj güvenli biçimde maskelenemedi. Hiçbir şey gönderilmedi. | The message could not be masked safely. Nothing was sent. |
+| Metin denetim sırasında değişti | Mesaj kontrol edilirken değişti. Yeniden gönderin. | The message changed while it was being checked. Press send again. |
+| Önceki denetim sürüyor | Önceki işlem hâlâ kontrol ediliyor. | Still checking the previous action. |
 | Site politikayla engelli | Kurumunuz bu yapay zekâ hizmetini engelledi. Hiçbir şey gönderilmedi. | Your organisation has blocked this AI service. Nothing was sent. |
 
 Tarama şu durumlarda eksik (incomplete) sayılır: istem 200.000 karakteri aştığında, iç süre
@@ -202,13 +236,39 @@ bütçesi dolduğunda ya da kodlanmış içerik çözücünün açabildiğinden 
 yerleştirildiğinde. O ana kadarki bulgular korunur, ancak sonuç hiçbir zaman "temiz"
 olarak raporlanmaz.
 
-**Nasıl kullanılır** — Her zaman açıktır. Metnin maskelenmeden geçtiği tek durumlar hiç
-engellemeyen `monitor` modu ve aynı biçimde izlenen `disabledSites` listesindeki sitelerdir
-(metin yine taranır ve sayılır).
+**Nasıl kullanılır** — Yukarıda açıklanan gönderim hareketleri için her zaman açıktır.
+Tarayıcıdan maskelenmemiş hiçbir şeyin çıkmayacağı garantisi değildir. Bu sürümde metin
+yapay zekâ hizmetine şu yollarla maskelenmeden ulaşabilir:
+- `monitor` modu ve `disabledSites` listesindeki bir site (taranır ve sayılır, hiç
+  engellenmez);
+- `allowSendAnyway` `true` iken (yönetilen politika yokken varsayılan; yönetilen politikada
+  yönetici açıkça ayarlamadıkça kapalıdır) `confirm` modunda **Orijinali gönder**;
+- `allowUserPause` `true` iken (yönetilen politika yokken varsayılan; yönetilen politikada
+  yönetici açıkça ayarlamadıkça kapalıdır) kullanıcının korumayı duraklatması (en fazla
+  60 dakika);
+- bağdaştırıcının tanımadığı bir gönderim: site yeniden tasarlandıktan sonra yeni bir
+  düğme, kısayol ya da hareket veya sayfanın kendi başına yaptığı bir istek (bkz.
+  Sınırlamalar ve özellik 1);
+- sesle giriş, dikte ve sesli mod: site sesi yazıya dökmek için sağlayıcıya gönderir, bu
+  yüzden ses korumadan hiç geçmez; yalnızca düzenleyiciye düşen ve tanınan bir hareketle
+  gönderilen metin denetlenir;
+- gönderilmeden önceki metin: istem düzenleyicisi siteye aittir; sitenin kendi betikleri
+  (taslaklar, otomatik kayıt, yazma telemetrisi) yazılan, bırakılan ya da dikte edilen
+  metni koruma gönderim anında denetlemeden önce okuyabilir;
+- içerik betiğinin çalışmadığı sekmeler; örneğin eklenti başlarken içine betik
+  yerleştiremediği, zaten açık olan bir sekme, yeniden yüklenene kadar;
+- eklentinin çalışmadığı gizli pencereler, misafir profilleri, diğer tarayıcı profilleri ve
+  diğer tarayıcılar.
+
+Yöneticiler politikayla kapatılabilen yolları `allowSendAnyway: false`,
+`allowUserPause: false` ve yönetilen bir `mode` ile, tarayıcı düzeyindekileri ise
+`deploy/browser-guard/README.md` içindeki sağlamlaştırma politikalarıyla (gizli gezinme,
+misafir modu, diğer profiller ve tarayıcılar, geliştirici araçları, diğer eklentiler)
+kapatır.
 
 **Örnek** — `auto` modunda kullanıcı 300.000 karakterlik bir log yapıştırıp Enter'a basar.
-Siteye hiçbir şey gitmez. **Gönderim engellendi** başlıklı kırmızı balonda "AIDR bu istemi
-kontrol etmeyi tamamlayamadı; gönderilmedi." yazar.
+Siteye hiçbir şey gitmez. **Gönderim engellendi** başlıklı kırmızı balonda "Singularity AIDR bu
+mesajı kontrol etmeyi tamamlayamadı; mesaj gönderilmedi." yazar.
 
 **Kapsam**
 
@@ -220,8 +280,14 @@ kontrol etmeyi tamamlayamadı; gönderilmedi." yazar.
 
 **Sınırlamalar**
 - `monitor` modunda istem kutusunun bulunamaması gönderimi engellemez.
-- Denetim, sitenin sayfa yapısına ve olay akışına bağlıdır (bkz. özellik 1). Bağdaştırıcının
-  tanımadığı bir yoldan gönderim yapan bir site denetlenemez.
+- Denetim, sitenin sayfa yapısına ve olay akışına bağlıdır (bkz. özellik 1). Korumanın
+  tanımadığı bir yoldan yapılan gönderim denetlenemez: bağdaştırıcı seçicilerinin dışında
+  kalan, form göndermeyen, yalnızca simgeli ya da etiketsiz bir düğme; Enter dışındaki bir
+  tuşla tetiklenen gönderim ya da kapalı (closed) bir shadow root içindeki düzenleyici.
+  Düzenle-ve-yeniden-gönder formları, modellenmiş bir DOM'da (jsdom testleri ve ChatGPT
+  fixture'ı) etiketleri ve konumlarıyla tanınır; canlı sitelerde henüz doğrulanmadı.
+- Enter'ın yalnızca yeni satır açtığı bir sitede, bulgu içeren bir istemde basılan Enter
+  yine önce denetlenir: `confirm` modunda yeni satır eklenmeden önce kullanıcıya sorulur.
 - 200.000 karakterden uzun istemler engelleyen modlarda gönderilemez. Bu tür içeriği bölün
   ya da onaylı bir kanal kullanın.
 
@@ -365,8 +431,8 @@ değeri hiçbir zaman almaz.
 **Örnek** — Kullanıcı `Please email ayse.yilmaz@example.com about the refund, deploy key sk-proj-…`
 gönderir. Site `Please email [EMAIL_1] about the refund, deploy key [SECRET_1]` alır.
 "I emailed `[EMAIL_1]`; rotate `[SECRET_1]`" yanıtı kullanıcıya "I emailed
-ayse.yilmaz@example.com; rotate `[SECRET_1]`" olarak, "AIDR tarafından yerel olarak geri
-yüklendi" ipucuyla gösterilir.
+ayse.yilmaz@example.com; rotate `[SECRET_1]`" olarak, "Yalnızca bu bilgisayarda gösteriliyor.
+Yapay zekâ hizmetine [EMAIL_1] gitti." ipucuyla gösterilir.
 
 **Kapsam**
 
@@ -402,21 +468,30 @@ göndermek, kullanıcıya sormak, reddetmek ya da yalnızca saymak.
 verinin dış yapay zekâya ulaşmaması gereken ekiplerde `block` kullanılır.
 
 **Nasıl çalışır** — Her modda kullanıcının gördükleri (`src/content/strings.ts` ve
-`_locales/*/messages.json` içindeki metinler; sayılar yer tutucu önekleriyle "1 EMAIL,
-1 TCKN" biçiminde gösterilir):
+`_locales/*/messages.json` içindeki metinler; veriler açılır penceredeki adlarıyla, örneğin
+"1 e-posta adresi, 1 T.C. kimlik numarası" biçiminde gösterilir):
 
 | Mod (açılır penceredeki etiket TR / EN) | Bulgu varsa ne olur | Kullanıcının gördüğü |
 |---|---|---|
-| `auto`, **Otomatik maskele** / **Auto-mask** (varsayılan) | Değerler istem kutusunda değiştirilir, gönderim bir kez yeniden tetiklenir | Bildirim: "2 öğe maskelendi: 1 EMAIL, 1 TCKN" / "2 items masked: 1 EMAIL, 1 TCKN". Site yeniden tetiklenen gönderimi almazsa: "İstem maskelendi. Devam etmek için gönderin." |
-| `confirm`, **Onayla** / **Confirm** | Kullanıcı karar verene kadar hiçbir şey gönderilmez | **İsteminizde hassas veri var** balonu: "2 hassas öğe bulundu: 1 EMAIL, 1 TCKN. Bunlar yer tutucularla değiştirilip yanıtta yerel olarak geri yüklenebilir." Düğmeler: **Maskeli gönder** (varsayılan), **Düzenle** ve yalnızca `allowSendAnyway` açıksa **Orijinali gönder** |
-| `block`, **Engelle** / **Block** | Gönderim durdurulur, istem kutuda kalır | **Gönderim engellendi** balonu: "2 hassas öğe bulundu: 1 EMAIL, 1 TCKN." ve "Kurumunuz bu verinin yapay zekâ hizmetlerine gönderilmesine izin vermiyor. Veriyi çıkarın veya genel ifadelerle anlatıp yeniden deneyin." Düğme: **Kapat** |
-| `monitor`, **İzle** / **Monitor** | Orijinal metin değiştirilmeden gönderilir, bulgular sayılır | Sayfada hiçbir şey görünmez. Açılır pencerede **Yalnızca izleniyor**: "ChatGPT hizmetine gönderilen hassas veriler sayılır ancak maskelenmez veya engellenmez." |
+| `auto`, **Otomatik maskele** / **Auto-mask** (varsayılan) | Değerler mesaj kutusunda değiştirilir, gönderim bir kez yeniden tetiklenir | Bildirim: "Gönderilmeden önce maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." / "Masked before sending: 1 email address, 1 Turkish ID number (TCKN)." Site yeniden tetiklenen gönderimi almazsa: "Mesaj maskelendi. Devam etmek için gönder düğmesine basın." |
+| `confirm`, **Bana sor** / **Ask me** | Kullanıcı karar verene kadar hiçbir şey gönderilmez | **Mesajınızda kişisel veya gizli bilgi var** balonu: "Bulunanlar: 1 e-posta adresi, 1 T.C. kimlik numarası. "Maskeli gönder" bunları, mesaj bilgisayarınızdan çıkmadan önce [EMAIL_1] gibi etiketlerle değiştirir; yanıtta gerçek değerler yalnızca bu bilgisayarda yeniden gösterilir." Düğmeler: **Maskeli gönder** (varsayılan), **Düzenle** ve yalnızca `allowSendAnyway` açıksa **Orijinali gönder**; düğmelerin altında ""Orijinali gönder" gerçek değerleri ChatGPT hizmetine gönderir. Bu seçim sayılır; mesajın kendisi hiçbir zaman raporlanmaz." notu |
+| `block`, **Engelle** / **Block** | Gönderim durdurulur, mesaj kutuda kalır | **Gönderim engellendi** balonu: "Bulunanlar: 1 e-posta adresi, 1 T.C. kimlik numarası." ve "Kurumunuz bu verinin yapay zekâ hizmetlerine gönderilmesine izin vermiyor. Veriyi çıkarın veya genel ifadelerle anlatıp yeniden deneyin." Düğme: **Kapat** |
+| `monitor`, **Yalnızca say (maskeleme yok)** / **Count only (no masking)** | Orijinal metin değiştirilmeden gönderilir, bulgular sayılır | Sayfada hiçbir şey görünmez. Açılır pencerede **Yalnızca sayılıyor (maskeleme yok)**: "ChatGPT hizmetine gönderilen hassas veriler sayılır ancak maskelenmez veya engellenmez." |
 
 Açılır penceredeki açıklamalar şöyledir. Otomatik maskele: "Hassas veriler gönderilmeden
-önce [EMAIL_1] gibi yer tutucularla değiştirilir." Onayla: "Bulunan verileri görür, mesajı
+önce [EMAIL_1] gibi etiketlerle değiştirilir." Bana sor: "Bulunan verileri görür, mesajı
 maskeli göndermeyi ya da düzenlemeyi siz seçersiniz." Engelle: "Hassas veri içeren mesajlar
-gönderilmez." İzle: "Hiçbir şey değiştirilmez veya engellenmez; bulgular yalnızca
+gönderilmez." Yalnızca say: "Hiçbir şey değiştirilmez veya engellenmez; bulgular yalnızca
 sayılır."
+
+Gelişmiş ad algılama (AIDR Privacy yardımcı uygulaması) kapalıyken bulgu bildiren
+bildirimler ve balonlar "Kişi adları denetlenmedi: gelişmiş ad algılama kapalı." satırını
+ekler; açılır pencere "Kişi adları ve adresler denetlenmiyor: gelişmiş algılama kapalı.
+Yerleşik kurallar etkin." der. Yanıtlarda geri getirilen değerlerin ipucu "Yalnızca bu
+bilgisayarda gösteriliyor. Yapay zekâ hizmetine [EMAIL_1] gitti." şeklindedir; bir sayfada
+ilk geri getirmede tek seferlik bir açıklama bildirimi görünür. Bildirimler karakter başına
+60 ms (en az 5 sn, en çok 20 sn) ekranda kalır, fare üzerindeyken veya odaktayken bekler ve
+bir kapatma düğmesi vardır (Escape de kapatır).
 
 Balonlar ve bildirimler sayfanın sağ altında, kapalı bir shadow root içinde çizilir. Sayfa
 bunları okuyamaz ve stillerini değiştiremez. Balonlar `role=alertdialog` kullanır, klavye
@@ -427,7 +502,8 @@ gönderilmez. Bulgu ve etkin sinyal içermeyen bir istem her modda kesintisiz g�
 Yönetilen anahtar `mode` (`auto` | `confirm` | `block` | `monitor`, varsayılan `auto`).
 `mode` yönetildiğinde seçici kilit simgesiyle ve **Kuruluşunuz tarafından yönetiliyor**
 yazısıyla gösterilir; kullanıcılar tek tek siteleri kapatamaz. `allowSendAnyway`
-(varsayılan `true`) **Orijinali gönder** düğmesini denetler.
+**Orijinali gönder** düğmesini denetler (yönetilen politika yokken varsayılan `true`;
+herhangi bir yönetilen politika altında yönetici açıkça ayarlamadıkça `false`).
 
 **Örnek** — `confirm` modunda kullanıcı `IBAN TR33 0006 1005 1978 6457 8413 26` yazıp Enter'a
 basar. Balon görünür ve siteye hiçbir şey gitmez. Kullanıcı **Maskeli gönder**'e tıklar ve
@@ -444,8 +520,9 @@ yapıldığını ve bu istekte yalnızca yer tutucular olduğunu doğrular.
 
 **Sınırlamalar**
 - `monitor` orijinal veriyi gönderir. Koruma için değil, ölçüm için kullanın.
-- `allowSendAnyway: true` (varsayılan) iken `confirm` modundaki kullanıcı orijinal
-  değerleri gönderebilir. Bunun mümkün olmaması gereken yerlerde `false` yapın.
+- `allowSendAnyway: true` iken (yalnızca yönetilmeyen kurulumlarda varsayılan; yönetilen
+  politikada açıkça ayarlanmalıdır) `confirm` modundaki kullanıcı orijinal değerleri
+  gönderebilir.
 - `auto` modunda, aynı zamanda `warn` düzeyinde bir risk sinyali tetikleyen istem sessizce
   maskelenmez; onay balonu gösterilir (özellik 10).
 
@@ -464,10 +541,10 @@ eklenir.
 
 | Mod | Sonuç | Mesaj |
 |---|---|---|
-| `auto`, `confirm` | Maskeli metin eklenir | "Yapıştırılan metin maskelendi (2 öğe): 1 EMAIL, 1 TCKN" |
+| `auto`, `confirm` | Maskeli metin eklenir | "Yapıştırılan metin maskelendi: 1 e-posta adresi, 1 T.C. kimlik numarası." |
 | `block` | Hiçbir şey eklenmez | "Yapıştırılan metin hassas veri içerdiği için eklenmedi." ve kurum yönlendirme satırı |
 | `monitor` | Orijinal eklenir, bulgular sayılır | — |
-| Tarama başarısız | Hiçbir şey eklenmez | "AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
+| Tarama başarısız | Hiçbir şey eklenmez | "Singularity AIDR yapıştırılan metni kontrol edemedi; metin eklenmedi." |
 
 Temiz metin değiştirilmeden eklenir. Yapıştırılan dosyaları dosya koruması ele alır
 (özellik 7).
@@ -490,8 +567,11 @@ söyler. Gerçek tarayıcıdaki `paste-*` senaryoları bu davranışı kapsar.
 
 **Sınırlamalar**
 - Yalnızca tanınan istem düzenleyicisine yapılan yapıştırmalar ele alınır.
-- Başka yollarla eklenen metin (sürükle-bırak metin, tarayıcı otomatik doldurma, sesle
-  giriş) eklendiği anda değil, gönderim anında denetlenir.
+- Başka yollarla eklenen metin (sürükle-bırak metin, tarayıcı otomatik doldurma) eklendiği
+  anda değil, gönderim anında denetlenir; o zamana kadar sitenin düzenleyicisinde durur ve
+  sayfa tarafından okunabilir.
+- Sesle giriş, dikte ve sesli mod kapsam dışıdır: ses, korumadan geçmeden yazıya dökülmek
+  üzere sağlayıcıya gider (özellik 2).
 
 ### 7. Dosya ve yükleme koruması
 
@@ -669,19 +749,23 @@ duraklatma süresince) dosyalar değiştirilmeden geçer ve yalnızca sayılır.
 
 | Durum | Mesaj (TR / EN) |
 |---|---|
-| Temizlendi | "1 dosya yüklenmeden önce temizlendi: 2 EMAIL" / "1 file sanitized before upload: 2 EMAIL" |
-| İkili, engellenmedi | `"report.pdf" taranamadı (ikili dosya). Göndermeden önce kontrol edin.` |
-| Eski Office tam okunamadı, engellenmedi | `"eski.doc" eski bir Office dosyası (.doc/.xls/.ppt); AIDR bu dosyayı tam olarak denetleyemedi. Maskelenmesi için .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
-| Hassas veri içeren eski Office dosyası | `"sozlesme.doc" yüklenmedi (SENSITIVE_DATA_IN_LEGACY_OFFICE, 1 EMAIL). Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez. Dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin: AIDR bu biçimleri maskeler.` |
-| Görsel incelenmedi | `"ekran.png" bir görsel ve içeriği denetlenmedi (yerel OCR yardımcısı yok ya da görseli okuyamadı). Göndermeden önce kontrol edin.` |
+| Maskelendi | "1 dosya yüklenmeden önce maskelendi: 2 e-posta adresi." / "1 file masked before upload: 2 email addresses." |
+| İkili, engellenmedi | `"report.pdf" denetlenemedi (ikili dosya). Göndermeden önce kontrol edin.` |
+| Eski Office tam okunamadı, engellenmedi | `"eski.doc" (eski .doc/.xls/.ppt biçimi) tam olarak denetlenemedi. .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.` |
+| Hassas veri içeren eski Office dosyası | `"sozlesme.doc" kişisel veya gizli bilgi içeriyor (1 e-posta adresi), bu yüzden yüklenmedi. Eski Office dosyaları (.doc/.xls/.ppt) maskelenemez: dosyayı .docx/.xlsx/.pptx olarak kaydedip onu yükleyin (bu biçimler maskelenir) ya da BT ekibinize başvurun.` |
+| Görsel incelenmedi | `"ekran.png" denetlenmedi: görseller için AIDR Privacy yardımcı uygulaması gerekir. Göndermeden önce kontrol edin.` |
 | Belgedeki resimler incelenmedi | `"rapor.docx" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.` |
-| Hassas veri içeren görsel | `"ekran.png" yüklenmedi (SENSITIVE_DATA_IN_IMAGE, 1 EMAIL). Görselde hassas veri görünüyor ve görseller maskelenemez. Yüklemeden önce kırpın ya da karartın.` |
-| Engellendi | **Yükleme engellendi**: `"big.csv" yüklenmedi (FILE_TOO_LARGE).` |
+| Hassas veri içeren görsel | `Bir görselde kişisel veya gizli bilgi görünüyor (1 e-posta adresi), bu yüzden "ekran.png" yüklenmedi. Görseller maskelenemez: yüklemeden önce o bölümü kırpın ya da karartın veya BT ekibinize başvurun.` |
+| Engellendi (çok büyük) | **Yükleme engellendi**: `"big.csv" yüklenmedi: dosya, kurumunuzun yapay zekâ hizmetleri için izin verdiği boyuttan büyük. Daha küçük bir dosya ya da yalnızca gereken bölümü yükleyin.` |
 | Yükleme politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine dosya yüklenmesine izin vermiyor." |
 | Belgeler politikayla kapalı | "Kurumunuz yapay zekâ hizmetlerine Office veya PDF belgesi yüklenmesine izin vermiyor." |
-| Hassas veri içeren PDF | `"sozlesme.pdf" yüklenmedi (SENSITIVE_DATA_IN_PDF, 1 EMAIL). PDF dosyaları maskelenemez. Gereken metni kopyalayıp yapıştırın: AIDR yapıştırılan metni maskeler.` |
-| Dosya denetlenemedi | "AIDR dosyayı kontrol edemedi; dosya yüklenmedi." |
-| Tarayıcı dosyayı değiştiremiyor | "Bu tarayıcı dosyayı temizlenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
+| Hassas veri içeren PDF | `"sozlesme.pdf" kişisel veya gizli bilgi içeriyor (1 e-posta adresi), bu yüzden yüklenmedi. PDF dosyaları maskelenemez: gereken metni kopyalayıp mesaja yapıştırın (yapıştırılan metin maskelenir) ya da BT ekibinize başvurun.` |
+| Dosya denetlenemedi | "Dosya kontrol edilemedi; yüklenmedi." |
+| Tarayıcı dosyayı değiştiremiyor | "Bu tarayıcı dosyayı maskelenmiş kopyasıyla değiştiremiyor; dosya yüklenmedi." |
+
+Yüklemeyi durdurabilecek her nedenin yukarıdakiler gibi sade bir cümlesi vardır (dosyaya ne
+oldu, ne yapılabilir), Türkçe ve İngilizce. İç neden kodları (`SENSITIVE_DATA_IN_PDF`,
+`FILE_TOO_LARGE`...) kararda kalır ve mesajda hiçbir zaman gösterilmez.
 
 **Nasıl kullanılır** — Yönetilen anahtarlar `fileHandling` (`scan` | `block` | `allow`,
 varsayılan `scan`), `documentHandling` (`mask` | `block` | `allow`, varsayılan `mask`;
@@ -804,75 +888,101 @@ burada listelenmez." yazar.
 
 ### 9. Tam veri eşleştirme (exact data match)
 
-**Ne yapar** — Kurumun kendi kayıtlarını (müşteri adları, hesap numaraları, personel sicil
-numaraları) değerleri tarayıcıya göndermeden işaretler. Tarayıcıya yalnızca anahtarlı
-parmak izleri gider.
+**Ne yapar** — Kurumun kendi kayıtlarını (müşteri kayıtları, adla birleştirilmiş hesap
+numaraları, personel sicil numaraları) değerleri tarayıcıya göndermeden işaretler.
+Tarayıcıya yalnızca anahtarlı parmak izleri gider; anahtar tarayıcı politikasında hiç yer
+almaz.
 
 **Neden önemli** — Kurallar IBAN'a benzeyen her şeyi bulur. Tam veri eşleştirme ise *sizin*
-müşterilerinizi bulur; hiçbir kuralın tanıyamayacağı adlar da buna dahildir. Liste ise
-yöneticinin elinden okunabilir biçimde hiç çıkmaz.
+müşterilerinizin kayıtlarını bulur. Liste ise yöneticinin elinden okunabilir biçimde hiç
+çıkmaz.
 
 **Nasıl çalışır**
-1. Yönetici, bir CSV'den `packages/browser-guard/scripts/fingerprint-dataset.mjs` ile veri
-   kümesi oluşturur. Her değer normalleştirilir (NFKC, küçük harf, sıfır genişlikli
-   işaretler kaldırılır, Türkçe `ı` ve `i̇` harfleri `i`'ye katlanır) ve harf/rakam
-   dizilerine ayrılır. Parmak izi, küçük harfli hex olarak
-   `HMAC-SHA256(anahtar, JSON.stringify(parçalar))` değeridir. Her değer 1–16 parça ve en az
-   3 karakter vermelidir.
-2. `{ datasetId, keyB64, fingerprints, type }` biçimindeki veri kümesi yönetilen politikayla
-   (`exactData`) dağıtılır.
-3. Sayfada istem aynı biçimde normalleştirilir. Ardışık en fazla 16 parçadan oluşan her
-   pencerenin parmak izi WebCrypto ile hesaplanır (tarama başına en fazla 65.536 HMAC) ve
-   veri kümesiyle karşılaştırılır. Eşleşme, veri kümesinin türüyle maskelenir ve ayrıca
-   `EXACT_DATA_MATCH` sinyalini üretir.
+1. Yönetici kurumun EDM sırrını bir kez oluşturur
+   (`fingerprint-dataset.mjs --new-secret edm-secret.b64`) ve bu dosyayı AIDR Privacy yerel
+   host yapılandırmasına kurar (`"exactData": {"secretFile": ...}`).
+2. Veri kümesi bir CSV'den aynı sırla oluşturulur. Her kümenin kendi anahtarı vardır:
+   `HMAC-SHA256(sır, "aidr-edm-v2" 0x00 datasetId)`. Her değer normalleştirilir (NFKC, küçük
+   harf, sıfır genişlikli işaretler kaldırılır, Türkçe `ı` ve `i̇` harfleri `i`'ye katlanır)
+   ve harf/rakam dizilerine ayrılır; parmak izi küçük harfli hex olarak
+   `HMAC-SHA256(kümeAnahtarı, JSON.stringify(parçalar))` değeridir. Her değer 1–16 parça ve
+   en az 3 karakter vermelidir.
+3. Araç her değerin entropisini tahmin eder ve 64 bitin altında değer varsa kümeyi reddeder
+   (`LOW_ENTROPY`): küme anahtarını ele geçiren biri bu değerleri çevrim dışı
+   sayabilir (7 haneli müşteri numarası yaklaşık 23 bit, TCKN yaklaşık 30, bir ad yaklaşık
+   20 bit). Sütunları `--composite` ile satır başına tek değerde birleştirin (örneğin ad +
+   hesap numarası) ya da tahmin edilebilir değerleri `--drop-low-entropy` ile dışarıda
+   bırakın.
+4. `{ datasetId, keySource: "native-host", minEntropyBits, fingerprints, type }` biçimindeki
+   küme yönetilen politikayla (`exactData`) dağıtılır ve anahtar içermez. Eklenti `keyB64`
+   taşıyan ya da 64 bitten az bildiren kümeyi reddeder ve `useNativeHost` ayarını açar.
+5. Arka plan çalışanı küme anahtarlarını yerel hosttan ister, yalnızca bellekte tutar ve
+   yalnızca içerik betiklerine verir. Sayfada istem aynı biçimde normalleştirilir, ardışık
+   en fazla 16 parçalık her pencerenin parmak izi WebCrypto ile hesaplanır (tarama başına en
+   fazla 65.536 HMAC) ve kümeyle karşılaştırılır. Eşleşme, kümenin türüyle maskelenir ve
+   `EXACT_DATA_MATCH` sinyalini üretir. Host bir kümenin anahtarını verene kadar o kümeyle
+   yapılan taramalar eksik (denetlenmemiş) sayılır, hiçbir zaman temiz sayılmaz.
 
 **Nasıl kullanılır**
 
 ```bash
+node packages/browser-guard/scripts/fingerprint-dataset.mjs --new-secret edm-secret.b64
 node packages/browser-guard/scripts/fingerprint-dataset.mjs \
-  --in customers.csv --header --columns full_name \
+  --in customers.csv --header --columns full_name,account_no --composite \
   --dataset-id crm-customers --type PERSON \
-  --key-file crm.key.b64 --out crm-customers.json
+  --secret-file edm-secret.b64 --out crm-customers.json
 ```
 
 Seçenekler: `--in <dosya.csv|->`, `--dataset-id`, `--type <VARLIK_TÜRÜ>`, `--header`,
-`--columns a,b`, `--key-b64 <base64>` ya da `--key-file <dosya>`, `--out <dosya.json>`.
-Anahtar verilmezse yeni bir 32 baytlık anahtar üretilir. Yeniden oluşturulan kümelerin aynı
-parmak izlerini vermesi için bu anahtarı saklayın. Çıktı dosyası `0600` izinleriyle yazılır.
-Parmak izleri sıralanır; dosyadaki sıra kaynak satırların sırası hakkında bilgi vermez. JSON
-nesnesini yönetilen `exactData` dizisine ekleyin. Politika en fazla 16 veri kümesi ve
-toplamda 100.000 parmak izi kabul eder. Araç, küme başına 250.000'e kadar üretebilir, ancak
-sınırı aşan politika reddedilir.
+`--columns a,b`, `--composite`, `--secret-file <dosya>`, `--min-entropy-bits <n>` (64 ve
+üzeri), `--drop-low-entropy`, `--out <dosya.json>`. `--key-b64` / `--key-file` reddedilir.
+Sırrı saklayın: aynı sır ve küme kimliği aynı parmak izlerini üretir. Çıktı dosyası `0600`
+izinleriyle yazılır. Parmak izleri sıralanır; dosyadaki sıra kaynak satırların sırası
+hakkında bilgi vermez. JSON nesnesini yönetilen `exactData` dizisine ekleyin. Politika en
+fazla 16 veri kümesi ve toplamda 100.000 parmak izi kabul eder. Araç, küme başına 250.000'e
+kadar üretebilir, ancak sınırı aşan politika reddedilir.
 
-**Parmak izlerinin gizliliği** — Veri kümesinde yalnızca parmak izleri ve HMAC anahtarı
-bulunur. Kaynak değerler hiçbir zaman yazılmaz ya da loglanmaz. Parmak izleri şifreleme
-değil, anahtarlı özetlerdir. Anahtarı da içeren veri kümesine sahip olan biri, tahmin ettiği
-değerlerin listede olup olmadığını deneyebilir. Veri kümesini gizli kabul edin, yalnızca
-yönetilen politikayla dağıtın ve hiçbir kod deposuna koymayın. `deploy/browser-guard/`
-içindeki örnek veri kümesi anahtar ve parmak izleri yerine `REPLACE_WITH_...` yer tutucuları
+**Parmak izlerinin gizliliği** — Kaynak değerler hiçbir zaman yazılmaz ya da loglanmaz ve
+kümede anahtar yoktur. Neye karşı koruduğu ve neye karşı korumadığı:
+- Sır ve küme anahtarları tarayıcı politikasında değildir; kullanıcı onları artık
+  `chrome://policy`, politika kayıt defteri anahtarları ya da `policies.json` üzerinden
+  okuyamaz. Sızan bir küme anahtarı yalnızca kendi kümesini açığa çıkarır.
+- Yerel host oturum açmış kullanıcı olarak çalışır; bu yüzden sır dosyası o kullanıcı
+  tarafından okunabilir olmalıdır. Bu dosyayı okuyan ya da tarayıcıya hata ayıklayıcı
+  bağlayan bir kullanıcı anahtarları yine elde edip parmak izlerine karşı tahmin
+  deneyebilir. Listenin bu yolla geri çıkarılmasını 64 bitlik entropi tabanı önler. Bu bir
+  tahmindir (harfler sözlük sözcüğü sayılır, yapılı kimlikler gerçek entropileriyle
+  sınırlanır), garanti değildir; rastgele görünen ama ardışık bir sütun tahminden zayıftır.
+- Parmak izleri şifreleme değil, anahtarlı özetlerdir; kümeleri kod depolarına koymayın.
+
+`deploy/browser-guard/` içindeki örnek küme `REPLACE_WITH_...` yer tutucu parmak izleri
 içerir; gerçek `fingerprint-dataset.mjs` çıktısıyla değiştirilene kadar eklenti onu reddeder.
 
-**Örnek** — `crm-customers` kümesi (`PERSON` türü) "Ahmet Kaya" değerinin parmak izini
-içerir. `Ahmet Kaya siparişi için aradı` istemindeki ad, hiçbir kural tanımadığı hâlde
-bulunur. Varsayılan ayarlarla (`detectSignals: true`, `signalAction: "warn"`) kullanıcı,
-"Metin, korunan bir kurum veri kümesindeki kayıtlarla eşleşiyor. Göndermeden önce bu
-verileri çıkarın veya onaylı bir kanal kullanın." yönlendirmesini içeren onay balonunu
-görür.
+**Örnek** — `crm-customers` kümesi (`PERSON` türü, ad ve 16 haneli hesap numarasının
+birleşimi) "Ahmet Kaya 4000123412341234" değerinin parmak izini içerir.
+`Ahmet Kaya 4000123412341234 siparişi için aradı` istemi bulunur. Varsayılan ayarlarla
+(`detectSignals: true`, `signalAction: "warn"`) kullanıcı, "Metin, korunan bir kurum veri
+kümesindeki kayıtlarla eşleşiyor. Göndermeden önce bu verileri çıkarın veya onaylı bir kanal
+kullanın." yönlendirmesini içeren onay balonunu görür.
 
 **Kapsam**
 
 | | |
 |---|---|
 | Plan | Team, Business, Enterprise (katalog) |
-| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped (veri kümesi tarayıcı politikasıyla dağıtılır; araç Node.js üzerinde çevrim dışı çalışır) |
-| Platformlar | Chrome, Edge, Firefox (masaüstü); araç için Node.js 22.12+ |
+| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped (küme tarayıcı politikasıyla, sır yerel hostla birlikte dağıtılır; araç Node.js üzerinde çevrim dışı çalışır) |
+| Platformlar | Chrome, Edge (masaüstü, yerel hostla); araç için Node.js 22.12+. Firefox desteklenmez: yerel host Firefox'u desteklemediği için kümeler orada hiç denetlenmez |
 
 **Sınırlamalar**
+- Bu sürümün yerel hostu ve kurulu EDM sırrı gerekir. Yoksa küme içeren her istem taraması
+  eksik sayılır; koruma bunu denetlenmemiş olarak ele alır.
 - Eşleştirme, normalleştirmeden sonra parça dizisinin birebir aynı olmasına dayanır. Yazım
-  hataları, yer değiştirmiş adlar ve kısmi değerler eşleşmez.
+  hataları, yer değiştirmiş adlar ve kısmi değerler eşleşmez; birleşik bir değer yalnızca
+  parçaları birlikte ve sütun sırasıyla geçtiğinde eşleşir.
+- Tek başına adlar, kısa hesap numaraları, telefon numaraları ve kimlik numaraları tahmin
+  edilebilir olduğu için reddedilir. Yerleşik kurallar TCKN, IBAN, kart ve telefon
+  numaralarını biçimlerinden bulmaya devam eder.
 - Politika sınırları (toplamda 100.000 parmak izi) veri kümesinin boyutunu kısıtlar.
-- Tarayıcı politikası uç noktada okunabilir; anahtar ve parmak izleri yerel kullanıcılara
-  açıktır (yukarıya bakın).
 
 ### 10. Prompt injection ve risk sinyalleri için yönlendirme
 
@@ -898,7 +1008,7 @@ yaygın bir fikrî mülkiyet sızıntısıdır.
 | `EXACT_DATA_MATCH` | tam veri eşleşmesi (özellik 9) |
 
 Tepkiyi `signalAction` belirler:
-- `warn` (varsayılan): **Göndermeden önce isteminizi kontrol edin** balonu. Balonda
+- `warn` (varsayılan): **Göndermeden önce mesajınızı kontrol edin** balonu. Balonda
   yönlendirme metni ile **Düzenle** (varsayılan) ve **Yine de gönder** düğmeleri bulunur.
   Aynı istemde kişisel veri de bulunduysa onay balonu (özellik 5) yönlendirme satırları
   eklenerek gösterilir.
@@ -948,11 +1058,13 @@ Yöneticiler ise kilitli ayarların kilitli olarak görünmesini ister; böylece
 - **Araç çubuğu açılır penceresi** geçerli sekmenin durumunu gösterir: **Korunuyor**,
   **Desteklenen bir yapay zekâ sitesi değil**, **ss:dd saatine kadar duraklatıldı**,
   **Politika tarafından devre dışı**, **Bu site için kapalı**, **Kuruluşunuz tarafından
-  engellendi**, **Yalnızca izleniyor**. Ayrıca mod seçicisi, oturum istatistikleri
+  engellendi**, **Yalnızca sayılıyor (maskeleme yok)**. Ayrıca mod seçicisi, oturum istatistikleri
   (**Korunan mesajlar**, **Maskelenen öğeler**, **Engellenen gönderimler**, **En sık
   bulunanlar**), **Yanıtlarda orijinal değerleri göster** anahtarı, **15 dk duraklat** /
-  **Korumayı sürdür** ve **Ayarlar** bulunur. Native host açıkken "Gelişmiş algılama bağlı"
-  ya da "Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin" satırı görünür. Araç
+  **Korumayı sürdür** ve **Ayarlar** bulunur. Native host kullanılıyorsa "Gelişmiş algılama
+  bağlı", değilse "Kişi adları ve adresler denetlenmiyor: AIDR Privacy yardımcı uygulaması
+  kullanılamıyor. Yerleşik kurallar etkin." (açık ama yanıt vermiyor) ya da "Kişi adları ve
+  adresler denetlenmiyor: gelişmiş algılama kapalı. Yerleşik kurallar etkin." satırı görünür. Araç
   çubuğu simgesindeki rozet, sekmede maskelenen öğe sayısını gösterir.
 - **Ayarlar sayfası** bölümleri: **Koruma** (mod, neler algılansın, yapıştırılan metni
   maskele, yanıtlarda geri getir, **Gelişmiş ad ve adres algılama**: native host anahtarı,
@@ -1001,7 +1113,7 @@ kaldırmasından hem daha dürüst hem de denetlenmesi daha kolaydır.
 
 **Nasıl çalışır** — **Duraklatma**, süre dolana kadar tüm sekmeleri `monitor` davranışına
 geçirir. Hiçbir şey maskelenmez, gönderimler yine sayılır. Açılır pencerede **ss:dd saatine
-kadar duraklatıldı** ve "O saate kadar ChatGPT hizmetine giden mesajlar yalnızca izlenir,
+kadar duraklatıldı** ve "O saate kadar ChatGPT hizmetine giden mesajlar yalnızca sayılır,
 hiçbir veri maskelenmez." yazar. Arka plan 1–60 dakikalık duraklatmaları kabul eder; açılır
 pencere 15 dakika sunar. Duraklatma, süre dolunca ya da **Korumayı sürdür** ile biter.
 **Site bazında kapatma** (Ayarlar → **Siteler**) o siteyi kalıcı olarak aynı izleme
@@ -1011,7 +1123,9 @@ istatistikler ve panel kullanımı görmeye devam eder. Açılır pencere bu dur
 için kapalı** gösterir ("ChatGPT için maskelemeyi kapattınız: orada hiçbir şey maskelenmez,
 yalnızca hassas öğe sayıları kaydedilir.").
 
-**Nasıl kullanılır** — Yönetilen anahtarlar `allowUserPause` (varsayılan `true`) ve
+**Nasıl kullanılır** — Yönetilen anahtarlar `allowUserPause` (yönetilen politika yokken
+varsayılan `true`, herhangi bir yönetilen politika altında ayarlanmadıkça `false`; duraklatma
+sırasındaki gönderimler `reason: "paused"` ile raporlanır) ve
 `disabledSites` (site kimlikleri). Duraklatmaya izin verilmediğinde açılır pencere duraklatma
 düğmesini göstermez ve bir duraklatma isteği "Kuruluşunuz korumanın duraklatılmasına izin
 vermiyor." mesajıyla reddedilir. `mode` yönetildiğinde kullanıcılar tek tek siteleri
@@ -1116,7 +1230,7 @@ söyler: eksik erişim hiçbir zaman "kullanım yok" olarak gösterilmez.
 **Nasıl kullanılır** — Yönetilen anahtar `shadowAi`:
 `{ "mode": "monitor" | "block-unsanctioned" | "off", "sanctioned": [kimlikler], "blocked": [kimlikler] }`.
 `blocked` içindeki kimlikler her kipte engellenir; iki listede birden bulunan kimlik
-engellenir. Panodaki **Browser Privacy** sayfasında bir **Shadow AI** paneli (en çok
+engellenir. Paneldeki **Browser Guard** sayfasında bir **Gölge yapay zekâ** (Shadow AI) bölümü (en çok
 kullanılan hizmetler, onaylı ve onaysız ziyaretler, engellenen denemeler, günlük eğilim) ve
 bir politika parçacığı oluşturucusu bulunur.
 
@@ -1138,8 +1252,15 @@ ziyaret olarak sayılır. Gerçek tarayıcı senaryosu `shadow-ai` bu davranış
   uygulanır, ancak kullanıcı tarayıcının kendi engelleme sayfasını görür ve hiçbir şey
   sayılmaz.
 - Genel amaçlı bir sitenin bir yolunda çalışan hizmetler (Notion AI, GitHub Copilot, Bing'deki
-  Copilot, Microsoft 365 Copilot) katalogda yoktur; alan adıyla engellemek ürünün tamamını
-  bozardı.
+  Copilot) katalogda yoktur; alan adıyla engellemek ürünün tamamını bozardı. Microsoft 365
+  Copilot Chat yol kapsamlı tek kayıttır (`m365-copilot`): kendi alan adı
+  `copilot.cloud.microsoft` ve `m365.cloud.microsoft` üzerinde yalnızca `/chat` yolu sayılır ve
+  engellenir; Microsoft 365 giriş sayfasının geri kalanı çalışmaya devam eder. Office web
+  uygulamalarının içindeki Copilot bölmesi ayrı bir katalog kaydı değildir ve ziyaretleri
+  sayılmaz (yalnızca üst düzey sekme adresleri sayılır). `m365-copilot` engeli (veya
+  `blockedSites: ["copilot"]`) bölme bir Copilot alan adından yüklendiğinde yalnızca
+  bölmenin kendi çerçevesini durdurur (`m365.cloud.microsoft` üzerinde yalnızca `/chat`);
+  Office uygulamasının kendisi hiçbir zaman engellenmez veya yönlendirilmez.
 - Hugging Face, DeepL ve Grammarly alan adıyla kataloglanmıştır; engellendiklerinde sitenin
   tamamı (model merkezi, çevirmen, tanıtım sayfaları) engellenir.
 
@@ -1184,6 +1305,10 @@ gösterir.
 **Sınırlamalar**
 - Her kullanıcı site erişimini bir kez verir; zaten açık olan sekmelerin ardından yeniden
   yüklenmesi gerekir.
+- İçerik betiği yalnızca portalın üst çerçevesinde çalışır (`allFrames: false`). Bir iframe
+  içine gömülü sohbet bileşeni (asistanı başka bir sayfadan ya da alan adından yükleyen iç
+  portal) korunmaz ve politika bu durumu algılayamaz: `hosts` ve seçicileri düzenleyiciyi
+  doğrudan barındıran sayfaya yöneltin ve portalı dağıtımdan önce test edin.
 - Seçiciler portalın işaretlemesine bağlıdır; yeniden tasarım politikanın güncellenmesini
   gerektirebilir.
 
@@ -1199,7 +1324,7 @@ yapay zekâ okuryazarlığı çalışmalarını destekler (farkındalık sağlar
 
 **Nasıl çalışır** — Yöneticiler bildirimi yönetilen politikanın `acceptableUse` anahtarında
 yayımlar (kimlik, sürüm, başlık, en fazla 4.000 karakter düz metin, isteğe bağlı `https://`
-bağlantısı); JSON'u **Browser Privacy** sayfası oluşturur. Browser Guard bildirimi
+bağlantısı); JSON'u **Browser Guard** sayfası oluşturur. Browser Guard bildirimi
 **I understand** ve **Remind me later** seçenekleriyle kendi penceresinde gösterir. Metin
 işaretleme olarak değil, her zaman düz metin olarak gösterilir; bildirim bilgilendirir,
 gönderimi asla engellemez. **I understand** her tarayıcı profili için hatırlanır; `version`
@@ -1211,7 +1336,7 @@ bütünüyle yok sayılır.
 **Nasıl kullanılır** — Örnek kayıt:
 `{"acceptableUse": {"id": "acme-ai-use", "version": 2, "title": "Using AI at Acme", "text":
 "Do not paste customer records.", "url": "https://intranet.example.com/ai-policy"}}`.
-Bildirim sürümü başına kapsam, paneldeki **Governance** skor kartında görünür.
+Bildirim sürümü başına kapsam, paneldeki **Yapay zekâ yönetişimi** skor kartında görünür.
 
 **Örnek** — 2. sürüm yayımlandıktan sonra ChatGPT'yi açan kullanıcı "Using AI at Acme"
 bildirimini bir kez görür, **I understand** düğmesine tıklar ve skor kartı 2. sürüm için
@@ -1229,11 +1354,82 @@ onaylayan tarayıcı kurulumu sayısını bir artırır.
 - Kodlama ajanı connector'ları bildirimi göstermez; bu bir Browser Guard özelliğidir.
 - Telemetri yapılandırılmamışken verilen bir onay sonradan raporlanmaz.
 
+### 13d. Kişisel ve kurumsal yapay zekâ hesapları
+
+**Ne yapar** — ChatGPT, Claude, Gemini ve Copilot'ta kullanıcının kurumun hesabıyla mı yoksa
+kişisel bir hesapla mı oturum açtığını denetler; kurum hesabı doğrulanamazsa uyarır, gönderimi
+engeller ya da yalnızca maskeli gönderime izin verir.
+
+**Neden önemli** — Kurumsal sürümler (ChatGPT Team/Enterprise, Claude Team/Enterprise, Google
+Workspace ile Gemini, Microsoft 365 Copilot Chat) istemleri sözleşme, saklama ve denetim
+ayarlarıyla korur; aynı sitedeki kişisel hesap bunları sağlamaz.
+
+**Nasıl çalışır** — Yöneticiler yönetilen `workAccounts` anahtarında site başına izin verilen
+çalışma alanı kimliklerini (`workspaceIds`: ChatGPT çalışma alanı, Claude kuruluş UUID'si) ve
+e-posta alan adlarını (`emailDomains`) listeler ve diğer hesaplar için eylemi seçer: `warn`
+(sayfadaki ilk gönderimde **Devam et** / **Vazgeç** sorulur), `block` (gönderim ve dosya
+yükleme reddedilir) ya da `mask-only` (gönderim her zaman maskelenir; o hesapta izleme modu,
+duraklatma ve **Send original** geçerli değildir). Sayfanın tanıtmadığı bir hesap,
+`unverified: "allow"` verilmedikçe kişisel hesap gibi ele alınır. Browser Guard yalnızca
+sayfanın adresini, HttpOnly olmayan çerezlerini ve DOM'unu okur; kimlik ve alan adı içerik
+betiğinden çıkmaz. Telemetri yalnızca `account_type` değerini (company, personal, other,
+unverified) taşır.
+
+**Nasıl kullanılır** — Örnek: `{"workAccounts": {"action": "block", "sites": {"gemini":
+{"emailDomains": ["acme.com.tr"]}, "copilot": {"emailDomains": ["acme.com.tr"]}}}}`. Her
+sitenin ne gösterdiği ve neyin algılanamadığı
+[`packages/browser-guard/docs/work-accounts.md`](../../../../packages/browser-guard/docs/work-accounts.md)
+belgesindedir.
+
+**Örnek** — Gemini'ye gmail.com hesabıyla giren kullanıcı mesaj gönderemez: "Hiçbir şey
+gönderilmedi. Kurumunuz Gemini hizmetini yalnızca kurum hesabıyla kullanmaya izin veriyor.
+Kurum hesabınıza geçip yeniden deneyin." Aynı sekmede acme.com.tr hesabına geçince gönderim
+her zamanki gibi maskelenerek yapılır.
+
+**Kapsam**
+
+| | |
+|---|---|
+| Plan | Team, Business, Enterprise (katalog) |
+| Dağıtım | Yerel / Bulut / Kurum içi / Air-gapped |
+| Platformlar | Chrome, Edge, Firefox (masaüstü) |
+
+**Sınırlamalar**
+- Masaüstü ve mobil uygulamalar (ChatGPT, Claude, Copilot uygulamaları), Safari ve eklentisiz
+  tarayıcılar kapsam dışıdır. Bunlar için Entra ID Tenant Restrictions v2, proxy'de
+  `X-GoogApps-Allowed-Domains` başlığı, ChatGPT/Claude alan adı doğrulaması ve SSO zorunluluğu
+  ile uygulama denetimi (Intune, AppLocker, WDAC) önerilir.
+- Sinyaller satıcı API'si değil, sayfada gözlenen işaretleme ve çerezlerdir; canlı kiracılarda
+  henüz doğrulanmadı (BG-LIVE). Sinyal kaybolursa hesap "doğrulanamadı" sayılır.
+- Şirket e-postasıyla açılmış kişisel bir Google hesabı Gemini'de kurum hesabı gibi görünür.
+- Kontrol düzlemi `account_type` alanını henüz saklamıyor; panel raporu sonraki adımdır.
+
 ### 14. Kurumsal yönetilen politika ve dağıtım
 
 **Ne yapar** — Yöneticilerin eklentiyi zorunlu olarak kurmasına ve yapılandırmasını merkezden
 kilitlemesine olanak tanır. Bunun için Group Policy, Microsoft Intune, Jamf ya da Firefox
 politika dosyası kullanılabilir.
+
+**Kurulum ve güncelleme kanalları** — İki kanal vardır; ikisinde de eklenti kendiliğinden
+güncellenir:
+
+- **Tarayıcı mağazaları**: liste dışı (unlisted) Chrome Web Store ve Microsoft Edge
+  Eklentileri kayıtları (mağaza aramasında çıkmaz; bağlantıdan ya da politikayla kurulur).
+  Mağazadan kurulan eklentiyi tarayıcı kendiliğinden günceller; mağazalar yalnızca en son
+  sürümü sunar. Kurulum yapılandırılmışsa mağaza bağlantıları ve uzantı kimlikleri panelin
+  **İndirmeler** sayfasında görünür.
+- **Kendi sunucunuzdan**: mağazalara erişemeyen ağlar ya da her sürümün ne zaman
+  dağıtılacağına kendisi karar vermek isteyenler için Chrome ve Edge'e, Singularity
+  tarafından imzalanmış bir CRX3 paketi (kendine ait sabit bir uzantı kimliğiyle) kendi
+  HTTPS sunucunuzdan sunulur. `packages/browser-guard/scripts/update-feed.mjs`, `update.xml`
+  beslemesini oluşturur: CRX imzasını ve sabitlenen uzantı kimliğini denetler, barındırılan
+  sürümden yüksek olmayan bir sürümü reddeder; böylece besleme hiçbir zaman geriye gitmez.
+  Firefox, içine gömülü `updates.json` adresinden güncellenen Mozilla imzalı XPI'ı kullanır.
+
+Sürüm paketleri `pnpm package:browser-guard` ile oluşturulur (mağaza ZIP'leri, kaynak
+arşivi, `SHA256SUMS`, mağaza doğrulaması). Adım adım:
+[Browser Guard'ı kurumda dağıtma](../../../installation/browser-guard-enterprise.tr.md),
+kurum içi barındırma için bölüm 10.
 
 **Neden önemli** — Her kullanıcının kendi başına ayarladığı bir gizlilik denetimi, gerçek bir
 denetim sayılmaz. Yönetilen politikayla modu, veri türlerini ve yükleme kurallarını kurum
@@ -1255,13 +1451,13 @@ Tüm yönetilen anahtarlar (`static/managed_schema.json` ve `src/background/poli
 | `enabledEntities` | varlık türü dizisi | `USERNAME`, `LOCATION` dışında hepsi | Yerleşik kuralların algılayıp maskelediği türler |
 | `neverRestore` | varlık türü dizisi | `SECRET`, `PRIVATE_KEY` | Maskelenir, yanıtlarda asla geri yüklenmez |
 | `literals` | `{ value, type }` dizisi; en fazla 1.024, her biri 2–256 karakter | yok | Kurum terimleri (özellik 8) |
-| `exactData` | `{ datasetId, keyB64, fingerprints, type }` dizisi; en fazla 16 küme, toplamda en fazla 100.000 parmak izi | yok | Tam veri eşleştirme (özellik 9) |
+| `exactData` | `{ datasetId, keySource: "native-host", minEntropyBits (≥ 64), fingerprints, type }` dizisi; en fazla 16 küme, toplamda en fazla 100.000 parmak izi; anahtar içermez (`keyB64` taşıyan küme reddedilir) | yok | Tam veri eşleştirme (özellik 9) |
 | `detectSignals` | boolean | `true` | Prompt injection ve kaynak kodu sinyallerini algıla |
 | `signalAction` | `off` \| `warn` \| `block` | `warn` | Sinyale verilecek tepki (özellik 10) |
 | `blockedSites` | site kimliği dizisi | yok | Sayfaları açılmayan siteler (özellik 13) |
 | `disabledSites` | site kimliği dizisi | yok | Yalnızca izlenen siteler: denetim hiçbir şeyi maskelemez ya da engellemez, gönderimler sayılır (özellik 12) |
-| `allowUserPause` | boolean | `true` | Kullanıcı en fazla 60 dakika duraklatabilir |
-| `allowSendAnyway` | boolean | `true` | Kullanıcı uyarıdan sonra maskesiz gönderebilir |
+| `allowUserPause` | boolean | `true`; yönetilen politikada ayarlanmadıkça `false` | Kullanıcı en fazla 60 dakika duraklatabilir |
+| `allowSendAnyway` | boolean | `true`; yönetilen politikada ayarlanmadıkça `false` | Kullanıcı uyarıdan sonra maskesiz gönderebilir |
 | `maskPaste` | boolean | `true` | Yapıştırılan metni maskele (özellik 6) |
 | `fileHandling` | `scan` \| `block` \| `allow` | `scan` | Yükleme davranışı (özellik 7) |
 | `documentHandling` | `mask` \| `block` \| `allow` | `mask` | `fileHandling` `scan` iken Office, OpenDocument, eski Office ve PDF yüklemeleri (özellik 7) |
@@ -1328,11 +1524,11 @@ New-ItemProperty -Path $key -Name neverRestore -PropertyType String -Value '["SE
 - Yönetilen politika kilitlemesi gerçek tarayıcı testlerinde denenemez (yönetilen depolamaya
   testten yazılamaz); birim testleriyle doğrulanır.
 
-### 15. Yalnızca sayım içeren telemetri ve Browser Privacy paneli
+### 15. Yalnızca sayım içeren telemetri ve Browser Guard panel sayfası
 
 **Ne yapar** — Kayıtlı tarayıcılar, her yapay zekâ sitesinde her türden kaç öğenin
 maskelendiğini, uyarıldığını, engellendiğini ya da geçtiğini raporlar. Kontrol düzlemi bu
-sayıları **Browser Privacy** sayfasında (`/privacy-guard`) gösterir.
+sayıları **Browser Guard** sayfasında (`/privacy-guard`) gösterir.
 
 **Neden önemli** — Güvenlik ekiplerinin, kişisel veri maruziyetinin nerede yaşandığını ve
 azalıp azalmadığını göstermesi gerekir. Bunu yaparken kişisel verinin ikinci bir kopyasını
@@ -1354,17 +1550,16 @@ ayrıca kuruluma özgü rastgele bir kimlik (`iid`), `agent_runtime: "browser_gu
 ailesi ve ana sürümü (ör. `chrome-126`) ve eklenti sürümünü ekler. İçerik betikleri API
 anahtarını hiçbir zaman almaz.
 
-Paneldeki **Browser Privacy Guard** sayfası 7 ya da 30 günlük pencere için şunları gösterir:
-**Prompts protected** (korunan istemler), **Items masked** (maskelenen öğeler), **Blocked
-sends** (engellenen gönderimler), **Active browser installs** (etkin tarayıcı kurulumları),
-**By entity type** (türe göre), **By AI site** (siteye göre), **Daily activity** (günlük
-etkinlik) ve **Recent privacy events** (son olaylar). Panel arayüzü şu an İngilizcedir.
-**Enroll browsers** bölümü, seçilen mod için kontrol düzlemi adresi doldurulmuş ve kiracı API
+Paneldeki **Browser Guard** sayfası (`/privacy-guard`, **Koruma** altında) 7 ya da 30
+günlük pencere için şunları gösterir: **Korunan mesajlar**, **Maskelenen öğeler**,
+**Engellenen gönderimler**, **Etkin tarayıcı kurulumları**, **Veri türüne göre**, **Yapay
+zekâ sitesine göre**, **Günlük etkinlik** ve **Son gizlilik olayları**. Panel Türkçe ve
+İngilizce kullanılabilir. **Tarayıcıları kaydedin** bölümü, seçilen mod için kontrol düzlemi adresi doldurulmuş ve kiracı API
 anahtarı için yer tutucu içeren bir yönetilen politika JSON parçası üretir. Olaylar kiracının
 telemetri saklama sınıfında tutulur ve yalnızca kiracı üyelerince okunur.
 
 **Nasıl kullanılır**
-1. Paneldeki **API Keys** sayfasında yazma yetkili bir kiracı API anahtarı oluşturun.
+1. Paneldeki **API anahtarları** sayfasında yazma yetkili bir kiracı API anahtarı oluşturun.
 2. `telemetry: { "controlPlaneUrl": "https://…", "apiKey": "…" }` değerini yönetilen
    politikaya ekleyin ya da kullanıcının Ayarlar → **Kuruluş bağlantısı** bölümünden girmesine
    izin verin (**Bağlantıyı kaydet**, **Bağlantıyı kes**).
@@ -1407,14 +1602,17 @@ modeli, metni makineden çıkarmadan bunu yapabilir.
 **Nasıl çalışır** — `useNativeHost` açıkken her istem ve yapıştırma taraması, yerleşik
 kurallarla paralel olarak arka plan çalışanından NER ister (`NATIVE_SCAN`). Çalışanın köprüsü
 privacy host'unun native messaging protokolünü tarayıcının stdio kanalı üzerinden konuşur.
-Soket ya da localhost HTTP uç noktası kullanılmaz. Her tarama yeni bir host süreci ve
-2 saniyelik bir bütçe kullanır (sayfa en fazla 2,5 saniye bekler). 200.000 karakterden uzun
-metin gönderilmez. Art arda üç hatadan sonra host 60 saniye boyunca kullanılamaz sayılır.
+Soket ya da localhost HTTP uç noktası kullanılmaz. Köprü tüm taramalar için tek bir host
+süreci tutar (NER modeli bir kez yüklenir) ve bu süreci ilk istemden önce başlatır; başlatma
+için 15 saniye tanır. Taramalar bu sürece sıraya alınır ve her biri 2 saniyelik bir bütçe
+kullanır (sayfa en fazla 2,5 saniye bekler); boşta kalan host 15 dakika sonra kapanır ve
+gerektiğinde yeniden başlatılır. Önceki sürümden bir host, eskisi gibi tarama başına bir
+süreçle kullanılır. 200.000 karakterden uzun metin gönderilmez. Art arda üç hatadan sonra host 60 saniye boyunca kullanılamaz sayılır.
 Host'un `PERSON`, `ADDRESS` ve `LOCATION` aralıkları (yalnızca `enabledEntities` içinde açık
 olan türler) `source: "native-ner"` ve sabit 0,9 skoruyla işaretlenip maskelemeden önce kural
 bulgularıyla birleştirilir. Host kullanılabilir bir yanıt vermezse istem yalnızca kurallarla
-denetlenir ve sayfa içi bildirim ya da balon "Gelişmiş ad ve adres algılama (yerel yardımcı
-uygulama) kullanılamıyor: yalnızca yerleşik kurallarla kontrol edildi." der (temiz çıkan
+denetlenir ve sayfa içi bildirim ya da balon "Ad ve adresler yalnızca yerleşik
+kurallarla denetlendi: AIDR Privacy yardımcı uygulaması kullanılamadı." der (temiz çıkan
 istemler için sayfa başına bir kez). Hiçbir şey kalıcı olarak saklanmaz. Yalnızca metnin
 kendisi gönderilir; adres, site, sekme ya da kullanıcı bilgisi gönderilmez.
 Yüklenen görseller (ve Office/OpenDocument dosyalarındaki resimler), host OCR bildirdiğinde
@@ -1436,7 +1634,7 @@ başına en fazla 65 saniye bekler.
 
 **Örnek** — Host kurulu ve etkinken açılır pencere ve ayarlar sayfası "Gelişmiş algılama
 bağlı" gösterir ve "Ahmet Kaya'ya yaz" metni "`[PERSON_1]`'ya yaz" olarak gider. Değilse
-"Gelişmiş algılama kullanılamıyor; yerleşik kurallar etkin" yazar, koruma yerleşik kurallarla
+kişi adları ve adreslerin denetlenmediğini ve yerleşik kuralların etkin olduğunu yazar, koruma yerleşik kurallarla
 devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını belirtir.
 
 **Kapsam**
@@ -1460,8 +1658,12 @@ devam eder ve sayfa içi mesaj denetimin yalnızca kurallarla yapıldığını b
   hassas metin içeren görsel engellenir, hiçbir zaman maskelenmez. Taranmış sayfalar dâhil
   PDF içindeki görseller Browser Guard tarafından çıkarılıp aynı yoldan gönderilir. OCR host'un isteğe bağlı Python/Tesseract yığınını gerektirir; protokol sahte
   OCR çalışanlarıyla test edilmiştir, gerçek OCR doğruluğu kendi görsellerinizde ölçülmelidir.
-- Ağır bir model ile büyük bir istem 2 saniyelik bütçeyi aşabilir. Bu durumda köprü geri çekilir
-  ve yalnızca kurallar çalışır.
+- Ağır bir model ile büyük bir istem, ısınmış bir hostta da 2 saniyelik bütçeyi aşabilir. Bu
+  durumda köprü geri çekilir ve yalnızca kurallar çalışır (`requireNativeNer` açıksa gönderim
+  engellenir). Bu sürüm için hedef Windows ya da macOS donanımında başlatma veya tarama
+  gecikmesi ölçülmemiştir ve Windows başlatıcısı doğrulanmamıştır: NER'i zorunlu kılmadan
+  önce kendi modelinizle p95 gecikmeyi ölçün. Firefox desteklenmez; orada
+  `requireNativeNer` gönderimi engeller.
 
 ### 17. Cihazdan hangi veriler çıkar
 
