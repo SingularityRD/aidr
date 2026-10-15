@@ -74,7 +74,7 @@
 			],
 			"ignore": ["deploy/upstream/**", "vendor/**", "deploy/helm/aidr/files/**"],
 			"ignoreDependencies": ["npm", "playwright-core"],
-			"ignoreBinaries": ["bash", "docker", "dpkg-deb", "du", "gh", "gitleaks", "go", "icacls.exe", "psql", "where.exe", "wrangler"]
+			"ignoreBinaries": ["bash", "docker", "dpkg-deb", "du", "gh", "gitleaks", "go", "icacls.exe", "npm.cmd", "psql", "where.exe", "wrangler"]
 		},
 		"packages/core": {
 			"entry": ["src/index.ts"],

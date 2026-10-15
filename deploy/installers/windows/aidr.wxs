@@ -28,8 +28,14 @@
   MdmManaged=1): `aidr update` and automatic updates then leave updates to the
   MDM. On removal the installing user's
   connectors are removed with `aidr uninstall` (yes, keep-data;
-  AIDR_OPERATOR_NONINTERACTIVE=1) before the bundle is deleted. (No double
-  hyphen in XML comments: WiX's XML reader rejects it.)
+  AIDR_OPERATOR_NONINTERACTIVE=1) before the bundle is deleted. For every other
+  profile of a per-machine install, the final removal registers the permanently
+  installed cleanup\Remove-AidrUserRegistrations.ps1 as an Active Setup
+  component (ca/ProfileCleanupActions.cs): it runs once per user at the next
+  sign-in, as that user, and removes the AIDR hook entries left in that profile.
+  No privileged process edits a user's files. Installing again removes that
+  registration first. (No double hyphen in XML comments: WiX's XML reader
+  rejects it.)
 
   Wizard (ui/AidrUI.wxs, strings in ui/aidr.<culture>.wxl): welcome, licence,
   scope (per-user / per-machine), optional company connection, ready, finish.
@@ -178,6 +184,7 @@
         </Directory>
         <Directory Id="CONFIGDIR" Name="config" />
         <Directory Id="DOCSDIR" Name="docs" />
+        <Directory Id="CLEANUPDIR" Name="cleanup" />
       </Directory>
     </StandardDirectory>
 
@@ -229,6 +236,12 @@
       <File Id="CustomerPacketMachineFile" Source="$(var.CustomerPacket)" Name="customer-packet.json" KeyPath="yes" />
     </Component>
     <?endif?>
+
+    <!-- Kept after removal (Permanent): the per-user cleanup Active Setup runs at each user's next sign-in. -->
+    <Component Id="ProfileCleanupScript" Directory="CLEANUPDIR" Condition="ALLUSERS=1" Permanent="yes"
+               Guid="3B8E1F6C-7A42-4D95-B1C3-5F0E9A2D6C81">
+      <File Id="ProfileCleanupScriptFile" Source="$(var.ProfileCleanupScript)" Name="Remove-AidrUserRegistrations.ps1" KeyPath="yes" />
+    </Component>
 
     <Component Id="PathMachine" Directory="INSTALLFOLDER" Condition="ALLUSERS=1"
                Guid="5E2A9C41-0B7D-4F6A-8C13-9D4E2B7A1F05">
@@ -326,6 +339,7 @@
       <ComponentRef Id="AidrPolicyApprovalsMode" />
       <ComponentRef Id="AidrPolicyOfflinePolicy" />
       <ComponentRef Id="ProtectionLocked" />
+      <ComponentRef Id="ProfileCleanupScript" />
     </Feature>
 
     <!-- System-wide hooks and heartbeat task: elevated (not impersonated), per-machine only; a failure is logged and never fails the install. -->
@@ -361,6 +375,25 @@
                   ExeCommand="&quot;[System64Folder]cmd.exe&quot; /d /s /c &quot;set AIDR_OPERATOR_NONINTERACTIVE=1&amp;&amp; &quot;[#AidrExe]&quot; uninstall --yes --keep-data&quot;"
                   Execute="deferred"
                   Impersonate="yes"
+                  Return="ignore" />
+
+    <!-- Removal, every other profile: register the per-user cleanup (as LocalSystem, HKLM only). -->
+    <CustomAction Id="AidrPrepareProfileCleanup"
+                  Property="AidrRegisterProfileCleanup"
+                  Value="install=[INSTALLFOLDER];system=[System64Folder]"
+                  Execute="immediate" />
+    <CustomAction Id="AidrRegisterProfileCleanup"
+                  BinaryRef="AidrInstallerActions"
+                  DllEntry="RegisterProfileCleanup"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <!-- Install: a reinstalled product owns the registrations again. -->
+    <CustomAction Id="AidrUnregisterProfileCleanup"
+                  BinaryRef="AidrInstallerActions"
+                  DllEntry="UnregisterProfileCleanup"
+                  Execute="deferred"
+                  Impersonate="no"
                   Return="ignore" />
 
     <!--
@@ -404,6 +437,12 @@
               Condition="NOT REMOVE AND ALLUSERS=1 AND AIDR_MACHINE_HOOKS &lt;&gt; &quot;0&quot; AND AIDR_LOCK_OTHER_HOOKS &lt;&gt; &quot;1&quot;" />
       <Custom Action="AidrMachineHooksInstallLocked" Before="InstallFinalize"
               Condition="NOT REMOVE AND ALLUSERS=1 AND AIDR_MACHINE_HOOKS &lt;&gt; &quot;0&quot; AND AIDR_LOCK_OTHER_HOOKS = &quot;1&quot;" />
+      <Custom Action="AidrPrepareProfileCleanup" Before="AidrRegisterProfileCleanup"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND ALLUSERS=1" />
+      <Custom Action="AidrRegisterProfileCleanup" After="AidrUninstallForUser"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND ALLUSERS=1" />
+      <Custom Action="AidrUnregisterProfileCleanup" After="InstallInitialize"
+              Condition="NOT REMOVE AND ALLUSERS=1" />
       <Custom Action="AidrPrepareEnrollmentHandoff" Before="AidrRollbackEnrollmentHandoff"
               Condition="NOT REMOVE AND (ENROLLMENT_URL OR ENROLLMENT_CODE) AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
       <Custom Action="AidrRollbackEnrollmentHandoff" Before="AidrWriteEnrollmentHandoff"

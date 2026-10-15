@@ -240,6 +240,13 @@ test("every workflow artifact upload has an explicit reviewed file selection", (
 			"${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}.exe",
 			"${{ runner.temp }}/installers-windows/${{ needs.prepare.outputs.stem }}-windows.SHA256SUMS",
 		]],
+		// The signed air-gap transfer bundle: image tarballs + Ed25519-signed manifest (tar),
+		// its cosign bundle, the vendor public key and SHA256SUMS. The signing key is deleted
+		// by the step's trap and the throwaway stack's credentials never reach this directory.
+		["release-images.yml::Upload the signed air-gap bundle (pinned)", ["${{ runner.temp }}/airgap-release/"]],
+		// Windows real-host records and the VS Code JUnit report (mock model: no credential exists).
+		["windows-real-host-e2e.yml::Upload the Windows evidence record (pinned)", ["docs/evidence/real-host/windows/"]],
+		["windows-real-host-e2e.yml::Upload the VS Code evidence (pinned)", ["docs/evidence/real-host/windows/"]],
 	]);
 	const actual = allArtifactUploads();
 	assert.deepEqual(actual.map(({ key }) => key).sort(), [...expected.keys()].sort());

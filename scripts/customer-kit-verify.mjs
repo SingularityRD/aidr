@@ -8,8 +8,10 @@ import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { isWithin, loadReleaseBundle } from "./release-signing-lib.mjs";
 import {
+  airgapBundleKitFailures,
   CUSTOMER_KIT_BENCHMARK_FILES,
   CUSTOMER_KIT_DELIVERY_FILES,
+  CUSTOMER_KIT_HELM_FILES,
   CUSTOMER_KIT_LINKED_GUIDES,
   CUSTOMER_KIT_REQUIRED_FILES,
   CUSTOMER_KIT_REQUIRED_RELEASE_ARTIFACTS,
@@ -78,6 +80,8 @@ try {
 
   const source = JSON.parse(readFileSync(join(kit, "release-source.json"), "utf8"));
   verifyDeliveryStatus(source, inventory);
+  const airgapFailures = airgapBundleKitFailures(new Set(inventory.keys()), source.airgap_image_bundle_bundled);
+  if (airgapFailures.length) throw new Error(airgapFailures[0]);
   const privacyGatewayFailures = privacyGatewayKitFailures(new Set(inventory.keys()), (path) => readFileSync(join(kit, path), "utf8"), source);
   if (privacyGatewayFailures.length) throw new Error(privacyGatewayFailures[0]);
   const gatewayRuntime = ["deploy/gateway/aidr-mcp-gateway.mjs", "deploy/gateway/aidr-mcp-approve.mjs", "deploy/gateway/aidr-mcp-stdio.mjs", "deploy/gateway/aidr-artifact.manifest.json", "deploy/gateway/README.md"];
@@ -228,6 +232,7 @@ function verifyDeliveryStatus(source, inventory) {
     tls_renewal_bundled: [CUSTOMER_KIT_DELIVERY_FILES.tls_service, CUSTOMER_KIT_DELIVERY_FILES.tls_timer, CUSTOMER_KIT_DELIVERY_FILES.tls_script],
     provenance_tool_bundled: [CUSTOMER_KIT_DELIVERY_FILES.provenance_script],
     airgap_tool_bundled: [CUSTOMER_KIT_DELIVERY_FILES.airgap_script],
+    helm_chart_bundled: CUSTOMER_KIT_HELM_FILES,
     benchmark_contract_bundled: CUSTOMER_KIT_BENCHMARK_FILES,
     provenance_statement_bundled: ["artifacts/aidr-provenance.intoto.json"],
   };

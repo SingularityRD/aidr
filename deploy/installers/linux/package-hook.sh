@@ -8,9 +8,20 @@
 #                                         then run `aidr setup` for the invoking user
 #   package-hook.sh preremove <final>     on final removal (final=1) run
 #                                         `aidr uninstall --yes --keep-data` for
-#                                         the invoking user and
-#                                         `aidr machine-hooks remove --heartbeat`;
+#                                         EVERY local account that ran `aidr setup`,
+#                                         then `aidr machine-hooks remove --heartbeat`;
 #                                         an upgrade (0) keeps every registration
+#   package-hook.sh deregister-all        the same machine-wide removal without
+#                                         removing the package (fleet removal:
+#                                         run it as root from configuration
+#                                         management, then remove the package)
+#
+# Machine-wide removal: an account is included when its home holds a
+# ~/.singularity-aidr directory it owns (not a link). `aidr uninstall` then runs
+# AS THAT USER (runuser), never as root on a user's files, so a user cannot make
+# root write through a planted link. Accounts the passwd database does not
+# enumerate (some LDAP/SSSD setups) are not seen: run `aidr uninstall` for them,
+# or `deregister-all` with AIDR_PACKAGE_HOOK_PASSWD naming a passwd-format list.
 #
 # The invoking user is SUDO_USER (`sudo apt install ./aidr.deb`). Setup never
 # runs for root or with root's HOME: without a non-root SUDO_USER the hook only
@@ -51,6 +62,8 @@
 #   AIDR_POLICY_OFFLINE_POLICY            keep_enforcing_local | block_after_grace
 #   AIDR_MACHINE_POLICY                   policy path (default /etc/singularity-aidr/managed.json; tests)
 # sudo resets the environment: pass them as `sudo env AIDR_POLICY_...=... apt install ./aidr.deb`.
+#   AIDR_PACKAGE_HOOK_PASSWD             passwd-format account list for the
+#                                        machine-wide removal (default: getent passwd)
 set -u
 
 PREFIX=${AIDR_PREFIX:-/opt/singularity-aidr}
@@ -185,6 +198,52 @@ machine_hooks() {
 	fi
 }
 
+# name:home of every account that ran `aidr setup`: it owns ~/.singularity-aidr.
+registered_users() {
+	if [ -n "${AIDR_PACKAGE_HOOK_PASSWD:-}" ]; then
+		cat "$AIDR_PACKAGE_HOOK_PASSWD"
+	else
+		getent passwd 2>/dev/null || cat /etc/passwd
+	fi | while IFS=: read -r name _ uid _ _ home _; do
+		case "$name" in '' | *[!A-Za-z0-9._-]*) continue ;; esac
+		case "$uid" in '' | *[!0-9]*) continue ;; esac
+		case "$home" in /*) ;; *) continue ;; esac
+		# Without root only the caller's own account can be changed.
+		[ "$(id -u)" -eq 0 ] || [ "$uid" = "$(id -u)" ] || continue
+		state="$home/.singularity-aidr"
+		[ -d "$state" ] && [ ! -L "$state" ] && [ ! -L "$home" ] || continue
+		[ "$(stat -c %u "$state" 2>/dev/null)" = "$uid" ] || continue
+		printf '%s:%s\n' "$name" "$home"
+	done
+}
+
+# `aidr uninstall --yes --keep-data` for every registered account, as that account.
+deregister_all() {
+	count=0
+	failed=0
+	list=$(mktemp) || return 1
+	registered_users | sort -u > "$list"
+	exec 3< "$list"
+	rm -f "$list"
+	while IFS= read -r entry <&3; do
+		user=${entry%%:*}
+		home=${entry#*:}
+		count=$((count + 1))
+		say "removing the AIDR connectors of $user ($home; local data kept)"
+		if ! run_as "$user" "$home" env AIDR_OPERATOR_NONINTERACTIVE=1 "$AIDR" uninstall --yes --keep-data < /dev/null; then
+			failed=$((failed + 1))
+			say "uninstall for $user was incomplete; see the lines above. As $user: aidr uninstall" >&2
+		fi
+	done
+	exec 3<&-
+	if [ "$count" -eq 0 ]; then
+		say "no account on this machine has AIDR connectors registered"
+	else
+		say "connectors removed for $((count - failed)) of $count account(s)"
+	fi
+	[ "$failed" -eq 0 ]
+}
+
 case "$action" in
 postinstall)
 	if [ ! -x "$AIDR" ]; then
@@ -242,22 +301,20 @@ preremove)
 	[ "$final" = "1" ] || exit 0
 	rm -f "$MDM_MARKER"
 	[ -x "$AIDR" ] || exit 0
-	if user=$(target_user); then
-		home=$(user_home "$user")
-		if [ -n "$home" ] && [ -d "$home" ]; then
-			say "removing the AIDR connectors of $user (local data kept)"
-			if ! run_as "$user" "$home" env AIDR_OPERATOR_NONINTERACTIVE=1 "$AIDR" uninstall --yes --keep-data; then
-				say "uninstall for $user was incomplete; see the lines above." >&2
-			fi
-		fi
-	fi
+	# A failed account never fails the package transaction; it is named above.
+	deregister_all || true
 	machine_hooks remove
-	say "other users who ran 'aidr setup' must run 'aidr uninstall' before the package is removed;"
-	say "otherwise their ~/.claude/settings.json keeps hook entries marked 'Singularity AIDR managed installation' that point at a removed binary; delete those entries."
 	exit 0
 	;;
+deregister-all)
+	if [ ! -x "$AIDR" ]; then
+		say "$AIDR is missing; reinstall the package, then run this again." >&2
+		exit 1
+	fi
+	deregister_all
+	;;
 *)
-	say "usage: package-hook.sh postinstall | preremove <final:1|0>" >&2
+	say "usage: package-hook.sh postinstall | preremove <final:1|0> | deregister-all" >&2
 	exit 64
 	;;
 esac

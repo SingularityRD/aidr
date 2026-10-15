@@ -13,10 +13,18 @@
  *
  * On the disconnected host:
  *
- *   node scripts/onprem-offline-bundle.mjs verify --bundle <dir | .tar> --public-key <PEM> [component keys]
+ *   node scripts/onprem-offline-bundle.mjs verify --bundle <dir | .tar> --public-key <PEM> [component keys] \
+ *     [--compose <compose.yml prepared on this host>]
  *   node scripts/onprem-offline-bundle.mjs import --bundle <dir | .tar> --public-key <PEM> [component keys] \
- *     [--load-images] [--intel-target local [--packs-dir <dir>] | --intel-target storage --deployment /srv/aidr] \
+ *     [--compose <compose.yml prepared on this host>] [--load-images] \
+ *     [--intel-target local [--packs-dir <dir>] | --intel-target storage --deployment /srv/aidr] \
  *     [--installers-out <new dir>] [--browser-guard-out <new dir>]
+ *
+ * With --compose on verify/import the image set must also be exactly what the
+ * stack prepared on this host needs (scripts/build-airgap-images.mjs --verify
+ * --compose). The vendor's signed image bundle (release-images.yml, job
+ * airgap-bundle) is checked this way after `deployment-prepare.mjs` generated
+ * this installation's credentials locally.
  *
  * Every component is verified with its own existing verifier before it enters
  * the bundle and again before anything is imported, and nothing is imported
@@ -35,8 +43,10 @@
  * signature, key or digest is a refusal, never a warning.
  *
  * Boundary: the image tarballs are covered by the bundle signature and their
- * digests, not by a publisher signature; verify vendor images with cosign as in
- * docs/operations/kubernetes.md before they are bundled.
+ * digests. The vendor bundle is signed with the vendor offline-bundle key (pass
+ * its public key, shipped in the signed customer kit, as --public-key) and,
+ * separately, keyless with cosign (`cosign verify-blob --bundle`); a bundle a
+ * customer assembles itself is signed with the operator's key instead.
  */
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -151,9 +161,15 @@ function loadPublicKey(value, label) {
 
 // --- component verifiers ----------------------------------------------------------
 
-function verifyImages(dir, { airgapScript = join(here, "build-airgap-images.mjs") } = {}) {
+/**
+ * Size and SHA-256 of every tarball. With `compose` (the stack prepared on this
+ * host), also plan completeness: every image that compose file runs or builds
+ * from is in the bundle, and nothing else is.
+ */
+function verifyImages(dir, { airgapScript = join(here, "build-airgap-images.mjs"), compose = null } = {}) {
 	regularFile(join(dir, IMAGES_MANIFEST), "image manifest");
-	const result = spawnSync(process.execPath, [airgapScript, "--verify", "--output", dir], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+	const plan = compose ? ["--compose", resolve(compose)] : [];
+	const result = spawnSync(process.execPath, [airgapScript, "--verify", "--output", dir, ...plan], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
 	if (result.status !== 0) fail(`image bundle verification failed: ${(result.stderr || result.stdout).trim().split("\n").at(-1)}`);
 	const manifest = JSON.parse(readFileSync(join(dir, IMAGES_MANIFEST), "utf8"));
 	return { count: manifest.images.length, platform: manifest.platform ?? null, refs: manifest.images.map((image) => image.ref), manifest_sha256: sha256(readFileSync(join(dir, IMAGES_MANIFEST))) };
@@ -380,7 +396,7 @@ export async function verifyBundle(options) {
 		const checks = [];
 		const components = manifest.components ?? {};
 		if (components.images) {
-			const images = verifyImages(join(source, "images"), options);
+			const images = verifyImages(join(source, "images"), { ...options, compose: options.planCompose });
 			if (images.manifest_sha256 !== components.images.manifest_sha256) fail("image manifest differs from the signed bundle manifest");
 			checks.push(["images", `${images.count} image(s)`]);
 		}
@@ -488,7 +504,8 @@ function parseOptions(argv) {
 		signingKey: values["signing-key"],
 		keyId: values["key-id"],
 		images: values.images,
-		compose: values.compose,
+		compose: positionals[0] === "build" ? values.compose : undefined,
+		planCompose: positionals[0] === "build" ? undefined : values.compose,
 		platform: values.platform,
 		intelPacks: values["intel-pack"].map((path) => resolve(path)),
 		intelTrustedKeys: values["intel-trusted-keys"] ? resolve(values["intel-trusted-keys"]) : null,

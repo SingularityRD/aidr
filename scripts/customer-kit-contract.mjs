@@ -101,6 +101,41 @@ export function privacyGatewayKitFailures(paths, read, source) {
 // SHA inventory remains the authority for the complete set and catches any
 // unlisted extra file; this list catches an assembler that silently omits a
 // newly required delivery artifact.
+// Kubernetes delivery: the Helm chart and its credential generator ship in every
+// kit, so a Helm installation needs no source checkout.
+export const CUSTOMER_KIT_HELM_FILES = Object.freeze([
+	"deploy/helm/aidr/Chart.yaml",
+	"deploy/helm/aidr/values.yaml",
+	"deploy/helm/aidr/values.schema.json",
+	"deploy/helm/aidr/README.md",
+	"deploy/helm/generate-secrets.mjs",
+	"KUBERNETES.md",
+]);
+
+// Optional vendor-signed air-gap image bundle (release-images.yml, job
+// airgap-bundle): the transfer archive, its cosign bundle, the vendor
+// offline-bundle public key and their SHA256SUMS, under airgap/.
+const CUSTOMER_KIT_AIRGAP_PUBLIC_KEY = "airgap/offline-bundle-signing-public.pem";
+const AIRGAP_ARCHIVE = /^airgap\/aidr-offline-bundle-[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.tar$/;
+
+/**
+ * The air-gap bundle is all there or not there: when release-source.json says it
+ * is bundled, exactly one signed archive, its cosign bundle, the public key and
+ * SHA256SUMS; otherwise nothing under airgap/. Returns failure messages.
+ */
+export function airgapBundleKitFailures(paths, declared) {
+	const present = [...paths].filter((path) => path.startsWith("airgap/"));
+	if (declared === undefined && present.length === 0) return [];
+	if (declared !== true) return present.length ? ["Air-gap bundle files are present but release-source.json does not declare them"] : [];
+	const archives = present.filter((path) => AIRGAP_ARCHIVE.test(path));
+	if (archives.length !== 1) return ["The kit must carry exactly one signed air-gap transfer archive"];
+	const expected = new Set([archives[0], `${archives[0]}.cosign.bundle`, CUSTOMER_KIT_AIRGAP_PUBLIC_KEY, "airgap/SHA256SUMS"]);
+	const missing = [...expected].filter((path) => !paths.has(path));
+	if (missing.length) return [`Air-gap bundle is incomplete: ${missing.join(", ")}`];
+	const extra = present.filter((path) => !expected.has(path));
+	return extra.length ? [`Unexpected files in airgap/: ${extra.join(", ")}`] : [];
+}
+
 export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	"START-HERE.md",
 	"INSTALLATION.md",
@@ -187,6 +222,7 @@ export const CUSTOMER_KIT_REQUIRED_FILES = Object.freeze([
 	...Object.values(CUSTOMER_KIT_DELIVERY_FILES),
 	...CUSTOMER_KIT_BENCHMARK_FILES,
 	...CUSTOMER_KIT_PRIVACY_GATEWAY_FILES,
+	...CUSTOMER_KIT_HELM_FILES,
 ]);
 
 // Top-level guides are renamed in the portable kit. Keep their local links

@@ -102,7 +102,7 @@
 		"test:e2e:browser-guard": "pnpm -C packages/browser-guard test:e2e",
 		"test:e2e:cursor": "vitest run --config vitest.e2e.config.ts packages/extension",
 		"test:e2e:vscode": "vitest run --config vitest.e2e.config.ts packages/extension",
-		"test:e2e:real-host": "node --test scripts/real-host-e2e/mock-llm-server.test.mjs && node scripts/real-host-e2e/run.mjs --install",
+		"test:e2e:real-host": "node --test scripts/real-host-e2e/mock-llm-server.test.mjs scripts/real-host-e2e/hosts.test.mjs && node scripts/real-host-e2e/run.mjs --install",
 		"test:customer-demo": "pnpm test:opencode:aidr && pnpm test -- packages/dashboard/src/__tests__/integration.test.tsx --run && pnpm -C packages/dashboard build && pnpm -C packages/dashboard run test:route-smoke:static",
 		"test:installers": "node --test deploy/installers/installers.test.mjs",
 		"test:privacy": "pnpm --filter @singularityrd/aidr-privacy build && pnpm --filter @singularityrd/aidr-privacy test",

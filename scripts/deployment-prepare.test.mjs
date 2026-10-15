@@ -80,10 +80,16 @@ test("production first boot does not wait on readiness evidence that is installe
 	assert.match(installation, /docker compose --project-directory \/srv\/aidr -f \/srv\/aidr\/compose\.yml up -d --build/);
 	assert.doesNotMatch(installation, /up -d --wait/);
 	assert.match(installation, /deployment-doctor\.mjs --deployment\s+\/srv\/aidr --online/);
-	const airgap = readFileSync(join(root, "deploy/README.md"), "utf8").split("On the disconnected host:")[1].split("## Release boundary")[0];
-	assert.match(airgap, /docker compose --project-directory \.aidr-deploy -f \.aidr-deploy\/compose\.yml up -d\s+node scripts\/deployment-migrate\.mjs \.aidr-deploy/);
-	assert.doesNotMatch(airgap, /up -d --wait/);
-	assert.match(airgap, /deployment-doctor\.mjs --deployment\s+\.aidr-deploy --online/);
+	const airgap = readFileSync(join(root, "deploy/README.md"), "utf8").split("### On the disconnected host")[1].split("### Operator-built bundle")[0];
+	// Credentials are generated on the disconnected host, before the signed images are imported.
+	assert.ok(airgap.indexOf("node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr") < airgap.indexOf("node scripts/onprem-offline-bundle.mjs import"));
+	assert.match(airgap, /onprem-offline-bundle\.mjs import --bundle airgap\/aidr-offline-bundle-<version>\.tar \\\n\s+--public-key airgap\/offline-bundle-signing-public\.pem --compose \/srv\/aidr\/compose\.yml --load-images/);
+	assert.match(airgap, /docker compose --project-directory \/srv\/aidr -f \/srv\/aidr\/compose\.yml up -d\nnode scripts\/deployment-migrate\.mjs \/srv\/aidr/, "no --build: the vendor image is used");
+	assert.doesNotMatch(airgap, /up -d --wait|up -d --build/);
+	assert.match(airgap, /deployment-doctor\.mjs --deployment\s+\/srv\/aidr --online/);
+	const operatorBuilt = readFileSync(join(root, "deploy/README.md"), "utf8").split("### Operator-built bundle")[1].split("## Release boundary")[0];
+	assert.match(operatorBuilt, /rm -rf \/tmp\/aidr-plan/, "the throwaway stack with its credentials never reaches the transfer media");
+	assert.doesNotMatch(readFileSync(join(root, "deploy/README.md"), "utf8"), /Transfer the whole `\.aidr-airgap` directory/);
 });
 
 test("operator runtime capability configuration is forwarded only to private function env", () => {

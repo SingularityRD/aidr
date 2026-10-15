@@ -424,6 +424,8 @@ Two non-negotiables:
 
 **Realistic constraint to plan around:** with a **USB token**, hosted CI (GitHub Actions) **cannot** sign. You need either a self-hosted Windows runner with the token attached, or a **cloud signing service** (SSL.com eSigner, DigiCert KeyLocker). For a one-person startup, choose a CA that offers cloud signing rather than a physical token — it is the difference between automated releases and manually signing on your laptop each time.
 
+**Implemented:** the release and customer-installer workflows no longer need an exportable PFX. `AIDR_WINDOWS_SIGNER` selects `azure-key-vault` (AzureSignTool, GitHub OIDC, no stored secret) or `jsign` (eSigner, DigiCert ONE, Google Cloud KMS, AWS KMS, Azure, PKCS#11 tokens including Certum cryptoCertum); `pfx` remains for local test builds. Every signed file is checked against the pinned certificate thumbprint whatever the backend. Configuration and the Certum purchase steps: [Windows code signing with an HSM-held certificate](../operations/windows-code-signing.md).
+
 ---
 
 ## 7. Timeline: purchase → first signed build

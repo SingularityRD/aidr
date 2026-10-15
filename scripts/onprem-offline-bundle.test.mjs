@@ -238,3 +238,35 @@ test("the CLI refuses a transfer archive with links and reports in Turkish", (t)
 	assert.match(unsignedBuild.stderr, /Refused: the offline bundle was not written/);
 	assert.match(unsignedBuild.stderr, /never written unsigned/);
 });
+
+test("verify/import --compose: the image set must be exactly what the stack prepared on this host needs", async (t) => {
+	const root = workdir(t);
+	const f = fixtures(root);
+	const output = join(root, "vendor-bundle");
+	// The vendor bundle: images only (release-images.yml, job airgap-bundle).
+	await buildBundle({ output, signingKey: f.signingKey, keyId: "aidr-offline-1", images: f.images, intelPacks: [], tar: true });
+	const compose = (services) => {
+		const path = join(root, `compose-${Object.keys(services).join("-")}.yml`);
+		writeFileSync(path, `services:\n${Object.entries(services).map(([name, image]) => `  ${name}:\n    image: ${image}\n`).join("")}`);
+		return path;
+	};
+	const matching = compose({ dashboard: "aidr-dashboard:0.6.1" });
+	const verified = await verifyBundle({ bundle: `${output}.tar`, publicKey: f.publicKey, planCompose: matching });
+	verified.cleanup();
+	assert.deepEqual(verified.checks, [["images", "1 image(s)"]]);
+	// A stack that needs an image the transfer media does not carry is refused before any load.
+	const missing = compose({ dashboard: "aidr-dashboard:0.6.1", db: "supabase/postgres:17.11.0.004" });
+	await assert.rejects(verifyBundle({ bundle: `${output}.tar`, publicKey: f.publicKey, planCompose: missing }), /incomplete: supabase\/postgres:17\.11\.0\.004 is required/);
+	const dockerLog = join(root, "docker.log");
+	const docker = join(root, "fake-docker");
+	writeFileSync(docker, `#!/bin/sh\necho "$@" >> '${dockerLog}'\n`);
+	chmodSync(docker, 0o755);
+	await assert.rejects(importBundle({ bundle: `${output}.tar`, publicKey: f.publicKey, planCompose: missing, loadImages: true, dockerBin: docker }, { out: () => {} }), /incomplete/);
+	assert.equal(existsSync(dockerLog), false, "nothing was loaded");
+	// The CLI maps --compose to the plan check for verify (it means "build from" only for build).
+	const cli = spawnSync(process.execPath, [script, "verify", "--bundle", `${output}.tar`, "--public-key", f.publicKey, "--compose", missing, "--lang", "en"], { encoding: "utf8" });
+	assert.equal(cli.status, 1);
+	assert.match(cli.stderr, /is required by the plan but not present/);
+	const ok = spawnSync(process.execPath, [script, "verify", "--bundle", `${output}.tar`, "--public-key", f.publicKey, "--compose", matching, "--lang", "en"], { encoding: "utf8" });
+	assert.equal(ok.status, 0, ok.stderr);
+});

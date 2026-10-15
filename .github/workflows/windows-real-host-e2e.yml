@@ -1,0 +1,173 @@
+name: Windows Real-Host E2E
+
+# Opt-in Windows evidence for the real-host tier (scripts/real-host-e2e,
+# docs/evidence/real-host/README.md#windows). On a GitHub-hosted Windows runner:
+#
+#   real-host   the real, unmodified Claude Code and Codex CLI binaries (pinned
+#               versions, scripts/real-host-e2e/hosts.mjs) with AIDR installed from
+#               this checkout's build in a disposable profile, driven by the
+#               scripted loopback mock model: no API key, no account.
+#   vscode      the VS Code extension in a real VS Code Extension Host
+#               (packages/extension e2e, pinned VS Code download).
+#
+# It records evidence only; it signs, publishes and deploys nothing and holds no
+# secret. Cursor, interactive approval dialogs, a real model and MDM-delivered
+# installs are not automatable here and stay a human acceptance step.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_vscode:
+        description: "Also run the VS Code Extension Host E2E"
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: windows-real-host-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22.12.0
+  PNPM_VERSION: 10.29.3
+  CLAUDE_CODE_VERSION: 2.1.282
+  VSCODE_VERSION: 1.105.1
+
+jobs:
+  real-host:
+    name: Real-host ${{ matrix.host }} on Windows (scripted mock model)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [claude-code, codex]
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Frozen install and development build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
+          pnpm build
+          if ($LASTEXITCODE -ne 0) { throw "pnpm build failed" }
+          node --test scripts/real-host-e2e/mock-llm-server.test.mjs scripts/real-host-e2e/hosts.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw "real-host harness tests failed" }
+
+      # The Claude Code npm package fetches its native binary in its postinstall step,
+      # so it is installed with scripts, pinned, into a private prefix.
+      - name: Install pinned Claude Code
+        if: matrix.host == 'claude-code'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $prefix = Join-Path $env:RUNNER_TEMP "claude-code"
+          npm install --prefix $prefix --no-audit --no-fund "@anthropic-ai/claude-code@$env:CLAUDE_CODE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "Claude Code install failed" }
+          $package = Join-Path $prefix "node_modules\@anthropic-ai\claude-code"
+          $binary = Get-ChildItem -LiteralPath $package -Recurse -Filter claude.exe -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          $path = if ($binary) { $binary.FullName } else { Join-Path $package "cli.js" }
+          if (-not (Test-Path -LiteralPath $path)) { throw "No Claude Code executable or cli.js in $package" }
+          "AIDR_CLAUDE_PATH=$path" >> $env:GITHUB_ENV
+          "CLAUDE_CODE_GIT_BASH_PATH=C:\Program Files\Git\bin\bash.exe" >> $env:GITHUB_ENV
+
+      - name: Run the real-host scenarios
+        shell: pwsh
+        env:
+          HOST_ID: ${{ matrix.host }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          node scripts/real-host-e2e/run.mjs --host $env:HOST_ID --install `
+            --hosts-dir (Join-Path $env:RUNNER_TEMP "real-host") `
+            --evidence-dir docs/evidence/real-host/windows
+          if ($LASTEXITCODE -ne 0) { throw "Windows real-host scenarios for $env:HOST_ID failed; see the evidence record" }
+
+      - name: Upload the Windows evidence record (pinned)
+        if: success() || failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-real-host-${{ matrix.host }}-${{ github.run_id }}
+          path: docs/evidence/real-host/windows/
+          if-no-files-found: warn
+          retention-days: 90
+
+  vscode:
+    name: VS Code Extension Host E2E on Windows
+    if: inputs.run_vscode
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository (pinned)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm (pinned)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js (pinned)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Frozen install and build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
+          pnpm build
+          if ($LASTEXITCODE -ne 0) { throw "pnpm build failed" }
+
+      # @vscode/test-electron checks the download against the update service's SHA-256.
+      - name: Download pinned VS Code
+        shell: pwsh
+        working-directory: packages/extension
+        run: |
+          $ErrorActionPreference = "Stop"
+          $code = node -e "require('@vscode/test-electron').downloadAndUnzipVSCode(process.env.VSCODE_VERSION).then((p) => console.log(p), (e) => { console.error(e); process.exit(1); })"
+          if ($LASTEXITCODE -ne 0) { throw "VS Code download failed" }
+          $code = ($code | Select-Object -Last 1).Trim()
+          if (-not (Test-Path -LiteralPath $code)) { throw "VS Code executable missing: $code" }
+          "VSCODE_EXECUTABLE_PATH=$code" >> $env:GITHUB_ENV
+
+      - name: Run the VS Code extension E2E
+        shell: pwsh
+        env:
+          AIDR_E2E_ENABLE_IDE_HOST: "1"
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path docs/evidence/real-host/windows | Out-Null
+          pnpm test:e2e:vscode -- --reporter=verbose --reporter=junit --outputFile.junit=docs/evidence/real-host/windows/vscode-extension.junit.xml
+          if ($LASTEXITCODE -ne 0) { throw "VS Code extension E2E failed" }
+
+      - name: Upload the VS Code evidence (pinned)
+        if: success() || failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-vscode-extension-${{ github.run_id }}
+          path: docs/evidence/real-host/windows/
+          if-no-files-found: warn
+          retention-days: 90

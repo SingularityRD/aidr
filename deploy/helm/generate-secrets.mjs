@@ -31,7 +31,10 @@ import { DEFAULT_PUBLIC_KEYS_PATH as LICENSE_PUBLIC_KEYS_PATH, loadPublicKeyRegi
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
-const { stringify } = createRequire(join(root, "packages/core/package.json"))("yaml");
+// In the customer kit there is no packages/core/node_modules: the kit carries the
+// bundled YAML runtime at deploy/vendor/yaml.cjs (scripts/customer-kit.mjs).
+const vendoredYaml = join(root, "deploy/vendor/yaml.cjs");
+const { stringify } = createRequire(join(root, "packages/core/package.json"))(existsSync(vendoredYaml) ? vendoredYaml : "yaml");
 
 const hex = (bytes) => randomBytes(bytes).toString("hex");
 const KEY_LIFETIME_SECONDS = 365 * 86400;
