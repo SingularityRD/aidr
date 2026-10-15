@@ -8,6 +8,7 @@ import editing from "./editing.mjs";
 import entities from "./entities.mjs";
 import fileUpload from "./file-upload.mjs";
 import frames from "./frames.mjs";
+import images from "./images.mjs";
 import managedAiSites from "./managed-ai-sites.mjs";
 import modes from "./modes.mjs";
 import nativeHost from "./native-host.mjs";
@@ -35,6 +36,7 @@ export const SCENARIOS = [
 	...managedAiSites,
 	...workAccounts,
 	...nativeHost,
+	...images,
 ];
 
 /** Selects scenarios by comma-separated ids or id prefixes (`auto` matches `auto-chatgpt`). */
