@@ -33,6 +33,10 @@
       "types": "./dist/enterprise/index.d.ts",
       "import": "./dist/enterprise/index.js"
     },
+    "./companion": {
+      "types": "./dist/companion/index.d.ts",
+      "import": "./dist/companion/index.js"
+    },
     "./platform": {
       "types": "./dist/platform/index.d.ts",
       "import": "./dist/platform/index.js"
@@ -44,7 +48,8 @@
     "aidr-native-host": "./dist/native/host.js",
     "aidr-privacy-service": "./dist/platform/serve.js",
     "aidr-privacy-send": "./dist/platform/send-cli.js",
-    "aidr-privacy-mcp": "./dist/platform/mcp-serve.js"
+    "aidr-privacy-mcp": "./dist/platform/mcp-serve.js",
+    "aidr-privacy-companion": "./dist/companion/cli.js"
   },
   "files": [
     "dist",
@@ -62,6 +67,7 @@
     "vision/requirements.txt",
     "vision/requirements.lock.txt",
     "vision/config.example.json",
+    "vision/windows_ocr.ps1",
     "native",
     "extension/chrome",
     "extension/managed-schema.json",
