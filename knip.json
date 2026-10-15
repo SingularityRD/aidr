@@ -115,6 +115,22 @@
 			"entry": ["src/main.tsx"],
 			"project": ["src/**/*.{ts,tsx}", "*.{js,mjs,ts}"]
 		},
+		"packages/desktop": {
+			"entry": [
+				"src/main/main.ts",
+				"src/preload/preload.ts",
+				"src/renderer/app.ts",
+				"scripts/*.{mjs,cjs}",
+				"e2e/*.mjs"
+			],
+			"project": ["src/**/*.ts", "scripts/**/*.{mjs,cjs}", "e2e/**/*.mjs"],
+			"ignoreDependencies": [
+				"@singularityrd/aidr-browser-guard",
+				"@singularityrd/aidr-claude-code",
+				"@singularityrd/aidr-cli",
+				"@singularityrd/aidr-codex"
+			]
+		},
 		"packages/extension": {
 			"entry": ["src/cursor_extension.ts", "src/vscode_extension.ts", "src/aidr-hook.ts"],
 			"project": ["src/**/*.ts", "scripts/**/*.{js,mjs}", "*.{js,cjs,mjs,ts}"],
