@@ -242,13 +242,14 @@ function unpackedExtensionId(extDir) {
  * full Chromium build in new-headless mode, which supports extensions; the
  * explicit-executable variant is kept as a fallback for older Playwright builds.
  */
-function strategies({ extDir, headed, log }) {
+function strategies({ extDir, headed, log, extraArgs = [] }) {
 	const args = [
 		`--disable-extensions-except=${extDir}`,
 		`--load-extension=${extDir}`,
 		"--lang=en-US",
 		"--no-first-run",
 		"--no-default-browser-check",
+		...extraArgs,
 	];
 	const list = [
 		{
@@ -270,7 +271,13 @@ function strategies({ extDir, headed, log }) {
 	return list;
 }
 
-export async function launch({ extDir, headed = false, log = () => {} }) {
+/**
+ * `recordVideo` ({ dir, size }) is passed to Playwright (WebM per page, used by e2e/demo.mjs);
+ * `viewport` overrides the 1280x800 default; `extraArgs` are added to the browser's command line
+ * (the demo passes `--window-size`: the headless window is narrower than the emulated
+ * viewport, and the video only shows the window).
+ */
+export async function launch({ extDir, headed = false, log = () => {}, recordVideo, viewport, extraArgs }) {
 	const manifestPath = path.join(extDir, "manifest.json");
 	if (!fs.existsSync(manifestPath)) {
 		throw new Error(
@@ -285,13 +292,15 @@ export async function launch({ extDir, headed = false, log = () => {} }) {
 	let profileDir;
 	let used;
 	const errors = [];
-	for (const strategy of strategies({ extDir, headed, log })) {
+	for (const strategy of strategies({ extDir, headed, log, extraArgs })) {
 		profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "bg-e2e-profile-"));
 		try {
 			context = await chromium.launchPersistentContext(profileDir, {
 				...strategy.options,
 				locale: "en-US",
-				viewport: { width: 1280, height: 800 },
+				// null = follow the window size (headed demo); undefined = the suite's default.
+				viewport: viewport === undefined ? { width: 1280, height: 800 } : viewport,
+				...(recordVideo ? { recordVideo } : {}),
 			});
 			worker = await findWorker(context, WORKER_START_TIMEOUT_MS, {
 				wakeUrl: `chrome-extension://${unpackedExtensionId(extDir)}/${manifest.action?.default_popup ?? "popup.html"}`,
@@ -651,7 +660,13 @@ class Harness {
 
 	async close() {
 		await this.context.close().catch(() => {});
-		fs.rmSync(this.profileDir, { recursive: true, force: true });
+		// Windows: Chromium's child processes can hold profile files for a while after close
+		// (seen with a headed browser); a leftover temp profile must not fail the run.
+		try {
+			fs.rmSync(this.profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+		} catch (error) {
+			console.error(`[harness] could not remove the temporary profile ${this.profileDir}: ${error.code ?? error}`);
+		}
 	}
 }
 

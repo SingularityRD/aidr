@@ -315,6 +315,14 @@ node scripts/native-host.mjs unregister --json
 
 Interface, exit codes, error codes and what was verified: [`docs/native-host.md`](docs/native-host.md#per-user-registration-scriptsnative-hostmjs).
 
+### Customer demo
+
+`pnpm demo:package` builds the release and `dist/demo/aidr-browser-guard-demo-<ver>.zip` (a
+`Load unpacked` folder plus Turkish install steps); `pnpm demo:live` opens the extension on the
+hermetic site fixtures for an offline demo; `pnpm demo:record` regenerates the evidence in
+[`docs/screenshots/`](docs/screenshots/). Presenter guide (Turkish), including what was and was
+not verified: [`docs/demo/browser-guard-demo.tr.md`](docs/demo/browser-guard-demo.tr.md).
+
 ### Loading an unpacked build
 
 - **Chrome/Edge:** `chrome://extensions` (or `edge://extensions`), enable

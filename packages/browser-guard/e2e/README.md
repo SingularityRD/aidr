@@ -164,6 +164,26 @@ re-verified at import time. Scenarios whose site is not in the manifest's
 Waits are condition polls with deadlines (`lib/expect.mjs`); "must not happen"
 checks (block, Shift+Enter) poll for a bounded window.
 
+## Customer demo (`demo.mjs`)
+
+`e2e/demo.mjs` reuses this harness for presentations (Turkish guide:
+[`docs/demo/browser-guard-demo.tr.md`](../docs/demo/browser-guard-demo.tr.md)). The fixtures
+get a demo mode (`?demo=1`, never used by the scenarios): a banner saying the page is a local
+simulation, a panel with the exact text the page sent to the simulated service, and a 1.5 s
+"thinking" pause before the reply.
+
+```bash
+pnpm --filter @singularityrd/aidr-browser-guard demo:record   # screenshots + APNG + evidence JSON -> docs/screenshots, WebM -> dist/demo
+pnpm --filter @singularityrd/aidr-browser-guard demo:live     # visible Chromium with the extension and the fixtures, for a live demo
+pnpm --filter @singularityrd/aidr-browser-guard demo:package  # release build + dist/demo/aidr-browser-guard-demo-<ver>.zip (Load unpacked)
+```
+
+`--record` checks every step like a scenario (no original value in any request, placeholders
+present, reply restored, secrets not restored, block/confirm send nothing) and stops on the first
+failure, so a screenshot is never kept for behaviour that did not happen. The WebM is written to
+`dist/demo/` (not committed: the pre-commit hook refuses files over 500 KB); its frames show the
+page scaled inside a grey margin (Playwright screencast of new-headless Chromium on Windows).
+
 ## Self-test
 
 `--self-test` writes a minimal MV3 extension to `os.tmpdir()`
