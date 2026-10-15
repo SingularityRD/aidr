@@ -10,6 +10,10 @@
  * `expires_at + grace_days`. Rolling the endpoint clock back therefore does not
  * admit a pack issued after the term, and a slow-to-arrive pack issued during
  * the term is still accepted after it.
+ *
+ * A license listed in a verified `aidr-license-revocations-v1` list
+ * (./license-revocations.ts) receives no new packs at all. Revocation, like the
+ * term, only gates what is accepted next; it never removes an installed pack.
  */
 import {
 	type LicenseDocument,
@@ -17,18 +21,25 @@ import {
 	licenseTermEndMs,
 	type VerifiedLicense,
 } from "../license/verify.js";
+import type { VerifiedLicenseRevocations } from "./license-revocations.js";
 import type { IntelPackManifest } from "./schema.js";
 
 export type PackRefusalCode =
 	| "pack_audience_mismatch"
 	| "license_term_ended"
-	| "pack_audience_requires_license";
+	| "pack_audience_requires_license"
+	| "license_revoked";
 
 export type PackAcceptance =
 	| { accepted: true }
 	| { accepted: false; code: PackRefusalCode; message: string };
 
 type PackTerms = Pick<IntelPackManifest, "pack_id" | "version" | "issued_at" | "audience">;
+
+export interface AcceptPackOptions {
+	/** A verified revocation list (`verifyLicenseRevocations`); null or absent revokes nothing. */
+	revocations?: VerifiedLicenseRevocations | null;
+}
 
 /**
  * Decide whether a signed pack manifest may be activated under `license`
@@ -37,6 +48,7 @@ type PackTerms = Pick<IntelPackManifest, "pack_id" | "version" | "issued_at" | "
 export function acceptPack(
 	manifest: PackTerms,
 	license: VerifiedLicense | LicenseDocument | LicensePayload | null,
+	options: AcceptPackOptions = {},
 ): PackAcceptance {
 	const label = `pack ${manifest.pack_id}@${manifest.version}`;
 	const audience = manifest.audience?.customer_ids;
@@ -51,6 +63,13 @@ export function acceptPack(
 		return { accepted: true };
 	}
 	const payload: LicensePayload = "payload" in license ? license.payload : license;
+	if (options.revocations?.licenseIds.has(payload.license_id)) {
+		return {
+			accepted: false,
+			code: "license_revoked",
+			message: `${label} is refused: license ${payload.license_id} is revoked (revocation list #${options.revocations.sequence}, ${options.revocations.issuedAt}). Installed rules keep enforcing.`,
+		};
+	}
 	if (
 		audience !== undefined &&
 		(payload.customer_id === undefined || !audience.includes(payload.customer_id))

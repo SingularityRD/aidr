@@ -12,7 +12,7 @@ What the license controls, and what it never controls:
 |------|-------------------------|----------------------|
 | Seat admission, device enrollment and control-plane event ingest (`tenant_admission_capacity`) | Yes (`tenant_admissions.expires_at`) | Degraded: capacity drops to 0, so enrollment and agent event ingest are refused and the dashboard stops receiving new endpoint telemetry |
 | Local detection on every endpoint (hooks, rules, allowlists, audit log) | **No** | **Keeps enforcing.** Detection never depends on a license, enrollment or network access |
-| Accepting **new** signed rule/intel update packs on a licensed endpoint (per-customer builds) | Yes: a pack is accepted only while its signed `issued_at` is within `expires_at + grace_days`, and only if its optional audience names the license's `customer_id` | New packs are refused; rules and packs already installed keep enforcing. See [customer builds](customer-builds.md) |
+| Accepting **new** signed rule/intel update packs on a licensed endpoint (per-customer builds) | Yes: a pack is accepted only while its signed `issued_at` is within `expires_at + grace_days`, and only if its optional audience names the license's `customer_id` | New packs are refused, also for a license listed in the signed revocation list; rules and packs already installed keep enforcing. See [customer builds](customer-builds.md) and [intel pack releases](intel-pack-releases.md) |
 | Signed per-installation entitlement of an enrolled endpoint | No (issued by the control plane) | Missing, invalid or expired beyond its offline grace period: managed-only features stop on that endpoint; local detection keeps deciding every tool call |
 
 This follows the product's enforcement default: a connector evaluates every tool

@@ -28,6 +28,15 @@
  * installed. Only signed times are compared. Packs already installed keep
  * enforcing whatever the license state.
  *
+ * Revoked licenses: `--license-revocations <file>` names a vendor-signed
+ * `aidr-license-revocations-v1` list (core `verifyLicenseRevocations`, same
+ * registry as the license). A pack is refused (`license_revoked`) when the
+ * license's id is listed; nothing installed is removed. The local target also
+ * reads the endpoint's stored list (`~/.singularity-aidr/license-revocations.json`),
+ * keeps whichever list has the higher signed `sequence`, and stores a newer one,
+ * so an older list cannot un-revoke a license. A list that does not verify
+ * refuses the import (fail closed).
+ *
  * Targets:
  *   --target local    install into a packs directory (`<packs>/<pack_id>/<version>/`)
  *                     and activate it, the layout the endpoint loader reads.
@@ -70,13 +79,14 @@ export class PackImportError extends Error {
 /** Core verification primitives, loaded from the built core (bundled into the customer kit). */
 async function loadCore() {
 	try {
-		const [schema, verify, semver, loader, acceptance, license] = await Promise.all([
+		const [schema, verify, semver, loader, acceptance, license, revocations] = await Promise.all([
 			import("../packages/core/dist/intel/schema.js"),
 			import("../packages/core/dist/intel/verify.js"),
 			import("../packages/core/dist/intel/semver.js"),
 			import("../packages/core/dist/intel/loader.js"),
 			import("../packages/core/dist/intel/acceptance.js"),
 			import("../packages/core/dist/license/index.js"),
+			import("../packages/core/dist/intel/license-revocations.js"),
 		]);
 		return {
 			IntelPackManifestSchema: schema.IntelPackManifestSchema,
@@ -87,6 +97,7 @@ async function loadCore() {
 			verifyLicense: license.verifyLicense,
 			parseLicensePublicKeyRegistry: license.parseLicensePublicKeyRegistry,
 			readSignedDocumentFile: license.readSignedDocumentFile,
+			verifyLicenseRevocations: revocations.verifyLicenseRevocations,
 		};
 	} catch (error) {
 		throw new PackImportError(`the core intel verifier is unavailable (${error?.code ?? error?.message}); run "pnpm -C packages/core build" or use the customer-kit copy of this script`);
@@ -260,9 +271,42 @@ export async function loadLicense(path, { publicKeysPath, now = Date.now(), core
 	}
 }
 
-/** Refuse a pack the license does not entitle (core acceptPack; signed times only). */
-export function assertPackAccepted(manifest, license, lib) {
-	const decision = lib.acceptPack(manifest, license ?? null);
+/**
+ * Read and verify an `aidr-license-revocations-v1` list (fail closed): a list
+ * that is present but does not verify refuses the import rather than being
+ * read as "nothing revoked".
+ */
+export async function loadRevocations(path, { publicKeysPath, now = Date.now(), core } = {}) {
+	const lib = core ?? (await loadCore());
+	try {
+		const document = lib.readSignedDocumentFile(resolve(path), "license revocation list");
+		const registry = publicKeysPath === undefined ? undefined : lib.parseLicensePublicKeyRegistry(lib.readSignedDocumentFile(resolve(publicKeysPath), "license public-key registry"));
+		return { document, verified: lib.verifyLicenseRevocations(document, { registry, now }) };
+	} catch (error) {
+		throw new PackImportError(`license revocation list ${resolve(path)} is not valid: ${error instanceof Error ? error.message : "verification failed"}`);
+	}
+}
+
+/** The newer of two loaded lists by signed sequence (either may be null). */
+export function newerRevocations(a, b) {
+	if (!a) return b ?? null;
+	if (!b) return a;
+	return b.verified.sequence > a.verified.sequence ? b : a;
+}
+
+/** Store a revocation list for later imports, only when it is newer than the stored one. */
+export function storeRevocations(path, loaded, stored) {
+	if (!loaded || (stored && stored.verified.sequence >= loaded.verified.sequence)) return false;
+	mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+	const temporary = `${path}.${randomUUID()}.tmp`;
+	writeFileSync(temporary, `${JSON.stringify(loaded.document, null, 2)}\n`, { flag: "wx", mode: 0o644 });
+	renameSync(temporary, path);
+	return true;
+}
+
+/** Refuse a pack the license does not entitle (core acceptPack; signed times only; revoked licenses). */
+export function assertPackAccepted(manifest, license, lib, revocations = null) {
+	const decision = lib.acceptPack(manifest, license ?? null, { revocations: revocations ?? null });
 	if (!decision.accepted) throw new PackImportError(`${decision.code}: ${decision.message}`);
 }
 
@@ -299,10 +343,10 @@ function readActiveVersion(packRoot) {
 }
 
 /** Install a verified pack into `<packsDir>/<pack_id>/<version>/` and activate it. */
-export async function installLocal(pack, verified, { packsDir, trustedKeys, license = null, now = Date.now(), core } = {}) {
+export async function installLocal(pack, verified, { packsDir, trustedKeys, license = null, revocations = null, now = Date.now(), core } = {}) {
 	const lib = core ?? (await loadCore());
 	const { manifest } = verified;
-	assertPackAccepted(manifest, license, lib);
+	assertPackAccepted(manifest, license, lib, revocations);
 	const root = resolve(packsDir);
 	const packRoot = join(root, manifest.pack_id);
 	const target = join(packRoot, manifest.version);
@@ -377,9 +421,9 @@ export function assertDeliverablePackKeys(manifest, tenantId = null) {
  * in `pack_versions`. Re-running after an interruption is safe: an identical
  * object or row is accepted, a different one is refused.
  */
-export async function installStorage(pack, verified, { deploymentDir, tenantId = null, bucket = "aidr-packs", license = null, core } = {}) {
+export async function installStorage(pack, verified, { deploymentDir, tenantId = null, bucket = "aidr-packs", license = null, revocations = null, core } = {}) {
 	const lib = core ?? (await loadCore());
-	assertPackAccepted(verified.manifest, license, lib);
+	assertPackAccepted(verified.manifest, license, lib, revocations);
 	if (tenantId !== null && !UUID.test(tenantId)) throw new PackImportError("--tenant-id must be a UUID");
 	assertDeliverablePackKeys(verified.manifest, tenantId);
 	const { base, env } = readDeployment(deploymentDir);
@@ -436,7 +480,8 @@ export async function installStorage(pack, verified, { deploymentDir, tenantId =
 const USAGE = `Usage:
   node scripts/import-offline-pack.mjs --pack <pack-dir|bundle.json> --trusted-keys <trusted-keys.json> --target local [--packs-dir <dir>] [--license <license.json>]
   node scripts/import-offline-pack.mjs --pack <pack-dir|bundle.json> --trusted-keys <trusted-keys.json> --target storage --deployment <dir> [--tenant-id <uuid>] [--license <license.json>]
-  (--license-public-keys <registry.json> overrides the license registry embedded in the core build)
+  (--license-public-keys <registry.json> overrides the license registry embedded in the core build;
+   --license-revocations <list.json> refuses new packs for a revoked license)
   node scripts/import-offline-pack.mjs --pack <pack-dir> --trusted-keys <trusted-keys.json> --export-bundle <out.json>`;
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
@@ -456,6 +501,7 @@ if (invoked) {
 				"export-bundle": { type: "string" },
 				license: { type: "string" },
 				"license-public-keys": { type: "string" },
+				"license-revocations": { type: "string" },
 			},
 		});
 		if (values.help) {
@@ -471,6 +517,10 @@ if (invoked) {
 		const installedLicense = join(home, ".singularity-aidr", "license.json");
 		const licensePath = values.license ?? (values.target === "local" && existsSync(installedLicense) ? installedLicense : undefined);
 		const license = licensePath === undefined ? null : await loadLicense(licensePath, { publicKeysPath: values["license-public-keys"], core });
+		const storedRevocationsPath = join(home, ".singularity-aidr", "license-revocations.json");
+		const givenRevocations = values["license-revocations"] === undefined ? null : await loadRevocations(values["license-revocations"], { publicKeysPath: values["license-public-keys"], core });
+		const storedRevocations = values.target === "local" && existsSync(storedRevocationsPath) ? await loadRevocations(storedRevocationsPath, { publicKeysPath: values["license-public-keys"], core }) : null;
+		const revocations = newerRevocations(storedRevocations, givenRevocations);
 		const summary = {
 			pack_id: verified.manifest.pack_id,
 			version: verified.manifest.version,
@@ -479,6 +529,7 @@ if (invoked) {
 			files: verified.files.length,
 			bytes: verified.bytes,
 			...(license ? { license: { license_id: license.payload.license_id, customer_id: license.payload.customer_id ?? null, state: license.state, updates_until: license.updatesUntil } } : {}),
+			...(revocations ? { license_revocations: { sequence: revocations.verified.sequence, issued_at: revocations.verified.issuedAt } } : {}),
 		};
 		if (values["export-bundle"]) {
 			writeFileSync(resolve(values["export-bundle"]), createBundle(pack, verified.manifest), { flag: "wx", mode: 0o644 });
@@ -486,11 +537,13 @@ if (invoked) {
 		}
 		if (values.target === "local") {
 			const packsDir = values["packs-dir"] ?? join(home, ".singularity-aidr", "intel", "packs");
-			const result = await installLocal(pack, verified, { packsDir, trustedKeys, license, core });
+			// Stored first: a newer list also binds later imports, whatever this one's outcome.
+			storeRevocations(storedRevocationsPath, givenRevocations, storedRevocations);
+			const result = await installLocal(pack, verified, { packsDir, trustedKeys, license, revocations: revocations?.verified, core });
 			console.log(JSON.stringify({ ...result, target: "local", ...summary }));
 		} else if (values.target === "storage") {
 			if (!values.deployment) throw new PackImportError("--target storage requires --deployment <dir>");
-			const result = await installStorage(pack, verified, { deploymentDir: values.deployment, tenantId: values["tenant-id"] ?? null, license, core });
+			const result = await installStorage(pack, verified, { deploymentDir: values.deployment, tenantId: values["tenant-id"] ?? null, license, revocations: revocations?.verified, core });
 			console.log(JSON.stringify({ ...result, target: "storage", ...summary }));
 		} else if (values.target !== undefined) {
 			throw new PackImportError("--target must be local or storage");
