@@ -298,6 +298,23 @@ The host list in the manifest is read at build time from `MATCH_PATTERNS` in
 [`src/sites/index.ts`](src/sites/index.ts), so it cannot drift from the site
 adapters.
 
+### Native host registration (per user, no admin)
+
+`scripts/native-host.mjs` registers the optional AIDR Privacy native host for Chrome and Edge
+for the current user (Windows: `HKCU\Software\{Google\Chrome,Microsoft\Edge}\NativeMessagingHosts`;
+macOS/Linux: the user's `NativeMessagingHosts` directories). The desktop app imports it as
+`@singularityrd/aidr-browser-guard/native-host` (`registerNativeHost`, `unregisterNativeHost`,
+`nativeHostStatus`, `unpackedExtensionId`; types in `scripts/native-host.d.mts`) or runs the
+CLI with `--json`:
+
+```bash
+node scripts/native-host.mjs register --host <abs launcher> --extension-id <id> [--browser chrome,edge] --json
+node scripts/native-host.mjs status --json
+node scripts/native-host.mjs unregister --json
+```
+
+Interface, exit codes, error codes and what was verified: [`docs/native-host.md`](docs/native-host.md#per-user-registration-scriptsnative-hostmjs).
+
 ### Loading an unpacked build
 
 - **Chrome/Edge:** `chrome://extensions` (or `edge://extensions`), enable

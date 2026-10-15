@@ -10,6 +10,7 @@ import fileUpload from "./file-upload.mjs";
 import frames from "./frames.mjs";
 import managedAiSites from "./managed-ai-sites.mjs";
 import modes from "./modes.mjs";
+import nativeHost from "./native-host.mjs";
 import paste from "./paste.mjs";
 import popup from "./popup.mjs";
 import preflight from "./preflight.mjs";
@@ -33,6 +34,7 @@ export const SCENARIOS = [
 	...frames,
 	...managedAiSites,
 	...workAccounts,
+	...nativeHost,
 ];
 
 /** Selects scenarios by comma-separated ids or id prefixes (`auto` matches `auto-chatgpt`). */

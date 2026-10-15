@@ -2,12 +2,12 @@
 // serves the fixture sites through context.route, records every request the
 // pages make, and talks to the extension through its own pages.
 
-import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { extensionIdForPath } from "../../scripts/native-host.mjs";
 import { ANY_PLACEHOLDER } from "./data.mjs";
 import { AssertionError, waitFor } from "./expect.mjs";
 import { KIT_PATH, SITES, siteForUrl, UPLOAD_PATH } from "./sites.mjs";
@@ -228,15 +228,13 @@ async function findWorker(context, timeout, { wakeUrl = null, wakeAfterMs = 5000
 
 /**
  * Id Chromium assigns to an unpacked extension: the first 128 bits of
- * SHA-256(absolute path), hex digits mapped to the letters a-p.
+ * SHA-256(absolute path), hex digits mapped to the letters a-p. On Windows the path
+ * is hashed as UTF-16LE (scripts/native-host.mjs `extensionIdForPath`, unit-tested
+ * against an id Chromium assigned); hashing UTF-8 there gave a wrong id, so the
+ * popup wake-up below opened a page of no extension.
  */
 function unpackedExtensionId(extDir) {
-	const hex = crypto
-		.createHash("sha256")
-		.update(fs.realpathSync(extDir))
-		.digest("hex")
-		.slice(0, 32);
-	return [...hex].map((d) => String.fromCharCode(97 + Number.parseInt(d, 16))).join("");
+	return extensionIdForPath(fs.realpathSync(extDir));
 }
 
 /**
