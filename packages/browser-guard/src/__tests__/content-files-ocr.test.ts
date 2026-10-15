@@ -50,7 +50,17 @@ describe("content guard: uploads that are not fully checked", () => {
 		[
 			"ekran.png",
 			["BINARY_FILE_UNSCANNED", "IMAGE_NOT_INSPECTED"],
-			"images need the AIDR Privacy helper app",
+			"was not checked. Pictures are checked by the AIDR Privacy helper app: install it from the Singularity AIDR desktop app",
+		],
+		[
+			"bulanik.png",
+			["BINARY_FILE_UNSCANNED", "IMAGE_NOT_INSPECTED", "IMAGE_OCR_UNCERTAIN"],
+			'The AIDR Privacy helper app could not fully read "bulanik.png"',
+		],
+		[
+			"qr.png",
+			["BINARY_FILE_UNSCANNED", "IMAGE_NOT_INSPECTED", "IMAGE_BARCODE_NOT_CHECKED"],
+			'No personal data was found in the text of "qr.png", but QR codes and barcodes cannot be checked',
 		],
 		["rapor.docx", ["DOCUMENT_IMAGES_NOT_INSPECTED"], 'Pictures inside "rapor.docx"'],
 		[

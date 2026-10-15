@@ -366,6 +366,17 @@ export interface GuardPolicy {
 	 * (optional so policies built before the key existed stay valid; the worker always sets it).
 	 */
 	readonly requireNativeNer?: boolean;
+	/**
+	 * An uploaded picture (PNG/JPEG/WebP/...) that could not be inspected: no AIDR Privacy
+	 * companion (native host with OCR), the permission is missing, or the host could not read it
+	 * to a verdict. "warn": uploaded with a warning that says how to install the companion;
+	 * "block": not uploaded (monitor mode only records it). Default "block" under any managed
+	 * policy, "warn" otherwise. A picture whose text the host read and found clean, but whose
+	 * QR codes/barcodes it could not check (IMAGE_BARCODE_NOT_CHECKED), is only warned about.
+	 * Optional so policies built before the key existed stay valid (absent means "warn"; the
+	 * worker always sets it).
+	 */
+	readonly uninspectedImages?: "warn" | "block";
 	readonly telemetry: TelemetryConfig | null;
 	readonly language: "auto" | "en" | "tr";
 	/** Keys locked by managed policy (UI renders them read-only). */
@@ -649,6 +660,8 @@ export interface UserSettings {
 	readonly restoreResponses: boolean;
 	/** Opt in to the local native host (NER); also needs the optional nativeMessaging permission. */
 	readonly useNativeHost: boolean;
+	/** Uninspected pictures: warn (upload with a warning) or block. See GuardPolicy. */
+	readonly uninspectedImages: "warn" | "block";
 	readonly language: "auto" | "en" | "tr";
 	readonly telemetry: TelemetryConfig | null;
 }
@@ -745,6 +758,8 @@ export const FILE_PASS_REASONS = [
 	"DOCUMENT_IMAGES_NOT_INSPECTED",
 	"IMAGE_OCR_CLEAN",
 	"PDF_IMAGES_OCR_CLEAN",
+	// Host detail next to IMAGE_NOT_INSPECTED: text clean, but no barcode decoder on the endpoint.
+	"IMAGE_BARCODE_NOT_CHECKED",
 ] as const;
 
 /**

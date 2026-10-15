@@ -166,6 +166,38 @@ const NATIVE_PERMISSION_KEYS: Readonly<Record<NativeState["permission"], string>
 	unsupported: msg("native_permission_unsupported"),
 };
 
+/** What happens to a picture the helper app could not inspect (policy.uninspectedImages). */
+function renderUninspectedImages(doc: Document, policy: GuardPolicy, t: Translate): HTMLElement {
+	const locked = isLocked(policy, "uninspectedImages");
+	const value = policy.uninspectedImages ?? "warn";
+	const choices = [
+		{ value: "warn", key: msg("uninspected_images_warn") },
+		{ value: "block", key: msg("uninspected_images_block") },
+	] as const;
+	return h(doc, "div", { className: "field", id: "uninspected-images" }, [
+		h(doc, "label", { for: "uninspected-images-select", className: "field__label" }, [
+			t("uninspected_images_label"),
+		]),
+		h(
+			doc,
+			"select",
+			{
+				id: "uninspected-images-select",
+				className: "input",
+				disabled: locked,
+				"data-action": "set-uninspected-images",
+			},
+			choices.map((choice) =>
+				h(doc, "option", { value: choice.value, selected: value === choice.value }, [
+					t(choice.key),
+				]),
+			),
+		),
+		locked ? managedBadge(doc, t) : null,
+		h(doc, "p", { className: "field__hint" }, [t("uninspected_images_help")]),
+	]);
+}
+
 /** Optional native host (NER): explanation, opt-in switch, permission and live status. */
 function renderNative(
 	doc: Document,
@@ -194,6 +226,7 @@ function renderNative(
 		policy.requireNativeNer === true
 			? h(doc, "p", { className: "field__hint", id: "native-required" }, [t("native_required")])
 			: null,
+		renderUninspectedImages(doc, policy, t),
 		h(doc, "p", { className: "field__hint", id: "native-permission" }, [
 			t(NATIVE_PERMISSION_KEYS[native.permission]),
 		]),

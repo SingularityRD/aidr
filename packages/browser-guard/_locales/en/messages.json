@@ -937,6 +937,22 @@
 		"message": "Needs the permission to communicate with cooperating native applications; you are asked for it when you turn this on.",
 		"description": "Options: native host switch help."
 	},
+	"uninspected_images_label": {
+		"message": "Pictures that could not be checked",
+		"description": "Options: label of the uninspectedImages setting."
+	},
+	"uninspected_images_warn": {
+		"message": "Upload with a warning",
+		"description": "Options: uninspectedImages value warn."
+	},
+	"uninspected_images_block": {
+		"message": "Do not upload",
+		"description": "Options: uninspectedImages value block."
+	},
+	"uninspected_images_help": {
+		"message": "Pictures (screenshots, photos) are checked for personal data by the AIDR Privacy helper app. Install it from the Singularity AIDR desktop app or with the install-companion script, then turn on \"Use the AIDR Privacy helper app\" above. This choice applies when a picture could not be checked.",
+		"description": "Options: uninspectedImages help."
+	},
 	"native_required": {
 		"message": "Required by your organisation: when the helper app cannot check a message, paste or upload for names and addresses (not installed, not responding, no name detection, text too long), it is blocked instead of being checked with the built-in rules only.",
 		"description": "Options: managed requireNativeNer is on (native NER is mandatory)."

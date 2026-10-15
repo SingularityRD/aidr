@@ -28,6 +28,7 @@ export type ManagedKey =
 	| "maskPaste"
 	| "restoreResponses"
 	| "useNativeHost"
+	| "uninspectedImages"
 	| "language"
 	| "telemetry";
 

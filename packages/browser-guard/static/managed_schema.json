@@ -384,6 +384,12 @@
 			"description": "Make native NER mandatory (default false). When true and PERSON, ADDRESS or LOCATION is enabled, a prompt, paste or file upload whose text the native host could not check with NER (host not installed or not permitted, crashed, timed out, rules-only host without an approved NER model, malformed reply, text over the host limit) is blocked with an explanation instead of continuing rules-only; images the host could not OCR are blocked too. Monitor mode never blocks but records such checks as not NER-checked (telemetry native_ner: unavailable). Forces and locks useNativeHost on. The signed dashboard policy (dashboardPolicy) can also switch it on; true from either side wins.",
 			"type": "boolean"
 		},
+		"uninspectedImages": {
+			"title": "Pictures that could not be inspected",
+			"description": "What happens to an uploaded picture (PNG/JPEG/WebP and other image files) that could not be inspected because the AIDR Privacy companion (native host with OCR) is not installed, not enabled (useNativeHost) or not permitted, or could not read it to a verdict. \"block\": the picture is not uploaded and the user is told how to install and enable the companion (monitor mode only records it). \"warn\": it is uploaded with that warning. Default \"block\" when any managed policy is present, \"warn\" otherwise. A picture whose text was read and found clean but whose QR codes/barcodes could not be checked on the endpoint is only warned about. Pictures with sensitive text are always blocked.",
+			"type": "string",
+			"enum": ["warn", "block"]
+		},
 		"telemetry": {
 			"title": "Control-plane telemetry",
 			"description": "Privacy telemetry enrollment (counts only). controlPlaneUrl must be https (http only for localhost/127.0.0.1).",
