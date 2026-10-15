@@ -44,12 +44,24 @@ sunucusuna gider.
 ### Browser Guard açıkken AI sağlayıcısı (ChatGPT, Gemini, Claude…) ne alır?
 
 Tespit edilen değerleri `[EMAIL_1]` ya da `[TCKN_1]` gibi yer tutucularla
-değiştirilmiş istemi. Yer tutucu–değer eşleştirmesi yalnız sayfanın içerik
-betiği belleğinde yaşar. Eklenti deposuna yazılmaz, hiçbir yere gönderilmez ve
-sayfa yenilenince unutulur. Tespit edilemeyen veri yazıldığı gibi gider; tespit
-kusursuz değildir ve müşteri verisi üzerinde ölçülmemiştir. İkili dosyalar (PDF,
-DOCX, görseller) tarayıcıda incelenemez: `block` modu onları durdurur, diğer
-modlar uyarıyla geçirir.
+değiştirilmiş istemi. Yer tutucu–değer eşleştirmesi tarayıcıda kalır: sekmenin
+içerik betiği belleğinde ve, sayfa yenilendikten sonra da yanıtlar geri
+yüklenebilsin diye, tarayıcının bellekte tutulan oturum deposunda
+(`chrome.storage.session`; yalnız eklentinin güvenilir bağlamları okuyabilir,
+sayfa betikleri okuyamaz). Bu kayıt sekme kapanınca ya da 4 saat kullanılmayınca
+silinir; tarayıcı kapanınca da temizlenir. Diske yazılan eklenti deposuna asla
+yazılmaz ve ağ üzerinden gönderilmez. Tespit edilemeyen veri yazıldığı gibi
+gider; tespit kusursuz değildir, müşteri verisi üzerinde ölçülmemiştir ve canlı
+AI sitelerinde değil, bu sitelerin kapalı test kopyalarında denenmiştir.
+
+Dosyalar: CSV/TSV, JSON, `.env` ve diğer metin dosyaları maskelenmiş kopya
+olarak yüklenir. Word, Excel, PowerPoint ve OpenDocument dosyaları yerinde
+maskelenip yeniden paketlenmiş kopya olarak yüklenir. PDF'ler taranır ama asla
+yeniden yazılmaz: bulgu içeren PDF engellenir; şifreli ya da görselleri
+okunamamış PDF "incelenmedi" olarak bildirilir. Eski `.doc`/`.xls`/`.ppt`
+dosyaları taranır, bulgu varsa engellenir, asla maskelenmez. Görseller yalnız
+isteğe bağlı yerel sunucunun OCR'ı ile incelenir; o da modelsiz gelir (model
+içermez). Aksi hâlde `block` modunda engellenir, diğer modlarda uyarıyla geçer.
 
 ### İsteğe bağlı yerel sunucu (native host) ne alır?
 
@@ -72,7 +84,8 @@ Katmana bağlıdır ve her birini ayrı söylüyoruz:
   reddeden bir işleyici kaydeder. Bu bağlayıcının yanıtıdır; aracın devre dışı
   bıraktığı, güvenmediği, sonlandırdığı ya da zaman aşımına uğrattığı bir kanca
   hiç yanıt vermez (son maddeye bakın). Cursor ve VS Code önizlemedir — henüz
-  gerçek ortam kabul kanıtı yok.
+  gerçek ortam kabul kanıtı yok. Codex CLI de önizlemedir ve ilk genel sürüm
+  (GA) kapsamının dışındadır.
 - **Browser Guard'ın içerik betiği de bir hata durumunda gönderimi durdurur.**
   Eksik politika, okunamayan düzenleyici, tarama hatası ya da eksik tarama
   gönderimi engeller (`monitor` modu hariç).
@@ -143,7 +156,8 @@ komutudur, asla bir MCP aracı ya da HTTP uç noktası değildir.
   dışa aktarımı, imzalı sayfalama imleçleriyle kısa ömürlü özel indirmeler
   üzerinden JSONL/CSV üretir.
 - **SIEM:** Splunk, Microsoft Sentinel ve Elastic için taşınabilir
-  `aidr.siem.event/v1` şemasında iletim.
+  `aidr.siem.event/v1` şemasında iletim. Henüz canlı bir SIEM'e karşı
+  denenmemiştir.
 
 ## Saklama ve silme
 
@@ -161,9 +175,19 @@ komutudur, asla bir MCP aracı ya da HTTP uç noktası değildir.
 
 Kontrol sunucusunun tamamı müşterinin ortamında Docker Compose ya da Kubernetes
 (Helm) üzerinde, imzalı çevrimdışı lisans ve imzalı çevrimdışı paketlerle
-internetsiz olarak da çalışabilir. Kontrol sunucusu şirket içindeyken
-SingularityRD'ye telemetri gönderilmez. Bkz. [onprem.md](../deployment/onprem.md)
-ve [veri yerleşimi](../deployment/data-residency.md).
+internetsiz olarak da çalışmak üzere yapılmıştır. Kontrol sunucusu şirket
+içindeyken SingularityRD'ye telemetri gönderilmez. İki yol da henüz bir müşteri
+sunucusunda kabul edilmemiştir; Helm şeması canlı bir kümede çalıştırılmamıştır.
+Bkz. [onprem.md](../deployment/onprem.md) ve
+[veri yerleşimi](../deployment/data-residency.md).
+
+## Barındırılan hizmet ve bölgeler
+
+Barındırılan (SaaS) kontrol sunucusu henüz canlı değildir: uygulama adresi
+çözümlenmiyor ve AB, ABD ya da APAC'ta kurulmuş bir bölge yoktur. AB, ABD ve
+APAC hedeflenen bölgelerdir, kullanılabilir bölgeler değildir. Yürürlükte bir
+hizmet düzeyi sözleşmesi yoktur; [SLA](../legal/sla.tr.md) taslaktır ve aylık
+%99,9 erişilebilirlik rakamı sözleşme görüşmesi için bir öneridir.
 
 ## Gizlilik mevzuatı (KVKK, GDPR)
 

@@ -66,12 +66,12 @@ export const STAGES = [
 		tr: {
 			name: "Veriyi koru",
 			intro: "Yapay zekâ kullanılırken hassas veri, modele ulaşmadan önce maskelenir ya da durdurulur.",
-			gain: "Kişisel veri ve anahtarlar içeride kalır; ekipler yapay zekâyı kullanmaya devam eder.",
+			gain: "Tespit edilen kişisel veri ve anahtarlar içeride kalır; ekipler yapay zekâyı kullanmaya devam eder.",
 		},
 		en: {
 			name: "Protect data",
 			intro: "While AI is in use, sensitive data is masked or stopped before it reaches a model.",
-			gain: "Personal data and keys stay inside, and people keep getting value from AI.",
+			gain: "Detected personal data and keys stay inside, and people keep getting value from AI.",
 		},
 	},
 	{
@@ -94,12 +94,12 @@ export const STAGES = [
 		tr: {
 			name: "Çıktıyı incele",
 			intro: "Ajanın geri okuduğu sonuçlar, bir sonraki adımı yönlendirmeden önce taranır.",
-			gain: "Araç sonuçlarındaki talimatlar ve sızan anahtarlar modeli yönlendiremez.",
+			gain: "Araç sonuçlarında tespit edilen talimatlar ve sızan anahtarlar modelden uzak tutulur.",
 		},
 		en: {
 			name: "Inspect output",
 			intro: "What the agent reads back is inspected before it can steer the next step.",
-			gain: "Instructions and leaked keys in tool results cannot steer the model.",
+			gain: "Detected instructions and leaked keys in tool results are kept from the model.",
 		},
 	},
 	{
@@ -200,7 +200,7 @@ export const FEATURES = [
 	{ key: "screenshot-ocr", stage: "protect", group: "agents", evidence: ["packages/privacy/src/visual"], tr: ["Ekran görüntüsü maskeleme", "yerel OCR ilk sürüm kapsamı dışında; model içermez, satılmaz."], en: ["Screenshot redaction", "local OCR is not in the first-release scope; ships without a model."] },
 	{ key: "privacy-gateway", stage: "protect", group: "agents", evidence: ["packages/privacy/src/platform"], tr: ["Kurumsal gizlilik ağ geçidi", "yapay zekâ trafiğini ağ çıkışında denetleyen sunucu bileşeni."], en: ["Enterprise privacy gateway", "a server component that inspects AI traffic at your network exit."] },
 	// 4 Control actions
-	{ key: "connectors", stage: "control", evidence: ["packages/claude-code", "packages/extension", "packages/openclaw", "packages/opencode", "packages/codex"], tr: ["Altı bağlayıcı", "Claude Code, OpenClaw, OpenCode, Codex CLI; Cursor, VS Code: önizleme — henüz gerçek ortam kabul kanıtı yok."], en: ["Six connectors", "Claude Code, OpenClaw, OpenCode, Codex CLI; Cursor, VS Code: preview — no real-host acceptance evidence yet."] },
+	{ key: "connectors", stage: "control", evidence: ["packages/claude-code", "packages/extension", "packages/openclaw", "packages/opencode", "packages/codex"], tr: ["Altı bağlayıcı", "Claude Code, OpenClaw, OpenCode; Codex CLI: önizleme; Cursor, VS Code: önizleme — henüz gerçek ortam kabul kanıtı yok."], en: ["Six connectors", "Claude Code, OpenClaw, OpenCode; Codex CLI: preview; Cursor, VS Code: preview — no real-host acceptance evidence yet."] },
 	{ key: "tool-call-inspection", stage: "control", evidence: ["packages/core/src/extractors.ts"], tr: ["Araç çağrısı denetimi", "kabuk, dosya, web ve MCP çağrıları çalışmadan önce değerlendirilir."], en: ["Tool-call inspection", "shell, file, web and MCP calls are evaluated before they run."] },
 	{ key: "verdicts", stage: "control", evidence: ["packages/core/src/engine.ts"], tr: ["allow / ask / deny", "her kararın kuralı ve gerekçesi görünür; sıkı olan kazanır."], en: ["allow / ask / deny", "every decision shows its rule and reason; the strictest wins."] },
 	{ key: "threat-rules", stage: "control", evidence: ["threats"], tr: ["{threat-rules} tespit kuralı", "Linux, macOS ve Windows için okunabilir YAML; kendi kurallarınız da."], en: ["{threat-rules} detection rules", "readable YAML for Linux, macOS and Windows; add your own."] },
@@ -653,14 +653,14 @@ function platformEditions(h) {
 ${rows.map(([feature, label]) => `\t\t\t<tr><td>${label}</td>${order.map((p) => cell(p, feature)).join("")}</tr>`).join("\n")}
 		</tbody>
 	</table>
-	<p class="mt2 mb0">${t(`Yerel tespit her uç noktada plan ya da hesap olmadan çalışır. Bulut kurulumunu tek ajanla ${fact("trial-days")} gün deneyebilirsiniz.`, `Local detection runs on every endpoint with or without a plan. You can try the cloud service with one agent for ${fact("trial-days")} days.`)} <b>${t("Fiyatlandırma ve teklif için bizimle iletişime geçin: anil@singularityrd.com", "Contact us for pricing and a quote: anil@singularityrd.com")}</b></p>`;
+	<p class="mt2 mb0">${t(`Yerel tespit her uç noktada plan ya da hesap olmadan çalışır. Bulut hizmeti henüz canlı değildir; açıldığında tek ajanla ${fact("trial-days")} gün denenebilecek.`, `Local detection runs on every endpoint with or without a plan. The cloud service is not live yet; once it is, it can be tried with one agent for ${fact("trial-days")} days.`)} <b>${t("Fiyatlandırma ve teklif için bizimle iletişime geçin: anil@singularityrd.com", "Contact us for pricing and a quote: anil@singularityrd.com")}</b></p>`;
 	return page("p-platform", t("Platform ve paketler", "Platform and editions"), t("Platform · Paketler", "Platform · Editions"), body);
 }
 
 function backCover(h) {
 	const { t, icon } = h;
 	const steps = [
-		["eye", t("Tanıtım", "Demo"), t("Ajan denetimini, Browser Guard maskelemesini ve yönetim panelini kendi senaryolarınız üzerinde birlikte inceleyelim.", "We walk through agent control, Browser Guard masking and the console on your own scenarios.")],
+		["eye", t("Tanıtım", "Demo"), t("Ajan denetimini ve Browser Guard maskelemesini kendi senaryolarınız üzerinde birlikte inceleyelim; panel sentetik veriyle ve öyle belirtilerek gösterilir.", "We walk through agent control and Browser Guard masking on your own scenarios; the console is shown with synthetic data, labelled as such.")],
 		["loop", "Pilot", t("Birkaç ekip ve İzle moduyla başlayan, kapsamı ve başarı ölçütleri birlikte belirlenen kontrollü bir deneme.", "A controlled trial that starts with a few teams in Monitor mode, with scope and success criteria agreed together.")],
 		["doc", t("Teknik değerlendirme", "Technical evaluation"), t("Güvenlik soruları, veri akışı ve mimari belgeleri ile ayrıntılı özellik rehberi talep üzerine paylaşılır.", "Security questionnaire answers, data-flow and architecture documents and the detailed feature guide are shared on request.")],
 	];

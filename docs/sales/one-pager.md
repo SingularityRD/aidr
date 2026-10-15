@@ -23,9 +23,10 @@ Existing layers see different parts of this:
 
 ## What Singularity AIDR does
 
-**AIDR for AI coding agents.** Connectors for Claude Code, OpenClaw, OpenCode and Codex
-CLI, plus Cursor and VS Code (preview — no real-host acceptance evidence yet), pass observed tool calls to one local decision engine before the
-host acts. The engine returns `allow`, `deny` or `ask`, naming the matched rule and
+**AIDR for AI coding agents.** Six connectors pass observed tool calls to one local
+decision engine before the host acts: Claude Code, OpenClaw and OpenCode, Cursor and
+VS Code (preview — no real-host acceptance evidence yet), and Codex CLI (preview;
+outside the first general-availability scope, which is the other five). The engine returns `allow`, `deny` or `ask`, naming the matched rule and
 artifact. The MCP Gateway inspects MCP tool results before the model reads them; the SDK
 applies the same checks inside your own applications.
 
@@ -83,7 +84,7 @@ AI agent tool call                     Prompt / paste / file in an AI chat
 
 | Local mode (free) | Cloud (SaaS) | On-premises |
 | --- | --- | --- |
-| Connectors and Browser Guard, no account | Hosted dashboard, enrollment, central policy, audit export, SSO/SCIM | Docker Compose or Kubernetes (Helm); air-gapped with a signed offline license and signed packs |
+| Connectors and Browser Guard, no account | Hosted dashboard, enrollment, central policy, audit export, SSO/SCIM. **Not live yet**: no hosted region is deployed | Docker Compose or Kubernetes (Helm); air-gapped with a signed offline license and signed packs. Not yet accepted on a customer host; the Helm chart has not run on a live cluster |
 
 ## Plans
 
@@ -129,9 +130,11 @@ Singularity AIDR is not yet released for live pilots or production; the release 
   success if zero rules load or the self-test does not match.
 - Connector code for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI,
   with cross-connector parity tests. Cursor and VS Code are a preview — no real-host acceptance evidence yet.
+  Claude Code, OpenClaw, OpenCode and Codex have one real-host record each (linux/x64,
+  development build, scripted mock model). Codex is outside the first GA scope.
 - Browser Guard engine, reversible vault, site adapters, file sanitisation, managed
   policy, counts-only telemetry and a real-browser E2E harness against hermetic site
-  fixtures.
+  fixtures. It has not been verified on the live AI sites.
 - AIDR Privacy 0.6.0 engine with its own test suite (`pnpm test:privacy`).
 - Control plane with tenancy/RLS, device enrollment, policy, audit export, SSO/SCIM.
 
@@ -145,8 +148,11 @@ Singularity AIDR is not yet released for live pilots or production; the release 
 - **No publisher-signed release.** No approved code-signing identity; Windows warnings or
   policy blocks depend on the device. Browser Guard is not yet published to the Chrome,
   Edge or Firefox stores.
-- **Cloud and on-prem are not accepted.** The hosted app hostname does not resolve yet;
-  both deployment paths still need the FCR installation, recovery and scale rehearsals.
+- **Cloud and on-prem are not accepted.** The hosted app hostname does not resolve yet,
+  the public website's API routes return errors, and no EU, US or APAC region is
+  deployed; both deployment paths still need the FCR installation, recovery and scale
+  rehearsals. There is no desktop application; endpoints run the CLI, hooks and
+  extensions.
 - **Real-host acceptance is open** for each connector, OS and host version, and for each
   browser and AI site. A returned `deny` is not proof that a side effect was prevented.
 - **Known coverage edges.** If a hook is disabled, untrusted or killed, the host
@@ -156,7 +162,8 @@ Singularity AIDR is not yet released for live pilots or production; the release 
   `block`), and a site redesign can require an adapter update. Names and addresses without
   cue words need the optional NER host, which ships without a model.
 - **Commercial terms open.** Legal terms and DPA, billing, support and regions still await
-  approval.
+  approval. The EULA, DPA and SLA in `docs/legal` are drafts; the 99.9% monthly
+  availability figure is a draft target for contract discussion, not an SLA in force.
 
 *This document contains no customer names, certifications or efficacy claims, because
 none exist. It will be updated when they do.*

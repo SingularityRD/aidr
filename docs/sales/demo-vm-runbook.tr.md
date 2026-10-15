@@ -28,7 +28,11 @@ lisansı, onayları ve kaydı bozar; `aidr doctor` bunu denetler).
 
 1. **Sürüm.** Yalnız imzalı bir müşteri kitinden kurun; kaynak ağacından
    derleme gösterim için kullanılmaz. Kit ve imza doğrulaması:
-   [ilk müşteri kılavuzu](../../deploy/FIRST_CUSTOMER.md).
+   [ilk müşteri kılavuzu](../../deploy/FIRST_CUSTOMER.md). Bugün imzalı bir
+   müşteri kiti yoktur; o çıkana kadar bu ortam kurulamaz ve gösterim
+   [demo betiğindeki](demo-script.md) kanca ve test düzeneği adımlarıyla
+   sınırlıdır. AIDR'ın masaüstü uygulaması yoktur; uç noktada CLI, kancalar ve
+   eklentiler çalışır.
 2. **İç CA.** `aidr-demo-cp` üzerinde küçük bir iç CA oluşturun, iki ad için
    sertifika çıkarın ve kök sertifikayı iki uç noktanın güven deposuna ekleyin.
    Sertifikayı `deployment-tls-renew.mjs --mode static` ile kurun
@@ -47,7 +51,10 @@ lisansı, onayları ve kaydı bozar; `aidr doctor` bunu denetler).
    verisi **asla** kullanılmaz.
 7. **Panel içeriği.** Bir politika sürümü yayımlayın, bir `ask` kararı üretip
    panelden onaylayın, bir olay (incident) oluşturun; denetim dışa aktarımı
-   alın. Bunlar anlık görüntüye girer.
+   alın. Bunlar anlık görüntüye girer. Panelde yalnız bu demo uç noktalarının
+   gerçekten gönderdiği olaylar gösterilir; gerçek uç noktalara bağlı olmayan bir
+   "demo modu" paneli ya da örnek veri canlı veri gibi gösterilmez, gösterilirse
+   ekranda "sentetik" diye söylenir.
 8. **Anlık görüntü.** Üç VM'yi kapatıp `demo-golden-<sürüm>` adıyla anlık
    görüntü alın.
 

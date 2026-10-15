@@ -19,7 +19,12 @@ etiketlidir.
 - [ ] Kullanılan araçlar ve sürümleri [uyumluluk matrisinde](../compatibility-matrix.md)
       gerçek ortam kaydı olanlar arasında. Cursor / VS Code önizlemedir
       (önizleme — henüz gerçek ortam kabul kanıtı yok); POC başarı kriterine
-      yalnız açık uyarıyla girer.
+      yalnız açık uyarıyla girer. Codex CLI de önizlemedir, ilk genel sürüm
+      kapsamı dışındadır ve kancası çalışmazsa (güvenilmeyen, çöken, zaman aşımına
+      uğrayan kanca) çağrıyı engellemeden geçirir; başarı kriterine yalnız bu
+      uyarıyla girer. Gerçek ortam kayıtları yalnız linux/x64 üzerinde, geliştirme
+      derlemesi ve betikli sahte modelle alınmıştır; Windows uç noktaları için
+      kabul kaydı yoktur.
 - [ ] Uç noktalar Windows 10/11 x64 ya da desteklenen Linux; macOS POC
       kapsamında değildir.
 - [ ] Müşteride bir sponsor (BT/güvenlik yöneticisi) ve bir teknik sorumlu var;
@@ -55,7 +60,7 @@ yöntemi önceden bellidir; "iyi hissettirdi" kriter değildir.
 | K5 | Gecikme | Araç çağrısı başına ek süre (`aidr status` / ölçüm betiği) | p95 ≤ [__] ms (müşteri kabul eşiği) |
 | K6 | Görünürlük | Panelde olaylar, onay akışı, denetim dışa aktarımı | SOC sorumlusu bir olayı uçtan uca izler |
 | K7 | Onay akışı | `ask` kararı panelden onaylanır, geliştirici yeniden dener | Onaylayıcı ve geliştirici akışı tamamlar |
-| K8 | Browser Guard (isteğe bağlı) | Sentetik TCKN, IBAN, e-posta, gizli anahtar içeren istemler | Maskelenir; maskelenmeyen tür listelenir (oran ölçülmez, yalnız gözlem) |
+| K8 | Browser Guard (isteğe bağlı) | Sentetik TCKN, IBAN, e-posta, gizli anahtar içeren istemler | Maskelenir; maskelenmeyen tür listelenir (oran ölçülmez, yalnız gözlem). Browser Guard bugüne kadar yalnız AI sitelerinin kapalı test kopyalarında denenmiştir; canlı sitedeki ilk gözlem bu POC olur, müşteriye öyle söylenir |
 | K9 | KVKK hazırlığı | Aydınlatma metni şablonu, veri envanteri, VKED taslağı | DPO gözden geçirdi |
 
 Sonuç raporu her kriter için ölçüm ve kanıt (komut çıktısı, ekran görüntüsü,

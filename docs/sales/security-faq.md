@@ -37,11 +37,24 @@ SingularityRD.
 ### What does the AI provider (ChatGPT, Gemini, Claude…) receive when Browser Guard is on?
 
 The prompt with detected values replaced by placeholders such as `[EMAIL_1]` or
-`[TCKN_1]`. The placeholder-to-value mapping lives only in the page's content-script
-memory. It is not written to extension storage or sent anywhere, and a page reload
-forgets it. Undetected data is sent as typed; detection is not perfect and has not been
-measured on customer data. Binary files (PDF, DOCX, images) cannot be inspected in the
-browser: `block` mode stops them, other modes let them through with a warning.
+`[TCKN_1]`. The placeholder-to-value mapping stays in the browser: in the tab's
+content-script memory and, so that replies still restore after a reload, in the
+browser's memory-backed session storage (`chrome.storage.session`, restricted to the
+extension's trusted contexts so page scripts cannot read it). That record is removed
+when the tab closes or after 4 hours without use, and the browser clears it on exit. It
+is never written to disk-backed extension storage or sent over the network. Undetected
+data is sent as typed; detection is not perfect and has not been measured on customer
+data, and it has been tested against hermetic copies of the AI sites, not the live
+sites.
+
+Files: CSV/TSV, JSON, `.env` and other text files are uploaded as masked copies. Word,
+Excel, PowerPoint and OpenDocument files are masked in place and uploaded as a rewritten
+copy. PDFs are scanned but never rewritten: a PDF with findings is blocked, and an
+encrypted PDF or one whose images were not read is reported as not inspected. Legacy
+`.doc`/`.xls`/`.ppt` files are scanned and blocked on findings, never masked. Images are
+inspected only through the optional native host's OCR, which ships without a model;
+otherwise they are blocked in `block` mode and let through with a warning in other
+modes.
 
 ### What does the optional native host receive?
 
@@ -63,6 +76,7 @@ It depends on the layer, and we state each one:
   register a deny-all handler instead of leaving the host unguarded. That is the
   connector's answer; a hook the host disabled, did not trust, killed or timed out gives
   none (see the last point). Cursor and VS Code are a preview — no real-host acceptance evidence yet.
+  Codex CLI is a preview outside the first GA scope.
 - **Browser Guard's content script fails closed.** A missing policy, unreadable editor,
   scan error or incomplete scan blocks the send (except in `monitor` mode).
 - **Detection internals** skip a failing signal, log it and continue. A skipped signal
@@ -126,7 +140,7 @@ never an MCP tool or HTTP endpoint.
   invitations, role changes, policy publication) are recorded. Audit export produces
   JSONL/CSV through short-lived private downloads with signed pagination cursors.
 - **SIEM:** delivery in a portable `aidr.siem.event/v1` schema for Splunk, Microsoft
-  Sentinel and Elastic ingestion.
+  Sentinel and Elastic ingestion. Not yet exercised against a live SIEM.
 
 ## Retention and deletion
 
@@ -140,10 +154,19 @@ never an MCP tool or HTTP endpoint.
 
 ## On-premises and air-gapped
 
-The full control plane can run in the customer's environment on Docker Compose or
-Kubernetes (Helm), and air-gapped with a signed offline license and signed offline packs.
-With the control plane on-prem, no telemetry is sent to SingularityRD. See
-[onprem.md](../deployment/onprem.md).
+The full control plane is built to run in the customer's environment on Docker Compose
+or Kubernetes (Helm), and air-gapped with a signed offline license and signed offline
+packs. With the control plane on-prem, no telemetry is sent to SingularityRD. Neither
+path has been accepted on a customer host yet, and the Helm chart has not been run on a
+live cluster. See [onprem.md](../deployment/onprem.md).
+
+## Hosted service and regions
+
+The hosted (SaaS) control plane is not live: the app hostname does not resolve and no
+EU, US or APAC region is deployed. EU, US and APAC are the intended regions, not
+available ones. There is no service-level agreement in force; the
+[SLA](../legal/sla.en.md) is a draft and its 99.9% monthly availability figure is a
+proposal for contract discussion.
 
 ## Privacy regulations (KVKK, GDPR)
 
@@ -151,8 +174,8 @@ AIDR is **designed to support** KVKK and GDPR obligations: data minimisation (lo
 detection, counts-only telemetry, hashed artifacts), masking of personal data before it
 reaches third-party AI providers, tenant-scoped retention and legal holds, deletion on
 offboarding, and an on-prem option for data residency. Using AIDR does not by itself make
-an organisation compliant. A DPA, subprocessor list and regional hosting terms are still
-awaiting approval.
+an organisation compliant. A DPA, subprocessor list and regional hosting terms are drafts
+awaiting approval ([DPA draft](../legal/dpa.en.md)).
 
 Owners and admins can generate a **compliance evidence report** for up to 366 days from
 the dashboard (**Compliance**): coverage, counts-only data-protection activity, policy
@@ -166,14 +189,17 @@ for what each section proves and what it does not.
 
 **None.** AIDR has no SOC 2 report, no ISO 27001 certification and no completed
 independent penetration test. An independent security review is a release gate
-(SEC-EXT-001) and has not been done. We do not give dates for certifications we have not
-started.
+(SEC-EXT-001) and has not been done; a scope and request for proposal are drafted
+([pentest scope/RFP](../security/pentest-scope-rfp.md)). We do not give dates for
+certifications we have not started.
 
 ## Vulnerability reporting and support
 
 The dashboard's public `/security` page is where the security contact is published; its
-destination is not configured yet. A monitored support channel with named owners and response targets is a release
-prerequisite (FCR-06/08) and is not yet in place.
+destination is not configured yet. The disclosure policy is a draft and not in force
+([policy draft](../security/vulnerability-disclosure-policy.md)). A monitored support
+channel with named owners and response targets is a release prerequisite (FCR-06/08) and
+is not yet in place ([SLA draft](../legal/sla.en.md)).
 
 ## Related
 

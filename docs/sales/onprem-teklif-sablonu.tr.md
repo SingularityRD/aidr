@@ -78,7 +78,7 @@ onaylı taahhüt değildir.
 |---|---|---|---|---|
 | `AIDR-ADD-AIRGAP` | Hava boşluğu (air-gap) paketi | İmzalı çevrimdışı güncelleme paketlerinin (kurallar, istihbarat, kurulum dosyaları, Browser Guard) taşınabilir ortamla düzenli teslimi; teslim takvimi siparişte yazılır | Yıllık, kurulum başına | `₺[____]` |
 | `AIDR-ADD-POSTURE` | AI güvenlik duruşu tarayıcısı | Business ve üstünde kapsamda; ayrı sunucu kaynağı gerekir | Dahil / `₺[____]` | — |
-| `AIDR-ADD-PRIVGW` | Gizlilik ağ geçidi (privacy gateway) | NER modeli kabulü kapanana kadar satılmaz ([pricing.md](pricing.md)) | — | Satışta değil |
+| `AIDR-ADD-PRIVGW` | Gizlilik ağ geçidi (privacy gateway) | NER modeli kabulü kapanana kadar satış kapsamı dışında; model içermez ([pricing.md](pricing.md)) | — | Satışta değil |
 | `AIDR-ADD-BGONLY` | Yalnız Browser Guard koltuğu | Açık soru ([pricing.md](pricing.md) §7 soru 1); onaylanmadan teklife girmez | — | Karar bekliyor |
 | `AIDR-ADD-ESCROW` | Kaynak kod emaneti | [Emanet teklif şablonu](../legal/kaynak-kod-emaneti-teklif.md) | Yıllık | `₺[____]` + emanetçi ücreti |
 
