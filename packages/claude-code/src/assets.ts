@@ -121,7 +121,7 @@ export function resolvePluginManifest(
 	}
 	// Standalone bundles (the desktop app runtime, SEA) ship neither file: report the version the
 	// core build stamped instead of a meaningless 0.0.0.
-	return { name, version: /^d+.d+.d+/.test(CORE_VERSION) ? CORE_VERSION : "0.0.0" };
+	return { name, version: /^\d+\.\d+\.\d+/.test(CORE_VERSION) ? CORE_VERSION : "0.0.0" };
 }
 
 function isDirectory(candidate: string): boolean {
