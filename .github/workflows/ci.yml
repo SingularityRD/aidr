@@ -160,6 +160,8 @@ jobs:
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/device-membership-token.rollback.sql
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/workspace-settings-retention.rollback.sql
           docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/oidc-provider-save.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/agent-retirement.rollback.sql
+          docker exec -i "${AIDR_RLS_TEST_DB_CONTAINER}" psql -X -qAt -v ON_ERROR_STOP=1 -w -U postgres -d postgres < supabase/functions/__tests__/license-imports.rollback.sql
           pnpm verify:supabase-pilot-audit-live
           pnpm verify:supabase-device-revocation-live
 

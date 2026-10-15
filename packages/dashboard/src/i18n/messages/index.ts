@@ -29,6 +29,7 @@ import { governanceRisksMessages } from "./governance-risks";
 import { governanceScorecardMessages } from "./governance-scorecard";
 import { helperErrorsMessages } from "./helper-errors";
 import { landingMessages } from "./landing";
+import { licenseMessages } from "./license";
 import { notificationsMessages } from "./notifications";
 import { oidcFlowMessages } from "./oidc-flow";
 import { oidcSsoMessages } from "./oidc-sso";
@@ -84,6 +85,7 @@ export const pageMessages = {
 	...governanceScorecardMessages,
 	...helperErrorsMessages,
 	...landingMessages,
+	...licenseMessages,
 	...notificationsMessages,
 	...oidcFlowMessages,
 	...oidcSsoMessages,
@@ -140,6 +142,7 @@ export const messageModules = [
 	governanceScorecardMessages,
 	helperErrorsMessages,
 	landingMessages,
+	licenseMessages,
 	notificationsMessages,
 	oidcFlowMessages,
 	oidcSsoMessages,

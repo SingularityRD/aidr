@@ -8,6 +8,10 @@
     "gateMustMatchBrowserCallSites": true
   },
   "functions": {
+    "agent-lifecycle": {
+      "owner": "Platform Engineering",
+      "tests": ["supabase/functions/__tests__/agent-lifecycle-contract.test.ts"]
+    },
     "api-keys": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/api-key-auth.test.ts"]
@@ -95,6 +99,13 @@
     "oauth-callback": {
       "owner": "Identity Engineering",
       "tests": ["supabase/functions/__tests__/oauth-callback-contract.test.ts"]
+    },
+    "license-admin": {
+      "owner": "Platform Engineering",
+      "tests": [
+        "supabase/functions/__tests__/license-admin-contract.test.ts",
+        "supabase/functions/__tests__/license-verify-parity.test.ts"
+      ]
     },
     "operator-admin": {
       "owner": "Platform Engineering",

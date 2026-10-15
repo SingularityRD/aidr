@@ -7,6 +7,8 @@ services:
       AIDR_SIGNING_HEALTH_FILE: /run/aidr-health/signing.json
       AIDR_BACKUP_HEALTH_FILE: /run/aidr-health/backup.json
       AIDR_QUEUE_HEALTH_FILE: /run/aidr-health/queue.json
+      # Optional: license expiry gauges (written hourly by deployment-maintenance).
+      AIDR_LICENSE_HEALTH_FILE: /run/aidr-health/license.json
       AIDR_PUBLIC_HTTPS_URL: ${AIDR_PUBLIC_HTTPS_URL:?set the customer-facing HTTPS origin}
       AIDR_METRICS_TOKEN: ${AIDR_METRICS_TOKEN:?set a random monitoring-only bearer token}
       AIDR_READINESS_REQUIRED_CHECKS: database,storage,functions,signing,backup,queue,certificate

@@ -14,6 +14,11 @@
 //   revoke --tenant ID --reason TEXT           Revoke a tenant's licensed admission.
 //   tenants [--limit N] [--after ID] [--all]   List tenants (minimal fields, keyset paged).
 //   usage --tenant ID                          Aggregate usage for one tenant.
+//   license-imports [--limit N]                Licenses tenant admins staged for application.
+//   license-apply --tenant ID --license-file PATH [--import ID] [--owner ID]
+//         [--public-keys PATH]                 Verify a vendor-signed aidr-license-v1 file
+//                                              locally, then apply its signed seats and
+//                                              expiry (the server verifies it again).
 //
 // Every command accepts --dry-run, which prints the request body and sends nothing.
 //
@@ -35,6 +40,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { DEFAULT_PUBLIC_KEYS_PATH, LicenseError, verifyLicenseFile } from "./license-verify.mjs";
 
 const FUNCTION_PATH = "/functions/v1/operator-admin";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -67,6 +73,9 @@ const OPTIONS = {
 	limit: { type: "string" },
 	after: { type: "string" },
 	all: { type: "boolean", default: false },
+	"license-file": { type: "string" },
+	"public-keys": { type: "string" },
+	import: { type: "string" },
 	help: { type: "boolean", short: "h", default: false },
 };
 
@@ -158,6 +167,34 @@ export async function buildRequestBody(command, positionals, values, io = { read
 		}
 		case "usage":
 			return { action: "tenant_usage", tenant_id: tenantId(values) };
+		case "license-imports": {
+			const body = { action: "list_license_imports" };
+			if (values.limit !== undefined) body.limit = integer(values.limit, "limit");
+			return body;
+		}
+		case "license-apply": {
+			const tenant = tenantId(values);
+			const licenseFile = required(values, "license-file");
+			// Local check first, against the vendor registry shipped with this kit
+			// (or --public-keys): a tampered, expired or not-yet-valid file never
+			// leaves the operator's machine. The server verifies it again.
+			let verified;
+			try {
+				verified = (io.verifyLicenseFile ?? verifyLicenseFile)(licenseFile, {
+					publicKeysPath: values["public-keys"] ? resolve(values["public-keys"]) : DEFAULT_PUBLIC_KEYS_PATH,
+				});
+			} catch (error) {
+				throw new UsageError(`license verification failed: ${error instanceof LicenseError || error instanceof Error ? error.message : String(error)}`);
+			}
+			if (verified.status === "expired" || verified.status === "not_yet_valid") {
+				throw new UsageError(`license ${verified.payload.license_id} is ${verified.status}; it cannot be applied now`);
+			}
+			const document = JSON.parse(String(await io.readFile(resolve(licenseFile))));
+			const body = { action: "apply_license", tenant_id: tenant, license: document };
+			if (values.import !== undefined) body.import_id = tenantId(values, "import");
+			if (values.owner !== undefined) body.owner_user_id = tenantId(values, "owner");
+			return body;
+		}
 		default:
 			throw new UsageError(`unknown command: ${command ?? "(none)"}`);
 	}
@@ -271,7 +308,7 @@ async function invokeOperatorAdmin(base, token, anonKey, body, fetchImpl) {
 	return postJson(fetchImpl, endpoint(base, FUNCTION_PATH), body, headers);
 }
 
-const USAGE = `Usage: node scripts/operator-admin.mjs <mode|legal|grant|revoke|tenants|usage> [options]
+const USAGE = `Usage: node scripts/operator-admin.mjs <mode|legal|grant|revoke|tenants|usage|license-imports|license-apply> [options]
 See docs/operations/operator-admin.md for every option and the credential environment.`;
 
 export async function run(argv, io = {}) {
@@ -287,7 +324,10 @@ export async function run(argv, io = {}) {
 		}
 		const [command, ...rest] = positionals;
 		if (values.all && command !== "tenants") throw new UsageError("--all applies only to tenants");
-		const body = await buildRequestBody(command, rest, values, { readFile: io.readFile ?? readFile });
+		const body = await buildRequestBody(command, rest, values, {
+			readFile: io.readFile ?? readFile,
+			...(io.verifyLicenseFile ? { verifyLicenseFile: io.verifyLicenseFile } : {}),
+		});
 		if (values["dry-run"]) {
 			out(JSON.stringify(body, null, 2));
 			return 0;

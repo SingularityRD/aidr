@@ -4,6 +4,7 @@ import { useTeam } from "../../enterprise/team-provider";
 import { useT } from "../../i18n/I18nProvider";
 import { readErrorMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
+import { RetireAgentControl } from "../RetireAgentControl";
 
 type AgentRow = {
 	id: string;
@@ -14,6 +15,8 @@ type AgentRow = {
 	agent_runtime_version: string | null;
 	first_seen: string;
 	last_seen: string;
+	retired_at?: string | null;
+	retired_reason?: "manual" | "offline" | null;
 };
 
 type EventRow = {
@@ -45,7 +48,7 @@ function verdictBadgeClass(verdict: string): string {
 
 export function AgentDetailPage() {
 	const { agentId } = useParams();
-	const { currentTeam, isLoading } = useTeam();
+	const { currentTeam, isLoading, canManageTeam } = useTeam();
 	const t = useT();
 	if (isLoading) return <div role="status">{t("layout.resolvingTenant")}</div>;
 	const tenantId = currentTeam?.id;
@@ -54,6 +57,7 @@ export function AgentDetailPage() {
 			key={`${tenantId ?? ""}:${agentId ?? ""}`}
 			agentId={agentId}
 			tenantId={tenantId}
+			canManage={canManageTeam}
 		/>
 	);
 }
@@ -61,9 +65,11 @@ export function AgentDetailPage() {
 function AgentDetailForId({
 	agentId,
 	tenantId,
+	canManage,
 }: {
 	agentId: string | undefined;
 	tenantId: string | undefined;
+	canManage: boolean;
 }) {
 	const t = useT();
 	const [agent, setAgent] = useState<AgentRow | null>(null);
@@ -98,7 +104,7 @@ function AgentDetailForId({
 					supabase
 						.from("agents")
 						.select(
-							"id,tenant_id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen",
+							"id,tenant_id,iid,display_name,agent_runtime,agent_runtime_version,first_seen,last_seen,retired_at,retired_reason",
 						)
 						.eq("id", currentAgentId)
 						.eq("tenant_id", currentTenantId)
@@ -204,6 +210,25 @@ function AgentDetailForId({
 
 				{agent ? (
 					<>
+						{agent.retired_at ? (
+							<div className="notice notice-warning" role="status" style={{ marginTop: 14 }}>
+								{t("agent.retired", {
+									date: new Date(agent.retired_at).toLocaleString(),
+									reason:
+										agent.retired_reason === "offline"
+											? t("agent.retiredReason.offline")
+											: t("agent.retiredReason.manual"),
+								})}
+							</div>
+						) : canManage && tenantId ? (
+							<div style={{ marginTop: 14 }}>
+								<RetireAgentControl
+									tenantId={tenantId}
+									agentId={agent.id}
+									onRetired={() => undefined}
+								/>
+							</div>
+						) : null}
 						<div className="grid" style={{ marginTop: 14 }}>
 							<div className="stat-card">
 								<div className="stat-label">{t("common.name")}</div>

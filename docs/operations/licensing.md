@@ -221,15 +221,152 @@ The command prints a prominent warning and the receipt records
 `license.source = "unsigned-pilot"`. Do not use it for production or air-gapped
 customers.
 
-## Renewal
+## Renewal, seat changes and importing a signed license
 
 The bootstrap is a one-time action; it refuses to change the terms of a
-completed bootstrap. To extend an installed deployment, verify the renewed
-license with `license-verify.mjs`, then have an admission operator apply its
-seats, `expires_at + grace_days` and `license_id` through
-`grant_licensed_tenant_admission` as described in
-[admission operators](admission-operators.md). Keep the verified license file
-and its `license-verify.mjs` output with the change record.
+completed bootstrap. Renewals, seat increases and true-ups are new signed
+license files, applied with a two-person import that keeps the
+[admission-operator](admission-operators.md) separation of duty:
+
+1. **A workspace owner or admin stages the file.** Dashboard: **Settings ->
+   License -> Import signed license**. The `license-admin` Edge function checks
+   the signature against the deployment's trust registry
+   (`AIDR_LICENSE_PUBLIC_KEYS_B64`, written by `deployment-prepare.mjs` from
+   `deploy/onprem/license-public-keys.json`; Helm: `generate-secrets.mjs`) with
+   the server clock. It refuses a tampered file, an unknown or revoked key, a
+   license past its grace period and, when `AIDR_LICENSE_CUSTOMER_ID` is set, a
+   license for another customer. An accepted file is stored as a **pending**
+   import; seats and expiry do not change yet. A renewal that starts later
+   (`not_before` in the future) may be staged early.
+2. **A platform operator applies it.** Operator console (`/operator`):
+   **Signed licence imports -> Load waiting licences -> Apply licence**, or
+   **Apply a licence file** for the selected tenant. Air-gapped admins use the
+   CLI, which verifies the file locally first and never sends a refused file:
+
+   ```sh
+   node scripts/operator-admin.mjs license-imports
+   node scripts/operator-admin.mjs license-apply --tenant <tenant-id> \
+     --license-file /secure-delivery/aidr-license.json [--import <import-id>]
+   ```
+
+   `operator-admin` verifies the document again at that moment (registry, key
+   status and clock may have changed) and calls `operator_apply_license`, which
+   reads seats, plan, license id and the admission end (`expires_at +
+   grace_days`) from the stored signed payload and applies them through
+   `operator_grant_license` -> `grant_licensed_tenant_admission`. That path
+   still requires the operator's tenant-scoped `admission_operators` row and
+   refuses an operator who is a member of the tenant. A license that is not yet
+   valid or past its grace period is refused, and one license id can admit only
+   one tenant.
+
+Every step is audited (`license.import_submitted`, `license.applied`,
+`operator.license_granted`, `admission.licensed_granted`) with the license id,
+key id and the SHA-256 of the canonical JSON of the document
+(`canonical_sha256`). Keep the license file with the change record. The
+database stores the verified document; it does not re-verify signatures.
+
+Manual terms through `grant_licensed_tenant_admission` (or `node
+scripts/operator-admin.mjs grant`) remain available for contracts without a
+signed file.
+
+## Expiry warnings
+
+- **Dashboard banner** (every member): 30 days and 7 days before the license
+  end, during the grace period and after it. The banner says plainly that local
+  detection on every device keeps enforcing. Without a stored signed license the
+  admission end (which already includes grace) is used.
+- **Prometheus** (`deploy/monitoring/prometheus-alerts.yml`, group
+  `aidr-license`): `AIDRLicenseExpiresIn30Days` (warning),
+  `AIDRLicenseExpiresIn7Days`, `AIDRLicenseInGracePeriod` and
+  `AIDRLicenseExpired` (critical), and `AIDRLicenseEvidenceUnhealthy` when the
+  evidence is failed or older than three hours. The hourly
+  `deployment-maintenance.mjs` run writes `<deployment>/health/license.json`
+  for the earliest-ending licensed admission; the dashboard publishes it as
+  `aidr_license_*` gauges when `AIDR_LICENSE_HEALTH_FILE` is set
+  (`deployment-prepare.mjs` sets it). License expiry is never a readiness check.
+
+## Seats and device retirement
+
+A seat is held by an enrolled installation (`agents` row, one per installation
+id `iid`) until it is **retired**. Retired devices do not count against seats,
+cannot write telemetry, and their enrollment-issued API keys are revoked. Local
+detection on a retired device keeps enforcing; it only stops syncing with the
+control plane.
+
+- **Manual:** Agents page or agent detail -> **Retire** (owner/admin, MFA).
+  A Browser Guard installation is also unlinked from its shared ingest key, so
+  the key's install slot is free again.
+- **Automatic:** Agents page -> **Automatic retirement**: retire devices not seen
+  for 7..365 days (per workspace; off by default). The hourly maintenance run
+  (Compose/Helm) or the `aidr-retention-agent-retirement` pg_cron job (Supabase
+  Cloud) applies it in bounded batches and audits every retirement
+  (`agent.retired`, reason `offline`).
+- **Re-enrollment of the same machine:** an installation keeps its `iid` in the
+  user profile (`~/.singularity-aidr/installation-id`). Enrolling again with the
+  same `iid` reuses its row: an active device keeps its seat; a retired device
+  gets a seat back only if one is free and is ranked as the newest device, so it
+  never displaces a device enrolled in the meantime (`agent.reactivated`). A
+  reimaged machine or a new user profile gets a new `iid` and therefore needs a
+  seat; retire the old row or let automatic retirement free it.
+- **Shared credentials:** a device that still holds a valid tenant-wide API key
+  (not an enrollment-issued key) and reports again is treated like a
+  re-enrollment: it returns only into a free seat. Revoke the shared key to stop
+  it for good.
+
+### VDI and non-persistent desktops
+
+Non-persistent desktops lose the user profile at logoff, so each session gets a
+new `iid` and a new seat. Either persist
+`%USERPROFILE%\.singularity-aidr` (Windows) or `~/.singularity-aidr` (Linux) in
+the profile solution (FSLogix, roaming profiles, a persistent home directory) so
+the installation id survives, or set automatic retirement to the shortest period
+the contract allows (7 days) and size seats for peak concurrent desktops plus
+seven days of churn. Pooled desktops that share one image must not bake an
+installation id into the image.
+
+## Usage reports
+
+`scripts/onprem-usage-report.mjs` produces the `aidr-usage-report-v1` report the
+vendor imports per customer (counts only: no device names, users, iids or
+events):
+
+```sh
+node scripts/onprem-usage-report.mjs /srv/aidr --license-file /secure-delivery/aidr-license.json
+node scripts/onprem-usage-report.mjs --verify /srv/aidr/aidr-usage-report-2026-10-14.json
+```
+
+```json
+{
+  "format": "aidr-usage-report-v1",
+  "customer_id": "example-ag",
+  "license_id": "LIC-2026-0042",
+  "generated_at": "2026-10-14T09:00:00.000Z",
+  "seats_licensed": 250,
+  "devices_enrolled": 180,
+  "devices_active_30d": 150,
+  "license_state": "valid",
+  "updates_until": "2027-10-15T00:00:00.000Z",
+  "deployment_version": "0.6.0+0123456789ab",
+  "report_sha256": "<sha256 of the canonical JSON of the other fields>"
+}
+```
+
+- `devices_enrolled` counts active (not retired) installations;
+  `devices_active_30d` those seen in the last 30 days.
+- `license_state` is `valid`, `grace`, `expired` or `not_yet_valid` for a
+  verified license (the `--license-file`, otherwise the applied signed import);
+  `unverified` when only typed admission terms exist; `unlicensed` without a
+  licensed admission. `updates_until` is the end of the grace period, the last
+  moment signed update packs are accepted.
+- With several licensed workspaces pass `--tenant <id>`; Helm installs use
+  `--from-env` like the maintenance job.
+- Workspace owners and admins can download the same report from **Settings ->
+  License -> Download usage report**.
+
+**The report is customer-attested, not tamper-proof.** `report_sha256` detects
+accidental edits and transport corruption; it is not a signature, and the
+customer controls the hosts and database that produce it. True-up rests on the
+report together with the contract's audit rights.
 
 ## Issuing licenses (vendor only)
 

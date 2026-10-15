@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
 import { cpSync } from "./lib/deployment-input-copy.mjs";
+import { DEFAULT_PUBLIC_KEYS_PATH, loadPublicKeyRegistry } from "./license-verify.mjs";
 import { isIP } from "node:net";
 import {
 	PRIVACY_GATEWAY_LAYOUT, PRIVACY_GATEWAY_PROFILE, PRIVACY_GATEWAY_SERVICE, PRIVACY_GATEWAY_UID,
@@ -563,6 +564,12 @@ const jwt = (role) => {
 };
 env.ANON_KEY = values.mode === "cloud" ? "REPLACE_WITH_PROJECT_ANON_KEY" : jwt("anon");
 env.SERVICE_ROLE_KEY = values.mode === "cloud" ? "REPLACE_WITH_PROJECT_SERVICE_ROLE_KEY" : jwt("service_role");
+// The license trust registry shipped with this kit becomes the Edge runtime's
+// trust root for dashboard license imports (supabase/functions/_shared/license.ts).
+// A malformed registry stops preparation; an empty one is valid and makes the
+// import refuse every license until the vendor registry is installed.
+loadPublicKeyRegistry(DEFAULT_PUBLIC_KEYS_PATH);
+const licensePublicKeysB64 = readFileSync(DEFAULT_PUBLIC_KEYS_PATH).toString("base64");
 const functionEnv = {
 	AIDR_ALLOWED_ORIGINS: dashboardUrl, AIDR_DASHBOARD_URL: dashboardUrl, AIDR_DASHBOARD_VERIFY_URL: `${dashboardUrl}/verify`,
 	AIDR_PUBLIC_API_ORIGIN: supabaseUrl,
@@ -579,6 +586,7 @@ const functionEnv = {
 	AIDR_COMPLIANCE_SIGNING_KEY_ID: complianceKeyId,
 	AIDR_COMPLIANCE_SIGNING_PRIVATE_KEY_PKCS8_B64: complianceSigning.privateKey.export({ type: "pkcs8", format: "der" }).toString("base64"),
 	AIDR_BILLING_PROVIDER: "",
+	AIDR_LICENSE_PUBLIC_KEYS_B64: licensePublicKeysB64,
 	AIDR_DEVICE_START_INGRESS_SECRET: deviceIngressSecret,
 	// Alert integrations: channel destinations are encrypted with this keyring
 	// (`<key id>:<base64 32 bytes>`, first entry encrypts) and the dispatcher
@@ -657,6 +665,7 @@ compose.services.dashboard = {
 		AIDR_SIGNING_HEALTH_FILE: "/run/aidr-health/signing.json",
 		AIDR_BACKUP_HEALTH_FILE: "/run/aidr-health/backup.json",
 		AIDR_QUEUE_HEALTH_FILE: "/run/aidr-health/queue.json",
+		AIDR_LICENSE_HEALTH_FILE: "/run/aidr-health/license.json",
 		...(!values.development ? { AIDR_PUBLIC_HTTPS_URL: dashboardUrl } : {}),
 		AIDR_METRICS_TOKEN: "${AIDR_METRICS_TOKEN:?AIDR_METRICS_TOKEN is required}",
 		AIDR_READINESS_REQUIRED_CHECKS: "database,storage,functions,signing,backup,queue,certificate",

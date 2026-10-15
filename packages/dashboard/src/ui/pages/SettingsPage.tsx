@@ -14,6 +14,7 @@ import {
 	type WorkspaceClosure,
 	type WorkspaceSettings,
 } from "../../lib/workspace-settings";
+import { LicenseSection } from "../LicenseSection";
 import { NotificationSettings } from "../NotificationSettings";
 import { getSession, signOut } from "../session";
 import { useTheme } from "../ThemeProvider";
@@ -565,6 +566,8 @@ export function SettingsPage() {
 			</div>
 
 			{tenantId ? <WorkspaceSection key={tenantId} tenantId={tenantId} /> : null}
+
+			{tenantId ? <LicenseSection key={`license-${tenantId}`} tenantId={tenantId} /> : null}
 
 			{tenantId ? (
 				<NotificationSettings key={`notifications-${tenantId}`} tenantId={tenantId} />

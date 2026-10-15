@@ -274,3 +274,97 @@ describe("run", () => {
 		assert.equal(tampered.calls.some((call) => call.key === "/functions/v1/operator-admin"), false);
 	});
 });
+
+describe("signed licence commands", () => {
+	// DEV test keys only: generated in memory for every run.
+	async function fixture(t, terms = {}) {
+		const { generateKeyPairSync } = await import("node:crypto");
+		const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+		const { tmpdir } = await import("node:os");
+		const { join } = await import("node:path");
+		const { publicKeyEntry, signLicense } = await import("./license-issue.mjs");
+		const key = generateKeyPairSync("ed25519").privateKey;
+		const dir = mkdtempSync(join(tmpdir(), "aidr-operator-licence-"));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
+		const now = Date.now();
+		const iso = (offsetDays) =>
+			new Date(Math.floor((now + offsetDays * 86_400_000) / 1000) * 1000).toISOString().replace(".000Z", "Z");
+		const license = signLicense(
+			{
+				license_id: "LIC-2026-0042",
+				customer: "Example Customer AG",
+				plan_id: "enterprise",
+				seats: 250,
+				features: [],
+				deployment: "airgap",
+				issued_at: iso(-10),
+				not_before: iso(-10),
+				expires_at: iso(300),
+				grace_days: 14,
+				...terms,
+			},
+			{ privateKey: key, keyId: "dev-1" },
+		);
+		const registry = {
+			format: "aidr-license-public-keys-v1",
+			schema_version: 1,
+			keys: [publicKeyEntry(key, { keyId: "dev-1", notBefore: "2024-01-01T00:00:00Z" })],
+		};
+		writeFileSync(join(dir, "license.json"), JSON.stringify(license, null, 2));
+		writeFileSync(join(dir, "keys.json"), JSON.stringify(registry));
+		return { license, licenseFile: join(dir, "license.json"), keysFile: join(dir, "keys.json") };
+	}
+
+	it("license-apply verifies locally and sends the exact signed document", async (t) => {
+		const f = await fixture(t);
+		const body = await buildRequestBody("license-apply", [], {
+			tenant: TENANT,
+			"license-file": f.licenseFile,
+			"public-keys": f.keysFile,
+			import: OWNER,
+		});
+		assert.deepEqual(body, { action: "apply_license", tenant_id: TENANT, license: f.license, import_id: OWNER });
+	});
+
+	it("license-apply refuses a tampered or expired file before any request", async (t) => {
+		const f = await fixture(t);
+		const { readFileSync, writeFileSync } = await import("node:fs");
+		const tampered = JSON.parse(readFileSync(f.licenseFile, "utf8"));
+		tampered.payload.seats = 9999;
+		writeFileSync(f.licenseFile, JSON.stringify(tampered));
+		await assert.rejects(
+			buildRequestBody("license-apply", [], { tenant: TENANT, "license-file": f.licenseFile, "public-keys": f.keysFile }),
+			/license verification failed: .*signature/,
+		);
+		const expired = await fixture(t, {
+			issued_at: "2025-01-01T00:00:00Z",
+			not_before: "2025-01-01T00:00:00Z",
+			expires_at: "2025-06-01T00:00:00Z",
+		});
+		await assert.rejects(
+			buildRequestBody("license-apply", [], {
+				tenant: TENANT,
+				"license-file": expired.licenseFile,
+				"public-keys": expired.keysFile,
+			}),
+			/is expired/,
+		);
+		await assert.rejects(buildRequestBody("license-apply", [], { tenant: TENANT }), /--license-file is required/);
+		const io = capture();
+		const fetch = fakeFetch({});
+		const code = await run(
+			["license-apply", "--tenant", TENANT, "--license-file", f.licenseFile, "--public-keys", f.keysFile],
+			{ env: ENV, fetch: fetch.fetch, stdout: io.stdout, stderr: io.stderr },
+		);
+		assert.equal(code, 2);
+		assert.equal(fetch.calls.length, 0);
+	});
+
+	it("license-imports lists staged licences", async () => {
+		assert.deepEqual(await buildRequestBody("license-imports", [], {}), { action: "list_license_imports" });
+		assert.deepEqual(await buildRequestBody("license-imports", [], { limit: "10" }), {
+			action: "list_license_imports",
+			limit: 10,
+		});
+	});
+});

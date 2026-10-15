@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -53,6 +53,8 @@ async function fixture(t, failure) {
     pending: new Map(),
     digestsDue: 1,
     digestCalls: [],
+    agents: [{ offline: true }, { offline: true }, { offline: false }],
+    agentCalls: [],
   };
   const heldPath = state.exports[0].path, freePath = state.exports[1].path, currentPath = state.exports[2].path;
   state.stored = new Set(state.exports.map(row => row.path));
@@ -181,6 +183,20 @@ async function fixture(t, failure) {
         applied: body.p_apply, cutoff: new Date(Date.now() - 15 * 60_000).toISOString(),
         contended_tenants: 0, held_tenants_present: 0, inactive_tenant_rows_present: 0 });
     }
+    if (req.url === "/rest/v1/rpc/retire_offline_agents") {
+      state.agentCalls.push(body);
+      if (failure === "retire-invalid") return reply(200, { eligible: 1, retired: 2, remaining: 0, applied: body.p_apply });
+      const due = state.agents.filter(row => row.offline && !row.retired);
+      const retired = body.p_apply ? due.slice(0, body.p_limit) : [];
+      for (const row of retired) row.retired = true;
+      return reply(200, { applied: body.p_apply, eligible: due.length, retired: retired.length,
+        remaining: due.length - retired.length, contended_tenants: 0, cutoff: new Date().toISOString() });
+    }
+    if (req.url === "/rest/v1/rpc/license_expiry_summary") {
+      if (failure === "license-down") return reply(503, { message: "down" });
+      return reply(200, { checked_at: new Date().toISOString(), licensed_tenants: 1, signed: true,
+        license_expires_at: "2027-10-01T00:00:00+00:00", grace_ends_at: "2027-10-15T00:00:00+00:00" });
+    }
     if (req.url === "/functions/v1/governance-digest" && req.method === "POST") {
       assert.equal(req.headers.authorization, "Bearer private-fixture-key", "dispatch uses the deployment credential");
       assert.deepEqual(Object.keys(body).sort(), ["action", "apply", "limit"]);
@@ -198,6 +214,7 @@ async function fixture(t, failure) {
   await new Promise(done => server.listen(0, "127.0.0.1", done));
   writeFileSync(join(dir, "deployment.json"), JSON.stringify({ development: true, supabase_url: `http://127.0.0.1:${server.address().port}` }));
   writeFileSync(join(dir, ".env"), "SERVICE_ROLE_KEY=private-fixture-key\n");
+  if (failure !== "no-health-dir") mkdirSync(join(dir, "health"));
   t.after(async () => { await new Promise(done => server.close(done)); rmSync(dir, { recursive: true, force: true }); });
   const run = (apply = true) => new Promise((done, reject) => {
     const child = spawn(process.execPath, [resolve(dirname(fileURLToPath(import.meta.url)), "deployment-maintenance.mjs"), dir, ...(apply ? ["--apply"] : [])], { stdio: ["ignore", "pipe", "pipe"], timeout: 10_000 });
@@ -492,3 +509,56 @@ for (const failure of ["prepare", "token", "storage", "partial", "wrong-path", "
     }
   });
 }
+
+test("agents offline past the tenant setting are counted on a dry run and retired on apply", async t => {
+  const f = await fixture(t);
+  let result = await f.run(false);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(f.state.agents.filter(row => row.retired).length, 0);
+  assert.equal(f.evidence().agent_retirement.eligible_observed, 2);
+  assert.equal(f.evidence().agent_retirement.retired, 0);
+  // The shared fixture keeps held retention rows, so an apply run exits 2
+  // (incomplete) for reasons unrelated to agent retirement.
+  result = await f.run();
+  assert.ok([0, 2].includes(result.code), result.stderr);
+  assert.equal(f.state.agents.filter(row => row.retired).length, 2);
+  assert.equal(f.state.agents.find(row => !row.offline).retired, undefined);
+  assert.equal(f.evidence().agent_retirement.retired, 2);
+  assert.equal(f.evidence().agent_retirement.complete, true);
+  assert.ok(f.state.agentCalls.every(call => call.p_limit === 500));
+});
+
+test("invalid agent retirement receipt cannot complete maintenance", async t => {
+  const f = await fixture(t, "retire-invalid");
+  const result = await f.run();
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Invalid agent retirement response/);
+  assert.equal(f.evidence().complete, false);
+});
+
+test("license expiry evidence is written for monitoring, and a failed read is never reported healthy", async t => {
+  const f = await fixture(t);
+  const result = await f.run();
+  assert.ok([0, 2].includes(result.code), result.stderr);
+  const document = JSON.parse(readFileSync(join(f.dir, "health", "license.json"), "utf8"));
+  assert.deepEqual(Object.keys(document).sort(), ["checked_at", "grace_ends_at", "license_expires_at", "schema_version", "signed", "status"]);
+  assert.equal(document.status, "ok");
+  assert.equal(document.license_expires_at, "2027-10-01T00:00:00.000Z");
+  assert.equal(document.grace_ends_at, "2027-10-15T00:00:00.000Z");
+  assert.equal(f.evidence().license_health.status, "ok");
+
+  const down = await fixture(t, "license-down");
+  const downResult = await down.run();
+  assert.ok([0, 2].includes(downResult.code), downResult.stderr);
+  const failed = JSON.parse(readFileSync(join(down.dir, "health", "license.json"), "utf8"));
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.license_expires_at, undefined);
+});
+
+test("no license evidence is written where the deployment has no health directory", async t => {
+  const f = await fixture(t, "no-health-dir");
+  const result = await f.run();
+  assert.ok([0, 2].includes(result.code), result.stderr);
+  assert.equal(existsSync(join(f.dir, "health", "license.json")), false);
+  assert.equal(f.evidence().license_health.status, "not_written");
+});
