@@ -35,7 +35,12 @@ export function validateScan(scan: ImageScan, hash: string, limits: GeometryLimi
   const height = integer(scan.height, 1, limits.maxDimension, 'IMAGE_DIMENSION_LIMIT');
   if (width * height > limits.maxPixels) imageFail('IMAGE_PIXEL_LIMIT');
   if (!['PNG', 'JPEG', 'WEBP'].includes(scan.format)) imageFail('IMAGE_FORMAT_UNSUPPORTED');
-  if (!Array.isArray(scan.languages) || !['eng', 'tur'].every(x => scan.languages.includes(x))) imageFail('IMAGE_OCR_UNAVAILABLE');
+  if (scan.ocrEngine !== undefined && scan.ocrEngine !== 'windows') imageFail('IMAGE_PROTOCOL_INVALID');
+  if (scan.barcodeCoverage !== undefined && scan.barcodeCoverage !== 'none') imageFail('IMAGE_PROTOCOL_INVALID');
+  // Tesseract must have run with both eng and tur. Windows OCR needs at least the Turkish recognizer
+  // (a Latin-script superset that also reads English text); an English recognizer is optional there.
+  const languages = scan.ocrEngine === 'windows' ? ['tur'] : ['eng', 'tur'];
+  if (!Array.isArray(scan.languages) || !languages.every(x => scan.languages.includes(x))) imageFail('IMAGE_OCR_UNAVAILABLE');
   if (!Array.isArray(scan.barcodes) || scan.barcodes.length > 256) imageFail('IMAGE_PROTOCOL_INVALID');
   for (const box of scan.barcodes) checkBox(box, width, height);
   return validatePages(scan.pages, width, height, limits);

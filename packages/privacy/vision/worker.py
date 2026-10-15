@@ -215,19 +215,39 @@ def parse_tsv(raw: bytes, width: int, height: int, limits: dict):
     except Exception:
         fail("IMAGE_PROTOCOL_INVALID")
 
-def ocr(im, args, psms, limits):
+WINDOWS_LANGUAGE = {"tr": "tur", "tr-TR": "tur", "en": "eng", "en-US": "eng", "en-GB": "eng"}
+
+def ocr(im, args, psms, limits, manifest):
     encoded = png_bytes(im)
     pages = []
-    for psm in psms:
-        command = [args.tesseract, "stdin", "stdout", "--tessdata-dir", args.tessdata,
-                   "-l", "eng+tur", "--oem", "1", "--psm", str(psm), "-c", "tessedit_create_tsv=1"]
-        data = run_bounded(command, encoded, 12, 4 * 1024 * 1024)
-        pages.append(parse_tsv(data, *im.size, limits))
+    if manifest.get("ocrEngine") == "windows":
+        # Windows.Media.Ocr through the pinned helper script: one page per installed recognizer
+        # language recorded in the manifest (psm values do not apply to this engine).
+        for tag in manifest["languages"]:
+            command = [args.powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                       "-File", args.windows_ocr_script, "-Languages", tag]
+            data = run_bounded(command, encoded, 20, 4 * 1024 * 1024)
+            pages.append(parse_tsv(data, *im.size, limits))
+    else:
+        for psm in psms:
+            command = [args.tesseract, "stdin", "stdout", "--tessdata-dir", args.tessdata,
+                       "-l", "eng+tur", "--oem", "1", "--psm", str(psm), "-c", "tessedit_create_tsv=1"]
+            data = run_bounded(command, encoded, 12, 4 * 1024 * 1024)
+            pages.append(parse_tsv(data, *im.size, limits))
     if sum(len(page["words"]) for page in pages) > limits["maxWords"]:
         fail("IMAGE_OCR_LIMIT")
     return pages
 
-def barcodes(im):
+def scan_languages(manifest):
+    if manifest.get("ocrEngine") == "windows":
+        return sorted({WINDOWS_LANGUAGE[tag] for tag in manifest["languages"]})
+    return ["eng", "tur"]
+
+def barcodes(im, manifest=None):
+    if (manifest or {}).get("barcodeEngine") == "none":
+        # No barcode decoder on this endpoint (recorded in the manifest): report none found and
+        # say so in barcodeCoverage, so the engine never treats the image as fully inspected.
+        return []
     try:
         from pyzbar.pyzbar import decode
     except Exception:
@@ -248,25 +268,54 @@ def barcodes(im):
     except Exception:
         fail("IMAGE_BARCODE_UNAVAILABLE")
 
+def sha256_file(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
 def check_artifacts(args):
+    """Verify the pinned OCR installation against the manifest; returns the manifest."""
     try:
-        for p in (args.tesseract, args.tessdata, args.manifest):
-            if not Path(p).is_absolute():
-                fail("IMAGE_ARTIFACT_MISMATCH")
+        if not Path(args.manifest).is_absolute():
+            fail("IMAGE_ARTIFACT_MISMATCH")
         manifest_path = Path(args.manifest)
         if manifest_path.stat().st_size > 65536:
             fail("IMAGE_ARTIFACT_MISMATCH")
         m = json.loads(manifest_path.read_text("utf-8"))
         if m["schemaVersion"] != 1:
             fail("IMAGE_ARTIFACT_MISMATCH")
-        if hashlib.sha256(Path(args.tesseract).read_bytes()).hexdigest() != m["tesseractSha256"]:
+        engine = m.get("ocrEngine", "tesseract")
+        if engine != getattr(args, "ocr_engine", "tesseract"):
             fail("IMAGE_ARTIFACT_MISMATCH")
-        for lang in ("eng", "tur"):
-            path = Path(args.tessdata) / (lang + ".traineddata")
-            if hashlib.sha256(path.read_bytes()).hexdigest() != m["models"][lang]:
+        if engine == "windows":
+            for p in (getattr(args, "powershell", None), getattr(args, "windows_ocr_script", None)):
+                if not p or not Path(p).is_absolute():
+                    fail("IMAGE_ARTIFACT_MISMATCH")
+            langs = m["languages"]
+            if type(langs) is not list or not 1 <= len(langs) <= 4 or any(type(t) is not str or t not in WINDOWS_LANGUAGE for t in langs):
                 fail("IMAGE_ARTIFACT_MISMATCH")
-        if version("Pillow") != m["pillowVersion"] or version("pyzbar") != m["pyzbarVersion"]:
+            if "tur" not in {WINDOWS_LANGUAGE[t] for t in langs}:
+                fail("IMAGE_ARTIFACT_MISMATCH")
+            if sha256_file(args.windows_ocr_script) != m["windowsOcrScriptSha256"]:
+                fail("IMAGE_ARTIFACT_MISMATCH")
+            if sha256_file(args.powershell) != m["powershellSha256"]:
+                fail("IMAGE_ARTIFACT_MISMATCH")
+        elif engine == "tesseract":
+            for p in (args.tesseract, args.tessdata):
+                if not p or not Path(p).is_absolute():
+                    fail("IMAGE_ARTIFACT_MISMATCH")
+            if sha256_file(args.tesseract) != m["tesseractSha256"]:
+                fail("IMAGE_ARTIFACT_MISMATCH")
+            for lang in ("eng", "tur"):
+                if sha256_file(Path(args.tessdata) / (lang + ".traineddata")) != m["models"][lang]:
+                    fail("IMAGE_ARTIFACT_MISMATCH")
+        else:
             fail("IMAGE_ARTIFACT_MISMATCH")
+        if m.get("barcodeEngine", "pyzbar") not in ("pyzbar", "none"):
+            fail("IMAGE_ARTIFACT_MISMATCH")
+        if version("Pillow") != m["pillowVersion"]:
+            fail("IMAGE_ARTIFACT_MISMATCH")
+        if m.get("barcodeEngine", "pyzbar") == "pyzbar" and version("pyzbar") != m["pyzbarVersion"]:
+            fail("IMAGE_ARTIFACT_MISMATCH")
+        return m
     except GuardError:
         raise
     except Exception:
@@ -288,7 +337,16 @@ def limits_from(request):
         fail("IMAGE_PROTOCOL_INVALID")
     return {key: positive(source.get(key, cap), 1, cap) for key, cap in caps.items()}
 
-def handle(request, args):
+def coverage(manifest):
+    """Extra scan fields for a non-default installation (absent for Tesseract + pyzbar)."""
+    extra = {}
+    if manifest.get("ocrEngine") == "windows":
+        extra["ocrEngine"] = "windows"
+    if manifest.get("barcodeEngine") == "none":
+        extra["barcodeCoverage"] = "none"
+    return extra
+
+def handle(request, args, manifest):
     if type(request) is not dict or request.get("protocol") != 1 or request.get("task") not in ("inspect", "render"):
         fail("IMAGE_PROTOCOL_INVALID")
     psms = request.get("psms", [11, 6])
@@ -310,24 +368,29 @@ def handle(request, args):
         im = render(im, request.get("regions"))
         output = png_bytes(im)
         return dict(protocol=1, complete=True, width=im.width, height=im.height,
-                    png=base64.b64encode(output).decode("ascii"), pages=ocr(im, args, psms, limits), barcodes=barcodes(im))
+                    png=base64.b64encode(output).decode("ascii"), pages=ocr(im, args, psms, limits, manifest),
+                    barcodes=barcodes(im, manifest), **coverage(manifest))
     return dict(protocol=1, complete=True, inputSha256=hashlib.sha256(raw).hexdigest(),
                 pixelSha256=pixel_sha, width=im.width, height=im.height, format=fmt,
-                pages=ocr(im, args, psms, limits), barcodes=barcodes(im), languages=["eng", "tur"])
+                pages=ocr(im, args, psms, limits, manifest), barcodes=barcodes(im, manifest),
+                languages=scan_languages(manifest), **coverage(manifest))
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tesseract", required=True)
-    parser.add_argument("--tessdata", required=True)
+    parser.add_argument("--ocr-engine", choices=("tesseract", "windows"), default="tesseract")
+    parser.add_argument("--tesseract")
+    parser.add_argument("--tessdata")
+    parser.add_argument("--powershell")
+    parser.add_argument("--windows-ocr-script")
     parser.add_argument("--manifest", required=True)
     args = parser.parse_args()
     try:
         restrict_process()
-        check_artifacts(args)
+        manifest = check_artifacts(args)
         data = sys.stdin.buffer.read(MAX_IPC + 1)
         if len(data) > MAX_IPC:
             fail("IMAGE_INPUT_LIMIT")
-        result = handle(json.loads(data.decode("utf-8", "strict")), args)
+        result = handle(json.loads(data.decode("utf-8", "strict")), args, manifest)
     except GuardError as error:
         result = dict(protocol=1, complete=False, code=error.code)
     except Exception:

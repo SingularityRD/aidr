@@ -174,6 +174,27 @@ class WorkerTests(unittest.TestCase):
             (root/'tur.traineddata').write_bytes(b'TAMPERED')
             self.code('IMAGE_ARTIFACT_MISMATCH',w.check_artifacts,args)
 
+    def test_windows_ocr_manifest_and_missing_barcode_decoder(self):
+        from importlib.metadata import version
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);ps=root/'powershell.exe';ps.write_bytes(b'SYNTHETIC POWERSHELL');script=root/'windows_ocr.ps1';script.write_bytes(b'# synthetic')
+            m=dict(schemaVersion=1,ocrEngine='windows',powershellSha256=hashlib.sha256(ps.read_bytes()).hexdigest(),
+                   windowsOcrScriptSha256=hashlib.sha256(script.read_bytes()).hexdigest(),languages=['tr'],
+                   pillowVersion=version('Pillow'),barcodeEngine='none')
+            manifest=root/'manifest.json';manifest.write_text(json.dumps(m))
+            args=SimpleNamespace(ocr_engine='windows',powershell=str(ps),windows_ocr_script=str(script),manifest=str(manifest))
+            self.assertEqual(w.check_artifacts(args)['ocrEngine'],'windows')
+            self.assertEqual(w.scan_languages(m),['tur'])
+            self.assertEqual(w.coverage(m),{'ocrEngine':'windows','barcodeCoverage':'none'})
+            # No decoder recorded: no barcodes are reported (and coverage says so) instead of failing.
+            self.assertEqual(w.barcodes(Image.new('RGB',(20,20),'white'),m),[])
+            # A Tesseract worker invocation must not accept a Windows manifest, and vice versa.
+            self.code('IMAGE_ARTIFACT_MISMATCH',w.check_artifacts,SimpleNamespace(ocr_engine='tesseract',tesseract=str(ps),tessdata=temp,manifest=str(manifest)))
+            for bad in (dict(languages=['en-US']),dict(languages=['xx']),dict(barcodeEngine='zxing')):
+                manifest.write_text(json.dumps({**m,**bad}));self.code('IMAGE_ARTIFACT_MISMATCH',w.check_artifacts,args)
+            manifest.write_text(json.dumps(m));script.write_bytes(b'# TAMPERED')
+            self.code('IMAGE_ARTIFACT_MISMATCH',w.check_artifacts,args)
+
 for fmt in ('PNG','JPEG','WEBP'):
     def test(self,fmt=fmt):
         im,actual=w.normalize(encoded(fmt=fmt),LIMITS)

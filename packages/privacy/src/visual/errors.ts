@@ -9,7 +9,7 @@ export const VISUAL_CODES = new Set([
   'IMAGE_NER_REQUIRED', 'IMAGE_PIXEL_VERIFICATION_FAILED', 'IMAGE_RESIDUAL_PII',
   'IMAGE_RESIDUAL_BARCODE', 'IMAGE_UNVERIFIED_OUTPUT', 'IMAGE_CONFIGURATION_INVALID',
   'IMAGE_DISPOSED', 'IMAGE_INTERNAL_FAILURE', 'IMAGE_ARTIFACT_MISMATCH',
-  'IMAGE_SENSITIVE_TEXT', 'IMAGE_TEXT_PRESENT', 'IMAGE_BARCODE_NOT_INSPECTED',
+  'IMAGE_SENSITIVE_TEXT', 'IMAGE_TEXT_PRESENT', 'IMAGE_BARCODE_NOT_INSPECTED', 'IMAGE_BARCODE_NOT_CHECKED',
 ]);
 export class VisualError extends Error { constructor(readonly code: string) { super(code); this.name = 'VisualError'; } }
 export function imageFail(code: string): never { throw new VisualError(code); }

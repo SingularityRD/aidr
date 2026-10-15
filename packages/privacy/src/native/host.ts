@@ -54,7 +54,7 @@ async function main():Promise<void>{
       protectJson:async(input:string)=>{const r=guard.protectJson(input);return r.output===null?r:text!.protectJson(input);},
     };
     if(config.visual){const v=config.visual as {backend:LocalImageOptions;policy?:Partial<VisualOptions>};
-      if(!v||typeof v!=='object'||Object.keys(v).some(k=>!['backend','policy'].includes(k))||!v.backend||Object.keys(v.policy??{}).some(k=>!['release','mode','granularity','barcodeAction','uncertainText','minConfidence','minWordHeight','paddingPx','maxInputBytes','maxPixels','maxDimension','maxWords','maxTextBytes','maxRegions','timeoutMs','maxConcurrent','policyId','requireNer'].includes(k)))throw new Error();
+      if(!v||typeof v!=='object'||Object.keys(v).some(k=>!['backend','policy'].includes(k))||!v.backend||Object.keys(v.policy??{}).some(k=>!['release','mode','granularity','barcodeAction','uncertainText','minConfidence','minWordHeight','paddingPx','maxInputBytes','maxPixels','maxDimension','maxWords','maxTextBytes','maxRegions','timeoutMs','maxConcurrent','policyId','requireNer','barcodeUnavailable'].includes(k)))throw new Error();
       visual=new VisualPrivacyEngine({...v.policy,backend:new LocalImageProcess(v.backend),textEngine:guardedText});
     }
     const probe=await guardedText.protect('');const secret=edmSecret;
