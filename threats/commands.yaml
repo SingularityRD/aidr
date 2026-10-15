@@ -570,3 +570,21 @@
   expires_at: null
   revoked: false
 
+# PHP socket reverse shell (counterpart of CLT-CMD-023/032/033/039). CLT-CMD-038
+# only asks for a PHP one-liner that runs a shell command; a socket opened to a
+# remote host and then a shell exec'd over it is an unmistakable reverse shell,
+# so this is a hard block, matching the python/perl/ruby/node rules.
+- id: "CLT-CMD-040"
+  category: tool
+  severity: critical
+  confidence: 0.90
+  action: block
+  pattern: "\\bphp\\b.{0,200}\\b(?:fsockopen|pfsockopen|stream_socket_client|socket_connect)\\b.{0,400}\\b(?:exec|system|shell_exec|passthru|popen|proc_open)\\b"
+  match_on:
+    - command
+    - command_normalized
+  title: "PHP reverse shell via socket"
+  title_tr: "PHP soketiyle ters kabuk"
+  expires_at: null
+  revoked: false
+

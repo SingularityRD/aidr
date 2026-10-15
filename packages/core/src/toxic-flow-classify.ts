@@ -539,6 +539,52 @@ function curlCarriesData(words: string[]): boolean {
 	return false;
 }
 
+/**
+ * Local file paths an HTTP client sends as the request body, so a credential
+ * file uploaded in the same call (`wget --post-file=.env`, `curl -T ~/.ssh/id_rsa`,
+ * `curl -d @.env`, `curl -F f=@creds.json`, PowerShell `-InFile`) is seen as a
+ * secret read, not only as an egress. `@-`/`@/dev/stdin` and inline values are
+ * ignored; only a referenced file path is returned.
+ */
+function uploadedLocalFiles(words: string[]): string[] {
+	const files: string[] = [];
+	const addFileArg = (value: string | undefined): void => {
+		if (!value) return;
+		const path = value.startsWith("@") ? value.slice(1) : value;
+		const bare = path.replace(/^["']|["']$/g, "");
+		if (bare && bare !== "-" && !/^\/dev\/(?:stdin|fd)/.test(bare) && !/^[a-z]+:\/\//i.test(bare)) {
+			files.push(bare);
+		}
+	};
+	for (let i = 0; i < words.length; i += 1) {
+		const word = words[i] as string;
+		// `--upload-file=FILE`, `--post-file=FILE`, `--data=@FILE`, `--data-binary @FILE`.
+		const long = /^--(upload-file|post-file|data(?:-binary|-raw|-urlencode)?|form|InFile)(?:=(.*))?$/i.exec(
+			word,
+		);
+		if (long) {
+			const value = long[2] !== undefined ? long[2] : words[i + 1];
+			if (/^(?:data|form)/i.test(long[1] as string)) {
+				// Only the `@file` / `field=@file` forms reference a file.
+				const at = value?.includes("@") ? value.slice(value.indexOf("@") + 1) : undefined;
+				addFileArg(at);
+			} else {
+				addFileArg(value);
+			}
+			continue;
+		}
+		// Short flags that take a file: `-T FILE`, `-d @FILE`, `-F field=@FILE`.
+		const short = /^-([a-zA-Z]*)([dFT])(.*)$/.exec(word);
+		if (short && !word.startsWith("--")) {
+			const inline = short[3];
+			const value = inline && inline.length > 0 ? inline : words[i + 1];
+			if (short[2] === "T") addFileArg(value);
+			else if (value?.includes("@")) addFileArg(value.slice(value.indexOf("@") + 1));
+		}
+	}
+	return files;
+}
+
 /** Where an HTTP download lands: a file (tracked) or stdout (content enters context). */
 function httpDownloadTarget(
 	client: string,
@@ -658,9 +704,42 @@ function handleNestedShell(ctx: StageContext): boolean {
 	return false;
 }
 
+/**
+ * Files read inside a command substitution that feeds this stage's body, e.g.
+ * `curl -d "$(cat ~/.aws/credentials)"` or `` wget --post-data=`head ~/.ssh/id_rsa` ``.
+ * `uploadedLocalFiles` handles `@file`/`-T file`; this handles the substitution
+ * form, so the read is seen as a secret in the same call and the egress denies.
+ */
+const SUBSTITUTION_FILE_READ =
+	/(?:\$\(|`|<\()\s*(?:[^)`]{0,80}\|\s*)?(?:cat|head|tail|less|more|xxd|base64|openssl|type|Get-Content|gc)\s+(?:-\S+\s+){0,3}["']?([^\s"'`)|]{1,200})/gi;
+
+function substitutionSecretReads(
+	text: string,
+	set: ObservationSet,
+	via: string,
+	options: Pick<ResolvedOptions, "patterns" | "workingDirectory">,
+): void {
+	SUBSTITUTION_FILE_READ.lastIndex = 0;
+	let found = 0;
+	for (
+		let m = SUBSTITUTION_FILE_READ.exec(text);
+		m !== null && found < 8;
+		m = SUBSTITUTION_FILE_READ.exec(text)
+	) {
+		found += 1;
+		if (m[1]) addSensitivePath(set, m[1], via, options);
+	}
+}
+
 function handleHttpClient(ctx: StageContext): boolean {
 	const { exe, args, stage, set, options } = ctx;
-	const carries = curlCarriesData(args) || stage.hasInput || HAS_SUBSTITUTION.test(stage.text);
+	// A request carries data when it has a body/upload or piped stdin. A `$( … )`
+	// substitution elsewhere in the command (a cache-busting path, a header) does
+	// NOT by itself make a GET an upload; a substitution inside the URL does (it
+	// can place a secret in the query), and that is checked per-URL below. A plain
+	// read-only GET (health check, docs fetch) therefore stays `network_egress`,
+	// not `data_upload`, so it cannot complete an exfiltration chain.
+	const carries = curlCarriesData(args) || stage.hasInput;
 	let urls = urlsIn(stage.text);
 	if (urls.length === 0) {
 		const bare = args.find(
@@ -669,11 +748,14 @@ function handleHttpClient(ctx: StageContext): boolean {
 		if (bare) urls = [`https://${bare}`];
 	}
 	for (const url of urls) {
-		addEgress(set, url, options, exe, carries || urlCarriesData(url));
+		addEgress(set, url, options, exe, carries || urlCarriesData(url) || HAS_SUBSTITUTION.test(url));
 		const target = exe === "curl" || exe === "wget" ? httpDownloadTarget(exe, args, url) : "stdout";
 		if (target === "stdout") addUntrustedFetch(set, url, exe, options);
 		else if (!classifyDestination(url, options)?.local) ctx.downloads.push(target);
 	}
+	// A credential file sent as the request body is a secret read in this call.
+	for (const file of uploadedLocalFiles(args)) addSensitivePath(set, file, exe, options);
+	substitutionSecretReads(stage.text, set, exe, options);
 	return true;
 }
 
@@ -712,6 +794,32 @@ function handleCopyClient(ctx: StageContext): boolean {
 function handleSsh(ctx: StageContext): boolean {
 	const host = firstOperand(ctx.args);
 	if (host && ctx.stage.hasInput) addRemoteUpload(ctx.set, "ssh", host, "piped data");
+	return false;
+}
+
+/**
+ * `tftp`/`ftp` were not classified at all, so `tftp HOST -c put .env` passed as
+ * a clean allow. A `put` subcommand/operand uploads (carries data); the first
+ * non-flag, non-`put/get` operand is the host. A `put` of a credential file is
+ * recorded as a secret read in this call too, so it denies as a one-shot exfil.
+ */
+function handleFtpPut(ctx: StageContext): boolean {
+	const operands = ctx.args.filter((arg) => !arg.startsWith("-"));
+	const host = operands.find((arg) => !/^(?:put|get|mput|mget)$/i.test(arg));
+	const putIndex = ctx.args.findIndex((arg) => /^(?:put|mput)$/i.test(arg));
+	const uploads = putIndex >= 0;
+	if (host) {
+		if (uploads || ctx.stage.hasInput) {
+			addRemoteUpload(ctx.set, ctx.exe, host, "file transfer");
+		} else {
+			addEgress(ctx.set, `ftp://${host.replace(/^[a-z]+:\/\//i, "")}`, ctx.options, ctx.exe, false);
+		}
+	}
+	if (uploads) {
+		for (const file of ctx.args.slice(putIndex + 1).filter((arg) => !arg.startsWith("-"))) {
+			addSensitivePath(ctx.set, file, ctx.exe, ctx.options);
+		}
+	}
 	return false;
 }
 
@@ -814,6 +922,7 @@ function stageHandler(
 	if (executables.dnsClients.has(exe)) return handleDns;
 	if (executables.interpreters.has(exe)) return handleInterpreter;
 	if (exe === "ssh") return handleSsh;
+	if (exe === "tftp" || exe === "ftp" || exe === "atftp") return handleFtpPut;
 	if (exe === "git") return handleGit;
 	if (exe === "gh") return handleGh;
 	return null;
