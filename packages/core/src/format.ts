@@ -280,6 +280,32 @@ function scanHeadline(version: string, result: SessionStartResult): string {
 		: headline;
 }
 
+/** `YYYY-MM-DD HH:MM` in the computer's local time zone. */
+function localMinute(date: Date): string {
+	const pad = (value: number) => String(value).padStart(2, "0");
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** What an unreachable control plane means for this session, per the install-time offline choice. */
+export function formatOfflineNotice(
+	notice: NonNullable<SessionStartResult["offline"]>,
+	now = Date.now(),
+): string {
+	const blocksAt = notice.blocksAt ? Date.parse(notice.blocksAt) : Number.NaN;
+	const line =
+		notice.policy === "keep_enforcing_local"
+			? t("session.offline.keepLocal")
+			: Number.isFinite(blocksAt) && blocksAt > now
+				? t("session.offline.blockAt", {
+						time: localMinute(new Date(blocksAt)),
+						minutes: Math.max(1, Math.ceil((blocksAt - now) / 60_000)),
+					})
+				: t("session.offline.blocked");
+	return notice.supportContact
+		? `${line}\n${t("session.offline.support", { contact: notice.supportContact })}`
+		: line;
+}
+
 export function formatSessionStartMessage(version: string, result: SessionStartResult): string {
 	if (result.enabled === false) {
 		const reason = result.disabled_reason ?? "disabled";
@@ -318,6 +344,7 @@ export function formatSessionStartMessage(version: string, result: SessionStartR
 	}
 	const coverage = result.coverageFindings ?? [];
 	if (coverage.length > 0) sections.push(...mcpCoverageGapSection(coverage));
+	if (result.offline) sections.push(formatOfflineNotice(result.offline));
 	if (sections.length === 0) return message;
 	return `${message}\n${sections.join("\n")}`;
 }

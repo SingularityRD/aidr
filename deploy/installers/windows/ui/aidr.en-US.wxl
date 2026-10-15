@@ -41,7 +41,7 @@
   <String Id="AidrCustomerCompanyHelp" Value="Protection runs on this computer whether or not the server can be reached. Without a code, your AI tool shows a short code and a link the first time it opens; this computer is approved there. Setup keeps the code in a file only your account can open and deletes it once it is used." />
 
   <String Id="AidrInvalidUrl" Value="The company address must start with https:// and contain only a server name and a path, for example https://aidr.example.com." />
-  <String Id="AidrInvalidCode" Value="The enrollment code is not complete. It starts with aidr_enroll_ and is 55 characters long. Copy it again from your company's console." />
+  <String Id="AidrInvalidCode" Value="The enrollment code is not complete. A one-time code starts with aidr_enroll_ and is 55 characters long; a fleet key starts with aidr_fleet_. Copy it again from your company's console." />
 
   <String Id="AidrReadyTitle" Value="{\WixUI_Font_Title}Ready to install" />
   <String Id="AidrReadyDescription" Value="Check your choices, then click Install." />

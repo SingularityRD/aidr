@@ -161,7 +161,7 @@ export const CUSTOMER_PACKET_MAX_BYTES = 64 * 1024;
 export const CUSTOMER_PACKET_FILE = "customer-packet.json";
 /** The Linux machine copy: a dpkg conffile / RPM %config(noreplace). */
 export const LINUX_CUSTOMER_PACKET = "/etc/singularity-aidr/customer-packet.json";
-const PACKET_PAYLOAD_KEYS = new Set(["customer_id", "packet_id", "issued_at", "license", "control_plane_url", "sensitivity", "display_name"]);
+const PACKET_PAYLOAD_KEYS = new Set(["customer_id", "packet_id", "issued_at", "license", "control_plane_url", "sensitivity", "display_name", "licensing_public_keys_pem"]);
 
 function checkCustomerId(customerId) {
 	if (typeof customerId !== "string" || !CUSTOMER_ID_PATTERN.test(customerId)) {

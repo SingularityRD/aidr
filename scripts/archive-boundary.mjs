@@ -45,7 +45,12 @@ const SMOKE_EVIDENCE_ENTRY = /^(?:smoke-evidence(?:-[a-f0-9]{64})?|doctor-eviden
 // Private state of scripts/deployment-upgrade.mjs (state, receipts, rollback
 // plan, the previous release's components). Compose never reads it.
 const UPGRADE_STATE_ENTRY = ".aidr-upgrade";
-const isRuntimeOutput = (name) => name === "health" || name === UPGRADE_STATE_ENTRY || SMOKE_EVIDENCE_ENTRY.test(name);
+// The endpoint machine policy deployment-prepare.mjs writes for the MSI / Linux
+// packages / GPO: a deliverable derived from agent-config.json (address, public
+// signing key, offline choice). Compose never reads it and installations
+// prepared before it existed have none, so it is neither required nor archived.
+const ENDPOINT_POLICY_ENTRY = "endpoint-policy";
+const isRuntimeOutput = (name) => name === "health" || name === UPGRADE_STATE_ENTRY || name === ENDPOINT_POLICY_ENTRY || SMOKE_EVIDENCE_ENTRY.test(name);
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 function fail(message) {

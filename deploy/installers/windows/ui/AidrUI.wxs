@@ -194,7 +194,7 @@
         <Control Id="CodeLabel" Type="Text" X="38" Y="146" Width="312" Height="10" Text="!(loc.AidrCompanyCodeLabel)"
                  DisableCondition='AIDR_CONNECTION &lt;&gt; "company"' EnableCondition='AIDR_CONNECTION = "company"' />
         <!-- The enrollment code is a one-time secret: masked here, Hidden in the log (aidr.wxs). -->
-        <Control Id="Code" Type="Edit" X="38" Y="158" Width="312" Height="18" Property="ENROLLMENT_CODE" Password="yes" Text="{80}"
+        <Control Id="Code" Type="Edit" X="38" Y="158" Width="312" Height="18" Property="ENROLLMENT_CODE" Password="yes" Text="{270}"
                  DisableCondition='AIDR_CONNECTION &lt;&gt; "company"' EnableCondition='AIDR_CONNECTION = "company"' />
         <Control Id="CompanyHelp" Type="Text" X="38" Y="182" Width="312" Height="40" NoPrefix="yes" Text="!(loc.AidrCompanyHelp)" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
@@ -225,7 +225,7 @@
         <Control Id="Server" Type="Text" X="20" Y="58" Width="330" Height="30" NoPrefix="yes" Text="!(loc.AidrCustomerCompanyServer)" />
         <Control Id="CustomerCodeLabel" Type="Text" X="20" Y="96" Width="330" Height="10" Text="!(loc.AidrCompanyCodeLabel)" />
         <!-- The enrollment code is a one-time secret: masked here, Hidden in the log (aidr.wxs). -->
-        <Control Id="CustomerCode" Type="Edit" X="20" Y="108" Width="330" Height="18" Property="ENROLLMENT_CODE" Password="yes" Text="{80}" />
+        <Control Id="CustomerCode" Type="Edit" X="20" Y="108" Width="330" Height="18" Property="ENROLLMENT_CODE" Password="yes" Text="{270}" />
         <Control Id="CustomerHelp" Type="Text" X="20" Y="134" Width="330" Height="60" NoPrefix="yes" Text="!(loc.AidrCustomerCompanyHelp)" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">

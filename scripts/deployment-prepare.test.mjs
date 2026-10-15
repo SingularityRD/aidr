@@ -41,7 +41,7 @@ function prepare(output, ...options) {
 		...(options.includes("--region") ? [] : ["--region", "self-hosted"]),
 		...(options.includes("--tenant-region") ? [] : ["--tenant-region", "self-hosted"]),
 	];
-	return spawnSync(process.execPath, [script, "--output", output, "--dashboard-url", dashboardUrl, "--supabase-url", supabaseUrl, "--artifact-verification-public-key-file", publicKeyFile, "--telemetry-queue-root", "/var/lib/aidr-telemetry", ...defaultRegion, ...options], {
+	return spawnSync(process.execPath, [script, "--output", output, "--dashboard-url", dashboardUrl, "--supabase-url", supabaseUrl, "--artifact-verification-public-key-file", publicKeyFile, "--telemetry-queue-root", "/var/lib/aidr-telemetry", ...defaultRegion, ...(options.includes("--offline-policy") ? [] : ["--offline-policy", "keep_enforcing_local"]), ...options], {
 		encoding: "utf8", timeout: 60_000,
 	});
 }
@@ -252,6 +252,51 @@ test("cloud ingress upstream uses a provider origin behind the public API proxy"
 		assert.doesNotMatch(dashboard.healthcheck.test.at(-1), /\/livez/);
 		assert.equal(Object.hasOwn(dashboard.environment, "AIDR_AUTH_TEMPLATE_DIR"), false);
 		assert.deepEqual(dashboard.volumes, [{ type: "bind", source: "./health", target: "/run/aidr-health", read_only: true }]);
+	});
+});
+
+test("the offline behaviour is an explicit install-time choice, written to the agent config and the endpoint policy", () => {
+	inTemporaryDirectory((directory) => {
+		const unset = join(directory, "unset");
+		const publicKeyFile = join(directory, "artifact.pem");
+		writeFileSync(publicKeyFile, artifactVerificationPublicKeyPem, "utf8");
+		const refused = spawnSync(process.execPath, [script,
+			"--mode", "cloud", "--output", unset,
+			"--dashboard-url", dashboardUrl, "--supabase-url", supabaseUrl,
+			"--artifact-verification-public-key-file", publicKeyFile,
+			"--telemetry-queue-root", "/var/lib/aidr-telemetry",
+			"--region", "self-hosted", "--tenant-region", "self-hosted",
+		], { encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] });
+		assert.notEqual(refused.status, 0);
+		assert.match(refused.stderr, /requires --offline-policy keep_enforcing_local\|block_after_grace/);
+		assert.equal(existsSync(unset), false);
+		const invalid = prepare(join(directory, "invalid"), "--mode", "cloud", "--offline-policy", "fail_open");
+		assert.notEqual(invalid.status, 0);
+		assert.match(invalid.stderr, /--offline-policy must be one of/);
+
+		for (const choice of ["keep_enforcing_local", "block_after_grace"]) {
+			const output = join(directory, choice);
+			const result = prepare(output, "--mode", "cloud", "--offline-policy", choice);
+			assert.equal(result.status, 0, result.stderr);
+			const agentConfig = JSON.parse(readFileSync(join(output, "agent-config.json"), "utf8"));
+			assert.equal(agentConfig.control_plane.offline_policy, choice);
+			assert.equal(agentConfig.control_plane.remote_policy_required, choice === "block_after_grace");
+			assert.equal(JSON.parse(readFileSync(join(output, "deployment.json"), "utf8")).offline_policy, choice);
+			// The endpoint machine policy carries the address, the deployment's signing key and the choice.
+			const policy = JSON.parse(readFileSync(join(output, "endpoint-policy/managed.json"), "utf8"));
+			assert.deepEqual(Object.keys(policy).sort(), ["control_plane_url", "licensing_public_keys_pem", "offline_policy"]);
+			assert.equal(policy.control_plane_url, `${supabaseUrl}/functions/v1`);
+			assert.equal(policy.offline_policy, choice);
+			const licensing = createPublicKey(agentConfig.licensing.public_keys_pem[0]).export({ type: "spki", format: "der" }).toString("base64");
+			assert.deepEqual(policy.licensing_public_keys_pem, [licensing]);
+			assert.equal(readFileSync(join(output, "endpoint-policy/licensing-public-keys.pem"), "utf8"), agentConfig.licensing.public_keys_pem[0]);
+			const reg = readFileSync(join(output, "endpoint-policy/aidr-machine-policy.reg"), "utf8");
+			assert.match(reg, /\[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Singularity AIDR\]/);
+			assert.match(reg, new RegExp(`"offline_policy"="${choice}"`));
+			const readme = readFileSync(join(output, "endpoint-policy/README.txt"), "utf8");
+			assert.match(readme, new RegExp(`AIDR_POLICY_OFFLINE_POLICY=${choice}`));
+			assert.doesNotMatch(readme + reg + JSON.stringify(policy), /PRIVATE KEY|aidr_fleet_[A-Za-z0-9]/);
+		}
 	});
 });
 

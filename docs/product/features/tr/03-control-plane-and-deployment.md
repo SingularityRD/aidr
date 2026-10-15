@@ -1807,7 +1807,7 @@ node scripts/deployment-prepare.mjs --mode self-hosted --output /srv/aidr --prof
   --region self-hosted --tenant-region self-hosted \
   --dashboard-url https://aidr.customer.example --supabase-url https://api.aidr.customer.example \
   --artifact-verification-public-key-file /secure-delivery/aidr-artifact-signing-public.pem \
-  --telemetry-queue-root /var/lib/aidr-telemetry
+  --telemetry-queue-root /var/lib/aidr-telemetry --offline-policy keep_enforcing_local
 docker compose --project-directory /srv/aidr -f /srv/aidr/compose.yml up -d --build
 node scripts/deployment-migrate.mjs /srv/aidr
 node scripts/deployment-doctor.mjs --deployment /srv/aidr --online

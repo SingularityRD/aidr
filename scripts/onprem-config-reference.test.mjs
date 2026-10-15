@@ -95,7 +95,7 @@ test("the catalog lists exactly the variables a prepared installation writes", (
 		"--device-start-upstream-url", "https://project.supabase.co/functions/v1/device-start",
 		"--artifact-verification-public-key-file", publicKey,
 		"--telemetry-queue-root", "/var/lib/aidr-telemetry",
-		"--region", "self-hosted", "--tenant-region", "self-hosted",
+		"--region", "self-hosted", "--tenant-region", "self-hosted", "--offline-policy", "keep_enforcing_local",
 	], { encoding: "utf8", timeout: 60_000 });
 	assert.equal(result.status, 0, result.stderr);
 	for (const file of Object.keys(FILES)) {

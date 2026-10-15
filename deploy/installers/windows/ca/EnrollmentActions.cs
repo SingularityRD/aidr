@@ -20,7 +20,7 @@ namespace SingularityAidr.Installer
         // The same rules as packages/cli/src/utils/installer-enrollment.ts;
         // deploy/installers/installers.test.mjs fails when the two differ.
         public const string UrlPattern = @"^https://[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~%/-]*)?$";
-        public const string CodePattern = @"^aidr_enroll_[A-Za-z0-9_-]{43}$";
+        public const string CodePattern = @"^(?:aidr_enroll_[A-Za-z0-9_-]{43}|aidr_fleet_[A-Za-z0-9_-]{16,256})$";
         public const int MaxUrlLength = 512;
         public const string HandoffDirectory = ".singularity-aidr";
         public const string HandoffFile = "installer-enrollment.json";

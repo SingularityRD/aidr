@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildPacketPayload, selfVerifyCustomerPacket, signCustomerPacket } from "./customer-packet-issue.mjs";
+import { buildPacketPayload, readLicensingPublicKeys, selfVerifyCustomerPacket, signCustomerPacket } from "./customer-packet-issue.mjs";
 import {
 	CUSTOMER_PACKET_FORMAT,
 	CustomerPacketError,
@@ -110,6 +110,29 @@ test("a vendor-signed packet verifies and exposes its terms and the license stat
 	const summary = summarizeCustomerPacket(result);
 	assert.equal(summary.updates_until, "2027-09-15T00:00:00.000Z");
 	assert.equal(JSON.stringify(summary).includes(result.license_document.sig), false);
+});
+
+test("a packet can carry the customer deployment's public signing keys, and only Ed25519 public keys", () => {
+	const deploymentKey = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" });
+	const result = verifyCustomerPacket(packet({ licensing_public_keys_pem: [deploymentKey] }), { publicKeys: registry(), now: inTerm });
+	assert.deepEqual(result.licensing_public_keys_pem, [deploymentKey]);
+	assert.equal(summarizeCustomerPacket(result).licensing_public_keys, 1);
+	const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({ type: "spki", format: "pem" });
+	const privatePem = generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" });
+	for (const keys of [[], [rsa], [privatePem], ["not a key"], Array(9).fill(deploymentKey)]) {
+		assert.throws(() => packet({ licensing_public_keys_pem: keys }), refusedWith("invalid_payload"));
+	}
+	// The issuance helper reads every PEM block of a deployment's key file.
+	const dir = mkdtempSync(join(tmpdir(), "aidr-packet-keys-"));
+	try {
+		const second = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" });
+		writeFileSync(join(dir, "keys.pem"), `${deploymentKey}${second}`);
+		assert.deepEqual(readLicensingPublicKeys([join(dir, "keys.pem")]).map((key) => key.trim()), [deploymentKey.trim(), second.trim()]);
+		writeFileSync(join(dir, "empty.pem"), "nothing here");
+		assert.throws(() => readLicensingPublicKeys([join(dir, "empty.pem")]), /holds no PEM public key/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("an expired or not-yet-valid license still verifies the packet; the state is reported, never hidden", () => {

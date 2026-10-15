@@ -134,6 +134,13 @@ export const tr: Record<MessageKey, string> = {
 	"session.policy.expiredAge": "{policy} önbelleğinin süresi doldu, {seconds} sn önce alındı",
 	"session.policy.invalid": "önbellek geçersiz",
 	"session.policy.defaultName": "politika",
+	"session.offline.keepLocal":
+		"⚠️ Şirketin AIDR sunucusu yanıt vermedi. Bu bilgisayarda yerel koruma sürüyor; merkezden gelen politika değişiklikleri sunucuya yeniden ulaşılınca gelecek.",
+	"session.offline.blockAt":
+		"⚠️ Şirketin AIDR sunucusu yanıt vermedi. Sunucuya yeniden ulaşılamazsa bu bilgisayarda yapay zekâ araçlarının işlemleri {time} itibarıyla (yaklaşık {minutes} dk sonra) ENGELLENECEK: şirketiniz çevrimdışı süre dolunca engellemeyi seçti. BT ekibinize hemen haber verin.",
+	"session.offline.blocked":
+		"⛔ Şirketin AIDR sunucusu yanıt vermedi ve çevrimdışı süre doldu: sunucuya yeniden ulaşılana kadar bu bilgisayarda yapay zekâ araçlarının işlemleri ENGELLENİYOR (şirketinizin seçimi). BT ekibinize haber verin.",
+	"session.offline.support": "Destek: {contact}",
 	"session.clean": "🛡️ Singularity AIDR v{version} ✅ Tehdit bulunamadı",
 	"session.disabled": "Singularity AIDR v{version} - Devre dışı ({reason})",
 	"session.localOnly":

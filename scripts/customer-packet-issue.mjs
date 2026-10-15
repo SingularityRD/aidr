@@ -17,7 +17,7 @@
  * no field for an enrollment code or API key and unknown fields are refused.
  */
 import { createPublicKey, sign, verify } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -54,6 +54,9 @@ export function buildPacketPayload(options, now = Date.now()) {
 		...(options.controlPlaneUrl === undefined ? {} : { control_plane_url: options.controlPlaneUrl }),
 		...(options.sensitivity === undefined ? {} : { sensitivity: options.sensitivity }),
 		...(options.displayName === undefined ? {} : { display_name: options.displayName }),
+		...(options.licensingPublicKeysPem === undefined || options.licensingPublicKeysPem.length === 0
+			? {}
+			: { licensing_public_keys_pem: options.licensingPublicKeysPem }),
 	};
 	validateCustomerPacketPayload(payload);
 	return payload;
@@ -82,11 +85,23 @@ export function selfVerifyCustomerPacket(packet, { privateKey, publicKeys, now =
 	return verifyCustomerPacket(packet, { publicKeys, now });
 }
 
+/** The PEM public keys in the given files (a file may hold several blocks). */
+export function readLicensingPublicKeys(files) {
+	const keys = [];
+	for (const file of files) {
+		const blocks = readFileSync(resolve(file), "utf8").match(/-----BEGIN PUBLIC KEY-----[\s\S]*?-----END PUBLIC KEY-----/g) ?? [];
+		if (blocks.length === 0) throw new CustomerPacketError("usage", `${file} holds no PEM public key`);
+		keys.push(...blocks.map((block) => `${block}\n`));
+	}
+	return [...new Set(keys)];
+}
+
 const USAGE = `Usage:
   node scripts/customer-packet-issue.mjs --key-id <id> --license-file <license.json> --packet-id <id>
     --public-keys <license-public-keys.json shipped to the customer> --out <customer-packet.json>
     [--customer-id <id, must match the license>] [--issued-at <ISO>]
     [--control-plane-url <https://...>] [--sensitivity ${SENSITIVITIES.join("|")}] [--display-name <text>]
+    [--licensing-public-key-file <deployment endpoint-policy/licensing-public-keys.pem>]...
     (signing key: --private-key-file <0600 pem> | AIDR_LICENSE_SIGNING_KEY_FILE | AIDR_LICENSE_SIGNING_KEY)`;
 
 const invoked = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
@@ -105,6 +120,7 @@ if (invoked) {
 				"control-plane-url": { type: "string" },
 				sensitivity: { type: "string" },
 				"display-name": { type: "string" },
+				"licensing-public-key-file": { type: "string", multiple: true },
 				"public-keys": { type: "string" },
 				out: { type: "string" },
 			},
@@ -127,6 +143,7 @@ if (invoked) {
 			controlPlaneUrl: values["control-plane-url"],
 			sensitivity: values.sensitivity,
 			displayName: values["display-name"],
+			licensingPublicKeysPem: readLicensingPublicKeys(values["licensing-public-key-file"] ?? []),
 		});
 		const packet = signCustomerPacket(payload, { privateKey, keyId: values["key-id"] });
 		const result = selfVerifyCustomerPacket(packet, { privateKey, publicKeys });

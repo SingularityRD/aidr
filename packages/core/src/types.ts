@@ -344,6 +344,14 @@ export const AuthConfigSchema = z.object({
 		.optional(),
 });
 
+/** Install-time choice for an unreachable control plane; see `control_plane.offline_policy`. */
+export const OFFLINE_POLICIES = ["keep_enforcing_local", "block_after_grace"] as const;
+export type OfflinePolicy = (typeof OFFLINE_POLICIES)[number];
+
+/** Machine policy `approvals_mode`; see `operator_approvals.approvals_mode`. */
+export const APPROVALS_MODES = ["dashboard_only", "host_dialog"] as const;
+export type ApprovalsMode = (typeof APPROVALS_MODES)[number];
+
 export const ControlPlaneConfigSchema = z.object({
 	/**
 	 * Enables managed control plane features (dashboard telemetry, agent seat enforcement).
@@ -393,6 +401,39 @@ export const ControlPlaneConfigSchema = z.object({
 	response_worker_required: z.boolean().default(false),
 	/** Maximum stale-policy grace after its normal refresh expiry; never renewed offline. */
 	remote_policy_offline_grace_seconds: z.number().int().min(0).max(604800).default(3600),
+	/**
+	 * What an enrolled endpoint does when the control plane stays unreachable,
+	 * chosen explicitly at install time (deployment-prepare, machine policy):
+	 * - `keep_enforcing_local`: local detection keeps deciding every call; central
+	 *   policy changes simply do not arrive until the control plane is back.
+	 * - `block_after_grace`: once the last central policy is older than
+	 *   `remote_policy_offline_grace_seconds`, every tool call is denied.
+	 * When set it decides `remote_policy_required`; unset keeps that field as is.
+	 */
+	offline_policy: z.enum(OFFLINE_POLICIES).optional(),
+});
+
+/**
+ * Outbound network settings for every first-party client (control plane,
+ * reputation, version and update checks). The `HTTPS_PROXY` / `NO_PROXY`
+ * environment variables apply when these are unset. A setting that does not
+ * parse is ignored: connectivity settings never change what is enforced.
+ */
+const NetworkConfigSchema = z.object({
+	/** PEM file with extra CA certificates (an internal CA or a TLS-inspecting proxy). */
+	ca_file: z.string().min(1).optional().catch(undefined),
+	/** Also trust the operating system's certificate store (Windows store, /etc/ssl). */
+	use_os_trust_store: z.boolean().default(false).catch(false),
+	/** `http://host:port` (or https) proxy for outbound HTTPS. */
+	https_proxy: z.string().min(1).optional().catch(undefined),
+	/** Comma-separated hosts / domain suffixes / `*` that bypass the proxy. */
+	no_proxy: z.string().optional().catch(undefined),
+});
+
+/** Organisation contact points shown to end users. Display only. */
+const OrganizationConfigSchema = z.object({
+	support_contact_url: z.string().min(1).optional().catch(undefined),
+	privacy_notice_url: z.string().min(1).optional().catch(undefined),
 });
 
 const PolicyFilesystemSchema = z.object({
@@ -1029,6 +1070,12 @@ const OperatorApprovalsConfigSchema = z.object({
 	 */
 	mode: z.enum(["host_dialog", "operator"]).default("host_dialog"),
 	/**
+	 * Organisation-wide approval channel, normally set by the machine policy:
+	 * `dashboard_only` turns on `dashboard_only` above, `host_dialog` turns it off
+	 * and uses the host dialog. Unset leaves both fields as configured.
+	 */
+	approvals_mode: z.enum(APPROVALS_MODES).optional(),
+	/**
 	 * Directories under which a repository-REMOTE scoped detection exception may
 	 * apply. The origin URL is read from `.git/config`, which the agent itself can
 	 * rewrite, so a remote match alone would let an exception follow the agent into
@@ -1082,6 +1129,8 @@ export const ConfigSchema = z.object({
 	mode: OperatingModeSchema.default("local"),
 	auth: AuthConfigSchema.default({}),
 	control_plane: ControlPlaneConfigSchema.default({}),
+	network: NetworkConfigSchema.default({}),
+	organization: OrganizationConfigSchema.default({}),
 	/** Explicit mandatory privacy profile; ordinary tool hooks do not own model transport. */
 	privacy: z
 		.object({ required: z.boolean().default(false) })
