@@ -28,6 +28,7 @@ import { governanceRequestsMessages } from "./governance-requests";
 import { governanceRisksMessages } from "./governance-risks";
 import { governanceScorecardMessages } from "./governance-scorecard";
 import { helperErrorsMessages } from "./helper-errors";
+import { incidentTriageMessages } from "./incident-triage";
 import { landingMessages } from "./landing";
 import { licenseMessages } from "./license";
 import { notificationsMessages } from "./notifications";
@@ -43,6 +44,7 @@ import { postureMessages } from "./posture";
 import { pricingMessages } from "./pricing";
 import { privacyGuardMessages } from "./privacy-guard";
 import { publicInfoMessages } from "./public-info";
+import { reportsMessages } from "./reports";
 import { retentionMessages } from "./retention";
 import { samlMessages } from "./saml";
 import { scimMessages } from "./scim";
@@ -84,6 +86,7 @@ export const pageMessages = {
 	...governanceRisksMessages,
 	...governanceScorecardMessages,
 	...helperErrorsMessages,
+	...incidentTriageMessages,
 	...landingMessages,
 	...licenseMessages,
 	...notificationsMessages,
@@ -99,6 +102,7 @@ export const pageMessages = {
 	...pricingMessages,
 	...privacyGuardMessages,
 	...publicInfoMessages,
+	...reportsMessages,
 	...retentionMessages,
 	...samlMessages,
 	...scimMessages,
@@ -141,6 +145,7 @@ export const messageModules = [
 	governanceRisksMessages,
 	governanceScorecardMessages,
 	helperErrorsMessages,
+	incidentTriageMessages,
 	landingMessages,
 	licenseMessages,
 	notificationsMessages,
@@ -156,6 +161,7 @@ export const messageModules = [
 	pricingMessages,
 	privacyGuardMessages,
 	publicInfoMessages,
+	reportsMessages,
 	retentionMessages,
 	samlMessages,
 	scimMessages,

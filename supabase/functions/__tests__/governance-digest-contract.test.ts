@@ -44,6 +44,15 @@ interface Options {
 	completeError?: boolean;
 	context?: unknown;
 	receiptError?: boolean;
+	reportContext?: unknown;
+	reportContextError?: boolean;
+}
+
+function triageFixture() {
+	return {
+		total: 14, open: 3, acknowledged: 2, resolved: 7, false_positive: 2, snoozed: 1,
+		unassigned_active: 2, active_critical: 1, active_high: 2, median_close_seconds: 5400,
+	};
 }
 
 function claimsFixture(recipients: string[][] = [["owner@acme.example", "admin@acme.example"], []]) {
@@ -128,6 +137,14 @@ function database(options: Options = {}) {
 					};
 				case "record_governance_digest_test":
 					return { data: null, error: options.receiptError ? { message: "db_down" } : null };
+				case "governance_report_context":
+					if (options.reportContextError) return { data: null, error: { message: "db_down" } };
+					return {
+						data: "reportContext" in options
+							? options.reportContext
+							: { language: "en", attachment: false, triage: triageFixture() },
+						error: null,
+					};
 				default:
 					throw new Error(`unexpected rpc ${name}`);
 			}
@@ -239,6 +256,57 @@ describe("governance-digest dispatch (service credential)", () => {
 		// Different recipients, different de-duplication keys, none carrying an address.
 		expect(new Set(sent.map((m) => m.idempotencyKey)).size).toBe(2);
 		for (const m of sent) expect(m.idempotencyKey).not.toContain("@");
+	});
+
+	it("writes the workspace's language, the executive summary and the printable report attachment", async () => {
+		const { handle, sent, rpcCalls } = await handler({
+			reportContext: { language: "tr", attachment: true, triage: triageFixture() },
+		});
+		const response = await handle(post({ action: "dispatch", apply: true }));
+		expect(await response.json()).toMatchObject({ sent: 1, failed: 0 });
+		expect(rpcCalls.find((call) => call.name === "governance_report_context")?.args).toEqual({
+			p_tenant_id: GOVERNANCE_TENANT,
+			p_from: "2026-09-21T00:00:00.000Z",
+			p_to: "2026-09-28T00:00:00.000Z",
+		});
+		const [message] = sent;
+		expect(message.subject).toBe("Haftalık yapay zekâ yönetişim özeti: Acme <Security>");
+		expect(message.text).toContain("Yönetici özeti: İlgilenilmesi gerekiyor");
+		expect(message.text).toContain("1 kritik ve 2 yüksek önem dereceli vaka hâlâ açık ya da üstlenilmiş durumda.");
+		expect(message.text).toContain("İzin verilen: 1.200 · onaya bekletilen: 40 · engellenen: 25");
+		expect(message.text).toContain("sorumlusu olmayan: 2");
+		expect(message.attachments).toHaveLength(1);
+		const [attachment] = message.attachments ?? [];
+		expect(attachment.filename).toBe("aidr-yonetici-raporu-2026-09-25.html");
+		expect(attachment.contentType).toBe("text/html");
+		const html = Buffer.from(attachment.contentBase64, "base64").toString("utf8");
+		expect(html).toContain('<html lang="tr">');
+		expect(html).toContain("Yapay zekâ güvenliği yönetici raporu");
+		expect(html).toContain("Acme &lt;Security&gt;");
+		expect(html).not.toContain("<Security>");
+		expect(html).not.toMatch(/<script|src=|href=/i);
+	});
+
+	it("keeps English and no attachment when the workspace says so, and never mails without triage counts", async () => {
+		const english = await handler();
+		await english.handle(post({ action: "dispatch", apply: true }));
+		expect(english.sent[0].attachments).toBeUndefined();
+		expect(english.sent[0].text).toContain("Executive summary: Needs attention");
+		expect(english.sent[0].text).toContain("! 2 open incident(s) have no owner.");
+		for (const options of [
+			{ reportContextError: true },
+			{ reportContext: { language: "de", attachment: true, triage: triageFixture() } },
+			{ reportContext: { language: "en", attachment: true, triage: { ...triageFixture(), open: -1 } } },
+		]) {
+			const run = await handler(options);
+			const body = await (await run.handle(post({ action: "dispatch", apply: true }))).json();
+			expect(body).toMatchObject({ failed: 1, sent: 0 });
+			expect(run.sent).toEqual([]);
+		}
+		const test = await handler({ reportContextError: true });
+		const response = await test.handle(post({ action: "send_test", tenant_id: GOVERNANCE_TENANT }, "user-token"));
+		expect(response.status).toBe(503);
+		expect(test.sent).toEqual([]);
 	});
 
 	it("records partial and failed deliveries so the schedule can retry", async () => {

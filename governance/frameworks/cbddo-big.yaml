@@ -1,0 +1,149 @@
+# T.C. Cumhurbaşkanlığı Dijital Dönüşüm Ofisi, Bilgi ve İletişim Güvenliği
+# Rehberi (BİG Rehberi, first published 2020): vendor control mapping for
+# Singularity AIDR, by measure topic.
+#
+# The guide groups its measures (tedbirler) by asset group and topic and has
+# been revised since 2020; measure numbers differ between versions. The mapping
+# is therefore made at topic level with this repository's own topic codes
+# (BIG-*); the institution maps them to the measure numbers of the version it
+# applies. The guide's text is not reproduced. This is a vendor mapping; it is
+# not a conformity audit result. Coverage values: see nist-ai-rmf.yaml.
+
+framework:
+  id: cbddo-big
+  name: Cumhurbaşkanlığı Bilgi ve İletişim Güvenliği Rehberi
+  version: "Dijital Dönüşüm Ofisi BİG Rehberi (topic-level mapping)"
+  reference: https://cbddo.gov.tr/bilgi-ve-iletisim-guvenligi-rehberi
+  scope: >-
+    Measure topics of the Information and Communication Security Guide where Singularity
+    AIDR provides a technical measure or evidence for an institution's use of AI coding
+    agents, AI chat sites and MCP servers. Topic codes are this mapping's own; measure
+    numbers, the institution's asset criticality level and its other systems are the
+    institution's to determine. Vendor mapping only, not an audit result.
+
+controls:
+  - id: BIG-VARLIK
+    group: Varlık yönetimi
+    title: Varlık envanteri ve sınıflandırma (asset inventory and classification)
+    capabilities: [ai-asset-inventory, mcp-inventory]
+    evidence: [agents, posture_findings, compliance-report.protection_coverage]
+    coverage: partial
+    note: >-
+      AI coding agents, browser installs, AI sites in use and MCP servers are inventoried
+      for endpoints that run an AIDR connector or Browser Guard. Criticality grading of
+      assets is the institution's.
+  - id: BIG-ERISIM
+    group: Ağ ve sistem güvenliği
+    title: Kimlik doğrulama ve erişim yönetimi (authentication and access management)
+    capabilities: [identity-access-control, tenant-isolation]
+    evidence: [tenant_identity_policies, compliance-report.access_identity]
+    coverage: partial
+    note: >-
+      Control-plane access uses roles, MFA, SSO and SCIM enforced on every tenant table.
+      Access management for the institution's other systems is outside the product.
+  - id: BIG-KAYIT
+    group: Ağ ve sistem güvenliği
+    title: Kayıt yönetimi ve izleme (log management and monitoring)
+    capabilities: [audit-logging, audit-export, siem-export]
+    evidence: [admin_audit_logs, local-audit-log, siem-export]
+    coverage: partial
+    note: >-
+      Agent decisions and administrative changes are logged append-only and can be sent to
+      the institution's SIEM. Central log retention and time synchronisation are the
+      institution's.
+  - id: BIG-OLAY
+    group: Siber olay yönetimi
+    title: Siber olaylara müdahale (cyber incident response)
+    capabilities: [incident-management, incident-triage]
+    evidence: [events.incident, incident_triage, incident_triage_history]
+    coverage: partial
+    note: >-
+      Incidents from blocked or flagged AI tool actions are triaged with owner, status,
+      resolution note and an append-only history. Reporting to the national CERT
+      (USOM/SOME) and the institution's response team are the institution's.
+  - id: BIG-KISISEL
+    group: Uygulama ve veri güvenliği
+    title: Kişisel verilerin güvenliği (security of personal data)
+    capabilities: [browser-guard-masking, prompt-dlp-protection, data-flow-inventory]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity, compliance-report.data_flows]
+    coverage: partial
+    note: >-
+      TR/EN personal data is masked before AI services receive it, telemetry is counts only
+      and the data-flow inventory documents the product's own processing. KVKK obligations
+      as a whole remain the controller's.
+  - id: BIG-SIZINTI
+    group: Uygulama ve veri güvenliği
+    title: Veri sızıntısının önlenmesi (data leakage prevention)
+    capabilities: [browser-guard-masking, prompt-dlp-protection, output-inspection, runtime-enforcement]
+    evidence: [events.privacy_scan, events.runtime_verdict, tenant_dlp_policies]
+    coverage: partial
+    note: >-
+      Secrets and personal data are kept out of AI prompts, uploads, agent tool calls and
+      MCP results on protected channels. Mail, removable media and unprotected sites are
+      outside the product.
+  - id: BIG-BULUT
+    group: Uygulama ve veri güvenliği
+    title: Bulut ve yapay zekâ hizmetlerinin güvenli kullanımı (secure use of cloud and AI services)
+    capabilities: [browser-guard-masking, acceptable-use-notice, ai-asset-inventory]
+    evidence: [events.privacy_scan, events.aup_acknowledgement]
+    coverage: partial
+    note: >-
+      AI sites in use are counted, can be blocked by policy, show the acceptable-use notice
+      and receive masked prompts. Choosing and contracting cloud services is the
+      institution's.
+  - id: BIG-YERELLESTIRME
+    group: Uygulama ve veri güvenliği
+    title: Veri yerelleştirme (data localisation)
+    capabilities: [data-flow-inventory]
+    evidence: [privacy-data-flow-matrix, compliance-report.data_flows]
+    coverage: customer-responsibility
+    note: >-
+      The control plane can run on the institution's own premises and the data-flow
+      inventory lists every destination of product data. Deciding where data may be
+      processed is the institution's.
+  - id: BIG-YAZILIM
+    group: Uygulama ve veri güvenliği
+    title: Güvenli yazılım geliştirme (secure software development)
+    capabilities: [runtime-enforcement, plugin-skill-scanning, output-inspection]
+    evidence: [events.runtime_verdict, threat-rules]
+    coverage: customer-responsibility
+    note: >-
+      Dangerous commands, packages and secret exposure by AI coding agents are blocked
+      during development. The institution's secure development process stays its own.
+  - id: BIG-ZARARLI
+    group: Ağ ve sistem güvenliği
+    title: Zararlı yazılımlardan korunma (protection against malware)
+    capabilities: [runtime-enforcement, plugin-skill-scanning, mcp-gateway]
+    evidence: [events.runtime_verdict, threat-rules]
+    coverage: partial
+    note: >-
+      Malicious commands, downloads, plugins, skills and MCP results are blocked on the
+      coding-agent path. The product does not replace endpoint protection.
+  - id: BIG-ZAFIYET
+    group: Ağ ve sistem güvenliği
+    title: Zafiyet yönetimi (vulnerability management)
+    capabilities: [ai-posture-scanning]
+    evidence: [posture_findings, compliance-report.ai_security_posture]
+    coverage: customer-responsibility
+    note: >-
+      CVE and exposed-component findings of the AI tool chain are reported by severity.
+      Scanning and patching the institution's systems are the institution's.
+  - id: BIG-FARKINDALIK
+    group: Personel güvenliği
+    title: Personel farkındalığı (staff awareness)
+    capabilities: [acceptable-use-notice]
+    evidence: [events.aup_acknowledgement]
+    coverage: customer-responsibility
+    note: >-
+      The acceptable-use notice reaches staff at the moment they use an AI site and records
+      acknowledgement. Awareness training is the institution's.
+  - id: BIG-DENETIM
+    group: Uygulama süreci
+    title: Uyum denetimi ve yönetime raporlama (compliance audit and reporting to management)
+    capabilities: [compliance-evidence-report, governance-digest, governance-scorecard]
+    evidence: [compliance-report.policy_inventory, executive-report, governance-scorecard]
+    coverage: partial
+    note: >-
+      A signed evidence report, the scorecard and a scheduled executive report in Turkish
+      or English support the institution's audit. The conformity audit itself is the
+      institution's.

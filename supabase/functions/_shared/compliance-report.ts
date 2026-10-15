@@ -12,6 +12,7 @@
 // payload, a prompt, a policy body or other free text into a report.
 
 import { COMPLIANCE_DATA_FLOW_MATRIX } from "./compliance-data-flows.ts";
+import { COMPLIANCE_CONTROL_MAPPING } from "./governance-frameworks.generated.ts";
 
 const COMPLIANCE_REPORT_SCHEMA = "aidr.compliance-report/v1";
 const COMPLIANCE_CANONICALIZATION = "aidr-canonical-json/v1";
@@ -29,6 +30,12 @@ const COMPLIANCE_STATEMENT =
 	"access reviews, data-protection activity and retention evidence). It is not a certification, " +
 	"an audit opinion or legal advice, and it does not state that the tenant is compliant with any law or standard.";
 
+const CONTROL_MAPPING_STATEMENT =
+	"Vendor mapping of Singularity AIDR capabilities to framework controls (including ISO/IEC 27001:2022 Annex A, " +
+	"the BDDK information systems and electronic banking regulation and the Presidency's Information and " +
+	"Communication Security Guide). It shows where the product can contribute a technical measure or evidence; " +
+	"it is not a certification, a regulatory approval or an audit result, and applicability is decided by the organisation.";
+
 const COMPLIANCE_LIMITATIONS: readonly string[] = [
 	"Counts cover only telemetry that reached this control plane; offline, local-mode or unmanaged endpoints are not represented.",
 	"Telemetry older than the tenant's retention window has been deleted, so counts for older periods can be lower than what happened.",
@@ -37,6 +44,7 @@ const COMPLIANCE_LIMITATIONS: readonly string[] = [
 	"Backup copies are outside live-data deletion receipts and need separate expiry or key-destruction evidence.",
 	"The data-flow and subprocessor inventory is the product's engineering matrix; values marked unknown must be completed for the specific deployment.",
 	"A valid signature proves the report was issued by a holder of the signing key and not altered afterwards; it does not prove the underlying records are complete.",
+	"Control mappings are the vendor's mapping by control or requirement topic; BDDK and Presidency guide entries use topic codes that the organisation maps to the article or measure numbers of the text it applies.",
 ];
 
 // ── Request ────────────────────────────────────────────────────────────────
@@ -322,6 +330,28 @@ const DATA_FLOW_SPEC = obj({
 	limitations: arr(str(500), 32),
 });
 
+const CONTROL_MAPPINGS_SPEC = obj({
+	kind: { kind: "enum", values: ["vendor_mapping"] },
+	statement: str(1000),
+	source: str(200),
+	source_sha256: str(64, SHA256),
+	frameworks: arr(obj({
+		id: str(64, SLUG),
+		name: str(200),
+		version: str(200),
+		scope: str(1000),
+		controls: arr(obj({
+			id: str(64),
+			group: str(200),
+			title: str(300),
+			coverage: { kind: "enum", values: ["full", "partial", "customer-responsibility"] },
+			capabilities: arr(str(300), 16),
+			evidence: arr(str(64, IDENT), 16),
+			note: str(1000),
+		}), 100),
+	}), 16),
+});
+
 const APPROVAL_SPEC = obj({
 	model: { kind: "enum", values: ["out_of_band_human_approval"] },
 	agent_callable_approval: bool,
@@ -351,6 +381,7 @@ export const COMPLIANCE_REPORT_BODY_SPEC = obj({
 		ai_security_posture: EVIDENCE_SECTIONS.ai_security_posture,
 		data_flows: DATA_FLOW_SPEC,
 		retention_deletion: EVIDENCE_SECTIONS.retention_deletion,
+		control_mappings: CONTROL_MAPPINGS_SPEC,
 	}),
 	limitations: arr(str(500), 32),
 });
@@ -484,6 +515,16 @@ function dataFlowsSection() {
 	};
 }
 
+function controlMappingsSection() {
+	return {
+		kind: "vendor_mapping",
+		statement: CONTROL_MAPPING_STATEMENT,
+		source: COMPLIANCE_CONTROL_MAPPING.source,
+		source_sha256: COMPLIANCE_CONTROL_MAPPING.source_sha256,
+		frameworks: COMPLIANCE_CONTROL_MAPPING.frameworks,
+	};
+}
+
 export interface ComplianceReportInput {
 	evidence: unknown;
 	reportId: string;
@@ -522,6 +563,7 @@ export function buildComplianceReportBody(input: ComplianceReportInput): Record<
 			ai_security_posture: evidence.ai_security_posture,
 			data_flows: dataFlowsSection(),
 			retention_deletion: evidence.retention_deletion,
+			control_mappings: controlMappingsSection(),
 		},
 		limitations: [...COMPLIANCE_LIMITATIONS],
 	};

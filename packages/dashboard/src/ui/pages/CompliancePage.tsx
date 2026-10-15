@@ -411,6 +411,28 @@ function highlights(
 				[t("cmp.h.legalHold"), yesNo(get(section, "legal_holds.active"))],
 				[t("cmp.h.exports"), num(get(section, "audit_exports.expired_pending_cleanup"))],
 			];
+		case "control_mappings": {
+			const frameworks = get(section, "frameworks");
+			const list = Array.isArray(frameworks) ? frameworks : [];
+			return list.flatMap((framework): Array<[string, string]> => {
+				if (framework === null || typeof framework !== "object" || Array.isArray(framework))
+					return [];
+				const controls = Array.isArray(framework.controls) ? framework.controls : [];
+				const covered = controls.filter(
+					(control) =>
+						control !== null &&
+						typeof control === "object" &&
+						!Array.isArray(control) &&
+						control.coverage !== "customer-responsibility",
+				).length;
+				return [
+					[
+						String(framework.name ?? framework.id ?? "—"),
+						t("cmp.h.mappedControls", { covered, total: controls.length }),
+					],
+				];
+			});
+		}
 	}
 }
 

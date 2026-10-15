@@ -1,13 +1,27 @@
 // Governance summary: parsing of the counts-only summary returned by
 // public.governance_digest_summary / claim_due_governance_digests, and the
-// e-mail built from it (docs/ai-governance-frameworks.md).
+// e-mail built from it (docs/ai-governance-frameworks.md), in English or
+// Turkish, optionally with the executive summary and the printable executive
+// report attached (executive-report.ts).
 //
 // Discipline: the e-mail is built only from the fields projected here. Every
 // number is re-validated; a malformed summary refuses the send instead of
 // mailing zeros. The message carries counts, enums and the workspace name
 // only: no prompt text, no approver identities, no page addresses.
 
-import { escapeHtml, isMailAddress, type MailMessage } from "./mailer.ts";
+import {
+	displayText,
+	executiveReportDocument,
+	executiveSummary,
+	type ReportLanguage,
+	reportFileName,
+	reportPeriod,
+	reportSections,
+	reportText,
+	type TriageSummary,
+	utf8Base64,
+} from "./executive-report.ts";
+import { escapeHtml, isMailAddress, type MailAttachment, type MailMessage } from "./mailer.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NOTICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
@@ -252,79 +266,6 @@ export function deliveryStatus(recipients: number, delivered: number): "sent" | 
 
 // ── E-mail ────────────────────────────────────────────────────────────────
 
-/** Collapse whitespace and drop control characters from display text. */
-function displayText(value: string, fallback: string, max = 120): string {
-	const cleaned = value.replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim();
-	if (cleaned === "") return fallback;
-	return cleaned.length > max ? `${cleaned.slice(0, max - 1)}…` : cleaned;
-}
-
-const day = (iso: string) => iso.slice(0, 10);
-const n = (value: number) => value.toLocaleString("en-US");
-
-function duration(value: number | null): string {
-	if (value === null) return "no decisions";
-	if (value < 90) return `${Math.round(value)} s`;
-	if (value < 5400) return `${Math.round(value / 60)} min`;
-	return `${(value / 3600).toFixed(1)} h`;
-}
-
-function policyLine(label: string, policy: { version: number | null; ageDays: number } | null): string {
-	if (!policy) return `${label}: not configured`;
-	const version = policy.version === null ? "" : ` v${policy.version}`;
-	return `${label}${version}, last changed ${n(policy.ageDays)} day(s) ago`;
-}
-
-/** The summary's sections as plain lines (shared by the text and HTML bodies). */
-function summarySections(summary: GovernanceSummary): Array<{ title: string; lines: string[] }> {
-	const aup = summary.acceptableUse;
-	return [
-		{
-			title: "AI usage",
-			lines: [
-				`Coding agents active: ${n(summary.agents.active)} of ${n(summary.agents.enrolled)} enrolled`,
-				`Browser installs active: ${n(summary.browserInstalls.active)} of ${n(summary.browserInstalls.enrolled)} enrolled`,
-				`AI sites in use: ${n(summary.aiSites)}`,
-				`MCP servers reported: ${n(summary.mcpServers.distinct)} (${n(summary.mcpServers.notApproved)} not approved)`,
-			],
-		},
-		{
-			title: "Decisions on agent actions",
-			lines: [
-				`Allowed: ${n(summary.decisions.allow)} · held for approval: ${n(summary.decisions.ask)} · denied: ${n(summary.decisions.deny)}`,
-				`Released after human approval: ${n(summary.decisions.releasedByDashboard)} in the dashboard, ${n(summary.decisions.releasedByOperator)} by a local operator`,
-			],
-		},
-		{
-			title: "Human oversight",
-			lines: [
-				`Approval requests: ${n(summary.approvals.requested)} (approved ${n(summary.approvals.approved)}, denied ${n(summary.approvals.denied)}, expired undecided ${n(summary.approvals.expiredWithoutDecision)}, pending now ${n(summary.approvals.pending)})`,
-				`Median decision time: ${duration(summary.approvals.medianDecisionSeconds)}`,
-				`Approvers to review (fast-approval pattern): ${n(summary.oversight.reviewPrompts)} of ${n(summary.oversight.approvers)}`,
-			],
-		},
-		{
-			title: "Incidents",
-			lines: [
-				`Reported: ${n(summary.incidents.reported)} · still open: ${n(summary.incidents.open)} (critical ${n(summary.incidents.openCritical)}, high ${n(summary.incidents.openHigh)})`,
-			],
-		},
-		{
-			title: "Browser Guard",
-			lines: [
-				`Sends scanned: ${n(summary.browserGuard.scans)} · masked: ${n(summary.browserGuard.masked)} (${n(summary.browserGuard.itemsMasked)} items) · warned: ${n(summary.browserGuard.warned)} · blocked: ${n(summary.browserGuard.blocked)}`,
-				aup
-					? `Acceptable-use notice ${aup.noticeId} v${aup.noticeVersion}: acknowledged on ${n(aup.installs)} browser install(s)`
-					: "Acceptable-use notice: no acknowledgements reported",
-			],
-		},
-		{
-			title: "Policies",
-			lines: [policyLine("Runtime policy", summary.policies.runtime), policyLine("DLP policy", summary.policies.dlp)],
-		},
-	];
-}
-
 export interface GovernanceDigestEmailInput {
 	to: string;
 	workspaceName: string;
@@ -334,37 +275,109 @@ export interface GovernanceDigestEmailInput {
 	dashboardUrl: string | null;
 	idempotencyKey: string;
 	test: boolean;
+	/** English unless the workspace chose Turkish (tenant_governance_settings.digest_language). */
+	language?: ReportLanguage;
+	/** Incident triage counts; with them the message opens with the executive summary. */
+	triage?: TriageSummary | null;
+	/** Attach the printable executive report (self-contained HTML). */
+	attachReport?: boolean;
+	/** Generation time stamped on the attachment (ISO-8601). */
+	generatedAt?: string;
 }
 
-const FOOTER =
-	"Counts only: this summary contains no prompt text, matched values, page addresses or approver identities. " +
-	"It is generated from the records Singularity AIDR holds for your workspace and supports, but does not replace, your own governance review.";
+const EMAIL_TEXT = {
+	en: {
+		weekly: "Weekly",
+		monthly: "Monthly",
+		subject: "{test}{label} AI governance summary: {workspace}",
+		heading: "{label} AI governance summary",
+		intro: "Singularity AIDR {label} AI governance summary",
+		workspace: "Workspace: {workspace}",
+		period: "Period: {period}",
+		test: "This is a test message requested from the dashboard.",
+		testTag: "[Test] ",
+		link: "Open the governance scorecard",
+		attached: "The printable executive report is attached ({file}); open it in a browser and print it to keep a PDF copy.",
+		fallbackWorkspace: "your AIDR workspace",
+		fallbackSubject: "AIDR workspace",
+		footer:
+			"Counts only: this summary contains no prompt text, matched values, page addresses or approver identities. " +
+			"It is generated from the records Singularity AIDR holds for your workspace and supports, but does not replace, your own governance review.",
+	},
+	tr: {
+		weekly: "Haftalık",
+		monthly: "Aylık",
+		subject: "{test}{label} yapay zekâ yönetişim özeti: {workspace}",
+		heading: "{label} yapay zekâ yönetişim özeti",
+		intro: "Singularity AIDR {label} yapay zekâ yönetişim özeti",
+		workspace: "Çalışma alanı: {workspace}",
+		period: "Dönem: {period}",
+		test: "Bu, panelden istenen bir deneme iletisidir.",
+		testTag: "[Deneme] ",
+		link: "Yönetişim karnesini aç",
+		attached: "Yazdırılabilir yönetici raporu ektedir ({file}); PDF kopyası için tarayıcıda açıp yazdırın.",
+		fallbackWorkspace: "AIDR çalışma alanınız",
+		fallbackSubject: "AIDR çalışma alanı",
+		footer:
+			"Yalnızca sayılar: bu özet istem metni, eşleşen değer, sayfa adresi ya da onaylayıcı kimliği içermez. " +
+			"Singularity AIDR'nin çalışma alanınız için tuttuğu kayıtlardan üretilir; kendi yönetişim incelemenizi destekler, onun yerini tutmaz.",
+	},
+} as const;
+
+function fill(template: string, params: Record<string, string>): string {
+	return template.replace(/\{(\w+)\}/g, (match, name: string) => params[name] ?? match);
+}
 
 export function governanceDigestEmail(input: GovernanceDigestEmailInput): MailMessage {
-	const workspace = displayText(input.workspaceName, "your AIDR workspace");
-	const period = `${day(input.summary.periodFrom)} to ${day(input.summary.periodTo)} (UTC)`;
-	const label = input.cadence === "weekly" ? "Weekly" : "Monthly";
-	const subject = `${input.test ? "[Test] " : ""}${label} AI governance summary: ${displayText(input.workspaceName, "AIDR workspace", 80)}`;
-	const sections = summarySections(input.summary);
+	const language: ReportLanguage = input.language ?? "en";
+	const strings = EMAIL_TEXT[language];
+	const workspace = displayText(input.workspaceName, strings.fallbackWorkspace);
+	const period = reportPeriod(language, input.summary.periodFrom, input.summary.periodTo);
+	const label = input.cadence === "weekly" ? strings.weekly : strings.monthly;
+	const subject = fill(strings.subject, {
+		test: input.test ? strings.testTag : "",
+		label,
+		workspace: displayText(input.workspaceName, strings.fallbackSubject, 80),
+	});
+	const triage = input.triage ?? null;
+	const executive = triage ? executiveSummary(input.summary, triage, language) : null;
+	const sections = reportSections(input.summary, triage, language);
 	const link = input.dashboardUrl ? `${input.dashboardUrl.replace(/\/+$/, "")}/governance` : null;
+	const file = triage && input.attachReport ? reportFileName(language, input.summary.periodTo) : null;
+	const statusLine = executive
+		? reportText(language, executive.status === "attention" ? "head.attention" : "head.ok")
+		: null;
 	const text = [
-		`Singularity AIDR ${label.toLowerCase()} AI governance summary`,
-		`Workspace: ${workspace}`,
-		`Period: ${period}`,
-		...(input.test ? ["This is a test message requested from the dashboard."] : []),
+		fill(strings.intro, { label: language === "en" ? label.toLowerCase() : label.toLocaleLowerCase("tr-TR") }),
+		fill(strings.workspace, { workspace }),
+		fill(strings.period, { period }),
+		...(input.test ? [strings.test] : []),
 		"",
+		...(executive
+			? [
+					`${reportText(language, "head.title")}: ${statusLine}`,
+					...executive.headlines.map((line) => `${line.level === "attention" ? "!" : "-"} ${line.text}`),
+					"",
+				]
+			: []),
 		...sections.flatMap((section) => [section.title, ...section.lines.map((line) => `- ${line}`), ""]),
-		...(link ? [`Open the governance scorecard: ${link}`, ""] : []),
-		FOOTER,
+		...(file ? [fill(strings.attached, { file }), ""] : []),
+		...(link ? [`${strings.link}: ${link}`, ""] : []),
+		strings.footer,
 	].join("\n");
 	const html = `<!doctype html>
-<html lang="en">
+<html lang="${language}">
 <body style="margin:0;padding:24px;background:#f5f6f8;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1d2330">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:8px;border:1px solid #e3e6eb">
 <tr><td style="padding:28px">
-<h1 style="font-size:20px;margin:0 0 4px">${escapeHtml(label)} AI governance summary</h1>
+<h1 style="font-size:20px;margin:0 0 4px">${escapeHtml(fill(strings.heading, { label }))}</h1>
 <p style="margin:0 0 16px;color:#5b6475">${escapeHtml(workspace)} · ${escapeHtml(period)}</p>
-${input.test ? `<p style="margin:0 0 16px;padding:8px 10px;background:#fff7e6;border-radius:6px;font-size:13px">This is a test message requested from the dashboard.</p>` : ""}
+${input.test ? `<p style="margin:0 0 16px;padding:8px 10px;background:#fff7e6;border-radius:6px;font-size:13px">${escapeHtml(strings.test)}</p>` : ""}
+${executive
+	? `<h2 style="font-size:15px;margin:18px 0 6px">${escapeHtml(reportText(language, "head.title"))} · <span style="color:${executive.status === "attention" ? "#8a1c12" : "#155d2c"}">${escapeHtml(statusLine ?? "")}</span></h2><ul style="margin:0;padding-left:20px;line-height:1.5">${executive.headlines
+			.map((line) => `<li${line.level === "attention" ? ' style="color:#8a1c12"' : ""}>${escapeHtml(line.text)}</li>`)
+			.join("")}</ul>`
+	: ""}
 ${sections
 	.map(
 		(section) =>
@@ -373,13 +386,29 @@ ${sections
 				.join("")}</ul>`,
 	)
 	.join("\n")}
-${link ? `<p style="margin:24px 0 8px"><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 18px;background:#2d5bff;color:#ffffff;text-decoration:none;border-radius:6px">Open the governance scorecard</a></p>` : ""}
-<p style="margin:16px 0 0;font-size:12px;color:#8a92a3">${escapeHtml(FOOTER)}</p>
+${file ? `<p style="margin:18px 0 0;font-size:13px">${escapeHtml(fill(strings.attached, { file }))}</p>` : ""}
+${link ? `<p style="margin:24px 0 8px"><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 18px;background:#2d5bff;color:#ffffff;text-decoration:none;border-radius:6px">${escapeHtml(strings.link)}</a></p>` : ""}
+<p style="margin:16px 0 0;font-size:12px;color:#8a92a3">${escapeHtml(strings.footer)}</p>
 </td></tr>
 </table>
 </body>
 </html>`;
-	return { to: input.to, subject, text, html, idempotencyKey: input.idempotencyKey };
+	const attachments: MailAttachment[] | undefined = file && triage
+		? [{
+				filename: file,
+				contentType: "text/html",
+				contentBase64: utf8Base64(executiveReportDocument({
+					language,
+					workspaceName: input.workspaceName,
+					periodFrom: input.summary.periodFrom,
+					periodTo: input.summary.periodTo,
+					generatedAt: input.generatedAt ?? input.summary.periodTo,
+					summary: input.summary,
+					triage,
+				})),
+			}]
+		: undefined;
+	return { to: input.to, subject, text, html, idempotencyKey: input.idempotencyKey, ...(attachments ? { attachments } : {}) };
 }
 
 /** Provider de-duplication key: no address, only a digest prefix of it. */

@@ -8,16 +8,23 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 //
 // The YAML files are the single source of truth for how Singularity AIDR
 // capabilities (product controls, not detection rules) map to NIST AI RMF,
-// ISO/IEC 42001 Annex A, the EU AI Act and KVKK/GDPR. The dashboard's
+// ISO/IEC 42001 Annex A, the EU AI Act, KVKK/GDPR, ISO/IEC 27001:2022 Annex A,
+// the BDDK information systems regulation and the Presidency's Information and
+// Communication Security Guide (vendor mappings, never certifications). The dashboard's
 // governance scorecard embeds a projection of them at build time (the Vite
 // bundle cannot read YAML), without repository paths.
 //
 //   node scripts/sync-governance-frameworks.mjs          validate + fail on drift
 //   node scripts/sync-governance-frameworks.mjs --write  validate + regenerate
+//
+// Two embeds are generated: the dashboard's (scorecard, print view) and the
+// compliance report's control-mapping section (supabase/functions/_shared).
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const FRAMEWORK_DIR = "governance/frameworks";
 const GENERATED = "packages/dashboard/src/lib/governance-frameworks.generated.ts";
+/** The compliance report's control-mapping section (Edge Functions cannot import the dashboard). */
+const GENERATED_EDGE = "supabase/functions/_shared/governance-frameworks.generated.ts";
 const CAPABILITIES_FILE = "capabilities.yaml";
 /** Display order of the framework files. */
 export const FRAMEWORK_FILES = Object.freeze([
@@ -25,6 +32,9 @@ export const FRAMEWORK_FILES = Object.freeze([
 	"iso-iec-42001.yaml",
 	"eu-ai-act.yaml",
 	"kvkk-gdpr.yaml",
+	"iso-iec-27001.yaml",
+	"bddk-bsebh.yaml",
+	"cbddo-big.yaml",
 ]);
 
 export const COVERAGE_LEVELS = Object.freeze(["full", "partial", "customer-responsibility"]);
@@ -56,6 +66,10 @@ const CONTROL_ID_PATTERNS = {
 	"iso-iec-42001": /^A\.(?:[2-9]|10)\.\d(?:\.\d)?$/,
 	"eu-ai-act": /^Art\. \d{1,3}(?:\(\d{1,2}\))?$/,
 	"kvkk-gdpr": /^(?:GDPR|KVKK) Art\. \d{1,3}(?:\(\d{1,2}\)(?:\([a-z]\))?)?$/,
+	"iso-iec-27001": /^A\.(?:5\.(?:[1-9]|[1-3]\d)|6\.[1-8]|7\.(?:[1-9]|1[0-4])|8\.(?:[1-9]|[12]\d|3[0-4]))$/,
+	// Topic codes: the mapping is made by requirement topic, not by article.
+	"bddk-bsebh": /^BSEBY-[A-Z]{3,16}$/,
+	"cbddo-big": /^BIG-[A-Z]{3,16}$/,
 };
 const ID = /^[a-z][a-z0-9-]{1,63}$/;
 const EVIDENCE_ID = /^[a-z][a-z0-9_.-]{1,63}$/;
@@ -210,13 +224,73 @@ export function validateGovernanceFrameworks(mapping = loadGovernanceFrameworks(
 	return problems;
 }
 
-/** The dashboard embed: everything except repository paths. */
-export function governanceFrameworksSource(mapping = loadGovernanceFrameworks()) {
+function sourceDigest(mapping) {
 	const digest = createHash("sha256");
 	for (const { file, text } of mapping.sources) digest.update(`${file}\n${text}\n`, "utf8");
+	return digest.digest("hex");
+}
+
+/**
+ * The compliance report embed: each framework's controls with capability
+ * titles (not ids or paths), evidence ids, coverage and the coverage note.
+ */
+export function complianceControlMappingSource(mapping = loadGovernanceFrameworks()) {
+	const titles = new Map(mapping.capabilities.map((capability) => [capability.id, capability.title]));
 	const embedded = {
 		source: FRAMEWORK_DIR,
-		source_sha256: digest.digest("hex"),
+		source_sha256: sourceDigest(mapping),
+		frameworks: mapping.frameworks.map(({ framework, controls }) => ({
+			id: framework.id,
+			name: framework.name,
+			version: framework.version,
+			scope: framework.scope.trim(),
+			controls: controls.map(({ id, group, title, capabilities, evidence, coverage, note }) => ({
+				id,
+				group,
+				title,
+				coverage,
+				capabilities: capabilities.map((capability) => titles.get(capability) ?? capability),
+				evidence,
+				note: note.trim(),
+			})),
+		})),
+	};
+	return [
+		"// Generated from governance/frameworks/*.yaml; do not edit.",
+		"// Regenerate: node scripts/sync-governance-frameworks.mjs --write",
+		"",
+		"interface ComplianceMappedControl {",
+		"\treadonly id: string;",
+		"\treadonly group: string;",
+		"\treadonly title: string;",
+		'\treadonly coverage: "full" | "partial" | "customer-responsibility";',
+		"\treadonly capabilities: readonly string[];",
+		"\treadonly evidence: readonly string[];",
+		"\treadonly note: string;",
+		"}",
+		"",
+		"export interface ComplianceMappedFramework {",
+		"\treadonly id: string;",
+		"\treadonly name: string;",
+		"\treadonly version: string;",
+		"\treadonly scope: string;",
+		"\treadonly controls: readonly ComplianceMappedControl[];",
+		"}",
+		"",
+		"export const COMPLIANCE_CONTROL_MAPPING: {",
+		"\treadonly source: string;",
+		"\treadonly source_sha256: string;",
+		"\treadonly frameworks: readonly ComplianceMappedFramework[];",
+		`} = ${JSON.stringify(embedded, null, "\t")};`,
+		"",
+	].join("\n");
+}
+
+/** The dashboard embed: everything except repository paths. */
+export function governanceFrameworksSource(mapping = loadGovernanceFrameworks()) {
+	const embedded = {
+		source: FRAMEWORK_DIR,
+		source_sha256: sourceDigest(mapping),
 		capabilities: mapping.capabilities.map(({ id, title, description, signal }) => ({ id, title, description, signal })),
 		evidence: mapping.evidence.map(({ id, kind, ref, detail }) => ({ id, kind, ref, detail })),
 		frameworks: mapping.frameworks.map(({ framework, controls }) => ({
@@ -288,18 +362,27 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 		for (const problem of problems) console.error(`- ${problem}`);
 		process.exitCode = 1;
 	} else {
-		const expected = governanceFrameworksSource(mapping);
-		const target = join(ROOT, GENERATED);
+		const outputs = [
+			[GENERATED, governanceFrameworksSource(mapping)],
+			[GENERATED_EDGE, complianceControlMappingSource(mapping)],
+		];
 		if (process.argv.includes("--write")) {
-			writeFileSync(target, expected);
-			console.log(`Wrote ${GENERATED}.`);
+			for (const [relative, expected] of outputs) {
+				writeFileSync(join(ROOT, relative), expected);
+				console.log(`Wrote ${relative}.`);
+			}
 		} else {
-			const current = existsSync(target) ? readFileSync(target, "utf8").replaceAll("\r\n", "\n") : "";
-			if (current !== expected) {
-				console.error("Governance framework drift: run node scripts/sync-governance-frameworks.mjs --write");
+			const drifted = outputs.filter(([relative, expected]) => {
+				const target = join(ROOT, relative);
+				return (existsSync(target) ? readFileSync(target, "utf8").replaceAll("\r\n", "\n") : "") !== expected;
+			});
+			if (drifted.length > 0) {
+				console.error(
+					`Governance framework drift (${drifted.map(([relative]) => relative).join(", ")}): run node scripts/sync-governance-frameworks.mjs --write`,
+				);
 				process.exitCode = 1;
 			} else {
-				console.log("Governance framework embed matches governance/frameworks.");
+				console.log("Governance framework embeds match governance/frameworks.");
 			}
 		}
 	}

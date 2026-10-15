@@ -1,0 +1,311 @@
+# ISO/IEC 27001:2022, Annex A (information security controls): vendor control
+# mapping for Singularity AIDR. Control identifiers and titles follow Annex A;
+# the standard's text is not reproduced. Only controls to which the product
+# contributes a technical measure or evidence for the use of AI coding agents,
+# AI chat sites and MCP servers are listed. Coverage values: see
+# nist-ai-rmf.yaml. This is a vendor mapping that supports the organisation's
+# Statement of Applicability; it is not a certification and says nothing about
+# the rest of the organisation's ISMS.
+
+framework:
+  id: iso-iec-27001
+  name: ISO/IEC 27001 Annex A
+  version: "ISO/IEC 27001:2022, Annex A"
+  reference: https://www.iso.org/standard/27001
+  scope: >-
+    Annex A controls where Singularity AIDR provides a technical measure or evidence for AI
+    tool use (coding agents, AI chat sites, MCP servers). Vendor mapping only: the
+    organisation decides applicability and implementation in its own ISMS, and an
+    accredited certification body, not this mapping, assesses conformity.
+
+controls:
+  - id: A.5.1
+    group: A.5 Organizational controls
+    title: Policies for information security
+    capabilities: [runtime-policy-management, acceptable-use-notice]
+    evidence: [tenant_runtime_policies, runtime_policy_revisions, events.aup_acknowledgement]
+    coverage: partial
+    note: >-
+      Runtime policy enforces the technical part of the AI-use rules for coding agents and
+      the acceptable-use notice distributes the written rule to browser users. Writing,
+      approving and reviewing the policy is the organisation's.
+  - id: A.5.7
+    group: A.5 Organizational controls
+    title: Threat intelligence
+    capabilities: [threat-rule-library, ai-posture-scanning]
+    evidence: [threat-rules, posture_findings]
+    coverage: partial
+    note: >-
+      Versioned threat rules and CVE/MCP/skill findings bring threat information about AI
+      tool chains into enforcement and reporting. Collecting and analysing threat
+      intelligence for the wider estate is outside the product.
+  - id: A.5.9
+    group: A.5 Organizational controls
+    title: Inventory of information and other associated assets
+    capabilities: [ai-asset-inventory, mcp-inventory]
+    evidence: [agents, posture_findings, compliance-report.protection_coverage]
+    coverage: partial
+    note: >-
+      Enrolled coding agents, browser installs, AI sites in use and reported MCP servers are
+      inventoried. Only endpoints with an AIDR connector or Browser Guard are visible.
+  - id: A.5.10
+    group: A.5 Organizational controls
+    title: Acceptable use of information and other associated assets
+    capabilities: [acceptable-use-notice, browser-guard-masking]
+    evidence: [events.aup_acknowledgement, events.privacy_scan]
+    coverage: partial
+    note: >-
+      The acceptable-use notice is shown once per version on protected AI sites and
+      acknowledgements are counted; masking enforces the data rule at the moment of use.
+  - id: A.5.12
+    group: A.5 Organizational controls
+    title: Classification of information
+    capabilities: [prompt-dlp-protection]
+    evidence: [tenant_dlp_policies, dlp_policy_revisions]
+    coverage: customer-responsibility
+    note: >-
+      DLP policy labels and rules can carry the organisation's classification scheme into
+      AI prompts and tool inputs. The classification scheme itself is the organisation's.
+  - id: A.5.14
+    group: A.5 Organizational controls
+    title: Information transfer
+    capabilities: [browser-guard-masking, prompt-dlp-protection, output-inspection]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity]
+    coverage: partial
+    note: >-
+      Personal data and secrets are masked, warned on or blocked before a prompt, paste or
+      file reaches an AI service. A masked send still transfers the redacted text, and
+      monitor-mode or allowed sends go unchanged.
+  - id: A.5.15
+    group: A.5 Organizational controls
+    title: Access control
+    capabilities: [identity-access-control, tenant-isolation]
+    evidence: [tenant_identity_policies, compliance-report.access_identity]
+    coverage: partial
+    note: >-
+      Role-based access to the control plane with owner, admin, member and viewer roles,
+      enforced by row-level security and the tenant identity barrier. Access control for
+      the organisation's other systems is outside the product.
+  - id: A.5.16
+    group: A.5 Organizational controls
+    title: Identity management
+    capabilities: [identity-access-control]
+    evidence: [tenant_identity_policies, compliance-report.access_identity]
+    coverage: partial
+    note: >-
+      SCIM provisioning and SAML/OIDC single sign-on tie control-plane accounts to the
+      organisation's directory. The directory and its joiner-mover-leaver process remain
+      the organisation's.
+  - id: A.5.19
+    group: A.5 Organizational controls
+    title: Information security in supplier relationships
+    capabilities: [data-flow-inventory]
+    evidence: [privacy-data-flow-matrix, compliance-report.data_flows]
+    coverage: customer-responsibility
+    note: >-
+      The product's data-flow and subprocessor inventory is input for the supplier
+      assessment of Singularity AIDR itself. Assessing AI service providers is the
+      organisation's.
+  - id: A.5.23
+    group: A.5 Organizational controls
+    title: Information security for use of cloud services
+    capabilities: [browser-guard-masking, ai-asset-inventory]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity]
+    coverage: partial
+    note: >-
+      AI chat sites in use are counted and personal data is masked before it reaches them.
+      Contracting, configuring and exiting cloud AI services is the organisation's.
+  - id: A.5.24
+    group: A.5 Organizational controls
+    title: Information security incident management planning and preparation
+    capabilities: [incident-triage, siem-export]
+    evidence: [incident_triage, siem-export]
+    coverage: partial
+    note: >-
+      Incident triage with owners and SIEM export give the AI tool-use part of the
+      incident process its tooling. The incident management plan and roles are the
+      organisation's.
+  - id: A.5.25
+    group: A.5 Organizational controls
+    title: Assessment and decision on information security events
+    capabilities: [incident-management, incident-triage]
+    evidence: [events.incident, incident_triage, incident_triage_history]
+    coverage: partial
+    note: >-
+      Blocked and flagged actions are listed as incidents; analysts acknowledge, resolve or
+      mark each one a false positive with a recorded note. Deciding what is a reportable
+      incident is the organisation's.
+  - id: A.5.26
+    group: A.5 Organizational controls
+    title: Response to information security incidents
+    capabilities: [runtime-enforcement, incident-triage, human-approval]
+    evidence: [events.runtime_verdict, incident_triage_history, approval_requests]
+    coverage: partial
+    note: >-
+      Deny decisions stop the action before it runs and ask decisions hold it for
+      out-of-band human approval. Containment and recovery beyond the blocked action are
+      the organisation's.
+  - id: A.5.27
+    group: A.5 Organizational controls
+    title: Learning from information security incidents
+    capabilities: [incident-triage, governance-digest]
+    evidence: [incident_triage_history, executive-report]
+    coverage: partial
+    note: >-
+      Resolution notes, false-positive decisions and the executive report's incident
+      figures feed lessons learned. Running the review is the organisation's.
+  - id: A.5.28
+    group: A.5 Organizational controls
+    title: Collection of evidence
+    capabilities: [audit-logging, audit-export, compliance-evidence-report]
+    evidence: [admin_audit_logs, audit-export, compliance-report.incidents]
+    coverage: partial
+    note: >-
+      Append-only audit logs, paginated export and the signed evidence report preserve
+      records of decisions. Forensic evidence handling procedures are the organisation's.
+  - id: A.5.33
+    group: A.5 Organizational controls
+    title: Protection of records
+    capabilities: [audit-logging, retention-legal-hold]
+    evidence: [admin_audit_logs, tenant_legal_holds, tenant_data_retention_policies]
+    coverage: partial
+    note: >-
+      Audit records are append-only, retention is configured per data class and legal
+      holds pause deletion. Backup copies need separate expiry evidence.
+  - id: A.5.34
+    group: A.5 Organizational controls
+    title: Privacy and protection of PII
+    capabilities: [browser-guard-masking, prompt-dlp-protection, data-flow-inventory]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity, compliance-report.data_flows]
+    coverage: partial
+    note: >-
+      TR/EN personal data is masked before AI services receive it and telemetry is counts
+      only. Obligations under KVKK or GDPR as a whole remain the controller's.
+  - id: A.5.36
+    group: A.5 Organizational controls
+    title: Compliance with policies, rules and standards for information security
+    capabilities: [governance-scorecard, compliance-evidence-report, governance-digest]
+    evidence: [governance-scorecard, compliance-report.policy_inventory, executive-report]
+    coverage: partial
+    note: >-
+      The scorecard, evidence report and scheduled executive report show whether the AI
+      tool-use controls are deployed and used. Reviewing compliance is the organisation's.
+  - id: A.6.3
+    group: A.6 People controls
+    title: Information security awareness, education and training
+    capabilities: [acceptable-use-notice]
+    evidence: [events.aup_acknowledgement]
+    coverage: customer-responsibility
+    note: >-
+      The acceptable-use notice reaches browser users at the point of AI use and records
+      acknowledgement. Awareness and training programmes are the organisation's.
+  - id: A.8.2
+    group: A.8 Technological controls
+    title: Privileged access rights
+    capabilities: [identity-access-control, audit-logging]
+    evidence: [compliance-report.access_identity, admin_audit_logs]
+    coverage: partial
+    note: >-
+      Owner and admin roles are listed in the evidence report with MFA status and every
+      administrative change is audited. Privileged access elsewhere is outside the product.
+  - id: A.8.5
+    group: A.8 Technological controls
+    title: Secure authentication
+    capabilities: [identity-access-control]
+    evidence: [tenant_identity_policies]
+    coverage: partial
+    note: >-
+      Workspace MFA and SSO requirements are enforced on every tenant table, and sensitive
+      administrative actions require a second factor. Authentication to other systems is
+      outside the product.
+  - id: A.8.7
+    group: A.8 Technological controls
+    title: Protection against malware
+    capabilities: [runtime-enforcement, plugin-skill-scanning, mcp-gateway]
+    evidence: [events.runtime_verdict, threat-rules]
+    coverage: partial
+    note: >-
+      Malicious commands, downloads, plugins, skills and MCP results are detected and
+      blocked on the coding-agent path. The product is not an endpoint anti-malware agent.
+  - id: A.8.8
+    group: A.8 Technological controls
+    title: Management of technical vulnerabilities
+    capabilities: [ai-posture-scanning, mcp-inventory]
+    evidence: [posture_findings, compliance-report.ai_security_posture]
+    coverage: partial
+    note: >-
+      CVE and exposed-component findings for the AI tool chain are reported by severity.
+      Patching and vulnerability management for the estate are the organisation's.
+  - id: A.8.11
+    group: A.8 Technological controls
+    title: Data masking
+    capabilities: [browser-guard-masking, prompt-dlp-protection]
+    evidence: [events.privacy_scan, compliance-report.data_protection_activity]
+    coverage: full
+    note: >-
+      Masking of TR/EN personal data and secrets with reversible placeholders on AI chat
+      sites, and DLP handling of agent prompts and tool inputs, is a core product function.
+  - id: A.8.12
+    group: A.8 Technological controls
+    title: Data leakage prevention
+    capabilities: [browser-guard-masking, prompt-dlp-protection, output-inspection, runtime-enforcement]
+    evidence: [events.privacy_scan, events.runtime_verdict, compliance-report.data_protection_activity]
+    coverage: partial
+    note: >-
+      Leakage of personal data and secrets through AI prompts, uploads, agent tool calls
+      and MCP results is prevented on protected channels. Other channels (mail, removable
+      media, unprotected sites) are outside the product.
+  - id: A.8.15
+    group: A.8 Technological controls
+    title: Logging
+    capabilities: [audit-logging, audit-export, siem-export]
+    evidence: [local-audit-log, admin_audit_logs, siem-export]
+    coverage: partial
+    note: >-
+      Decisions are logged on the endpoint and, in managed mode, in the control plane; logs
+      can be exported to a SIEM. Logs hold decisions and digests, not prompt text.
+  - id: A.8.16
+    group: A.8 Technological controls
+    title: Monitoring activities
+    capabilities: [incident-management, governance-scorecard, oversight-analytics]
+    evidence: [events.runtime_verdict, governance-scorecard, governance_digest_deliveries]
+    coverage: partial
+    note: >-
+      Agent decisions, incidents and approval patterns are monitored in the dashboard and
+      the scheduled summary. Only telemetry that reached the control plane is visible.
+  - id: A.8.19
+    group: A.8 Technological controls
+    title: Installation of software on operational systems
+    capabilities: [runtime-enforcement, plugin-skill-scanning]
+    evidence: [events.runtime_verdict, threat-rules]
+    coverage: partial
+    note: >-
+      Package installs and agent plugins are checked before they run on the coding-agent
+      path. Software installed by other means is outside the product.
+  - id: A.8.23
+    group: A.8 Technological controls
+    title: Web filtering
+    capabilities: [runtime-enforcement, browser-guard-masking]
+    evidence: [events.runtime_verdict, events.privacy_scan]
+    coverage: partial
+    note: >-
+      Agent web requests are checked against threat rules and reputation, and Browser Guard
+      can block AI sites by policy. It is not a general web proxy.
+  - id: A.8.28
+    group: A.8 Technological controls
+    title: Secure coding
+    capabilities: [runtime-enforcement, output-inspection]
+    evidence: [events.runtime_verdict]
+    coverage: customer-responsibility
+    note: >-
+      Dangerous commands and secret exposure by AI coding agents are blocked while code is
+      written. Secure coding practice and code review remain the organisation's.
+  - id: A.8.32
+    group: A.8 Technological controls
+    title: Change management
+    capabilities: [runtime-policy-management]
+    evidence: [runtime_policy_revisions, dlp_policy_revisions]
+    coverage: partial
+    note: >-
+      Policy changes are versioned with digests and can require four-eyes change control.
+      Change management for other systems is outside the product.

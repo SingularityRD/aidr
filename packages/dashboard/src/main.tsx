@@ -364,6 +364,20 @@ const router = createBrowserRouter([
 		],
 	},
 	{
+		path: "/reports",
+		lazy: loadAppLayout,
+		errorElement: routeErrorElement,
+		loader: requireSessionLoader,
+		children: [
+			{
+				index: true,
+				lazy: async () => ({
+					Component: (await import("./ui/pages/ReportsPage")).ReportsPage,
+				}),
+			},
+		],
+	},
+	{
 		path: "/governance",
 		lazy: loadAppLayout,
 		errorElement: routeErrorElement,

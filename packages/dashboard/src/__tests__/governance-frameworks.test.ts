@@ -58,12 +58,15 @@ describe("governance framework mapping", () => {
 		for (const signal of tenantSignals) expect(sql).toContain(`'${signal}',`);
 	});
 
-	it("covers the four frameworks with their own identifier schemes", () => {
+	it("covers the seven frameworks with their own identifier schemes", () => {
 		expect(GOVERNANCE_MAPPING.frameworks.map((f) => f.id)).toEqual([
 			"nist-ai-rmf",
 			"iso-iec-42001",
 			"eu-ai-act",
 			"kvkk-gdpr",
+			"iso-iec-27001",
+			"bddk-bsebh",
+			"cbddo-big",
 		]);
 		const ids = (id: string) =>
 			GOVERNANCE_MAPPING.frameworks.find((f) => f.id === id)?.controls.map((c) => c.id) ?? [];
@@ -77,6 +80,28 @@ describe("governance framework mapping", () => {
 		expect(ids("kvkk-gdpr")).toEqual(
 			expect.arrayContaining(["GDPR Art. 25", "GDPR Art. 32", "KVKK Art. 12"]),
 		);
+		expect(ids("iso-iec-27001")).toEqual(
+			expect.arrayContaining(["A.5.15", "A.5.25", "A.8.11", "A.8.12", "A.8.15", "A.8.16"]),
+		);
+		expect(ids("bddk-bsebh")).toEqual(
+			expect.arrayContaining(["BSEBY-ERISIM", "BSEBY-IZKAYDI", "BSEBY-OLAY", "BSEBY-GIZLILIK"]),
+		);
+		expect(ids("cbddo-big")).toEqual(
+			expect.arrayContaining(["BIG-ERISIM", "BIG-KAYIT", "BIG-OLAY", "BIG-KISISEL", "BIG-SIZINTI"]),
+		);
+	});
+
+	it("marks the regulatory mappings as vendor mappings by topic, never as certification", () => {
+		for (const id of ["iso-iec-27001", "bddk-bsebh", "cbddo-big"]) {
+			const framework = GOVERNANCE_MAPPING.frameworks.find((f) => f.id === id);
+			expect(framework?.scope, id).toMatch(/[Vv]endor mapping/);
+			expect(framework?.scope, id).not.toMatch(/\bcertified\b|\bcompliant\b/i);
+		}
+		// Incident handling maps to the new triage capability and its audit trail.
+		const iso = GOVERNANCE_MAPPING.frameworks.find((f) => f.id === "iso-iec-27001");
+		const a525 = iso?.controls.find((c) => c.id === "A.5.25");
+		expect(a525?.capabilities).toContain("incident-triage");
+		expect(a525?.evidence).toContain("incident_triage_history");
 	});
 
 	it("maps human-oversight controls to the approval and oversight analytics capabilities", () => {

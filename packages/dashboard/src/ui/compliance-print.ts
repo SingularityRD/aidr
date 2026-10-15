@@ -108,6 +108,11 @@ const EN: Labels = {
 			proves:
 				"Retention settings, the oldest retained telemetry, legal holds, offboarding receipts and export clean-up.",
 		},
+		control_mappings: {
+			title: "Control mappings (vendor mapping)",
+			proves:
+				"Where the product can contribute a measure or evidence for ISO/IEC 27001:2022 Annex A, the BDDK information systems regulation, the Presidency's Information and Communication Security Guide and other frameworks. Not a certification or an audit result.",
+		},
 	},
 	keys: {},
 	limitations: {},
@@ -182,6 +187,11 @@ const TR: Labels = {
 			proves:
 				"Saklama ayarları, en eski saklanan telemetri, yasal saklama kararları, kapatma makbuzları ve dışa aktarım temizliği.",
 		},
+		control_mappings: {
+			title: "Kontrol eşlemeleri (üretici eşlemesi)",
+			proves:
+				"Ürünün ISO/IEC 27001:2022 Ek-A, BDDK Bilgi Sistemleri ve Elektronik Bankacılık Hizmetleri Yönetmeliği, Cumhurbaşkanlığı Bilgi ve İletişim Güvenliği Rehberi ve diğer çerçevelerde hangi tedbire ya da kanıta katkı sağlayabildiği. Sertifika ya da denetim sonucu değildir.",
+		},
 	},
 	keys: {
 		tenant_id: "çalışma alanı kimliği",
@@ -249,6 +259,14 @@ const TR: Labels = {
 		active: "aktif",
 		placed_in_period: "dönemde konulan",
 		released_in_period: "dönemde kaldırılan",
+		controls: "kontrol",
+		group: "grup",
+		title: "başlık",
+		coverage: "kapsama",
+		capabilities: "ürün yetenekleri",
+		evidence: "kanıt",
+		note: "açıklama",
+		scope: "kapsam",
 	},
 	limitations: {
 		"Counts cover only telemetry that reached this control plane; offline, local-mode or unmanaged endpoints are not represented.":
@@ -265,6 +283,8 @@ const TR: Labels = {
 			"Veri akışı ve alt işleyen envanteri ürünün mühendislik matrisidir; bilinmeyen olarak işaretlenen değerler ilgili kurulum için tamamlanmalıdır.",
 		"A valid signature proves the report was issued by a holder of the signing key and not altered afterwards; it does not prove the underlying records are complete.":
 			"Geçerli bir imza, raporun imzalama anahtarının sahibi tarafından üretildiğini ve sonradan değiştirilmediğini kanıtlar; kayıtların eksiksiz olduğunu kanıtlamaz.",
+		"Control mappings are the vendor's mapping by control or requirement topic; BDDK and Presidency guide entries use topic codes that the organisation maps to the article or measure numbers of the text it applies.":
+			"Kontrol eşlemeleri üreticinin kontrol ya da gereklilik konusu düzeyindeki eşlemesidir; BDDK ve Cumhurbaşkanlığı rehberi kayıtları, kuruluşun uyguladığı metnin madde ya da tedbir numaralarına kendisinin eşleyeceği konu kodlarını kullanır.",
 	},
 };
 

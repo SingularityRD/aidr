@@ -155,6 +155,30 @@ export interface ExceptionDraft {
 	artifactSha256: string;
 }
 
+/**
+ * A draft pre-filled from the page's query string (the Security incidents page
+ * links here after a false-positive decision). Only well-formed values are
+ * taken; nothing is submitted until an owner/admin reviews and sends the form,
+ * and the server checks everything again. Defaults to a 7-day end date.
+ */
+export function draftFromQuery(search: string, nowMs: number): ExceptionDraft {
+	const params = new URLSearchParams(search);
+	const rule = (params.get("rule") ?? "").trim();
+	const kind = params.get("subject_kind");
+	const subjectKind: SubjectKind =
+		kind === "agent" || kind === "repo" || kind === "user" ? kind : "user";
+	const subject = (params.get("subject") ?? "").trim();
+	const subjectOk = subjectKind === "repo" ? subject.length <= 512 : UUID.test(subject);
+	return {
+		ruleId: RULE_ID.test(rule) && !isProtectedRule(rule) ? rule : "",
+		subjectKind,
+		subject: subjectOk ? subject : "",
+		endDate: new Date(nowMs + 7 * 86_400_000).toISOString().slice(0, 10),
+		reason: (params.get("reason") ?? "").replace(/\s+/g, " ").trim().slice(0, 500),
+		artifactSha256: "",
+	};
+}
+
 /** A user-facing problem with the draft, or null when it can be sent. */
 export function draftProblem(
 	draft: ExceptionDraft,

@@ -27,6 +27,7 @@ export const COMPLIANCE_SECTION_KEYS = [
 	"ai_security_posture",
 	"data_flows",
 	"retention_deletion",
+	"control_mappings",
 ] as const;
 export type ComplianceSectionKey = (typeof COMPLIANCE_SECTION_KEYS)[number];
 
