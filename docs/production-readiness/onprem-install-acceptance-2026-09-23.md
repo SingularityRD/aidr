@@ -12,11 +12,14 @@ $id = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $installation = ".tmp-test/onprem-$id"
 $project = "aidr-onprem-$id"
 node scripts/deployment-prepare.mjs --mode self-hosted --output $installation --development --project-name $project --dashboard-url http://localhost:8080 --supabase-url http://localhost:8000 --region self-hosted --tenant-region self-hosted
-docker compose --project-directory $installation -f "$installation/compose.yml" up -d --build --wait --wait-timeout 180
+docker compose --project-directory $installation -f "$installation/compose.yml" up -d --build
 node scripts/deployment-migrate.mjs $installation
+docker compose --project-directory $installation -f "$installation/compose.yml" up -d --wait --wait-timeout 300
 node scripts/deployment-smoke.mjs $installation
 node scripts/deployment-doctor.mjs --deployment $installation --online
 ```
+
+Wait for health only after the migration: on an empty database the `siem-forwarder` service stays `unhealthy` (its Edge Function cannot claim from the SIEM outbox until the schema exists), so `up --wait` before `deployment-migrate` exits non-zero on a fresh install even though every other service is healthy (observed 2026-10-15 with 201 migrations).
 
 The smoke runner creates only synthetic users, tenants, keys and policy in that installation; it writes one evidence receipt and refuses a second run against the same directory. On Windows, the online doctor is expected to remain red for host systemd timers and missing TLS/signing/backup/queue evidence. The required checks must stay enabled for production.
 
