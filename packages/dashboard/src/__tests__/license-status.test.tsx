@@ -147,6 +147,39 @@ describe("license UI", () => {
 		expect(supabase.rpc).toHaveBeenCalledWith("tenant_license_status", { p_tenant_id: tenantId });
 	});
 
+	it("names the signed license id in the expiry banner", async () => {
+		vi.mocked(supabase.rpc).mockResolvedValue({ data: rawStatus, error: null } as never);
+		await act(async () => {
+			render(
+				<MemoryRouter>
+					<LicenseBanner now={() => EXPIRES - 10 * DAY} />
+				</MemoryRouter>,
+			);
+		});
+		const banner = document.querySelector("[data-license-banner]");
+		expect(banner).toHaveAttribute("data-license-banner", "expires_30");
+		expect(banner).toHaveTextContent("Your AIDR license LIC-2026-0042 ends in 10 days");
+	});
+
+	it("leaves the id out for admission terms without a signed license (unsigned pilot bootstrap)", async () => {
+		vi.mocked(supabase.rpc).mockResolvedValue({
+			data: { ...rawStatus, license: null },
+			error: null,
+		} as never);
+		const admissionEnd = Date.parse(rawStatus.admission.expires_at);
+		await act(async () => {
+			render(
+				<MemoryRouter>
+					<LicenseBanner now={() => admissionEnd - 20 * DAY} />
+				</MemoryRouter>,
+			);
+		});
+		const banner = document.querySelector("[data-license-banner]");
+		expect(banner).toHaveAttribute("data-license-banner", "expires_30");
+		expect(banner).toHaveTextContent("Your AIDR license ends in 20 days");
+		expect(banner?.textContent).not.toMatch(/license\s{2}|\(\)/);
+	});
+
 	it("shows nothing when the status cannot be read", async () => {
 		vi.mocked(supabase.rpc).mockResolvedValue({
 			data: null,

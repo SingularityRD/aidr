@@ -2,9 +2,43 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTeam } from "../enterprise/team-provider";
 import { useT } from "../i18n/I18nProvider";
-import { fetchLicenseStatus, type LicenseStatus, licenseBanner } from "../lib/license";
+import {
+	fetchLicenseStatus,
+	type LicenseBanner as LicenseBannerState,
+	type LicenseStatus,
+	licenseBanner,
+} from "../lib/license";
 
 const REFRESH_MS = 10 * 60 * 1000;
+
+/**
+ * Admission terms without a stored signed license (an unsigned pilot
+ * bootstrap) have no license id, so they use the id-less wording rather than
+ * rendering an empty "()".
+ */
+function bannerMessage(
+	t: ReturnType<typeof useT>,
+	banner: LicenseBannerState,
+	id: string,
+	date: string,
+	graceDate: string,
+): string {
+	const days = banner.days;
+	switch (banner.level) {
+		case "expires_30":
+			return id
+				? t("license.banner.expires30", { id, days, date })
+				: t("license.banner.expires30NoId", { days, date });
+		case "expires_7":
+			return id
+				? t("license.banner.expires7", { id, days, date })
+				: t("license.banner.expires7NoId", { days, date });
+		case "grace":
+			return t("license.banner.grace", { days, date, graceDate });
+		default:
+			return t("license.banner.expired", { graceDate });
+	}
+}
 
 /**
  * License expiry banner: 30 and 7 days before the license end, during the
@@ -39,15 +73,8 @@ export function LicenseBanner({ now = () => Date.now() }: { now?: () => number }
 	if (banner.level === "none") return null;
 	const date = banner.expiresAt ? new Date(banner.expiresAt).toLocaleDateString() : "";
 	const graceDate = banner.graceEndsAt ? new Date(banner.graceEndsAt).toLocaleDateString() : "";
-	const id = status.value?.license?.licenseId ?? "";
-	const message =
-		banner.level === "expires_30"
-			? t("license.banner.expires30", { id, days: banner.days, date })
-			: banner.level === "expires_7"
-				? t("license.banner.expires7", { id, days: banner.days, date })
-				: banner.level === "grace"
-					? t("license.banner.grace", { days: banner.days, date, graceDate })
-					: t("license.banner.expired", { graceDate });
+	const id = status.value?.license?.licenseId?.trim() ?? "";
+	const message = bannerMessage(t, banner, id, date, graceDate);
 	const tone =
 		banner.level === "expires_30"
 			? "notice"

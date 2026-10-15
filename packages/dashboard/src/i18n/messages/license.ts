@@ -10,6 +10,15 @@ export const licenseMessages = {
 		"Your AIDR license {id} ends in {days} days ({date}). Import the renewed signed license now.",
 		"AIDR lisansınız ({id}) {days} gün sonra bitiyor ({date}). Yenilenmiş imzalı lisansı şimdi içe aktarın.",
 	],
+	// Admission terms without a stored signed license (an unsigned pilot bootstrap) have no id.
+	"license.banner.expires30NoId": [
+		"Your AIDR license ends in {days} days ({date}). Ask your vendor for the renewal and import the signed file.",
+		"AIDR lisansınız {days} gün sonra bitiyor ({date}). Satıcınızdan yenileme isteyin ve imzalı dosyayı içe aktarın.",
+	],
+	"license.banner.expires7NoId": [
+		"Your AIDR license ends in {days} days ({date}). Import the renewed signed license now.",
+		"AIDR lisansınız {days} gün sonra bitiyor ({date}). Yenilenmiş imzalı lisansı şimdi içe aktarın.",
+	],
 	"license.banner.grace": [
 		"Your AIDR license ended on {date}. Grace period: managed features stop in {days} days ({graceDate}). Local detection on every device keeps enforcing.",
 		"AIDR lisansınız {date} tarihinde bitti. Ek süre: yönetim özellikleri {days} gün sonra duracak ({graceDate}). Her cihazdaki yerel koruma çalışmaya devam eder.",
