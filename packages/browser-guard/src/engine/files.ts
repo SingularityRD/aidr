@@ -1535,8 +1535,17 @@ async function handleImage(file: GuardFile, deps: SanitizeDeps): Promise<FileDec
 	if (inspection?.result === "clean")
 		return { action: "allow", counts: {}, reasons: ["IMAGE_OCR_CLEAN"] };
 	const detail = inspection?.reasons.filter((r) => HOST_REASON.test(r)).slice(0, 4) ?? [];
+	// policy.uninspectedImages "block": a picture nobody could read is not uploaded. A picture
+	// whose text the host read and found clean, but whose barcodes it could not check, was
+	// inspected and is only warned about.
+	const textChecked = detail.length > 0 && detail.every((r) => r === BARCODE_NOT_CHECKED);
+	if (policy.uninspectedImages === "block" && !textChecked)
+		return refuse(policy, ["IMAGE_NOT_INSPECTED", ...detail]);
 	return unscanned(policy, ["IMAGE_NOT_INSPECTED", ...detail]);
 }
+
+/** Host reason: OCR text was clean, but the endpoint has no barcode decoder. */
+export const BARCODE_NOT_CHECKED = "IMAGE_BARCODE_NOT_CHECKED";
 
 /** MIME type of a re-encoded (UTF-8) copy: a declared charset parameter becomes utf-8. */
 function utf8MimeType(type: string): string {

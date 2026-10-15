@@ -1,0 +1,55 @@
+{
+  "generated": "2026-10-15T06:40:41.851Z",
+  "steps": [
+    {
+      "screenshot": "01-istem-yazildi.png",
+      "caption": "Kullanıcı e-posta, telefon, TCKN, IBAN, kart ve API anahtarları içeren bir istem yazıyor"
+    },
+    {
+      "screenshot": "02-gonderimden-once-maskelendi.png",
+      "caption": "Gönderimden önce maskelendi: servise yalnızca [EMAIL_1_xxxx] gibi etiketler gitti (üstteki koyu panel)",
+      "sent": "Müşteri Ayşe Yılmaz için iade yazısı hazırla. E-posta [EMAIL_1_o8u3], telefon [PHONE_1_o8u3], TCKN [TCKN_1_o8u3], IBAN [IBAN_1_o8u3], kart [CARD_1_o8u3]. Deploy anahtarları: [SECRET_1_o8u3] [SECRET_2_o8u3] [SECRET_3_o8u3]"
+    },
+    {
+      "screenshot": "03-yanit-yerelde-geri-yuklendi.png",
+      "caption": "Yanıttaki etiketler yalnızca bu tarayıcıda gerçek değerlere çevrildi; API anahtarları maskeli kalır"
+    },
+    {
+      "screenshot": "04-yapistirma-maskelendi.png",
+      "caption": "Yapıştırılan metin editöre zaten maskeli olarak giriyor"
+    },
+    {
+      "screenshot": "05-bana-sor-modu.png",
+      "caption": "\"Bana sor\" modu: bulunanları gösterir, kullanıcı maskeli göndermeyi veya düzenlemeyi seçer"
+    },
+    {
+      "screenshot": "06-engelle-modu.png",
+      "caption": "\"Engelle\" modu: hassas veri varken gönderim durdurulur, hiçbir şey gönderilmez"
+    },
+    {
+      "screenshot": "07-acilir-pencere.png",
+      "caption": "Araç çubuğu penceresi: sekme korunuyor, mod ve bu oturumun sayıları"
+    },
+    {
+      "screenshot": "08-ayarlar.png",
+      "caption": "Ayarlar: koruma modu, algılanan veri türleri, yardımcı uygulama (yerel NER)"
+    },
+    {
+      "screenshot": "09-gemini.png",
+      "caption": "gemini: aynı maskeleme ve yerel geri yükleme",
+      "sent": "Müşteri Ayşe Yılmaz için iade yazısı hazırla. E-posta [EMAIL_1_7qgb], telefon [PHONE_1_7qgb], TCKN [TCKN_1_7qgb], IBAN [IBAN_1_7qgb], kart [CARD_1_7qgb]. Deploy anahtarları: [SECRET_1_7qgb] [SECRET_2_7qgb] [SECRET_3_7qgb]"
+    },
+    {
+      "screenshot": "10-claude.png",
+      "caption": "claude: aynı maskeleme ve yerel geri yükleme",
+      "sent": "Müşteri Ayşe Yılmaz için iade yazısı hazırla. E-posta [EMAIL_1_3p11], telefon [PHONE_1_3p11], TCKN [TCKN_1_3p11], IBAN [IBAN_1_3p11], kart [CARD_1_3p11]. Deploy anahtarları: [SECRET_1_3p11] [SECRET_2_3p11] [SECRET_3_3p11]"
+    },
+    {
+      "screenshot": "11-kisisel-hesap-engellendi.png",
+      "caption": "Kurum politikası: Gemini'de kişisel (gmail.com) hesapla gönderim engellendi"
+    }
+  ],
+  "browser": "153.0.8010.12",
+  "extension": "Singularity AIDR Browser Guard 1.0.0 (dist/chrome)",
+  "data": "synthetic, checksum-valid demo values (e2e/lib/data.mjs DEMO_PROMPT); 'sent' holds what the simulated AI service received"
+}

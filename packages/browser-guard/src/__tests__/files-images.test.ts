@@ -104,6 +104,69 @@ describe("standalone images", () => {
 		expect(text).toEqual({ action: "allow", counts: {}, reasons: [] });
 	});
 
+	describe("uninspectedImages", () => {
+		const barcodeOnly: ImageInspection = {
+			result: "incomplete",
+			counts: {},
+			reasons: ["IMAGE_BARCODE_NOT_CHECKED"],
+		};
+
+		it("block: an image no helper app inspected is not uploaded", async () => {
+			for (const inspectImage of [ocr(null), undefined]) {
+				const d = await sanitize("a.png", PNG, {
+					...(inspectImage ? { inspectImage } : {}),
+					policy: { uninspectedImages: "block" },
+				});
+				expect(d).toEqual({ action: "block", counts: {}, reasons: ["IMAGE_NOT_INSPECTED"] });
+			}
+		});
+
+		it("block: an image the host could not read to a verdict is not uploaded (host codes kept)", async () => {
+			const d = await sanitize("a.webp", WEBP, {
+				inspectImage: ocr(incomplete),
+				policy: { uninspectedImages: "block" },
+			});
+			expect(d).toEqual({
+				action: "block",
+				counts: {},
+				reasons: ["IMAGE_NOT_INSPECTED", "IMAGE_OCR_UNCERTAIN"],
+			});
+		});
+
+		it("block: monitor mode records instead of blocking", async () => {
+			const d = await sanitize("a.png", PNG, {
+				policy: { uninspectedImages: "block", mode: "monitor" },
+			});
+			expect(d).toEqual({ action: "allow", counts: {}, reasons: ["IMAGE_NOT_INSPECTED"] });
+		});
+
+		it("block: clean text without a barcode decoder is only warned about", async () => {
+			const d = await sanitize("a.png", PNG, {
+				inspectImage: ocr(barcodeOnly),
+				policy: { uninspectedImages: "block" },
+			});
+			expect(d).toEqual({
+				action: "allow",
+				counts: {},
+				reasons: ["BINARY_FILE_UNSCANNED", "IMAGE_NOT_INSPECTED", "IMAGE_BARCODE_NOT_CHECKED"],
+			});
+		});
+
+		it("warn (default): uploaded with a warning; sensitive images stay blocked", async () => {
+			expect((await sanitize("a.png", PNG, { policy: { uninspectedImages: "warn" } })).action).toBe(
+				"allow",
+			);
+			expect(
+				(
+					await sanitize("a.png", PNG, {
+						inspectImage: ocr(sensitive),
+						policy: { uninspectedImages: "warn" },
+					})
+				).action,
+			).toBe("block");
+		});
+	});
+
 	it("sniffs PNG, JPEG and WebP by magic bytes only", () => {
 		expect([ocrFormat(PNG), ocrFormat(JPEG), ocrFormat(WEBP), ocrFormat(GIF)]).toEqual([
 			"png",

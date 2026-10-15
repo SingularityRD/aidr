@@ -14,11 +14,16 @@ export interface ImageScan {
   /** Payloads deliberately never cross the process boundary. */
   readonly barcodes: readonly Box[];
   readonly languages: readonly string[];
+  /** Present (`windows`) when the worker used Windows.Media.Ocr instead of Tesseract. */
+  readonly ocrEngine?: 'windows';
+  /** Present (`none`) when the endpoint has no barcode decoder: `barcodes` is then empty but NOT a clean result. */
+  readonly barcodeCoverage?: 'none';
 }
 export interface RenderScan {
   readonly protocol: 1; readonly complete: true;
   readonly png: Uint8Array; readonly width: number; readonly height: number;
   readonly pages: readonly OcrPage[]; readonly barcodes: readonly Box[];
+  readonly ocrEngine?: 'windows'; readonly barcodeCoverage?: 'none';
 }
 /** Trusted backend; no HTTP URLs, untrusted plugins or client-supplied OCR accepted. */
 export interface ImageBackend {
@@ -44,6 +49,13 @@ export interface VisualOptions {
   readonly policyId?: string;
   /** Require underlying engine's declared rules-and-ner coverage, not a quality guarantee. */
   readonly requireNer?: boolean;
+  /**
+   * Backend without a barcode decoder (`barcodeCoverage: 'none'`). `review` (default): an image
+   * that would otherwise be clean is reported `review` / IMAGE_BARCODE_NOT_CHECKED, because a QR
+   * code or barcode in it was never looked for. `allow`: an administrator accepts that gap.
+   * Sensitive text is blocked either way; `protect` never releases bytes without barcode coverage.
+   */
+  readonly barcodeUnavailable?: 'review' | 'allow';
 }
 export interface VisualAudit {
   readonly version: string; readonly policyId: string; readonly inputBytes: number;

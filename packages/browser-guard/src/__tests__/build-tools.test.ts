@@ -9,7 +9,21 @@ import { deriveEdmKey, EDM_KEY_LABEL } from "../../../privacy/src/native/edm";
 // @ts-expect-error -- plain ESM build script without type declarations
 import * as fingerprint from "../../scripts/fingerprint-dataset.mjs";
 // @ts-expect-error -- plain ESM build script without type declarations
-import { decodePng, ICON_SIZES, MASTER_ICON, renderIcons } from "../../scripts/icons.mjs";
+import {
+	decodePng,
+	expectedOutputs,
+	ICON_COLOR,
+	ICON_SIZES,
+	logoDataUrl,
+	MARK_SVG,
+	MASTER_ICON,
+	parseMark,
+	rasterizeMark,
+	renderIcons,
+	renderMaster,
+	UI_CSS,
+	withLogo,
+} from "../../scripts/icons.mjs";
 // @ts-expect-error -- plain ESM build script without type declarations
 import { crc32, createZip, readZip } from "../../scripts/zip.mjs";
 import { EXACT_DATA_MIN_ENTROPY_BITS, evaluatePolicy } from "../background/policy";
@@ -327,18 +341,82 @@ describe("zip writer", () => {
 });
 
 describe("icons", () => {
-	it("committed icons are the current rendering of the brand master", () => {
+	const alphaAt = (image: { width: number; data: Uint8Array }, x: number, y: number) =>
+		image.data[(y * image.width + x) * 4 + 3];
+
+	it("the committed master, icons and UI logo are the current rendering of branding/singularity-mark.svg", () => {
+		for (const [file, bytes] of expectedOutputs() as Map<string, Buffer>) {
+			expect(readFileSync(file).equals(bytes), file).toBe(true);
+		}
+		expect(MARK_SVG.replaceAll("\\", "/")).toMatch(/branding\/singularity-mark\.svg$/);
+		expect(readFileSync(MASTER_ICON).equals(renderMaster(readFileSync(MARK_SVG, "utf8")))).toBe(
+			true,
+		);
 		const rendered = renderIcons(readFileSync(MASTER_ICON));
 		for (const size of ICON_SIZES) {
 			const committed = readFileSync(join(PACKAGE_ROOT, "static", "icons", `icon-${size}.png`));
 			expect(committed.equals(rendered.get(size))).toBe(true);
 			const image = decodePng(committed);
 			expect([image.width, image.height]).toEqual([size, size]);
-			// The shield is opaque in the centre and the corners are transparent.
-			const centre = ((size >> 1) * size + (size >> 1)) * 4;
-			expect(image.data[centre + 3]).toBe(255);
-			expect(image.data[3]).toBe(0);
+			// Round mark: the corners are transparent at every size.
+			for (const [x, y] of [
+				[0, 0],
+				[size - 1, 0],
+				[0, size - 1],
+				[size - 1, size - 1],
+			]) {
+				expect(alphaAt(image, x, y)).toBe(0);
+			}
 		}
+		// At 128 px the central ray is opaque, the gap next to it transparent, and the colour is the accent.
+		const big = decodePng(readFileSync(join(PACKAGE_ROOT, "static", "icons", "icon-128.png")));
+		expect(alphaAt(big, 64, 64)).toBe(255);
+		const centre = (64 * 128 + 64) * 4;
+		expect([...big.data.subarray(centre, centre + 3)]).toEqual([...ICON_COLOR]);
+		expect(alphaAt(big, 64, 8)).toBe(255);
+		expect(alphaAt(big, 56, 30)).toBe(0);
+	});
+
+	it("rasterises the mark deterministically and with exact coverage", () => {
+		const square = '<svg viewBox="0 0 4 4"><polygon points="1,1 3,1 3,3 1,3"/></svg>';
+		const image = rasterizeMark(parseMark(square), 4, [1, 2, 3]);
+		expect([0, 1, 2, 3].map((x) => alphaAt(image, x, 1))).toEqual([0, 255, 255, 0]);
+		const half = rasterizeMark(
+			parseMark('<svg viewBox="0 0 2 2"><polygon points="0.5,0 2,0 2,2 0.5,2"/></svg>'),
+			2,
+		);
+		expect(alphaAt(half, 0, 0)).toBe(128);
+		const svg = readFileSync(MARK_SVG, "utf8");
+		expect(renderMaster(svg).equals(renderMaster(svg))).toBe(true);
+	});
+
+	it("refuses SVG features the renderer does not implement instead of rendering them wrong", () => {
+		expect(() => parseMark('<svg viewBox="0 0 4 4"><path d="M0 0"/></svg>')).toThrow(
+			"SVG_UNSUPPORTED_ELEMENT: path",
+		);
+		expect(() =>
+			parseMark('<svg viewBox="0 0 4 4"><linearGradient/><polygon points="0,0 1,0 1,1"/></svg>'),
+		).toThrow("SVG_UNSUPPORTED_ELEMENT");
+		expect(() => parseMark('<svg viewBox="0 0 4 2"><polygon points="0,0 1,0 1,1"/></svg>')).toThrow(
+			"SVG_VIEWBOX_NOT_SQUARE",
+		);
+		expect(() =>
+			parseMark(
+				'<svg viewBox="0 0 4 4"><circle cx="2" cy="2" r="2"/><polygon points="0,0 1,0 1,1"/></svg>',
+			),
+		).toThrow("SVG_CIRCLE_OUTSIDE_CLIP");
+		expect(() => parseMark('<svg viewBox="0 0 4 4"></svg>')).toThrow("SVG_NO_POLYGONS");
+	});
+
+	it("puts the mark into ui.css as a mask-only data URL (no remote reference, no currentColor)", () => {
+		const url = logoDataUrl(readFileSync(MARK_SVG, "utf8"));
+		expect(url.startsWith("data:image/svg+xml,")).toBe(true);
+		expect(url).not.toContain("currentColor");
+		expect(url).not.toMatch(/["\n#]/);
+		const css = readFileSync(UI_CSS, "utf8");
+		expect(css).toContain(`--logo: url("${url}");`);
+		expect(css).toMatch(/\.brand__logo \{[^}]*mask: var\(--logo\)/);
+		expect(() => withLogo("body{}", readFileSync(MARK_SVG, "utf8"))).toThrow("no --logo line");
 	});
 });
 

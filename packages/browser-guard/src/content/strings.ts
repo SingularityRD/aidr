@@ -40,8 +40,14 @@ export interface Strings {
 	fileUnscannedToast(name: string): string;
 	/** A legacy .doc/.xls/.ppt upload passed through without a complete check. */
 	legacyOfficeToast(name: string): string;
-	/** An image passed through without OCR (no native host, or it could not read it fully). */
+	/** An image passed through without OCR: no helper app (or it is off); says how to install it. */
 	imageUnscannedToast(name: string): string;
+	/** An image the helper app inspected but could not read to a verdict. */
+	imageIncompleteToast(name: string): string;
+	/** An image whose text was clean, but whose QR codes/barcodes could not be checked here. */
+	imageBarcodeToast(name: string): string;
+	/** A blocked image the helper app inspected but could not read to a verdict. */
+	imageIncompleteBlocked(name: string): string;
 	/** A document was checked, but pictures inside it were not inspected. */
 	documentImagesToast(name: string): string;
 	/** A PDF passed through although its embedded images were not inspected (no/failed OCR). */
@@ -128,6 +134,8 @@ const BRAND = "Singularity AIDR";
 /** " (1 email address)" after a sentence's data, or "" when nothing was counted. */
 const paren = (found: string): string => (found ? ` (${found})` : "");
 
+const EN_INSTALL_COMPANION =
+	'Pictures are checked by the AIDR Privacy helper app: install it from the Singularity AIDR desktop app (or with the install-companion script from your IT team), then turn on "Use the AIDR Privacy helper app" in Browser Guard Options.';
 const EN_NOT_FULLY_CHECKED = "and your organisation only allows files that can be fully checked";
 const EN_PASTE_INSTEAD =
 	"Copy the text you need into the message instead (pasted text is masked), or ask your IT team.";
@@ -199,11 +207,13 @@ const EN_FILE_REASONS: Readonly<Record<FileBlockReason, FileReasonMessage>> = {
 	DOCUMENT_UNPARSEABLE: (name) =>
 		`"${name}" could not be opened (it may be damaged or in an unusual format), so it could not be checked and was not uploaded. ${EN_SAVE_AGAIN}`,
 	IMAGE_NOT_INSPECTED: (name) =>
-		`The picture "${name}" could not be checked (pictures need the AIDR Privacy helper app), ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. Describe what you need in the message instead, or ask your IT team.`,
+		`"${name}" was not uploaded because the picture could not be inspected. ${EN_INSTALL_COMPANION}`,
 	BINARY_FILE_UNSCANNABLE: (name) =>
 		`"${name}" is a type of file that cannot be checked, ${EN_NOT_FULLY_CHECKED}, so it was not uploaded. ${EN_PASTE_INSTEAD}`,
 };
 
+const TR_INSTALL_COMPANION =
+	'Görseller AIDR Privacy yardımcı uygulamasıyla denetlenir: uygulamayı Singularity AIDR masaüstü uygulamasından (ya da BT ekibinizin verdiği install-companion betiğiyle) kurun, ardından Browser Guard Seçenekler sayfasında "AIDR Privacy yardımcı uygulamasını kullan" seçeneğini açın.';
 const TR_NOT_FULLY_CHECKED =
 	"kurumunuz yalnızca tamamen denetlenebilen dosyalara izin verdiği için dosya yüklenmedi";
 const TR_PASTE_INSTEAD =
@@ -276,7 +286,7 @@ const TR_FILE_REASONS: Readonly<Record<FileBlockReason, FileReasonMessage>> = {
 	DOCUMENT_UNPARSEABLE: (name) =>
 		`"${name}" açılamadı (bozuk ya da alışılmadık bir biçimde olabilir); denetlenemediği için yüklenmedi. ${TR_SAVE_AGAIN}`,
 	IMAGE_NOT_INSPECTED: (name) =>
-		`"${name}" görseli denetlenemedi (görseller için AIDR Privacy yardımcı uygulaması gerekir); ${TR_NOT_FULLY_CHECKED}. Gerekeni mesajda anlatın ya da BT ekibinize başvurun.`,
+		`"${name}" yüklenmedi çünkü görsel denetlenemedi. ${TR_INSTALL_COMPANION}`,
 	BINARY_FILE_UNSCANNABLE: (name) =>
 		`"${name}" denetlenemeyen bir dosya türünde; ${TR_NOT_FULLY_CHECKED}. ${TR_PASTE_INSTEAD}`,
 };
@@ -301,7 +311,13 @@ const EN: Strings = {
 	legacyOfficeToast: (name) =>
 		`"${name}" (old .doc/.xls/.ppt format) could not be fully checked. Save it as .docx/.xlsx/.pptx, or check it before sending.`,
 	imageUnscannedToast: (name) =>
-		`"${name}" was not checked: images need the AIDR Privacy helper app. Check it before sending.`,
+		`"${name}" was not checked. ${EN_INSTALL_COMPANION} Check the picture before sending.`,
+	imageIncompleteToast: (name) =>
+		`The AIDR Privacy helper app could not fully read "${name}". Check it before sending.`,
+	imageBarcodeToast: (name) =>
+		`No personal data was found in the text of "${name}", but QR codes and barcodes cannot be checked on this computer. Check it before sending.`,
+	imageIncompleteBlocked: (name) =>
+		`"${name}" was not uploaded: the AIDR Privacy helper app could not fully read this picture, so it could not be inspected. Describe what you need in the message instead, or ask your IT team.`,
 	documentImagesToast: (name) =>
 		`Pictures inside "${name}" were not checked. Check them before sending.`,
 	pdfImagesUnscannedToast: (name) =>
@@ -396,7 +412,13 @@ const TR: Strings = {
 	legacyOfficeToast: (name) =>
 		`"${name}" (eski .doc/.xls/.ppt biçimi) tam olarak denetlenemedi. .docx/.xlsx/.pptx olarak kaydedin ya da göndermeden önce kontrol edin.`,
 	imageUnscannedToast: (name) =>
-		`"${name}" denetlenmedi: görseller için AIDR Privacy yardımcı uygulaması gerekir. Göndermeden önce kontrol edin.`,
+		`"${name}" denetlenmedi. ${TR_INSTALL_COMPANION} Göndermeden önce görseli kontrol edin.`,
+	imageIncompleteToast: (name) =>
+		`AIDR Privacy yardımcı uygulaması "${name}" görselini tam olarak okuyamadı. Göndermeden önce kontrol edin.`,
+	imageBarcodeToast: (name) =>
+		`"${name}" görselindeki yazıda kişisel veri bulunmadı; ancak bu bilgisayarda QR kod ve barkodlar denetlenemiyor. Göndermeden önce kontrol edin.`,
+	imageIncompleteBlocked: (name) =>
+		`"${name}" yüklenmedi: AIDR Privacy yardımcı uygulaması bu görseli tam olarak okuyamadı, bu yüzden görsel denetlenemedi. Gerekeni mesajda anlatın ya da BT ekibinize başvurun.`,
 	documentImagesToast: (name) =>
 		`"${name}" içindeki görseller denetlenmedi. Göndermeden önce kontrol edin.`,
 	pdfImagesUnscannedToast: (name) =>

@@ -24,7 +24,12 @@
 
 import { coachingFor, isSignalCode } from "../engine/coaching.js";
 import { type Counts, mergeCounts } from "../engine/counts.js";
-import { isDocumentContent, isDocumentFile, isLargeDocumentContent } from "../engine/files.js";
+import {
+	BARCODE_NOT_CHECKED,
+	isDocumentContent,
+	isDocumentFile,
+	isLargeDocumentContent,
+} from "../engine/files.js";
 import {
 	type DetectionEngine,
 	FILE_BLOCK_REASONS,
@@ -152,6 +157,14 @@ type Outcome =
 const SIGNAL_PREFIX = "SIGNAL_";
 
 /**
+ * The native host's own reasons next to IMAGE_NOT_INSPECTED (it inspected the picture but
+ * could not read it to a verdict). None: no host answered (missing, off, no permission).
+ */
+function imageHostDetail(reasons: readonly string[]): string[] {
+	return reasons.filter((r) => /^(?:IMAGE|NATIVE)_/.test(r) && r !== "IMAGE_NOT_INSPECTED");
+}
+
+/**
  * Bubble text for a blocked upload: one plain sentence saying what happened to the file and
  * what to do, chosen by the most specific reason present (FILE_BLOCK_REASONS order). Reason
  * codes stay in the decision (and tests) and never appear in the text.
@@ -163,6 +176,9 @@ export function blockedMessage(
 	const { name, reasons } = outcome;
 	const found = formatCounts(outcome.counts, s.lang);
 	const code = FILE_BLOCK_REASONS.find((r) => reasons.includes(r));
+	// The helper app answered but could not read the picture: installing it is not the remedy.
+	if (code === "IMAGE_NOT_INSPECTED" && imageHostDetail(reasons).length)
+		return s.imageIncompleteBlocked(name);
 	if (code) return s.fileReasons[code](name, found);
 	const signal = reasons.find((r) => r.startsWith(SIGNAL_PREFIX))?.slice(SIGNAL_PREFIX.length);
 	const coaching = signal && isSignalCode(signal) ? coachingFor(signal, s.lang) : "";
@@ -176,7 +192,13 @@ export function blockedMessage(
 /** Why an allowed/masked file was not fully checked, as a user message (null: fully checked). */
 function passWarning(s: Strings, name: string, reasons: readonly string[]): string | null {
 	if (reasons.includes("LEGACY_OFFICE_FORMAT")) return s.legacyOfficeToast(name);
-	if (reasons.includes("IMAGE_NOT_INSPECTED")) return s.imageUnscannedToast(name);
+	if (reasons.includes("IMAGE_NOT_INSPECTED")) {
+		const detail = imageHostDetail(reasons);
+		if (!detail.length) return s.imageUnscannedToast(name);
+		return detail.every((r) => r === BARCODE_NOT_CHECKED)
+			? s.imageBarcodeToast(name)
+			: s.imageIncompleteToast(name);
+	}
 	if (reasons.includes("PDF_IMAGES_NOT_INSPECTED")) return s.pdfImagesUnscannedToast(name);
 	if (reasons.some((r) => r.startsWith("BINARY_FILE"))) return s.fileUnscannedToast(name);
 	if (reasons.includes("DOCUMENT_IMAGES_NOT_INSPECTED")) return s.documentImagesToast(name);

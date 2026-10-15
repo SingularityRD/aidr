@@ -298,6 +298,31 @@ The host list in the manifest is read at build time from `MATCH_PATTERNS` in
 [`src/sites/index.ts`](src/sites/index.ts), so it cannot drift from the site
 adapters.
 
+### Native host registration (per user, no admin)
+
+`scripts/native-host.mjs` registers the optional AIDR Privacy native host for Chrome and Edge
+for the current user (Windows: `HKCU\Software\{Google\Chrome,Microsoft\Edge}\NativeMessagingHosts`;
+macOS/Linux: the user's `NativeMessagingHosts` directories). The desktop app imports it as
+`@singularityrd/aidr-browser-guard/native-host` (`registerNativeHost`, `unregisterNativeHost`,
+`nativeHostStatus`, `unpackedExtensionId`; types in `scripts/native-host.d.mts`) or runs the
+CLI with `--json`:
+
+```bash
+node scripts/native-host.mjs register --host <abs launcher> --extension-id <id> [--browser chrome,edge] --json
+node scripts/native-host.mjs status --json
+node scripts/native-host.mjs unregister --json
+```
+
+Interface, exit codes, error codes and what was verified: [`docs/native-host.md`](docs/native-host.md#per-user-registration-scriptsnative-hostmjs).
+
+### Customer demo
+
+`pnpm demo:package` builds the release and `dist/demo/aidr-browser-guard-demo-<ver>.zip` (a
+`Load unpacked` folder plus Turkish install steps); `pnpm demo:live` opens the extension on the
+hermetic site fixtures for an offline demo; `pnpm demo:record` regenerates the evidence in
+[`docs/screenshots/`](docs/screenshots/). Presenter guide (Turkish), including what was and was
+not verified: [`docs/demo/browser-guard-demo.tr.md`](docs/demo/browser-guard-demo.tr.md).
+
 ### Loading an unpacked build
 
 - **Chrome/Edge:** `chrome://extensions` (or `edge://extensions`), enable
@@ -307,13 +332,27 @@ adapters.
 
 ### Icons
 
-`static/icons/icon-{16,32,48,128}.png` are generated from the brand master
-`images/aidr-icon.png` by a dependency-free PNG resampler:
+The icons and the logo in the popup, options and blocked pages are generated from the
+round Singularity product mark [`branding/singularity-mark.svg`](../../branding/singularity-mark.svg)
+by `scripts/icons.mjs`, without dependencies:
+
+1. the SVG is parsed (only the subset the mark uses: a circle clip path and polygons; anything
+   else, such as `<path>` or gradients, is refused with `SVG_UNSUPPORTED_ELEMENT`) and
+   rasterised by a scanline renderer into the master `images/icon-master.png` (1024 px, the
+   accent `#3862E8`, legible on light and dark toolbars);
+2. the master is box-resampled to `static/icons/icon-{16,32,48,128}.png`;
+3. `static/ui.css` `--logo` is set to the same SVG as a data URL, used as a CSS mask, so the
+   UI logo takes the theme's `--accent` (as the SVG's `currentColor` intends).
 
 ```bash
-node scripts/icons.mjs           # regenerate
-node scripts/icons.mjs --check   # exit 1 if the committed icons are stale
+pnpm icons                # node scripts/icons.mjs: regenerate master, icons and --logo
+pnpm icons:check          # exit 1 if any of them is stale (also asserted by build-tools.test.ts)
+pnpm store:assets         # then refresh the store screenshots and promo tiles (they show the logo)
 ```
+
+The output is deterministic, so the committed files change only when the mark changes. When
+the designer's master file replaces the SVG (same file name, see `branding/README.md`), run
+`pnpm icons` and `pnpm store:assets` and commit the result.
 
 ## Manifest and permissions
 

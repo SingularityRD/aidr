@@ -44,6 +44,31 @@ function engineReasonCodes(): Set<string> {
 	return codes;
 }
 
+describe("uninspected picture messages", () => {
+	it("a picture no helper app inspected: not uploaded, with how to install and enable it", () => {
+		const en = render("en", ["IMAGE_NOT_INSPECTED"]);
+		expect(en).toContain("was not uploaded because the picture could not be inspected");
+		expect(en).toContain("Singularity AIDR desktop app");
+		expect(en).toContain("install-companion");
+		expect(en).toContain('"Use the AIDR Privacy helper app"');
+		const tr = render("tr", ["IMAGE_NOT_INSPECTED"]);
+		expect(tr).toContain("yüklenmedi çünkü görsel denetlenemedi");
+		expect(tr).toContain("masaüstü uygulamasından");
+		expect(tr).toContain('"AIDR Privacy yardımcı uygulamasını kullan"');
+		// In block mode the engine adds BINARY_FILE_UNSCANNABLE first; the picture sentence still wins.
+		expect(render("en", ["BINARY_FILE_UNSCANNABLE", "IMAGE_NOT_INSPECTED"])).toBe(en);
+	});
+
+	it("a picture the helper app could not read: no install advice", () => {
+		for (const lang of LANGS) {
+			const text = render(lang, ["IMAGE_NOT_INSPECTED", "IMAGE_OCR_UNCERTAIN"]);
+			expect(text).toContain(`"${NAME}"`);
+			expect(text).not.toContain("install-companion");
+			expect(text).not.toMatch(UPPER_SNAKE);
+		}
+	});
+});
+
 describe("blocked upload messages", () => {
 	it("has an EN and a TR sentence for every reason code (exhaustive over FILE_BLOCK_REASONS)", () => {
 		for (const lang of LANGS) {

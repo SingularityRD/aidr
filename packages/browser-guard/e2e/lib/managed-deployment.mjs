@@ -22,7 +22,12 @@ import path from "node:path";
 
 const HOST_ORIGIN = /^https:\/\/[a-z0-9.-]+\/\*$/;
 
-export function createManagedDeployment(extDir, { managedPolicy, grantedOrigins }) {
+/**
+ * `grantedPermissions`: optional API permissions the user would grant on the options page
+ * (only `nativeMessaging` exists); moved from `optional_permissions` to `permissions`, which
+ * for the browser is the same active permission.
+ */
+export function createManagedDeployment(extDir, { managedPolicy, grantedOrigins, grantedPermissions = [] }) {
 	for (const origin of grantedOrigins) {
 		if (!HOST_ORIGIN.test(origin)) throw new Error(`not an exact https origin: ${origin}`);
 	}
@@ -36,6 +41,12 @@ export function createManagedDeployment(extDir, { managedPolicy, grantedOrigins 
 		throw new Error("the build does not request optional https host permissions");
 	}
 	manifest.host_permissions = [...new Set([...(manifest.host_permissions ?? []), ...grantedOrigins])];
+	for (const permission of grantedPermissions) {
+		if (!(manifest.optional_permissions ?? []).includes(permission)) {
+			throw new Error(`the build does not declare the optional permission ${permission}`);
+		}
+		manifest.permissions = [...new Set([...(manifest.permissions ?? []), permission])];
+	}
 	fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
 	const backgroundPath = path.join(dir, manifest.background.service_worker);

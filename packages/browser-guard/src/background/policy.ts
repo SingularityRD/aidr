@@ -103,6 +103,7 @@ export const DEFAULT_POLICY: GuardPolicy = deepFreeze({
 	restoreResponses: true,
 	useNativeHost: false,
 	requireNativeNer: false,
+	uninspectedImages: "warn",
 	telemetry: null,
 	language: "auto",
 	managedKeys: [],
@@ -657,6 +658,7 @@ const MANAGED_VALIDATORS: Readonly<Record<ManagedKey, Validator>> = {
 	restoreResponses: bool,
 	useNativeHost: bool,
 	requireNativeNer: bool,
+	uninspectedImages: oneOf(["warn", "block"]),
 	telemetry: telemetryValidator(false),
 	language: oneOf(["auto", "en", "tr"]),
 	policyId,
@@ -768,6 +770,7 @@ const FAIL_SAFE: Readonly<Partial<Record<ManagedKey, (raw: unknown) => unknown>>
 	restoreResponses: () => false,
 	useNativeHost: () => true,
 	requireNativeNer: () => true,
+	uninspectedImages: () => "block",
 	workAccounts: failSafeWorkAccounts,
 };
 
@@ -792,6 +795,7 @@ const USER_VALIDATORS: Readonly<Record<keyof UserSettings, Validator>> = {
 	restoreResponses: bool,
 	// Adds detection only (NER on top of the rules), so it is not a protection-reducing key.
 	useNativeHost: bool,
+	uninspectedImages: MANAGED_VALIDATORS.uninspectedImages,
 	language: MANAGED_VALIDATORS.language,
 	telemetry: telemetryValidator(true),
 };
@@ -819,7 +823,15 @@ export const PROTECTION_SETTING_KEYS: readonly (keyof UserSettings)[] = Object.f
 	"maskPaste",
 	"restoreResponses",
 	"disabledSites",
+	"uninspectedImages",
 ]);
+
+/**
+ * Built-in values that differ when a managed (enterprise) policy is present and the
+ * administrator did not set the key: an uninspected picture is blocked, not only warned about.
+ */
+export const MANAGED_DEFAULTS: Readonly<Partial<Record<keyof UserSettings, unknown>>> =
+	Object.freeze({ uninspectedImages: "block" });
 
 /** Keys a user may change (options page / popup). */
 export const USER_SETTING_KEYS: readonly (keyof UserSettings)[] = Object.freeze(
@@ -914,6 +926,11 @@ export function evaluatePolicy(
 		lockProtectionKeys(merged, managedKeys, userResult.settings, warnings);
 
 	if (admin.present) switchOffUnlessManaged(merged, managedKeys);
+	// With user overrides allowed, a managed install still starts from the managed defaults.
+	if (admin.present)
+		for (const [key, value] of Object.entries(MANAGED_DEFAULTS))
+			if (!managedKeys.includes(key) && !Object.hasOwn(userResult.settings, key))
+				merged[key] = value;
 
 	if (merged.requireNativeNer === true)
 		requireNativeHost(merged, managedKeys, warnings, '"requireNativeNer" is true');
@@ -1084,7 +1101,9 @@ function lockProtectionKeys(
 		if (managedKeys.includes(key)) continue;
 		if (Object.hasOwn(user, key))
 			warnings.push(`user: "${key}" ignored because a managed policy locks user overrides`);
-		merged[key] = DEFAULT_POLICY[key];
+		merged[key] = Object.hasOwn(MANAGED_DEFAULTS, key)
+			? MANAGED_DEFAULTS[key]
+			: DEFAULT_POLICY[key];
 		managedKeys.push(key);
 	}
 }

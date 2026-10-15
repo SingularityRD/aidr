@@ -87,6 +87,12 @@ function settingsForChange(
 			return { restoreResponses: checked };
 		case "toggle-native-host":
 			return checked === policy.useNativeHost ? null : { useNativeHost: checked };
+		case "set-uninspected-images": {
+			const value = control.value === "block" || control.value === "warn" ? control.value : null;
+			return value && value !== (policy.uninspectedImages ?? "warn")
+				? { uninspectedImages: value }
+				: null;
+		}
 		case "toggle-site": {
 			const site = control.dataset.site;
 			if (!isSupportedSite(site) || policy.blockedSites.includes(site)) return null;

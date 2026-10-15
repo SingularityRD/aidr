@@ -5,8 +5,19 @@ import { imageFail, integer, VISUAL_CODES, VisualError } from './errors.js';
 import type { Box, ImageBackend, ImageScan, RenderScan } from './types.js';
 export interface LocalImageOptions {
   readonly python: string;
-  readonly tesseract: string;
-  readonly tessdata: string;
+  /**
+   * OCR engine run by the worker. `tesseract` (default): Tesseract with eng+tur traineddata.
+   * `windows`: the Windows built-in OCR (Windows.Media.Ocr) through vision/windows_ocr.ps1 and
+   * Windows PowerShell 5.1; no OCR model is downloaded (the OS recognizer languages are used).
+   */
+  readonly ocrEngine?: 'tesseract' | 'windows';
+  /** Tesseract executable and tessdata directory (required for `tesseract`). */
+  readonly tesseract?: string;
+  readonly tessdata?: string;
+  /** Windows PowerShell 5.1 executable (required for `windows`). */
+  readonly powershell?: string;
+  /** Absolute path to the Windows OCR helper; defaults to the bundled vision/windows_ocr.ps1. */
+  readonly windowsOcrScript?: string;
   readonly manifest: string;
   /** Absolute path to bundled worker or an explicitly trusted replacement. */
   readonly worker?: string;
@@ -14,18 +25,27 @@ export interface LocalImageOptions {
   readonly processTimeoutMs?: number;
   readonly maxResponseBytes?: number;
 }
+type ResolvedOptions = Required<Pick<LocalImageOptions,'python'|'manifest'|'worker'|'dualPass'|'processTimeoutMs'|'maxResponseBytes'|'ocrEngine'>> & {readonly engineArgs:readonly string[]};
 /** Process-per-stage local backend. No network API and no inherited API keys.
  * Linux process groups ensure cancellation kills OCR descendants as well as Python.
  * This is not a sandbox: deploy with OS network denial, syscall policy and cgroups. */
 export class LocalImageProcess implements ImageBackend {
-  #options: Required<LocalImageOptions>;
+  #options: ResolvedOptions;
   constructor(options: LocalImageOptions) {
     const worker=options.worker??fileURLToPath(new URL('../../vision/worker.py',import.meta.url));
     // dist/visual -> package/vision needs two parent steps, not one.
-    for(const value of [options.python,options.tesseract,options.tessdata,options.manifest,worker])
+    const ocrEngine=options.ocrEngine??'tesseract';
+    if(ocrEngine!=='tesseract'&&ocrEngine!=='windows')imageFail('IMAGE_CONFIGURATION_INVALID');
+    const script=options.windowsOcrScript??fileURLToPath(new URL('../../vision/windows_ocr.ps1',import.meta.url));
+    const engineArgs=ocrEngine==='windows'
+      ?['--ocr-engine','windows','--powershell',options.powershell as string,'--windows-ocr-script',script]
+      :['--tesseract',options.tesseract as string,'--tessdata',options.tessdata as string];
+    for(const value of [options.python,options.manifest,worker,engineArgs[engineArgs.length-1],engineArgs[engineArgs.length-3]])
       if(typeof value!=='string'||!isAbsolute(value)||value.includes('\0'))imageFail('IMAGE_CONFIGURATION_INVALID');
     if(options.dualPass!==undefined&&typeof options.dualPass!=='boolean')imageFail('IMAGE_CONFIGURATION_INVALID');
-    this.#options={...options,worker,dualPass:options.dualPass??true,
+    this.#options={python:options.python,manifest:options.manifest,worker,ocrEngine,engineArgs,
+      // Windows OCR runs one pass per recognizer language; the psm passes are Tesseract's.
+      dualPass:ocrEngine==='windows'?false:options.dualPass??true,
       processTimeoutMs:integer(options.processTimeoutMs??30000,1,120000,'IMAGE_CONFIGURATION_INVALID'),
       maxResponseBytes:integer(options.maxResponseBytes??64*1024*1024,1024,128*1024*1024,'IMAGE_CONFIGURATION_INVALID')};
   }
@@ -36,7 +56,7 @@ export class LocalImageProcess implements ImageBackend {
       let done=false,bytes=0;const chunks:Buffer[]=[];
       const env:Record<string,string>={PYTHONUNBUFFERED:'1',PYTHONDONTWRITEBYTECODE:'1',PYTHONNOUSERSITE:'1',OMP_THREAD_LIMIT:'1',OMP_NUM_THREADS:'1',LC_ALL:'C.UTF-8'};
       for(const key of ['PATH','SYSTEMROOT','WINDIR'])if(process.env[key])env[key]=process.env[key]!;
-      const child=spawn(o.python,['-I',o.worker,'--tesseract',o.tesseract,'--tessdata',o.tessdata,'--manifest',o.manifest],
+      const child=spawn(o.python,['-I',o.worker,...o.engineArgs,'--manifest',o.manifest],
         {env,shell:false,windowsHide:true,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe']});
       const kill=()=>{
         if(process.platform!=='win32'&&child.pid){try{process.kill(-child.pid,'SIGKILL');}catch{child.kill('SIGKILL');}}

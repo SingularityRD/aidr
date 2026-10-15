@@ -102,7 +102,7 @@ const FRAME_CSS = `
 	.frame { width: 1280px; height: 800px; display: grid; grid-template-columns: 400px 1fr; background: #0a3d91; overflow: hidden; }
 	.copy { padding: 64px 40px 48px 56px; color: #fff; display: flex; flex-direction: column; gap: 20px; }
 	.brand { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 600; opacity: .95; }
-	.brand i { width: 34px; height: 44px; background: var(--logo) center / contain no-repeat; }
+	.brand i { width: 40px; height: 40px; background: #fff; -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
 	h1 { font-size: 36px; line-height: 1.18; margin: 24px 0 0; font-weight: 700; }
 	p { font-size: 19px; line-height: 1.5; margin: 0; color: #dbe7fb; }
 	.stage { padding: 48px 48px 48px 0; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
@@ -112,7 +112,7 @@ const FRAME_CSS = `
 	.sent b { display: block; font: 600 13px "DejaVu Sans", Arial, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #8fb4ff; margin-bottom: 6px; }
 	.pair { display: grid; grid-template-columns: 360px 1fr; gap: 24px; align-items: start; }
 	.tile { width: 440px; height: 280px; padding: 28px; background: #0a3d91; color: #fff; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
-	.tile i { width: 54px; height: 70px; background: var(--logo) center / contain no-repeat; }
+	.tile i { width: 64px; height: 64px; background: #fff; -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
 	.tile strong { font-size: 30px; line-height: 1.15; }
 	.tile span { font-size: 18px; line-height: 1.35; color: #dbe7fb; }
 `;

@@ -25,8 +25,8 @@ export class VisualPrivacyEngine {
       minConfidence:options.minConfidence??50,minWordHeight:options.minWordHeight??7,paddingPx:options.paddingPx??6,
       maxInputBytes:options.maxInputBytes??8*1024*1024,maxPixels:options.maxPixels??12_000_000,maxDimension:options.maxDimension??8192,
       maxWords:options.maxWords??10000,maxTextBytes:options.maxTextBytes??65536,maxRegions:options.maxRegions??4096,
-      timeoutMs:options.timeoutMs??45000,maxConcurrent:options.maxConcurrent??2,policyId:options.policyId??'aidr-visual-v1',requireNer:options.requireNer??false};
-    if(!['manual','automatic'].includes(o.release)||!['pii','all-text','block'].includes(o.mode)||!['line','word'].includes(o.granularity)||!['block','redact'].includes(o.barcodeAction)||!['review','redact-line'].includes(o.uncertainText)||typeof o.requireNer!=='boolean'||!/^[A-Za-z0-9_.-]{1,64}$/.test(o.policyId))imageFail('IMAGE_CONFIGURATION_INVALID');
+      timeoutMs:options.timeoutMs??45000,maxConcurrent:options.maxConcurrent??2,policyId:options.policyId??'aidr-visual-v1',requireNer:options.requireNer??false,barcodeUnavailable:options.barcodeUnavailable??'review'};
+    if(!['manual','automatic'].includes(o.release)||!['pii','all-text','block'].includes(o.mode)||!['line','word'].includes(o.granularity)||!['block','redact'].includes(o.barcodeAction)||!['review','redact-line'].includes(o.uncertainText)||typeof o.requireNer!=='boolean'||!['review','allow'].includes(o.barcodeUnavailable)||!/^[A-Za-z0-9_.-]{1,64}$/.test(o.policyId))imageFail('IMAGE_CONFIGURATION_INVALID');
     for(const [n,min,max]of [[o.minConfidence,0,100],[o.minWordHeight,1,256],[o.paddingPx,1,128],[o.maxInputBytes,1,8*1024*1024],[o.maxPixels,1,12_000_000],[o.maxDimension,1,8192],[o.maxWords,1,10000],[o.maxTextBytes,1,262144],[o.maxRegions,1,4096],[o.timeoutMs,1,120000],[o.maxConcurrent,1,16]] as const)integer(n,min,max,'IMAGE_CONFIGURATION_INVALID');
     this.#o=Object.freeze(o);
   }
@@ -90,6 +90,8 @@ export class VisualPrivacyEngine {
     const regions=[...map.values()].map(r=>({...r.box,types:[...r.types].sort()}));
     if(uncertain)return {decision:'review',output:null,regions,reasons:['IMAGE_OCR_UNCERTAIN']};
     if(o.release==='manual')return {decision:'review',output:null,regions,reasons:['IMAGE_MANUAL_REVIEW']};
+    // Released bytes need the residual barcode check, which a backend without a decoder cannot do.
+    if(scan.barcodeCoverage==='none')imageFail('IMAGE_BARCODE_UNAVAILABLE');
     this.#check(signal);
     const rendered=await o.backend.render(data,scan,regions,signal);this.#check(signal);
     if(!rendered||rendered.protocol!==1||rendered.complete!==true||rendered.width!==scan.width||rendered.height!==scan.height||!(rendered.png instanceof Uint8Array)||!Array.isArray(rendered.barcodes)||rendered.barcodes.length>256)imageFail('IMAGE_PROTOCOL_INVALID');
@@ -169,6 +171,8 @@ export class VisualPrivacyEngine {
     if(!stats.wordCount)return {decision:'review',reasons:['IMAGE_NO_TEXT']};
     for(const page of scan.pages)for(const word of page.words)
       if((word.confidence<o.minConfidence||word.height<o.minWordHeight)&&!covered.some(box=>contains(box,word)))return {decision:'review',reasons:['IMAGE_OCR_UNCERTAIN']};
+    // No barcode decoder: the text is clean, but a QR code or barcode was never looked for.
+    if(scan.barcodeCoverage==='none'&&o.barcodeUnavailable==='review')return {decision:'review',reasons:['IMAGE_BARCODE_NOT_CHECKED']};
     return {decision:'allow',reasons:[]};
   }
   /**

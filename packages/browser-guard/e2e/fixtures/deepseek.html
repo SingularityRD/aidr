@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DeepSeek (E2E fixture)</title>
+<style>
+	body { font-family: sans-serif; margin: 0; }
+	#chat { min-height: 200px; padding: 16px; }
+	.composer { display: flex; gap: 8px; padding: 16px; align-items: center; }
+	textarea { flex: 1; min-height: 40px; }
+	._7436101 { padding: 6px 12px; border: 1px solid #4d6bfe; border-radius: 16px; cursor: pointer; }
+</style>
+</head>
+<body>
+<!-- Mirrors src/sites/deepseek.ts: textarea#chat-input, a hashed-class div[role=button] send
+     control (no <button>), assistant turns in .ds-markdown, user turns [data-role=user]. -->
+<div id="chat"></div>
+<div class="composer">
+	<textarea id="chat-input" placeholder="Message DeepSeek" rows="2"></textarea>
+	<div class="_7436101" role="button" aria-label="Send" tabindex="0">&#8593;</div>
+	<input type="file" id="ds-upload">
+</div>
+<script src="/__fixture__/kit.js"></script>
+<script>
+	FixtureChat.init({
+		site: "deepseek",
+		kind: "textarea",
+		editor: "textarea#chat-input",
+		send: 'div[role="button"][aria-label="Send"]',
+		thread: "#chat",
+		endpoint: "/api/v0/chat/completion",
+		fileInput: "#ds-upload",
+		renderUser(text) {
+			const msg = document.createElement("div");
+			msg.setAttribute("data-role", "user");
+			msg.textContent = text;
+			return msg;
+		},
+		renderAssistant() {
+			const root = document.createElement("div");
+			root.className = "_4f9bf79";
+			const body = document.createElement("div");
+			body.className = "ds-markdown ds-markdown--block";
+			root.appendChild(body);
+			return { root, body };
+		},
+	});
+</script>
+</body>
+</html>

@@ -157,7 +157,9 @@ const POPUP_JS = `(async () => {
 	if (host === "chatgpt.com") document.getElementById("site").textContent = "Sensitive data you send to ChatGPT is checked.";
 	const p = await chrome.runtime.sendMessage({ type: "GET_POLICY" });
 	const s = await chrome.runtime.sendMessage({ type: "GET_STATS" });
-	document.getElementById("mode").textContent = p.mode;
+	// The product's user-facing mode names (scenarios/popup.mjs matches them, not the ids).
+	const labels = { auto: "Automatic masking", confirm: "Ask me", block: "Block", monitor: "Count only (no masking)" };
+	document.getElementById("mode").textContent = labels[p.mode] || p.mode;
 	document.getElementById("count").textContent = String(s.protectedPrompts);
 })();`;
 

@@ -137,6 +137,7 @@ describe("mergePolicy", () => {
 			"enabledEntities",
 			"literals",
 			"restoreResponses",
+			"uninspectedImages",
 			...OFF,
 		]);
 		expect(warnings).toEqual(
@@ -465,9 +466,35 @@ describe("validateUserSettings", () => {
 			"maskPaste",
 			"restoreResponses",
 			"useNativeHost",
+			"uninspectedImages",
 			"language",
 			"telemetry",
 		]);
+	});
+
+	it("uninspectedImages: warn without a managed policy, block under one unless set", () => {
+		expect(evaluatePolicy(undefined, undefined).policy.uninspectedImages).toBe("warn");
+		expect(evaluatePolicy(undefined, { uninspectedImages: "block" }).policy.uninspectedImages).toBe(
+			"block",
+		);
+		// Any managed policy: block, locked; a user "warn" is ignored.
+		const locked = evaluatePolicy({ mode: "auto" }, { uninspectedImages: "warn" }).policy;
+		expect(locked.uninspectedImages).toBe("block");
+		expect(locked.managedKeys).toContain("uninspectedImages");
+		// The administrator can choose warn explicitly.
+		expect(evaluatePolicy({ uninspectedImages: "warn" }, undefined).policy.uninspectedImages).toBe(
+			"warn",
+		);
+		// With user overrides allowed the managed default still applies until the user changes it.
+		const open = { allowUserOverrides: true, mode: "auto" };
+		expect(evaluatePolicy(open, undefined).policy.uninspectedImages).toBe("block");
+		expect(evaluatePolicy(open, { uninspectedImages: "warn" }).policy.uninspectedImages).toBe(
+			"warn",
+		);
+		// A mistyped managed value fails safe.
+		const bad = evaluatePolicy({ uninspectedImages: "sometimes" }, undefined).policy;
+		expect(bad.uninspectedImages).toBe("block");
+		expect(bad.policyErrors).toContain("uninspectedImages");
 	});
 
 	it("lets a user opt in to the native host unless the administrator set it", () => {

@@ -937,6 +937,22 @@
 		"message": "Yerel uygulamalarla iletişim izni gerekir; bu seçeneği açtığınızda izin istenir.",
 		"description": "Options: native host switch help."
 	},
+	"uninspected_images_label": {
+		"message": "Denetlenemeyen görseller",
+		"description": "Options: label of the uninspectedImages setting."
+	},
+	"uninspected_images_warn": {
+		"message": "Uyarıyla yükle",
+		"description": "Options: uninspectedImages value warn."
+	},
+	"uninspected_images_block": {
+		"message": "Yükleme",
+		"description": "Options: uninspectedImages value block."
+	},
+	"uninspected_images_help": {
+		"message": "Görseller (ekran görüntüleri, fotoğraflar) AIDR Privacy yardımcı uygulamasıyla kişisel veri açısından denetlenir. Uygulamayı Singularity AIDR masaüstü uygulamasından ya da install-companion betiğiyle kurun, ardından yukarıdaki \"AIDR Privacy yardımcı uygulamasını kullan\" seçeneğini açın. Bu seçim, bir görsel denetlenemediğinde uygulanır.",
+		"description": "Options: uninspectedImages help."
+	},
 	"native_required": {
 		"message": "Kurumunuz tarafından zorunlu tutuluyor: yardımcı uygulama bir mesajı, yapıştırmayı veya yüklemeyi ad ve adres açısından denetleyemezse (kurulu değil, yanıt vermiyor, ad algılaması yok, metin çok uzun) yalnızca yerleşik kurallarla denetlenmek yerine engellenir.",
 		"description": "Options: managed requireNativeNer is on (native NER is mandatory)."
