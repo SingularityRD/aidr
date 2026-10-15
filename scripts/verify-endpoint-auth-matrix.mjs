@@ -165,6 +165,21 @@ export const MIXED_ROUTE_PUBLIC_ACTIONS = Object.freeze([
 			},
 		]),
 	},
+	{
+		route: "supabase/functions/response-playbooks/index.ts",
+		handler: "supabase/functions/response-playbooks/index.ts",
+		// Operator actions call authorizeOperator (session + identity barrier +
+		// owner/admin + AAL2); the automation action never does.
+		authenticatedCall: "authorizeOperator(",
+		actions: Object.freeze([
+			{
+				name: "trigger_automation",
+				mechanism: "per-grant automation secret (SHA-256 hash lookup bound to tenant and grant) + per-grant rate limit",
+				justification:
+					"SOAR/automation trigger with no user session: the 256-bit aidr_rsp_ secret must hash-match an owner-created, unexpired, unrevoked delegated grant for that tenant, the RPC re-validates the grant under a row lock, and the run is quota-limited per grant.",
+			},
+		]),
+	},
 ]);
 
 /** Which shared guards the route source presents (an empty list is a failure). */
@@ -232,6 +247,14 @@ export function evaluateAuthMatrix(routes, allowlist = PUBLIC_ROUTE_ALLOWLIST, o
 		}
 	}
 
+	// A route that marks a public action must be declared as a mixed route, so a
+	// non-session path cannot be added to a guarded route without review.
+	const declaredMixed = new Set((options.mixedRoutes ?? []).map((mixed) => mixed.route));
+	for (const { route, source } of routes) {
+		if (source.includes("// public-action:") && !declaredMixed.has(route))
+			failures.push(`${route}: marks a public action but is not declared in MIXED_ROUTE_PUBLIC_ACTIONS`);
+	}
+
 	for (const mixed of options.mixedRoutes ?? []) {
 		const route = routes.find((candidate) => candidate.route === mixed.route);
 		if (!route) {
@@ -260,7 +283,17 @@ export function evaluateAuthMatrix(routes, allowlist = PUBLIC_ROUTE_ALLOWLIST, o
 /** Compare the handler's `// public-action:` markers with the declared public actions. */
 export function evaluateMixedHandler(mixed, handlerSource) {
 	const failures = [];
-	const cases = [...handlerSource.matchAll(/(\/\/ public-action: (\w+)\s*\n\s*)?case "(\w+)":/g)];
+	// Actions are dispatched either by `case "name":` or by
+	// `if (<expr>.action === "name")`; a public action's marker must sit on the
+	// line directly above its dispatch either way.
+	const cases = [
+		...handlerSource.matchAll(/(\/\/ public-action: (\w+)\s*\n\s*)?case "(\w+)":/g),
+		...handlerSource.matchAll(/(\/\/ public-action: (\w+)\s*\n\s*)?if \([\w.]*\baction === "(\w+)"\)/g),
+	];
+	const stray = [...handlerSource.matchAll(/\/\/ public-action: (\w+)/g)].length;
+	const attached = cases.filter((match) => match[1]).length;
+	if (stray !== attached)
+		failures.push(`${mixed.handler}: a public-action marker is not directly above a case/if dispatch`);
 	const publicCases = new Set();
 	let authenticated = 0;
 	for (const match of cases) {
@@ -285,8 +318,9 @@ export function evaluateMixedHandler(mixed, handlerSource) {
 			failures.push(`${mixed.handler}: public action "${action.name}" must name its mechanism`);
 	}
 	if (authenticated === 0) failures.push(`${mixed.handler}: no authenticated action; the route is entirely public`);
-	if (!/\.authenticate\(/.test(handlerSource))
-		failures.push(`${mixed.handler}: authenticated actions never call authenticate()`);
+	const authenticatedCall = mixed.authenticatedCall ?? ".authenticate(";
+	if (!handlerSource.includes(authenticatedCall))
+		failures.push(`${mixed.handler}: authenticated actions never call ${authenticatedCall.replace(/^\./, "")})`);
 	return failures;
 }
 
