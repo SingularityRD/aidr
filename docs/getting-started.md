@@ -175,8 +175,8 @@ The CLI is a separate setup and diagnostics package. Install it from the private
 registry using [Package Installation](package-installation.md), then run
 `aidr setup --dry-run` to see what it would do and `aidr setup` to configure AIDR
 and install or update the connector of every agent host found in your home
-directory. Exit code `3` means no supported AI tool was found yet (nothing failed);
-`1` is a real problem. Local mode (the default) needs no account, credential or OS credential
+directory. Exit code `3` means no supported AI tool was found yet (nothing failed),
+with or without `--dry-run`; `1` is a real problem. Local mode (the default) needs no account, credential or OS credential
 vault, so this works on headless Linux, WSL and containers too; only a managed
 configuration stores a credential (in the OS vault, or the machine-bound
 encrypted file store `~/.singularity-aidr/sealed` where there is none). Commercial

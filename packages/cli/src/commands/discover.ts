@@ -7,6 +7,7 @@ import {
 	newPostureScanId,
 	uploadPostureEvents,
 } from "@singularityrd/aidr-core";
+import { ct } from "../i18n/index.js";
 import { formatAgentFinding, scanAgentEnvironment } from "../utils/agent-posture.js";
 
 interface DiscoverOptions {
@@ -34,34 +35,45 @@ type DiscoveredServer = DiscoveryReport["servers"][number];
 /** Human-readable lines for one server. Secret findings name locations, never values. */
 function describeDiscoveredServer(server: DiscoveredServer): string[] {
 	const lines = [
-		`  ${server.name}  ${server.transport}  ${server.endpoint ?? "local process"}`,
-		`    ${server.source}${server.project === undefined ? "" : ` (project ${server.project})`}`,
-		`    ${server.risk_hints.join(", ") || "No configured risk indicator; trust is not verified"}`,
+		`  ${server.name}  ${server.transport}  ${server.endpoint ?? ct("discover.localProcess")}`,
+		`    ${server.source}${server.project === undefined ? "" : ct("discover.project", { project: server.project })}`,
+		`    ${server.risk_hints.join(", ") || ct("discover.noRiskHint")}`,
 	];
 	const categories = server.aig_categories;
 	lines.push(
 		categories.length > 0
-			? `    AIG categories: ${categories
-					.map((category) => `${category.id} ${category.name} (${category.risk}, ${category.basis})`)
-					.join("; ")}`
-			: "    AIG categories: none matched (not a safety verdict)",
+			? ct("discover.aigCategories", {
+					categories: categories
+						.map(
+							(category) => `${category.id} ${category.name} (${category.risk}, ${category.basis})`,
+						)
+						.join("; "),
+				})
+			: ct("discover.aigNone"),
 	);
 	for (const finding of server.secret_findings) {
 		lines.push(
-			`    Hardcoded secret: ${finding.location} ${finding.key} (${finding.kind}) - move it to a secret store or an env reference`,
+			ct("discover.secret", {
+				location: finding.location,
+				key: finding.key,
+				kind: finding.kind,
+			}),
 		);
 	}
 	return lines;
 }
 
 function printReport(report: DiscoveryReport): void {
-	console.log(`MCP discovery: ${report.servers.length} configured server(s)`);
+	console.log(ct("discover.header", { count: report.servers.length }));
 	for (const server of report.servers) console.log(describeDiscoveredServer(server).join("\n"));
 	for (const source of report.sources.filter((s) => s.status === "invalid"))
-		console.error(`Unreadable or unsupported configuration: ${source.path}`);
+		console.error(ct("discover.unreadable", { path: source.path }));
 	if (report.coverage.servers_not_enumerated > 0) {
 		console.error(
-			`Inventory coverage is ${report.coverage.status}; malformed server entries not enumerated: ${report.coverage.servers_not_enumerated}`,
+			ct("discover.coverage", {
+				status: report.coverage.status,
+				count: report.coverage.servers_not_enumerated,
+			}),
 		);
 	}
 	console.log(report.scope);
@@ -79,10 +91,13 @@ function isIncomplete(report: DiscoveryReport, explicitConfigs: boolean): boolea
 function printAgentReport(report: AgentEnvironmentReport): void {
 	const detected = report.hosts.filter((host) => host.detected).map((host) => host.host);
 	console.log(
-		`Agent environment: ${detected.length > 0 ? detected.join(", ") : "no agent host"} detected; ${report.findings.length} finding(s)`,
+		ct("discover.agents", {
+			hosts: detected.length > 0 ? detected.join(", ") : ct("discover.noAgentHost"),
+			count: report.findings.length,
+		}),
 	);
 	for (const finding of report.findings) console.log(`  ${formatAgentFinding(finding)}`);
-	for (const path of report.unreadable) console.error(`Unreadable agent configuration: ${path}`);
+	for (const path of report.unreadable) console.error(ct("discover.unreadableAgent", { path }));
 	console.log(report.scope);
 }
 
@@ -104,15 +119,15 @@ async function uploadInventory(
 	const write = json ? console.error : console.log;
 	if (result.ok) {
 		write(
-			`Uploaded ${result.delivered} ${agents ? "MCP inventory and agent environment" : "MCP inventory"} finding(s) to the control plane.`,
+			ct(agents ? "discover.uploadedAgents" : "discover.uploaded", { count: result.delivered }),
 		);
 		return;
 	}
 	console.error(
-		`Upload failed: ${describePostureUploadError(result.error)}.` +
+		ct("discover.uploadFailed", { reason: describePostureUploadError(result.error) }) +
 			(result.queued
-				? ` ${result.total - result.delivered} finding(s) remain queued and will be retried on the next delivery.`
-				: " Nothing was uploaded."),
+				? ct("discover.queued", { count: result.total - result.delivered })
+				: ct("discover.nothingUploaded")),
 	);
 	process.exitCode = 1;
 }

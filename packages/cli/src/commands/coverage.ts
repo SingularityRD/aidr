@@ -54,7 +54,13 @@ export async function runCoverage(
 	const err = dependencies.err ?? ((text: string) => console.error(text));
 	const format = (options.format ?? "table").toLowerCase();
 	if (!COVERAGE_FORMATS.includes(format as CoverageFormat)) {
-		fail(err, `Unknown format "${options.format}". Use one of: ${COVERAGE_FORMATS.join(", ")}.`);
+		fail(
+			err,
+			ct("coverage.badFormat", {
+				format: String(options.format),
+				formats: COVERAGE_FORMATS.join(", "),
+			}),
+		);
 		return;
 	}
 
@@ -63,20 +69,20 @@ export async function runCoverage(
 	if (!existsSync(threatsDir) || !existsSync(mappingPath)) {
 		fail(
 			err,
-			`No rule set with a framework mapping was found at ${threatsDir}. Reinstall or rebuild the CLI (its resources/threats directory ships ${FRAMEWORK_MAPPINGS_RELATIVE_PATH}).`,
+			ct("coverage.noMapping", { path: threatsDir, mapping: FRAMEWORK_MAPPINGS_RELATIVE_PATH }),
 		);
 		return;
 	}
 
 	const { mappings, errors } = parseFrameworkMappingsYaml(readFileSync(mappingPath, "utf8"));
 	if (!mappings) {
-		fail(err, `The framework mapping at ${mappingPath} is invalid:\n  ${errors.join("\n  ")}`);
+		fail(err, ct("coverage.invalidMapping", { path: mappingPath, errors: errors.join("\n  ") }));
 		return;
 	}
 
 	const rules = toCoverageRules(await loadThreats(threatsDir));
 	if (rules.length === 0) {
-		fail(err, `No detection rules loaded from ${threatsDir}; there is no coverage to report.`);
+		fail(err, ct("coverage.noRules", { path: threatsDir }));
 		return;
 	}
 
@@ -101,10 +107,7 @@ export async function runCoverage(
 	// as a clean result: list the problems and exit non-zero.
 	const problems = validateFrameworkMappingsAgainstRules(mappings, rules);
 	if (problems.length > 0) {
-		fail(
-			err,
-			`Warning: the framework mapping does not match the installed rules (${problems.length} problem(s)):\n  ${problems.join("\n  ")}`,
-		);
+		fail(err, ct("coverage.mismatch", { count: problems.length, problems: problems.join("\n  ") }));
 	}
 }
 

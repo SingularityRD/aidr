@@ -97,6 +97,31 @@ describe("aidr config -s", () => {
 		expect(stdout.join("\n")).not.toContain("sensitive-auth-value");
 	});
 
+	it("lists the valid values when an enum value is rejected", async () => {
+		await configCommand({ set: ["sensitivity", "banana"] });
+
+		expect(mocks.replaceConfig).not.toHaveBeenCalled();
+		expect(process.exitCode).toBe(1);
+		const errors = stderr.join("\n");
+		expect(errors).toContain("Invalid runtime configuration; no changes saved.");
+		expect(errors).toContain(
+			"sensitivity: 'banana' is not a valid value. Valid values: paranoid, balanced, relaxed.",
+		);
+	});
+
+	it("lists the valid values in Turkish", async () => {
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			await configCommand({ set: ["sensitivity", "banana"] });
+		} finally {
+			vi.unstubAllEnvs();
+		}
+		const errors = stderr.join("\n");
+		expect(errors).toContain("Geçersiz çalışma zamanı yapılandırması");
+		expect(errors).toContain("Geçerli değerler: paranoid, balanced, relaxed.");
+		expect(errors).not.toContain("Invalid runtime configuration");
+	});
+
 	it("does not accept a secret value supplied as an argument", async () => {
 		await configCommand({ set: ["auth.api_key", "shell-history-secret"] });
 

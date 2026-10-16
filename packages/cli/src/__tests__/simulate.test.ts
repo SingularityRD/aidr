@@ -251,6 +251,21 @@ describe("simulate formatting", () => {
 			expect(turkish).toContain("Kategori");
 			expect(turkish).toContain("BAŞARILI");
 			expect(formatHtml(report)).toContain('<html lang="tr">');
+			// "Yanlış alarm" is 12 characters: the column still keeps a space before it.
+			expect(turkish).toMatch(/Oran Yanlış alarm/);
+			expect(turkish).not.toContain("OranYanlış");
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("names a configured sensitivity in the reader's language, not the JSON marker", () => {
+		const fromConfig = { ...report, sensitivity: "(from config)" };
+		expect(formatTable(fromConfig)).toContain("Sensitivity: (from config)");
+		expect(JSON.parse(formatReport(fromConfig, "json")).sensitivity).toBe("(from config)");
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			expect(formatTable(fromConfig)).toContain("Hassasiyet: (yapılandırmadan)");
 		} finally {
 			vi.unstubAllEnvs();
 		}

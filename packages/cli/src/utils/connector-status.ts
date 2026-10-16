@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolvePath, VERSION } from "@singularityrd/aidr-core";
+import { ct } from "../i18n/index.js";
 import { type MachineHookState, machineHookStatus } from "./machine-hooks.js";
 
 /**
@@ -82,7 +83,7 @@ function unavailableStatus(
 	id: ConnectorStatus["id"],
 	label: string,
 	evidence: string[],
-	detail = "AIDR could not read the host registration; installation state is unknown",
+	detail = ct("conn.unavailable"),
 ): ConnectorStatus {
 	return {
 		id,
@@ -90,7 +91,7 @@ function unavailableStatus(
 		state: "unavailable",
 		detail,
 		evidence,
-		remedy: "Check the file permissions and rerun 'aidr status' as the host user",
+		remedy: ct("conn.unavailableRemedy"),
 	};
 }
 
@@ -109,7 +110,10 @@ function machinePolicyStatus(
 		id,
 		label,
 		state: "installed",
-		detail: `AIDR hooks deployed by machine policy in ${machine.path}${machine.otherHooksLocked ? " (only managed hooks run)" : ""}; users cannot disable them; host execution unverified`,
+		detail: ct("conn.machinePolicy", {
+			path: machine.path,
+			locked: machine.otherHooksLocked ? ct("conn.machinePolicyLocked") : "",
+		}),
 		evidence: [machine.path],
 	};
 }
@@ -153,7 +157,7 @@ function detectClaudeCode(home: string, machine?: MachineHookState): ConnectorSt
 			id: "claude-code",
 			label: "Claude Code",
 			state: "installed",
-			detail: "AIDR plugin enabled or PreToolUse handler registered; host execution unverified",
+			detail: ct("conn.claude.installed"),
 			evidence,
 		};
 	}
@@ -163,10 +167,9 @@ function detectClaudeCode(home: string, machine?: MachineHookState): ConnectorSt
 			id: "claude-code",
 			label: "Claude Code",
 			state: "runtime_present_not_installed",
-			detail: "~/.claude/settings.json exists but does not reference AIDR",
+			detail: ct("conn.claude.present"),
 			evidence,
-			remedy:
-				"Verify the publisher-signed release bundle before extracting the Claude plugin, add the extracted directory as a marketplace, then install aidr@aidr",
+			remedy: ct("conn.claude.presentRemedy"),
 		};
 	}
 
@@ -174,9 +177,9 @@ function detectClaudeCode(home: string, machine?: MachineHookState): ConnectorSt
 		id: "claude-code",
 		label: "Claude Code",
 		state: "not_detected",
-		detail: "no ~/.claude/settings.json found",
+		detail: ct("conn.claude.none"),
 		evidence,
-		remedy: "Install the AIDR plugin from the Claude Code marketplace",
+		remedy: ct("conn.claude.noneRemedy"),
 	};
 }
 
@@ -213,7 +216,7 @@ function detectEditor(
 			id,
 			label,
 			state: "installed",
-			detail: `extension package found: ${hits.join(", ")}; activation and hook execution unverified`,
+			detail: ct("conn.editor.installed", { packages: hits.join(", ") }),
 			evidence,
 		};
 	}
@@ -222,17 +225,16 @@ function detectEditor(
 			id,
 			label,
 			state: "runtime_present_not_installed",
-			detail: `${label} config directory exists but no AIDR extension was found`,
+			detail: ct("conn.editor.present", { label }),
 			evidence,
-			remedy:
-				"Install the VSIX, then run 'Singularity AIDR: Enable protection' from the command palette",
+			remedy: ct("conn.editor.presentRemedy"),
 		};
 	}
 	return {
 		id,
 		label,
 		state: "not_detected",
-		detail: `no ${label} configuration directory found`,
+		detail: ct("conn.editor.none", { label }),
 		evidence,
 	};
 }
@@ -265,14 +267,11 @@ function detectOpenClaw(home: string): ConnectorStatus {
 			id: "openclaw",
 			label: "OpenClaw",
 			state: enabled ? "installed" : "installed_but_degraded",
-			detail: enabled
-				? "AIDR plugin enabled in ~/.openclaw/openclaw.json; host execution unverified"
-				: "AIDR plugin is registered but disabled by the OpenClaw plugin policy",
+			detail: enabled ? ct("conn.openclaw.installed") : ct("conn.openclaw.disabled"),
 			evidence,
 			...(!enabled
 				? {
-						remedy:
-							"Enable aidr-openclaw in plugins.entries and permit it in the OpenClaw allow/deny policy",
+						remedy: ct("conn.openclaw.disabledRemedy"),
 					}
 				: {}),
 		};
@@ -282,16 +281,16 @@ function detectOpenClaw(home: string): ConnectorStatus {
 			id: "openclaw",
 			label: "OpenClaw",
 			state: "runtime_present_not_installed",
-			detail: "~/.openclaw/openclaw.json exists but does not list AIDR",
+			detail: ct("conn.openclaw.present"),
 			evidence,
-			remedy: `Install the approved version: openclaw plugins install npm:@singularityrd/aidr-openclaw@${VERSION} (${VERSION} matches this CLI; confirm it against the approved release record)`,
+			remedy: ct("conn.openclaw.presentRemedy", { version: VERSION }),
 		};
 	}
 	return {
 		id: "openclaw",
 		label: "OpenClaw",
 		state: "not_detected",
-		detail: "no ~/.openclaw/openclaw.json found",
+		detail: ct("conn.openclaw.none"),
 		evidence,
 	};
 }
@@ -331,7 +330,7 @@ function detectOpenCode(home: string, env: NodeJS.ProcessEnv): ConnectorStatus {
 			id: "opencode",
 			label: "OpenCode",
 			state: "installed",
-			detail: "AIDR npm plugin is listed in OpenCode config; host execution unverified",
+			detail: ct("conn.opencode.npm"),
 			evidence,
 		};
 	}
@@ -357,7 +356,7 @@ function detectOpenCode(home: string, env: NodeJS.ProcessEnv): ConnectorStatus {
 			id: "opencode",
 			label: "OpenCode",
 			state: "installed",
-			detail: `AIDR local plugin file found: ${localHits.join(", ")}; host execution unverified`,
+			detail: ct("conn.opencode.local", { files: localHits.join(", ") }),
 			evidence,
 		};
 	}
@@ -365,12 +364,9 @@ function detectOpenCode(home: string, env: NodeJS.ProcessEnv): ConnectorStatus {
 		id: "opencode",
 		label: "OpenCode",
 		state: existsSync(configDir) ? "runtime_present_not_installed" : "not_detected",
-		detail: existsSync(configDir)
-			? "OpenCode config contains no registered AIDR plugin"
-			: "no OpenCode config directory found",
+		detail: existsSync(configDir) ? ct("conn.opencode.present") : ct("conn.opencode.none"),
 		evidence,
-		remedy:
-			"Add the approved @singularityrd/aidr-opencode version to package.json and register it in opencode.json",
+		remedy: ct("conn.opencode.remedy"),
 	};
 }
 
@@ -402,8 +398,7 @@ function detectCodex(home: string, machine?: MachineHookState): ConnectorStatus 
 				id: "codex",
 				label: "Codex",
 				state: "installed",
-				detail:
-					"AIDR PreToolUse handler registered in ~/.codex/config.toml; host trust and execution unverified",
+				detail: ct("conn.codex.toml"),
 				evidence,
 			};
 		}
@@ -412,11 +407,9 @@ function detectCodex(home: string, machine?: MachineHookState): ConnectorStatus 
 				id: "codex",
 				label: "Codex",
 				state: "installed_but_degraded",
-				detail:
-					"config.toml uses a lower-case hooks.pre_tool_use table, which Codex parses and then IGNORES - the hook will never run",
+				detail: ct("conn.codex.lowercase"),
 				evidence,
-				remedy:
-					"Rename the table to [[hooks.PreToolUse]] with a nested [[hooks.PreToolUse.hooks]] handler",
+				remedy: ct("conn.codex.lowercaseRemedy"),
 			};
 		}
 	}
@@ -442,8 +435,7 @@ function detectCodex(home: string, machine?: MachineHookState): ConnectorStatus 
 			id: "codex",
 			label: "Codex",
 			state: "installed",
-			detail:
-				"AIDR PreToolUse handler registered in ~/.codex/hooks.json; host trust and execution unverified",
+			detail: ct("conn.codex.json"),
 			evidence,
 		};
 	}
@@ -452,16 +444,16 @@ function detectCodex(home: string, machine?: MachineHookState): ConnectorStatus 
 			id: "codex",
 			label: "Codex",
 			state: "runtime_present_not_installed",
-			detail: "Codex directory exists but registers no AIDR hook",
+			detail: ct("conn.codex.present"),
 			evidence,
-			remedy: "Add [[hooks.PreToolUse]] with a command handler pointing at aidr-codex-hook",
+			remedy: ct("conn.codex.presentRemedy"),
 		};
 	}
 	return {
 		id: "codex",
 		label: "Codex",
 		state: "not_detected",
-		detail: "no ~/.codex configuration found",
+		detail: ct("conn.codex.none"),
 		evidence,
 	};
 }

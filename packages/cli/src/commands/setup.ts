@@ -100,6 +100,7 @@ const ACTION_TEXT: Record<HostInstallResult["action"], CliMessageKey> = {
 	manual: "setup.action.manual",
 	failed: "setup.action.failed",
 	skipped_not_detected: "setup.action.notDetected",
+	skipped_not_selected: "setup.action.notSelected",
 };
 
 /** Parse `--host a,b`; unknown ids are an error, never silently ignored. */
@@ -114,7 +115,10 @@ export function parseHosts(value: string | undefined): HostId[] | undefined {
 	const unknown = hosts.filter((entry) => !(HOST_IDS as readonly string[]).includes(entry));
 	if (unknown.length > 0 || hosts.length === 0) {
 		throw new Error(
-			`Unknown host ${unknown.join(", ") || "(none)"}. Valid hosts: ${HOST_IDS.join(", ")}.`,
+			ct("setup.unknownHost", {
+				hosts: unknown.join(", ") || ct("setup.noneGiven"),
+				valid: HOST_IDS.join(", "),
+			}),
 		);
 	}
 	return [...new Set(hosts)] as HostId[];
@@ -123,18 +127,26 @@ export function parseHosts(value: string | undefined): HostId[] | undefined {
 function printHostResults(results: HostInstallResult[]): void {
 	console.log(ct("setup.connectors"));
 	for (const entry of results) {
-		console.log(`  ${entry.label.padEnd(12)} ${ct(ACTION_TEXT[entry.action])} — ${entry.detail}`);
+		const detail = entry.detail ? ` — ${entry.detail}` : "";
+		console.log(`  ${entry.label.padEnd(12)} ${ct(ACTION_TEXT[entry.action])}${detail}`);
 		for (const change of entry.changes) console.log(`               ${change}`);
 	}
 }
 
-/** Run an operator confirmation; on refusal report it, set a failing exit code and return false. */
+/**
+ * Run an operator confirmation; on refusal report it, set a failing exit code
+ * and return false. Without a terminal the prompt was never shown, so the
+ * refusal repeats it and says how to confirm: an interactive terminal, or
+ * AIDR_OPERATOR_NONINTERACTIVE=1 with --yes.
+ */
 async function confirmed(
 	prompt: string[],
 	word: string,
 	options: SetupOptions,
 	deps: OperatorCommandDeps,
 ): Promise<boolean> {
+	const streams = deps.streams ?? { input: process.stdin, output: process.stderr };
+	const interactive = !options.yes && streams.input.isTTY === true && streams.output.isTTY === true;
 	try {
 		await confirmOperatorAction({
 			prompt: prompt.join("\n"),
@@ -145,9 +157,14 @@ async function confirmed(
 		});
 		return true;
 	} catch (error) {
-		console.error(
-			`${error instanceof OperatorConfirmationError ? error.message : String(error)} ${ct("setup.nothingChanged")}`,
-		);
+		if (!interactive && error instanceof OperatorConfirmationError) {
+			console.error(prompt.join("\n"));
+			console.error(ct("setup.confirmRequired", { word }));
+		} else {
+			console.error(
+				`${error instanceof OperatorConfirmationError ? error.message : String(error)} ${ct("setup.nothingChanged")}`,
+			);
+		}
 		process.exitCode = 1;
 		return false;
 	}
@@ -157,15 +174,7 @@ function confirmForce(options: SetupOptions, deps: OperatorCommandDeps): Promise
 	// --force replaces the existing configuration and credential and resets
 	// the recorded hook state, so it is an operator-only action confirmed like
 	// `aidr allowlist add`. A plain `aidr setup` reuses the config unchanged.
-	return confirmed(
-		[
-			"Singularity AIDR — forced re-setup",
-			"The existing local configuration and CLI credential will be replaced.",
-		],
-		"replace",
-		options,
-		deps,
-	);
+	return confirmed([ct("setup.force.title"), ct("setup.force.effect")], "replace", options, deps);
 }
 
 /**
@@ -180,9 +189,9 @@ async function confirmArtifacts(
 	releaseKey: SetupReleaseKey | null,
 ): Promise<boolean> {
 	const artifacts = [
-		options.claudePluginDir && `  Claude Code plugin directory: ${options.claudePluginDir}`,
-		options.cursorVsix && `  Cursor extension: ${options.cursorVsix}`,
-		options.vscodeVsix && `  VS Code extension: ${options.vscodeVsix}`,
+		options.claudePluginDir && ct("setup.artifacts.claude", { path: options.claudePluginDir }),
+		options.cursorVsix && ct("setup.artifacts.cursor", { path: options.cursorVsix }),
+		options.vscodeVsix && ct("setup.artifacts.vscode", { path: options.vscodeVsix }),
 		// A release key decides which signer the hooks trust: an explicit one is
 		// an operator action. The installer's own key needs no confirmation.
 		options.releaseKey &&
@@ -194,11 +203,7 @@ async function confirmArtifacts(
 	].filter((line): line is string => typeof line === "string");
 	if (artifacts.length === 0) return true;
 	return confirmed(
-		[
-			"Singularity AIDR — install connector artifacts",
-			...artifacts,
-			"Install only artifacts you verified against the signed release bundle.",
-		],
+		[ct("setup.artifacts.title"), ...artifacts, ct("setup.artifacts.verifyOnly")],
 		"install",
 		options,
 		deps,
@@ -623,7 +628,11 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 		releaseKey = setupReleaseKey(options, standaloneRoot);
 	} catch (error) {
 		console.error(
-			`Setup failed: ${ct("releaseKey.invalid", { reason: error instanceof Error ? error.message : String(error) })}`,
+			ct("setup.failed", {
+				reason: ct("releaseKey.invalid", {
+					reason: error instanceof Error ? error.message : String(error),
+				}),
+			}),
 		);
 		process.exitCode = 1;
 		return;
@@ -661,17 +670,13 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 				secretStoreSelection: options.secretStore,
 			});
 			// The reused branch must stay distinct (config.outcome === "reused"):
-			// a rerun reports that no changes were needed, never a fresh success.
+			// a rerun reports, once, that no changes were needed, never a fresh success.
 			console.error(
 				config.outcome === "reused"
 					? `✓ ${ct("setup.configReused", { path: config.path })}`
 					: `✓ ${ct("setup.configCreated", { path: config.path })}`,
 			);
 			if (config.warning) console.warn(`⚠ ${config.warning}`);
-			if (config.outcome === "reused") {
-				console.log(`\n${ct("setup.rerunNoChanges")}`);
-				console.log(`  ${ct("setup.rerunConfig", { path: config.path })}`);
-			}
 			const packet = applyCustomerPacket(home, discovery, false);
 			if (await applyMachinePolicy(env, options, deps, false)) {
 				discardHandoffForMachinePolicy(home);
@@ -758,9 +763,20 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 		const pending = results.filter((entry) => entry.followUp.length > 0);
 		// A host that was found (or asked for) but has no working connector after
 		// this run: its tool calls are not inspected, so setup did not succeed.
+		// A host left out by --host is the operator's choice, not a setup failure.
 		const unprotected = results.filter(
-			(entry) => entry.action !== "skipped_not_detected" && entry.state !== "installed",
+			(entry) =>
+				entry.action !== "skipped_not_detected" &&
+				entry.action !== "skipped_not_selected" &&
+				entry.state !== "installed",
 		);
+		// Nothing failed and no AI tool is there yet: a distinct code (dry run or
+		// not), so the installers can say "install an AI tool, then run aidr
+		// setup" instead of reporting a setup failure.
+		const nothingFound =
+			failed.length === 0 &&
+			unprotected.length === 0 &&
+			results.every((entry) => entry.action === "skipped_not_detected");
 		console.log("");
 		if (options.dryRun) {
 			console.log(ct("setup.dryRunDone"));
@@ -784,22 +800,28 @@ async function setupCommand(options: SetupOptions = {}, deps: SetupDeps = {}): P
 			console.log(ct("setup.nextSteps"));
 			for (const entry of pending) for (const line of entry.followUp) console.log(line);
 		}
+		// Restart-and-verify only makes sense when a connector is registered.
+		const next = options.dryRun
+			? ct("setup.dryRunNext")
+			: active.length > 0
+				? ct("setup.verifyNext")
+				: null;
+		if (next) {
+			console.log("");
+			console.log(next);
+		}
 		console.log("");
-		console.log(options.dryRun ? ct("setup.dryRunNext") : ct("setup.verifyNext"));
-		console.log("");
-		if (!options.dryRun && (failed.length > 0 || unprotected.length > 0 || active.length === 0)) {
-			// Nothing failed and no AI tool is there yet: a distinct code, so the
-			// installers can say "install an AI tool, then run aidr setup" instead
-			// of reporting a setup failure.
-			const nothingFound =
-				failed.length === 0 &&
-				unprotected.length === 0 &&
-				results.every((entry) => entry.action === "skipped_not_detected");
-			process.exitCode = nothingFound ? SETUP_EXIT_NO_AI_TOOL : 1;
+		if (nothingFound) {
+			process.exitCode = SETUP_EXIT_NO_AI_TOOL;
+		} else if (
+			!options.dryRun &&
+			(failed.length > 0 || unprotected.length > 0 || active.length === 0)
+		) {
+			process.exitCode = 1;
 		}
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error(`Setup failed: ${message}`);
+		console.error(ct("setup.failed", { reason: message }));
 		process.exit(1);
 	}
 }

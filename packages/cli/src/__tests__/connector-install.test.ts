@@ -18,7 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type ConnectorDeps,
 	type HostCommandRunner,
@@ -279,8 +279,28 @@ describe("aidr setup installs the connector of every detected host (CON-13)", ()
 		writeJson(join(f.home, ".config", "opencode", "opencode.json"), {});
 		const results = installConnectors(deps(f), { hosts: ["codex"] });
 		expect(results.find((r) => r.host === "codex")?.action).toBe("installed");
-		expect(results.find((r) => r.host === "opencode")?.action).toBe("skipped_not_detected");
+		// OpenCode is present but left out by --host: "not selected", never "not detected".
+		const opencode = results.find((r) => r.host === "opencode");
+		expect(opencode?.action).toBe("skipped_not_selected");
+		expect(opencode?.detail).toBe("");
+		expect(results.find((r) => r.host === "openclaw")?.action).toBe("skipped_not_detected");
 		expect(existsSync(join(f.home, ".config", "opencode", "package.json"))).toBe(false);
+	});
+
+	it("reports host details and follow-up steps in Turkish under AIDR_LOCALE=tr", () => {
+		const f = fixture([]);
+		mkdirSync(join(f.home, ".codex"), { recursive: true });
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			const codex = installConnectors(deps(f), { hosts: ["codex"] }).find(
+				(r) => r.host === "codex",
+			);
+			expect(codex?.action).toBe("manual");
+			expect(codex?.detail).toContain("PATH üzerinde değil");
+			expect(codex?.followUp.join("\n")).toContain("özel kayıt deposundan kurun");
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 });
 

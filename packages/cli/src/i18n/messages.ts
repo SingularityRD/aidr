@@ -247,10 +247,8 @@ export const CLI_EN = {
 		"No supported AI tool found in this home directory (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw).",
 	"setup.skipConfig": "Skipping config creation (dry run).",
 	"setup.creatingConfig": "Creating config...",
-	"setup.configReused": "Config already present: {path}",
+	"setup.configReused": "Configuration already in place — no changes were needed: {path}",
 	"setup.configCreated": "Config: {path}",
-	"setup.rerunNoChanges": "Configuration already in place — no changes were needed to it.",
-	"setup.rerunConfig": "Existing config reused: {path}",
 	"setup.loadingRules": "Loading threat rules...",
 	"setup.noRules":
 		"No threat rules could be loaded. Detection would not be active - refusing to report success.",
@@ -337,7 +335,7 @@ export const CLI_EN = {
 		"Customer packet: refused ({reason}); not used. Local detection is not affected. Ask Singularity R&D for a new installer.",
 	"setup.complete": "✅ Setup complete!",
 	"setup.registeredFor": "Registered for: {hosts} (not yet verified inside the AI tool).",
-	"setup.incomplete": "⚠ Setup finished, but Protection is NOT yet active for every AI tool:",
+	"setup.incomplete": "⚠ Setup finished, but protection is NOT yet active for every AI tool:",
 	"setup.incompleteDetail":
 		"tool calls of an AI tool without a registered connector are NOT inspected.",
 	"setup.unprotected": "Not protected: {hosts}",
@@ -465,6 +463,358 @@ export const CLI_EN = {
 		"The AIDR Codex hook is deployed by machine policy; Codex trusts it without review.",
 	"doctor.codexTrustFix":
 		"Fix: open Codex, run /hooks and trust the AIDR hooks, or have an administrator run 'aidr machine-hooks install' so Codex trusts them by policy.",
+	"setup.unknownHost": "Unknown host {hosts}. Valid hosts: {valid}.",
+	"setup.noneGiven": "(none)",
+	"setup.failed": "Setup failed: {reason}",
+	"setup.action.notSelected": "detected — not selected",
+	"setup.confirmRequired":
+		"This needs operator confirmation: run aidr setup in an interactive terminal and type '{word}', or for automation set AIDR_OPERATOR_NONINTERACTIVE=1 and pass --yes. Nothing was changed.",
+	"setup.force.title": "Singularity AIDR — forced re-setup",
+	"setup.force.effect": "The existing local configuration and CLI credential will be replaced.",
+	"setup.artifacts.title": "Singularity AIDR — install connector artifacts",
+	"setup.artifacts.claude": "  Claude Code plugin directory: {path}",
+	"setup.artifacts.cursor": "  Cursor extension: {path}",
+	"setup.artifacts.vscode": "  VS Code extension: {path}",
+	"setup.artifacts.verifyOnly":
+		"Install only artifacts you verified against the signed release bundle.",
+
+	"conn.unavailable": "AIDR could not read the host registration; installation state is unknown",
+	"conn.unavailableRemedy": "Check the file permissions and rerun 'aidr status' as the host user",
+	"conn.machinePolicy":
+		"AIDR hooks deployed by machine policy in {path}{locked}; users cannot disable them; host execution unverified",
+	"conn.machinePolicyLocked": " (only managed hooks run)",
+	"conn.claude.installed":
+		"AIDR plugin enabled or PreToolUse handler registered; host execution unverified",
+	"conn.claude.present": "~/.claude/settings.json exists but does not reference AIDR",
+	"conn.claude.presentRemedy":
+		"Verify the publisher-signed release bundle before extracting the Claude plugin, add the extracted directory as a marketplace, then install aidr@aidr",
+	"conn.claude.none": "no ~/.claude/settings.json found",
+	"conn.claude.noneRemedy": "Install the AIDR plugin from the Claude Code marketplace",
+	"conn.editor.installed":
+		"extension package found: {packages}; activation and hook execution unverified",
+	"conn.editor.present": "{label} config directory exists but no AIDR extension was found",
+	"conn.editor.presentRemedy":
+		"Install the VSIX, then run 'Singularity AIDR: Enable protection' from the command palette",
+	"conn.editor.none": "no {label} configuration directory found",
+	"conn.openclaw.installed":
+		"AIDR plugin enabled in ~/.openclaw/openclaw.json; host execution unverified",
+	"conn.openclaw.disabled": "AIDR plugin is registered but disabled by the OpenClaw plugin policy",
+	"conn.openclaw.disabledRemedy":
+		"Enable aidr-openclaw in plugins.entries and permit it in the OpenClaw allow/deny policy",
+	"conn.openclaw.present": "~/.openclaw/openclaw.json exists but does not list AIDR",
+	"conn.openclaw.presentRemedy":
+		"Install the approved version: openclaw plugins install npm:@singularityrd/aidr-openclaw@{version} ({version} matches this CLI; confirm it against the approved release record)",
+	"conn.openclaw.none": "no ~/.openclaw/openclaw.json found",
+	"conn.opencode.npm": "AIDR npm plugin is listed in OpenCode config; host execution unverified",
+	"conn.opencode.local": "AIDR local plugin file found: {files}; host execution unverified",
+	"conn.opencode.present": "OpenCode config contains no registered AIDR plugin",
+	"conn.opencode.none": "no OpenCode config directory found",
+	"conn.opencode.remedy":
+		"Add the approved @singularityrd/aidr-opencode version to package.json and register it in opencode.json",
+	"conn.codex.toml":
+		"AIDR PreToolUse handler registered in ~/.codex/config.toml; host trust and execution unverified",
+	"conn.codex.lowercase":
+		"config.toml uses a lower-case hooks.pre_tool_use table, which Codex parses and then IGNORES - the hook will never run",
+	"conn.codex.lowercaseRemedy":
+		"Rename the table to [[hooks.PreToolUse]] with a nested [[hooks.PreToolUse.hooks]] handler",
+	"conn.codex.json":
+		"AIDR PreToolUse handler registered in ~/.codex/hooks.json; host trust and execution unverified",
+	"conn.codex.present": "Codex directory exists but registers no AIDR hook",
+	"conn.codex.presentRemedy":
+		"Add [[hooks.PreToolUse]] with a command handler pointing at aidr-codex-hook",
+	"conn.codex.none": "no ~/.codex configuration found",
+	"conn.state.unavailable": "unavailable",
+	"conn.state.runtime_present_not_installed": "runtime_present_not_installed",
+	"conn.state.not_detected": "not_detected",
+	"conn.state.installed_but_degraded": "installed_but_degraded",
+
+	"install.machinePolicy":
+		"AIDR hooks are deployed for every user by machine policy ({path}); the user configuration was left as is.",
+	"install.bundleFailed":
+		"the installed AIDR bundle at {root} failed verification: {problems}. Reinstall it.",
+	"install.probeDecision": "returned {decision} for the deny canary ({detail})",
+	"install.probeBenign": "denied the harmless 'ls' as well ({detail})",
+	"install.backedUp": "backed up {path} to {backup}",
+	"install.wrote": "wrote {path}",
+	"install.ran": "ran: {command}",
+	"install.wouldRun": "would run: {command}",
+	"install.notOnPath": "the {cli} CLI is not on PATH.",
+	"install.notAFile": "{path} is not a file.",
+	"install.notObject": "{path} has a '{field}' value that is not an object; it was left untouched.",
+	"install.notArray": "{path} has a '{field}' value that is not an array; it was left untouched.",
+	"install.codex.tomlRegistered":
+		"AIDR hook already registered in ~/.codex/config.toml; left as is.",
+	"install.codex.byHand":
+		"  Codex: register aidr-codex-hook by hand as shown in packages/codex/README.md.",
+	"install.codex.trust1":
+		"  Codex: review and trust the three AIDR hooks with /hooks. Codex drops an untrusted",
+	"install.codex.trust2":
+		"         hook silently (fails open), so protection starts only after trust.",
+	"install.codex.jsonRegistered": "AIDR hooks already registered in ~/.codex/hooks.json.",
+	"install.codex.notOnPath":
+		"{hook} is not on PATH, so registering it would leave Codex running a missing hook (Codex fails open).",
+	"install.codex.installPackage":
+		"  Codex: install @singularityrd/aidr-codex@{version} from the private registry, then rerun 'aidr setup'.",
+	"install.codex.wouldRegister":
+		"would register {hook} ({binary}) for PreToolUse, UserPromptSubmit and PostToolUse in {path}.",
+	"install.codex.probeFailed": "the bundle's Codex hook {reason}; registration unchanged.",
+	"install.codex.registered": "registered {hook} in {path}.",
+	"install.codex.notSeen": "wrote {path} but Codex detection does not see the hook ({detail}).",
+	"install.opencode.jsonc":
+		"OpenCode is configured through opencode.jsonc, which AIDR does not rewrite (its comments would be lost).",
+	"install.opencode.jsoncStep1": '  OpenCode: add "{package}" to "plugin" in opencode.jsonc and',
+	"install.opencode.jsoncStep2": "            {dependencies} to {path}.",
+	"install.opencode.follow1":
+		"  OpenCode: it installs the package at its next start; the private registry must be reachable",
+	"install.opencode.follow2":
+		"            (docs/package-installation.md). Then run a host-side deny canary.",
+	"install.opencode.already": "{package}@{version} already registered.",
+	"install.opencode.wouldPin":
+		"would pin {package}@{version} in {manifest} and list it in {config}.",
+	"install.opencode.registered": "registered {package}@{version}.",
+	"install.opencode.notSeen":
+		"wrote the OpenCode config but detection does not see the plugin ({detail}).",
+	"install.openclaw.already": "AIDR plugin already enabled in ~/.openclaw/openclaw.json.",
+	"install.openclaw.enablePolicy": "enable aidr-openclaw in the OpenClaw plugin policy",
+	"install.openclaw.thenCanary": "            then run a host-side deny canary.",
+	"install.openclaw.installed": "installed {spec}.",
+	"install.openclaw.canary": "  OpenClaw: run a host-side deny canary.",
+	"install.openclaw.notRegistered": "openclaw plugins install did not register AIDR ({reason}).",
+	"install.editor.enable":
+		"  {label}: run 'Singularity AIDR: Enable protection' from the command palette.",
+	"install.editor.passVsix": "{detail}; pass --{host}-vsix <file> to update it.",
+	"install.editor.noVsix": "no verified {artifact} was given (--{host}-vsix <file>).",
+	"install.editor.fromBundle":
+		"  {label}: {cli} --install-extension ./{artifact} (from the verified release bundle)",
+	"install.editor.installed": "installed {extension} from {path}.",
+	"install.editor.notRegistered": "the extension install did not register AIDR ({reason}).",
+	"install.claude.manual1":
+		"  Claude Code:  verify the publisher-signed release bundle and extract aidr-claude-plugin-<version>.tar.gz,",
+	"install.claude.manual2":
+		"                provision the release Ed25519 public key in ~/.singularity-aidr/config.json, then run",
+	"install.claude.manual3":
+		"                aidr setup --claude-plugin-dir /absolute/path/to/extracted/aidr-claude-plugin",
+	"install.claude.manual4":
+		"                (or from the Claude Code prompt: /plugin marketplace add <dir> and /plugin install aidr@aidr).",
+	"install.claude.noDir": "no verified plugin directory was given (--claude-plugin-dir <dir>).",
+	"install.claude.notPlugin":
+		"{dir} is not an extracted AIDR Claude Code plugin (no .claude-plugin manifest).",
+	"install.claude.cmdFailed": "claude {args} failed ({reason}).",
+	"install.claude.installed": "installed aidr@aidr from the verified plugin directory.",
+	"install.claude.restartPlugin":
+		"  Claude Code: restart it and confirm the plugin is active (/plugin).",
+	"install.claude.notRegistered": "the plugin install did not register AIDR ({detail}).",
+	"install.claude.disableAll": "Claude Code has disableAllHooks set, so no hook would run.",
+	"install.claude.disableAllStep":
+		"  Claude Code: remove \"disableAllHooks\" from ~/.claude/settings.json, then rerun 'aidr setup'.",
+	"install.claude.pluginEnabled":
+		"the AIDR Claude Code plugin is enabled; the standalone hooks were not added (they would inspect every call twice).",
+	"install.claude.standaloneAlready": "AIDR hooks from {root} already registered.",
+	"install.claude.wouldRegister": "would register the hooks of {root} in {path}.",
+	"install.claude.probeFailed": "the bundle's PreToolUse hook {reason}; registration unchanged.",
+	"install.claude.registered": "registered the AIDR hooks from {root} (local deny canary passed).",
+	"install.claude.notSeen":
+		"wrote {path} but Claude Code detection does not see the hook ({detail}).",
+	"install.claude.restartHooks":
+		"  Claude Code: restart it so it loads the AIDR hooks, then run 'aidr verify'.",
+
+	"remove.codex.byHand":
+		"  Codex: remove the aidr-codex-hook handlers from ~/.codex/hooks.json / config.toml by hand.",
+	"remove.codex.none": "no AIDR hook registered.",
+	"remove.codex.would": "would remove {count} aidr-codex-hook handler(s).",
+	"remove.codex.removed": "removed {count} aidr-codex-hook handler(s).",
+	"remove.codex.package":
+		"  Codex: the global @singularityrd/aidr-codex package is left installed; remove it with npm uninstall --global @singularityrd/aidr-codex.",
+	"remove.opencode.none": "no AIDR plugin registered.",
+	"remove.opencode.byHand":
+		'  OpenCode: remove "{package}" from opencode.json "plugin" and package.json by hand.',
+	"remove.would": "would remove AIDR from {files}.",
+	"remove.removedFrom": "removed AIDR from {files}.",
+	"remove.deleted": "deleted {path}",
+	"remove.stillRegistered": "AIDR is still registered after the host CLI ran{reason}.",
+	"remove.hostRemoved": "the host CLI removed AIDR.",
+	"remove.claude.none": "no AIDR marketplace plugin enabled.",
+	"remove.claude.manual":
+		"  Claude Code: /plugin uninstall aidr@aidr and /plugin marketplace remove aidr",
+
+	"uninstall.title": "Singularity AIDR — uninstall",
+	"uninstall.titleHooks": "Singularity AIDR — uninstall (managed hooks only)",
+	"uninstall.targetHome": "Target home: {home}",
+	"uninstall.refused": "Refused: {reason}",
+	"uninstall.refusedTarget": "the target could not be verified.",
+	"uninstall.refusedInstall": "the installation could not be verified.",
+	"uninstall.hooksRemoved": "Claude Code managed hooks: removed {count} (backup: {backup}).",
+	"uninstall.hooksRefused": "Claude Code managed hooks: NOT removed — {reason}",
+	"uninstall.refusedWord": "refused",
+	"uninstall.hooksWould": "Claude Code managed hooks: would remove {count}.",
+	"uninstall.action.removed": "removed",
+	"uninstall.action.nothingToRemove": "nothing to remove",
+	"uninstall.action.wouldRemove": "would remove",
+	"uninstall.data.deleted":
+		"deleted {path} (configuration, allowlist, audit log, approvals, quarantine, keys)",
+	"uninstall.data.kept": "kept {path}{reason}",
+	"uninstall.data.wouldDelete": "would delete {path} and the AIDR vault items",
+	"uninstall.data.absent": "{path} does not exist",
+	"uninstall.data.failed": "FAILED to delete {path}: {reason}",
+	"uninstall.unknownError": "unknown error",
+	"uninstall.localData": "Local data: {line}",
+	"uninstall.vaultRemoved": "Vault items removed: {items}",
+	"uninstall.vaultFailed": "Vault items that could NOT be removed: {items}",
+	"uninstall.byHand": "Still to do by hand:",
+	"uninstall.dryRun": "Dry run: nothing was changed.",
+	"uninstall.incomplete":
+		"Uninstall is INCOMPLETE: see the lines above. AIDR may still inspect some agents.",
+	"uninstall.removed": "AIDR was removed. Restart the agent hosts so they unload it.",
+	"uninstall.browserGuard":
+		"Browser Guard is a browser extension: remove it from the browser (or the enterprise policy) separately.",
+	"uninstall.nothing": "Nothing to remove.",
+	"uninstall.notRemoved": "{error} Nothing was removed.",
+	"uninstall.receiptVerified":
+		"Installation receipt verified: {path} (connector {connector}, digest {digest}…)",
+	"uninstall.reasonCode": "Reason code: {code}",
+	"uninstall.noConfigChanged": "No configuration was changed.",
+	"uninstall.noManagedHooks":
+		"No AIDR-managed hook entries found; agent settings were left untouched.",
+	"uninstall.leftAlone":
+		"Left alone: {entries} hook {entryWord} and {hooks} non-AIDR hook registration(s).",
+	"uninstall.entry": "entry",
+	"uninstall.entries": "entries",
+	"uninstall.removedCount": "Removed {count} AIDR-managed hook registration(s):",
+	"uninstall.noCommand": "(no command recorded)",
+	"uninstall.emptyEvents": "Hook events left empty and therefore deleted: {events}",
+	"uninstall.backup": "Backup of the previous settings: {path}",
+	"uninstall.preserved":
+		"Preserved: AIDR policy/allowlist configuration, connector files, the installation receipt and every non-AIDR hook.",
+	"uninstall.credentialKept":
+		"The local CLI credential and its vault item are also preserved; use 'aidr config revoke-key' to remove that credential. Managed endpoint API keys are unchanged.",
+	"uninstall.notActive":
+		"Protection is NOT active for this agent now: AIDR no longer inspects its tool calls.",
+	"uninstall.reEnable":
+		"Re-enable it with 'aidr setup' and the connector install for your agent (docs/getting-started.md).",
+	"uninstall.remedy.receipt":
+		"Run 'aidr status' to see what is registered. A Claude Code marketplace install has no receipt: remove it with '/plugin uninstall aidr@aidr' and '/plugin marketplace remove aidr'. If AIDR was installed by hand or by an MDM, remove it with the same tool that installed it.",
+	"uninstall.remedy.settings":
+		"Repair or restore your agent settings file first; it was left untouched.",
+	"uninstall.remedy.default":
+		"Run 'aidr status' for the measured installation state before retrying.",
+	"uninstall.confirm.hooksTitle": "Singularity AIDR — uninstall the managed agent hooks",
+	"uninstall.confirm.hooksEffect": "AIDR will no longer inspect this agent's tool calls.",
+	"uninstall.confirm.removes":
+		"  Removes the AIDR connector from every agent host and the AIDR-managed hooks.",
+	"uninstall.confirm.keeps": "  Keeps ~/.singularity-aidr and the AIDR vault items (--keep-data).",
+	"uninstall.confirm.deletes":
+		"  DELETES ~/.singularity-aidr (configuration, allowlist, audit log, approvals,\n  quarantined files, keys) and the AIDR items in the OS credential vault.",
+	"uninstall.confirm.effect": "AIDR will no longer inspect any agent's tool calls.",
+
+	"scan.usageTitle": "AIDR infrastructure and skill scan",
+	"scan.noTargets": "No targets given.",
+	"scan.usage": "Usage:",
+	"scan.usageFile": "  aidr scan --file targets.txt          # one URL per line",
+	"scan.usageSkill":
+		"  aidr scan --skill ~/.claude/skills/my-skill   # skill/plugin package (T01-T09)",
+	"scan.usageCode":
+		"  aidr scan --code .                     # model loading + secure-code rules, file:line",
+	"scan.options": "Options:",
+	"scan.optJson": "  --json             machine-readable output",
+	"scan.optAllowPublic": "  --allow-public     permit non-private targets (off by default)",
+	"scan.optTimeout": "  --timeout <ms>     per-request timeout (default 3000)",
+	"scan.optConcurrency": "  --concurrency <n>  parallel targets (default 4)",
+	"scan.optUpload":
+		"  --upload           send findings to the managed control plane (enrolled API key)",
+	"scan.dataset":
+		"Dataset: {fingerprints} fingerprints, {cves} CVEs (compiled from AI-Infra-Guard).",
+
+	"discover.localProcess": "local process",
+	"discover.project": " (project {project})",
+	"discover.noRiskHint": "No configured risk indicator; trust is not verified",
+	"discover.aigCategories": "    AIG categories: {categories}",
+	"discover.aigNone": "    AIG categories: none matched (not a safety verdict)",
+	"discover.secret":
+		"    Hardcoded secret: {location} {key} ({kind}) - move it to a secret store or an env reference",
+	"discover.header": "MCP discovery: {count} configured server(s)",
+	"discover.unreadable": "Unreadable or unsupported configuration: {path}",
+	"discover.coverage":
+		"Inventory coverage is {status}; malformed server entries not enumerated: {count}",
+	"discover.agents": "Agent environment: {hosts} detected; {count} finding(s)",
+	"discover.noAgentHost": "no agent host",
+	"discover.unreadableAgent": "Unreadable agent configuration: {path}",
+	"discover.uploaded": "Uploaded {count} MCP inventory finding(s) to the control plane.",
+	"discover.uploadedAgents":
+		"Uploaded {count} MCP inventory and agent environment finding(s) to the control plane.",
+	"discover.uploadFailed": "Upload failed: {reason}.",
+	"discover.queued": " {count} finding(s) remain queued and will be retried on the next delivery.",
+	"discover.nothingUploaded": " Nothing was uploaded.",
+
+	"privacy.unknownType": 'Unknown type "{type}". Valid types: {valid} (aliases: {aliases})',
+	"privacy.typesEmpty": "--types needs at least one type",
+	"privacy.badFailOn": '--fail-on must be none, any or secret (got "{value}")',
+	"privacy.notFound": "File not found: {path}",
+	"privacy.cannotRead": "Cannot read {path} ({code})",
+	"privacy.notRegular": "Not a regular file: {path}",
+	"privacy.tooLarge":
+		"Input is {size}; the privacy scan reads at most {max}. Split the file and scan the parts.",
+	"privacy.grew": "Input grew past {max} while reading; the privacy scan reads at most {max}.",
+	"privacy.stdinTooLarge":
+		"Standard input exceeds {max}; the privacy scan reads at most {max}. Split the input and scan the parts.",
+	"privacy.binary":
+		"Input looks binary (contains NUL bytes); the privacy scan inspects UTF-8 text only.",
+	"privacy.notUtf8": "Input is not valid UTF-8 text; the privacy scan inspects UTF-8 text only.",
+	"privacy.more": "(+{count} more)",
+	"privacy.header": "AIDR privacy scan: {source} ({bytes} bytes, local only)",
+	"privacy.noFindingsPartial": "No findings in the inspected part of the input.",
+	"privacy.noFindings": "No findings for the selected detectors.",
+	"privacy.colType": "TYPE",
+	"privacy.colCount": "COUNT",
+	"privacy.colLines": "LINES",
+	"privacy.findings":
+		"{count} finding(s). Values are never printed; use --mask for a redacted copy.",
+	"privacy.incomplete": "INCOMPLETE: part of the input was not inspected ({reasons}).",
+	"privacy.notClean": "This is not a clean result; findings above are a lower bound.",
+	"privacy.noInput":
+		"No input: pass a file path, or pipe text on standard input (aidr privacy scan - < file).",
+	"privacy.stdinSource": "standard input",
+	"privacy.refuseMask":
+		"Refusing to print a masked copy: the input was not fully inspected, so unmasked values could remain.",
+	"privacy.failed": "Privacy scan failed: {name}",
+
+	"coverage.badFormat": 'Unknown format "{format}". Use one of: {formats}.',
+	"coverage.noMapping":
+		"No rule set with a framework mapping was found at {path}. Reinstall or rebuild the CLI (its resources/threats directory ships {mapping}).",
+	"coverage.invalidMapping": "The framework mapping at {path} is invalid:\n  {errors}",
+	"coverage.noRules": "No detection rules loaded from {path}; there is no coverage to report.",
+	"coverage.mismatch":
+		"Warning: the framework mapping does not match the installed rules ({count} problem(s)):\n  {problems}",
+
+	"config.unreadable":
+		"Local configuration could not be read. Check its permissions, JSON and credential store.",
+	"config.notConfigured": "⚠️  AIDR not configured. Run 'aidr setup' first.",
+	"config.notSet": "(not set)",
+	"config.invalidPath": "Invalid configuration path.",
+	"config.secretArg":
+		"Secret values cannot be passed as command-line arguments. Rerun without the value argument to enter it at the hidden prompt.",
+	"config.setUsage": "⚠️  Usage: aidr config -s <key> <value> (secret values are prompted securely)",
+	"config.secretPrompt": "Secret value: ",
+	"config.secretReadFailed": "Could not read secret input.",
+	"config.secretInObject":
+		"Secret fields cannot be supplied inside object arguments. Set each secret field through its hidden prompt.",
+	"config.unknownField": "Invalid or unknown configuration field; no changes saved.",
+	"config.invalid": "Invalid runtime configuration; no changes saved.",
+	"config.invalidChoice": "  {key}: '{value}' is not a valid value. Valid values: {choices}.",
+	"config.unknownFieldOnly": "Unknown configuration field; no changes saved.",
+	"config.confirmTitle": "Singularity AIDR — change a protection setting",
+	"config.confirmEffect": "This change may weaken what AIDR inspects or blocks.",
+	"config.noChanges": "{error} No changes saved.",
+	"config.saveFailed":
+		"Configuration could not be saved. Check its permissions and credential store, then retry.",
+	"config.set": "✅ Set {key} = {value}",
+	"config.listTitle": "🛡️  AIDR Configuration",
+	"config.usage": "Usage:",
+	"config.usageGet": "  aidr config -g <key>       Get value",
+	"config.usageSet": "  aidr config -s <key> <val> Set non-secret value",
+	"config.usageSecret": "  aidr config -s <secret-key> Enter secret at hidden prompt",
+	"config.usageList": "  aidr config -l             List all",
+
+	"simulate.fromConfig": "(from config)",
 } as const;
 
 export type CliMessageKey = keyof typeof CLI_EN;
@@ -713,10 +1063,8 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 		"Bu ev dizininde desteklenen bir yapay zekâ aracı bulunamadı (Claude Code, Cursor, VS Code, Codex, OpenCode, OpenClaw).",
 	"setup.skipConfig": "Yapılandırma oluşturma atlandı (deneme).",
 	"setup.creatingConfig": "Yapılandırma oluşturuluyor...",
-	"setup.configReused": "Yapılandırma zaten var: {path}",
+	"setup.configReused": "Yapılandırma zaten hazır — değişiklik gerekmedi: {path}",
 	"setup.configCreated": "Yapılandırma: {path}",
-	"setup.rerunNoChanges": "Yapılandırma zaten hazır — değişiklik gerekmedi.",
-	"setup.rerunConfig": "Mevcut yapılandırma kullanıldı: {path}",
 	"setup.loadingRules": "Tehdit kuralları yükleniyor...",
 	"setup.noRules":
 		"Hiçbir tehdit kuralı yüklenemedi. Tespit çalışmayacağı için kurulum başarılı sayılmıyor.",
@@ -935,4 +1283,377 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 		"AIDR Codex kancası makine ilkesiyle kurulmuş; Codex ona incelemeden güvenir.",
 	"doctor.codexTrustFix":
 		"Çözüm: Codex'i açın, /hooks ile AIDR kancalarına güvenin ya da bir yöneticiye 'aidr machine-hooks install' komutunu çalıştırtın; Codex ilke yoluyla güvenir.",
+	"setup.unknownHost": "Bilinmeyen araç: {hosts}. Geçerli araçlar: {valid}.",
+	"setup.noneGiven": "(yok)",
+	"setup.failed": "Kurulum başarısız: {reason}",
+	"setup.action.notSelected": "bulundu — seçilmedi",
+	"setup.confirmRequired":
+		"Bu adım operatör onayı gerektirir: aidr setup komutunu etkileşimli bir terminalde çalıştırıp '{word}' yazın ya da otomasyon için AIDR_OPERATOR_NONINTERACTIVE=1 ayarlayıp --yes verin. Hiçbir şey değiştirilmedi.",
+	"setup.force.title": "Singularity AIDR — zorunlu yeniden kurulum",
+	"setup.force.effect": "Mevcut yerel yapılandırma ve CLI kimlik bilgisi değiştirilecek.",
+	"setup.artifacts.title": "Singularity AIDR — bağlayıcı paketlerini kur",
+	"setup.artifacts.claude": "  Claude Code eklenti dizini: {path}",
+	"setup.artifacts.cursor": "  Cursor eklentisi: {path}",
+	"setup.artifacts.vscode": "  VS Code eklentisi: {path}",
+	"setup.artifacts.verifyOnly":
+		"Yalnızca imzalı sürüm paketine göre doğruladığınız paketleri kurun.",
+
+	"conn.unavailable": "AIDR, yapay zekâ aracındaki kaydı okuyamadı; kurulum durumu bilinmiyor",
+	"conn.unavailableRemedy":
+		"Dosya izinlerini denetleyin ve 'aidr status' komutunu yapay zekâ aracını çalıştıran kullanıcıyla yeniden çalıştırın",
+	"conn.machinePolicy":
+		"AIDR hook'ları {path} içindeki makine politikasıyla kuruldu{locked}; kullanıcılar bunları kapatamaz; yapay zekâ aracının onları çalıştırdığı doğrulanmadı",
+	"conn.machinePolicyLocked": " (yalnızca yönetilen hook'lar çalışır)",
+	"conn.claude.installed":
+		"AIDR eklentisi etkin ya da PreToolUse işleyicisi kayıtlı; yapay zekâ aracının onu çalıştırdığı doğrulanmadı",
+	"conn.claude.present": "~/.claude/settings.json var ama AIDR'ye hiç başvurmuyor",
+	"conn.claude.presentRemedy":
+		"Claude eklentisini çıkarmadan önce yayıncı imzalı sürüm paketini doğrulayın, çıkardığınız dizini marketplace olarak ekleyin, ardından aidr@aidr eklentisini kurun",
+	"conn.claude.none": "~/.claude/settings.json bulunamadı",
+	"conn.claude.noneRemedy": "AIDR eklentisini Claude Code marketplace'inden kurun",
+	"conn.editor.installed":
+		"eklenti paketi bulundu: {packages}; etkinleşmesi ve hook'ların çalışması doğrulanmadı",
+	"conn.editor.present": "{label} yapılandırma dizini var ama AIDR eklentisi bulunamadı",
+	"conn.editor.presentRemedy":
+		"VSIX dosyasını kurun, ardından komut paletinden 'Singularity AIDR: Enable protection' komutunu çalıştırın",
+	"conn.editor.none": "{label} yapılandırma dizini bulunamadı",
+	"conn.openclaw.installed":
+		"AIDR eklentisi ~/.openclaw/openclaw.json içinde etkin; yapay zekâ aracının onu çalıştırdığı doğrulanmadı",
+	"conn.openclaw.disabled":
+		"AIDR eklentisi kayıtlı ama OpenClaw eklenti politikası onu devre dışı bırakmış",
+	"conn.openclaw.disabledRemedy":
+		"aidr-openclaw eklentisini plugins.entries içinde etkinleştirin ve OpenClaw allow/deny politikasında ona izin verin",
+	"conn.openclaw.present": "~/.openclaw/openclaw.json var ama AIDR'yi listelemiyor",
+	"conn.openclaw.presentRemedy":
+		"Onaylı sürümü kurun: openclaw plugins install npm:@singularityrd/aidr-openclaw@{version} ({version} bu CLI ile eşleşir; onaylı sürüm kaydıyla karşılaştırın)",
+	"conn.openclaw.none": "~/.openclaw/openclaw.json bulunamadı",
+	"conn.opencode.npm":
+		"AIDR npm eklentisi OpenCode yapılandırmasında listeleniyor; yapay zekâ aracının onu çalıştırdığı doğrulanmadı",
+	"conn.opencode.local":
+		"AIDR yerel eklenti dosyası bulundu: {files}; yapay zekâ aracının onu çalıştırdığı doğrulanmadı",
+	"conn.opencode.present": "OpenCode yapılandırmasında kayıtlı bir AIDR eklentisi yok",
+	"conn.opencode.none": "OpenCode yapılandırma dizini bulunamadı",
+	"conn.opencode.remedy":
+		"Onaylı @singularityrd/aidr-opencode sürümünü package.json dosyasına ekleyin ve opencode.json içinde kaydedin",
+	"conn.codex.toml":
+		"AIDR PreToolUse işleyicisi ~/.codex/config.toml içinde kayıtlı; Codex'in ona güvendiği ve onu çalıştırdığı doğrulanmadı",
+	"conn.codex.lowercase":
+		"config.toml küçük harfli bir hooks.pre_tool_use tablosu kullanıyor; Codex bu tabloyu okur ama YOK SAYAR - hook hiç çalışmaz",
+	"conn.codex.lowercaseRemedy":
+		"Tabloyu [[hooks.PreToolUse]] olarak yeniden adlandırın ve içine bir [[hooks.PreToolUse.hooks]] işleyicisi ekleyin",
+	"conn.codex.json":
+		"AIDR PreToolUse işleyicisi ~/.codex/hooks.json içinde kayıtlı; Codex'in ona güvendiği ve onu çalıştırdığı doğrulanmadı",
+	"conn.codex.present": "Codex dizini var ama hiçbir AIDR hook'u kaydetmiyor",
+	"conn.codex.presentRemedy":
+		"aidr-codex-hook komutunu çalıştıran bir işleyiciyle [[hooks.PreToolUse]] tablosu ekleyin",
+	"conn.codex.none": "~/.codex yapılandırması bulunamadı",
+	"conn.state.unavailable": "bilinmiyor (okunamadı)",
+	"conn.state.runtime_present_not_installed": "araç var, AIDR kurulu değil",
+	"conn.state.not_detected": "bulunamadı",
+	"conn.state.installed_but_degraded": "kayıtlı ama çalışmıyor",
+
+	"install.machinePolicy":
+		"AIDR hook'ları makine politikasıyla ({path}) her kullanıcı için kuruldu; kullanıcı yapılandırmasına dokunulmadı.",
+	"install.bundleFailed":
+		"{root} konumundaki kurulu AIDR paketi doğrulanamadı: {problems}. Paketi yeniden kurun.",
+	"install.probeDecision":
+		"engellenmesi gereken deneme girdisine {decision} yanıtı verdi ({detail})",
+	"install.probeBenign": "zararsız 'ls' komutunu da engelledi ({detail})",
+	"install.backedUp": "{path} yedeklendi: {backup}",
+	"install.wrote": "yazıldı: {path}",
+	"install.ran": "çalıştırıldı: {command}",
+	"install.wouldRun": "çalıştırılacak: {command}",
+	"install.notOnPath": "{cli} komut satırı aracı PATH üzerinde değil.",
+	"install.notAFile": "{path} bir dosya değil.",
+	"install.notObject": "{path} dosyasındaki '{field}' değeri bir nesne değil; dosyaya dokunulmadı.",
+	"install.notArray": "{path} dosyasındaki '{field}' değeri bir dizi değil; dosyaya dokunulmadı.",
+	"install.codex.tomlRegistered":
+		"AIDR hook'u ~/.codex/config.toml içinde zaten kayıtlı; olduğu gibi bırakıldı.",
+	"install.codex.byHand":
+		"  Codex: aidr-codex-hook komutunu packages/codex/README.md dosyasında gösterildiği gibi elle kaydedin.",
+	"install.codex.trust1":
+		"  Codex: üç AIDR hook'unu /hooks ile inceleyip güvenilir olarak işaretleyin. Codex güvenilmeyen",
+	"install.codex.trust2":
+		"         bir hook'u sessizce atlar (açık kalır); bu yüzden koruma ancak onaydan sonra başlar.",
+	"install.codex.jsonRegistered": "AIDR hook'ları ~/.codex/hooks.json içinde zaten kayıtlı.",
+	"install.codex.notOnPath":
+		"{hook} PATH üzerinde değil; kaydedilirse Codex var olmayan bir hook'u çalıştırmaya çalışır (Codex bu durumda açık kalır).",
+	"install.codex.installPackage":
+		"  Codex: @singularityrd/aidr-codex@{version} paketini özel kayıt deposundan kurun, ardından 'aidr setup' komutunu yeniden çalıştırın.",
+	"install.codex.wouldRegister":
+		"{hook} ({binary}), {path} içinde PreToolUse, UserPromptSubmit ve PostToolUse için kaydedilecek.",
+	"install.codex.probeFailed": "paketin Codex hook'u {reason}; kayıt değiştirilmedi.",
+	"install.codex.registered": "{hook}, {path} içinde kaydedildi.",
+	"install.codex.notSeen": "{path} yazıldı ama Codex denetimi hook'u görmüyor ({detail}).",
+	"install.opencode.jsonc":
+		"OpenCode, opencode.jsonc ile yapılandırılmış; AIDR bu dosyayı yeniden yazmaz (içindeki yorumlar kaybolurdu).",
+	"install.opencode.jsoncStep1":
+		'  OpenCode: opencode.jsonc içindeki "plugin" listesine "{package}" girdisini ekleyin ve',
+	"install.opencode.jsoncStep2": "            {path} dosyasına {dependencies} ekleyin.",
+	"install.opencode.follow1":
+		"  OpenCode: paketi bir sonraki açılışta kurar; özel kayıt deposuna erişilebilmelidir",
+	"install.opencode.follow2":
+		"            (docs/package-installation.md). Ardından araç tarafında bir engelleme denemesi yapın.",
+	"install.opencode.already": "{package}@{version} zaten kayıtlı.",
+	"install.opencode.wouldPin":
+		"{package}@{version}, {manifest} dosyasına sabitlenecek ve {config} içinde listelenecek.",
+	"install.opencode.registered": "{package}@{version} kaydedildi.",
+	"install.opencode.notSeen":
+		"OpenCode yapılandırması yazıldı ama denetim eklentiyi görmüyor ({detail}).",
+	"install.openclaw.already": "AIDR eklentisi ~/.openclaw/openclaw.json içinde zaten etkin.",
+	"install.openclaw.enablePolicy":
+		"aidr-openclaw eklentisini OpenClaw eklenti politikasında etkinleştirin",
+	"install.openclaw.thenCanary":
+		"            ardından araç tarafında bir engelleme denemesi yapın.",
+	"install.openclaw.installed": "{spec} kuruldu.",
+	"install.openclaw.canary": "  OpenClaw: araç tarafında bir engelleme denemesi yapın.",
+	"install.openclaw.notRegistered": "openclaw plugins install AIDR'yi kaydetmedi ({reason}).",
+	"install.editor.enable":
+		"  {label}: komut paletinden 'Singularity AIDR: Enable protection' komutunu çalıştırın.",
+	"install.editor.passVsix": "{detail}; güncellemek için --{host}-vsix <file> verin.",
+	"install.editor.noVsix": "doğrulanmış bir {artifact} verilmedi (--{host}-vsix <file>).",
+	"install.editor.fromBundle":
+		"  {label}: {cli} --install-extension ./{artifact} (doğrulanmış sürüm paketinden)",
+	"install.editor.installed": "{extension}, {path} dosyasından kuruldu.",
+	"install.editor.notRegistered": "eklenti kurulumu AIDR'yi kaydetmedi ({reason}).",
+	"install.claude.manual1":
+		"  Claude Code:  yayıncı imzalı sürüm paketini doğrulayıp aidr-claude-plugin-<version>.tar.gz dosyasını çıkarın,",
+	"install.claude.manual2":
+		"                sürümün Ed25519 açık anahtarını ~/.singularity-aidr/config.json içine ekleyin, ardından şunu çalıştırın:",
+	"install.claude.manual3":
+		"                aidr setup --claude-plugin-dir /absolute/path/to/extracted/aidr-claude-plugin",
+	"install.claude.manual4":
+		"                (ya da Claude Code isteminden: /plugin marketplace add <dir> ve /plugin install aidr@aidr).",
+	"install.claude.noDir": "doğrulanmış bir eklenti dizini verilmedi (--claude-plugin-dir <dir>).",
+	"install.claude.notPlugin":
+		"{dir} çıkarılmış bir AIDR Claude Code eklentisi değil (.claude-plugin bildirimi yok).",
+	"install.claude.cmdFailed": "claude {args} başarısız oldu ({reason}).",
+	"install.claude.installed": "aidr@aidr doğrulanmış eklenti dizininden kuruldu.",
+	"install.claude.restartPlugin":
+		"  Claude Code: yeniden başlatın ve eklentinin etkin olduğunu doğrulayın (/plugin).",
+	"install.claude.notRegistered": "eklenti kurulumu AIDR'yi kaydetmedi ({detail}).",
+	"install.claude.disableAll":
+		"Claude Code'da disableAllHooks ayarlı; bu yüzden hiçbir hook çalışmaz.",
+	"install.claude.disableAllStep":
+		"  Claude Code: ~/.claude/settings.json dosyasından \"disableAllHooks\" ayarını kaldırın, ardından 'aidr setup' komutunu yeniden çalıştırın.",
+	"install.claude.pluginEnabled":
+		"AIDR Claude Code eklentisi etkin; bağımsız hook'lar eklenmedi (her çağrıyı iki kez denetlerlerdi).",
+	"install.claude.standaloneAlready": "{root} konumundaki AIDR hook'ları zaten kayıtlı.",
+	"install.claude.wouldRegister": "{root} hook'ları {path} içinde kaydedilecek.",
+	"install.claude.probeFailed": "paketin PreToolUse hook'u {reason}; kayıt değiştirilmedi.",
+	"install.claude.registered":
+		"{root} konumundaki AIDR hook'ları kaydedildi (yerel engelleme denemesi başarılı).",
+	"install.claude.notSeen": "{path} yazıldı ama Claude Code denetimi hook'u görmüyor ({detail}).",
+	"install.claude.restartHooks":
+		"  Claude Code: AIDR hook'larını yüklemesi için yeniden başlatın, ardından 'aidr verify' çalıştırın.",
+
+	"remove.codex.byHand":
+		"  Codex: aidr-codex-hook işleyicilerini ~/.codex/hooks.json / config.toml dosyalarından elle kaldırın.",
+	"remove.codex.none": "kayıtlı AIDR hook'u yok.",
+	"remove.codex.would": "{count} aidr-codex-hook işleyicisi kaldırılacak.",
+	"remove.codex.removed": "{count} aidr-codex-hook işleyicisi kaldırıldı.",
+	"remove.codex.package":
+		"  Codex: genel @singularityrd/aidr-codex paketi kurulu bırakıldı; npm uninstall --global @singularityrd/aidr-codex ile kaldırın.",
+	"remove.opencode.none": "kayıtlı AIDR eklentisi yok.",
+	"remove.opencode.byHand":
+		'  OpenCode: "{package}" girdisini opencode.json "plugin" listesinden ve package.json dosyasından elle kaldırın.',
+	"remove.would": "AIDR şuralardan kaldırılacak: {files}.",
+	"remove.removedFrom": "AIDR şuralardan kaldırıldı: {files}.",
+	"remove.deleted": "silindi: {path}",
+	"remove.stillRegistered":
+		"Yapay zekâ aracının komut satırı aracı çalıştıktan sonra AIDR hâlâ kayıtlı{reason}.",
+	"remove.hostRemoved": "yapay zekâ aracının komut satırı aracı AIDR'yi kaldırdı.",
+	"remove.claude.none": "etkin bir AIDR marketplace eklentisi yok.",
+	"remove.claude.manual":
+		"  Claude Code: /plugin uninstall aidr@aidr ve /plugin marketplace remove aidr",
+
+	"uninstall.title": "Singularity AIDR — kaldırma",
+	"uninstall.titleHooks": "Singularity AIDR — kaldırma (yalnızca yönetilen hook'lar)",
+	"uninstall.targetHome": "Hedef ev dizini: {home}",
+	"uninstall.refused": "Reddedildi: {reason}",
+	"uninstall.refusedTarget": "hedef doğrulanamadı.",
+	"uninstall.refusedInstall": "kurulum doğrulanamadı.",
+	"uninstall.hooksRemoved":
+		"Claude Code yönetilen hook'ları: {count} tane kaldırıldı (yedek: {backup}).",
+	"uninstall.hooksRefused": "Claude Code yönetilen hook'ları: KALDIRILMADI — {reason}",
+	"uninstall.refusedWord": "reddedildi",
+	"uninstall.hooksWould": "Claude Code yönetilen hook'ları: {count} tane kaldırılacak.",
+	"uninstall.action.removed": "kaldırıldı",
+	"uninstall.action.nothingToRemove": "kaldırılacak bir şey yok",
+	"uninstall.action.wouldRemove": "kaldırılacak",
+	"uninstall.data.deleted":
+		"{path} silindi (yapılandırma, izin listesi, denetim kaydı, onaylar, karantina, anahtarlar)",
+	"uninstall.data.kept": "{path} korundu{reason}",
+	"uninstall.data.wouldDelete": "{path} ve AIDR kasa öğeleri silinecek",
+	"uninstall.data.absent": "{path} yok",
+	"uninstall.data.failed": "{path} SİLİNEMEDİ: {reason}",
+	"uninstall.unknownError": "bilinmeyen hata",
+	"uninstall.localData": "Yerel veriler: {line}",
+	"uninstall.vaultRemoved": "Kaldırılan kasa öğeleri: {items}",
+	"uninstall.vaultFailed": "KALDIRILAMAYAN kasa öğeleri: {items}",
+	"uninstall.byHand": "Elle yapılması gerekenler:",
+	"uninstall.dryRun": "Deneme: hiçbir şey değiştirilmedi.",
+	"uninstall.incomplete":
+		"Kaldırma TAMAMLANMADI: yukarıdaki satırlara bakın. AIDR bazı yapay zekâ araçlarını hâlâ denetliyor olabilir.",
+	"uninstall.removed":
+		"AIDR kaldırıldı. AIDR'yi bırakmaları için yapay zekâ araçlarınızı yeniden başlatın.",
+	"uninstall.browserGuard":
+		"Browser Guard bir tarayıcı eklentisidir: onu tarayıcıdan (ya da kurumsal politikadan) ayrıca kaldırın.",
+	"uninstall.nothing": "Kaldırılacak bir şey yok.",
+	"uninstall.notRemoved": "{error} Hiçbir şey kaldırılmadı.",
+	"uninstall.receiptVerified":
+		"Kurulum makbuzu doğrulandı: {path} (bağlayıcı {connector}, özet {digest}…)",
+	"uninstall.reasonCode": "Neden kodu: {code}",
+	"uninstall.noConfigChanged": "Hiçbir yapılandırma değiştirilmedi.",
+	"uninstall.noManagedHooks":
+		"AIDR'nin yönettiği bir hook girdisi bulunamadı; yapay zekâ aracı ayarlarına dokunulmadı.",
+	"uninstall.leftAlone":
+		"Dokunulmayanlar: {entries} hook {entryWord} ve AIDR'ye ait olmayan {hooks} hook kaydı.",
+	"uninstall.entry": "girdisi",
+	"uninstall.entries": "girdisi",
+	"uninstall.removedCount": "AIDR'nin yönettiği {count} hook kaydı kaldırıldı:",
+	"uninstall.noCommand": "(kayıtlı komut yok)",
+	"uninstall.emptyEvents": "Boş kaldığı için silinen hook olayları: {events}",
+	"uninstall.backup": "Önceki ayarların yedeği: {path}",
+	"uninstall.preserved":
+		"Korunanlar: AIDR politika/izin listesi yapılandırması, bağlayıcı dosyaları, kurulum makbuzu ve AIDR'ye ait olmayan her hook.",
+	"uninstall.credentialKept":
+		"Yerel CLI kimlik bilgisi ve kasa öğesi de korundu; bu kimlik bilgisini kaldırmak için 'aidr config revoke-key' kullanın. Yönetilen uç nokta API anahtarları değişmedi.",
+	"uninstall.notActive":
+		"Bu yapay zekâ aracı için koruma artık ETKİN DEĞİL: AIDR araç çağrılarını denetlemiyor.",
+	"uninstall.reEnable":
+		"Yeniden etkinleştirmek için 'aidr setup' çalıştırın ve yapay zekâ aracınızın bağlayıcısını kurun (docs/getting-started.md).",
+	"uninstall.remedy.receipt":
+		"Neyin kayıtlı olduğunu görmek için 'aidr status' çalıştırın. Claude Code marketplace kurulumunun makbuzu yoktur: '/plugin uninstall aidr@aidr' ve '/plugin marketplace remove aidr' ile kaldırın. AIDR elle ya da bir MDM ile kurulduysa, onu kuran araçla kaldırın.",
+	"uninstall.remedy.settings":
+		"Önce yapay zekâ aracınızın ayar dosyasını onarın ya da geri yükleyin; dosyaya dokunulmadı.",
+	"uninstall.remedy.default":
+		"Yeniden denemeden önce ölçülen kurulum durumunu görmek için 'aidr status' çalıştırın.",
+	"uninstall.confirm.hooksTitle":
+		"Singularity AIDR — yönetilen yapay zekâ aracı hook'larını kaldır",
+	"uninstall.confirm.hooksEffect":
+		"AIDR bu yapay zekâ aracının araç çağrılarını artık denetlemeyecek.",
+	"uninstall.confirm.removes":
+		"  AIDR bağlayıcısını her yapay zekâ aracından, AIDR'nin yönettiği hook'larla birlikte kaldırır.",
+	"uninstall.confirm.keeps":
+		"  ~/.singularity-aidr dizinini ve AIDR kasa öğelerini korur (--keep-data).",
+	"uninstall.confirm.deletes":
+		"  ~/.singularity-aidr dizinini (yapılandırma, izin listesi, denetim kaydı, onaylar,\n  karantinadaki dosyalar, anahtarlar) ve işletim sistemi kimlik kasasındaki AIDR öğelerini SİLER.",
+	"uninstall.confirm.effect":
+		"AIDR hiçbir yapay zekâ aracının araç çağrılarını artık denetlemeyecek.",
+
+	"scan.usageTitle": "AIDR altyapı ve beceri taraması",
+	"scan.noTargets": "Hedef verilmedi.",
+	"scan.usage": "Kullanım:",
+	"scan.usageFile": "  aidr scan --file targets.txt          # her satırda bir URL",
+	"scan.usageSkill":
+		"  aidr scan --skill ~/.claude/skills/my-skill   # beceri/eklenti paketi (T01-T09)",
+	"scan.usageCode":
+		"  aidr scan --code .                     # model yükleme + güvenli kod kuralları, dosya:satır",
+	"scan.options": "Seçenekler:",
+	"scan.optJson": "  --json             makinece okunabilir çıktı",
+	"scan.optAllowPublic":
+		"  --allow-public     özel ağ dışındaki hedeflere de izin ver (varsayılan: kapalı)",
+	"scan.optTimeout": "  --timeout <ms>     istek başına zaman aşımı (varsayılan 3000)",
+	"scan.optConcurrency": "  --concurrency <n>  aynı anda taranan hedef sayısı (varsayılan 4)",
+	"scan.optUpload":
+		"  --upload           bulguları yönetilen kontrol düzlemine gönder (kayıtlı API anahtarıyla)",
+	"scan.dataset":
+		"Veri kümesi: {fingerprints} parmak izi, {cves} CVE (AI-Infra-Guard'dan derlendi).",
+
+	"discover.localProcess": "yerel süreç",
+	"discover.project": " (proje {project})",
+	"discover.noRiskHint": "Yapılandırılmış bir risk göstergesi yok; güvenilirlik doğrulanmadı",
+	"discover.aigCategories": "    AIG kategorileri: {categories}",
+	"discover.aigNone": "    AIG kategorileri: eşleşen yok (bu bir güvenlik kararı değildir)",
+	"discover.secret":
+		"    Koda gömülü gizli bilgi: {location} {key} ({kind}) - bir gizli bilgi deposuna ya da ortam değişkeni başvurusuna taşıyın",
+	"discover.header": "MCP keşfi: {count} yapılandırılmış sunucu",
+	"discover.unreadable": "Okunamayan ya da desteklenmeyen yapılandırma: {path}",
+	"discover.coverage": "Envanter kapsamı: {status}; listelenemeyen hatalı sunucu girdisi: {count}",
+	"discover.agents": "Yapay zekâ aracı ortamı: {hosts} bulundu; {count} bulgu",
+	"discover.noAgentHost": "hiçbir yapay zekâ aracı",
+	"discover.unreadableAgent": "Okunamayan yapay zekâ aracı yapılandırması: {path}",
+	"discover.uploaded": "{count} MCP envanteri bulgusu kontrol düzlemine yüklendi.",
+	"discover.uploadedAgents":
+		"{count} MCP envanteri ve yapay zekâ aracı ortamı bulgusu kontrol düzlemine yüklendi.",
+	"discover.uploadFailed": "Yükleme başarısız: {reason}.",
+	"discover.queued": " {count} bulgu kuyrukta kaldı; bir sonraki gönderimde yeniden denenecek.",
+	"discover.nothingUploaded": " Hiçbir şey yüklenmedi.",
+
+	"privacy.unknownType":
+		'Bilinmeyen tür "{type}". Geçerli türler: {valid} (diğer adları: {aliases})',
+	"privacy.typesEmpty": "--types en az bir tür gerektirir",
+	"privacy.badFailOn": '--fail-on none, any ya da secret olmalı (verilen: "{value}")',
+	"privacy.notFound": "Dosya bulunamadı: {path}",
+	"privacy.cannotRead": "{path} okunamıyor ({code})",
+	"privacy.notRegular": "Normal bir dosya değil: {path}",
+	"privacy.tooLarge":
+		"Girdi {size}; gizlilik taraması en fazla {max} okur. Dosyayı bölüp parçaları ayrı ayrı tarayın.",
+	"privacy.grew": "Girdi okunurken {max} sınırını aştı; gizlilik taraması en fazla {max} okur.",
+	"privacy.stdinTooLarge":
+		"Standart girdi {max} sınırını aşıyor; gizlilik taraması en fazla {max} okur. Girdiyi bölüp parçaları ayrı ayrı tarayın.",
+	"privacy.binary":
+		"Girdi ikili veri gibi görünüyor (NUL baytları içeriyor); gizlilik taraması yalnızca UTF-8 metni inceler.",
+	"privacy.notUtf8":
+		"Girdi geçerli bir UTF-8 metni değil; gizlilik taraması yalnızca UTF-8 metni inceler.",
+	"privacy.more": "(+{count} tane daha)",
+	"privacy.header": "AIDR gizlilik taraması: {source} ({bytes} bayt, yalnızca yerel)",
+	"privacy.noFindingsPartial": "Girdinin incelenen kısmında bulgu yok.",
+	"privacy.noFindings": "Seçilen algılayıcılar için bulgu yok.",
+	"privacy.colType": "TÜR",
+	"privacy.colCount": "ADET",
+	"privacy.colLines": "SATIRLAR",
+	"privacy.findings":
+		"{count} bulgu. Değerler hiçbir zaman yazdırılmaz; maskelenmiş bir kopya için --mask kullanın.",
+	"privacy.incomplete": "EKSİK: girdinin bir kısmı incelenmedi ({reasons}).",
+	"privacy.notClean": "Bu temiz bir sonuç değildir; yukarıdaki bulgular yalnızca bir alt sınırdır.",
+	"privacy.noInput":
+		"Girdi yok: bir dosya yolu verin ya da metni standart girdiden aktarın (aidr privacy scan - < file).",
+	"privacy.stdinSource": "standart girdi",
+	"privacy.refuseMask":
+		"Maskelenmiş kopya yazdırılmıyor: girdi tamamen incelenmedi, maskelenmemiş değerler kalmış olabilir.",
+	"privacy.failed": "Gizlilik taraması başarısız: {name}",
+
+	"coverage.badFormat": 'Bilinmeyen biçim "{format}". Şunlardan birini kullanın: {formats}.',
+	"coverage.noMapping":
+		"{path} konumunda çerçeve eşlemesi içeren bir kural kümesi bulunamadı. CLI'yi yeniden kurun ya da derleyin (resources/threats dizini {mapping} dosyasını içermelidir).",
+	"coverage.invalidMapping": "{path} konumundaki çerçeve eşlemesi geçersiz:\n  {errors}",
+	"coverage.noRules": "{path} konumundan hiçbir tespit kuralı yüklenmedi; raporlanacak kapsam yok.",
+	"coverage.mismatch":
+		"Uyarı: çerçeve eşlemesi kurulu kurallarla eşleşmiyor ({count} sorun):\n  {problems}",
+
+	"config.unreadable":
+		"Yerel yapılandırma okunamadı. Dosya izinlerini, JSON yapısını ve kimlik bilgisi deposunu denetleyin.",
+	"config.notConfigured": "⚠️  AIDR yapılandırılmamış. Önce 'aidr setup' çalıştırın.",
+	"config.notSet": "(ayarlanmamış)",
+	"config.invalidPath": "Geçersiz yapılandırma yolu.",
+	"config.secretArg":
+		"Gizli değerler komut satırı argümanı olarak verilemez. Değeri gizli istemde girmek için komutu değer argümanı olmadan yeniden çalıştırın.",
+	"config.setUsage":
+		"⚠️  Kullanım: aidr config -s <key> <value> (gizli değerler güvenli biçimde sorulur)",
+	"config.secretPrompt": "Gizli değer: ",
+	"config.secretReadFailed": "Gizli girdi okunamadı.",
+	"config.secretInObject":
+		"Gizli alanlar nesne argümanlarının içinde verilemez. Her gizli alanı kendi gizli isteminden ayarlayın.",
+	"config.unknownField": "Geçersiz ya da bilinmeyen yapılandırma alanı; değişiklik kaydedilmedi.",
+	"config.invalid": "Geçersiz çalışma zamanı yapılandırması; değişiklik kaydedilmedi.",
+	"config.invalidChoice":
+		"  {key}: '{value}' geçerli bir değer değil. Geçerli değerler: {choices}.",
+	"config.unknownFieldOnly": "Bilinmeyen yapılandırma alanı; değişiklik kaydedilmedi.",
+	"config.confirmTitle": "Singularity AIDR — bir koruma ayarını değiştir",
+	"config.confirmEffect":
+		"Bu değişiklik AIDR'nin denetlediği ya da engellediği şeyleri zayıflatabilir.",
+	"config.noChanges": "{error} Değişiklik kaydedilmedi.",
+	"config.saveFailed":
+		"Yapılandırma kaydedilemedi. Dosya izinlerini ve kimlik bilgisi deposunu denetleyip yeniden deneyin.",
+	"config.set": "✅ {key} = {value} olarak ayarlandı",
+	"config.listTitle": "🛡️  AIDR yapılandırması",
+	"config.usage": "Kullanım:",
+	"config.usageGet": "  aidr config -g <key>       Değeri oku",
+	"config.usageSet": "  aidr config -s <key> <val> Gizli olmayan bir değer ayarla",
+	"config.usageSecret": "  aidr config -s <secret-key> Gizli değeri gizli istemde gir",
+	"config.usageList": "  aidr config -l             Tümünü listele",
+
+	"simulate.fromConfig": "(yapılandırmadan)",
 };

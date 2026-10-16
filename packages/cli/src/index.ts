@@ -481,7 +481,7 @@ program
 	.description(
 		"Write a redacted diagnostic archive (versions, doctor checks, hooks, config, recent verdict metadata, rule hashes) for a support case",
 	)
-	.option("--out <path>", "Archive path (.tar.gz); never overwrites an existing file")
+	.option("-o, --out <path>", "Archive path (.tar.gz); never overwrites an existing file")
 	.option("--audit-entries <n>", "Recent audit verdicts to summarise (0-1000)", "50")
 	.option("--json", "Print the bundle summary as JSON")
 	.action((options) => supportBundleCommand(options));

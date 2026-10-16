@@ -25,6 +25,7 @@ import {
 	type Threat,
 	uploadPostureEvents,
 } from "@singularityrd/aidr-core";
+import { ct } from "../i18n/index.js";
 import { resolveBundledDataDirs } from "../utils/test-protection.js";
 
 interface ScanOptions {
@@ -84,7 +85,9 @@ export async function runScan(
 	const codePaths = [...new Set((options.code ?? []).map((path) => resolve(path)))];
 
 	if (targets.length === 0 && skills.length === 0 && codePaths.length === 0) {
+		// Nothing to scan is a usage error, never a clean (0) result.
 		printUsage();
+		process.exitCode = 1;
 		return;
 	}
 
@@ -306,26 +309,26 @@ async function scanSkills(
 	return { results, missing, rules, rulesIncomplete: incomplete };
 }
 
+/** Usage for a run without targets; on stderr, since it reports a usage error. */
 function printUsage(): void {
-	console.log("\n🛡️  AIDR infrastructure and skill scan\n");
-	console.log("No targets given.");
-	console.log("\nUsage:");
-	console.log("  aidr scan --target http://127.0.0.1:8080");
-	console.log("  aidr scan --target http://127.0.0.1:8080 --target http://10.0.0.4:3000");
-	console.log("  aidr scan --file targets.txt          # one URL per line");
-	console.log("  aidr scan --skill ~/.claude/skills/my-skill   # skill/plugin package (T01-T09)");
-	console.log(
-		"  aidr scan --code .                     # model loading + secure-code rules, file:line",
-	);
-	console.log("\nOptions:");
-	console.log("  --json             machine-readable output");
-	console.log("  --allow-public     permit non-private targets (off by default)");
-	console.log("  --timeout <ms>     per-request timeout (default 3000)");
-	console.log("  --concurrency <n>  parallel targets (default 4)");
-	console.log("  --upload           send findings to the managed control plane (enrolled API key)");
-	console.log(
-		`\nDataset: ${fingerprintCount()} fingerprints, ${cveCount()} CVEs (compiled from AI-Infra-Guard).\n`,
-	);
+	const lines = [
+		`\n🛡️  ${ct("scan.usageTitle")}\n`,
+		ct("scan.noTargets"),
+		`\n${ct("scan.usage")}`,
+		"  aidr scan --target http://127.0.0.1:8080",
+		"  aidr scan --target http://127.0.0.1:8080 --target http://10.0.0.4:3000",
+		ct("scan.usageFile"),
+		ct("scan.usageSkill"),
+		ct("scan.usageCode"),
+		`\n${ct("scan.options")}`,
+		ct("scan.optJson"),
+		ct("scan.optAllowPublic"),
+		ct("scan.optTimeout"),
+		ct("scan.optConcurrency"),
+		ct("scan.optUpload"),
+		`\n${ct("scan.dataset", { fingerprints: fingerprintCount(), cves: cveCount() })}\n`,
+	];
+	console.error(lines.join("\n"));
 }
 
 function collectTargets(options: ScanOptions): string[] {

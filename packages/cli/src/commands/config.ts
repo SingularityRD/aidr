@@ -1,4 +1,5 @@
 import { ConfigSchema, escapeTerminalText } from "@singularityrd/aidr-core";
+import { ct } from "../i18n/index.js";
 import { type Config, getConfig, replaceConfig } from "../utils/config-manager.js";
 import {
 	configPathParts,
@@ -30,15 +31,13 @@ async function configCommand(
 	try {
 		config = getConfig();
 	} catch {
-		console.error(
-			"Local configuration could not be read. Check its permissions, JSON and credential store.",
-		);
+		console.error(ct("config.unreadable"));
 		process.exitCode = 1;
 		return;
 	}
 
 	if (!config) {
-		console.log("⚠️  AIDR not configured. Run 'aidr setup' first.");
+		console.log(ct("config.notConfigured"));
 		process.exitCode = 1;
 		return;
 	}
@@ -49,9 +48,11 @@ async function configCommand(
 			// default (e.g. `mode` is "local"), so report the effective value.
 			const value =
 				getNestedValue(config, options.get) ?? getNestedValue(effectiveConfig(config), options.get);
-			console.log(value !== undefined ? displayConfigValue(options.get, value) : "(not set)");
+			console.log(
+				value !== undefined ? displayConfigValue(options.get, value) : ct("config.notSet"),
+			);
 		} catch {
-			console.error("Invalid configuration path.");
+			console.error(ct("config.invalidPath"));
 			process.exitCode = 1;
 		}
 		return;
@@ -61,14 +62,12 @@ async function configCommand(
 		const [key, ...valueParts] = options.set;
 		const secret = isSecretConfigPath(key);
 		if (secret && valueParts.length > 0) {
-			console.error(
-				"Secret values cannot be passed as command-line arguments. Rerun without the value argument to enter it at the hidden prompt.",
-			);
+			console.error(ct("config.secretArg"));
 			process.exitCode = 1;
 			return;
 		}
 		if (!secret && valueParts.length === 0) {
-			console.log("⚠️  Usage: aidr config -s <key> <value> (secret values are prompted securely)");
+			console.log(ct("config.setUsage"));
 			process.exitCode = 1;
 			return;
 		}
@@ -79,7 +78,7 @@ async function configCommand(
 		try {
 			before = getNestedValue(config, key) ?? getNestedValue(effectiveConfig(config), key);
 		} catch {
-			console.error("Invalid configuration path.");
+			console.error(ct("config.invalidPath"));
 			process.exitCode = 1;
 			return;
 		}
@@ -87,18 +86,16 @@ async function configCommand(
 		let value: unknown;
 		if (secret) {
 			try {
-				value = await readHiddenInput("Secret value: ");
+				value = await readHiddenInput(ct("config.secretPrompt"));
 			} catch (error: unknown) {
-				console.error(error instanceof Error ? error.message : "Could not read secret input.");
+				console.error(error instanceof Error ? error.message : ct("config.secretReadFailed"));
 				process.exitCode = 1;
 				return;
 			}
 		} else {
 			value = parseConfigValue(valueParts.join(" "));
 			if (containsSecretConfigValue(value)) {
-				console.error(
-					"Secret fields cannot be supplied inside object arguments. Set each secret field through its hidden prompt.",
-				);
+				console.error(ct("config.secretInObject"));
 				process.exitCode = 1;
 				return;
 			}
@@ -106,19 +103,21 @@ async function configCommand(
 		try {
 			setNestedValue(config, key, value);
 		} catch {
-			console.error("Invalid or unknown configuration field; no changes saved.");
+			console.error(ct("config.unknownField"));
 			process.exitCode = 1;
 			return;
 		}
 		const checked = ConfigSchema.safeParse(config);
 		if (!checked.success) {
-			console.error("Invalid runtime configuration; no changes saved.");
+			console.error(ct("config.invalid"));
+			// Name the allowed values, so the operator does not have to look them up.
+			for (const line of invalidChoiceLines(checked.error.issues, value)) console.error(line);
 			process.exitCode = 1;
 			return;
 		}
 		const after = getNestedValue(checked.data as unknown as Config, key);
 		if (after === undefined) {
-			console.error("Unknown configuration field; no changes saved.");
+			console.error(ct("config.unknownFieldOnly"));
 			process.exitCode = 1;
 			return;
 		}
@@ -130,9 +129,9 @@ async function configCommand(
 			try {
 				await confirmOperatorAction({
 					prompt: [
-						"Singularity AIDR — change a protection setting",
+						ct("config.confirmTitle"),
 						`  ${escapeTerminalText(key)}: ${describeForPrompt(key, before)} -> ${describeForPrompt(key, after)}`,
-						"This change may weaken what AIDR inspects or blocks.",
+						ct("config.confirmEffect"),
 					].join("\n"),
 					word: "change",
 					yes: options.yes,
@@ -141,7 +140,9 @@ async function configCommand(
 				});
 			} catch (error) {
 				console.error(
-					`${error instanceof OperatorConfirmationError ? error.message : String(error)} No changes saved.`,
+					ct("config.noChanges", {
+						error: error instanceof OperatorConfirmationError ? error.message : String(error),
+					}),
 				);
 				process.exitCode = 1;
 				return;
@@ -166,27 +167,48 @@ async function configCommand(
 		try {
 			replaceConfig(normalized);
 		} catch {
-			console.error(
-				"Configuration could not be saved. Check its permissions and credential store, then retry.",
-			);
+			console.error(ct("config.saveFailed"));
 			process.exitCode = 1;
 			return;
 		}
-		console.log(`✅ Set ${key} = ${displayConfigValue(key, value)}`);
+		console.log(ct("config.set", { key, value: displayConfigValue(key, value) }));
 		return;
 	}
 
 	if (options.list) {
-		console.log("\n🛡️  AIDR Configuration\n");
+		console.log(`\n${ct("config.listTitle")}\n`);
 		printConfig(config);
 		return;
 	}
 
-	console.log("Usage:");
-	console.log("  aidr config -g <key>       Get value");
-	console.log("  aidr config -s <key> <val> Set non-secret value");
-	console.log("  aidr config -s <secret-key> Enter secret at hidden prompt");
-	console.log("  aidr config -l             List all\n");
+	console.log(ct("config.usage"));
+	console.log(ct("config.usageGet"));
+	console.log(ct("config.usageSet"));
+	console.log(ct("config.usageSecret"));
+	console.log(`${ct("config.usageList")}\n`);
+}
+
+/** A schema issue that carries its allowed values (an enum such as `sensitivity`). */
+interface ChoiceIssue {
+	path: (string | number)[];
+	options?: readonly unknown[];
+	values?: readonly unknown[];
+	received?: unknown;
+}
+
+/** One line per rejected enum value, naming the values that are accepted. */
+export function invalidChoiceLines(issues: readonly ChoiceIssue[], given?: unknown): string[] {
+	return issues.flatMap((issue) => {
+		const choices = issue.options ?? issue.values;
+		if (!Array.isArray(choices) || choices.length === 0) return [];
+		return [
+			ct("config.invalidChoice", {
+				key: escapeTerminalText(issue.path.join(".")),
+				value: escapeTerminalText(String(issue.received ?? given)),
+				choices: choices.map(String).join(", "),
+			}),
+		];
+	});
 }
 
 /**

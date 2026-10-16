@@ -186,7 +186,8 @@ function runningExecutable(deps: UpdateDeps): string | null {
 	return standaloneBundleRoot() ? process.execPath : null;
 }
 
-type Resolved<T> = { ok: true; value: T } | { ok: false; message: string };
+/** `error` is the machine-readable reason `aidr update --check --json` reports. */
+type Resolved<T> = { ok: true; value: T } | { ok: false; error: string; message: string };
 
 /** This machine's installer platform and installation layout. */
 function resolveTarget(
@@ -199,6 +200,7 @@ function resolveTarget(
 	if (!platform) {
 		return {
 			ok: false,
+			error: "unsupported_platform",
 			message: ut("update.unsupportedPlatform", { platform: platformName, arch }),
 		};
 	}
@@ -206,7 +208,7 @@ function resolveTarget(
 	const layout = executable ? installerLayoutFor(executable, environment) : null;
 	return layout
 		? { ok: true, value: { platform, layout } }
-		: { ok: false, message: ut("update.notInstaller") };
+		: { ok: false, error: "not_installer_install", message: ut("update.notInstaller") };
 }
 
 /** Why this machine must not install, or null. */
@@ -226,11 +228,15 @@ function resolveKeys(
 ): Resolved<TrustedCatalogKeys> {
 	const keys = trustedCatalogKeys(layout, config.update.catalog_public_keys, environment);
 	if (keys.invalid.length > 0) {
-		return { ok: false, message: ut("update.keyInvalid", { source: keys.invalid.join(", ") }) };
+		return {
+			ok: false,
+			error: "catalog_key_invalid",
+			message: ut("update.keyInvalid", { source: keys.invalid.join(", ") }),
+		};
 	}
 	if (keys.keys.length === 0) {
 		const path = join(layout.prefix, "config", CATALOG_KEY_FILE);
-		return { ok: false, message: ut("update.noKey", { path }) };
+		return { ok: false, error: "catalog_key_missing", message: ut("update.noKey", { path }) };
 	}
 	return { ok: true, value: keys };
 }
@@ -279,11 +285,30 @@ function environmentFor(deps: UpdateDeps): UpdateEnvironmentDeps & { platform: N
 async function prepare(options: UpdateOptions, deps: UpdateDeps): Promise<UpdateRun | null> {
 	const auto = options.auto === true;
 	const { out, err, fail } = outputs(deps, auto);
+	// `--check --json` stays machine-readable when the check cannot even start.
+	const refuse = (error: string, message: string): null => {
+		if (!(options.check && options.json) || auto) return fail(message);
+		out(
+			JSON.stringify(
+				{
+					schema_version: 1,
+					status: "error",
+					error,
+					message,
+					current: deps.currentVersion ?? VERSION,
+				},
+				null,
+				2,
+			),
+		);
+		process.exitCode = 1;
+		return null;
+	};
 	const environment = environmentFor(deps);
 	const platformName = environment.platform;
 	const config = deps.config ?? (await loadConfig(deps.configPath));
 	const target = resolveTarget(deps, environment);
-	if (!target.ok) return fail(target.message);
+	if (!target.ok) return refuse(target.error, target.message);
 	const { platform, layout } = target.value;
 	const mdm = detectMdmManaged(environment);
 	if (auto && autoDeclines(options, config, mdm)) return null;
@@ -291,9 +316,9 @@ async function prepare(options: UpdateOptions, deps: UpdateDeps): Promise<Update
 	const blocker = options.check ? null : installBlocker(mdm, platformName, isRoot);
 	if (blocker) return fail(blocker);
 	const keys = resolveKeys(layout, config, environment);
-	if (!keys.ok) return fail(keys.message);
+	if (!keys.ok) return refuse(keys.error, keys.message);
 	const source = await resolveSource(options, deps, config);
-	if (!source) return fail(ut("update.noSource"));
+	if (!source) return refuse("no_source", ut("update.noSource"));
 	const run = deps.run ?? runCommand;
 	return {
 		options,

@@ -14,6 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { ct } from "../i18n/index.js";
 import { CODEX_HOOK_PATTERN, codexDesiredHooks, stripCodexHooks } from "./codex-hooks.js";
 import {
 	type ConnectorState,
@@ -113,7 +114,9 @@ type HostInstallAction =
 	| "would_update"
 	| "manual"
 	| "failed"
-	| "skipped_not_detected";
+	| "skipped_not_detected"
+	/** Found in the home directory, but left out by an explicit `--host` selection. */
+	| "skipped_not_selected";
 
 export interface HostInstallResult {
 	host: HostId;
@@ -245,7 +248,7 @@ function machinePolicyResult(
 		host,
 		label,
 		"already_installed",
-		`AIDR hooks are deployed for every user by machine policy (${machine.path}); the user configuration was left as is.`,
+		ct("install.machinePolicy", { path: machine.path }),
 		"installed",
 	);
 }
@@ -285,7 +288,7 @@ function writeWithBackup(
 	if (original !== null) {
 		const backup = `${path}.aidr-${purpose}-backup-${(deps.now ?? Date.now)()}`;
 		copyFileSync(path, backup);
-		changes.push(`backed up ${path} to ${backup}`);
+		changes.push(ct("install.backedUp", { path, backup }));
 	}
 	const temporary = `${path}.aidr-${process.pid}.tmp`;
 	writeFileSync(temporary, content, { flag: "wx", mode: 0o600 });
@@ -307,7 +310,7 @@ function writeWithBackup(
 		}
 		throw error;
 	}
-	changes.push(`wrote ${path}`);
+	changes.push(ct("install.wrote", { path }));
 	return changes;
 }
 
@@ -348,14 +351,20 @@ function standaloneBundle(deps: ConnectorDeps): StandaloneBundleCheck {
 }
 
 function bundleFailure(deps: ConnectorDeps, check: StandaloneBundleCheck): string {
-	return `the installed AIDR bundle at ${deps.standaloneRoot} failed verification: ${check.problems.slice(0, 3).join("; ")}. Reinstall it.`;
+	return ct("install.bundleFailed", {
+		root: String(deps.standaloneRoot),
+		problems: check.problems.slice(0, 3).join("; "),
+	});
 }
 
 /** Why a canary probe failed, in one sentence. */
 function probeFailure(probe: { canary: HookProbe; benign: HookProbe | null }): string {
 	return probe.benign === null
-		? `returned ${probe.canary.decision} for the deny canary (${probe.canary.detail})`
-		: `denied the harmless 'ls' as well (${probe.benign.detail})`;
+		? ct("install.probeDecision", {
+				decision: probe.canary.decision,
+				detail: probe.canary.detail,
+			})
+		: ct("install.probeBenign", { detail: probe.benign.detail });
 }
 
 function summarizeFailure(outcome: ReturnType<HostCommandRunner>): string {
@@ -402,12 +411,12 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 	const fromPolicy = machinePolicyResult(deps, "codex", label);
 	if (fromPolicy) return fromPolicy;
 	const before = measure(deps, "codex");
-	if (before.state === "installed" && before.detail.includes("config.toml")) {
+	if (before.state === "installed" && before.detail === ct("conn.codex.toml")) {
 		return result(
 			"codex",
 			label,
 			"already_installed",
-			"AIDR hook already registered in ~/.codex/config.toml; left as is.",
+			ct("install.codex.tomlRegistered"),
 			before.state,
 		);
 	}
@@ -423,7 +432,7 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			`${(error as Error).message}.`,
 			before.state,
 			[],
-			["  Codex: register aidr-codex-hook by hand as shown in packages/codex/README.md."],
+			[ct("install.codex.byHand")],
 		);
 	}
 	const existingHooks = document.value.hooks;
@@ -432,7 +441,7 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			"codex",
 			label,
 			"manual",
-			`${path} has a 'hooks' value that is not an object; it was left untouched.`,
+			ct("install.notObject", { path, field: "hooks" }),
 			before.state,
 		);
 	}
@@ -446,16 +455,13 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			return result("codex", label, "failed", bundleFailure(deps, bundle), before.state);
 	}
 	const desired = { ...document.value, hooks: codexDesiredHooks(existingHooks ?? {}, command) };
-	const trust = [
-		"  Codex: review and trust the three AIDR hooks with /hooks. Codex drops an untrusted",
-		"         hook silently (fails open), so protection starts only after trust.",
-	];
+	const trust = [ct("install.codex.trust1"), ct("install.codex.trust2")];
 	if (document.raw !== null && JSON.stringify(document.value) === JSON.stringify(desired)) {
 		return result(
 			"codex",
 			label,
 			"already_installed",
-			"AIDR hooks already registered in ~/.codex/hooks.json.",
+			ct("install.codex.jsonRegistered"),
 			before.state,
 			[],
 			trust,
@@ -467,12 +473,10 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			"codex",
 			label,
 			"manual",
-			`${AIDR_CODEX_HOOK} is not on PATH, so registering it would leave Codex running a missing hook (Codex fails open).`,
+			ct("install.codex.notOnPath", { hook: AIDR_CODEX_HOOK }),
 			before.state,
 			[],
-			[
-				`  Codex: install @singularityrd/aidr-codex@${deps.version} from the private registry, then rerun 'aidr setup'.`,
-			],
+			[ct("install.codex.installPackage", { version: deps.version })],
 		);
 	}
 	const update = before.state === "installed" || before.state === "installed_but_degraded";
@@ -481,7 +485,7 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			"codex",
 			label,
 			update ? "would_update" : "would_install",
-			`would register ${AIDR_CODEX_HOOK} (${binary}) for PreToolUse, UserPromptSubmit and PostToolUse in ${path}.`,
+			ct("install.codex.wouldRegister", { hook: AIDR_CODEX_HOOK, binary, path }),
 			before.state,
 			[],
 			trust,
@@ -499,7 +503,7 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 				"codex",
 				label,
 				"failed",
-				`the bundle's Codex hook ${probeFailure(probe)}; registration unchanged.`,
+				ct("install.codex.probeFailed", { reason: probeFailure(probe) }),
 				before.state,
 			);
 		}
@@ -512,8 +516,8 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			label,
 			after.state === "installed" ? (update ? "updated" : "installed") : "failed",
 			after.state === "installed"
-				? `registered ${AIDR_CODEX_HOOK} in ${path}.`
-				: `wrote ${path} but Codex detection does not see the hook (${after.detail}).`,
+				? ct("install.codex.registered", { hook: AIDR_CODEX_HOOK, path })
+				: ct("install.codex.notSeen", { path, detail: after.detail }),
 			after.state,
 			changes,
 			trust,
@@ -536,12 +540,15 @@ function installOpenCode(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 			"opencode",
 			label,
 			"manual",
-			"OpenCode is configured through opencode.jsonc, which AIDR does not rewrite (its comments would be lost).",
+			ct("install.opencode.jsonc"),
 			before.state,
 			[],
 			[
-				`  OpenCode: add "${AIDR_OPENCODE_PACKAGE}" to "plugin" in opencode.jsonc and`,
-				`            {"dependencies":{"${AIDR_OPENCODE_PACKAGE}":"${deps.version}"}} to ${manifestPath}.`,
+				ct("install.opencode.jsoncStep1", { package: AIDR_OPENCODE_PACKAGE }),
+				ct("install.opencode.jsoncStep2", {
+					dependencies: JSON.stringify({ dependencies: { [AIDR_OPENCODE_PACKAGE]: deps.version } }),
+					path: manifestPath,
+				}),
 			],
 		);
 	}
@@ -558,7 +565,7 @@ function installOpenCode(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 			"opencode",
 			label,
 			"manual",
-			`${configPath} has a 'plugin' value that is not an array; it was left untouched.`,
+			ct("install.notArray", { path: configPath, field: "plugin" }),
 			before.state,
 		);
 	}
@@ -567,7 +574,7 @@ function installOpenCode(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 			"opencode",
 			label,
 			"manual",
-			`${manifestPath} has 'dependencies' that are not an object; it was left untouched.`,
+			ct("install.notObject", { path: manifestPath, field: "dependencies" }),
 			before.state,
 		);
 	}
@@ -576,16 +583,13 @@ function installOpenCode(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 	const needsPlugin = !plugins.includes(AIDR_OPENCODE_PACKAGE);
 	const currentVersion = dependencies[AIDR_OPENCODE_PACKAGE];
 	const needsDependency = currentVersion !== deps.version;
-	const followUp = [
-		"  OpenCode: it installs the package at its next start; the private registry must be reachable",
-		"            (docs/package-installation.md). Then run a host-side deny canary.",
-	];
+	const followUp = [ct("install.opencode.follow1"), ct("install.opencode.follow2")];
 	if (!needsPlugin && !needsDependency) {
 		return result(
 			"opencode",
 			label,
 			"already_installed",
-			`${AIDR_OPENCODE_PACKAGE}@${deps.version} already registered.`,
+			ct("install.opencode.already", { package: AIDR_OPENCODE_PACKAGE, version: deps.version }),
 			before.state,
 		);
 	}
@@ -595,7 +599,12 @@ function installOpenCode(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 			"opencode",
 			label,
 			update ? "would_update" : "would_install",
-			`would pin ${AIDR_OPENCODE_PACKAGE}@${deps.version} in ${manifestPath} and list it in ${configPath}.`,
+			ct("install.opencode.wouldPin", {
+				package: AIDR_OPENCODE_PACKAGE,
+				version: deps.version,
+				manifest: manifestPath,
+				config: configPath,
+			}),
 			before.state,
 			[],
 			followUp,
@@ -620,8 +629,11 @@ function installOpenCode(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 			label,
 			after.state === "installed" ? (update ? "updated" : "installed") : "failed",
 			after.state === "installed"
-				? `registered ${AIDR_OPENCODE_PACKAGE}@${deps.version}.`
-				: `wrote the OpenCode config but detection does not see the plugin (${after.detail}).`,
+				? ct("install.opencode.registered", {
+						package: AIDR_OPENCODE_PACKAGE,
+						version: deps.version,
+					})
+				: ct("install.opencode.notSeen", { detail: after.detail }),
 			after.state,
 			changes,
 			followUp,
@@ -653,7 +665,7 @@ function installOpenClaw(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 			"openclaw",
 			label,
 			"already_installed",
-			"AIDR plugin already enabled in ~/.openclaw/openclaw.json.",
+			ct("install.openclaw.already"),
 			before.state,
 		);
 	}
@@ -665,20 +677,20 @@ function installOpenClaw(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 			before.detail,
 			before.state,
 			[],
-			[`  OpenClaw: ${before.remedy ?? "enable aidr-openclaw in the OpenClaw plugin policy"}.`],
+			[`  OpenClaw: ${before.remedy ?? ct("install.openclaw.enablePolicy")}.`],
 		);
 	}
 	const binary = findExecutable("openclaw", hostEnv(deps));
 	const manual = [
 		`  OpenClaw: openclaw plugins install ${spec}`,
-		"            then run a host-side deny canary.",
+		ct("install.openclaw.thenCanary"),
 	];
 	if (!binary)
 		return result(
 			"openclaw",
 			label,
 			"manual",
-			"the openclaw CLI is not on PATH.",
+			ct("install.notOnPath", { cli: "openclaw" }),
 			before.state,
 			[],
 			manual,
@@ -688,28 +700,30 @@ function installOpenClaw(deps: ConnectorDeps, dryRun: boolean): HostInstallResul
 			"openclaw",
 			label,
 			"would_install",
-			`would run: openclaw plugins install ${spec}`,
+			ct("install.wouldRun", { command: `openclaw plugins install ${spec}` }),
 			before.state,
 		);
 	const outcome = runHost(deps, binary, ["plugins", "install", spec]);
 	const after = measure(deps, "openclaw");
-	const command = `ran: ${binary} plugins install ${spec}`;
+	const command = ct("install.ran", { command: `${binary} plugins install ${spec}` });
 	if (outcome.status === 0 && after.state === "installed") {
 		return result(
 			"openclaw",
 			label,
 			"installed",
-			`installed ${spec}.`,
+			ct("install.openclaw.installed", { spec }),
 			after.state,
 			[command],
-			["  OpenClaw: run a host-side deny canary."],
+			[ct("install.openclaw.canary")],
 		);
 	}
 	return result(
 		"openclaw",
 		label,
 		"failed",
-		`openclaw plugins install did not register AIDR (${outcome.status === 0 ? after.detail : summarizeFailure(outcome)}).`,
+		ct("install.openclaw.notRegistered", {
+			reason: outcome.status === 0 ? after.detail : summarizeFailure(outcome),
+		}),
 		after.state,
 		[command],
 		manual,
@@ -726,7 +740,7 @@ function installEditor(
 	const before = measure(deps, host);
 	const artifact = host === "cursor" ? "aidr-cursor.vsix" : "aidr-vscode.vsix";
 	const cliName = EDITOR_CLIS[host];
-	const enable = `  ${label}: run 'Singularity AIDR: Enable protection' from the command palette.`;
+	const enable = ct("install.editor.enable", { label });
 	// The installer's own VSIX, used only once the signed bundle that lists it
 	// verified; an operator-supplied --<host>-vsix always wins (and was confirmed).
 	const bundled =
@@ -744,25 +758,22 @@ function installEditor(
 					host,
 					label,
 					"already_installed",
-					`${before.detail}; pass --${host}-vsix <file> to update it.`,
+					ct("install.editor.passVsix", { detail: before.detail, host }),
 					before.state,
 				)
 			: result(
 					host,
 					label,
 					"manual",
-					`no verified ${artifact} was given (--${host}-vsix <file>).`,
+					ct("install.editor.noVsix", { artifact, host }),
 					before.state,
 					[],
-					[
-						`  ${label}: ${cliName} --install-extension ./${artifact} (from the verified release bundle)`,
-						enable,
-					],
+					[ct("install.editor.fromBundle", { label, cli: cliName, artifact }), enable],
 				);
 	}
 	const file = resolve(vsix);
 	if (!existsSync(file) || !statSync(file).isFile()) {
-		return result(host, label, "failed", `${file} is not a file.`, before.state);
+		return result(host, label, "failed", ct("install.notAFile", { path: file }), before.state);
 	}
 	const binary = findExecutable(cliName, hostEnv(deps));
 	if (!binary) {
@@ -770,7 +781,7 @@ function installEditor(
 			host,
 			label,
 			"manual",
-			`the ${cliName} CLI is not on PATH.`,
+			ct("install.notOnPath", { cli: cliName }),
 			before.state,
 			[],
 			[`  ${label}: ${cliName} --install-extension ${file}`, enable],
@@ -782,18 +793,18 @@ function installEditor(
 			host,
 			label,
 			update ? "would_update" : "would_install",
-			`would run: ${cliName} --install-extension ${file} --force`,
+			ct("install.wouldRun", { command: `${cliName} --install-extension ${file} --force` }),
 			before.state,
 		);
 	const outcome = runHost(deps, binary, ["--install-extension", file, "--force"]);
 	const after = measure(deps, host);
-	const command = `ran: ${binary} --install-extension ${file} --force`;
+	const command = ct("install.ran", { command: `${binary} --install-extension ${file} --force` });
 	if (outcome.status === 0 && after.state === "installed") {
 		return result(
 			host,
 			label,
 			update ? "updated" : "installed",
-			`installed ${EXTENSION_IDS[host]} from ${file}.`,
+			ct("install.editor.installed", { extension: EXTENSION_IDS[host], path: file }),
 			after.state,
 			[command],
 			[enable],
@@ -803,18 +814,23 @@ function installEditor(
 		host,
 		label,
 		"failed",
-		`the extension install did not register AIDR (${outcome.status === 0 ? after.detail : summarizeFailure(outcome)}).`,
+		ct("install.editor.notRegistered", {
+			reason: outcome.status === 0 ? after.detail : summarizeFailure(outcome),
+		}),
 		after.state,
 		[command],
 	);
 }
 
-const CLAUDE_MANUAL = [
-	"  Claude Code:  verify the publisher-signed release bundle and extract aidr-claude-plugin-<version>.tar.gz,",
-	"                provision the release Ed25519 public key in ~/.singularity-aidr/config.json, then run",
-	"                aidr setup --claude-plugin-dir /absolute/path/to/extracted/aidr-claude-plugin",
-	"                (or from the Claude Code prompt: /plugin marketplace add <dir> and /plugin install aidr@aidr).",
-];
+/** The manual Claude Code install steps, in the current locale. */
+function claudeManual(): string[] {
+	return [
+		ct("install.claude.manual1"),
+		ct("install.claude.manual2"),
+		ct("install.claude.manual3"),
+		ct("install.claude.manual4"),
+	];
+}
 
 function installClaude(
 	deps: ConnectorDeps,
@@ -834,10 +850,10 @@ function installClaude(
 			"claude-code",
 			label,
 			"manual",
-			"no verified plugin directory was given (--claude-plugin-dir <dir>).",
+			ct("install.claude.noDir"),
 			before.state,
 			[],
-			CLAUDE_MANUAL,
+			claudeManual(),
 		);
 	}
 	const dir = resolve(pluginDir);
@@ -849,7 +865,7 @@ function installClaude(
 			"claude-code",
 			label,
 			"failed",
-			`${dir} is not an extracted AIDR Claude Code plugin (no .claude-plugin manifest).`,
+			ct("install.claude.notPlugin", { dir }),
 			before.state,
 		);
 	}
@@ -859,17 +875,19 @@ function installClaude(
 			"claude-code",
 			label,
 			"manual",
-			"the claude CLI is not on PATH.",
+			ct("install.notOnPath", { cli: "claude" }),
 			before.state,
 			[],
-			CLAUDE_MANUAL,
+			claudeManual(),
 		);
 	if (dryRun) {
 		return result(
 			"claude-code",
 			label,
 			"would_install",
-			`would run: claude plugin marketplace add ${dir}; claude plugin install aidr@aidr`,
+			ct("install.wouldRun", {
+				command: `claude plugin marketplace add ${dir}; claude plugin install aidr@aidr`,
+			}),
 			before.state,
 		);
 	}
@@ -879,16 +897,16 @@ function installClaude(
 		["plugin", "install", "aidr@aidr"],
 	]) {
 		const outcome = runHost(deps, binary, args);
-		changes.push(`ran: ${binary} ${args.join(" ")}`);
+		changes.push(ct("install.ran", { command: `${binary} ${args.join(" ")}` }));
 		if (outcome.status !== 0) {
 			return result(
 				"claude-code",
 				label,
 				"failed",
-				`claude ${args.join(" ")} failed (${summarizeFailure(outcome)}).`,
+				ct("install.claude.cmdFailed", { args: args.join(" "), reason: summarizeFailure(outcome) }),
 				measure(deps, "claude-code").state,
 				changes,
-				CLAUDE_MANUAL,
+				claudeManual(),
 			);
 		}
 	}
@@ -898,19 +916,19 @@ function installClaude(
 				"claude-code",
 				label,
 				"installed",
-				"installed aidr@aidr from the verified plugin directory.",
+				ct("install.claude.installed"),
 				after.state,
 				changes,
-				["  Claude Code: restart it and confirm the plugin is active (/plugin)."],
+				[ct("install.claude.restartPlugin")],
 			)
 		: result(
 				"claude-code",
 				label,
 				"failed",
-				`the plugin install did not register AIDR (${after.detail}).`,
+				ct("install.claude.notRegistered", { detail: after.detail }),
 				after.state,
 				changes,
-				CLAUDE_MANUAL,
+				claudeManual(),
 			);
 }
 
@@ -981,12 +999,10 @@ function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInst
 			"claude-code",
 			label,
 			"manual",
-			"Claude Code has disableAllHooks set, so no hook would run.",
+			ct("install.claude.disableAll"),
 			before.state,
 			[],
-			[
-				"  Claude Code: remove \"disableAllHooks\" from ~/.claude/settings.json, then rerun 'aidr setup'.",
-			],
+			[ct("install.claude.disableAllStep")],
 		);
 	}
 	const plugins = settings.value.enabledPlugins;
@@ -1000,7 +1016,7 @@ function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInst
 			"claude-code",
 			label,
 			"already_installed",
-			"the AIDR Claude Code plugin is enabled; the standalone hooks were not added (they would inspect every call twice).",
+			ct("install.claude.pluginEnabled"),
 			before.state,
 		);
 	}
@@ -1031,7 +1047,7 @@ function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInst
 			"claude-code",
 			label,
 			"already_installed",
-			`AIDR hooks from ${root} already registered.`,
+			ct("install.claude.standaloneAlready", { root }),
 			before.state,
 		);
 	}
@@ -1041,7 +1057,7 @@ function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInst
 			"claude-code",
 			label,
 			update ? "would_update" : "would_install",
-			`would register the hooks of ${root} in ${settingsPath}.`,
+			ct("install.claude.wouldRegister", { root, path: settingsPath }),
 			before.state,
 		);
 	}
@@ -1058,7 +1074,7 @@ function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInst
 			"claude-code",
 			label,
 			"failed",
-			`the bundle's PreToolUse hook ${probeFailure(probe)}; registration unchanged.`,
+			ct("install.claude.probeFailed", { reason: probeFailure(probe) }),
 			before.state,
 		);
 	}
@@ -1086,11 +1102,11 @@ function installClaudeStandalone(deps: ConnectorDeps, dryRun: boolean): HostInst
 			label,
 			after.state === "installed" ? (update ? "updated" : "installed") : "failed",
 			after.state === "installed"
-				? `registered the AIDR hooks from ${root} (local deny canary passed).`
-				: `wrote ${settingsPath} but Claude Code detection does not see the hook (${after.detail}).`,
+				? ct("install.claude.registered", { root })
+				: ct("install.claude.notSeen", { path: settingsPath, detail: after.detail }),
 			after.state,
 			changes,
-			["  Claude Code: restart it so it loads the AIDR hooks, then run 'aidr verify'."],
+			[ct("install.claude.restartHooks")],
 		);
 	} catch (error) {
 		return result("claude-code", label, "failed", (error as Error).message, before.state);
@@ -1107,7 +1123,8 @@ function detectedHosts(deps: Pick<ConnectorDeps, "home" | "env">): HostId[] {
 /**
  * Install or update the connector of every selected host. With no explicit
  * selection that is every host found in the home directory; the others are
- * reported as `skipped_not_detected`. Never throws for a single host's failure.
+ * reported as `skipped_not_detected`, or `skipped_not_selected` when an explicit
+ * selection left out a host that is present. Never throws for a single host's failure.
  */
 export function installConnectors(
 	deps: ConnectorDeps,
@@ -1118,13 +1135,10 @@ export function installConnectors(
 	return HOST_IDS.map((host) => {
 		if (!selected.has(host)) {
 			const status = measure(deps, host);
-			return result(
-				host,
-				status.label,
-				"skipped_not_detected",
-				options.hosts ? "not selected." : status.detail,
-				status.state,
-			);
+			// Left out by --host while present: say so, never "not detected".
+			return status.state !== "not_detected" && options.hosts
+				? result(host, status.label, "skipped_not_selected", "", status.state)
+				: result(host, status.label, "skipped_not_detected", status.detail, status.state);
 		}
 		try {
 			switch (host) {
@@ -1256,17 +1270,17 @@ function removeCodex(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult {
 		}
 	} catch (error) {
 		return removal("codex", label, "failed", (error as Error).message, before.state, changes, [
-			"  Codex: remove the aidr-codex-hook handlers from ~/.codex/hooks.json / config.toml by hand.",
+			ct("remove.codex.byHand"),
 		]);
 	}
 	if (found === 0)
-		return removal("codex", label, "nothing_to_remove", "no AIDR hook registered.", before.state);
+		return removal("codex", label, "nothing_to_remove", ct("remove.codex.none"), before.state);
 	if (dryRun)
 		return removal(
 			"codex",
 			label,
 			"would_remove",
-			`would remove ${found} aidr-codex-hook handler(s).`,
+			ct("remove.codex.would", { count: found }),
 			before.state,
 		);
 	const after = measure(deps, "codex");
@@ -1274,12 +1288,10 @@ function removeCodex(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult {
 		"codex",
 		label,
 		after.state === "installed" ? "failed" : "removed",
-		`removed ${found} aidr-codex-hook handler(s).`,
+		ct("remove.codex.removed", { count: found }),
 		after.state,
 		changes,
-		[
-			"  Codex: the global @singularityrd/aidr-codex package is left installed; remove it with npm uninstall --global @singularityrd/aidr-codex.",
-		],
+		[ct("remove.codex.package")],
 	);
 }
 
@@ -1323,7 +1335,7 @@ function removeOpenCode(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult
 				"opencode",
 				label,
 				"nothing_to_remove",
-				"no AIDR plugin registered.",
+				ct("remove.opencode.none"),
 				before.state,
 			);
 		if (dryRun)
@@ -1331,7 +1343,7 @@ function removeOpenCode(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult
 				"opencode",
 				label,
 				"would_remove",
-				`would remove AIDR from ${found.join(", ")}.`,
+				ct("remove.would", { files: found.join(", ") }),
 				before.state,
 			);
 		if (plugins?.includes(AIDR_OPENCODE_PACKAGE)) {
@@ -1348,11 +1360,11 @@ function removeOpenCode(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult
 		}
 		for (const path of localFiles) {
 			unlinkSync(path);
-			changes.push(`deleted ${path}`);
+			changes.push(ct("remove.deleted", { path }));
 		}
 	} catch (error) {
 		return removal("opencode", label, "failed", (error as Error).message, before.state, changes, [
-			`  OpenCode: remove "${AIDR_OPENCODE_PACKAGE}" from opencode.json "plugin" and package.json by hand.`,
+			ct("remove.opencode.byHand", { package: AIDR_OPENCODE_PACKAGE }),
 		]);
 	}
 	const after = measure(deps, "opencode");
@@ -1360,7 +1372,7 @@ function removeOpenCode(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult
 		"opencode",
 		label,
 		after.state === "installed" ? "failed" : "removed",
-		`removed AIDR from ${found.join(", ")}.`,
+		ct("remove.removedFrom", { files: found.join(", ") }),
 		after.state,
 		changes,
 	);
@@ -1385,7 +1397,7 @@ function removeViaHostCli(
 			host,
 			label,
 			"manual",
-			`the ${cliName} CLI is not on PATH.`,
+			ct("install.notOnPath", { cli: cliName }),
 			before.state,
 			[],
 			manual,
@@ -1395,14 +1407,16 @@ function removeViaHostCli(
 			host,
 			label,
 			"would_remove",
-			`would run: ${commands.map((args) => `${cliName} ${args.join(" ")}`).join("; ")}`,
+			ct("install.wouldRun", {
+				command: commands.map((args) => `${cliName} ${args.join(" ")}`).join("; "),
+			}),
 			before.state,
 		);
 	const changes: string[] = [];
 	let lastFailure = "";
 	for (const args of commands) {
 		const outcome = runHost(deps, binary, args);
-		changes.push(`ran: ${binary} ${args.join(" ")}`);
+		changes.push(ct("install.ran", { command: `${binary} ${args.join(" ")}` }));
 		if (outcome.status !== 0) lastFailure = summarizeFailure(outcome);
 	}
 	const after = measure(deps, host);
@@ -1411,13 +1425,13 @@ function removeViaHostCli(
 			host,
 			label,
 			"failed",
-			`AIDR is still registered after the host CLI ran${lastFailure ? ` (${lastFailure})` : ""}.`,
+			ct("remove.stillRegistered", { reason: lastFailure ? ` (${lastFailure})` : "" }),
 			after.state,
 			changes,
 			manual,
 		);
 	}
-	return removal(host, label, "removed", "the host CLI removed AIDR.", after.state, changes);
+	return removal(host, label, "removed", ct("remove.hostRemoved"), after.state, changes);
 }
 
 function claudeHasMarketplacePlugin(home: string): boolean {
@@ -1479,7 +1493,7 @@ export function removeConnectors(
 							"claude-code",
 							status.label,
 							"nothing_to_remove",
-							"no AIDR marketplace plugin enabled.",
+							ct("remove.claude.none"),
 							status.state,
 						);
 					}
@@ -1492,7 +1506,7 @@ export function removeConnectors(
 							["plugin", "uninstall", "aidr@aidr"],
 							["plugin", "marketplace", "remove", "aidr"],
 						],
-						["  Claude Code: /plugin uninstall aidr@aidr and /plugin marketplace remove aidr"],
+						[ct("remove.claude.manual")],
 					);
 				}
 			}

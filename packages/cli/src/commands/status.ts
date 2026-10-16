@@ -32,6 +32,15 @@ const CONFIG_STATE_KEY = {
 	invalid: "status.configInvalid",
 } as const;
 
+/** A measured connector state in words (English keeps the state ids scripts already match). */
+const CONNECTOR_STATE_KEY = {
+	installed: "status.registrationDetected",
+	unavailable: "conn.state.unavailable",
+	runtime_present_not_installed: "conn.state.runtime_present_not_installed",
+	not_detected: "conn.state.not_detected",
+	installed_but_degraded: "conn.state.installed_but_degraded",
+} as const satisfies Record<ConnectorStatus["state"], string>;
+
 /** Registration, local evaluation and live host enforcement are separate facts. */
 /** The verdict as one line in the current locale. */
 export function formatStatusVerdict(verdict: StatusVerdict): string {
@@ -205,7 +214,7 @@ export default async function statusCommand(
 		printCustomer(customer);
 		for (const connector of connectors)
 			console.log(
-				`  ${connector.label}: ${connector.state === "installed" ? ct("status.registrationDetected") : connector.state} — ${connector.detail}`,
+				`  ${connector.label}: ${ct(CONNECTOR_STATE_KEY[connector.state])} — ${connector.detail}`,
 			);
 		console.log(
 			unprotected.length > 0

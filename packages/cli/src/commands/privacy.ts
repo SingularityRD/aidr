@@ -7,6 +7,7 @@ import {
 	PRIVACY_DETECTOR_MAX_CHARS,
 	scanPrivacyDetectors,
 } from "@singularityrd/aidr-core";
+import { ct } from "../i18n/index.js";
 
 /**
  * `aidr privacy scan` — local TR/EN personal-data and secret scan of one file or stdin.
@@ -91,19 +92,23 @@ function parsePrivacyTypes(list: string | undefined): DlpDetector[] {
 			TYPE_ALIASES[name] ?? DETECTORS.find((candidate) => candidate === name) ?? undefined;
 		if (!detector) {
 			throw new PrivacyInputError(
-				`Unknown type "${raw.trim()}". Valid types: ${DETECTORS.join(", ")} (aliases: ${Object.keys(TYPE_ALIASES).join(", ")})`,
+				ct("privacy.unknownType", {
+					type: raw.trim(),
+					valid: DETECTORS.join(", "),
+					aliases: Object.keys(TYPE_ALIASES).join(", "),
+				}),
 			);
 		}
 		selected.add(detector);
 	}
-	if (selected.size === 0) throw new PrivacyInputError("--types needs at least one type");
+	if (selected.size === 0) throw new PrivacyInputError(ct("privacy.typesEmpty"));
 	return DETECTORS.filter((detector) => selected.has(detector));
 }
 
 function parseFailOn(value: string | undefined): PrivacyFailOn {
 	const mode = (value ?? "any").trim().toLowerCase();
 	if (mode === "none" || mode === "any" || mode === "secret") return mode;
-	throw new PrivacyInputError(`--fail-on must be none, any or secret (got "${value}")`);
+	throw new PrivacyInputError(ct("privacy.badFailOn", { value: String(value) }));
 }
 
 /** Map a credential-detector type onto the privacy entity vocabulary. */
@@ -270,15 +275,17 @@ async function readBoundedFile(path: string, maxBytes: number): Promise<Buffer> 
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code;
 		throw new PrivacyInputError(
-			code === "ENOENT" ? `File not found: ${path}` : `Cannot read ${path} (${code ?? "error"})`,
+			code === "ENOENT"
+				? ct("privacy.notFound", { path })
+				: ct("privacy.cannotRead", { path, code: code ?? "error" }),
 		);
 	}
 	try {
 		const info = await handle.stat();
-		if (!info.isFile()) throw new PrivacyInputError(`Not a regular file: ${path}`);
+		if (!info.isFile()) throw new PrivacyInputError(ct("privacy.notRegular", { path }));
 		if (info.size > maxBytes) {
 			throw new PrivacyInputError(
-				`Input is ${formatBytes(info.size)}; the privacy scan reads at most ${formatBytes(maxBytes)}. Split the file and scan the parts.`,
+				ct("privacy.tooLarge", { size: formatBytes(info.size), max: formatBytes(maxBytes) }),
 			);
 		}
 		const buffer = Buffer.alloc(maxBytes + 1);
@@ -289,9 +296,7 @@ async function readBoundedFile(path: string, maxBytes: number): Promise<Buffer> 
 			length += bytesRead;
 		}
 		if (length > maxBytes) {
-			throw new PrivacyInputError(
-				`Input grew past ${formatBytes(maxBytes)} while reading; the privacy scan reads at most ${formatBytes(maxBytes)}.`,
-			);
+			throw new PrivacyInputError(ct("privacy.grew", { max: formatBytes(maxBytes) }));
 		}
 		return buffer.subarray(0, length);
 	} finally {
@@ -306,9 +311,7 @@ async function readBoundedStream(stream: NodeJS.ReadableStream, maxBytes: number
 		const buffer = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk);
 		length += buffer.length;
 		if (length > maxBytes) {
-			throw new PrivacyInputError(
-				`Standard input exceeds ${formatBytes(maxBytes)}; the privacy scan reads at most ${formatBytes(maxBytes)}. Split the input and scan the parts.`,
-			);
+			throw new PrivacyInputError(ct("privacy.stdinTooLarge", { max: formatBytes(maxBytes) }));
 		}
 		chunks.push(buffer);
 	}
@@ -318,16 +321,12 @@ async function readBoundedStream(stream: NodeJS.ReadableStream, maxBytes: number
 /** Decode UTF-8 text, refusing binary content instead of scanning mojibake. */
 function decodePrivacyInput(buffer: Buffer): string {
 	if (buffer.includes(0)) {
-		throw new PrivacyInputError(
-			"Input looks binary (contains NUL bytes); the privacy scan inspects UTF-8 text only.",
-		);
+		throw new PrivacyInputError(ct("privacy.binary"));
 	}
 	try {
 		return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
 	} catch {
-		throw new PrivacyInputError(
-			"Input is not valid UTF-8 text; the privacy scan inspects UTF-8 text only.",
-		);
+		throw new PrivacyInputError(ct("privacy.notUtf8"));
 	}
 }
 
@@ -346,38 +345,36 @@ function exitCodeFor(report: PrivacyScanReport, failOn: PrivacyFailOn): number {
 function summarizeLines(lines: readonly number[]): string {
 	const unique = [...new Set(lines)];
 	const shown = unique.slice(0, 12).join(", ");
-	return unique.length > 12 ? `${shown}, … (+${unique.length - 12} more)` : shown;
+	return unique.length > 12
+		? `${shown}, … ${ct("privacy.more", { count: unique.length - 12 })}`
+		: shown;
 }
 
 function humanReport(report: PrivacyScanReport, source: string, bytes: number): string {
-	const out: string[] = [`AIDR privacy scan: ${source} (${bytes} bytes, local only)`, ""];
+	const out: string[] = [ct("privacy.header", { source, bytes }), ""];
 	if (report.findings.length === 0) {
-		out.push(
-			report.incomplete
-				? "No findings in the inspected part of the input."
-				: "No findings for the selected detectors.",
-		);
+		out.push(report.incomplete ? ct("privacy.noFindingsPartial") : ct("privacy.noFindings"));
 	} else {
 		const rows = Object.keys(report.counts).map((type) => [
 			type,
 			String(report.counts[type]),
 			summarizeLines(report.findings.filter((f) => f.type === type).map((f) => f.line)),
 		]);
-		const width = Math.max(4, ...rows.map(([type]) => (type ?? "").length));
-		out.push(`${"TYPE".padEnd(width)}  COUNT  LINES`);
+		const typeHeader = ct("privacy.colType");
+		const width = Math.max(typeHeader.length, ...rows.map(([type]) => (type ?? "").length));
+		out.push(
+			`${typeHeader.padEnd(width)}  ${ct("privacy.colCount").padStart(5)}  ${ct("privacy.colLines")}`,
+		);
 		for (const [type, count, lines] of rows) {
 			out.push(`${(type ?? "").padEnd(width)}  ${(count ?? "").padStart(5)}  ${lines}`);
 		}
-		out.push(
-			"",
-			`${report.findings.length} finding(s). Values are never printed; use --mask for a redacted copy.`,
-		);
+		out.push("", ct("privacy.findings", { count: report.findings.length }));
 	}
 	if (report.incomplete) {
 		out.push(
 			"",
-			`INCOMPLETE: part of the input was not inspected (${report.reasons.join(", ") || "UNKNOWN"}).`,
-			"This is not a clean result; findings above are a lower bound.",
+			ct("privacy.incomplete", { reasons: report.reasons.join(", ") || "UNKNOWN" }),
+			ct("privacy.notClean"),
 		);
 	}
 	return `${out.join("\n")}\n`;
@@ -398,11 +395,9 @@ async function readPrivacyInput(
 	}
 	const stdin = dependencies.stdin ?? process.stdin;
 	if (stdin.isTTY) {
-		throw new PrivacyInputError(
-			"No input: pass a file path, or pipe text on standard input (aidr privacy scan - < file).",
-		);
+		throw new PrivacyInputError(ct("privacy.noInput"));
 	}
-	return { buffer: await readBoundedStream(stdin, maxBytes), source: "standard input" };
+	return { buffer: await readBoundedStream(stdin, maxBytes), source: ct("privacy.stdinSource") };
 }
 
 function emitReport(
@@ -430,9 +425,7 @@ function emitReport(
 	// The table goes to stderr so stdout is exactly the redacted text.
 	stderr(table);
 	if (report.masked === undefined) {
-		stderr(
-			"Refusing to print a masked copy: the input was not fully inspected, so unmasked values could remain.\n",
-		);
+		stderr(`${ct("privacy.refuseMask")}\n`);
 	} else {
 		stdout(report.masked);
 	}
@@ -466,7 +459,7 @@ export async function runPrivacyScan(
 		const message =
 			error instanceof PrivacyInputError
 				? error.message
-				: `Privacy scan failed: ${error instanceof Error ? error.name : "error"}`;
+				: ct("privacy.failed", { name: error instanceof Error ? error.name : "error" });
 		writers.stderr(`aidr privacy scan: ${message}\n`);
 		return PRIVACY_EXIT.error;
 	}
