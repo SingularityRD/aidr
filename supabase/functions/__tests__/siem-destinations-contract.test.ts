@@ -18,6 +18,10 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const migration = readFileSync(join(ROOT, "supabase", "migrations", "20261014000130_siem_forwarding.sql"), "utf8");
+const followUp = readFileSync(
+	join(ROOT, "supabase", "migrations", "20261016000200_siem_admin_audit_and_gap_ledger.sql"),
+	"utf8",
+);
 const config = readFileSync(join(ROOT, "supabase", "config.toml"), "utf8");
 
 const TENANT = "22222222-2222-4222-8222-222222222222";
@@ -112,7 +116,14 @@ function database(options: Options = {}) {
 				case "consume_tenant_rate_limit":
 					return { data: { allowed: true, remaining: 3 }, error: null };
 				case "list_siem_destinations":
-					return { data: { destinations: [options.leak ? { ...view(), config_ciphertext: "must-not-leak" } : view()], dead_letters: [] }, error: null };
+					return {
+						data: {
+							destinations: [options.leak ? { ...view(), config_ciphertext: "must-not-leak" } : view()],
+							dead_letters: [],
+							enqueue_failures: { count: 4, last_failed_at: "2026-10-16T08:00:00.000Z", detail: "dropped" },
+						},
+						error: null,
+					};
 				case "create_siem_destination":
 					state.ciphertext = String(args.p_config_ciphertext);
 					return { data: view({ id: args.p_destination_id, target_hint: args.p_target_hint }), error: null };
@@ -196,6 +207,8 @@ describe("siem-destinations", () => {
 		expect(response.status).toBe(200);
 		const body = await response.json();
 		expect(body).toMatchObject({ ok: true, configured: true, private_networks_allowed: false, limits: { max_destinations: 10 } });
+		// Rows that could not be queued are surfaced, projected to count and time only.
+		expect(body.enqueue_failures).toEqual({ count: 4, last_failed_at: "2026-10-16T08:00:00.000Z" });
 		// A view that carries the ciphertext is a contract breach: fail closed, never forward it.
 		const leaking = await (await destinationsHandler({ leak: true })).handle(get());
 		expect(leaking.status).toBe(503);
@@ -242,6 +255,10 @@ describe("siem-destinations", () => {
 			[{ ...createHec, format: "cef" }, "invalid_format"],
 			[{ ...createHec, filters: { ...FILTERS, decisions: ["deny", "deny"] } }, "invalid_filters"],
 			[{ ...createHec, filters: { incidents: false, decisions: [], browser: false, min_severity: "info" } }, "invalid_filters"],
+			[{ ...createHec, filters: { incidents: false, decisions: [], browser: false, admin_audit: false, min_severity: "info" } }, "invalid_filters"],
+			[{ ...createHec, filters: { ...FILTERS, admin_audit: "yes" } }, "invalid_filters"],
+			[{ ...createHec, filters: { ...FILTERS, admin: true } }, "invalid_filters"],
+			[{ ...createHec, filters: { incidents: true, decisions: [], browser: false } }, "invalid_filters"],
 			[{ ...createHec, name: "bad\nname" }, "invalid_destination_name"],
 			[{ ...createHec, extra: true }, "invalid_request"],
 			[{ tenant_id: TENANT, action: "update", destination_id: DESTINATION }, "no_changes"],
@@ -253,6 +270,16 @@ describe("siem-destinations", () => {
 		expect(mutations(rpcCalls)).toEqual([]);
 		const invalidConfig = await handle(post({ ...createHec, config: { url: "http://splunk.example", token: HEC_TOKEN } }));
 		expect(await invalidConfig.json()).toEqual({ error: "url_not_https" });
+	});
+
+	it("accepts admin audit forwarding as the only selected event, on create and update", async () => {
+		const { handle, rpcCalls } = await destinationsHandler();
+		const auditOnly = { incidents: false, decisions: [], browser: false, admin_audit: true, min_severity: "info" };
+		expect((await handle(post({ ...createHec, filters: auditOnly }))).status).toBe(200);
+		expect(rpcCalls.find((call) => call.name === "create_siem_destination")?.args.p_filters).toEqual(auditOnly);
+		const update = await handle(post({ tenant_id: TENANT, action: "update", destination_id: DESTINATION, filters: { ...FILTERS, admin_audit: false } }));
+		expect(update.status).toBe(200);
+		expect(rpcCalls.find((call) => call.name === "update_siem_destination")?.args.p_filters).toMatchObject({ admin_audit: false });
 	});
 
 	it("refuses a private collector unless the operator allowed private networks", async () => {
@@ -354,6 +381,35 @@ describe("SIEM forwarding SQL contract", () => {
 		const report = analyzeIdentityBarrier([{ name: "20261014000130_siem_forwarding.sql", sql: migration }]);
 		expect(report.missing).toEqual([]);
 		expect(migration.match(/create policy tenant_identity_access_restrict/g)).toHaveLength(2);
+	});
+
+	it("forwards admin audit rows, records enqueue gaps and prunes with the tenant retention", () => {
+		expect(followUp).toMatch(/after insert on public\.admin_audit_logs[\s\S]*when \(new\.tenant_id is not null\)[\s\S]*app\.enqueue_admin_audit_siem_trigger\(\)/);
+		expect(followUp).toMatch(/forward_admin_audit boolean not null default false/);
+		expect(followUp).toMatch(/on conflict \(destination_id, audit_row_id\) do nothing/);
+		// Both triggers record a failure durably instead of only warning.
+		expect(followUp.match(/perform app\.siem_enqueue_failed\(/g)).toHaveLength(2);
+		expect(followUp).toMatch(/alter table public\.siem_enqueue_failures enable row level security/);
+		expect(followUp).not.toMatch(/least\(coalesce\(p\.retention_days, 7\), 7\)/);
+		expect(followUp).toMatch(/make_interval\(days => coalesce\(p\.retention_days, 7\)\)/);
+		for (const fn of [
+			"app.record_siem_enqueue_failure(uuid, text, bigint, text)",
+			"app.siem_admin_audit_payload(public.admin_audit_logs)",
+			"app.enqueue_admin_audit_siem(public.admin_audit_logs)",
+			"app.enqueue_admin_audit_siem_trigger()",
+			"public.prune_siem_deliveries(integer)",
+		]) {
+			expect(followUp).toContain(`revoke all on function ${fn} from public, anon, authenticated;`);
+		}
+		const report = analyzeIdentityBarrier([
+			{ name: "20261014000130_siem_forwarding.sql", sql: migration },
+			{ name: "20261016000200_siem_admin_audit_and_gap_ledger.sql", sql: followUp },
+		]);
+		expect(report.missing).toEqual([]);
+		// Every function the follow-up defines pins its search_path.
+		const definitions = followUp.match(/create or replace function[\s\S]*?as \$\$/g) ?? [];
+		expect(definitions.length).toBeGreaterThan(10);
+		for (const definition of definitions) expect(definition).toContain("set search_path = pg_catalog");
 	});
 
 	it("registers both functions with the right JWT posture", () => {

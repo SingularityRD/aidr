@@ -239,6 +239,54 @@ describe("forwarded event", () => {
 		expect(coreLeef).toContain("\tsev=10\t");
 	});
 
+	it("forwards admin audit rows as identifiers only, under their own event id", () => {
+		const ACTOR = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+		const TARGET = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+		const audit = (payload: Record<string, unknown>) =>
+			buildForwardedEvent(TENANT, row({
+				kind: "admin_audit",
+				// The defaults carry telemetry fields: none of them may survive for this kind.
+				payload: { audit_row_id: "4242", type: "admin_audit", action: "tenant_member.role_changed", actor_user_id: ACTOR, target_user_id: TARGET, detail: "promoted by phone", ...payload },
+			}));
+		const event = audit({});
+		expect(event).toEqual({
+			schema_version: "aidr.siem.forwarded_event/v1",
+			event_id: "aidr_audit_4242",
+			observed_at: "2026-10-14T07:59:58.000Z",
+			source: { vendor: "Singularity", product: "AIDR", component: "control_plane" },
+			tenant_id: TENANT,
+			kind: "admin_audit",
+			event: {
+				type: "admin_audit",
+				occurred_at: "2026-10-14T07:59:58.000Z",
+				event_row_id: null,
+				audit_row_id: "4242",
+				actor_user_id: ACTOR.toLowerCase(),
+				target_user_id: TARGET,
+				action: "tenant_member.role_changed",
+			},
+		});
+		// Same numeric id as an events row, different dedupe key.
+		expect(buildForwardedEvent(TENANT, row()).event_id).toBe("aidr_evt_4242");
+		expect(audit({ action: "free text; CEF:0|forged", actor_user_id: "not-a-uuid" }).event).not.toHaveProperty("action");
+		expect(audit({ actor_user_id: "not-a-uuid" }).event).not.toHaveProperty("actor_user_id");
+
+		const cef = formatCef(event);
+		expect(cef).toMatch(/^CEF:0\|Singularity\|AIDR\|1\.0\|AIDR\/warning\/ADMIN_AUDIT\/TENANT_MEMBER\.ROLE_CHANGED\|AIDR admin action - tenant_member\.role_changed\|5\|/);
+		expect(cef).toContain("externalId=aidr_audit_4242");
+		expect(cef).toContain(`suid=${ACTOR.toLowerCase()}`);
+		expect(cef).toContain(`duid=${TARGET}`);
+		expect(cef).toContain("audit_row_id=4242");
+		expect(cef).not.toContain("act=");
+		const [, , , , eventId, attributes] = formatLeef(event).split("|");
+		expect(eventId).toBe("AIDR-WARNING-ADMIN_AUDIT-TENANT_MEMBER.ROLE_CHANGED");
+		expect(attributes.split("\t")).toEqual(expect.arrayContaining(["cat=admin_audit", "sev=5", "action=tenant_member.role_changed"]));
+		const config = { provider: "syslog", transport: "tls", host: COLLECTOR, port: 6514 } as const;
+		expect(formatSyslogMessage(event, "json", config)).toMatch(
+			/^<132>1 2026-10-14T07:59:58\.000Z aidr-control-plane aidr - ADMIN_AUDIT \[aidr@32473 eventId="aidr_audit_4242" kind="admin_audit" severity="warning" tenant="/,
+		);
+	});
+
 	it("frames JSON as RFC 5424 and CEF/LEEF behind an RFC 3164 header", () => {
 		const event = buildForwardedEvent(TENANT, row());
 		const config = { provider: "syslog", transport: "tls", host: COLLECTOR, port: 6514 } as const;
@@ -421,6 +469,13 @@ describe("HTTP providers over real TLS", () => {
 		expect(collector.requests).toHaveLength(2);
 		mode = "busy";
 		expect((await deliverSiemBatch(config, "json", [event], forward))[0]).toMatchObject({ outcome: "retry", retryAfterSeconds: 120 });
+		mode = "ok";
+		const audit = buildForwardedEvent(TENANT, row({ kind: "admin_audit", payload: { audit_row_id: "7", type: "admin_audit", action: "auth.login" } }));
+		expect((await deliverSiemBatch(config, "json", [audit], forward))[0].outcome).toBe("delivered");
+		const auditRequest = collector.requests.at(-1);
+		expect(auditRequest?.headers["x-aidr-event"]).toBe("siem.admin_audit");
+		expect(auditRequest?.headers["idempotency-key"]).toBe("aidr_audit_7");
+		expect(JSON.parse(String(auditRequest?.body)).event).toMatchObject({ action: "auth.login", audit_row_id: "7" });
 	});
 
 	it("authenticates to Microsoft Sentinel with client credentials and ingests records", async () => {

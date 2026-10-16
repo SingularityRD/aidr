@@ -1,5 +1,6 @@
 // Real-PostgreSQL contract for central SIEM forwarding:
 //   supabase/migrations/20261014000130_siem_forwarding.sql
+//   supabase/migrations/20261016000200_siem_admin_audit_and_gap_ledger.sql
 // (on top of the alert-integration migrations whose helpers it reuses).
 //
 // Runs against AIDR_POSTGRES_TEST_URL=postgres://user@host:port/db (a
@@ -18,6 +19,7 @@ const migrations = [
 	"20260926000020_notification_channels.sql",
 	"20260926000021_notification_outbox.sql",
 	"20261014000130_siem_forwarding.sql",
+	"20261016000200_siem_admin_audit_and_gap_ledger.sql",
 ].map((name) => readFileSync(resolve(root, "supabase/migrations", name), "utf8"));
 
 function run(command, args, input = "") {
@@ -63,7 +65,8 @@ create table public.events (
 );
 create table public.admin_audit_logs (
   id bigint generated always as identity primary key, actor_user_id uuid, tenant_id uuid,
-  action text not null, detail jsonb not null default '{}'::jsonb
+  action text not null, target_user_id uuid, detail jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
 );
 create table public.audit_logs (
   id uuid primary key default gen_random_uuid(), team_id uuid not null references public.teams(id),
@@ -232,6 +235,179 @@ test("SIEM forwarding outbox: RLS, allow-listed enqueue, claim/complete, dead le
 		assert.equal(sql(`select count(*) from public.siem_deliveries where tenant_id = '${TENANT_B}';`), "0");
 		sql(`update public.tenant_offboarding_runs set status = 'completed' where tenant_id = '${TENANT_B}';`);
 		fails(create(DEST_B, TENANT_B, ADMIN_B, "elastic", "json"), /workspace_not_active/);
+	} finally {
+		database.stop();
+	}
+});
+
+test("SIEM forwarding: admin audit kind, enqueue gap ledger, tenant retention for pruning", { timeout: 300_000 }, async (t) => {
+	const database = startDatabase();
+	if (!database) {
+		t.skip("no PostgreSQL available (set AIDR_POSTGRES_TEST_URL)");
+		return;
+	}
+	const sql = (query) => {
+		const result = database.exec(query);
+		assert.equal(result.code, 0, result.stderr);
+		return result.stdout;
+	};
+	const json = (query) => JSON.parse(sql(query).split("\n").at(-1));
+	const fails = (query, pattern) => {
+		const result = database.exec(query);
+		assert.notEqual(result.code, 0, `expected failure: ${query}`);
+		assert.match(result.stderr, pattern);
+	};
+	const as = (user, query) => `begin; set local role authenticated;
+		select set_config('request.jwt.claim.sub', '${user}', true); ${query} commit;`;
+	const create = (id, tenant, admin, filter) =>
+		`select public.create_siem_destination('${tenant}', '${admin}', '${id}', 'syslog', 'cef',
+		  'SOC ${id.slice(0, 4)}', '${cipher}', 'k1', 'tls://siem.corp.example:6514', '${filter}'::jsonb, true);`;
+	const update = (filter) =>
+		`select public.update_siem_destination('${TENANT_A}', '${ADMIN_A}', '${DEST_A}', 'syslog', null, null, null,
+		  '${filter}'::jsonb, null, null, null);`;
+	const auditDeliveries = (destination) =>
+		sql(`select count(*) from public.siem_deliveries where destination_id = '${destination}' and kind = 'admin_audit';`);
+	const audit = (tenant, action, target = null, detail = {}) =>
+		sql(`insert into public.admin_audit_logs (actor_user_id, tenant_id, action, target_user_id, detail) values
+		  ('${ADMIN_A}', ${tenant ? `'${tenant}'` : "null"}, '${action}', ${target ? `'${target}'` : "null"}, '${JSON.stringify(detail)}'::jsonb);`);
+	try {
+		sql(FIXTURE);
+		sql(`insert into public.tenants (id) values ('${TENANT_A}'), ('${TENANT_B}');
+			insert into public.teams (id) values ('${TENANT_A}'), ('${TENANT_B}');
+			insert into public.agents values ('${AGENT}', 'laptop-17', 'claude-code');
+			insert into public.tenant_members values
+			  ('${TENANT_A}', '${ADMIN_A}', 'admin', null), ('${TENANT_A}', '${MEMBER_A}', 'member', null),
+			  ('${TENANT_B}', '${ADMIN_B}', 'owner', null);`);
+		for (const migration of migrations) sql(migration);
+		for (const migration of migrations) sql(migration);
+
+		// ── 1. Admin audit forwarding: opt-in, validated, audited ─────────────
+		fails(create(DEST_A, TENANT_A, ADMIN_A, filters({ admin_audit: "yes" })), /invalid_siem_destination/);
+		fails(create(DEST_A, TENANT_A, ADMIN_A, filters({ admin_audit: true, extra: 1 })), /invalid_siem_destination/);
+		// admin_audit alone selects an event; its absence means "off".
+		const created = json(create(DEST_A, TENANT_A, ADMIN_A, filters({ incidents: false, decisions: [], admin_audit: true })));
+		assert.equal(created.filters.admin_audit, true);
+		const legacy = json(create(DEST_B, TENANT_B, ADMIN_B, filters()));
+		assert.equal(legacy.filters.admin_audit, false);
+		fails(create("c0000000-0000-4000-8000-00000000000c", TENANT_B, ADMIN_B, filters({ incidents: false, decisions: [], admin_audit: false })),
+			/invalid_siem_destination/);
+		assert.equal(json(`select detail from public.admin_audit_logs where action = 'siem_destination.created' and tenant_id = '${TENANT_A}';`)
+			.filters.admin_audit, true);
+		// The destination's own creation audit row is the first forwarded admin action.
+		assert.equal(auditDeliveries(DEST_A), "1");
+		assert.equal(auditDeliveries(DEST_B), "0", "opt-in: default destinations do not forward admin audit");
+		assert.equal(sql(as(ADMIN_A, "select forward_admin_audit from public.siem_destinations;")).split("\n").at(-1), "t");
+
+		const target = randomUUID();
+		audit(TENANT_A, "auth.login", null, { ip: "203.0.113.9", email: "alice@example.com" });
+		audit(TENANT_A, "tenant_member.role_changed", target, { note: "promoted by phone call" });
+		audit(TENANT_A, "free text with spaces", null);
+		audit(null, "platform.global_action", null);
+		audit(TENANT_B, "auth.login", null);
+		assert.equal(auditDeliveries(DEST_A), "4", "tenant-less rows are not forwarded");
+		assert.equal(auditDeliveries(DEST_B), "0");
+		const rows = json(`select jsonb_agg(to_jsonb(d) order by d.id) from public.siem_deliveries d where kind = 'admin_audit';`);
+		const allowed = ["audit_row_id", "kind", "type", "occurred_at", "action", "actor_user_id", "target_user_id"];
+		for (const row of rows) {
+			assert.equal(row.event_row_id, null);
+			assert.equal(row.payload.audit_row_id, String(row.audit_row_id));
+			assert.deepEqual(Object.keys(row.payload).filter((key) => !allowed.includes(key)), []);
+		}
+		assert.doesNotMatch(JSON.stringify(rows), /203\.0\.113|alice|phone call|spaces/);
+		const role = rows.find((row) => row.payload.action === "tenant_member.role_changed");
+		assert.equal(role.payload.target_user_id, target);
+		assert.equal(role.payload.actor_user_id, ADMIN_A);
+		assert.equal(rows.filter((row) => row.payload.action === undefined).length, 1, "a non-identifier action is dropped");
+
+		// Dedupe key is independent of events ids: an events row with the same id still enqueues.
+		sql(`update public.siem_destinations set forward_decisions = array['deny'] where id = '${DEST_A}';`);
+		sql(`insert into public.events (tenant_id, agent_id, type, payload) values ('${TENANT_A}', '${AGENT}', 'runtime_verdict', '{"verdict":"deny"}'::jsonb);`);
+		assert.equal(sql(`select count(*) from public.siem_deliveries x join public.siem_deliveries y
+			on x.destination_id = y.destination_id and x.event_row_id = y.audit_row_id;`), "1");
+		fails(`insert into public.siem_deliveries (tenant_id, destination_id, event_row_id, audit_row_id, kind, payload)
+			values ('${TENANT_A}', '${DEST_A}', 99, 99, 'decision', '{}'::jsonb);`, /siem_deliveries_source_shape/);
+		fails(`insert into public.siem_deliveries (tenant_id, destination_id, audit_row_id, kind, payload)
+			values ('${TENANT_A}', '${DEST_A}', ${rows[0].audit_row_id}, 'admin_audit', '{}'::jsonb);`, /siem_deliveries_audit_unique/);
+
+		const claimed = json("select public.claim_siem_deliveries(10, 100, 60);");
+		assert.ok(claimed[0].deliveries.some((row) => row.kind === "admin_audit" && row.payload.action === "auth.login"));
+
+		// Update: filters without admin_audit keep it; an explicit false turns it off (audited).
+		assert.equal(json(update(filters({ decisions: [] }))).filters.admin_audit, true);
+		const off = json(update(filters({ admin_audit: false })));
+		assert.equal(off.filters.admin_audit, false);
+		assert.deepEqual(off.changed, ["filters"]);
+		assert.equal(json(`select detail from public.admin_audit_logs where action = 'siem_destination.updated'
+			order by id desc limit 1;`).filters.admin_audit, false);
+		const before = auditDeliveries(DEST_A);
+		audit(TENANT_A, "auth.login");
+		assert.equal(auditDeliveries(DEST_A), before);
+		sql(update(filters({ admin_audit: true })));
+
+		// ── 2. Enqueue failures are counted durably, never lose the source row ─
+		sql("alter table public.siem_deliveries add constraint siem_break check (kind not in ('admin_audit', 'incident')) not valid;");
+		audit(TENANT_A, "auth.login");
+		sql(`insert into public.events (tenant_id, agent_id, type, payload) values
+			('${TENANT_A}', '${AGENT}', 'incident', '{"severity":"high"}'::jsonb),
+			('${TENANT_A}', '${AGENT}', 'incident', '{"severity":"high"}'::jsonb);`);
+		sql("alter table public.siem_deliveries drop constraint siem_break;");
+		assert.equal(sql("select count(*) from public.events where type = 'incident';"), "2", "telemetry kept");
+		assert.equal(sql(`select string_agg(source || ':' || sqlstate || ':' || failures, ',' order by source)
+			from public.siem_enqueue_failures where tenant_id = '${TENANT_A}';`), "admin_audit_logs:23514:1,events:23514:2");
+		const health = json(`select public.list_siem_destinations('${TENANT_A}');`);
+		assert.equal(health.enqueue_failures.count, 3);
+		assert.ok(health.enqueue_failures.last_failed_at);
+		assert.equal(json(`select public.list_siem_destinations('${TENANT_B}');`).enqueue_failures.count, 0);
+		// RLS: tenant admins read their own ledger; nobody writes it from a client.
+		assert.equal(sql(as(ADMIN_A, "select sum(failures) from public.siem_enqueue_failures;")).split("\n").at(-1), "3");
+		assert.equal(sql(as(MEMBER_A, "select count(*) from public.siem_enqueue_failures;")).split("\n").at(-1), "0");
+		assert.equal(sql(as(ADMIN_B, "select count(*) from public.siem_enqueue_failures;")).split("\n").at(-1), "0");
+		fails(as(ADMIN_A, `insert into public.siem_enqueue_failures (tenant_id, day, source, sqlstate)
+			values ('${TENANT_A}', current_date, 'events', '23514');`), /permission denied/);
+		fails(as(ADMIN_A, "delete from public.siem_enqueue_failures;"), /permission denied/);
+		for (const signature of [
+			"app.record_siem_enqueue_failure(uuid,text,bigint,text)",
+			"app.enqueue_admin_audit_siem(public.admin_audit_logs)",
+			"public.prune_siem_deliveries(integer)",
+		]) {
+			assert.equal(sql(`select has_function_privilege('authenticated', '${signature}', 'EXECUTE');`), "f", signature);
+		}
+		// Even a broken ledger never costs the source row.
+		sql(`alter table public.siem_enqueue_failures add constraint ledger_break check (failures < 0) not valid;
+			alter table public.siem_deliveries add constraint siem_break check (kind <> 'admin_audit') not valid;`);
+		audit(TENANT_A, "auth.logout");
+		assert.equal(sql("select count(*) from public.admin_audit_logs where action = 'auth.logout';"), "1");
+		sql(`alter table public.siem_deliveries drop constraint siem_break;
+			alter table public.siem_enqueue_failures drop constraint ledger_break;`);
+
+		// ── 3. Pruning honours the tenant's operational_ephemera retention ────
+		sql(`delete from public.siem_deliveries;
+			insert into public.tenant_data_retention_policies values ('${TENANT_A}', 'operational_ephemera', 30);
+			insert into public.siem_deliveries (tenant_id, destination_id, event_row_id, kind, payload, status, delivered_at, created_at)
+			select tenant, dest, n, 'decision', '{}'::jsonb, 'delivered', now(), now() - make_interval(days => age)
+			  from (values ('${TENANT_A}'::uuid, '${DEST_A}'::uuid, 1, 10), ('${TENANT_A}'::uuid, '${DEST_A}'::uuid, 2, 31),
+			               ('${TENANT_B}'::uuid, '${DEST_B}'::uuid, 3, 10), ('${TENANT_B}'::uuid, '${DEST_B}'::uuid, 4, 3)) v(tenant, dest, n, age);
+			update public.siem_enqueue_failures set last_failed_at = now() - interval '10 days';`);
+		const pruned = json("select public.prune_siem_deliveries(100);");
+		assert.equal(pruned.deleted, 2);
+		assert.equal(pruned.enqueue_failures_deleted, 0, "tenant A keeps its gap ledger for 30 days");
+		assert.equal(sql("select string_agg(event_row_id::text, ',' order by event_row_id) from public.siem_deliveries;"), "1,4");
+		// A legal hold blocks pruning; releasing it lets the tenant retention apply.
+		sql(`update public.siem_enqueue_failures set last_failed_at = now() - interval '31 days';
+			update public.siem_deliveries set created_at = now() - interval '40 days';
+			insert into public.tenant_legal_holds values ('${TENANT_A}', null);`);
+		assert.equal(json("select public.prune_siem_deliveries(100);").deleted, 1);
+		assert.equal(sql("select count(*) from public.siem_enqueue_failures;"), "2");
+		sql(`update public.tenant_legal_holds set released_at = now() where tenant_id = '${TENANT_A}';`);
+		assert.deepEqual(json("select public.prune_siem_deliveries(100);"), { deleted: 1, enqueue_failures_deleted: 2 });
+
+		// Offboarding removes the ledger too.
+		sql(`insert into public.siem_enqueue_failures (tenant_id, day, source, sqlstate, failures)
+			  values ('${TENANT_B}', current_date, 'events', '23514', 1);
+			insert into public.tenant_offboarding_runs values ('${randomUUID()}', '${TENANT_B}', 'running');
+			update public.tenants set status = 'closing' where id = '${TENANT_B}';`);
+		assert.equal(sql(`select count(*) from public.siem_enqueue_failures where tenant_id = '${TENANT_B}';`), "0");
+		sql(`update public.tenant_offboarding_runs set status = 'completed' where tenant_id = '${TENANT_B}';`);
 	} finally {
 		database.stop();
 	}

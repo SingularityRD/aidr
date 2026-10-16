@@ -13,15 +13,22 @@ from a durable local queue, `packages/core/src/siem-delivery.ts`, configured wit
 
 ## What is forwarded
 
-| Destination filter | Source rows (`public.events`) | `kind` |
+| Destination filter | Source rows | `kind` |
 | --- | --- | --- |
-| Incidents | `incident`, `incident_record` | `incident` |
-| Decisions: blocked / held for approval / allowed | `runtime_verdict` with verdict `deny` / `ask` / `allow` | `decision` |
-| Browser Guard | `privacy_scan` with action `blocked` or `warned`; `shadow_ai_usage` with action `blocked` | `browser` |
+| Incidents | `public.events` `incident`, `incident_record` | `incident` |
+| Decisions: blocked / held for approval / allowed | `public.events` `runtime_verdict` with verdict `deny` / `ask` / `allow` | `decision` |
+| Browser Guard | `public.events` `privacy_scan` with action `blocked` or `warned`; `shadow_ai_usage` with action `blocked` | `browser` |
+| Admin actions and sign-ins (`filters.admin_audit`, off by default) | `public.admin_audit_logs` rows with a `tenant_id` | `admin_audit` |
 | (test send) | none, a fixed content-free event | `test` |
 
 A minimum severity applies to incidents and decisions (an event without a severity counts as
 `info`). Allowed decisions are high volume and off by default.
+
+Admin audit events (migration `20261016000200`) carry identifiers only: the audit row id
+(`audit_row_id`, deduplicated per destination independently of event row ids; `event_id`
+`aidr_audit_<id>`), the action identifier (dropped unless it matches
+`^[A-Za-z][A-Za-z0-9_.:-]{0,95}$`), `actor_user_id`, `target_user_id` and the time. The
+audit `detail` is never forwarded. Severity is `warning`; CEF adds `suid` / `duid`.
 
 Telemetry is stored already sanitised (ingest projection). The outbox copies an allow-listed
 projection only: identifiers (event row id, client event id, agent id, agent IID, connector,
@@ -117,8 +124,11 @@ RFC 3164 header. QRadar and Wazuh set-up: [QRadar](../integrations/qradar.md) ·
   (time, kind, decision/severity, last error and HTTP status) and re-queueable with
   **Resend dead letters** after the collector is fixed. Disabling a destination turns its
   waiting rows into dead letters.
-- **Retention.** Delivered rows and dead letters are pruned after the tenant's
-  `operational_ephemera` retention (at most 7 days), never during a legal hold. Offboarding
+- **Enqueue gaps.** A fault while queueing never loses the source row; it is counted in
+  `siem_enqueue_failures` (per tenant, UTC day, source table and SQLSTATE) and the SIEM page
+  shows "N events could not be queued" (`enqueue_failures` in the destination listing).
+- **Retention.** Delivered rows, dead letters and the enqueue-gap ledger are pruned after the
+  tenant's `operational_ephemera` retention (7 days when unset), never during a legal hold. Offboarding
   a workspace deletes its destinations and outbox in the same transaction.
 
 ## Security
