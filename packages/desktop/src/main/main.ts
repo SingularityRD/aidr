@@ -14,6 +14,7 @@ import {
 	shell,
 	Tray,
 } from "electron";
+import { auditLogFiles, readAuditEntries } from "../../../cli/src/commands/audit.js";
 import type {
 	ActionResult,
 	AppInfo,
@@ -27,9 +28,14 @@ import type {
 } from "../shared/contract.js";
 import { type MessageKey, resolveLanguage, translate } from "../shared/i18n.js";
 import { setLogClean } from "./aidr-config.js";
-import { APP_ENTRY, APP_HOST, APP_SCHEME, CONTENT_SECURITY_POLICY, resolveAppAsset } from "./app-protocol.js";
-import { auditLogFiles, readAuditEntries } from "../../../cli/src/commands/audit.js";
-import { type AuditRecord, AuditReader, watchAudit } from "./audit.js";
+import {
+	APP_ENTRY,
+	APP_HOST,
+	APP_SCHEME,
+	CONTENT_SECURITY_POLICY,
+	resolveAppAsset,
+} from "./app-protocol.js";
+import { AuditReader, type AuditRecord, watchAudit } from "./audit.js";
 import { AuditStore } from "./audit-store.js";
 import {
 	browserGuardStatus,
@@ -60,10 +66,18 @@ protocol.registerSchemesAsPrivileged([
 const home = aidrHome();
 const appRoot = app.getAppPath();
 const resourceRoot = app.isPackaged ? process.resourcesPath : join(appRoot, "build", "runtime");
-const bundledRuntimeDir = join(resourceRoot, app.isPackaged ? join("runtime", "aidr-sea") : "aidr-sea");
+const bundledRuntimeDir = join(
+	resourceRoot,
+	app.isPackaged ? join("runtime", "aidr-sea") : "aidr-sea",
+);
 const bundledRuntime = existsSync(bundledRuntimeDir) ? bundledRuntimeDir : null;
-const bundledExtensionDir = join(resourceRoot, app.isPackaged ? join("runtime", "browser-guard") : "browser-guard");
-const bundledExtension = existsSync(join(bundledExtensionDir, "manifest.json")) ? bundledExtensionDir : null;
+const bundledExtensionDir = join(
+	resourceRoot,
+	app.isPackaged ? join("runtime", "browser-guard") : "browser-guard",
+);
+const bundledExtension = existsSync(join(bundledExtensionDir, "manifest.json"))
+	? bundledExtensionDir
+	: null;
 const rendererRoot = join(__dirname, "..", "renderer");
 const iconRoot = join(rendererRoot, "icons");
 
@@ -80,7 +94,8 @@ let auditReader: AuditReader | null = null;
 let stopAuditWatch: (() => void) | null = null;
 let store = new AuditStore();
 
-const t = (key: MessageKey, params?: Record<string, string | number>) => translate(language, key, params);
+const t = (key: MessageKey, params?: Record<string, string | number>) =>
+	translate(language, key, params);
 
 function push<C extends PushChannel>(channel: C, payload: PushMap[C]): void {
 	if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
@@ -91,7 +106,12 @@ function applyLanguage(): void {
 }
 
 function appInfo(): AppInfo {
-	return { appVersion: app.getVersion(), language, preferences, platform: `${process.platform}/${process.arch}` };
+	return {
+		appVersion: app.getVersion(),
+		language,
+		preferences,
+		platform: `${process.platform}/${process.arch}`,
+	};
 }
 
 // ── Audit log ──────────────────────────────────────────────────────────
@@ -114,7 +134,8 @@ function onAuditRecords(records: AuditRecord[]): void {
 	const { rows, incidentsChanged } = store.ingest(records);
 	if (rows.length > 0) push("audit:events", rows);
 	if (incidentsChanged) push("incidents:changed", store.incidentList());
-	for (const row of rows) if (row.recordType === "runtime_verdict" && row.decision === "deny") notifyDeny(row);
+	for (const row of rows)
+		if (row.recordType === "runtime_verdict" && row.decision === "deny") notifyDeny(row);
 }
 
 /**
@@ -129,7 +150,9 @@ async function followAudit(): Promise<void> {
 	auditPath = path;
 	auditReader = new AuditReader(path);
 	store = new AuditStore();
-	const rotated = auditLogFiles({ path, max_files: auditMaxFiles(home) }).filter((file) => file !== path);
+	const rotated = auditLogFiles({ path, max_files: auditMaxFiles(home) }).filter(
+		(file) => file !== path,
+	);
 	try {
 		store.ingest((await readAuditEntries(rotated)).entries);
 	} catch {
@@ -293,7 +316,8 @@ async function openTarget(target: OpenTarget): Promise<ActionResult> {
 		browserGuardFolder: stagedExtensionDir(bgDeps()),
 	};
 	const path = paths[target];
-	if (!path || !existsSync(path)) return { ok: false, message: `${path ?? target} does not exist`, log: "" };
+	if (!path || !existsSync(path))
+		return { ok: false, message: `${path ?? target} does not exist`, log: "" };
 	if (target === "browserGuardFolder" || target === "dataDir") {
 		const error = await shell.openPath(path);
 		return { ok: error === "", message: error || path, log: "" };
@@ -309,32 +333,48 @@ async function openTarget(target: OpenTarget): Promise<ActionResult> {
 async function exportAudit(format: "jsonl" | "csv"): Promise<ActionResult> {
 	const receipt = (() => {
 		try {
-			return JSON.parse(readFileSync(join(dataDir(home), "installation.json"), "utf8")) as { path?: unknown };
+			return JSON.parse(readFileSync(join(dataDir(home), "installation.json"), "utf8")) as {
+				path?: unknown;
+			};
 		} catch {
 			return null;
 		}
 	})();
 	const root =
-		typeof receipt?.path === "string" && existsSync(runtimeBinary(receipt.path)) ? receipt.path : bundledRuntime;
+		typeof receipt?.path === "string" && existsSync(runtimeBinary(receipt.path))
+			? receipt.path
+			: bundledRuntime;
 	if (!root) return { ok: false, message: "no AIDR runtime is available", log: "" };
 	const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 	const options = {
 		defaultPath: join(app.getPath("documents"), `aidr-audit-${stamp}.${format}`),
 		filters: [{ name: format.toUpperCase(), extensions: [format] }],
 	};
-	const choice = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
+	const choice = mainWindow
+		? await dialog.showSaveDialog(mainWindow, options)
+		: await dialog.showSaveDialog(options);
 	if (choice.canceled || !choice.filePath) return { ok: false, message: "canceled", log: "" };
 	// The save dialog already asked before replacing an existing file; the CLI
 	// itself only ever creates a new one.
 	if (existsSync(choice.filePath)) rmSync(choice.filePath);
-	const result = await runFile(runtimeBinary(root), ["audit", "export", "--format", format, "--output", choice.filePath], {
-		cwd: home,
-		timeoutMs: 120_000,
-	});
-	const log = [result.stdout.trim(), result.stderr.trim(), result.error ?? ""].filter(Boolean).join("\n");
+	const result = await runFile(
+		runtimeBinary(root),
+		["audit", "export", "--format", format, "--output", choice.filePath],
+		{
+			cwd: home,
+			timeoutMs: 120_000,
+		},
+	);
+	const log = [result.stdout.trim(), result.stderr.trim(), result.error ?? ""]
+		.filter(Boolean)
+		.join("\n");
 	return result.exitCode === 0 && existsSync(choice.filePath)
 		? { ok: true, message: choice.filePath, log }
-		: { ok: false, message: `aidr audit export failed (exit ${result.exitCode ?? result.error})`, log };
+		: {
+				ok: false,
+				message: `aidr audit export failed (exit ${result.exitCode ?? result.error})`,
+				log,
+			};
 }
 
 function applyStartAtLogin(): void {
@@ -473,6 +513,15 @@ if (!app.requestSingleInstanceLock()) {
 		}
 		void followAudit();
 		createTray();
+		// Browser Guard ships with the app: keep its per-user folder current on every
+		// start, so the browser only has to load it once (and reloads updates itself).
+		if (bundledExtension) {
+			try {
+				stageExtension(bgDeps());
+			} catch {
+				// Shown on the Browser Guard page, which can stage it again.
+			}
+		}
 		createWindow(!process.argv.includes("--hidden"));
 		void refreshStatus().catch(() => undefined);
 		setInterval(() => void refreshStatus().catch(() => undefined), STATUS_INTERVAL_MS);

@@ -28,7 +28,10 @@ export function readSettingsObject(path: string): Record<string, unknown> | null
 }
 
 /** AIDR hook registrations (managed marker, or a command naming AIDR) of one event. */
-export function aidrHooks(settings: Record<string, unknown> | null, event: string): RegisteredHook[] {
+export function aidrHooks(
+	settings: Record<string, unknown> | null,
+	event: string,
+): RegisteredHook[] {
 	const hooks = settings && isObject(settings.hooks) ? settings.hooks[event] : undefined;
 	if (!Array.isArray(hooks)) return [];
 	const found: RegisteredHook[] = [];

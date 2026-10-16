@@ -138,7 +138,8 @@ export function createIpcHandlers(services: AppServices): IpcHandlers {
 		},
 		"audit:export": async (payload) => {
 			const { format } = objectPayload(payload, ["format"]);
-			if (format !== "jsonl" && format !== "csv") throw new IpcValidationError("format must be jsonl or csv");
+			if (format !== "jsonl" && format !== "csv")
+				throw new IpcValidationError("format must be jsonl or csv");
 			return exclusive("export", () => services.exportAudit(format));
 		},
 		"audit:setLogClean": async (payload) => {

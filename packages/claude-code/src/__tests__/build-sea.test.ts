@@ -240,6 +240,23 @@ describe("build-sea multi-call binary", () => {
 		expect(resolveEntry([exe, "aidr", "hook"], exe, HOOK_NAMES).kind).toBe("unknown");
 	});
 
+	it("runs the AIDR Privacy engine on its subcommand and on an aidr-privacy link", () => {
+		const exe = "/opt/aidr/bundle/bin/aidr";
+		expect(resolveEntry([exe, "aidr", "privacy-engine", "--redact"], exe, HOOK_NAMES)).toEqual({
+			kind: "privacy",
+			argv: [exe, "aidr", "--redact"],
+		});
+		const link = "C:\\AIDR\\bin\\aidr-privacy.exe";
+		expect(resolveEntry([link, link, "--json"], link, HOOK_NAMES)).toEqual({
+			kind: "privacy",
+			argv: [link, link, "--json"],
+		});
+		// `aidr privacy scan` stays the CLI's file report.
+		expect(resolveEntry([exe, "aidr", "privacy", "scan", "f.txt"], exe, HOOK_NAMES).kind).toBe(
+			"cli",
+		);
+	});
+
 	it("the dispatcher is self-contained CommonJS that compiles only the requested asset", () => {
 		const source = dispatcherSource();
 		expect(() =>

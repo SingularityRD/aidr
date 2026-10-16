@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import { assertHandlersMatchContract, type AppServices, createIpcHandlers, isTrustedSender } from "../main/ipc.js";
+import {
+	type AppServices,
+	assertHandlersMatchContract,
+	createIpcHandlers,
+	isTrustedSender,
+} from "../main/ipc.js";
 import { DEFAULT_PREFERENCES, INVOKE_CHANNELS } from "../shared/contract.js";
 
 function services(overrides: Partial<AppServices> = {}): AppServices {
 	const ok = { ok: true, message: "", log: "" };
-	const info = { appVersion: "1", language: "en" as const, preferences: DEFAULT_PREFERENCES, platform: "win32/x64" };
+	const info = {
+		appVersion: "1",
+		language: "en" as const,
+		preferences: DEFAULT_PREFERENCES,
+		platform: "win32/x64",
+	};
 	return {
 		info: () => info,
 		status: vi.fn(async () => ({}) as never),
@@ -31,7 +41,9 @@ describe("IPC handlers", () => {
 		const handlers = createIpcHandlers(services());
 		expect(Object.keys(handlers).sort()).toEqual([...INVOKE_CHANNELS].sort());
 		expect(() => assertHandlersMatchContract(handlers)).not.toThrow();
-		expect(() => assertHandlersMatchContract({ ...handlers, "evil:channel": async () => 1 } as never)).toThrow();
+		expect(() =>
+			assertHandlersMatchContract({ ...handlers, "evil:channel": async () => 1 } as never),
+		).toThrow();
 	});
 
 	it("reject payloads on channels that take none", async () => {
@@ -44,18 +56,28 @@ describe("IPC handlers", () => {
 		const api = services();
 		const handlers = createIpcHandlers(api);
 		await expect(handlers["audit:setLogClean"]({ enabled: "yes" })).rejects.toThrow(/boolean/);
-		await expect(handlers["audit:setLogClean"]({ enabled: true, extra: 1 })).rejects.toThrow(/unexpected field/);
-		await expect(handlers["browserGuard:openExtensionsPage"]({ browser: "firefox" })).rejects.toThrow(/chrome or edge/);
-		await expect(handlers["open:target"]({ target: "C:\\Windows\\System32" })).rejects.toThrow(/unknown open target/);
+		await expect(handlers["audit:setLogClean"]({ enabled: true, extra: 1 })).rejects.toThrow(
+			/unexpected field/,
+		);
+		await expect(
+			handlers["browserGuard:openExtensionsPage"]({ browser: "firefox" }),
+		).rejects.toThrow(/chrome or edge/);
+		await expect(handlers["open:target"]({ target: "C:\\Windows\\System32" })).rejects.toThrow(
+			/unknown open target/,
+		);
 		await expect(handlers["prefs:set"]({ language: "de" })).rejects.toThrow(/invalid language/);
 		await expect(handlers["prefs:set"]({ startAtLogin: "true" })).rejects.toThrow(/boolean/);
-		await expect(handlers["prefs:set"]({ __proto__: { polluted: true }, theme: "dark" })).resolves.toBeDefined();
+		await expect(
+			handlers["prefs:set"]({ __proto__: { polluted: true }, theme: "dark" }),
+		).resolves.toBeDefined();
 		await handlers["audit:setLogClean"]({ enabled: true });
 		expect(api.setLogClean).toHaveBeenCalledWith(true);
 		await handlers["open:target"]({ target: "auditLog" });
 		expect(api.open).toHaveBeenCalledWith("auditLog");
 		await expect(handlers["audit:export"]({ format: "xml" })).rejects.toThrow(/jsonl or csv/);
-		await expect(handlers["audit:export"]({ format: "csv", output: "C:\\x" })).rejects.toThrow(/unexpected field/);
+		await expect(handlers["audit:export"]({ format: "csv", output: "C:\\x" })).rejects.toThrow(
+			/unexpected field/,
+		);
 		await expect(handlers["incidents:get"]({ id: 42 })).rejects.toThrow(/non-empty string/);
 		await expect(handlers["incidents:get"]({ id: "" })).rejects.toThrow(/non-empty string/);
 		await expect(handlers["incidents:list"]({})).rejects.toThrow(/no payload/);

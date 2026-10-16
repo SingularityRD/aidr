@@ -24,4 +24,5 @@ async function main():Promise<void> {
   } catch {gate.abort();process.stdout.write('{"decision":"block","output":null,"reasons":["CLI_INPUT_FAILURE"]}\n');process.exitCode=2;}
   finally{engine.dispose();}
 }
-await main();
+// No top-level await: the same entry is bundled as CommonJS into the AIDR runtime binary.
+main().catch(()=>{process.stdout.write('{"decision":"block","output":null,"reasons":["CLI_INPUT_FAILURE"]}\n');process.exitCode=2;});

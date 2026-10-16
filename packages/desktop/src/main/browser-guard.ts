@@ -1,4 +1,12 @@
-import { cpSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+} from "node:fs";
 import { isAbsolute, join, win32 } from "node:path";
 import type {
 	BrowserExtensionHit,
@@ -121,7 +129,12 @@ export function findInProfile(
 		if (typeof settings !== "object" || settings === null) continue;
 		for (const [id, raw] of Object.entries(settings as Record<string, unknown>)) {
 			if (hits.has(id) || typeof raw !== "object" || raw === null) continue;
-			const entry = raw as { path?: unknown; location?: unknown; state?: unknown; disable_reasons?: unknown };
+			const entry = raw as {
+				path?: unknown;
+				location?: unknown;
+				state?: unknown;
+				disable_reasons?: unknown;
+			};
 			if (typeof entry.path !== "string") continue;
 			// Chrome writes Windows separators ("id\\1.0.0_0"); split on both so a
 			// relative store path resolves under the profile on any platform.
@@ -185,9 +198,12 @@ function bundledVersion(dir: string | null): string | null {
 	return dir ? (manifestName(dir)?.version ?? null) : null;
 }
 
+/**
+ * The per-user folder the browser loads Browser Guard from. It is stable across
+ * app updates, so a browser that loaded it picks up the new build on restart.
+ */
 export function stagedExtensionDir(deps: BrowserGuardDeps): string | null {
-	const version = bundledVersion(deps.bundledExtension);
-	return version ? join(browserGuardDir(deps.home), `chrome-${version}`) : null;
+	return bundledVersion(deps.bundledExtension) ? join(browserGuardDir(deps.home), "chrome") : null;
 }
 
 export async function browserGuardStatus(deps: BrowserGuardDeps): Promise<BrowserGuardStatus> {
@@ -205,26 +221,55 @@ export async function browserGuardStatus(deps: BrowserGuardDeps): Promise<Browse
 			return { browser: layout.id, installed: executable !== null, executable };
 		}),
 		extensions,
-		nativeHost: { name: NATIVE_HOST_NAME, registrations: await nativeHostRegistrations(deps.run, layouts) },
+		nativeHost: {
+			name: NATIVE_HOST_NAME,
+			registrations: await nativeHostRegistrations(deps.run, layouts),
+		},
 		bundled: {
-			available: deps.bundledExtension !== null && existsSync(join(deps.bundledExtension, "manifest.json")),
+			available:
+				deps.bundledExtension !== null && existsSync(join(deps.bundledExtension, "manifest.json")),
 			version: bundledVersion(deps.bundledExtension),
 			stagedPath: staged && existsSync(join(staged, "manifest.json")) ? staged : null,
 		},
 	};
 }
 
-/** Copy the shipped unpacked extension to its stable per-user folder. */
-export function stageExtension(deps: BrowserGuardDeps): string {
-	const target = stagedExtensionDir(deps);
-	if (!deps.bundledExtension || !target) throw new Error("this build does not include Browser Guard");
-	if (existsSync(join(target, "manifest.json"))) return target;
+/** Replace `target` with a copy of `source`, so a reader never sees a half-copied folder. */
+function replaceFolder(source: string, target: string): void {
 	const staging = `${target}.staging-${process.pid}`;
+	const previous = `${target}.previous-${process.pid}`;
 	try {
-		cpSync(deps.bundledExtension, staging, { recursive: true });
+		cpSync(source, staging, { recursive: true });
+		if (existsSync(target)) renameSync(target, previous);
 		renameSync(staging, target);
 	} finally {
 		rmSync(staging, { recursive: true, force: true });
+		rmSync(previous, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Copy the shipped unpacked extension to its stable per-user folder, and bring
+ * every folder staged by an earlier version (chrome-<version>, which a browser
+ * may still load) up to the shipped build. Idempotent: an up-to-date folder is
+ * left alone.
+ */
+export function stageExtension(deps: BrowserGuardDeps): string {
+	const target = stagedExtensionDir(deps);
+	const shipped = bundledVersion(deps.bundledExtension);
+	if (!deps.bundledExtension || !target || !shipped) {
+		throw new Error("this build does not include Browser Guard");
+	}
+	const root = browserGuardDir(deps.home);
+	const legacy = existsSync(root)
+		? readdirSync(root)
+				.filter((name) => /^chrome-\d[\w.-]*$/.test(name))
+				.map((name) => join(root, name))
+		: [];
+	for (const folder of [target, ...legacy]) {
+		if (folder !== target && !existsSync(join(folder, "manifest.json"))) continue;
+		if (manifestName(folder)?.version === shipped) continue;
+		replaceFolder(deps.bundledExtension, folder);
 	}
 	return target;
 }

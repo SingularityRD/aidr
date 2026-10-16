@@ -323,7 +323,12 @@ export interface PushMap {
 
 export type PushChannel = keyof PushMap;
 
-export const PUSH_CHANNELS: readonly PushChannel[] = ["audit:events", "status:changed", "nav:go", "incidents:changed"];
+export const PUSH_CHANNELS: readonly PushChannel[] = [
+	"audit:events",
+	"status:changed",
+	"nav:go",
+	"incidents:changed",
+];
 
 /** What the preload exposes as `window.aidr`. */
 export interface AidrBridge {

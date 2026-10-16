@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 
@@ -10,7 +17,9 @@ export function tempDir(prefix: string): string {
 function listFiles(root: string, current = root): string[] {
 	return readdirSync(current).flatMap((name) => {
 		const path = join(current, name);
-		return statSync(path).isDirectory() ? listFiles(root, path) : [relative(root, path).split(sep).join("/")];
+		return statSync(path).isDirectory()
+			? listFiles(root, path)
+			: [relative(root, path).split(sep).join("/")];
 	});
 }
 

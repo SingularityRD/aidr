@@ -15,7 +15,8 @@ export function validatePreferencesPatch(value: unknown): Partial<Preferences> {
 				patch.language = raw;
 				break;
 			case "theme":
-				if (raw !== "system" && raw !== "light" && raw !== "dark") throw new TypeError("invalid theme");
+				if (raw !== "system" && raw !== "light" && raw !== "dark")
+					throw new TypeError("invalid theme");
 				patch.theme = raw;
 				break;
 			case "notifyOnDeny":

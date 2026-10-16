@@ -3,7 +3,8 @@
 // as extraResources):
 //
 //   build/runtime/aidr-sea/        the standalone AIDR runtime: one multi-call aidr.exe
-//                                  serving the CLI and every hook, plus the rules it
+//                                  serving the CLI, every hook and the AIDR Privacy
+//                                  engine (`aidr privacy-engine`), plus the rules it
 //                                  loads; built by packages/claude-code/scripts/build-sea.mjs
 //                                  from the connector bundles of the workspace build
 //   build/runtime/browser-guard/   the unpacked Browser Guard extension for Chrome/Edge
@@ -43,6 +44,8 @@ const required = [
 	"packages/claude-code/dist/pre-tool-use.bundle.cjs",
 	"packages/codex/dist/pre-tool-use.bundle.cjs",
 	"packages/cli/dist/index.js",
+	// AIDR Privacy engine, bundled into aidr.exe as `aidr privacy-engine`.
+	"packages/privacy/dist/cli.js",
 ];
 const missing = required.filter((path) => !existsSync(join(repo, path)));
 if (missing.length > 0) {

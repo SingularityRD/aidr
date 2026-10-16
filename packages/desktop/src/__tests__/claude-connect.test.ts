@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MANAGED_HOOK_MARKER } from "../../../cli/src/utils/install-hooks.js";
 import { connectClaude, disconnectClaude, previewConnect } from "../main/claude.js";
-import type { RunOptions, Runner } from "../main/exec.js";
+import type { Runner, RunOptions } from "../main/exec.js";
 import { runtimeBinary } from "../main/paths.js";
 import { checkRuntime, ensureInstalledRuntime, installedRuntimeDir } from "../main/runtime.js";
 import { fakeBundle, tempDir } from "./fixtures.js";
@@ -35,23 +35,44 @@ const userSettings = {
 	},
 };
 
-const run: Runner = async () => ({ exitCode: 0, signal: null, stdout: "", stderr: "", durationMs: 1, error: null });
+const run: Runner = async () => ({
+	exitCode: 0,
+	signal: null,
+	stdout: "",
+	stderr: "",
+	durationMs: 1,
+	error: null,
+});
 
 describe("previewConnect (the settings merge aidr setup performs)", () => {
 	it("adds the three AIDR hooks and keeps every user hook and key", () => {
 		const { home, bundle } = setup(userSettings);
-		const preview = previewConnect({ home, bundledRuntime: bundle, run, language: "en", machine: [] });
+		const preview = previewConnect({
+			home,
+			bundledRuntime: bundle,
+			run,
+			language: "en",
+			machine: [],
+		});
 		expect(preview.blocker).toBeNull();
 		expect(preview.changed).toBe(true);
-		const added = preview.diff.filter((line) => line.kind === "add").map((line) => line.text).join("\n");
+		const added = preview.diff
+			.filter((line) => line.kind === "add")
+			.map((line) => line.text)
+			.join("\n");
 		const removed = preview.diff.filter((line) => line.kind === "remove");
 		expect(added).toContain("hook pre-tool-use");
 		expect(added).toContain("hook post-tool-use");
 		expect(added).toContain("hook session-start");
 		expect(added).toContain(MANAGED_HOOK_MARKER);
 		// Only additions: nothing the user wrote is removed or rewritten.
-		expect(removed.filter((line) => line.text.trim() !== "]" && line.text.trim() !== "}")).toEqual([]);
-		const after = preview.diff.filter((line) => line.kind !== "remove").map((line) => line.text).join("\n");
+		expect(removed.filter((line) => line.text.trim() !== "]" && line.text.trim() !== "}")).toEqual(
+			[],
+		);
+		const after = preview.diff
+			.filter((line) => line.kind !== "remove")
+			.map((line) => line.text)
+			.join("\n");
 		const parsed = JSON.parse(after);
 		expect(parsed.model).toBe("opus");
 		expect(parsed.hooks.Stop).toEqual(userSettings.hooks.Stop);
@@ -66,30 +87,68 @@ describe("previewConnect (the settings merge aidr setup performs)", () => {
 				PreToolUse: [
 					{
 						matcher: "*",
-						hooks: [{ type: "command", command: '"C:/old/aidr.exe" hook pre-tool-use', statusMessage: MANAGED_HOOK_MARKER }],
+						hooks: [
+							{
+								type: "command",
+								command: '"C:/old/aidr.exe" hook pre-tool-use',
+								statusMessage: MANAGED_HOOK_MARKER,
+							},
+						],
 					},
 				],
 			},
 		};
 		const { home, bundle } = setup(stale);
-		const preview = previewConnect({ home, bundledRuntime: bundle, run, language: "en", machine: [] });
-		const after = JSON.parse(preview.diff.filter((line) => line.kind !== "remove").map((line) => line.text).join("\n"));
+		const preview = previewConnect({
+			home,
+			bundledRuntime: bundle,
+			run,
+			language: "en",
+			machine: [],
+		});
+		const after = JSON.parse(
+			preview.diff
+				.filter((line) => line.kind !== "remove")
+				.map((line) => line.text)
+				.join("\n"),
+		);
 		expect(after.hooks.PreToolUse).toHaveLength(1);
 		expect(after.hooks.PreToolUse[0].hooks[0].command).not.toContain("C:/old");
 	});
 
 	it("is a no-op when the settings already hold exactly these hooks", () => {
 		const { home, bundle } = setup(userSettings);
-		const first = previewConnect({ home, bundledRuntime: bundle, run, language: "en", machine: [] });
-		const desired = first.diff.filter((line) => line.kind !== "remove").map((line) => line.text).join("\n");
+		const first = previewConnect({
+			home,
+			bundledRuntime: bundle,
+			run,
+			language: "en",
+			machine: [],
+		});
+		const desired = first.diff
+			.filter((line) => line.kind !== "remove")
+			.map((line) => line.text)
+			.join("\n");
 		writeFileSync(join(home, ".claude", "settings.json"), `${desired}\n`);
-		const second = previewConnect({ home, bundledRuntime: bundle, run, language: "en", machine: [] });
+		const second = previewConnect({
+			home,
+			bundledRuntime: bundle,
+			run,
+			language: "en",
+			machine: [],
+		});
 		expect(second.changed).toBe(false);
 	});
 
 	it("creates the settings file when there is none", () => {
 		const { home, bundle } = setup();
-		const preview = previewConnect({ home, bundledRuntime: bundle, run, language: "en", machine: [] });
+		const preview = previewConnect({
+			home,
+			bundledRuntime: bundle,
+			run,
+			language: "en",
+			machine: [],
+		});
 		expect(preview.settingsExists).toBe(false);
 		expect(preview.diff.every((line) => line.kind === "add")).toBe(true);
 	});
@@ -97,11 +156,21 @@ describe("previewConnect (the settings merge aidr setup performs)", () => {
 	it.each([
 		["invalid JSON", "{ not json", /cannot be read as JSON/],
 		["disableAllHooks", { disableAllHooks: true }, /disableAllHooks/],
-		["the AIDR plugin enabled", { enabledPlugins: { "aidr@aidr": true } }, /plugin is already enabled/],
+		[
+			"the AIDR plugin enabled",
+			{ enabledPlugins: { "aidr@aidr": true } },
+			/plugin is already enabled/,
+		],
 		["hooks that are not an object", { hooks: [] }, /not an object/],
 	])("refuses to connect over %s", (_name, settings, message) => {
 		const { home, bundle } = setup(settings);
-		const preview = previewConnect({ home, bundledRuntime: bundle, run, language: "en", machine: [] });
+		const preview = previewConnect({
+			home,
+			bundledRuntime: bundle,
+			run,
+			language: "en",
+			machine: [],
+		});
 		expect(preview.blocker).toMatch(message);
 		expect(preview.diff).toEqual([]);
 	});
@@ -113,7 +182,13 @@ describe("previewConnect (the settings merge aidr setup performs)", () => {
 			bundledRuntime: bundle,
 			run,
 			language: "en",
-			machine: [{ host: "claude-code", path: "C:/ProgramData/managed-settings.json", registered: true } as never],
+			machine: [
+				{
+					host: "claude-code",
+					path: "C:/ProgramData/managed-settings.json",
+					registered: true,
+				} as never,
+			],
 		});
 		expect(preview.blocker).toMatch(/machine policy/);
 	});
@@ -121,7 +196,13 @@ describe("previewConnect (the settings merge aidr setup performs)", () => {
 	it("refuses a bundled runtime that fails verification", () => {
 		const { home, bundle } = setup(userSettings);
 		writeFileSync(join(bundle, "dist", "response-worker.cjs"), "// tampered\n");
-		const preview = previewConnect({ home, bundledRuntime: bundle, run, language: "en", machine: [] });
+		const preview = previewConnect({
+			home,
+			bundledRuntime: bundle,
+			run,
+			language: "en",
+			machine: [],
+		});
 		expect(preview.blocker).toMatch(/failed verification/);
 	});
 });
@@ -143,7 +224,9 @@ describe("ensureInstalledRuntime", () => {
 		writeFileSync(join(root, "dist", "response-worker.cjs"), "// tampered\n");
 		const again = ensureInstalledRuntime(bundle, home);
 		expect(again.copied).toBe(true);
-		expect(readFileSync(join(again.root, "dist", "response-worker.cjs"), "utf8")).toBe("// worker\n");
+		expect(readFileSync(join(again.root, "dist", "response-worker.cjs"), "utf8")).toBe(
+			"// worker\n",
+		);
 	});
 });
 
@@ -175,10 +258,26 @@ describe("connect and disconnect run the supported CLI paths", () => {
 				}),
 			);
 			mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
-			writeFileSync(join(home, ".singularity-aidr", "installation.json"), JSON.stringify({ path: root }));
-			return { exitCode: 0, signal: null, stdout: "Setup complete", stderr: "", durationMs: 5, error: null };
+			writeFileSync(
+				join(home, ".singularity-aidr", "installation.json"),
+				JSON.stringify({ path: root }),
+			);
+			return {
+				exitCode: 0,
+				signal: null,
+				stdout: "Setup complete",
+				stderr: "",
+				durationMs: 5,
+				error: null,
+			};
 		};
-		const result = await connectClaude({ home, bundledRuntime: bundle, run: fakeSetup, language: "tr", machine: [] });
+		const result = await connectClaude({
+			home,
+			bundledRuntime: bundle,
+			run: fakeSetup,
+			language: "tr",
+			machine: [],
+		});
 		expect(result.ok).toBe(true);
 		expect(calls).toHaveLength(1);
 		expect(calls[0]?.args).toEqual(["setup", "--host", "claude-code"]);
@@ -188,7 +287,13 @@ describe("connect and disconnect run the supported CLI paths", () => {
 
 	it("connect reports failure when the hooks were not registered, even with exit 0", async () => {
 		const { home, bundle } = setup(userSettings);
-		const result = await connectClaude({ home, bundledRuntime: bundle, run, language: "en", machine: [] });
+		const result = await connectClaude({
+			home,
+			bundledRuntime: bundle,
+			run,
+			language: "en",
+			machine: [],
+		});
 		expect(result.ok).toBe(false);
 		expect(result.message).toMatch(/not registered/);
 	});
@@ -201,13 +306,23 @@ describe("connect and disconnect run the supported CLI paths", () => {
 			return {
 				exitCode: 0,
 				signal: null,
-				stdout: JSON.stringify({ outcome: "removed", removed: [{ event: "PreToolUse" }], backup_path: "C:/backup.json" }),
+				stdout: JSON.stringify({
+					outcome: "removed",
+					removed: [{ event: "PreToolUse" }],
+					backup_path: "C:/backup.json",
+				}),
 				stderr: "",
 				durationMs: 3,
 				error: null,
 			};
 		};
-		const result = await disconnectClaude({ home, bundledRuntime: bundle, run: fakeUninstall, language: "en", machine: [] });
+		const result = await disconnectClaude({
+			home,
+			bundledRuntime: bundle,
+			run: fakeUninstall,
+			language: "en",
+			machine: [],
+		});
 		expect(result).toMatchObject({ ok: true, backupPath: "C:/backup.json" });
 		expect(calls[0]?.args).toEqual(["uninstall", "--hooks-only", "--yes", "--json"]);
 		expect(calls[0]?.env?.AIDR_OPERATOR_NONINTERACTIVE).toBe("1");
@@ -218,12 +333,21 @@ describe("connect and disconnect run the supported CLI paths", () => {
 		const refusing: Runner = async () => ({
 			exitCode: 1,
 			signal: null,
-			stdout: JSON.stringify({ outcome: "refused", reason: { code: "receipt_missing", detail: "No receipt" } }),
+			stdout: JSON.stringify({
+				outcome: "refused",
+				reason: { code: "receipt_missing", detail: "No receipt" },
+			}),
 			stderr: "",
 			durationMs: 3,
 			error: null,
 		});
-		const result = await disconnectClaude({ home, bundledRuntime: bundle, run: refusing, language: "en", machine: [] });
+		const result = await disconnectClaude({
+			home,
+			bundledRuntime: bundle,
+			run: refusing,
+			language: "en",
+			machine: [],
+		});
 		expect(result.ok).toBe(false);
 		expect(result.message).toContain("No receipt");
 		expect(existsSync(join(home, ".claude", "settings.json"))).toBe(true);

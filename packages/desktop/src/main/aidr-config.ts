@@ -10,7 +10,8 @@ import { type Config, getConfig, updateConfig } from "../../../cli/src/utils/con
  */
 export function setLogClean(enabled: boolean): void {
 	const current = getConfig() as (Config & { logging?: Record<string, unknown> }) | null;
-	if (!current) throw new Error("The AIDR configuration does not exist yet; connect Claude Code first.");
+	if (!current)
+		throw new Error("The AIDR configuration does not exist yet; connect Claude Code first.");
 	const update = { logging: { ...(current.logging ?? {}), log_clean: enabled } };
 	if (!ConfigSchema.safeParse({ ...current, ...update }).success) {
 		throw new Error("the resulting configuration is not valid");

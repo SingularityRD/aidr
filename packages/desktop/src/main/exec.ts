@@ -23,7 +23,11 @@ export interface RunOptions {
  * joined into a command line that a shell parses, so nothing in them is
  * interpreted (no injection through paths, payloads or user input).
  */
-export type Runner = (file: string, args: readonly string[], options?: RunOptions) => Promise<RunResult>;
+export type Runner = (
+	file: string,
+	args: readonly string[],
+	options?: RunOptions,
+) => Promise<RunResult>;
 
 export const runFile: Runner = (file, args, options = {}) =>
 	new Promise((resolve) => {

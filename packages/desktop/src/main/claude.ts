@@ -68,7 +68,9 @@ export function previewConnect(deps: ClaudeDeps): ConnectPreview {
 	}
 	const root = installedRuntimeDir(deps.home, check);
 	const commands = STANDALONE_CLAUDE_HOOKS.map(({ hook }) => standaloneHookCommand(root, hook));
-	const machine = (deps.machine ?? machineHookStatus()).find((entry) => entry.host === "claude-code");
+	const machine = (deps.machine ?? machineHookStatus()).find(
+		(entry) => entry.host === "claude-code",
+	);
 	if (machine?.registered) {
 		return {
 			...base,
@@ -153,7 +155,9 @@ function cliEnv(deps: ClaudeDeps, extra: NodeJS.ProcessEnv = {}): NodeJS.Process
 }
 
 function output(result: { stdout: string; stderr: string; error: string | null }): string {
-	return [result.stdout.trim(), result.stderr.trim(), result.error ?? ""].filter(Boolean).join("\n");
+	return [result.stdout.trim(), result.stderr.trim(), result.error ?? ""]
+		.filter(Boolean)
+		.join("\n");
 }
 
 export async function connectClaude(deps: ClaudeDeps): Promise<ActionResult> {
@@ -174,7 +178,8 @@ export async function connectClaude(deps: ClaudeDeps): Promise<ActionResult> {
 	try {
 		const receipt = JSON.parse(readFileSync(receiptPath(deps.home), "utf8")) as { path?: unknown };
 		receiptMatches =
-			typeof receipt.path === "string" && resolve(receipt.path).toLowerCase() === resolve(root).toLowerCase();
+			typeof receipt.path === "string" &&
+			resolve(receipt.path).toLowerCase() === resolve(root).toLowerCase();
 	} catch {
 		receiptMatches = false;
 	}

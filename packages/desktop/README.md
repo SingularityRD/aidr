@@ -10,7 +10,7 @@ protection of one Windows user, using the product's own code paths.
 | Prove it works (Çalıştığını kanıtla) | Runs the registered PreToolUse hook exactly as Claude Code does (JSON on stdin) with `ls -la` (expect allow) and a never-executed `curl … \| bash` canary (expect deny); shows verdicts, rule and latency | The hook command in the settings, split into program + arguments and run without a shell |
 | Logs (Kayıtlar) | Every audit record type, live: tool calls, prompt checks (UserPromptSubmit), tool-output findings (PostToolUse), plugin scans, incidents, response actions, approvals, exceptions; decision and type filters, search; JSONL/CSV export | `audit.jsonl` in the AIDR data folder and its rotated files (read with the CLI's audit reader); export through `aidr audit export` (redacted, session ids digested) |
 | Incidents (Olaylar) | Correlated incidents with severity, status (open/closed), session, connector, first/last seen, event count; severity/status filters; detail with each linked verdict (rule, reason, masked artifact, time); live | `incident_record` entries of the audit log (core's correlator), latest snapshot per incident, events joined to their verdict records by session and time |
-| Browser Guard | Chrome/Edge detection of the extension and of the optional native helper; staging of the unpacked extension and the browser's extensions page | Browser profile preference files (read only), `reg query` of the native-messaging keys |
+| Browser Guard | Chrome/Edge detection of the extension and of the optional native helper; the shipped extension is staged automatically on every start (a stable per-user folder, refreshed when the app updates) and the page opens the browser's extensions page for the one-time "Load unpacked" | Browser profile preference files (read only), `reg query` of the native-messaging keys |
 | Settings | Language (Turkish by default on a Turkish system), theme, deny notifications, start at sign-in (off by default) | `preferences.json` in the app's user-data folder |
 
 A tray icon shows protected / not protected. Closing the window keeps the app in the tray
@@ -22,6 +22,23 @@ registering it (`kurulum testi` / `setup canary`).
 
 Everything except Connect, Disconnect, the "Also record allowed calls" toggle
 (`logging.log_clean`) and Browser Guard staging is read-only.
+
+## AIDR Privacy ships with the app
+
+AIDR Privacy is installed with the app, nothing extra to download:
+
+- **Browser Guard** (TR/EN personal data and secret masking before a prompt reaches an AI
+  chat site) is bundled and staged to `%USERPROFILE%\.singularity-aidr\desktop\browser-guard\chrome`
+  on every start. Load that folder once in Chrome or Edge (Browser Guard page → open the
+  extensions page → "Load unpacked"); after an app update the browser picks up the new build
+  on its next restart. Fleet-wide force-install with a fixed extension ID goes through
+  enterprise policy instead (`deploy/browser-guard/`).
+- **The AIDR Privacy engine** is part of the bundled `aidr.exe`:
+  `aidr privacy-engine [--json] [--redact] < input` masks TCKN, IBAN (mod-97), card numbers
+  (Luhn), phones, e-mail addresses and secrets locally and prints the decision as JSON
+  (exit 2 when the input must be blocked). A copy or hard link of `aidr.exe` named
+  `aidr-privacy.exe` runs the same engine. `aidr privacy scan <file>` remains the
+  file-oriented report.
 
 ## How the hooks are installed
 

@@ -1,9 +1,10 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { CONTENT_SECURITY_POLICY, resolveAppAsset } from "../main/app-protocol.js";
-import { findInProfile, manifestName } from "../main/browser-guard.js";
+import { findInProfile, manifestName, stageExtension } from "../main/browser-guard.js";
 import { lineDiff } from "../main/diff.js";
+import { browserGuardDir } from "../main/paths.js";
 import { loadPreferences, savePreferences, validatePreferencesPatch } from "../main/prefs.js";
 import { auditLogPath, hookFactsFor } from "../main/status.js";
 import { DEFAULT_PREFERENCES } from "../shared/contract.js";
@@ -42,7 +43,12 @@ describe("i18n", () => {
 
 describe("preferences", () => {
 	it("defaults: start at login off, notifications on, language follows the system", () => {
-		expect(DEFAULT_PREFERENCES).toEqual({ language: "auto", theme: "system", notifyOnDeny: true, startAtLogin: false });
+		expect(DEFAULT_PREFERENCES).toEqual({
+			language: "auto",
+			theme: "system",
+			notifyOnDeny: true,
+			startAtLogin: false,
+		});
 		expect(loadPreferences(join(dir("prefs"), "absent.json"))).toEqual(DEFAULT_PREFERENCES);
 	});
 
@@ -108,14 +114,45 @@ describe("lineDiff", () => {
 describe("Browser Guard detection", () => {
 	function extension(root: string, name: string, version: string) {
 		mkdirSync(join(root, "_locales", "en"), { recursive: true });
-		writeFileSync(join(root, "manifest.json"), JSON.stringify({ name: "__MSG_extName__", default_locale: "en", version }));
-		writeFileSync(join(root, "_locales", "en", "messages.json"), JSON.stringify({ extName: { message: name } }));
+		writeFileSync(
+			join(root, "manifest.json"),
+			JSON.stringify({ name: "__MSG_extName__", default_locale: "en", version }),
+		);
+		writeFileSync(
+			join(root, "_locales", "en", "messages.json"),
+			JSON.stringify({ extName: { message: name } }),
+		);
 	}
+
+	it("stages the shipped build in a stable folder and refreshes folders staged by older versions", () => {
+		const home = dir("home");
+		const shipped = dir("shipped");
+		extension(shipped, "Singularity AIDR Browser Guard", "1.2.0");
+		const legacy = join(browserGuardDir(home), "chrome-1.1.0");
+		extension(legacy, "Singularity AIDR Browser Guard", "1.1.0");
+		const deps = {
+			home,
+			run: async () => ({ code: 0, stdout: "", stderr: "", error: null }),
+			bundledExtension: shipped,
+		};
+
+		const target = stageExtension(deps as never);
+		expect(target).toBe(join(browserGuardDir(home), "chrome"));
+		for (const folder of [target, legacy]) {
+			expect(JSON.parse(readFileSync(join(folder, "manifest.json"), "utf8")).version).toBe("1.2.0");
+		}
+		// Idempotent: a second start leaves the up-to-date folders as they are.
+		expect(stageExtension(deps as never)).toBe(target);
+		expect(existsSync(join(target, "manifest.json"))).toBe(true);
+	});
 
 	it("resolves localized manifest names", () => {
 		const root = dir("ext");
 		extension(root, "Singularity AIDR Browser Guard", "1.0.0");
-		expect(manifestName(root)).toEqual({ name: "Singularity AIDR Browser Guard", version: "1.0.0" });
+		expect(manifestName(root)).toEqual({
+			name: "Singularity AIDR Browser Guard",
+			version: "1.0.0",
+		});
 	});
 
 	it("finds Browser Guard among a profile's extensions (store and unpacked), and its state", () => {
@@ -123,7 +160,11 @@ describe("Browser Guard detection", () => {
 		const profile = join(userData, "Default");
 		const unpacked = dir("unpacked");
 		extension(unpacked, "Singularity AIDR Browser Guard", "1.0.0");
-		extension(join(profile, "Extensions", "storeid", "1.1.0_0"), "Singularity AIDR Browser Guard", "1.1.0");
+		extension(
+			join(profile, "Extensions", "storeid", "1.1.0_0"),
+			"Singularity AIDR Browser Guard",
+			"1.1.0",
+		);
 		extension(join(profile, "Extensions", "otherid", "2.0_0"), "Some Other Extension", "2.0");
 		writeFileSync(
 			join(profile, "Secure Preferences"),
@@ -138,7 +179,9 @@ describe("Browser Guard detection", () => {
 			}),
 		);
 		const hits = findInProfile("chrome", userData, "Default");
-		expect(hits.map((hit) => [hit.extensionId, hit.version, hit.enabled, hit.unpacked]).sort()).toEqual([
+		expect(
+			hits.map((hit) => [hit.extensionId, hit.version, hit.enabled, hit.unpacked]).sort(),
+		).toEqual([
 			["storeid", "1.1.0", true, false],
 			["unpackedid", "1.0.0", false, true],
 		]);
@@ -150,7 +193,10 @@ describe("status helpers", () => {
 		const home = dir("home");
 		expect(auditLogPath(home)).toBe(join(home, ".singularity-aidr", "audit.jsonl"));
 		mkdirSync(join(home, ".singularity-aidr"), { recursive: true });
-		writeFileSync(join(home, ".singularity-aidr", "config.json"), JSON.stringify({ logging: { path: "~/logs/aidr.jsonl" } }));
+		writeFileSync(
+			join(home, ".singularity-aidr", "config.json"),
+			JSON.stringify({ logging: { path: "~/logs/aidr.jsonl" } }),
+		);
 		expect(auditLogPath(home)).toBe(join(home, "logs", "aidr.jsonl"));
 	});
 
@@ -160,10 +206,26 @@ describe("status helpers", () => {
 		writeFileSync(
 			join(home, ".claude", "settings.json"),
 			JSON.stringify({
-				hooks: { PreToolUse: [{ hooks: [{ type: "command", command: '"C:/gone/bin/aidr.exe" hook pre-tool-use', statusMessage: "Singularity AIDR managed installation" }] }] },
+				hooks: {
+					PreToolUse: [
+						{
+							hooks: [
+								{
+									type: "command",
+									command: '"C:/gone/bin/aidr.exe" hook pre-tool-use',
+									statusMessage: "Singularity AIDR managed installation",
+								},
+							],
+						},
+					],
+				},
 			}),
 		);
-		expect(hookFactsFor("claude-code", home)).toMatchObject({ kind: "command", registered: true, binaryPresent: false });
+		expect(hookFactsFor("claude-code", home)).toMatchObject({
+			kind: "command",
+			registered: true,
+			binaryPresent: false,
+		});
 		expect(hookFactsFor("opencode", home)).toMatchObject({ kind: "in_process", registered: null });
 	});
 });

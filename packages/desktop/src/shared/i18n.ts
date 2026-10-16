@@ -48,7 +48,8 @@ const en = {
 	"status.mode.managed": "Managed",
 	"status.mode.unknown": "Unknown",
 	"status.connectors": "Connectors",
-	"status.connectorsHint": "Claude Code is always shown; other agents appear when they are found on this computer.",
+	"status.connectorsHint":
+		"Claude Code is always shown; other agents appear when they are found on this computer.",
 	"status.row.installed": "Installed",
 	"status.row.hook": "Hook registered",
 	"status.row.binary": "Hook program present",
@@ -79,7 +80,8 @@ const en = {
 	"claude.previewRuntime": "Hook programs (per-user copy, keeps working when this app is closed)",
 	"claude.previewCommands": "Hook commands",
 	"claude.previewDiff": "Change preview",
-	"claude.previewNoChange": "The settings already contain exactly these hooks. Connecting re-verifies them.",
+	"claude.previewNoChange":
+		"The settings already contain exactly these hooks. Connecting re-verifies them.",
 	"claude.previewBlocked": "Cannot connect",
 	"claude.confirmConnect": "Back up and connect",
 	"claude.disconnectTitle": "Disconnect Claude Code",
@@ -132,7 +134,8 @@ const en = {
 	"activity.logClean": "Also record allowed calls (logging.log_clean)",
 	"activity.logCleanHint":
 		"By default the audit log records deny and ask verdicts only. Turn this on to see allowed calls too.",
-	"activity.logCleanNeedsConfig": "Connect Claude Code first: the AIDR configuration does not exist yet.",
+	"activity.logCleanNeedsConfig":
+		"Connect Claude Code first: the AIDR configuration does not exist yet.",
 	"activity.openLog": "Open audit log",
 	"decision.allow": "ALLOW",
 	"decision.ask": "ASK",
@@ -157,7 +160,8 @@ const en = {
 	"bg.nativeHostNone":
 		"Not registered. The helper adds name/address detection (NER) and is installed by an administrator; Browser Guard works without it.",
 	"bg.install": "Install Browser Guard",
-	"bg.installSteps": "Browser Guard is not yet published in the Chrome Web Store or Edge Add-ons, so it is loaded as an unpacked extension:",
+	"bg.installSteps":
+		"Browser Guard is not yet published in the Chrome Web Store or Edge Add-ons, so it is loaded as an unpacked extension:",
 	"bg.step1": "Prepare the extension folder (copied to a stable folder in your profile).",
 	"bg.step2": "Open the browser's extensions page and turn on Developer mode.",
 	"bg.step3": "Click “Load unpacked” and select the folder below.",
@@ -180,7 +184,8 @@ const en = {
 	"settings.theme.dark": "Dark",
 	"settings.notify": "Notify me when a tool call is denied",
 	"settings.startAtLogin": "Start at sign-in (in the tray)",
-	"settings.startAtLoginHint": "Off by default. The hooks protect Claude Code whether or not this app runs.",
+	"settings.startAtLoginHint":
+		"Off by default. The hooks protect Claude Code whether or not this app runs.",
 	"settings.about": "About",
 	"settings.openData": "Open AIDR data folder",
 	"settings.openSettings": "Open Claude Code settings file",
@@ -211,7 +216,8 @@ const en = {
 	"severity.info": "Info",
 	"severity.other": "Other",
 	"incidents.title": "Incidents",
-	"incidents.intro": "Incidents correlated by AIDR from the verdicts in {path} (incident_record entries, rotated files included). Read-only; updates live.",
+	"incidents.intro":
+		"Incidents correlated by AIDR from the verdicts in {path} (incident_record entries, rotated files included). Read-only; updates live.",
 	"incidents.empty": "No incidents recorded.",
 	"incidents.emptyFiltered": "No incident matches the filter.",
 	"incidents.col.severity": "Severity",
@@ -309,17 +315,20 @@ const tr: Record<MessageKey, string> = {
 		"AIDR, PreToolUse, PostToolUse ve SessionStart kancalarını Claude Code kullanıcı ayarlarınıza kaydedecek. Yalnızca AIDR'ın kendi girdileri değişir; diğer kancalarınız ve ayarlarınız korunur. Mevcut dosya önce yanına yedeklenir.",
 	"claude.previewFile": "Ayar dosyası",
 	"claude.previewNewFile": "(oluşturulacak)",
-	"claude.previewRuntime": "Kanca programları (kullanıcıya özel kopya; bu uygulama kapalıyken de çalışır)",
+	"claude.previewRuntime":
+		"Kanca programları (kullanıcıya özel kopya; bu uygulama kapalıyken de çalışır)",
 	"claude.previewCommands": "Kanca komutları",
 	"claude.previewDiff": "Değişiklik önizlemesi",
-	"claude.previewNoChange": "Ayarlarda bu kancalar zaten aynen var. Bağlamak onları yeniden doğrular.",
+	"claude.previewNoChange":
+		"Ayarlarda bu kancalar zaten aynen var. Bağlamak onları yeniden doğrular.",
 	"claude.previewBlocked": "Bağlanamıyor",
 	"claude.confirmConnect": "Yedekle ve bağla",
 	"claude.disconnectTitle": "Claude Code bağlantısını kes",
 	"claude.disconnectBody":
 		"AIDR yalnızca kendi kurduğu kanca kayıtlarını kaldırır (kurulum makbuzuyla doğrulanır). Ayar dosyanız önce yedeklenir. Claude Code araç çağrıları artık denetlenmez.",
 	"claude.confirmDisconnect": "Yedekle ve bağlantıyı kes",
-	"claude.connected": "Claude Code bağlandı. Kancaları yüklemesi için Claude Code'u yeniden başlatın.",
+	"claude.connected":
+		"Claude Code bağlandı. Kancaları yüklemesi için Claude Code'u yeniden başlatın.",
 	"claude.disconnected": "Bağlantı kesildi. Önceki ayarların yedeği: {path}",
 	"claude.backup": "Yedek",
 
@@ -446,7 +455,8 @@ const tr: Record<MessageKey, string> = {
 	"severity.info": "Bilgi",
 	"severity.other": "Diğer",
 	"incidents.title": "Olaylar",
-	"incidents.intro": "AIDR'ın {path} dosyasındaki kararlardan ilişkilendirdiği olaylar (incident_record kayıtları, döndürülmüş dosyalar dahil). Salt okunur; canlı güncellenir.",
+	"incidents.intro":
+		"AIDR'ın {path} dosyasındaki kararlardan ilişkilendirdiği olaylar (incident_record kayıtları, döndürülmüş dosyalar dahil). Salt okunur; canlı güncellenir.",
 	"incidents.empty": "Kayıtlı olay yok.",
 	"incidents.emptyFiltered": "Filtreye uyan olay yok.",
 	"incidents.col.severity": "Önem",

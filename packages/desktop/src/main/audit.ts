@@ -41,7 +41,9 @@ function asDecision(value: unknown): Decision | null {
 }
 
 function strings(value: unknown): string[] {
-	return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+	return Array.isArray(value)
+		? value.filter((entry): entry is string => typeof entry === "string")
+		: [];
 }
 
 function bounded(text: string): string {
@@ -85,17 +87,25 @@ function timestampOf(record: AuditRecord): string | null {
 	if (at && !Number.isNaN(Date.parse(at))) return at;
 	const incident = isObject(record.incident) ? record.incident : null;
 	const lastSeen = incident?.last_seen_ms;
-	return typeof lastSeen === "number" && Number.isFinite(lastSeen) ? new Date(lastSeen).toISOString() : null;
+	return typeof lastSeen === "number" && Number.isFinite(lastSeen)
+		? new Date(lastSeen).toISOString()
+		: null;
 }
 
-function pluginScanText(record: AuditRecord): { summary: string; ruleId: string | null; severity: string | null } {
+function pluginScanText(record: AuditRecord): {
+	summary: string;
+	ruleId: string | null;
+	severity: string | null;
+} {
 	const findings = Array.isArray(record.findings) ? record.findings.filter(isObject) : [];
 	const first = findings[0];
 	const plugin = `${asString(record.plugin_key) ?? "?"}@${asString(record.plugin_version) ?? "?"}`;
 	const count = typeof record.findings_count === "number" ? record.findings_count : findings.length;
 	return {
 		summary: `${count} finding(s) in ${plugin}`,
-		ruleId: first ? (asString(first.threat_id) ?? asString(first.threatId) ?? asString(first.id)) : null,
+		ruleId: first
+			? (asString(first.threat_id) ?? asString(first.threatId) ?? asString(first.id))
+			: null,
 		severity: first ? asString(first.severity) : null,
 	};
 }
@@ -117,7 +127,11 @@ export function toLogRecord(record: AuditRecord, idSeed = ""): AuditEvent | null
 	const type = asString(record.type);
 	const at = timestampOf(record);
 	if (!type || !at) return null;
-	const id = createHash("sha256").update(idSeed).update(JSON.stringify(record)).digest("hex").slice(0, 24);
+	const id = createHash("sha256")
+		.update(idSeed)
+		.update(JSON.stringify(record))
+		.digest("hex")
+		.slice(0, 24);
 	const base = { id, at, recordType: type, durationMs: null as number | null };
 	if (type === "runtime_verdict") {
 		const decision = asDecision(record.verdict);
@@ -135,7 +149,9 @@ export function toLogRecord(record: AuditRecord, idSeed = ""): AuditEvent | null
 			sessionId,
 			origin: originOf(sessionId),
 			durationMs:
-				typeof record.duration_ms === "number" && Number.isFinite(record.duration_ms) ? record.duration_ms : null,
+				typeof record.duration_ms === "number" && Number.isFinite(record.duration_ms)
+					? record.duration_ms
+					: null,
 		};
 	}
 	if (type === "incident_record") {
@@ -176,7 +192,10 @@ export function toLogRecord(record: AuditRecord, idSeed = ""): AuditEvent | null
 		kind: KIND_BY_TYPE[type] ?? "other",
 		decision: asDecision(record.verdict) ?? asDecision(record.decision),
 		tool: asString(record.tool_name) ?? type,
-		summary: typeof record.tool_input_summary === "string" ? record.tool_input_summary : genericText(record),
+		summary:
+			typeof record.tool_input_summary === "string"
+				? record.tool_input_summary
+				: genericText(record),
 		ruleId: asString(record.matched_threat_id),
 		reason: strings(record.reasons)[0] ?? "",
 		severity: asString(record.severity),

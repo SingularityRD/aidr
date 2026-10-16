@@ -60,7 +60,12 @@ function lastJson(stdout: string): Record<string, unknown> | null {
 	}
 }
 
-function failure(settingsPath: string, ranAt: string, error: string, hookCommand: string | null): SelfTestResult {
+function failure(
+	settingsPath: string,
+	ranAt: string,
+	error: string,
+	hookCommand: string | null,
+): SelfTestResult {
 	return { ok: false, error, hookCommand, settingsPath, ranAt, cases: [] };
 }
 
@@ -71,7 +76,12 @@ export async function runSelfTest(deps: SelfTestDeps): Promise<SelfTestResult> {
 	try {
 		settings = readSettingsObject(settingsPath);
 	} catch (error) {
-		return failure(settingsPath, ranAt, `${settingsPath} cannot be read: ${(error as Error).message}`, null);
+		return failure(
+			settingsPath,
+			ranAt,
+			`${settingsPath} cannot be read: ${(error as Error).message}`,
+			null,
+		);
 	}
 	const hooks = aidrHooks(settings, "PreToolUse");
 	const hook = hooks.find((entry) => entry.managed) ?? hooks[0];
@@ -93,7 +103,12 @@ export async function runSelfTest(deps: SelfTestDeps): Promise<SelfTestResult> {
 		);
 	}
 	if (!programExists(parsed.file)) {
-		return failure(settingsPath, ranAt, `The hook program is missing: ${parsed.file}`, hook.command);
+		return failure(
+			settingsPath,
+			ranAt,
+			`The hook program is missing: ${parsed.file}`,
+			hook.command,
+		);
 	}
 	const timeoutMs = Math.max(5, hook.timeoutSeconds ?? 15) * 1000;
 	const cwd = mkdtempSync(join(tmpdir(), "aidr-desktop-selftest-"));

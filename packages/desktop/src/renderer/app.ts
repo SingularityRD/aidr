@@ -80,7 +80,8 @@ const state: State = {
 };
 
 const lang = (): Lang => state.info?.language ?? "en";
-const t = (key: MessageKey, params?: Record<string, string | number>) => translate(lang(), key, params);
+const t = (key: MessageKey, params?: Record<string, string | number>) =>
+	translate(lang(), key, params);
 
 // ── DOM helpers ────────────────────────────────────────────────────────
 
@@ -159,7 +160,8 @@ function decisionChip(decision: Decision | "unknown", testId?: string): HTMLElem
 }
 
 function yesNo(value: boolean | null, testId?: string): HTMLElement {
-	if (value === null) return h("span", { class: "check-value na", "data-testid": testId }, t("common.na"));
+	if (value === null)
+		return h("span", { class: "check-value na", "data-testid": testId }, t("common.na"));
 	return h(
 		"span",
 		{ class: `check-value ${value ? "yes" : "no"}`, "data-testid": testId },
@@ -243,8 +245,10 @@ function hero(status: StatusSnapshot | null): HTMLElement {
 	}
 	const claude = status.connectors.find((connector) => connector.id === "claude-code");
 	let detail: string;
-	if (status.protected) detail = t("status.hero.protectedDetail", { rules: status.engine.rules ?? 0 });
-	else if (!status.engine.ok) detail = t("status.hero.engineDown", { detail: status.engine.detail });
+	if (status.protected)
+		detail = t("status.hero.protectedDetail", { rules: status.engine.rules ?? 0 });
+	else if (!status.engine.ok)
+		detail = t("status.hero.engineDown", { detail: status.engine.detail });
 	else if (claude?.hook.registered && claude.hook.binaryPresent === false)
 		detail = t("status.hero.binaryMissing", { path: claude.hook.commands[0] ?? "" });
 	else detail = t("status.hero.notConnected");
@@ -267,7 +271,13 @@ function hero(status: StatusSnapshot | null): HTMLElement {
 
 function facts(status: StatusSnapshot | null): HTMLElement {
 	const modeText = status
-		? t(status.mode === "local" ? "status.mode.local" : status.mode === "managed" ? "status.mode.managed" : "status.mode.unknown")
+		? t(
+				status.mode === "local"
+					? "status.mode.local"
+					: status.mode === "managed"
+						? "status.mode.managed"
+						: "status.mode.unknown",
+			)
 		: "…";
 	const fact = (label: string, value: string, sub: string, testId: string) =>
 		h(
@@ -280,10 +290,17 @@ function facts(status: StatusSnapshot | null): HTMLElement {
 	return h(
 		"section",
 		{ class: "facts" },
-		fact(t("status.fact.version"), status?.aidrVersion ?? "…", status ? `app v${status.appVersion}` : "", "fact-version"),
+		fact(
+			t("status.fact.version"),
+			status?.aidrVersion ?? "…",
+			status ? `app v${status.appVersion}` : "",
+			"fact-version",
+		),
 		fact(
 			t("status.fact.rules"),
-			status?.engine.rules !== null && status?.engine.rules !== undefined ? String(status.engine.rules) : "—",
+			status?.engine.rules !== null && status?.engine.rules !== undefined
+				? String(status.engine.rules)
+				: "—",
 			status ? (status.engine.ok ? status.engine.detail : status.engine.detail || "") : "",
 			"fact-rules",
 		),
@@ -363,7 +380,11 @@ function connectorCard(connector: ConnectorView): HTMLElement {
 					"details",
 					{},
 					h("summary", {}, t("claude.previewCommands")),
-					h("ul", { class: "evidence" }, ...connector.hook.commands.map((command) => h("li", {}, h("code", {}, command)))),
+					h(
+						"ul",
+						{ class: "evidence" },
+						...connector.hook.commands.map((command) => h("li", {}, h("code", {}, command))),
+					),
 				)
 			: null,
 		h(
@@ -392,7 +413,12 @@ function actionBanner(): HTMLElement | null {
 		h("strong", {}, headline),
 		result.ok ? h("span", { class: "small" }, result.message) : null,
 		result.log
-			? h("details", {}, h("summary", {}, t("common.details")), h("pre", { class: "log" }, result.log))
+			? h(
+					"details",
+					{},
+					h("summary", {}, t("common.details")),
+					h("pre", { class: "log" }, result.log),
+				)
 			: null,
 	);
 }
@@ -407,13 +433,26 @@ function runtimeCard(status: StatusSnapshot): HTMLElement {
 			"dl",
 			{ class: "kv" },
 			h("dt", {}, t("status.runtime.bundled")),
-			h("dd", {}, h("code", {}, runtime.bundledRoot ?? "—"), runtime.flavor ? ` · ${runtime.flavor}` : ""),
+			h(
+				"dd",
+				{},
+				h("code", {}, runtime.bundledRoot ?? "—"),
+				runtime.flavor ? ` · ${runtime.flavor}` : "",
+			),
 			h("dt", {}, t("status.runtime.installed")),
-			h("dd", {}, runtime.installedRoot ? h("code", {}, runtime.installedRoot) : t("status.runtime.none")),
+			h(
+				"dd",
+				{},
+				runtime.installedRoot ? h("code", {}, runtime.installedRoot) : t("status.runtime.none"),
+			),
 		),
 		!runtime.signed ? h("p", { class: "small muted" }, t("status.runtime.unsigned")) : null,
 		runtime.problems.length > 0
-			? h("div", { class: "banner danger" }, t("status.runtime.problems", { problems: runtime.problems.slice(0, 3).join("; ") }))
+			? h(
+					"div",
+					{ class: "banner danger" },
+					t("status.runtime.problems", { problems: runtime.problems.slice(0, 3).join("; ") }),
+				)
 			: null,
 	);
 }
@@ -432,7 +471,10 @@ function renderStatus(): HTMLElement {
 				h("h1", {}, t("status.title")),
 				status ? h("p", { class: "muted" }, t("status.subtitle", { home: status.home })) : null,
 			),
-			button(t("common.refresh"), () => void loadStatus(), { variant: "ghost", testId: "refresh-status" }),
+			button(t("common.refresh"), () => void loadStatus(), {
+				variant: "ghost",
+				testId: "refresh-status",
+			}),
 		),
 		state.statusError ? h("div", { class: "banner danger" }, state.statusError) : null,
 		hero(status),
@@ -572,7 +614,11 @@ function caseCard(entry: SelfTestCase): HTMLElement {
 			h("dt", {}, t("selftest.got")),
 			h("dd", {}, decisionChip(entry.decision, `verdict-${entry.name}`)),
 			h("dt", {}, t("selftest.latency")),
-			h("dd", { class: "latency", "data-testid": `latency-${entry.name}` }, `${entry.latencyMs} ms`),
+			h(
+				"dd",
+				{ class: "latency", "data-testid": `latency-${entry.name}` },
+				`${entry.latencyMs} ms`,
+			),
 			h("dt", {}, t("selftest.rule")),
 			h("dd", {}, entry.ruleId ? h("code", {}, entry.ruleId) : "—"),
 			h("dt", {}, t("selftest.reason")),
@@ -585,7 +631,11 @@ function renderSelfTest(): HTMLElement {
 	const result = state.selfTest;
 	let body: HTMLElement;
 	if (state.selfTestRunning) {
-		body = h("div", { class: "banner" }, h("div", { class: "row" }, h("span", { class: "spinner" }), t("selftest.running")));
+		body = h(
+			"div",
+			{ class: "banner" },
+			h("div", { class: "row" }, h("span", { class: "spinner" }), t("selftest.running")),
+		);
 	} else if (!result) {
 		body = h("p", { class: "muted" }, t("selftest.notRun"));
 	} else if (result.error) {
@@ -714,7 +764,11 @@ function eventRows(): HTMLElement {
 						"data-origin": event.origin ?? "agent",
 					},
 					h("td", { class: "time", title: event.at }, clockTime(event.at)),
-					h("td", {}, h("span", { class: "chip neutral", title: event.recordType }, t(`kind.${event.kind}`))),
+					h(
+						"td",
+						{},
+						h("span", { class: "chip neutral", title: event.recordType }, t(`kind.${event.kind}`)),
+					),
 					h("td", {}, event.decision ? decisionChip(event.decision) : severityChip(event.severity)),
 					h(
 						"td",
@@ -821,7 +875,9 @@ function renderActivity(): HTMLElement {
 			h(
 				"div",
 				{ class: "row" },
-				button(t("activity.exportJsonl"), () => void exportAudit("jsonl"), { testId: "export-jsonl" }),
+				button(t("activity.exportJsonl"), () => void exportAudit("jsonl"), {
+					testId: "export-jsonl",
+				}),
 				button(t("activity.exportCsv"), () => void exportAudit("csv"), { testId: "export-csv" }),
 				button(t("activity.openLog"), () => void openTarget("auditLog"), { variant: "ghost" }),
 			),
@@ -837,7 +893,15 @@ function renderActivity(): HTMLElement {
 				status?.configExists ? t("activity.logCleanHint") : t("activity.logCleanNeedsConfig"),
 			),
 		),
-		h("div", { class: "row" }, filters, kindSelect(refreshRows), search, h("span", { class: "spacer" }), hideSelfTest),
+		h(
+			"div",
+			{ class: "row" },
+			filters,
+			kindSelect(refreshRows),
+			search,
+			h("span", { class: "spacer" }),
+			hideSelfTest,
+		),
 		tableWrap,
 	);
 }
@@ -845,7 +909,10 @@ function renderActivity(): HTMLElement {
 function kindSelect(onChange: () => void): HTMLElement {
 	return select(
 		state.kindFilter,
-		[["all", t("kind.all")], ...LOG_KINDS.map((kind): [string, string] => [kind, t(`kind.${kind}`)])],
+		[
+			["all", t("kind.all")],
+			...LOG_KINDS.map((kind): [string, string] => [kind, t(`kind.${kind}`)]),
+		],
 		(value) => {
 			state.kindFilter = value as State["kindFilter"];
 			onChange();
@@ -871,11 +938,19 @@ function severityChip(severity: string | null, testId?: string): HTMLElement {
 			: severity === "warning" || severity === "medium"
 				? "warn"
 				: "neutral";
-	return h("span", { class: `chip ${tone}`, "data-testid": testId }, severity ? t(severityKey(severity)) : "—");
+	return h(
+		"span",
+		{ class: `chip ${tone}`, "data-testid": testId },
+		severity ? t(severityKey(severity)) : "—",
+	);
 }
 
 function severityKey(severity: string): MessageKey {
-	return (["critical", "high", "warning", "info"].includes(severity) ? `severity.${severity}` : "severity.other") as MessageKey;
+	return (
+		["critical", "high", "warning", "info"].includes(severity)
+			? `severity.${severity}`
+			: "severity.other"
+	) as MessageKey;
 }
 
 // ── Incidents page ─────────────────────────────────────────────────────
@@ -927,7 +1002,8 @@ function incidentRows(): HTMLElement {
 				h(
 					"tr",
 					{
-						class: `clickable ${state.selectedIncident?.id === incident.id ? "selected" : ""}`.trim(),
+						class:
+							`clickable ${state.selectedIncident?.id === incident.id ? "selected" : ""}`.trim(),
 						"data-testid": "incident-row",
 						"data-severity": incident.severity,
 						"data-open": incident.open ? "true" : "false",
@@ -941,7 +1017,11 @@ function incidentRows(): HTMLElement {
 					h(
 						"td",
 						{},
-						h("span", { class: `chip ${incident.open ? "warn" : "ok"}` }, incident.open ? t("incidents.open") : t("incidents.closed")),
+						h(
+							"span",
+							{ class: `chip ${incident.open ? "warn" : "ok"}` },
+							incident.open ? t("incidents.open") : t("incidents.closed"),
+						),
 						h("div", { class: "small muted" }, incident.status),
 					),
 					h(
@@ -949,7 +1029,19 @@ function incidentRows(): HTMLElement {
 						{ class: "mono small", title: incident.sessionId ?? "" },
 						shortSession(incident.sessionId),
 						incident.origin
-							? h("div", {}, h("span", { class: "chip tag" }, t(incident.origin === "self-test" ? "activity.selfTestTag" : "activity.setupTag")))
+							? h(
+									"div",
+									{},
+									h(
+										"span",
+										{ class: "chip tag" },
+										t(
+											incident.origin === "self-test"
+												? "activity.selfTestTag"
+												: "activity.setupTag",
+										),
+									),
+								)
 							: null,
 					),
 					h("td", {}, incident.connector ?? "—"),
@@ -970,10 +1062,14 @@ function incidentDetailView(detail: IncidentDetail): HTMLElement {
 			"div",
 			{ class: "card-head" },
 			h("h2", {}, t("incidents.detailTitle")),
-			button(t("common.close"), () => {
-				state.selectedIncident = null;
-				render();
-			}, { variant: "ghost small" }),
+			button(
+				t("common.close"),
+				() => {
+					state.selectedIncident = null;
+					render();
+				},
+				{ variant: "ghost small" },
+			),
 		),
 		h(
 			"dl",
@@ -984,7 +1080,10 @@ function incidentDetailView(detail: IncidentDetail): HTMLElement {
 			h("dd", {}, severityChip(detail.severity)),
 			h("dt", {}, t("incidents.col.status")),
 			h("dd", {}, detail.status),
-			...detail.correlation.flatMap(([key, value]) => [h("dt", {}, key), h("dd", {}, h("code", {}, value))]),
+			...detail.correlation.flatMap(([key, value]) => [
+				h("dt", {}, key),
+				h("dd", {}, h("code", {}, value)),
+			]),
 		),
 		h("h3", {}, t("incidents.events", { n: detail.events.length })),
 		h(
@@ -1016,7 +1115,9 @@ function incidentDetailView(detail: IncidentDetail): HTMLElement {
 							h(
 								"td",
 								{},
-								event.verdict?.decision ? decisionChip(event.verdict.decision) : severityChip(event.severity),
+								event.verdict?.decision
+									? decisionChip(event.verdict.decision)
+									: severityChip(event.severity),
 								h("div", { class: "small muted" }, event.signalType),
 							),
 							h(
@@ -1029,7 +1130,11 @@ function incidentDetailView(detail: IncidentDetail): HTMLElement {
 								"td",
 								{ class: "rule" },
 								event.verdict?.ruleId ? h("div", { class: "rule-id" }, event.verdict.ruleId) : null,
-								h("div", { class: "reason" }, event.verdict?.reason || (event.verdict ? "" : t("incidents.noVerdict"))),
+								h(
+									"div",
+									{ class: "reason" },
+									event.verdict?.reason || (event.verdict ? "" : t("incidents.noVerdict")),
+								),
 							),
 						),
 					),
@@ -1078,7 +1183,13 @@ function renderIncidents(): HTMLElement {
 						render();
 					},
 				},
-				t(value === "all" ? "incidents.all" : value === "open" ? "incidents.open" : "incidents.closed"),
+				t(
+					value === "all"
+						? "incidents.all"
+						: value === "open"
+							? "incidents.open"
+							: "incidents.closed",
+				),
 			),
 		);
 	}
@@ -1086,7 +1197,11 @@ function renderIncidents(): HTMLElement {
 		"div",
 		{ class: "page", "data-testid": "page-incidents" },
 		h("div", { class: "page-head" }, h("h1", {}, t("incidents.title"))),
-		h("p", { class: "muted" }, t("incidents.intro", { path: state.status?.auditPath ?? "audit.jsonl" })),
+		h(
+			"p",
+			{ class: "muted" },
+			t("incidents.intro", { path: state.status?.auditPath ?? "audit.jsonl" }),
+		),
 		h("div", { class: "row" }, statusFilter, severityFilter),
 		h("div", { class: "table-wrap", id: "incident-rows" }, incidentRows()),
 		state.selectedIncident ? incidentDetailView(state.selectedIncident) : null,
@@ -1098,7 +1213,12 @@ function renderIncidents(): HTMLElement {
 function renderBrowserGuard(): HTMLElement {
 	const bg = state.browserGuard;
 	if (!bg) {
-		return h("div", { class: "page", "data-testid": "page-browser-guard" }, h("h1", {}, t("bg.title")), h("p", { class: "muted" }, t("common.loading")));
+		return h(
+			"div",
+			{ class: "page", "data-testid": "page-browser-guard" },
+			h("h1", {}, t("bg.title")),
+			h("p", { class: "muted" }, t("common.loading")),
+		);
 	}
 	const browserName = (id: "chrome" | "edge") => (id === "chrome" ? "Chrome" : "Edge");
 	const browsers = h(
@@ -1157,17 +1277,30 @@ function renderBrowserGuard(): HTMLElement {
 				{ class: "card", "data-testid": "bg-install" },
 				h("h2", {}, t("bg.install")),
 				h("p", { class: "muted" }, t("bg.installSteps")),
-				h("ol", { class: "steps" }, h("li", {}, t("bg.step1")), h("li", {}, t("bg.step2")), h("li", {}, t("bg.step3"))),
+				h(
+					"ol",
+					{ class: "steps" },
+					h("li", {}, t("bg.step1")),
+					h("li", {}, t("bg.step2")),
+					h("li", {}, t("bg.step3")),
+				),
 				h(
 					"div",
 					{ class: "row" },
-					button(t("bg.prepare"), () => void stageBrowserGuard(), { variant: staged ? "" : "primary", testId: "bg-prepare" }),
+					button(t("bg.prepare"), () => void stageBrowserGuard(), {
+						variant: staged ? "" : "primary",
+						testId: "bg-prepare",
+					}),
 					...bg.browsers
 						.filter((entry) => entry.installed)
 						.map((entry) =>
-							button(t(entry.browser === "chrome" ? "bg.openChrome" : "bg.openEdge"), () => void openExtensions(entry.browser), {
-								disabled: !staged,
-							}),
+							button(
+								t(entry.browser === "chrome" ? "bg.openChrome" : "bg.openEdge"),
+								() => void openExtensions(entry.browser),
+								{
+									disabled: !staged,
+								},
+							),
 						),
 				),
 				staged
@@ -1175,13 +1308,23 @@ function renderBrowserGuard(): HTMLElement {
 							"div",
 							{ class: "path-box", "data-testid": "bg-staged-path" },
 							h("span", { class: "spacer" }, staged),
-							button(t("bg.copyPath"), () => {
-								void navigator.clipboard.writeText(staged).then(() => toast(t("bg.copied")));
-							}, { variant: "small" }),
-							button(t("bg.openFolder"), () => void openTarget("browserGuardFolder"), { variant: "small" }),
+							button(
+								t("bg.copyPath"),
+								() => {
+									void navigator.clipboard.writeText(staged).then(() => toast(t("bg.copied")));
+								},
+								{ variant: "small" },
+							),
+							button(t("bg.openFolder"), () => void openTarget("browserGuardFolder"), {
+								variant: "small",
+							}),
 						)
 					: null,
-				h("p", { class: "small muted" }, t("bg.typeUrl", { url: "chrome://extensions · edge://extensions" })),
+				h(
+					"p",
+					{ class: "small muted" },
+					t("bg.typeUrl", { url: "chrome://extensions · edge://extensions" }),
+				),
 			)
 		: h("div", { class: "banner warn" }, t("bg.notBundled"));
 	return h(
@@ -1226,7 +1369,10 @@ function select(
 ): HTMLElement {
 	const element = h(
 		"select",
-		{ "data-testid": testId, onchange: (event: Event) => onChange((event.target as HTMLSelectElement).value) },
+		{
+			"data-testid": testId,
+			onchange: (event: Event) => onChange((event.target as HTMLSelectElement).value),
+		},
 		...options.map(([optionValue, label]) => {
 			const option = h("option", { value: optionValue }, label) as HTMLOptionElement;
 			option.selected = optionValue === value;
@@ -1256,7 +1402,8 @@ function renderSettings(): HTMLElement {
 				type: "checkbox",
 				checked: prefs[key],
 				"data-testid": testId,
-				onchange: (event: Event) => void setPreference({ [key]: (event.target as HTMLInputElement).checked }),
+				onchange: (event: Event) =>
+					void setPreference({ [key]: (event.target as HTMLInputElement).checked }),
 			}),
 			label,
 		);
@@ -1301,7 +1448,12 @@ function renderSettings(): HTMLElement {
 			h(
 				"div",
 				{ class: "setting" },
-				h("div", {}, toggle("startAtLogin", t("settings.startAtLogin"), "pref-login"), h("p", { class: "small muted" }, t("settings.startAtLoginHint"))),
+				h(
+					"div",
+					{},
+					toggle("startAtLogin", t("settings.startAtLogin"), "pref-login"),
+					h("p", { class: "small muted" }, t("settings.startAtLoginHint")),
+				),
 			),
 		),
 		h(
@@ -1328,7 +1480,9 @@ function renderSettings(): HTMLElement {
 	);
 }
 
-async function openTarget(target: "auditLog" | "claudeSettings" | "dataDir" | "browserGuardFolder"): Promise<void> {
+async function openTarget(
+	target: "auditLog" | "claudeSettings" | "dataDir" | "browserGuardFolder",
+): Promise<void> {
 	const result = await api.invoke("open:target", { target });
 	if (!result.ok) toast(result.message);
 }
@@ -1338,8 +1492,10 @@ async function openTarget(target: "auditLog" | "claudeSettings" | "dataDir" | "b
 /** Equal apart from the measurement time. */
 function sameStatus(a: StatusSnapshot | null, b: StatusSnapshot): boolean {
 	if (!a) return false;
-	return JSON.stringify({ ...a, checkedAt: "", engine: { ...a.engine, latencyMs: 0 } }) ===
-		JSON.stringify({ ...b, checkedAt: "", engine: { ...b.engine, latencyMs: 0 } });
+	return (
+		JSON.stringify({ ...a, checkedAt: "", engine: { ...a.engine, latencyMs: 0 } }) ===
+		JSON.stringify({ ...b, checkedAt: "", engine: { ...b.engine, latencyMs: 0 } })
+	);
 }
 
 /** Fetch the status; `force` re-renders even when nothing changed (after an action). */

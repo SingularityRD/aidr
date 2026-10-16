@@ -40,7 +40,12 @@ function homeWithHook(command: string | null): string {
 			: {
 					hooks: {
 						PreToolUse: [
-							{ matcher: "*", hooks: [{ type: "command", command, timeout: 15, statusMessage: MANAGED_HOOK_MARKER }] },
+							{
+								matcher: "*",
+								hooks: [
+									{ type: "command", command, timeout: 15, statusMessage: MANAGED_HOOK_MARKER },
+								],
+							},
 						],
 					},
 				};
@@ -59,8 +64,19 @@ describe("runSelfTest", () => {
 		expect(result.error).toBeNull();
 		expect(result.ok).toBe(true);
 		const [benign, canary] = result.cases;
-		expect(benign).toMatchObject({ command: BENIGN_COMMAND, expected: "allow", decision: "allow", pass: true });
-		expect(canary).toMatchObject({ command: CANARY_COMMAND, expected: "deny", decision: "deny", pass: true, ruleId: "CLT-CMD-001" });
+		expect(benign).toMatchObject({
+			command: BENIGN_COMMAND,
+			expected: "allow",
+			decision: "allow",
+			pass: true,
+		});
+		expect(canary).toMatchObject({
+			command: CANARY_COMMAND,
+			expected: "deny",
+			decision: "deny",
+			pass: true,
+			ruleId: "CLT-CMD-001",
+		});
 		expect(canary?.latencyMs).toBeGreaterThanOrEqual(0);
 	});
 
@@ -68,11 +84,17 @@ describe("runSelfTest", () => {
 		const scripts = tempDir("hook");
 		cleanup.push(scripts);
 		const script = join(scripts, "allow-all.cjs");
-		writeFileSync(script, 'process.stdin.resume(); process.stdin.on("end", () => process.stdout.write("{}"));');
+		writeFileSync(
+			script,
+			'process.stdin.resume(); process.stdin.on("end", () => process.stdout.write("{}"));',
+		);
 		const home = homeWithHook(`${quote(process.execPath)} ${quote(script)}`);
 		const result = await runSelfTest({ home, run: runFile });
 		expect(result.ok).toBe(false);
-		expect(result.cases.find((entry) => entry.name === "canary")).toMatchObject({ decision: "allow", pass: false });
+		expect(result.cases.find((entry) => entry.name === "canary")).toMatchObject({
+			decision: "allow",
+			pass: false,
+		});
 	});
 
 	it("fails visibly when no hook is registered", async () => {
@@ -105,8 +127,16 @@ describe("runSelfTest", () => {
 
 describe("parseHookCommand", () => {
 	it.each([
-		['"C:/Users/a b/.singularity-aidr/desktop/runtime/x/bin/aidr.exe" hook pre-tool-use', "C:/Users/a b/.singularity-aidr/desktop/runtime/x/bin/aidr.exe", ["hook", "pre-tool-use"]],
-		['"C:/Program Files/nodejs/node.exe" "C:/x/dist/pre-tool-use.cjs"', "C:/Program Files/nodejs/node.exe", ["C:/x/dist/pre-tool-use.cjs"]],
+		[
+			'"C:/Users/a b/.singularity-aidr/desktop/runtime/x/bin/aidr.exe" hook pre-tool-use',
+			"C:/Users/a b/.singularity-aidr/desktop/runtime/x/bin/aidr.exe",
+			["hook", "pre-tool-use"],
+		],
+		[
+			'"C:/Program Files/nodejs/node.exe" "C:/x/dist/pre-tool-use.cjs"',
+			"C:/Program Files/nodejs/node.exe",
+			["C:/x/dist/pre-tool-use.cjs"],
+		],
 	])("splits %s", (command, file, args) => {
 		if (process.platform !== "win32") return;
 		expect(parseHookCommand(command)).toEqual({ file, args });

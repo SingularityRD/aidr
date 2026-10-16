@@ -1,4 +1,9 @@
-import type { AuditEvent, IncidentDetail, IncidentEventView, IncidentSummary } from "../shared/contract.js";
+import type {
+	AuditEvent,
+	IncidentDetail,
+	IncidentEventView,
+	IncidentSummary,
+} from "../shared/contract.js";
 import { type AuditRecord, originOf, toLogRecord } from "./audit.js";
 
 /**
@@ -36,7 +41,15 @@ interface IncidentSnapshot {
 	[key: string]: unknown;
 }
 
-const CORRELATION_KEYS = ["session_id", "agent_iid", "connector", "plugin_key", "package_name", "domain", "file_path"];
+const CORRELATION_KEYS = [
+	"session_id",
+	"agent_iid",
+	"connector",
+	"plugin_key",
+	"package_name",
+	"domain",
+	"file_path",
+];
 
 function str(value: unknown): string | null {
 	return typeof value === "string" && value.length > 0 ? value : null;
@@ -140,7 +153,9 @@ export class AuditStore {
 			const ms = typeof event.timestamp_ms === "number" ? event.timestamp_ms : Number.NaN;
 			const signalType = str(event.signal_type) ?? "unknown";
 			const verdict =
-				signalType === "runtime_verdict" && session ? this.verdicts.get(`${session}|${ms}`) : undefined;
+				signalType === "runtime_verdict" && session
+					? this.verdicts.get(`${session}|${ms}`)
+					: undefined;
 			return {
 				signalId: str(event.signal_id) ?? "",
 				at: Number.isFinite(ms) ? iso(ms) : "",

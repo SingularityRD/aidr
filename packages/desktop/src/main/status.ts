@@ -61,7 +61,9 @@ export function auditLogPath(home: string): string {
 export function auditMaxFiles(home: string): number {
 	const logging = readObject(configPath(home))?.logging as { max_files?: unknown } | undefined;
 	const value = logging?.max_files;
-	return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100 ? value : 3;
+	return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100
+		? value
+		: 3;
 }
 
 function logCleanEnabled(home: string): boolean {
@@ -75,7 +77,13 @@ function commandHookFacts(file: string, event: string): HookFacts {
 	try {
 		settings = readSettingsObject(file);
 	} catch {
-		return { kind: "command", registered: null, commands: [], binaryPresent: null, configPath: file };
+		return {
+			kind: "command",
+			registered: null,
+			commands: [],
+			binaryPresent: null,
+			configPath: file,
+		};
 	}
 	const commands = aidrHooks(settings, event).map((hook) => hook.command);
 	if (commands.length === 0) {
@@ -103,9 +111,21 @@ export function hookFactsFor(id: HostId, home: string): HookFacts {
 			return commandHookFacts(join(home, ".codex", "hooks.json"), "PreToolUse");
 		case "cursor":
 		case "vscode":
-			return { kind: "extension", registered: null, commands: [], binaryPresent: null, configPath: null };
+			return {
+				kind: "extension",
+				registered: null,
+				commands: [],
+				binaryPresent: null,
+				configPath: null,
+			};
 		default:
-			return { kind: "in_process", registered: null, commands: [], binaryPresent: null, configPath: null };
+			return {
+				kind: "in_process",
+				registered: null,
+				commands: [],
+				binaryPresent: null,
+				configPath: null,
+			};
 	}
 }
 
@@ -129,7 +149,9 @@ async function engineFacts(deps: StatusDeps): Promise<{
 }> {
 	const receipt = readObject(receiptPath(deps.home));
 	const installed =
-		typeof receipt?.path === "string" && existsSync(runtimeBinary(receipt.path)) ? receipt.path : null;
+		typeof receipt?.path === "string" && existsSync(runtimeBinary(receipt.path))
+			? receipt.path
+			: null;
 	const root = installed ?? deps.bundledRuntime;
 	if (!root || !existsSync(runtimeBinary(root))) {
 		return {
@@ -199,7 +221,9 @@ export async function collectStatus(deps: StatusDeps): Promise<StatusSnapshot> {
 	const receipt = readObject(receiptPath(deps.home));
 	const installedRoot =
 		typeof receipt?.path === "string" && existsSync(resolve(receipt.path)) ? receipt.path : null;
-	const flavor = deps.bundledRuntime ? runtimeFlavor(deps.bundledRuntime) : { flavor: null, signed: false };
+	const flavor = deps.bundledRuntime
+		? runtimeFlavor(deps.bundledRuntime)
+		: { flavor: null, signed: false };
 	const claude = connectors.find((connector) => connector.id === "claude-code");
 	const last = deps.lastVerdict ?? null;
 	return {

@@ -118,6 +118,14 @@ export const HOOKS = Object.freeze([
 ]);
 export const HOOK_NAMES = Object.freeze(HOOKS.map(({ name }) => name));
 export const CLI_ASSET = "cli";
+/**
+ * The AIDR Privacy engine CLI (packages/privacy, `aidr-privacy`): TR/EN personal
+ * data and secret masking on stdin. Shipped in the same binary so every install
+ * gets it without Node: `aidr privacy-engine [--json] [--redact] < input`, or a
+ * link/copy of the binary named `aidr-privacy`.
+ */
+export const PRIVACY_ASSET = "privacy";
+export const PRIVACY_COMMAND = "privacy-engine";
 export const hookAsset = (name) => `hook/${name}`;
 
 /**
@@ -187,7 +195,7 @@ export function binaryFileName(name, platform = process.platform) {
  * @param {string[]} argv process.argv of a SEA: [execPath, argv0, ...args]
  * @param {string} execPath process.execPath (a hard link keeps its own name)
  * @param {readonly string[]} hooks the hook names
- * @returns {{ kind: "cli", argv: string[] } | { kind: "hook", name: string, argv: string[] } | { kind: "unknown", name: string }}
+ * @returns {{ kind: "cli", argv: string[] } | { kind: "privacy", argv: string[] } | { kind: "hook", name: string, argv: string[] } | { kind: "unknown", name: string }}
  */
 export function resolveEntry(argv, execPath, hooks) {
 	const known = (value) => {
@@ -200,6 +208,8 @@ export function resolveEntry(argv, execPath, hooks) {
 		return bare === "codex" || bare === "codex-hook" ? "aidr-codex-hook" : null;
 	};
 	const invoked = String(execPath).split(/[\\/]/u).pop() ?? "";
+	if (/^aidr-privacy(?:\.exe)?$/iu.test(invoked)) return { kind: "privacy", argv: [...argv] };
+	if (argv[2] === "privacy-engine") return { kind: "privacy", argv: [argv[0], argv[1], ...argv.slice(3)] };
 	const linked = /^aidr(?:\.exe)?$/iu.test(invoked) ? null : known(invoked);
 	if (linked) return { kind: "hook", name: linked, argv: [...argv] };
 	if (argv[2] === "hook") {
@@ -225,16 +235,23 @@ export function dispatcherSource() {
 		"\tprocess.exitCode = 2;",
 		"} else {",
 		"\tprocess.argv.splice(0, process.argv.length, ...entry.argv);",
-		`\tconst key = entry.kind === "hook" ? \`hook/\${entry.name}\` : ${JSON.stringify(CLI_ASSET)};`,
+		`\tconst key = entry.kind === "hook" ? \`hook/\${entry.name}\` : entry.kind === "privacy" ? ${JSON.stringify(PRIVACY_ASSET)} : ${JSON.stringify(CLI_ASSET)};`,
 		"\ttry {",
 		'\t\tconst code = require("node:sea").getAsset(key, "utf8");',
 		'\t\tconst run = vm.compileFunction(code, ["exports", "require", "module", "__filename", "__dirname"], { filename: `${process.execPath}#${key}` });',
 		"\t\tconst mod = { exports: {} };",
 		"\t\trun.call(mod.exports, mod.exports, require, mod, process.execPath, dirname(process.execPath));",
 		"\t} catch (error) {",
-		'\t\tif (entry.kind !== "hook") throw error;',
-		'\t\tprocess.stderr.write("Singularity AIDR hook failed to load; execution was denied.\\n");',
-		"\t\tprocess.exitCode = 2;",
+		'\t\tif (entry.kind === "privacy") {',
+		"\t\t\t// Fail closed like the engine itself: nothing is passed through unmasked.",
+		'\t\t\tprocess.stdout.write(\'{"decision":"block","output":null,"reasons":["ENGINE_UNAVAILABLE"]}\\n\');',
+		"\t\t\tprocess.exitCode = 2;",
+		'\t\t} else if (entry.kind !== "hook") {',
+		"\t\t\tthrow error;",
+		"\t\t} else {",
+		'\t\t\tprocess.stderr.write("Singularity AIDR hook failed to load; execution was denied.\\n");',
+		"\t\t\tprocess.exitCode = 2;",
+		"\t\t}",
 		"\t}",
 		"}",
 		"",
@@ -608,6 +625,7 @@ export function relocatedSmoke(outDir, command = runBinary, options = {}) {
 		const unknown = spawnSync(...command(binary, "no-such-hook"), { cwd: scratch, env, input: "{}", encoding: "utf8", timeout: 60_000 });
 		if (unknown.status !== 2) problems.push(`an unknown hook name exited ${unknown.status}, not 2 (blocking)`);
 		problems.push(...relocatedCliSmoke(binary, command, { cwd: scratch, env }));
+		problems.push(...relocatedPrivacySmoke(binary, command, { cwd: scratch, env }));
 		return problems;
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });
@@ -633,6 +651,23 @@ function relocatedCliSmoke(binary, command, { cwd, env }) {
 		return [`relocated aidr CLI could not load the shipped rules (${report?.detection?.detail ?? "no detection report"})`];
 	}
 	return [];
+}
+
+/** The relocated binary must run the AIDR Privacy engine and answer with a decision. */
+function relocatedPrivacySmoke(binary, command, { cwd, env }) {
+	const [file, args] = command(binary, null);
+	const result = spawnSync(file, [...args, PRIVACY_COMMAND], {
+		cwd,
+		env,
+		input: "Meeting notes for the release review.",
+		encoding: "utf8",
+		timeout: 60_000,
+	});
+	try {
+		const answer = JSON.parse(result.stdout ?? "");
+		if (typeof answer?.decision === "string") return [];
+	} catch {}
+	return [`relocated aidr privacy-engine gave no decision (${`${result.stdout ?? ""}${result.stderr ?? ""}`.slice(0, 400)})`];
 }
 
 // ── Bundling ─────────────────────────────────────────────────────────────
@@ -671,6 +706,31 @@ export async function bundleCli({ cliDist, outfile, version, esbuild, release = 
 	return outfile;
 }
 
+/**
+ * Bundle the AIDR Privacy engine CLI (packages/privacy/dist/cli.js, ESM, no
+ * runtime dependencies) into one CommonJS file for the multi-call binary.
+ */
+export async function bundlePrivacy({ privacyDist, outfile, esbuild, release = false }) {
+	const entry = join(privacyDist, "cli.js");
+	if (!existsSync(entry)) throw new Error(`${entry} is missing; build AIDR Privacy first (pnpm build)`);
+	await esbuild.build({
+		entryPoints: [entry],
+		outfile,
+		bundle: true,
+		platform: "node",
+		target: "node22",
+		format: "cjs",
+		sourcemap: false,
+		legalComments: "none",
+		logLevel: "warning",
+		...releaseMinifyOptions(release),
+		define: { "import.meta.url": "__aidrImportMetaUrl" },
+		banner: { js: 'var __aidrImportMetaUrl = require("node:url").pathToFileURL(__filename).href;' },
+	});
+	writeFileSync(outfile, readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/u, ""));
+	return outfile;
+}
+
 /** The build flavour a bundle embeds (core's EMBEDDED_BUILD_FLAVOR), or null when none is found. */
 export function embeddedFlavor(source) {
 	const flavors = embeddedBuildFlavors(source);
@@ -681,17 +741,18 @@ export function embeddedFlavor(source) {
 
 /**
  * Write each entry as a SEA asset: hashbang removed (an asset is compiled as a
- * function body), flavour checked against the requested one.
+ * function body), flavour checked against the requested one (except `unflavored`
+ * entries such as the privacy engine, which does not embed the core).
  * @returns {{ assets: Record<string, string>, problems: string[] }}
  */
-export function stageAssets({ sources, assetDir, flavor }) {
+export function stageAssets({ sources, assetDir, flavor, unflavored = [] }) {
 	mkdirSync(assetDir, { recursive: true });
 	const assets = {};
 	const problems = [];
 	for (const [key, source] of Object.entries(sources)) {
 		const text = readFileSync(source, "utf8").replace(/^#![^\n]*\n/u, "");
 		const embedded = embeddedFlavor(text);
-		if (embedded !== flavor) problems.push(`${key} (${source}) is a ${embedded ?? "unknown"}-flavour build, not ${flavor}`);
+		if (!unflavored.includes(key) && embedded !== flavor) problems.push(`${key} (${source}) is a ${embedded ?? "unknown"}-flavour build, not ${flavor}`);
 		const file = join(assetDir, `${key.replaceAll("/", "-")}.cjs`);
 		writeFileSync(file, text);
 		assets[key] = file;
@@ -828,13 +889,24 @@ async function main() {
 	try {
 		const esbuild = await import("esbuild");
 		const cliBundle = await bundleCli({ cliDist, outfile: join(stage, "aidr-cli.bundle.cjs"), version, esbuild, release: flavor === "release" });
-		const sources = { [CLI_ASSET]: cliBundle };
+		const privacyBundle = await bundlePrivacy({
+			privacyDist: join(pkgDir, "..", "privacy", "dist"),
+			outfile: join(stage, "aidr-privacy.bundle.cjs"),
+			esbuild,
+			release: flavor === "release",
+		});
+		const sources = { [CLI_ASSET]: cliBundle, [PRIVACY_ASSET]: privacyBundle };
 		for (const { name, pkg, main } of HOOKS) {
 			const source = join(pkg === "codex" ? join(codexDir, "dist") : distDir, main);
 			statSync(source); // throws a clear ENOENT if the bundle is missing
 			sources[hookAsset(name)] = source;
 		}
-		const { assets, problems } = stageAssets({ sources, assetDir: join(stage, "assets"), flavor });
+		const { assets, problems } = stageAssets({
+			sources,
+			assetDir: join(stage, "assets"),
+			flavor,
+			unflavored: [PRIVACY_ASSET],
+		});
 		if (problems.length > 0) fail(`the bundles do not match --flavor ${flavor}:\n  ${problems.join("\n  ")}`);
 
 		rmSync(outDir, { recursive: true, force: true });

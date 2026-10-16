@@ -67,7 +67,9 @@ export function ensureInstalledRuntime(source: string, home: string): InstalledR
 		cpSync(source, staging, { recursive: true, errorOnExist: true, force: false });
 		const staged = checkRuntime(staging);
 		if (!staged.ok || staged.manifestSha256 !== sourceCheck.manifestSha256) {
-			throw new Error(`the copied runtime failed verification: ${staged.problems.slice(0, 3).join("; ")}`);
+			throw new Error(
+				`the copied runtime failed verification: ${staged.problems.slice(0, 3).join("; ")}`,
+			);
 		}
 		renameSync(staging, target);
 	} finally {
@@ -81,7 +83,9 @@ export function ensureInstalledRuntime(source: string, home: string): InstalledR
 /** `sea.flavor` and signature facts from a bundle manifest, for display. */
 export function runtimeFlavor(root: string): { flavor: string | null; signed: boolean } {
 	try {
-		const manifest = JSON.parse(readFileSync(join(root, "aidr-artifact.manifest.json"), "utf8")) as {
+		const manifest = JSON.parse(
+			readFileSync(join(root, "aidr-artifact.manifest.json"), "utf8"),
+		) as {
 			sea?: { flavor?: unknown; signed?: unknown };
 		};
 		return {
