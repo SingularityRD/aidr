@@ -5,8 +5,12 @@ export function isSecretConfigPath(path: string): boolean {
 }
 
 export function containsSecretConfigValue(value: unknown): boolean {
-	return value !== null && typeof value === "object" && Object.entries(value).some(
-		([key, nested]) => isSecretConfigPath(key) || containsSecretConfigValue(nested),
+	return (
+		value !== null &&
+		typeof value === "object" &&
+		Object.entries(value).some(
+			([key, nested]) => isSecretConfigPath(key) || containsSecretConfigValue(nested),
+		)
 	);
 }
 
@@ -33,4 +37,50 @@ export function parseConfigValue(value: string): unknown {
 	} catch {
 		return value;
 	}
+}
+
+/**
+ * Whether a dotted path names a field of the configuration schema. An optional
+ * field that is simply unset still exists; a misspelled key does not.
+ */
+export function isKnownConfigPath(schema: unknown, parts: readonly string[]): boolean {
+	let node = schema as { _def?: Record<string, unknown> } | undefined;
+	for (const part of parts) {
+		node = unwrapSchema(node);
+		const def = node?._def;
+		if (!def) return false;
+		if (def.typeName === "ZodObject") {
+			const shape = (def.shape as () => Record<string, unknown>)();
+			if (!(part in shape)) return false;
+			node = shape[part] as typeof node;
+		} else if (def.typeName === "ZodRecord") {
+			node = def.valueType as typeof node;
+		} else if (def.typeName === "ZodArray" && /^\d+$/.test(part)) {
+			node = def.type as typeof node;
+		} else {
+			return false;
+		}
+	}
+	return node !== undefined;
+}
+
+function unwrapSchema(node: { _def?: Record<string, unknown> } | undefined) {
+	let current = node;
+	for (let depth = 0; depth < 10 && current?._def; depth++) {
+		const def = current._def;
+		const inner =
+			def.typeName === "ZodOptional" ||
+			def.typeName === "ZodNullable" ||
+			def.typeName === "ZodDefault" ||
+			def.typeName === "ZodReadonly"
+				? def.innerType
+				: def.typeName === "ZodEffects"
+					? def.schema
+					: def.typeName === "ZodPipeline"
+						? def.in
+						: undefined;
+		if (!inner) break;
+		current = inner as typeof current;
+	}
+	return current;
 }

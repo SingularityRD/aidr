@@ -252,9 +252,11 @@ export function falsePositiveFeedbackId(
 ): string {
 	if (!Number.isSafeInteger(sequence) || sequence < 1) throw new Error("feedback_sequence_invalid");
 	const digest = context.hash(
-		["aidr.false-positive-feedback.id.v1", falsePositiveFeedbackSubmissionDigest(input, context), String(sequence)].join(
-			"\n",
-		),
+		[
+			"aidr.false-positive-feedback.id.v1",
+			falsePositiveFeedbackSubmissionDigest(input, context),
+			String(sequence),
+		].join("\n"),
 	);
 	return `fpfb_${digest}`;
 }
@@ -265,7 +267,8 @@ function parseBinding(value: unknown): FalsePositiveParseResult<FalsePositiveFee
 	if (typeof raw.policyRevision !== "string" || !REF.test(raw.policyRevision)) {
 		return fail("invalid_policy_revision");
 	}
-	if (typeof raw.incidentId !== "string" || !REF.test(raw.incidentId)) return fail("invalid_incident_id");
+	if (typeof raw.incidentId !== "string" || !REF.test(raw.incidentId))
+		return fail("invalid_incident_id");
 	if (typeof raw.candidateDigest !== "string" || !HASH.test(raw.candidateDigest)) {
 		return fail("invalid_candidate_digest");
 	}
@@ -283,13 +286,18 @@ function parseBinding(value: unknown): FalsePositiveParseResult<FalsePositiveFee
 function parseInput(value: unknown): FalsePositiveParseResult<FalsePositiveFeedbackInput> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return fail("not_an_object");
 	const raw = value as Record<string, unknown>;
-	if (typeof raw.tenantId !== "string" || !TENANT.test(raw.tenantId)) return fail("invalid_tenant_id");
+	if (typeof raw.tenantId !== "string" || !TENANT.test(raw.tenantId))
+		return fail("invalid_tenant_id");
 	const binding = parseBinding(raw.binding);
 	if (!binding.ok) return fail(binding.error);
-	if (typeof raw.feedback !== "string" || !FEEDBACK.has(raw.feedback)) return fail("invalid_feedback");
-	if (typeof raw.reasonCode !== "string" || !REASONS.has(raw.reasonCode)) return fail("invalid_reason_code");
-	if (typeof raw.rationale !== "string" || raw.rationale.length > 2000) return fail("invalid_rationale");
-	if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(raw.rationale)) return fail("invalid_rationale");
+	if (typeof raw.feedback !== "string" || !FEEDBACK.has(raw.feedback))
+		return fail("invalid_feedback");
+	if (typeof raw.reasonCode !== "string" || !REASONS.has(raw.reasonCode))
+		return fail("invalid_reason_code");
+	if (typeof raw.rationale !== "string" || raw.rationale.length > 2000)
+		return fail("invalid_rationale");
+	if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(raw.rationale))
+		return fail("invalid_rationale");
 	if (typeof raw.origin !== "string" || !ORIGINS.has(raw.origin)) return fail("invalid_origin");
 	if (
 		raw.observedSideEffect !== undefined &&
@@ -317,7 +325,8 @@ function parseFalsePositiveFeedbackRecord(
 	if (!value || typeof value !== "object" || Array.isArray(value)) return fail("not_a_record");
 	const raw = value as Record<string, unknown>;
 	if (raw.version !== FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION) return fail("unsupported_version");
-	if (!Number.isSafeInteger(raw.sequence) || (raw.sequence as number) < 1) return fail("invalid_sequence");
+	if (!Number.isSafeInteger(raw.sequence) || (raw.sequence as number) < 1)
+		return fail("invalid_sequence");
 	if (typeof raw.feedbackId !== "string" || !/^fpfb_[0-9a-f]{64}$/.test(raw.feedbackId)) {
 		return fail("invalid_feedback_id");
 	}
@@ -368,7 +377,10 @@ function validateStore(store: FalsePositiveFeedbackStore): FalsePositiveFeedback
 	return store;
 }
 
-function headFor(store: FalsePositiveFeedbackStore, key: string): FalsePositiveFeedbackRecordV1 | null {
+function headFor(
+	store: FalsePositiveFeedbackStore,
+	key: string,
+): FalsePositiveFeedbackRecordV1 | null {
 	for (let index = store.records.length - 1; index >= 0; index -= 1) {
 		const record = store.records[index];
 		if (record && bindingKeyOf(record) === key) return record;
@@ -575,7 +587,10 @@ export function falsePositiveFeedbackState(
 	policyRevision: string,
 ): FalsePositiveFeedbackState | null {
 	validateStore(store);
-	const key = falsePositiveBindingKey({ incidentId, policyRevision } as FalsePositiveFeedbackBinding);
+	const key = falsePositiveBindingKey({
+		incidentId,
+		policyRevision,
+	} as FalsePositiveFeedbackBinding);
 	const head = headFor(store, key);
 	if (!head) return null;
 	return {
@@ -696,7 +711,9 @@ function verifyFeedbackRecord(
 		findings.push({
 			code: "sequence_regressed",
 			feedbackId: record.feedbackId,
-			...(record.sequence > expectedSequence ? { detail: `expected_sequence:${expectedSequence}` } : {}),
+			...(record.sequence > expectedSequence
+				? { detail: `expected_sequence:${expectedSequence}` }
+				: {}),
 		});
 	}
 	const expectedPreviousHash = previous ? previous.recordHash : FALSE_POSITIVE_GENESIS_HASH;
@@ -714,7 +731,11 @@ function verifyFeedbackRecord(
 			findings.push({ code: "record_hash_mismatch", feedbackId: record.feedbackId });
 		}
 	} catch {
-		findings.push({ code: "record_unreadable", feedbackId: record.feedbackId, detail: "hash_unavailable" });
+		findings.push({
+			code: "record_unreadable",
+			feedbackId: record.feedbackId,
+			detail: "hash_unavailable",
+		});
 	}
 }
 
@@ -731,7 +752,11 @@ export function verifyFalsePositiveFeedbackStore(
 ): FalsePositiveStoreVerification {
 	const findings: FalsePositiveStoreFinding[] = [];
 	if (!store || store.schemaVersion !== FALSE_POSITIVE_FEEDBACK_SCHEMA_VERSION) {
-		return { valid: false, checked: 0, findings: [{ code: "record_unreadable", detail: "store_invalid" }] };
+		return {
+			valid: false,
+			checked: 0,
+			findings: [{ code: "record_unreadable", detail: "store_invalid" }],
+		};
 	}
 	const ordered = [...store.records].sort((a, b) => a.sequence - b.sequence);
 	const headByBinding = new Map<string, FalsePositiveFeedbackRecordV1>();
@@ -769,11 +794,7 @@ export function verifyFalsePositiveFeedbackStore(
 /** Canonical JSON for a store, so two equal folds serialize identically. */
 export function canonicalFalsePositiveFeedbackJson(store: FalsePositiveFeedbackStore): string {
 	const ordered = [...store.records].sort((a, b) =>
-		a.sequence === b.sequence
-			? a.feedbackId < b.feedbackId
-				? -1
-				: 1
-			: a.sequence - b.sequence,
+		a.sequence === b.sequence ? (a.feedbackId < b.feedbackId ? -1 : 1) : a.sequence - b.sequence,
 	);
 	return JSON.stringify({
 		schemaVersion: store.schemaVersion,

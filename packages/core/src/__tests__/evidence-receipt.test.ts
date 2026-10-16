@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
-	appendEvidenceReceipt,
 	anchorEvidenceHead,
+	appendEvidenceReceipt,
 	compareEvidenceClock,
 	detectEvidenceTruncation,
 	EVIDENCE_GENESIS_HASH,
@@ -38,7 +38,11 @@ function binding(overrides: Partial<EvidenceBinding> = {}): EvidenceBinding {
 	};
 }
 
-function clock(logicalCounter: number, wallClockUtc = "2026-09-13T00:00:00.000Z", skew: number | null = null): EvidenceClock {
+function clock(
+	logicalCounter: number,
+	wallClockUtc = "2026-09-13T00:00:00.000Z",
+	skew: number | null = null,
+): EvidenceClock {
 	return { wallClockUtc, logicalCounter, observedSkewMs: skew };
 }
 
@@ -112,9 +116,10 @@ describe("evidence receipt integrity", () => {
 			ok: false,
 			error: "external_anchor_not_permitted_here",
 		});
-		expect(
-			parseEvidenceReceipt({ ...receipt, payloadSummary: "x".repeat(4097) }),
-		).toEqual({ ok: false, error: "invalid_payload_summary" });
+		expect(parseEvidenceReceipt({ ...receipt, payloadSummary: "x".repeat(4097) })).toEqual({
+			ok: false,
+			error: "invalid_payload_summary",
+		});
 	});
 
 	it("refuses to append a receipt it cannot hash", () => {
@@ -163,7 +168,11 @@ describe("evidence chain verification", () => {
 		expect(gap.valid).toBe(false);
 		expect(gap.findings.map((finding) => finding.code)).toContain("chain_link_mismatch");
 
-		const rewritten = [{ ...(chain[0] as EvidenceReceiptV1), payloadSummary: "rewritten" }, chain[1], chain[2]];
+		const rewritten = [
+			{ ...(chain[0] as EvidenceReceiptV1), payloadSummary: "rewritten" },
+			chain[1],
+			chain[2],
+		];
 		const tampered = verifyEvidenceChain(rewritten, hashContext);
 		expect(tampered.valid).toBe(false);
 		expect(tampered.findings.map((finding) => finding.code)).toContain("receipt_hash_mismatch");
@@ -174,7 +183,9 @@ describe("evidence chain verification", () => {
 		];
 		const conflict = verifyEvidenceChain(conflictingReplay, hashContext);
 		expect(conflict.valid).toBe(false);
-		expect(conflict.findings.map((finding) => finding.code)).toContain("duplicate_receipt_conflict");
+		expect(conflict.findings.map((finding) => finding.code)).toContain(
+			"duplicate_receipt_conflict",
+		);
 		expect(conflict.head).toBeNull();
 	});
 
@@ -204,9 +215,14 @@ describe("evidence chain verification", () => {
 		);
 		expect(second.ok).toBe(true);
 		if (!second.ok) return;
-		const verification = verifyEvidenceChain([chain[0] as EvidenceReceiptV1, second.value], hashContext);
+		const verification = verifyEvidenceChain(
+			[chain[0] as EvidenceReceiptV1, second.value],
+			hashContext,
+		);
 		expect(verification.valid).toBe(false);
-		expect(verification.findings.map((finding) => finding.code)).toContain("candidate_digest_mismatch");
+		expect(verification.findings.map((finding) => finding.code)).toContain(
+			"candidate_digest_mismatch",
+		);
 		expect(verification.head).toBeNull();
 	});
 
@@ -235,21 +251,32 @@ describe("evidence chain verification", () => {
 
 	it("compares clocks deterministically for ties and skew", () => {
 		expect(compareEvidenceClock(clock(1), clock(2))).toBeLessThan(0);
-		expect(compareEvidenceClock(clock(1, "2026-09-13T01:00:00.000Z"), clock(1, "2026-09-13T00:00:00.000Z"))).toBe(1);
+		expect(
+			compareEvidenceClock(
+				clock(1, "2026-09-13T01:00:00.000Z"),
+				clock(1, "2026-09-13T00:00:00.000Z"),
+			),
+		).toBe(1);
 		expect(compareEvidenceClock(clock(1), clock(1))).toBe(0);
 	});
 
 	it("detects a truncated tail against a previously observed head", () => {
 		const chain = buildChain(3);
 		const full = verifyEvidenceChain(chain, hashContext);
-		expect(detectEvidenceTruncation(full.head, full)).toEqual({ truncated: false, reason: "head_unchanged" });
+		expect(detectEvidenceTruncation(full.head, full)).toEqual({
+			truncated: false,
+			reason: "head_unchanged",
+		});
 
 		const truncated = verifyEvidenceChain(chain.slice(0, 2), hashContext);
 		const detection = detectEvidenceTruncation(full.head, truncated);
 		expect(detection.truncated).toBe(true);
 		expect(detection.reason).toBe("logical_counter_regressed");
 
-		expect(detectEvidenceTruncation(null, full)).toEqual({ truncated: false, reason: "no_previous_head" });
+		expect(detectEvidenceTruncation(null, full)).toEqual({
+			truncated: false,
+			reason: "no_previous_head",
+		});
 		const broken: EvidenceChainVerification = { ...full, valid: false, head: null };
 		expect(detectEvidenceTruncation(full.head, broken).reason).toBe("chain_not_verifiable");
 
@@ -310,7 +337,9 @@ describe("external archive custody (fail-closed)", () => {
 		receipts: chain,
 	};
 
-	function sink(result: EvidenceArchiveResult | (() => Promise<EvidenceArchiveResult>)): EvidenceArchiveSink {
+	function sink(
+		result: EvidenceArchiveResult | (() => Promise<EvidenceArchiveResult>),
+	): EvidenceArchiveSink {
 		return {
 			id: "test-archive",
 			anchor: typeof result === "function" ? result : async () => result,
@@ -338,12 +367,24 @@ describe("external archive custody (fail-closed)", () => {
 
 	it("stays unanchored when the archive is absent, unavailable, rejects or errors", async () => {
 		expect((await anchorEvidenceHead(null, request, hashContext)).reason).toBe("no_archive_sink");
-		expect((await anchorEvidenceHead(sink({ status: "unavailable", reason: "s3_down" }), request, hashContext)).status).toBe(
-			"unanchored",
-		);
-		expect((await anchorEvidenceHead(sink({ status: "rejected", reason: "quota" }), request, hashContext)).reason).toBe(
-			"rejected:quota",
-		);
+		expect(
+			(
+				await anchorEvidenceHead(
+					sink({ status: "unavailable", reason: "s3_down" }),
+					request,
+					hashContext,
+				)
+			).status,
+		).toBe("unanchored");
+		expect(
+			(
+				await anchorEvidenceHead(
+					sink({ status: "rejected", reason: "quota" }),
+					request,
+					hashContext,
+				)
+			).reason,
+		).toBe("rejected:quota");
 		const throwing = sink(async () => {
 			throw new Error("network");
 		});
@@ -427,7 +468,11 @@ describe("external archive custody (fail-closed)", () => {
 			called = true;
 			return { status: "unavailable", reason: "unused" };
 		});
-		const outcome = await anchorEvidenceHead(spy, { ...request, headReceiptHash: "nope" }, hashContext);
+		const outcome = await anchorEvidenceHead(
+			spy,
+			{ ...request, headReceiptHash: "nope" },
+			hashContext,
+		);
 		expect(outcome.reason).toBe("invalid_head_hash");
 		expect(called).toBe(false);
 	});
@@ -445,9 +490,17 @@ describe("external archive custody (fail-closed)", () => {
 		});
 		const empty = await anchorEvidenceHead(spy, { ...request, receipts: [] }, hashContext);
 		expect(empty.reason).toBe("invalid_receipt_chain");
-		const wrongIncident = await anchorEvidenceHead(spy, { ...request, incidentId: "other-incident" }, hashContext);
+		const wrongIncident = await anchorEvidenceHead(
+			spy,
+			{ ...request, incidentId: "other-incident" },
+			hashContext,
+		);
 		expect(wrongIncident.reason).toBe("receipt_chain_binding_mismatch");
-		const wrongHead = await anchorEvidenceHead(spy, { ...request, headReceiptId: randomUUID() }, hashContext);
+		const wrongHead = await anchorEvidenceHead(
+			spy,
+			{ ...request, headReceiptId: randomUUID() },
+			hashContext,
+		);
 		expect(wrongHead.reason).toBe("archive_head_mismatch");
 		expect(called).toBe(false);
 	});
@@ -464,7 +517,11 @@ describe("external archive custody (fail-closed)", () => {
 			};
 		});
 		const altered = { ...(chain[0] as EvidenceReceiptV1), payloadSummary: "forged" };
-		const outcome = await anchorEvidenceHead(spy, { ...request, receipts: [altered, head] }, hashContext);
+		const outcome = await anchorEvidenceHead(
+			spy,
+			{ ...request, receipts: [altered, head] },
+			hashContext,
+		);
 		expect(outcome).toMatchObject({ status: "unanchored", reason: "receipt_integrity_unverified" });
 		expect(called).toBe(false);
 	});
@@ -497,7 +554,10 @@ describe("external archive custody (fail-closed)", () => {
 			},
 			hashContext,
 		);
-		expect(outcome).toMatchObject({ status: "unanchored", reason: "receipt_chain_binding_mismatch" });
+		expect(outcome).toMatchObject({
+			status: "unanchored",
+			reason: "receipt_chain_binding_mismatch",
+		});
 		expect(called).toBe(false);
 	});
 });

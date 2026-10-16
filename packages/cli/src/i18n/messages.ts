@@ -19,6 +19,10 @@ export const CLI_EN = {
 	"status.configDefaults": "defaults",
 	"status.configInvalid": "INVALID (a restrictive fallback is enforced)",
 	"status.registrationDetected": "registration/package detected",
+	"status.state.unavailable": "unreadable",
+	"status.state.runtime_present_not_installed": "found, NOT protected",
+	"status.state.not_detected": "not found",
+	"status.state.installed_but_degraded": "registered but BROKEN",
 	"status.managedInactive":
 		"Managed: inactive (mode: {mode}); enforcement is local and no control plane is used.",
 	"status.managedEnabled": "enabled",
@@ -27,6 +31,8 @@ export const CLI_EN = {
 	"status.endpointMissing": "missing",
 	"status.managed":
 		"Managed: {state}; endpoint {endpoint}. Connectivity and fleet adoption have not been checked.",
+	"status.notEnrolled":
+		"! This device is NOT enrolled: local protection is on, but it receives no company policy and reports nothing. Run `aidr assistant` and connect to your company (or ask IT for an enrollment code).",
 	"status.telemetry":
 		"Telemetry queue: {state}; {pending} event(s) undelivered, {lost} lost{oldest}{suffix}",
 	"status.telemetryOldest": ", oldest {seconds}s",
@@ -163,6 +169,8 @@ export const CLI_EN = {
 	"doctor.connectorsUnprotected":
 		"AI tools found ({hosts}) but no AIDR hook is registered. Run `aidr setup`.",
 	"doctor.connectorsNone": "No supported AI tool and no AIDR hook was found.",
+	"doctor.connectorsPartial":
+		"Hooks registered for: {hosts}. Also found without AIDR: {unprotected}. Run `aidr setup` to protect them.",
 	"doctor.dlpInvalid":
 		"Detector (DLP) policy invalid for {runtimes}; those connectors block every call.",
 	"doctor.dlpEnabled": "DLP enabled for {runtimes}.",
@@ -479,6 +487,10 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"status.configDefaults": "varsayılanlar",
 	"status.configInvalid": "GEÇERSİZ (kısıtlayıcı yedek ayarlar uygulanıyor)",
 	"status.registrationDetected": "kayıt/paket algılandı",
+	"status.state.unavailable": "okunamadı",
+	"status.state.runtime_present_not_installed": "bulundu, KORUNMUYOR",
+	"status.state.not_detected": "bulunamadı",
+	"status.state.installed_but_degraded": "kayıtlı ama ÇALIŞMIYOR",
 	"status.managedInactive":
 		"Yönetilen mod: etkin değil (mod: {mode}); koruma yerelde uygulanıyor ve kontrol düzlemi kullanılmıyor.",
 	"status.managedEnabled": "etkin",
@@ -487,6 +499,8 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"status.endpointMissing": "eksik",
 	"status.managed":
 		"Yönetilen mod: {state}; uç nokta {endpoint}. Bağlantı ve filo benimsemesi denetlenmedi.",
+	"status.notEnrolled":
+		"! Bu cihaz KAYITLI DEĞİL: yerel koruma açık, ancak şirket politikasını almıyor ve hiçbir şey raporlamıyor. `aidr assistant` çalıştırıp şirketinize bağlanın (ya da BT'den kayıt kodu isteyin).",
 	"status.telemetry":
 		"Telemetri kuyruğu: {state}; {pending} olay teslim edilmedi, {lost} olay kayboldu{oldest}{suffix}",
 	"status.telemetryOldest": ", en eskisi {seconds} sn",
@@ -629,6 +643,8 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"doctor.connectorsUnprotected":
 		"Yapay zekâ araçları bulundu ({hosts}) ama hiçbirinde AIDR hook'u kayıtlı değil. `aidr setup` çalıştırın.",
 	"doctor.connectorsNone": "Desteklenen bir yapay zekâ aracı ya da AIDR hook'u bulunamadı.",
+	"doctor.connectorsPartial":
+		"Hook kayıtlı yapay zekâ araçları: {hosts}. AIDR olmadan bulunanlar: {unprotected}. Korumak için `aidr setup` çalıştırın.",
 	"doctor.dlpInvalid":
 		"{runtimes} için veri sızıntısı önleme (DLP) politikası geçersiz; bu bağlayıcılar her çağrıyı engeller.",
 	"doctor.dlpEnabled": "DLP etkin: {runtimes}.",

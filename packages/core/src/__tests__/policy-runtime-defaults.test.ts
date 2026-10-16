@@ -58,12 +58,9 @@ describe("runtime default policy enforcement", () => {
 			policy: { enabled: true, runtime_defaults: { package_action: "require_approval" } },
 		});
 
-		const verdict = await evaluatePolicy(
-			"Bash",
-			[{ type: "command", value: command }],
-			config,
-			{ command },
-		);
+		const verdict = await evaluatePolicy("Bash", [{ type: "command", value: command }], config, {
+			command,
+		});
 
 		expect(verdict).toMatchObject({
 			decision: "ask",

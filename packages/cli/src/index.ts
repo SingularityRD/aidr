@@ -123,6 +123,10 @@ const configProgram = program
 		"Set a dotted key/value; enter secrets at the hidden prompt, never as arguments",
 	)
 	.option("-l, --list", "Print all configuration values")
+	.option(
+		"-y, --yes",
+		"With AIDR_OPERATOR_NONINTERACTIVE=1, confirm a protection-weakening change without a prompt",
+	)
 	.action(configCommand);
 
 configProgram

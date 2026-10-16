@@ -114,6 +114,17 @@ describe("aidr exception add", () => {
 		expect(await listDetectionExceptions(store)).toEqual([]);
 	});
 
+	it("refuses a rule ID this installation does not load (a typo would match nothing)", async () => {
+		await exceptionAddCommand("CLT-CMD-9999", VALID, {
+			store,
+			streams: ttyStreams("except"),
+			knownRuleIds: async () => new Set(["CLT-CMD-011"]),
+		});
+		expect(process.exitCode).toBe(1);
+		expect(err.join("\n")).toContain("not a rule this installation loads");
+		expect(await listDetectionExceptions(store)).toEqual([]);
+	});
+
 	it("adds a signed exception when the operator types the confirmation word", async () => {
 		await exceptionAddCommand("CLT-CMD-011", VALID, { store, streams: ttyStreams("except") });
 		expect(process.exitCode).toBeUndefined();

@@ -135,6 +135,7 @@ describe("telemetry redaction boundary", () => {
 			`OPENAI=${openai}`,
 			`key ${google} and ${hugging}`,
 			`ANTHROPIC_API_KEY=${envValue} PGPASSWORD=${envValue} GITHUB_TOKEN=${envValue}`,
+			`export AWS_SECRET_ACCESS_KEY=${envValue}; DB_PASSWORD_PROD=${envValue} STRIPE_SECRET_KEY=${envValue}`,
 			`mysql -u root -p${dbPassword} prod`,
 			`mysqldump -h db -p'${dbPassword}' app`,
 		].join("\n");
@@ -148,8 +149,10 @@ describe("telemetry redaction boundary", () => {
 
 	it("keeps ordinary identifiers that merely resemble credential names", () => {
 		const safe = redactTelemetryString(
-			"pip install scikit-learn; TOKEN_COUNT=5; design=modern; author=Ada",
+			"pip install scikit-learn; TOKEN_COUNT=5; SECRET_ROTATION_DAYS=30; design=modern; author=Ada",
 		);
-		expect(safe).toBe("pip install scikit-learn; TOKEN_COUNT=5; design=modern; author=Ada");
+		expect(safe).toBe(
+			"pip install scikit-learn; TOKEN_COUNT=5; SECRET_ROTATION_DAYS=30; design=modern; author=Ada",
+		);
 	});
 });

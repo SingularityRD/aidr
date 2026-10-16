@@ -225,7 +225,10 @@ describe("PackageChecker", () => {
 
 		const checker = new PackageChecker({ fileCheckEnabled: false });
 		const check = checker.checkPackages(
-			Array.from({ length: 12 }, (_, index) => ({ name: `pkg-${index}`, registry: "npm" as const })),
+			Array.from({ length: 12 }, (_, index) => ({
+				name: `pkg-${index}`,
+				registry: "npm" as const,
+			})),
 		);
 		await vi.waitFor(() => expect(started).toBe(10));
 		release.shift()?.();

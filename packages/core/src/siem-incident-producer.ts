@@ -258,8 +258,7 @@ async function withStateLock<T>(stateFile: string, work: () => Promise<T>): Prom
 			if (errorCode(error) !== "EEXIST") throw error;
 			if (await recoverAbandonedLock(lockPath)) continue;
 			const current = await currentLockOwner(lockPath);
-			const liveLocalOwner =
-				current?.owner.host === hostname() && ownerAlive(current.owner);
+			const liveLocalOwner = current?.owner.host === hostname() && ownerAlive(current.owner);
 			// A newly acquired lock may not have its owner marker yet. Synchronous
 			// NTFS ACL repair can also pause every waiter in this process.
 			let freshUnmarkedLock = false;

@@ -31,14 +31,14 @@
  * of silently dropping the case.
  */
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { evaluateToolCall } from "../evaluator.js";
 import { invalidateCanaryIndex } from "../canary/detect.js";
+import { evaluateToolCall } from "../evaluator.js";
 import { extractFromToolCall } from "../extractors.js";
 import type { Verdict } from "../types.js";
 import { makeTmpDir, removeTmpDir } from "./test-utils.js";
@@ -68,7 +68,10 @@ interface Corpus {
 }
 
 const corpus = JSON.parse(
-	readFileSync(fileURLToPath(new URL("./fixtures/red-team-regression.json", import.meta.url)), "utf8"),
+	readFileSync(
+		fileURLToPath(new URL("./fixtures/red-team-regression.json", import.meta.url)),
+		"utf8",
+	),
 ) as Corpus;
 
 /** Reputation legs that escalate to `ask` without a content finding when disabled/unavailable. */
@@ -181,9 +184,7 @@ describe("red-team regression corpus (shape)", () => {
 				.update(JSON.stringify(entry.tool_input, Object.keys(entry.tool_input).sort()))
 				.digest("hex");
 			// The generator hashes with sorted keys; recompute the same way.
-			const canonical = createHash("sha256")
-				.update(canonicalJson(entry.tool_input))
-				.digest("hex");
+			const canonical = createHash("sha256").update(canonicalJson(entry.tool_input)).digest("hex");
 			expect([digest, canonical], entry.case_id).toContain(entry.input_sha256);
 		}
 	});
@@ -195,7 +196,9 @@ function canonicalJson(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(", ")}]`;
 	const entries = Object.keys(value as Record<string, unknown>)
 		.sort()
-		.map((key) => `${JSON.stringify(key)}: ${canonicalJson((value as Record<string, unknown>)[key])}`);
+		.map(
+			(key) => `${JSON.stringify(key)}: ${canonicalJson((value as Record<string, unknown>)[key])}`,
+		);
 	return `{${entries.join(", ")}}`;
 }
 

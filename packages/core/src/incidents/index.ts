@@ -9,8 +9,8 @@ export {
 } from "./anchor.js";
 export { type CorrelateOptions, correlateIncidents } from "./correlate.js";
 export {
-	appendEvidenceReceipt,
 	anchorEvidenceHead,
+	appendEvidenceReceipt,
 	compareEvidenceClock,
 	detectEvidenceTruncation,
 	EVIDENCE_GENESIS_HASH,
@@ -40,5 +40,5 @@ export {
 	persistIncidentRecords,
 	verifyIncidentSqliteStore,
 } from "./persist.js";
-;
+
 export type { Incident, IncidentSeverity, NormalizedSignal, SignalType } from "./types.js";

@@ -61,7 +61,9 @@ describe("connector detection reports measured state", () => {
 		write(
 			home,
 			join(".claude", "settings.json"),
-			JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "aidr/pre-tool-use.cjs" }] }] } }),
+			JSON.stringify({
+				hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "aidr/pre-tool-use.cjs" }] }] },
+			}),
 		);
 
 		const claude = detectConnectorStatuses(home).find((s) => s.id === "claude-code");
@@ -88,7 +90,9 @@ describe("connector detection reports measured state", () => {
 	])("does not mistake disabled or unrelated configuration for an enabled hook: %j", (settings) => {
 		const home = makeHome();
 		write(home, join(".claude", "settings.json"), JSON.stringify(settings));
-		expect(detectConnectorStatuses(home).find((s) => s.id === "claude-code")?.state).toBe("runtime_present_not_installed");
+		expect(detectConnectorStatuses(home).find((s) => s.id === "claude-code")?.state).toBe(
+			"runtime_present_not_installed",
+		);
 	});
 
 	it("detects installed Cursor and VS Code extensions", () => {
@@ -124,9 +128,13 @@ describe("connector detection reports measured state", () => {
 
 	it("detects an OpenClaw plugin listed in its config", () => {
 		const home = makeHome();
-		write(home, join(".openclaw", "openclaw.json"), JSON.stringify({
-			plugins: { entries: { "aidr-openclaw": { enabled: true } }, allow: ["aidr-openclaw"] },
-		}));
+		write(
+			home,
+			join(".openclaw", "openclaw.json"),
+			JSON.stringify({
+				plugins: { entries: { "aidr-openclaw": { enabled: true } }, allow: ["aidr-openclaw"] },
+			}),
+		);
 
 		expect(detectConnectorStatuses(home).find((s) => s.id === "openclaw")?.state).toBe("installed");
 	});
@@ -135,11 +143,16 @@ describe("connector detection reports measured state", () => {
 		{ description: "aidr was uninstalled" },
 		{ plugins: ["aidr"] },
 		{ plugins: { entries: { "another-plugin": { config: { description: "singularity" } } } } },
-	])("does not mistake unrelated OpenClaw text or obsolete plugin arrays for registration: %j", (config) => {
-		const home = makeHome();
-		write(home, join(".openclaw", "openclaw.json"), JSON.stringify(config));
-		expect(detectConnectorStatuses(home).find((s) => s.id === "openclaw")?.state).toBe("runtime_present_not_installed");
-	});
+	])(
+		"does not mistake unrelated OpenClaw text or obsolete plugin arrays for registration: %j",
+		(config) => {
+			const home = makeHome();
+			write(home, join(".openclaw", "openclaw.json"), JSON.stringify(config));
+			expect(detectConnectorStatuses(home).find((s) => s.id === "openclaw")?.state).toBe(
+				"runtime_present_not_installed",
+			);
+		},
+	);
 
 	it.each([
 		{ enabled: false, entries: { "aidr-openclaw": { enabled: true } } },
@@ -206,7 +219,11 @@ describe("Codex detection catches the configuration that silently does nothing",
 		// runs. Reporting it as "installed" would tell the operator they are
 		// protected when they are not.
 		const home = makeHome();
-		write(home, join(".codex", "config.toml"), "[hooks.pre_tool_use]\ncommand = 'aidr-codex-hook'\n");
+		write(
+			home,
+			join(".codex", "config.toml"),
+			"[hooks.pre_tool_use]\ncommand = 'aidr-codex-hook'\n",
+		);
 
 		const codex = detectConnectorStatuses(home).find((s) => s.id === "codex");
 		expect(codex?.state).toBe("installed_but_degraded");
@@ -216,6 +233,14 @@ describe("Codex detection catches the configuration that silently does nothing",
 		expect(anyConnectorInstalled([codex!])).toBe(false);
 	});
 
+	/** A PATH holding an aidr-codex-hook program, so the registration is runnable. */
+	function codexHookOnPath(home: string): NodeJS.ProcessEnv {
+		const bin = join(home, "bin");
+		const name = process.platform === "win32" ? "aidr-codex-hook.cmd" : "aidr-codex-hook";
+		write(home, join("bin", name), "");
+		return { PATH: bin, PATHEXT: ".CMD" };
+	}
+
 	it("accepts the PascalCase table that Codex actually honours", () => {
 		const home = makeHome();
 		write(
@@ -224,7 +249,31 @@ describe("Codex detection catches the configuration that silently does nothing",
 			'[[hooks.PreToolUse]]\nmatcher = "^Bash$"\n[[hooks.PreToolUse.hooks]]\ntype = "command"\ncommand = "aidr-codex-hook"\n',
 		);
 
-		expect(detectConnectorStatuses(home).find((s) => s.id === "codex")?.state).toBe("installed");
+		expect(
+			detectConnectorStatuses(home, codexHookOnPath(home), []).find((s) => s.id === "codex")?.state,
+		).toBe("installed");
+	});
+
+	it("reports a registered Codex hook whose program is gone as degraded (Codex fails open)", () => {
+		const home = makeHome();
+		write(
+			home,
+			join(".codex", "hooks.json"),
+			JSON.stringify({
+				hooks: {
+					PreToolUse: [
+						{
+							matcher: "^Bash$",
+							hooks: [{ type: "command", command: `"${join(home, "gone", "aidr-codex-hook")}"` }],
+						},
+					],
+				},
+			}),
+		);
+
+		const codex = detectConnectorStatuses(home, { PATH: "" }, []).find((s) => s.id === "codex");
+		expect(codex?.state).toBe("installed_but_degraded");
+		expect(codex?.detail).toContain("cannot be found");
 	});
 
 	it("detects an AIDR hook registered through hooks.json", () => {
@@ -241,7 +290,9 @@ describe("Codex detection catches the configuration that silently does nothing",
 			}),
 		);
 
-		expect(detectConnectorStatuses(home).find((s) => s.id === "codex")?.state).toBe("installed");
+		expect(
+			detectConnectorStatuses(home, codexHookOnPath(home), []).find((s) => s.id === "codex")?.state,
+		).toBe("installed");
 	});
 
 	it("does not count unrelated AIDR text as a Codex PreToolUse handler", () => {

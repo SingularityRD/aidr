@@ -3,12 +3,18 @@ import { ContentClassifier } from "../../dlp/content-classifier.js";
 
 describe("ContentClassifier binary sampling", () => {
 	it("keeps Unicode business text as text", () => {
-		const result = new ContentClassifier().classify("müşteri.txt", "Gizli müşteri bilgisi: İstanbul");
+		const result = new ContentClassifier().classify(
+			"müşteri.txt",
+			"Gizli müşteri bilgisi: İstanbul",
+		);
 		expect(result.category).toBe("documentation");
 	});
 
 	it("does not hide a credential classification behind Unicode", () => {
-		const result = new ContentClassifier().classify("müşteri.txt", "İstanbul\nDB_PASSWORD=synthetic-only");
+		const result = new ContentClassifier().classify(
+			"müşteri.txt",
+			"İstanbul\nDB_PASSWORD=synthetic-only",
+		);
 		expect(result.category).toBe("credentials");
 		expect(result.sensitivity).toBe("restricted");
 	});

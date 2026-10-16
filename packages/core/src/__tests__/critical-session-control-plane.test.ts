@@ -1,5 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -63,7 +63,9 @@ describe("critical runtime session and control-plane boundaries", () => {
 				json: async () => ({
 					ok: true,
 					runtime_policy: { command_default: "not-a-policy" },
-					policy_sha256: createHash("sha256").update('{"command_default":"not-a-policy"}').digest("hex"),
+					policy_sha256: createHash("sha256")
+						.update('{"command_default":"not-a-policy"}')
+						.digest("hex"),
 				}),
 			} as unknown as Response);
 			const config = ConfigSchema.parse({

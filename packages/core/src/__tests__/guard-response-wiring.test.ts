@@ -6,15 +6,15 @@
  * response layer does.
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApprovalStore } from "../approval-store.js";
-import { guardToolCall } from "../guard.js";
 import { extractFromWrite } from "../extractors.js";
+import { guardToolCall } from "../guard.js";
 
 let home: string;
 let vault: string;

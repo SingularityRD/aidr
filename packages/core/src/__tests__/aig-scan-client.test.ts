@@ -31,10 +31,14 @@ afterEach(() => {
 describe("AIG scan client contract", () => {
 	it("checks bridge readiness without throwing on malformed health", async () => {
 		process.env.AIG_BRIDGE_URL = "http://bridge.test/";
-		globalThis.fetch = vi.fn(async () => jsonResponse({ status: "ok", scan_ready: true })) as unknown as typeof fetch;
+		globalThis.fetch = vi.fn(async () =>
+			jsonResponse({ status: "ok", scan_ready: true }),
+		) as unknown as typeof fetch;
 		expect(await isAigAvailable()).toBe(true);
 
-		(globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(jsonResponse({ scan_ready: "yes" }));
+		(globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+			jsonResponse({ scan_ready: "yes" }),
+		);
 		expect(await isAigAvailable()).toBe(false);
 	});
 
@@ -48,10 +52,28 @@ describe("AIG scan client contract", () => {
 		});
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-		await triggerAigScan({ scan_type: "infra", target: "https://infra.test", options: { scan_depth: "quick" }, idempotency_key: "once" });
-		await triggerAigScan({ scan_type: "mcp", target: "https://mcp.test/sse", options: { target_type: "url", categories: ["prompt_injection"] } });
+		await triggerAigScan({
+			scan_type: "infra",
+			target: "https://infra.test",
+			options: { scan_depth: "quick" },
+			idempotency_key: "once",
+		});
+		await triggerAigScan({
+			scan_type: "mcp",
+			target: "https://mcp.test/sse",
+			options: { target_type: "url", categories: ["prompt_injection"] },
+		});
 		await triggerAigScan({ scan_type: "agent", options: { agent_config: { targets: [] } } });
-		await triggerAigScan({ scan_type: "jailbreak", target: "https://llm.test", options: { model: "demo", token: "target-token", base_url: "https://llm.test", test_suites: ["jailbreak"] } });
+		await triggerAigScan({
+			scan_type: "jailbreak",
+			target: "https://llm.test",
+			options: {
+				model: "demo",
+				token: "target-token",
+				base_url: "https://llm.test",
+				test_suites: ["jailbreak"],
+			},
+		});
 
 		expect(fetchMock).toHaveBeenCalledTimes(4);
 		const first = fetchMock.mock.calls[0];
@@ -64,23 +86,32 @@ describe("AIG scan client contract", () => {
 
 	it("normalizes result status/findings and rejects path traversal IDs", async () => {
 		process.env.AIG_BRIDGE_URL = "http://bridge.test";
-		globalThis.fetch = vi.fn(async () => jsonResponse({
-			status: "completed",
-			findings: [null, { cve_id: "CVE-1", severity: "HIGH", detail: "safe" }],
-			summary: { total: "bad", high: 2 },
-		})).bind(null) as unknown as typeof fetch;
+		globalThis.fetch = vi
+			.fn(async () =>
+				jsonResponse({
+					status: "completed",
+					findings: [null, { cve_id: "CVE-1", severity: "HIGH", detail: "safe" }],
+					summary: { total: "bad", high: 2 },
+				}),
+			)
+			.bind(null) as unknown as typeof fetch;
 		const result = await getAigScanResult("task-123", "infra");
 		expect(result?.status).toBe("completed");
 		expect(result?.findings).toHaveLength(2);
 		expect(result?.findings[1]?.severity).toBe("high");
 		expect(result?.summary.total).toBe(2);
-		await expect(getAigScanResult("../../etc/passwd", "infra")).rejects.toThrow("Invalid AIG task id");
+		await expect(getAigScanResult("../../etc/passwd", "infra")).rejects.toThrow(
+			"Invalid AIG task id",
+		);
 	});
 
 	it("redacts secrets in bridge error bodies and treats 404 as pending/missing", async () => {
 		process.env.AIG_BRIDGE_URL = "http://bridge.test";
-		const fetchMock = vi.fn()
-			.mockResolvedValueOnce(jsonResponse({ error: "token=target-secret", authorization: "Bearer bridge-secret" }, 500))
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				jsonResponse({ error: "token=target-secret", authorization: "Bearer bridge-secret" }, 500),
+			)
 			.mockResolvedValueOnce(jsonResponse({ error: "not found" }, 404));
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 		const error = await getAigScanResult("task-1", "mcp").catch((value: unknown) => value);

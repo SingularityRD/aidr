@@ -39,11 +39,7 @@ function consoleHost(config: Pick<Config, "control_plane">): string {
 
 type NoticeConfig = Pick<
 	Config,
-	| "mode"
-	| "control_plane"
-	| "logging"
-	| "version_check"
-	| "organization"
+	"mode" | "control_plane" | "logging" | "version_check" | "organization"
 >;
 
 /** The facts the notice states; a change to any of them shows the notice again. */

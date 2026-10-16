@@ -71,9 +71,9 @@ describe("input inspection boundary", () => {
 
 	it("inspects free text larger than one window instead of refusing it", async () => {
 		const large = `${" ".repeat(MAX_ARTIFACT_SIZE)}ordinary tail`;
-		expect(
-			await inspect("Write", { file_path: "src/example.txt", content: large }),
-		).toMatchObject({ decision: "allow" });
+		expect(await inspect("Write", { file_path: "src/example.txt", content: large })).toMatchObject({
+			decision: "allow",
+		});
 	});
 
 	it("continues allowing fully inspected ordinary writes", async () => {

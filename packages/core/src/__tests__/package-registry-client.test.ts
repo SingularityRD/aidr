@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-	MAX_REGISTRY_RESPONSE_BYTES,
-	RegistryClient,
-} from "../clients/package-registry.js";
+import { MAX_REGISTRY_RESPONSE_BYTES, RegistryClient } from "../clients/package-registry.js";
 
 describe("RegistryClient", () => {
 	const originalFetch = globalThis.fetch;

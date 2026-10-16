@@ -224,7 +224,14 @@ function parseLink(
 		return { ok: false, error: "invalid_correlation" };
 	}
 	const correlationRaw = raw.correlation as Record<string, unknown>;
-	const required = ["sessionId", "agentIid", "connector", "incidentId", "traceId", "spanId"] as const;
+	const required = [
+		"sessionId",
+		"agentIid",
+		"connector",
+		"incidentId",
+		"traceId",
+		"spanId",
+	] as const;
 	for (const key of required) {
 		if (typeof correlationRaw[key] !== "string" || !LINK_ID.test(correlationRaw[key] as string)) {
 			return { ok: false, error: `invalid_correlation_${key}` };
@@ -497,7 +504,9 @@ export function recordCausalChain(
 				spanId: "unknown",
 			} as CausalCorrelationIds),
 		links,
-		head: head ? { linkId: head.linkId, linkDigest: head.linkDigest, position: head.position } : null,
+		head: head
+			? { linkId: head.linkId, linkDigest: head.linkDigest, position: head.position }
+			: null,
 		findings: sortFindings(findings),
 		duplicates: [...duplicates].sort(),
 		expectedKinds,
@@ -532,7 +541,11 @@ function bindCausalChainReceipts(
 		try {
 			receiptId = causalLinkReceiptId(link.linkId);
 		} catch {
-			findings.push({ code: "receipt_unavailable", linkId: link.linkId, detail: "receipt_id_unavailable" });
+			findings.push({
+				code: "receipt_unavailable",
+				linkId: link.linkId,
+				detail: "receipt_id_unavailable",
+			});
 			continue;
 		}
 		const clock: EvidenceClock = {
@@ -624,7 +637,11 @@ function verifyCausalLink(
 		});
 	}
 	if (!receiptId) {
-		findings.push({ code: "receipt_unavailable", linkId: link.linkId, detail: "link_has_no_receipt" });
+		findings.push({
+			code: "receipt_unavailable",
+			linkId: link.linkId,
+			detail: "link_has_no_receipt",
+		});
 		return null;
 	}
 	const receipt = receiptById.get(receiptId);
@@ -724,7 +741,10 @@ export function verifyCausalChainEvidence(
 		const current = chain.receipts[index];
 		if (!previous || !current) continue;
 		if (current.previousHash !== previous.receiptHash) {
-			findings.push({ code: "receipt_not_intact", detail: `chain_link_mismatch:${current.receiptId}` });
+			findings.push({
+				code: "receipt_not_intact",
+				detail: `chain_link_mismatch:${current.receiptId}`,
+			});
 		}
 	}
 

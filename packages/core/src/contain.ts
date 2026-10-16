@@ -65,7 +65,7 @@ export class AutoContain {
 		}
 		throw new Error(
 			"Generic operation isolation is not supported; refusing to run the operation unisolated. " +
-			"Use isolateCommand() or block the call instead.",
+				"Use isolateCommand() or block the call instead.",
 		);
 	}
 

@@ -251,7 +251,9 @@ describe("aidr discover", () => {
 		await discoverCommand({});
 
 		const text = log.mock.calls.map((call) => String(call[0])).join("\n");
-		expect(text).toContain("AIG categories: mcp-01 Token Mismanagement & Secret Exposure (critical, evidence)");
+		expect(text).toContain(
+			"AIG categories: mcp-01 Token Mismanagement & Secret Exposure (critical, evidence)",
+		);
 		expect(text).toContain("Hardcoded secret: env GITHUB_TOKEN (github_token)");
 		expect(process.exitCode).toBe(initialExitCode);
 	});

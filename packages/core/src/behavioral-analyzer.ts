@@ -240,7 +240,10 @@ export class BehavioralAnalyzer {
 
 	getSessionStats(): { totalEvents: number; uniqueSessions: number; averageSessionLength: number } {
 		const uniqueSessions = this.events.size;
-		const totalEvents = [...this.events.values()].reduce((total, events) => total + events.length, 0);
+		const totalEvents = [...this.events.values()].reduce(
+			(total, events) => total + events.length,
+			0,
+		);
 
 		return {
 			totalEvents,

@@ -210,33 +210,33 @@ describe("evaluateToolCall allowlist behavior", () => {
 			vi.setSystemTime(now);
 			const sourceFreshUntil = now.getTime() + 60 * 60 * 1000;
 			const benignUrl = "https://benign.test/installer.sh";
-			const fetchMock = vi.fn().mockImplementation(async (_endpoint: unknown, init: unknown = {}) => {
-				const payload = JSON.parse(String((init as { body?: unknown }).body ?? "{}")) as {
-					queries?: Array<{ key?: { "url-like"?: string } }>;
-				};
-				const stale = Date.now() >= sourceFreshUntil;
-				return {
-					ok: true,
-					json: async () => ({
-						answers: (payload.queries ?? []).map((query) => ({
-							key: query.key?.["url-like"] ?? "",
-							coverage: stale ? "no_data" : "covered",
-							...(!stale
-								? { cache_valid_until: new Date(sourceFreshUntil).toISOString() }
-								: {}),
-							result: {
-								success: {
-									classification: {
-										result: stale ? { unknown: { reason: "stale_reputation_row" } } : {},
+			const fetchMock = vi
+				.fn()
+				.mockImplementation(async (_endpoint: unknown, init: unknown = {}) => {
+					const payload = JSON.parse(String((init as { body?: unknown }).body ?? "{}")) as {
+						queries?: Array<{ key?: { "url-like"?: string } }>;
+					};
+					const stale = Date.now() >= sourceFreshUntil;
+					return {
+						ok: true,
+						json: async () => ({
+							answers: (payload.queries ?? []).map((query) => ({
+								key: query.key?.["url-like"] ?? "",
+								coverage: stale ? "no_data" : "covered",
+								...(!stale ? { cache_valid_until: new Date(sourceFreshUntil).toISOString() } : {}),
+								result: {
+									success: {
+										classification: {
+											result: stale ? { unknown: { reason: "stale_reputation_row" } } : {},
+										},
+										flags: [],
+										coverage: stale ? "no_data" : "covered",
 									},
-									flags: [],
-									coverage: stale ? "no_data" : "covered",
 								},
-							},
-						})),
-					}),
-				};
-			});
+							})),
+						}),
+					};
+				});
 			globalThis.fetch = fetchMock as typeof fetch;
 			const urlCheckRequestCount = () =>
 				fetchMock.mock.calls.filter(([endpoint]) => String(endpoint).includes("/url-check")).length;
@@ -260,9 +260,7 @@ describe("evaluateToolCall allowlist behavior", () => {
 			const savedCache = JSON.parse(await readFile(cachePath, "utf8")) as {
 				urls: Record<string, { expiresAt: string }>;
 			};
-			expect(savedCache.urls[benignUrl]?.expiresAt).toBe(
-				new Date(sourceFreshUntil).toISOString(),
-			);
+			expect(savedCache.urls[benignUrl]?.expiresAt).toBe(new Date(sourceFreshUntil).toISOString());
 
 			vi.setSystemTime(new Date(sourceFreshUntil));
 			const secondVerdict = await evaluateToolCall(

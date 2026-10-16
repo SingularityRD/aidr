@@ -204,7 +204,13 @@ const EDGE_ID = /^xedge_[0-9a-f]{64}$/;
 const NATURAL_KEY = /^[^\u0000-\u001f\u007f]{1,400}$/;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
 const KIND_SET = new Set<string>(EXPOSURE_NODE_KINDS);
-const EDGE_KIND_SET = new Set<string>(["authorizes", "runs_on", "uses", "can_reach", "last_seen_at"]);
+const EDGE_KIND_SET = new Set<string>([
+	"authorizes",
+	"runs_on",
+	"uses",
+	"can_reach",
+	"last_seen_at",
+]);
 const SOURCE_SET = new Set<string>([
 	"mcp_inventory",
 	"mcp_discovery",
@@ -274,7 +280,12 @@ function observationDigestInput(record: {
 	edges: ExposureObservationEdge[];
 }): string {
 	const nodes = [...record.nodes]
-		.map((node) => [node.kind, node.naturalKey, node.label ?? "", JSON.stringify(node.metadata ?? {})])
+		.map((node) => [
+			node.kind,
+			node.naturalKey,
+			node.label ?? "",
+			JSON.stringify(node.metadata ?? {}),
+		])
 		.sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
 	const edges = [...record.edges]
 		.map((edge) => [edge.kind, edge.fromNodeId, edge.toNodeId])
@@ -361,11 +372,13 @@ function parseObservationNode(value: unknown): ExposureParseResult<ExposureObser
 function parseObservationEdge(value: unknown): ExposureParseResult<ExposureObservationEdge> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return fail("invalid_edge");
 	const edge = value as Record<string, unknown>;
-	if (typeof edge.kind !== "string" || !EDGE_KIND_SET.has(edge.kind)) return fail("invalid_edge_kind");
+	if (typeof edge.kind !== "string" || !EDGE_KIND_SET.has(edge.kind))
+		return fail("invalid_edge_kind");
 	if (typeof edge.fromNodeId !== "string" || !NODE_ID.test(edge.fromNodeId)) {
 		return fail("invalid_edge_from");
 	}
-	if (typeof edge.toNodeId !== "string" || !NODE_ID.test(edge.toNodeId)) return fail("invalid_edge_to");
+	if (typeof edge.toNodeId !== "string" || !NODE_ID.test(edge.toNodeId))
+		return fail("invalid_edge_to");
 	if (edge.fromNodeId === edge.toNodeId) return fail("self_edge");
 	return accept({
 		kind: edge.kind as ExposureEdgeKind,
@@ -410,16 +423,19 @@ function parseObservation(
 ): ExposureParseResult<NormalizedObservation> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return fail("not_an_object");
 	const raw = value as Record<string, unknown>;
-	if (typeof raw.tenantId !== "string" || !IDENTIFIER.test(raw.tenantId)) return fail("invalid_tenant_id");
+	if (typeof raw.tenantId !== "string" || !IDENTIFIER.test(raw.tenantId))
+		return fail("invalid_tenant_id");
 	if (typeof raw.observationId !== "string" || !IDENTIFIER.test(raw.observationId)) {
 		return fail("invalid_observation_id");
 	}
 	if (typeof raw.source !== "string" || !SOURCE_SET.has(raw.source)) return fail("invalid_source");
-	if (typeof raw.sourceRef !== "string" || !NATURAL_KEY.test(raw.sourceRef)) return fail("invalid_source_ref");
+	if (typeof raw.sourceRef !== "string" || !NATURAL_KEY.test(raw.sourceRef))
+		return fail("invalid_source_ref");
 	if (!Number.isSafeInteger(raw.observedAtMs) || (raw.observedAtMs as number) < 0) {
 		return fail("invalid_observed_at");
 	}
-	if (raw.observed !== undefined && typeof raw.observed !== "boolean") return fail("invalid_observed");
+	if (raw.observed !== undefined && typeof raw.observed !== "boolean")
+		return fail("invalid_observed");
 	if (!Array.isArray(raw.nodes)) return fail("invalid_nodes");
 	if (raw.edges !== undefined && !Array.isArray(raw.edges)) return fail("invalid_edges");
 
@@ -661,11 +677,7 @@ function mergeObservationEdges(
 }
 
 /** Record an `invalid_record` rejection with whatever the raw record exposed. */
-function rejectUnreadableRecord(
-	state: ExposureFoldState,
-	record: unknown,
-	detail: string,
-): void {
+function rejectUnreadableRecord(state: ExposureFoldState, record: unknown, detail: string): void {
 	const raw =
 		record && typeof record === "object" && !Array.isArray(record)
 			? (record as Record<string, unknown>)
@@ -985,7 +997,9 @@ export function canonicalExposureGraphJson(graph: ExposureGraph): string {
 			firstSeenAtMs: node.firstSeenAtMs,
 			lastSeenAtMs: node.lastSeenAtMs,
 			observationIds: [...node.observationIds].sort(),
-			metadata: Object.fromEntries(Object.entries(node.metadata).sort(([a], [b]) => (a < b ? -1 : 1))),
+			metadata: Object.fromEntries(
+				Object.entries(node.metadata).sort(([a], [b]) => (a < b ? -1 : 1)),
+			),
 		})),
 		edges: sortEdges(graph.edges).map((edge) => ({
 			edgeId: edge.edgeId,

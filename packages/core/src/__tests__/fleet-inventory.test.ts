@@ -63,7 +63,11 @@ describe("tenant fleet inventory", () => {
 			"collector-a",
 			["http://127.0.0.1:8080"],
 			null,
-			{ now: () => 1_000_000, staleAfterMs: 1_000, scanTargetImpl: async ({ url }) => result(url, true) },
+			{
+				now: () => 1_000_000,
+				staleAfterMs: 1_000,
+				scanTargetImpl: async ({ url }) => result(url, true),
+			},
 		);
 		const lastSeenAt = first.items[0]?.lastSeenAt;
 		const second = await collectFleetInventory(

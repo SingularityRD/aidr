@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,7 +10,16 @@ describe("AI infrastructure policy", () => {
 		const dir = await mkdtemp(join(tmpdir(), "aidr-infra-policy-"));
 		try {
 			const path = join(dir, "scan.json");
-			const config = ConfigSchema.parse({ policy: { enabled: true, ai_infrastructure: { enabled: true, targets: ["http://127.0.0.1:9911"], report_path: path } } });
+			const config = ConfigSchema.parse({
+				policy: {
+					enabled: true,
+					ai_infrastructure: {
+						enabled: true,
+						targets: ["http://127.0.0.1:9911"],
+						report_path: path,
+					},
+				},
+			});
 			const artifact = { type: "url" as const, value: "http://127.0.0.1:9911/invoke" };
 			const report = {
 				scannedAt: new Date().toISOString(),
@@ -26,7 +35,13 @@ describe("AI infrastructure policy", () => {
 			};
 			await writeFile(path, JSON.stringify(report));
 			expect((await evaluatePolicy("WebFetch", [artifact], config))?.decision).toBe("deny");
-			expect(await evaluatePolicy("WebFetch", [{ ...artifact, value: "http://127.0.0.1:9912/invoke" }], config)).toBeNull();
+			expect(
+				await evaluatePolicy(
+					"WebFetch",
+					[{ ...artifact, value: "http://127.0.0.1:9912/invoke" }],
+					config,
+				),
+			).toBeNull();
 			report.targets[0].cves[0].evaluated = false;
 			await writeFile(path, JSON.stringify(report));
 			expect((await evaluatePolicy("WebFetch", [artifact], config))?.decision).toBe("ask");
@@ -46,12 +61,18 @@ describe("AI infrastructure policy", () => {
 					},
 				},
 			});
-			expect((await evaluatePolicy("WebFetch", [artifact], blockUnverifiedConfig))?.decision).toBe("deny");
+			expect((await evaluatePolicy("WebFetch", [artifact], blockUnverifiedConfig))?.decision).toBe(
+				"deny",
+			);
 			report.scannedAt = "2000-01-01";
 			await writeFile(path, JSON.stringify(report));
-			expect((await evaluatePolicy("WebFetch", [artifact], config))?.reasons[0]).toContain("expired");
+			expect((await evaluatePolicy("WebFetch", [artifact], config))?.reasons[0]).toContain(
+				"expired",
+			);
 			await writeFile(path, "invalid");
 			expect((await evaluatePolicy("WebFetch", [artifact], config))?.decision).toBe("ask");
-		} finally { await rm(dir, { recursive: true, force: true }); }
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
 	});
 });

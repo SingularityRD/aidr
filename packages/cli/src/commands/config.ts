@@ -4,6 +4,7 @@ import {
 	configPathParts,
 	containsSecretConfigValue,
 	displayConfigValue,
+	isKnownConfigPath,
 	isSecretConfigPath,
 	parseConfigValue,
 } from "../utils/config-values.js";
@@ -44,6 +45,21 @@ async function configCommand(
 	}
 
 	if (options.get) {
+		let parts: string[];
+		try {
+			parts = configPathParts(options.get);
+		} catch {
+			console.error("Invalid configuration path.");
+			process.exitCode = 1;
+			return;
+		}
+		if (!isKnownConfigPath(ConfigSchema, parts)) {
+			console.error(
+				`Unknown configuration key: ${escapeTerminalText(options.get)}. List the keys with 'aidr config -l'.`,
+			);
+			process.exitCode = 1;
+			return;
+		}
 		try {
 			// A field absent from config.json is still in effect at its schema
 			// default (e.g. `mode` is "local"), so report the effective value.

@@ -76,7 +76,9 @@ export interface HostObservationRecord {
  * the gate refuses to correlate an observation it cannot bind to a case, so
  * writing one would only produce a misleading receipt.
  */
-export function createHostObservation(env: NodeJS.ProcessEnv = process.env): HostObservation | null {
+export function createHostObservation(
+	env: NodeJS.ProcessEnv = process.env,
+): HostObservation | null {
 	const receiptPath = env[HOST_OBSERVATION_ENV.receipt]?.trim();
 	const nonce = env[HOST_OBSERVATION_ENV.nonce]?.trim();
 	const workspace = env[HOST_OBSERVATION_ENV.workspace]?.trim();
@@ -85,7 +87,13 @@ export function createHostObservation(env: NodeJS.ProcessEnv = process.env): Hos
 	const resolvedWorkspace = resolve(workspace);
 	const resolvedReceipt = resolve(receiptPath);
 	const receiptRelative = relative(resolvedWorkspace, resolvedReceipt);
-	if (!receiptRelative || receiptRelative === ".." || receiptRelative.startsWith(`..${sep}`) || isAbsolute(receiptRelative)) return null;
+	if (
+		!receiptRelative ||
+		receiptRelative === ".." ||
+		receiptRelative.startsWith(`..${sep}`) ||
+		isAbsolute(receiptRelative)
+	)
+		return null;
 	return { receiptPath: resolvedReceipt, nonce, workspace: resolvedWorkspace };
 }
 

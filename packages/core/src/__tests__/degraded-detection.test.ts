@@ -45,8 +45,24 @@ beforeEach(async () => {
 	// Redirect HOME so the user threat directory cannot accidentally supply rules.
 	process.env.HOME = home;
 	process.env.USERPROFILE = home;
-	goodThreatsDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "claude-code", "resources", "threats");
-	goodAllowlistsDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "claude-code", "resources", "allowlists");
+	goodThreatsDir = resolve(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"..",
+		"..",
+		"claude-code",
+		"resources",
+		"threats",
+	);
+	goodAllowlistsDir = resolve(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"..",
+		"..",
+		"claude-code",
+		"resources",
+		"allowlists",
+	);
 });
 
 afterEach(async () => {
@@ -112,10 +128,10 @@ describe("detection is never silently unavailable", () => {
 			"utf8",
 		);
 
-		const verdict = await evaluateToolCall(
-			request("echo harmless"),
-			{ configPath, threatsDir: join(home, "does-not-exist") },
-		);
+		const verdict = await evaluateToolCall(request("echo harmless"), {
+			configPath,
+			threatsDir: join(home, "does-not-exist"),
+		});
 		// An explicit operator choice is not a degradation: do not nag on every call.
 		expect(verdict.decision).toBe("allow");
 		expect(verdict.source).not.toBe("detection_unavailable");

@@ -42,7 +42,9 @@ function describeDiscoveredServer(server: DiscoveredServer): string[] {
 	lines.push(
 		categories.length > 0
 			? `    AIG categories: ${categories
-					.map((category) => `${category.id} ${category.name} (${category.risk}, ${category.basis})`)
+					.map(
+						(category) => `${category.id} ${category.name} (${category.risk}, ${category.basis})`,
+					)
 					.join("; ")}`
 			: "    AIG categories: none matched (not a safety verdict)",
 	);

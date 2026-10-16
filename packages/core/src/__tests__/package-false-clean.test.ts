@@ -35,9 +35,9 @@ describe("resolveDistDigest", () => {
 	it("recognises sha256 and sha384 too", () => {
 		expect(resolveDistDigest("", `sha256-${SHA256_B64}`).hashAlgorithm).toBe("sha256");
 		expect(resolveDistDigest("", `sha256-${SHA256_B64}`).hash).toHaveLength(64);
-		expect(resolveDistDigest("", `sha384-${Buffer.alloc(48, 1).toString("base64")}`).hashAlgorithm).toBe(
-			"sha384",
-		);
+		expect(
+			resolveDistDigest("", `sha384-${Buffer.alloc(48, 1).toString("base64")}`).hashAlgorithm,
+		).toBe("sha384");
 	});
 
 	it("falls back to the shasum and reports sha1 when only that is available", () => {

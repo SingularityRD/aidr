@@ -46,18 +46,32 @@ describe("committed synthetic detection fixtures", () => {
 		expect(fixtures.cases.length).toBe(8);
 		expect(new Set(fixtures.cases.map((entry) => entry.case_id)).size).toBe(fixtures.cases.length);
 		expect(fixtures.cases.every((entry) => entry.partition === "development")).toBe(true);
-		expect(fixtures.cases.every((entry) => entry.oracle === "malicious"
-			? entry.expected_decision !== "allow" && entry.expected_threat_id !== null
-			: entry.expected_decision === "allow" && entry.expected_threat_id === null,
-		)).toBe(true);
-		expect(fixtures.cases.every((entry) =>
-			createHash("sha256").update(entry.content.replace(/\r\n?/g, "\n").trim()).digest("hex") === entry.content_sha256,
-		)).toBe(true);
+		expect(
+			fixtures.cases.every((entry) =>
+				entry.oracle === "malicious"
+					? entry.expected_decision !== "allow" && entry.expected_threat_id !== null
+					: entry.expected_decision === "allow" && entry.expected_threat_id === null,
+			),
+		).toBe(true);
+		expect(
+			fixtures.cases.every(
+				(entry) =>
+					createHash("sha256")
+						.update(entry.content.replace(/\r\n?/g, "\n").trim())
+						.digest("hex") === entry.content_sha256,
+			),
+		).toBe(true);
 
 		for (const family of fixtures.scope.required_attack_families) {
 			const cases = fixtures.cases.filter((entry) => entry.family === family);
-			expect(cases.some((entry) => entry.oracle === "malicious"), `${family} malicious`).toBe(true);
-			expect(cases.some((entry) => entry.oracle === "benign"), `${family} benign twin`).toBe(true);
+			expect(
+				cases.some((entry) => entry.oracle === "malicious"),
+				`${family} malicious`,
+			).toBe(true);
+			expect(
+				cases.some((entry) => entry.oracle === "benign"),
+				`${family} benign twin`,
+			).toBe(true);
 		}
 		for (const [dimension, required] of [
 			["connector", fixtures.scope.required_connectors],
@@ -65,8 +79,14 @@ describe("committed synthetic detection fixtures", () => {
 		] as const) {
 			for (const id of required) {
 				const cases = fixtures.cases.filter((entry) => entry[dimension] === id);
-				expect(cases.some((entry) => entry.oracle === "malicious"), `${dimension} ${id} malicious`).toBe(true);
-				expect(cases.some((entry) => entry.oracle === "benign"), `${dimension} ${id} benign`).toBe(true);
+				expect(
+					cases.some((entry) => entry.oracle === "malicious"),
+					`${dimension} ${id} malicious`,
+				).toBe(true);
+				expect(
+					cases.some((entry) => entry.oracle === "benign"),
+					`${dimension} ${id} benign`,
+				).toBe(true);
 			}
 		}
 	});

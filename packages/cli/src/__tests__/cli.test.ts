@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { generateApiKey, hashToolCall } from "../utils/crypto.js";
-import { loadBundledThreatCount, resolveBundledDataDirs, verifyDetection } from "../utils/test-protection.js";
+import {
+	loadBundledThreatCount,
+	resolveBundledDataDirs,
+	verifyDetection,
+} from "../utils/test-protection.js";
 
 /**
  * The CLI previously had zero tests, which is how it shipped reporting a

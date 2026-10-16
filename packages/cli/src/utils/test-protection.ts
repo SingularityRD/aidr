@@ -1,7 +1,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractFromBash, HeuristicsEngine, loadThreatsFromDirs } from "@singularityrd/aidr-core";
+import {
+	extractFromBash,
+	HeuristicsEngine,
+	loadThreatsFromDirs,
+	resolvePath,
+} from "@singularityrd/aidr-core";
 import { standaloneBundleRoot } from "./standalone.js";
 
 /**
@@ -35,6 +40,16 @@ export async function loadBundledThreatCount(): Promise<number> {
 	}
 	const threats = await loadThreatsFromDirs([threatsDir]);
 	return threats.length;
+}
+
+/** IDs of the shipped rules plus the operator's own (~/.singularity-aidr/threats). */
+export async function knownRuleIds(): Promise<Set<string>> {
+	const { threatsDir } = resolveBundledDataDirs();
+	const dirs = [threatsDir, resolvePath("~/.singularity-aidr/threats")].filter((dir) =>
+		existsSync(dir),
+	);
+	const threats = dirs.length > 0 ? await loadThreatsFromDirs(dirs) : [];
+	return new Set(threats.map((threat) => threat.id));
 }
 
 export interface DetectionSelfTest {

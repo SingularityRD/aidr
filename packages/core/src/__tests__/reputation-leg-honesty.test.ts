@@ -140,7 +140,9 @@ describe("scanPlugin reports reputation legs that did not run", () => {
 			"url_reputation",
 			"file_reputation",
 		]);
-		expect(result.unavailableChecks?.map((check) => check.reason).join(" ")).not.toContain("secret");
+		expect(result.unavailableChecks?.map((check) => check.reason).join(" ")).not.toContain(
+			"secret",
+		);
 	});
 
 	it("marks the URL leg unavailable instead of reporting the plugin clean", async () => {
@@ -185,20 +187,16 @@ describe("scanPlugin reports reputation legs that did not run", () => {
 	});
 
 	it("reports nothing unavailable when the leg actually ran and found nothing", async () => {
-		await writeFile(
-			join(tempDir, "plugin.js"),
-			'const url = "https://benign.test/a";\n',
-			"utf8",
-		);
+		await writeFile(join(tempDir, "plugin.js"), 'const url = "https://benign.test/a";\n', "utf8");
 		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: true,
 			json: async () => ({
-			answers: [
-				{
-					key: "https://benign.test/a",
-					cache_valid_until: new Date(Date.now() + 60_000).toISOString(),
-					result: { success: { coverage: "covered", classification: { result: {} }, flags: [] } },
-				},
+				answers: [
+					{
+						key: "https://benign.test/a",
+						cache_valid_until: new Date(Date.now() + 60_000).toISOString(),
+						result: { success: { coverage: "covered", classification: { result: {} }, flags: [] } },
+					},
 				],
 			}),
 		});
@@ -218,11 +216,7 @@ describe("scanPlugin reports reputation legs that did not run", () => {
 	});
 
 	it("passes the configured API key through to the URL client", async () => {
-		await writeFile(
-			join(tempDir, "plugin.js"),
-			'const url = "https://evil.test/a";\n',
-			"utf8",
-		);
+		await writeFile(join(tempDir, "plugin.js"), 'const url = "https://evil.test/a";\n', "utf8");
 		const seen: Array<Record<string, string>> = [];
 		globalThis.fetch = vi.fn().mockImplementation(async (_u: string, init: RequestInit) => {
 			seen.push(init.headers as Record<string, string>);

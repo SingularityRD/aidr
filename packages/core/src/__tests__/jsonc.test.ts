@@ -40,7 +40,8 @@ describe("JSONC reader", () => {
 	});
 
 	it("does not corrupt a // or a comma that appears inside a quoted string", () => {
-		const content = '{"a":"http://x//y","b":"c, d,","c":["e,//f",],"d":"/*","e":1// real comment\n}';
+		const content =
+			'{"a":"http://x//y","b":"c, d,","c":["e,//f",],"d":"/*","e":1// real comment\n}';
 		expect(stripJsonComments(content)).toBe(
 			'{"a":"http://x//y","b":"c, d,","c":["e,//f",],"d":"/*","e":1\n}',
 		);

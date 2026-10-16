@@ -141,7 +141,14 @@ describe("aidr setup installs the connector of every detected host (CON-13)", ()
 		expect(written.other).toBe(true);
 		expect(written.hooks.PreToolUse?.[0]).toEqual(own);
 		expect(written.hooks.PreToolUse?.[1]?.matcher).toBe("^(Bash|apply_patch|mcp__.+)$");
-		expect(written.hooks.UserPromptSubmit?.[0]?.hooks[0]?.command).toBe("aidr-codex-hook");
+		// Registered by absolute path: a Codex started with another PATH still finds it.
+		const hookFile = join(
+			f.bin,
+			process.platform === "win32" ? "aidr-codex-hook.cmd" : "aidr-codex-hook",
+		);
+		expect(written.hooks.UserPromptSubmit?.[0]?.hooks[0]?.command).toBe(
+			`"${hookFile.replaceAll("\\", "/")}"`,
+		);
 		expect(written.hooks.PostToolUse?.[0]?.matcher).toBe("^(Bash|mcp__.+)$");
 		expect(first?.followUp.join("\n")).toContain("/hooks");
 

@@ -368,11 +368,7 @@ describe("tenant DLP policy", () => {
 				createException({
 					id: "exception-stale",
 					scope: "match",
-					fingerprint: createDlpMatchFingerprint(
-						"tenant-acme",
-						"rule-employee-id",
-						"EMP-000322",
-					),
+					fingerprint: createDlpMatchFingerprint("tenant-acme", "rule-employee-id", "EMP-000322"),
 					expiresAt: "2020-01-01T00:00:00.000Z",
 				}),
 			],

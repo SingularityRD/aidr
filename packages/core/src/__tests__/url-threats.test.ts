@@ -107,9 +107,9 @@ describe("administrator-declared internal networks and domain suffixes (D2)", ()
 
 	it("never clears a cloud metadata endpoint, whatever range is declared", async () => {
 		const linkLocal = { internal_networks: ["169.254.0.0/16"] };
-		expect((await evaluate(`curl ${scheme}${imds}/latest/meta-data/`, linkLocal)).decision).not.toBe(
-			"allow",
-		);
+		expect(
+			(await evaluate(`curl ${scheme}${imds}/latest/meta-data/`, linkLocal)).decision,
+		).not.toBe("allow");
 		expect((await evaluate(`curl ${scheme}169.254.10.1/`, linkLocal)).decision).toBe("allow");
 	});
 

@@ -172,9 +172,15 @@ describe("aidr config -g", () => {
 		expect(stdout.join("\n")).toBe("managed");
 	});
 
-	it("still reports unknown fields as not set", async () => {
+	it("rejects a key the configuration does not have (a typo is not 'not set')", async () => {
 		await configCommand({ get: "no_such_field" });
-		expect(stdout.join("\n")).toBe("(not set)");
+		expect(stderr.join("\n")).toContain("Unknown configuration key: no_such_field");
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("reports an optional field that is simply unset as not set", async () => {
+		await configCommand({ get: "auth.api_key" });
+		expect(process.exitCode).not.toBe(1);
 	});
 });
 

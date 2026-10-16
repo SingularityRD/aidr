@@ -99,7 +99,8 @@ function parseBinding(value: unknown): EvidenceParseResult<EvidenceBinding> {
 		return fail("invalid_candidate_digest");
 	}
 	for (const key of ["policyRevision", "deviceId", "actorRef", "incidentId"] as const) {
-		if (typeof raw[key] !== "string" || !REF.test(raw[key] as string)) return fail(`invalid_${key}`);
+		if (typeof raw[key] !== "string" || !REF.test(raw[key] as string))
+			return fail(`invalid_${key}`);
 	}
 	if (raw.actionId !== null && (typeof raw.actionId !== "string" || !REF.test(raw.actionId))) {
 		return fail("invalid_action_id");
@@ -124,7 +125,8 @@ function parseClock(value: unknown): EvidenceParseResult<EvidenceClock> {
 	}
 	if (
 		raw.observedSkewMs !== null &&
-		(!Number.isSafeInteger(raw.observedSkewMs) || Math.abs(raw.observedSkewMs as number) > 86_400_000)
+		(!Number.isSafeInteger(raw.observedSkewMs) ||
+			Math.abs(raw.observedSkewMs as number) > 86_400_000)
 	) {
 		return fail("invalid_observed_skew");
 	}
@@ -139,7 +141,8 @@ export function parseEvidenceReceipt(value: unknown): EvidenceParseResult<Eviden
 	if (!value || typeof value !== "object" || Array.isArray(value)) return fail("invalid_receipt");
 	const raw = value as Record<string, unknown>;
 	if (raw.version !== EVIDENCE_RECEIPT_VERSION) return fail("unsupported_version");
-	if (typeof raw.receiptId !== "string" || !UUID.test(raw.receiptId)) return fail("invalid_receipt_id");
+	if (typeof raw.receiptId !== "string" || !UUID.test(raw.receiptId))
+		return fail("invalid_receipt_id");
 	const binding = parseBinding(raw.binding);
 	if (!binding.ok) return fail(binding.error);
 	const clock = parseClock(raw.clock);
@@ -147,7 +150,8 @@ export function parseEvidenceReceipt(value: unknown): EvidenceParseResult<Eviden
 	if (typeof raw.previousHash !== "string" || !HASH.test(raw.previousHash)) {
 		return fail("invalid_previous_hash");
 	}
-	if (typeof raw.receiptHash !== "string" || !HASH.test(raw.receiptHash)) return fail("invalid_receipt_hash");
+	if (typeof raw.receiptHash !== "string" || !HASH.test(raw.receiptHash))
+		return fail("invalid_receipt_hash");
 	if (!["decision", "response", "telemetry", "audit"].includes(String(raw.dataClass))) {
 		return fail("invalid_data_class");
 	}
@@ -176,9 +180,7 @@ export function parseEvidenceReceipt(value: unknown): EvidenceParseResult<Eviden
  * included, so a receipt cannot be re-pointed at another candidate, policy,
  * device, incident or action without changing its digest.
  */
-export function evidenceReceiptHashInput(
-	receipt: Omit<EvidenceReceiptV1, "receiptHash">,
-): string {
+export function evidenceReceiptHashInput(receipt: Omit<EvidenceReceiptV1, "receiptHash">): string {
 	const b = receipt.binding;
 	return [
 		`aidr.evidence.receipt.v${EVIDENCE_RECEIPT_VERSION}`,
@@ -359,7 +361,8 @@ export function verifyEvidenceChain(
 		const verification = verifyEvidenceReceipt(receipt, context);
 		if (verification.status !== "intact") {
 			result.findings.push({
-				code: verification.status === "tampered" ? "receipt_hash_mismatch" : "receipt_hash_unavailable",
+				code:
+					verification.status === "tampered" ? "receipt_hash_mismatch" : "receipt_hash_unavailable",
 				receiptId: receipt.receiptId,
 			});
 		}
@@ -418,7 +421,9 @@ export function detectEvidenceTruncation(
 		return { truncated: true, reason: "logical_counter_regressed" };
 	}
 	const previousPresent = verification.verifiedReceipts.some(
-		(receipt) => receipt.receiptId === previousHead.receiptId && receipt.receiptHash === previousHead.receiptHash,
+		(receipt) =>
+			receipt.receiptId === previousHead.receiptId &&
+			receipt.receiptHash === previousHead.receiptHash,
 	);
 	if (!previousPresent) return { truncated: true, reason: "previous_head_missing_or_replaced" };
 	return { truncated: false, reason: "head_advanced" };
@@ -479,11 +484,18 @@ export interface EvidenceArchiveRequest {
 	receipts: readonly EvidenceReceiptV1[];
 }
 
-function validateArchiveRequest(request: EvidenceArchiveRequest, context: EvidenceHashContext): string | null {
+function validateArchiveRequest(
+	request: EvidenceArchiveRequest,
+	context: EvidenceHashContext,
+): string | null {
 	if (!HASH.test(request.headReceiptHash)) return "invalid_head_hash";
 	if (!HASH.test(request.candidateDigest)) return "invalid_candidate_digest";
 	if (!REF.test(request.incidentId)) return "invalid_incident_id";
-	if (!UUID.test(request.headReceiptId) || !Array.isArray(request.receipts) || request.receipts.length === 0) {
+	if (
+		!UUID.test(request.headReceiptId) ||
+		!Array.isArray(request.receipts) ||
+		request.receipts.length === 0
+	) {
 		return "invalid_receipt_chain";
 	}
 	let previousHash = EVIDENCE_GENESIS_HASH;
@@ -494,7 +506,8 @@ function validateArchiveRequest(request: EvidenceArchiveRequest, context: Eviden
 		const parsed = parseEvidenceReceipt(value);
 		if (!parsed.ok) return "invalid_receipt_chain";
 		const receipt = parsed.value;
-		if (verifyEvidenceReceipt(receipt, context).status !== "intact") return "receipt_integrity_unverified";
+		if (verifyEvidenceReceipt(receipt, context).status !== "intact")
+			return "receipt_integrity_unverified";
 		if (receiptIds.has(receipt.receiptId)) return "duplicate_receipt_id";
 		receiptIds.add(receipt.receiptId);
 		if (
@@ -502,12 +515,17 @@ function validateArchiveRequest(request: EvidenceArchiveRequest, context: Eviden
 			receipt.binding.candidateDigest !== request.candidateDigest ||
 			(policyRevision !== null && receipt.binding.policyRevision !== policyRevision) ||
 			receipt.previousHash !== previousHash
-		) return "receipt_chain_binding_mismatch";
+		)
+			return "receipt_chain_binding_mismatch";
 		policyRevision = receipt.binding.policyRevision;
 		previousHash = receipt.receiptHash;
 		head = receipt;
 	}
-	if (!head || head.receiptId !== request.headReceiptId || head.receiptHash !== request.headReceiptHash) {
+	if (
+		!head ||
+		head.receiptId !== request.headReceiptId ||
+		head.receiptHash !== request.headReceiptHash
+	) {
 		return "archive_head_mismatch";
 	}
 	return null;
@@ -558,7 +576,13 @@ export async function anchorEvidenceHead(
 	context: EvidenceHashContext,
 	options: { timeoutMs?: number; now?: () => number } = {},
 ): Promise<EvidenceAnchorOutcome> {
-	if (!sink) return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "no_archive_sink" };
+	if (!sink)
+		return {
+			status: "unanchored",
+			reference: null,
+			anchoredAtUtc: null,
+			reason: "no_archive_sink",
+		};
 	const requestFailure = validateArchiveRequest(request, context);
 	if (requestFailure) {
 		return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: requestFailure };
@@ -586,7 +610,12 @@ export async function anchorEvidenceHead(
 		return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: result.reason };
 	}
 	if (result.status === "rejected") {
-		return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: `rejected:${result.reason}` };
+		return {
+			status: "unanchored",
+			reference: null,
+			anchoredAtUtc: null,
+			reason: `rejected:${result.reason}`,
+		};
 	}
 	if (result.anchoredReceiptHash !== request.headReceiptHash) {
 		return {
@@ -596,18 +625,37 @@ export async function anchorEvidenceHead(
 			reason: "archive_digest_mismatch",
 		};
 	}
-	if (typeof result.reference !== "string" || result.reference.trim() === "" || result.reference.length > 512) {
-		return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "archive_reference_invalid" };
+	if (
+		typeof result.reference !== "string" ||
+		result.reference.trim() === "" ||
+		result.reference.length > 512
+	) {
+		return {
+			status: "unanchored",
+			reference: null,
+			anchoredAtUtc: null,
+			reason: "archive_reference_invalid",
+		};
 	}
 	const anchoredAt = parseIso(result.anchoredAtUtc);
 	if (!anchoredAt) {
-		return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "archive_timestamp_invalid" };
+		return {
+			status: "unanchored",
+			reference: null,
+			anchoredAtUtc: null,
+			reason: "archive_timestamp_invalid",
+		};
 	}
 	// An archive that answers only after the caller's budget elapsed is not proof
 	// of a timely anchor: the caller cannot distinguish "stored" from "stored
 	// just before it gave up", and a retry may already be racing it.
 	if (now() - started > timeoutMs) {
-		return { status: "unanchored", reference: null, anchoredAtUtc: null, reason: "archive_timeout_exceeded" };
+		return {
+			status: "unanchored",
+			reference: null,
+			anchoredAtUtc: null,
+			reason: "archive_timeout_exceeded",
+		};
 	}
 	return {
 		status: "anchored",

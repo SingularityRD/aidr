@@ -144,30 +144,36 @@ function asBoundedString(value: unknown, fallback = "", max = 4096): string {
 
 function redactValue(value: unknown, depth = 0): unknown {
 	if (depth > 5) return "[TRUNCATED]";
-	if (typeof value === "string") return asBoundedString(value, "", 2048)
-		.replace(/(bearer\s+|sk-[A-Za-z0-9_-]{8,})[^\s,]*/gi, "$1[REDACTED]")
-		.replace(/((?:token|secret|password|api[-_]?key)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]");
+	if (typeof value === "string")
+		return asBoundedString(value, "", 2048)
+			.replace(/(bearer\s+|sk-[A-Za-z0-9_-]{8,})[^\s,]*/gi, "$1[REDACTED]")
+			.replace(/((?:token|secret|password|api[-_]?key)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]");
 	if (Array.isArray(value)) return value.slice(0, 50).map((item) => redactValue(item, depth + 1));
 	if (!value || typeof value !== "object") return value;
 	const result: Record<string, unknown> = {};
 	for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 100)) {
-		if (/token|secret|password|authorization|api[-_]?key|cookie|credential/i.test(key)) result[key] = "[REDACTED]";
+		if (/token|secret|password|authorization|api[-_]?key|cookie|credential/i.test(key))
+			result[key] = "[REDACTED]";
 		else result[key] = redactValue(item, depth + 1);
 	}
 	return result;
 }
 
 function parseBridgeScanResponse(value: unknown): BridgeScanResponse {
-	if (!value || typeof value !== "object") throw new AigBridgeError("AIG bridge returned an invalid task response");
+	if (!value || typeof value !== "object")
+		throw new AigBridgeError("AIG bridge returned an invalid task response");
 	const response = value as Record<string, unknown>;
 	if (typeof response.task_id !== "string" || !TASK_ID_RE.test(response.task_id)) {
 		throw new AigBridgeError("AIG bridge returned an invalid task id");
 	}
-	if (!isTaskStatus(response.status)) throw new AigBridgeError("AIG bridge returned an invalid task status");
+	if (!isTaskStatus(response.status))
+		throw new AigBridgeError("AIG bridge returned an invalid task status");
 	return {
 		task_id: response.task_id,
 		status: response.status,
-		...(typeof response.estimated_seconds === "number" ? { estimated_seconds: response.estimated_seconds } : {}),
+		...(typeof response.estimated_seconds === "number"
+			? { estimated_seconds: response.estimated_seconds }
+			: {}),
 	};
 }
 
@@ -237,7 +243,11 @@ async function bridgeRequest<T>(
 export async function isAigAvailable(): Promise<boolean> {
 	try {
 		const health = await bridgeRequest<unknown>("/api/v1/health", {}, 5_000);
-		return Boolean(health && typeof health === "object" && (health as Record<string, unknown>).scan_ready === true);
+		return Boolean(
+			health &&
+				typeof health === "object" &&
+				(health as Record<string, unknown>).scan_ready === true,
+		);
 	} catch {
 		return false;
 	}
@@ -263,15 +273,17 @@ export async function triggerAigScan(request: AigScanRequest): Promise<string> {
 	switch (scan_type) {
 		case "infra": {
 			const infraTarget = requireText(target, "infrastructure target");
-			const res = parseBridgeScanResponse(await bridgeRequest<unknown>("/api/v1/scan/infra", {
-				method: "POST",
-				headers: requestHeaders,
-				body: JSON.stringify({
-					targets: [infraTarget],
-					scan_type: options?.scan_depth || "full",
-					options: options || {},
+			const res = parseBridgeScanResponse(
+				await bridgeRequest<unknown>("/api/v1/scan/infra", {
+					method: "POST",
+					headers: requestHeaders,
+					body: JSON.stringify({
+						targets: [infraTarget],
+						scan_type: options?.scan_depth || "full",
+						options: options || {},
+					}),
 				}),
-			}));
+			);
 			return res.task_id;
 		}
 		case "mcp": {
@@ -280,60 +292,67 @@ export async function triggerAigScan(request: AigScanRequest): Promise<string> {
 			const categories = Array.isArray(options?.categories)
 				? options.categories.filter((item): item is string => typeof item === "string")
 				: [];
-			const res = parseBridgeScanResponse(await bridgeRequest<unknown>("/api/v1/scan/mcp", {
-				method: "POST",
-				headers: requestHeaders,
-				body: JSON.stringify({
-					target_type: targetType,
-					target: mcpTarget,
-					headers: options?.headers || {},
-					categories,
-					eval_model: options?.eval_model,
+			const res = parseBridgeScanResponse(
+				await bridgeRequest<unknown>("/api/v1/scan/mcp", {
+					method: "POST",
+					headers: requestHeaders,
+					body: JSON.stringify({
+						target_type: targetType,
+						target: mcpTarget,
+						headers: options?.headers || {},
+						categories,
+						eval_model: options?.eval_model,
+					}),
 				}),
-			}));
+			);
 			return res.task_id;
 		}
 		case "agent": {
 			const agentId =
-				typeof options?.agent_id === "string"
-					? options.agent_id
-					: target || undefined;
+				typeof options?.agent_id === "string" ? options.agent_id : target || undefined;
 			const agentConfig =
 				options?.agent_config && typeof options.agent_config === "object"
 					? options.agent_config
 					: undefined;
-			const res = parseBridgeScanResponse(await bridgeRequest<unknown>("/api/v1/scan/agent", {
-				method: "POST",
-				headers: requestHeaders,
-				body: JSON.stringify({
-					...(agentConfig ? { agent_config: agentConfig } : { agent_id: agentId }),
-					eval_model: options?.eval_model,
-					language: typeof options?.language === "string" ? options.language : "en",
-					prompt: typeof options?.prompt === "string" ? options.prompt : "",
+			const res = parseBridgeScanResponse(
+				await bridgeRequest<unknown>("/api/v1/scan/agent", {
+					method: "POST",
+					headers: requestHeaders,
+					body: JSON.stringify({
+						...(agentConfig ? { agent_config: agentConfig } : { agent_id: agentId }),
+						eval_model: options?.eval_model,
+						language: typeof options?.language === "string" ? options.language : "en",
+						prompt: typeof options?.prompt === "string" ? options.prompt : "",
+					}),
 				}),
-			}));
+			);
 			return res.task_id;
 		}
 		case "jailbreak": {
 			const model = requireText(options?.model, "jailbreak model");
 			const token = requireText(options?.token, "jailbreak token");
-			const baseUrl = requireText(typeof options?.base_url === "string" ? options.base_url : target, "jailbreak base URL");
+			const baseUrl = requireText(
+				typeof options?.base_url === "string" ? options.base_url : target,
+				"jailbreak base URL",
+			);
 			const configuredSuites = Array.isArray(options?.test_suites)
 				? options.test_suites.filter((item): item is string => typeof item === "string")
 				: ["jailbreak"];
 			const testSuites = configuredSuites.length > 0 ? configuredSuites : ["jailbreak"];
-			const res = parseBridgeScanResponse(await bridgeRequest<unknown>("/api/v1/evaluate/jailbreak", {
-				method: "POST",
-				headers: requestHeaders,
-				body: JSON.stringify({
-					target: requireText(target || baseUrl, "jailbreak target"),
-					model,
-					token,
-					base_url: baseUrl,
-					test_suites: testSuites,
-					language: typeof options?.language === "string" ? options.language : "en",
+			const res = parseBridgeScanResponse(
+				await bridgeRequest<unknown>("/api/v1/evaluate/jailbreak", {
+					method: "POST",
+					headers: requestHeaders,
+					body: JSON.stringify({
+						target: requireText(target || baseUrl, "jailbreak target"),
+						model,
+						token,
+						base_url: baseUrl,
+						test_suites: testSuites,
+						language: typeof options?.language === "string" ? options.language : "en",
+					}),
 				}),
-			}));
+			);
 			return res.task_id;
 		}
 	}
@@ -399,13 +418,16 @@ function normalizeScanResult(raw: Record<string, unknown>, scanId: string): AigS
 		? rawFindings.map(normalizeFinding)
 		: [];
 
-	const summary = raw.summary && typeof raw.summary === "object" ? raw.summary as Record<string, unknown> : {
-		total: findings.length,
-		critical: findings.filter((f) => f.severity === "critical").length,
-		high: findings.filter((f) => f.severity === "high").length,
-		medium: findings.filter((f) => f.severity === "medium").length,
-		low: findings.filter((f) => f.severity === "low").length,
-	};
+	const summary =
+		raw.summary && typeof raw.summary === "object"
+			? (raw.summary as Record<string, unknown>)
+			: {
+					total: findings.length,
+					critical: findings.filter((f) => f.severity === "critical").length,
+					high: findings.filter((f) => f.severity === "high").length,
+					medium: findings.filter((f) => f.severity === "medium").length,
+					low: findings.filter((f) => f.severity === "low").length,
+				};
 
 	return {
 		scan_id: scanId,
@@ -428,7 +450,7 @@ function boundedCount(value: unknown, fallback: number): number {
 }
 
 function normalizeFinding(raw: unknown): AigFinding {
-	const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+	const item = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 	const recommendation = item.recommendation ?? item.remediation ?? item.fix;
 	return {
 		id: asBoundedString(item.id ?? item.cve_id ?? item.finding_id, "", 256),
@@ -436,6 +458,8 @@ function normalizeFinding(raw: unknown): AigFinding {
 		severity: asBoundedString(item.severity ?? item.risk, "medium", 64).toLowerCase(),
 		title: asBoundedString(item.title ?? item.name ?? item.cve_id, "Unknown finding", 512),
 		description: asBoundedString(item.description ?? item.detail, "", 4096),
-		...(typeof recommendation === "string" ? { recommendation: asBoundedString(recommendation, "", 4096) } : {}),
+		...(typeof recommendation === "string"
+			? { recommendation: asBoundedString(recommendation, "", 4096) }
+			: {}),
 	};
 }

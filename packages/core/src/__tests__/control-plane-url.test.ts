@@ -48,11 +48,12 @@ describe("control plane deployment routes", () => {
 		expect(
 			() => new ControlPlaneClient({ ...config, allow_insecure_loopback: true }, "token"),
 		).not.toThrow();
-		expect(() =>
-			new ControlPlaneClient(
-				{ ...config, endpoint: "http://127.attacker.test", allow_insecure_loopback: true },
-				"token",
-			),
+		expect(
+			() =>
+				new ControlPlaneClient(
+					{ ...config, endpoint: "http://127.attacker.test", allow_insecure_loopback: true },
+					"token",
+				),
 		).toThrow(/must use HTTPS/);
 	});
 });

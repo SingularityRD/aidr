@@ -259,10 +259,10 @@ describe("cloud collector wire and real CLI selection", () => {
 		const evidence = base.providerEvidence!;
 		expect(() =>
 			discoveryIngestPayload(
-					{ ...base, providerEvidence: { ...evidence, scopeHash: "bad" } },
-					1,
-					TARGET_KEY,
-				),
+				{ ...base, providerEvidence: { ...evidence, scopeHash: "bad" } },
+				1,
+				TARGET_KEY,
+			),
 		).toThrow("discovery_upload_provider_evidence_invalid");
 		expect(() =>
 			discoveryIngestPayload(
@@ -300,17 +300,15 @@ describe("cloud collector wire and real CLI selection", () => {
 			vi.spyOn(core, "getInstallationId").mockResolvedValue("collector-a");
 			vi.spyOn(core, "loadFleetInventory").mockResolvedValue(null);
 			const save = vi.spyOn(core, "saveFleetInventory").mockResolvedValue(undefined);
-			const network = vi
-				.spyOn(globalThis, "fetch")
-				.mockImplementation(async (input) =>
-					new URL(String(input)).hostname === "login.microsoftonline.com"
-						? Response.json({
-								access_token: "fixture-token",
-								token_type: "Bearer",
-								expires_in: 3600,
-							})
-						: Response.json({ id: device }),
-				);
+			const network = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+				new URL(String(input)).hostname === "login.microsoftonline.com"
+					? Response.json({
+							access_token: "fixture-token",
+							token_type: "Bearer",
+							expires_in: 3600,
+						})
+					: Response.json({ id: device }),
+			);
 			await collectCommand({
 				tenant: TENANT,
 				provider: "intune",
@@ -546,7 +544,9 @@ describe("managed discovery upload", () => {
 
 	it("derives stable pseudonyms that differ per tenant and per installation key", () => {
 		const id = core.discoveryTargetPseudonym(TARGET_KEY, TENANT, "https://agent.example.test/");
-		expect(core.discoveryTargetPseudonym(TARGET_KEY, TENANT, "https://agent.example.test/")).toBe(id);
+		expect(core.discoveryTargetPseudonym(TARGET_KEY, TENANT, "https://agent.example.test/")).toBe(
+			id,
+		);
 		expect(
 			core.discoveryTargetPseudonym(
 				TARGET_KEY,
@@ -571,7 +571,12 @@ describe("managed discovery upload", () => {
 			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
 			bodies.push(String(init?.body));
 			if (body.action === "cursor")
-				return Response.json({ ok: true, collector_id: "collector-a", last_sequence: 1, next_sequence: 2 });
+				return Response.json({
+					ok: true,
+					collector_id: "collector-a",
+					last_sequence: 1,
+					next_sequence: 2,
+				});
 			return Response.json(
 				{ ok: true, cycle: { collector_id: "collector-a", sequence: 2, cycle_id: body.cycle_id } },
 				{ status: 201 },
@@ -644,9 +649,9 @@ describe("managed discovery upload", () => {
 				});
 			return Response.json({ error: "invalid_collector_credential" }, { status: 401 });
 		});
-		await expect(publishDiscoveryInventory(remoteInventory(), config, transport, TARGET_KEY)).rejects.toThrow(
-			"discovery_upload_invalid_collector_credential",
-		);
+		await expect(
+			publishDiscoveryInventory(remoteInventory(), config, transport, TARGET_KEY),
+		).rejects.toThrow("discovery_upload_invalid_collector_credential");
 		expect(actions).toEqual(["cursor", "ingest"]);
 	});
 });

@@ -46,7 +46,9 @@ describe("host observation contract", () => {
 		const dir = workspace();
 		// A receipt with no nonce cannot be correlated with a case, so writing one
 		// would produce a receipt the gate must reject anyway.
-		expect(createHostObservation({ [HOST_OBSERVATION_ENV.receipt]: join(dir, "receipt") })).toBeNull();
+		expect(
+			createHostObservation({ [HOST_OBSERVATION_ENV.receipt]: join(dir, "receipt") }),
+		).toBeNull();
 		expect(
 			createHostObservation({
 				[HOST_OBSERVATION_ENV.receipt]: join(dir, "receipt"),
@@ -65,20 +67,26 @@ describe("host observation contract", () => {
 
 	it("refuses receipt paths outside the disposable gate workspace", () => {
 		const dir = workspace();
-		expect(createHostObservation({
-			[HOST_OBSERVATION_ENV.receipt]: join(dir, "..", "outside.receipt"),
-			[HOST_OBSERVATION_ENV.nonce]: "nonce",
-			[HOST_OBSERVATION_ENV.workspace]: dir,
-		})).toBeNull();
-		expect(createHostObservation({
-			[HOST_OBSERVATION_ENV.receipt]: "relative.receipt",
-			[HOST_OBSERVATION_ENV.nonce]: "nonce",
-			[HOST_OBSERVATION_ENV.workspace]: dir,
-		})).toBeNull();
+		expect(
+			createHostObservation({
+				[HOST_OBSERVATION_ENV.receipt]: join(dir, "..", "outside.receipt"),
+				[HOST_OBSERVATION_ENV.nonce]: "nonce",
+				[HOST_OBSERVATION_ENV.workspace]: dir,
+			}),
+		).toBeNull();
+		expect(
+			createHostObservation({
+				[HOST_OBSERVATION_ENV.receipt]: "relative.receipt",
+				[HOST_OBSERVATION_ENV.nonce]: "nonce",
+				[HOST_OBSERVATION_ENV.workspace]: dir,
+			}),
+		).toBeNull();
 	});
 
 	it("records nothing when there is no observation", () => {
-		expect(recordHostObservation(null, { connector: "claude-code", event: "PreToolUse" })).toBe(false);
+		expect(recordHostObservation(null, { connector: "claude-code", event: "PreToolUse" })).toBe(
+			false,
+		);
 	});
 
 	it("writes a nonce-stamped receipt the gate can correlate", () => {
@@ -146,7 +154,9 @@ describe("host observation contract", () => {
 			[HOST_OBSERVATION_ENV.nonce]: "n",
 			[HOST_OBSERVATION_ENV.workspace]: dir,
 		});
-		expect(() => recordHostObservation(observation, { connector: "c", event: "PreToolUse" })).not.toThrow();
+		expect(() =>
+			recordHostObservation(observation, { connector: "c", event: "PreToolUse" }),
+		).not.toThrow();
 		expect(recordHostObservation(observation, { connector: "c", event: "PreToolUse" })).toBe(false);
 	});
 

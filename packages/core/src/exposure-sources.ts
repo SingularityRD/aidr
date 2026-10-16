@@ -20,7 +20,6 @@
  * These functions do not claim any cloud, IdP or MDM coverage.
  */
 
-import type { McpInventoryItem, McpInventoryReport } from "./mcp-inventory.js";
 import type {
 	ExposureNodeKind,
 	ExposureObservationEdge,
@@ -31,6 +30,7 @@ import type {
 } from "./exposure-graph.js";
 import { exposureNodeId } from "./exposure-graph.js";
 import type { FleetInventory, FleetInventoryEntry } from "./fleet-inventory.js";
+import type { McpInventoryItem, McpInventoryReport } from "./mcp-inventory.js";
 
 /**
  * Kinds this adapter maps onto. `host` covers an endpoint the agent runs on;
@@ -62,9 +62,11 @@ export interface ExposureMcpInventoryBatch {
 }
 
 /** Host and agent nodes for the endpoint the inventory was read on, when known. */
-function endpointNodes(
-	options: ExposureMcpInventoryOptions,
-): { nodes: ExposureObservationNode[]; hostNodeId: string | null; agentNodeId: string | null } {
+function endpointNodes(options: ExposureMcpInventoryOptions): {
+	nodes: ExposureObservationNode[];
+	hostNodeId: string | null;
+	agentNodeId: string | null;
+} {
 	const nodes: ExposureObservationNode[] = [];
 	let hostNodeId: string | null = null;
 	if (options.hostNaturalKey) {
@@ -73,7 +75,12 @@ function endpointNodes(
 	}
 	let agentNodeId: string | null = null;
 	if (options.agentNaturalKey) {
-		agentNodeId = exposureNodeId(options.tenantId, "agent", options.agentNaturalKey, options.context);
+		agentNodeId = exposureNodeId(
+			options.tenantId,
+			"agent",
+			options.agentNaturalKey,
+			options.context,
+		);
 		nodes.push({ kind: "agent", naturalKey: options.agentNaturalKey });
 	}
 	return { nodes, hostNodeId, agentNodeId };
@@ -126,9 +133,7 @@ export function exposureObservationsFromMcpInventory(
 		// `invalid` is the inventory layer's "present but unreadable": it is a
 		// coverage gap, whereas a genuinely absent file is only `missing`.
 		status:
-			source.status === "invalid"
-				? ("unreadable" as const)
-				: (source.status as "read" | "missing"),
+			source.status === "invalid" ? ("unreadable" as const) : (source.status as "read" | "missing"),
 		...(source.status === "invalid" ? { detail: "inventory_unreadable" } : {}),
 	}));
 

@@ -59,7 +59,12 @@ const GENERATED_PATH = join(
 	"production-readiness",
 	"data-flow-proof.generated.json",
 );
-const MATRIX_PATH = join(REPO_ROOT, "docs", "production-readiness", "privacy-data-flow-matrix.json");
+const MATRIX_PATH = join(
+	REPO_ROOT,
+	"docs",
+	"production-readiness",
+	"privacy-data-flow-matrix.json",
+);
 
 // ── Canaries ─────────────────────────────────────────────────────────
 
@@ -223,10 +228,7 @@ export const FLOWS: FlowSpec[] = [
 		sends_nothing_when: RUNTIME_GATES,
 		auth: "tenant_api_key",
 		matrix_flow: "DF-002",
-		body_key_paths: [
-			...INGEST_ENVELOPE,
-			...prefixed("runtime_verdict", VERDICT_EVENT_KEYS),
-		].sort(),
+		body_key_paths: [...INGEST_ENVELOPE, ...prefixed("runtime_verdict", VERDICT_EVENT_KEYS)].sort(),
 		hashed_fields: [],
 		content_fields: [
 			{
@@ -409,7 +411,8 @@ export const FLOWS: FlowSpec[] = [
 		id: "connector_heartbeat",
 		method: "POST",
 		endpoint: "{cp}/v1/connector-heartbeat",
-		source: "packages/cli/src/utils/heartbeat.ts (builder) -> packages/core/src/clients/control-plane.ts",
+		source:
+			"packages/cli/src/utils/heartbeat.ts (builder) -> packages/core/src/clients/control-plane.ts",
 		enabled_by: "`aidr heartbeat` in managed mode with an enrolled key",
 		sends_nothing_when: ["mode != managed", "no enrolled API key", "degraded safe mode"],
 		auth: "tenant_api_key",
@@ -547,7 +550,10 @@ export const FLOWS: FlowSpec[] = [
 		endpoint: "file_check.endpoint (default AIDR reputation gateway)",
 		source: "packages/core/src/clients/file-check.ts",
 		enabled_by: "file_check.enabled (default false in source builds)",
-		sends_nothing_when: ["file_check.enabled = false", "hash matched by the signed reputation feed"],
+		sends_nothing_when: [
+			"file_check.enabled = false",
+			"hash matched by the signed reputation feed",
+		],
 		auth: "optional_service_api_key",
 		matrix_flow: "DF-006",
 		body_key_paths: [
@@ -638,7 +644,8 @@ const NOT_COVERED: Array<{ path: string; source: string; reason: string }> = [
 		path: "Rule / AIG / reputation-feed downloads, URL endpoint health probe",
 		source:
 			"packages/core/src/rule-sync.ts; packages/core/src/aig-sync.ts; packages/core/src/reputation-feed.ts; packages/core/src/health.ts",
-		reason: "download-only GET/HEAD requests that carry no endpoint data beyond a timestamp/rule id",
+		reason:
+			"download-only GET/HEAD requests that carry no endpoint data beyond a timestamp/rule id",
 	},
 	{
 		path: "Public package registry metadata",
@@ -727,7 +734,11 @@ function keyPaths(value: unknown, prefix = "", out = new Set<string>()): Set<str
 		for (const item of value) {
 			if (item && typeof item === "object" && !Array.isArray(item)) {
 				const type = (item as Record<string, unknown>).type;
-				keyPaths(item, typed && typeof type === "string" ? `${prefix}[${type}]` : `${prefix}[]`, out);
+				keyPaths(
+					item,
+					typed && typeof type === "string" ? `${prefix}[${type}]` : `${prefix}[]`,
+					out,
+				);
 			} else if (Array.isArray(item)) {
 				keyPaths(item, `${prefix}[]`, out);
 			}
@@ -829,9 +840,16 @@ function assertFlow(request: Captured, id: string, credential?: string): void {
 	const surfaces = {
 		url: request.url,
 		headers: JSON.stringify(
-			Object.fromEntries(Object.entries(request.headers).filter(([name]) => name !== "authorization")),
+			Object.fromEntries(
+				Object.entries(request.headers).filter(([name]) => name !== "authorization"),
+			),
 		),
-		body: JSON.stringify(withoutPaths(request.body, spec.content_fields.map((f) => f.path)) ?? null),
+		body: JSON.stringify(
+			withoutPaths(
+				request.body,
+				spec.content_fields.map((f) => f.path),
+			) ?? null,
+		),
 	};
 	for (const [surface, text] of Object.entries(surfaces)) {
 		for (const [name, needle] of Object.entries(NEEDLES)) {
@@ -993,9 +1011,7 @@ describe("runtime verdict telemetry (evaluateToolCall -> /v1/ingest)", () => {
 
 	it("full mode: summaries, artifacts and reasons are emptied", async () => {
 		const { calls } = installCapture();
-		await evaluateCanary(
-			managedRuntimeConfig({ redact_mode: "full", sync_incidents: false }),
-		);
+		await evaluateCanary(managedRuntimeConfig({ redact_mode: "full", sync_incidents: false }));
 		const sent = classifyRuntimeRequests(calls, "ingest.runtime_verdict.full").get(
 			"ingest.runtime_verdict.full",
 		);
@@ -1009,9 +1025,7 @@ describe("runtime verdict telemetry (evaluateToolCall -> /v1/ingest)", () => {
 
 	it("none mode: secrets are still scrubbed; remaining text is declared content", async () => {
 		const { calls } = installCapture();
-		await evaluateCanary(
-			managedRuntimeConfig({ redact_mode: "none", sync_incidents: false }),
-		);
+		await evaluateCanary(managedRuntimeConfig({ redact_mode: "none", sync_incidents: false }));
 		const sent = classifyRuntimeRequests(calls, "ingest.runtime_verdict.none").get(
 			"ingest.runtime_verdict.none",
 		);
@@ -1097,9 +1111,10 @@ describe("control-plane client paths", () => {
 		expect((await client("").ingest(payload)).error).toBe("missing_api_key");
 		expect(
 			(
-				await new ControlPlaneClient(ControlPlaneConfigSchema.parse({ endpoint: "" }), TENANT_KEY).ingest(
-					payload,
-				)
+				await new ControlPlaneClient(
+					ControlPlaneConfigSchema.parse({ endpoint: "" }),
+					TENANT_KEY,
+				).ingest(payload)
 			).error,
 		).toBe("missing_endpoint");
 		expect(calls).toEqual([]);
@@ -1342,9 +1357,9 @@ describe("dashboard approvals and false-positive reports", () => {
 	it("approval request: nothing in local mode or without a signed entitlement", async () => {
 		const { calls, fetch } = installCapture();
 		const local = managedHome({ mode: "local" });
-		expect(await processDashboardApproval(approvalInput, local.config, { ...local.options, fetch })).toBe(
-			null,
-		);
+		expect(
+			await processDashboardApproval(approvalInput, local.config, { ...local.options, fetch }),
+		).toBe(null);
 		const unsigned = managedHome();
 		writeFileSync(unsigned.options.managedStatePath, JSON.stringify({}));
 		const outcome = await processDashboardApproval(approvalInput, unsigned.config, {

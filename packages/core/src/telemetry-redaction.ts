@@ -17,9 +17,10 @@ const SENSITIVE_KEY_RE =
 // URLs such as https://example.test/path.
 const BEARER_RE = /(\bBearer\s+)[^\s,;"']+/gi;
 // The optional prefix covers env-style names (ANTHROPIC_API_KEY, PGPASSWORD,
-// GITHUB_TOKEN) where the leading word characters defeat a plain \b anchor.
+// GITHUB_TOKEN) where the leading word characters defeat a plain \b anchor; the
+// optional separated suffix covers AWS_SECRET_ACCESS_KEY and DB_PASSWORD_PROD.
 const KEY_VALUE_RE =
-	/(\b[A-Za-z0-9_-]*?(?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|client[_-]?secret|cookie|password|passwd|private[_-]?key|refresh[_-]?token|id[_-]?token|invite(?:[_-]?token)?|grant(?:[_-]?id)?|state|secret|session[_-]?token|signature|sig|token)\b\s*[:=]\s*)(["']?)([^\s,;&"']+)\2/gi;
+	/(\b[A-Za-z0-9_-]*?(?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|client[_-]?secret|cookie|password|passwd|private[_-]?key|refresh[_-]?token|id[_-]?token|invite(?:[_-]?token)?|grant(?:[_-]?id)?|state|secret|session[_-]?token|signature|sig|token)(?:[_-](?:access[_-]?key|key|id|value|pem|b64|base64|prod|production|staging|dev|test|live|[0-9]+))*\b\s*[:=]\s*)(["']?)([^\s,;&"']+)\2/gi;
 // Database clients accept the password glued to the flag (mysql -pSECRET).
 const DB_CLIENT_PASSWORD_RE =
 	/(\b(?:mysql|mysqldump|mysqladmin|mariadb)\b[^\n|;&]*?\s-p)(["']?)([^\s"']+)\2/gi;

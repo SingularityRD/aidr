@@ -60,7 +60,14 @@ function fleetInventory(overrides: Partial<FleetInventory> = {}): FleetInventory
 				consecutiveFailures: 0,
 				attempts: 1,
 				nextRetryAt: null,
-				scan: { url: "https://infra.example.test/", reachable: true, matched: [], cves: [], error: null, requestsMade: 1 },
+				scan: {
+					url: "https://infra.example.test/",
+					reachable: true,
+					matched: [],
+					cves: [],
+					error: null,
+					requestsMade: 1,
+				},
 			},
 		],
 		...overrides,
@@ -90,7 +97,9 @@ describe("MCP inventory adapter", () => {
 			tenantId: TENANT,
 		});
 		expect(result.coverage.unobservedKinds).not.toContain("mcp_server");
-		expect(result.graph.nodes.find((node) => node.kind === "mcp_server")?.label).toBe("tool-server");
+		expect(result.graph.nodes.find((node) => node.kind === "mcp_server")?.label).toBe(
+			"tool-server",
+		);
 	});
 
 	it("keeps the same server configured for two clients as two distinct nodes", () => {
@@ -154,16 +163,13 @@ describe("MCP inventory adapter", () => {
 	});
 
 	it("produces no observation when it has nothing at all to report", () => {
-		const batch = exposureObservationsFromMcpInventory(
-			mcpReport({ items: [], sources: [] }),
-			{
-				tenantId: TENANT,
-				observationId: "obs-empty",
-				observedAtMs: BASE,
-				sourceRef: "~/.cursor/mcp.json",
-				context: hash,
-			},
-		);
+		const batch = exposureObservationsFromMcpInventory(mcpReport({ items: [], sources: [] }), {
+			tenantId: TENANT,
+			observationId: "obs-empty",
+			observedAtMs: BASE,
+			sourceRef: "~/.cursor/mcp.json",
+			context: hash,
+		});
 		expect(batch.observations).toEqual([]);
 	});
 });
@@ -216,10 +222,10 @@ describe("fleet inventory adapter", () => {
 			}),
 			{ tenantId: TENANT, observationId: "cycle-2", context: hash },
 		);
-		const result = foldExposureObservations(
-			mergeExposureObservationBatches([first, second]),
-			{ ...hash, tenantId: TENANT },
-		);
+		const result = foldExposureObservations(mergeExposureObservationBatches([first, second]), {
+			...hash,
+			tenantId: TENANT,
+		});
 		const node = result.graph.nodes.find((entry) => entry.kind === "data_source");
 		expect(node?.lastSeenAtMs).toBe(BASE);
 		expect(exposureStaleness(node?.lastSeenAtMs ?? null, BASE, WINDOW)).toBe("fresh");

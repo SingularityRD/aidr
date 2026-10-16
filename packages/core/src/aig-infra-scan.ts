@@ -231,7 +231,10 @@ function cves(): CompiledCve[] {
 
 async function dataAvailable(): Promise<boolean> {
 	const directory = prepareDataDirectory();
-	_bundleValid ??= validateAigDataBundle(directory).then((result) => result.valid, () => false);
+	_bundleValid ??= validateAigDataBundle(directory).then(
+		(result) => result.valid,
+		() => false,
+	);
 	if (!(await _bundleValid)) return false;
 	return fingerprints().length > 0 && cves().length > 0;
 }
@@ -257,17 +260,22 @@ export function isScannableHost(hostname: string): boolean {
 	if (version === 4) {
 		const octets = host.split(".").map(Number);
 		const [first, second] = octets;
-		return first === 10 || first === 127 ||
+		return (
+			first === 10 ||
+			first === 127 ||
 			(first === 192 && second === 168) ||
 			(first === 172 && second !== undefined && second >= 16 && second <= 31) ||
-			(first === 169 && second === 254);
+			(first === 169 && second === 254)
+		);
 	}
 	if (version === 6) {
 		const normalized = host.toLowerCase();
 		if (normalized === "::1") return true;
 		const firstHextet = Number.parseInt(normalized.split(":", 1)[0] ?? "", 16);
-		return (firstHextet >= 0xfc00 && firstHextet <= 0xfdff) || // unique-local fc00::/7
-			(firstHextet >= 0xfe80 && firstHextet <= 0xfebf); // link-local fe80::/10
+		return (
+			(firstHextet >= 0xfc00 && firstHextet <= 0xfdff) || // unique-local fc00::/7
+			(firstHextet >= 0xfe80 && firstHextet <= 0xfebf)
+		); // link-local fe80::/10
 	}
 	// DNS names are not resolved and reclassified here, so only literal IP
 	// addresses from the private ranges above are allowed by default.
@@ -295,7 +303,11 @@ export function isTargetAllowed(target: string, allowPublicTargets: boolean): bo
  */
 export function compareVersions(a: string, b: string): number | null {
 	const parse = (value: string): number[] | null => {
-		const core = value.trim().replace(/^v(?=\d)/i, "").split(/[-+]/)[0] ?? "";
+		const core =
+			value
+				.trim()
+				.replace(/^v(?=\d)/i, "")
+				.split(/[-+]/)[0] ?? "";
 		if (!/^\d+(\.\d+)*$/.test(core)) return null;
 		const parts = core.split(".").map((part) => Number.parseInt(part, 10));
 		// A four-digit leading component is a date (e.g. `2026.01.01`), a build
@@ -303,7 +315,11 @@ export function compareVersions(a: string, b: string): number | null {
 		// version. Ordering it numerically would produce a wrong vulnerability
 		// verdict, so refuse to compare instead.
 		const first = parts[0];
-		if (first === undefined || first > 9999 || (first > 999 && core.length >= 4 && /^\d{4}/.test(core))) {
+		if (
+			first === undefined ||
+			first > 9999 ||
+			(first > 999 && core.length >= 4 && /^\d{4}/.test(core))
+		) {
 			return null;
 		}
 		return parts;
@@ -551,7 +567,10 @@ async function fetchBounded(
 			await response.body?.cancel();
 			return { error: "scan_aborted" };
 		}
-		if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); return { error: "redirect_not_followed" }; }
+		if (response.status >= 300 && response.status < 400) {
+			await response.body?.cancel();
+			return { error: "redirect_not_followed" };
+		}
 		const chunks: Uint8Array[] = [];
 		let size = 0;
 		const reader = response.body?.getReader();
@@ -561,11 +580,16 @@ async function fetchBounded(
 					const { done, value } = await reader.read();
 					if (done) break;
 					size += value.byteLength;
-					if (size > MAX_BODY_BYTES) { await reader.cancel(); return { error: "response_too_large" }; }
+					if (size > MAX_BODY_BYTES) {
+						await reader.cancel();
+						return { error: "response_too_large" };
+					}
 					chunks.push(value);
 				}
 			}
-		} finally { reader?.releaseLock(); }
+		} finally {
+			reader?.releaseLock();
+		}
 		const body = Buffer.concat(chunks).toString("utf8");
 		return { status: response.status, body, headers: response.headers };
 	} catch (error) {
@@ -719,9 +743,15 @@ export async function scanTarget(
 		}
 		for (const probe of fingerprint.http ?? []) {
 			if (!probe.supported) continue;
-			if (Date.now() >= deadline) { lastError = lastError ?? "deadline_exceeded"; break; }
+			if (Date.now() >= deadline) {
+				lastError = lastError ?? "deadline_exceeded";
+				break;
+			}
 			const probeUrl = new URL(probe.path, base).toString();
-			if (new URL(probeUrl).origin !== base.origin) { lastError = "cross_origin_probe_refused"; continue; }
+			if (new URL(probeUrl).origin !== base.origin) {
+				lastError = "cross_origin_probe_refused";
+				continue;
+			}
 			const response = await fetchBounded(
 				probeUrl,
 				probe.method,
@@ -840,15 +870,18 @@ export async function scanTargets(
 	const { concurrency = 4 } = options;
 	const results: AigInfraTargetResult[] = [];
 	let index = 0;
-	const workers = Array.from({ length: Math.max(1, Math.min(concurrency, targets.length)) }, async () => {
-		while (index < targets.length) {
-			options.signal?.throwIfAborted();
-			const current = index++;
-			const target = targets[current];
-			if (!target) continue;
-			results.push(await scanTarget({ url: target }, options));
-		}
-	});
+	const workers = Array.from(
+		{ length: Math.max(1, Math.min(concurrency, targets.length)) },
+		async () => {
+			while (index < targets.length) {
+				options.signal?.throwIfAborted();
+				const current = index++;
+				const target = targets[current];
+				if (!target) continue;
+				results.push(await scanTarget({ url: target }, options));
+			}
+		},
+	);
 	await Promise.all(workers);
 
 	return {

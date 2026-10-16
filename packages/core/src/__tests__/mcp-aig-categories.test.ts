@@ -103,7 +103,9 @@ describe("classifyMcpServer", () => {
 describe("hardcoded secret detection", () => {
 	it("finds literal secrets in env, headers, args and URL and never returns values", () => {
 		const findings = detectMcpConfigSecrets({
-			env: [{ GITHUB_TOKEN: GITHUB_TOKEN_VALUE, DB_PASSWORD: "hunter2hunter2", LOG_LEVEL: "debug" }],
+			env: [
+				{ GITHUB_TOKEN: GITHUB_TOKEN_VALUE, DB_PASSWORD: "hunter2hunter2", LOG_LEVEL: "debug" },
+			],
 			headers: { Authorization: "Bearer abcdefghijklmnop" },
 			args: ["--api-key", "k3y-value-123456", "--port", "8080", GITHUB_TOKEN_VALUE],
 			url: ["https://mcp.example/sse?access", "_token=", "abcdef", "123456"].join(""),
@@ -117,7 +119,13 @@ describe("hardcoded secret detection", () => {
 			{ location: "url", key: "query:access_token", kind: "credential_named_value" },
 		]);
 		const serialized = JSON.stringify(findings);
-		for (const value of [GITHUB_TOKEN_VALUE, "hunter2hunter2", "abcdefghijklmnop", "k3y-value-123456", "abcdef123456"]) {
+		for (const value of [
+			GITHUB_TOKEN_VALUE,
+			"hunter2hunter2",
+			"abcdefghijklmnop",
+			"k3y-value-123456",
+			"abcdef123456",
+		]) {
 			expect(serialized).not.toContain(value);
 		}
 	});

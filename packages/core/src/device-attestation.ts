@@ -40,9 +40,9 @@ function validKeyHash(value: unknown): value is string {
 }
 
 /** Validate an attestation without accepting extra or ambiguous fields. */
-export function parseDeviceAttestation(value: unknown):
-	| { ok: true; attestation: DeviceAttestation }
-	| { ok: false; error: DeviceAttestationError } {
+export function parseDeviceAttestation(
+	value: unknown,
+): { ok: true; attestation: DeviceAttestation } | { ok: false; error: DeviceAttestationError } {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		return { ok: false, error: "invalid_device_attestation" };
 	}
@@ -56,7 +56,11 @@ export function parseDeviceAttestation(value: unknown):
 	if (!validKeyHash(candidate.key_hash)) {
 		return { ok: false, error: "invalid_key_hash" };
 	}
-	if (Object.keys(candidate).some((key) => !["schema_version", "installation_id", "key_hash"].includes(key))) {
+	if (
+		Object.keys(candidate).some(
+			(key) => !["schema_version", "installation_id", "key_hash"].includes(key),
+		)
+	) {
 		return { ok: false, error: "invalid_device_attestation" };
 	}
 	return {

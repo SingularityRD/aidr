@@ -13,8 +13,8 @@
  * which is exactly what a real install does.
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,8 +93,24 @@ beforeEach(async () => {
 	target = join(home, ".ssh", "authorized_keys");
 	await mkdir(join(home, ".ssh"), { recursive: true });
 	await writeFile(target, PRIOR_CONTENT, "utf8");
-	threatsDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "claude-code", "resources", "threats");
-	allowlistsDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "claude-code", "resources", "allowlists");
+	threatsDir = resolve(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"..",
+		"..",
+		"claude-code",
+		"resources",
+		"threats",
+	);
+	allowlistsDir = resolve(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"..",
+		"..",
+		"claude-code",
+		"resources",
+		"allowlists",
+	);
 });
 
 afterEach(async () => {

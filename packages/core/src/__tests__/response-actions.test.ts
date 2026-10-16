@@ -7,8 +7,8 @@
  * the boundaries that make it safe to enable.
  */
 
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -162,11 +162,11 @@ describe("snapshot boundaries are reported, never silent", () => {
 			toolInput: { patch },
 			artifacts: [],
 		});
-		const result = await runPreAllowedResponseActions(
-			verdict({ decision: "allow" }),
-			request,
-			{ snapshotBeforeDestructive: true, protectPaths: [second], snapshotRootDir: snapshotRoot },
-		);
+		const result = await runPreAllowedResponseActions(verdict({ decision: "allow" }), request, {
+			snapshotBeforeDestructive: true,
+			protectPaths: [second],
+			snapshotRootDir: snapshotRoot,
+		});
 		expect(result.snapshot).toBeNull();
 		expect(result.records[0]).toMatchObject({
 			outcome: "failure",

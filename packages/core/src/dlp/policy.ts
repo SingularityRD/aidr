@@ -181,7 +181,11 @@ export function regexRiskIssue(pattern: string): string | undefined {
 		if (unbounded > DLP_MAX_UNBOUNDED_QUANTIFIERS) {
 			return `more than ${DLP_MAX_UNBOUNDED_QUANTIFIERS} unbounded quantifiers are not allowed`;
 		}
-		if (previous !== "atom" && quantifier.max > 1 && (previous.quantified || previous.alternation)) {
+		if (
+			previous !== "atom" &&
+			quantifier.max > 1 &&
+			(previous.quantified || previous.alternation)
+		) {
 			return "a repeated group must not contain a quantifier or an alternation";
 		}
 		// An exact count such as {4} adds no ambiguity inside a repeated group.

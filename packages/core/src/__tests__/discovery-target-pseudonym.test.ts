@@ -41,7 +41,9 @@ describe("discovery target pseudonyms", () => {
 		expect(id).not.toContain("10.0.0.4");
 		expect(discoveryTargetPseudonym(key, TENANT.toUpperCase(), "http://10.0.0.4:11434/")).toBe(id);
 		expect(discoveryTargetPseudonym(key, TENANT, "http://10.0.0.5:11434/")).not.toBe(id);
-		expect(discoveryTargetPseudonym(Buffer.alloc(32, 2), TENANT, "http://10.0.0.4:11434/")).not.toBe(id);
+		expect(
+			discoveryTargetPseudonym(Buffer.alloc(32, 2), TENANT, "http://10.0.0.4:11434/"),
+		).not.toBe(id);
 		expect(() => discoveryTargetPseudonym(Buffer.alloc(16), TENANT, "http://10.0.0.4/")).toThrow(
 			"discovery_target_key_invalid",
 		);

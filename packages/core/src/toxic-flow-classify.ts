@@ -559,9 +559,10 @@ function uploadedLocalFiles(words: string[]): string[] {
 	for (let i = 0; i < words.length; i += 1) {
 		const word = words[i] as string;
 		// `--upload-file=FILE`, `--post-file=FILE`, `--data=@FILE`, `--data-binary @FILE`.
-		const long = /^--(upload-file|post-file|data(?:-binary|-raw|-urlencode)?|form|InFile)(?:=(.*))?$/i.exec(
-			word,
-		);
+		const long =
+			/^--(upload-file|post-file|data(?:-binary|-raw|-urlencode)?|form|InFile)(?:=(.*))?$/i.exec(
+				word,
+			);
 		if (long) {
 			const value = long[2] !== undefined ? long[2] : words[i + 1];
 			if (/^(?:data|form)/i.test(long[1] as string)) {

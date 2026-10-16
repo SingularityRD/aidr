@@ -127,10 +127,7 @@ function privateFiles(directory: string, files: string[]): void {
 }
 
 /** Consistency check only; the HTTPS control plane authenticates the HS256 bearer. */
-function windowsResponseTokenIdentity(
-	token: string,
-	allowExpired = false,
-): FleetResponseIdentity {
+function windowsResponseTokenIdentity(token: string, allowExpired = false): FleetResponseIdentity {
 	try {
 		const parts = token.split(".");
 		if (

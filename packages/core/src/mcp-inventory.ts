@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { join, resolve as resolveAbsolute } from "node:path";
 import { resolvePath } from "./config.js";
 import { getFileContent } from "./file-utils.js";
 import { parseJsonc } from "./jsonc.js";
@@ -425,9 +425,15 @@ export async function inspectMcpServerInventory(
 	configPaths?: string[],
 ): Promise<McpInventoryReport> {
 	const defaultPaths = defaultMcpConfigPaths();
-	const paths = (configPaths && configPaths.length > 0 ? configPaths : defaultPaths).map(
-		resolvePath,
-	);
+	// "~/.cursor/mcp.json" and the project-relative ".cursor/mcp.json" are the same
+	// file when run from the home directory: read each resolved path once.
+	const paths = [
+		...new Set(
+			(configPaths && configPaths.length > 0 ? configPaths : defaultPaths).map((path) =>
+				resolveAbsolute(resolvePath(path)),
+			),
+		),
+	];
 	const all: McpInventoryItem[] = [];
 	const sources: McpInventoryReport["sources"] = [];
 	let serversNotEnumerated = 0;

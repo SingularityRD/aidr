@@ -154,13 +154,25 @@ describe("durable webhook delivery", () => {
 		"secures the state directory and replacement file before exposing SIEM receipts",
 		async () => {
 			const path = await statePath();
-			const delivery = await DurableSiemDelivery.open(webhookOptions(path, vi.fn() as unknown as typeof fetch));
+			const delivery = await DurableSiemDelivery.open(
+				webhookOptions(path, vi.fn() as unknown as typeof fetch),
+			);
 			await delivery.enqueue(incident);
 			for (const target of [dirname(path), path]) {
 				const result = spawnSync(
 					"powershell.exe",
-					["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(VERIFY_WINDOWS_ACL, "utf16le").toString("base64")],
-					{ env: { ...process.env, AIDR_TEST_ACL_PATH: target }, encoding: "utf8", timeout: 30_000, windowsHide: true },
+					[
+						"-NoProfile",
+						"-NonInteractive",
+						"-EncodedCommand",
+						Buffer.from(VERIFY_WINDOWS_ACL, "utf16le").toString("base64"),
+					],
+					{
+						env: { ...process.env, AIDR_TEST_ACL_PATH: target },
+						encoding: "utf8",
+						timeout: 30_000,
+						windowsHide: true,
+					},
 				);
 				expect(result.error).toBeUndefined();
 				expect(result.status, result.stderr).toBe(0);

@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
-	type CausalChainLinkInput,
 	CAUSAL_CHAIN_ORDER,
+	type CausalChainLinkInput,
 	type CausalCorrelationIds,
+	canonicalCausalChainJson,
 	causalLinkDigest,
 	causalLinkReceiptId,
-	canonicalCausalChainJson,
 	recordCausalChain,
 	verifyCausalChainEvidence,
 } from "../causal-chain.js";
@@ -101,7 +101,10 @@ function gappedLinks(): CausalChainLinkInput[] {
 	);
 }
 
-function link(overrides: Partial<CausalChainLinkInput> & Pick<CausalChainLinkInput, "linkId" | "kind" | "position">): CausalChainLinkInput {
+function link(
+	overrides: Partial<CausalChainLinkInput> &
+		Pick<CausalChainLinkInput, "linkId" | "kind" | "position">,
+): CausalChainLinkInput {
 	return {
 		wallClockUtc: `2026-09-13T00:00:${String(overrides.position).padStart(2, "0")}.000Z`,
 		correlation,
@@ -138,9 +141,24 @@ describe("causal chain ordering", () => {
 	});
 
 	it("orders by position, then wall clock, then link id, so input order never decides", () => {
-		const a = link({ linkId: "b-link", kind: "message", position: 1, wallClockUtc: "2026-09-13T00:00:01.000Z" });
-		const b = link({ linkId: "a-link", kind: "retrieval", position: 1, wallClockUtc: "2026-09-13T00:00:01.000Z" });
-		const c = link({ linkId: "c-link", kind: "action", position: 1, wallClockUtc: "2026-09-13T00:00:00.000Z" });
+		const a = link({
+			linkId: "b-link",
+			kind: "message",
+			position: 1,
+			wallClockUtc: "2026-09-13T00:00:01.000Z",
+		});
+		const b = link({
+			linkId: "a-link",
+			kind: "retrieval",
+			position: 1,
+			wallClockUtc: "2026-09-13T00:00:01.000Z",
+		});
+		const c = link({
+			linkId: "c-link",
+			kind: "action",
+			position: 1,
+			wallClockUtc: "2026-09-13T00:00:00.000Z",
+		});
 		const chain = recordCausalChain([a, b, c], { ...hash, expectedKinds: [] });
 		// Same position: the earlier wall clock wins, then the lower link id.
 		expect(chain.links.map((entry) => entry.linkId)).toEqual(["c-link", "a-link", "b-link"]);
@@ -150,7 +168,9 @@ describe("causal chain ordering", () => {
 		const links = benignLinks();
 		const replay = recordCausalChain([...links, ...links], { ...hash, expectedKinds: [] });
 		expect(replay.duplicates).toEqual(links.map((entry) => entry.linkId).sort());
-		expect(replay.findings.filter((finding) => finding.code === "duplicate_link_conflict")).toEqual([]);
+		expect(replay.findings.filter((finding) => finding.code === "duplicate_link_conflict")).toEqual(
+			[],
+		);
 
 		const rewritten = { ...links[4], payloadSummary: "rewritten" } as CausalChainLinkInput;
 		const conflict = recordCausalChain([links[4], rewritten], { ...hash, expectedKinds: [] });
@@ -215,8 +235,12 @@ describe("causal chain gaps", () => {
 		const chain = recordCausalChain(gappedLinks(), { ...hash, expectedKinds: [] });
 		const gaps = gapFindings(chain);
 		expect(gaps.length).toBeGreaterThan(0);
-		expect(gaps.some((finding) => finding.detail === "missing_predecessor:l3-tool-description")).toBe(true);
-		expect(gaps.some((finding) => finding.detail === "missing_successor:l3-tool-description")).toBe(true);
+		expect(
+			gaps.some((finding) => finding.detail === "missing_predecessor:l3-tool-description"),
+		).toBe(true);
+		expect(gaps.some((finding) => finding.detail === "missing_successor:l3-tool-description")).toBe(
+			true,
+		);
 		// The hole is not spliced: retrieval and tool_response remain distinct
 		// links and no synthetic tool_description appears.
 		expect(chain.links.map((entry) => entry.kind)).toEqual([
@@ -227,7 +251,9 @@ describe("causal chain gaps", () => {
 			"action",
 			"side_effect",
 		]);
-		expect(chain.findings.some((finding) => finding.code === "chain_gap" && finding.missingKind)).toBe(false);
+		expect(
+			chain.findings.some((finding) => finding.code === "chain_gap" && finding.missingKind),
+		).toBe(false);
 	});
 
 	it("reports a kind that is entirely absent when the chain claims to cover it", () => {
@@ -248,7 +274,9 @@ describe("causal chain gaps", () => {
 			expectedKinds: links.map((entry) => entry.kind),
 		});
 		expect(chain.findings).toEqual([]);
-		expect(chain.observedKinds).toEqual([...CAUSAL_CHAIN_ORDER].filter((kind) => kind !== "intervention"));
+		expect(chain.observedKinds).toEqual(
+			[...CAUSAL_CHAIN_ORDER].filter((kind) => kind !== "intervention"),
+		);
 		// The same turn is still complete when the chain says it covers everything:
 		// the one absent kind is reported, not silently accepted.
 		const full = recordCausalChain(links, { ...hash, expectedKinds: CAUSAL_CHAIN_ORDER });
@@ -278,7 +306,9 @@ describe("causal chain tamper-evident binding", () => {
 		expect(chain.receiptOutcome).toMatchObject({ status: "bound", receipts: 7 });
 		expect(chain.receipts).toHaveLength(7);
 		expect(chain.receipts[0]?.previousHash).toBe(EVIDENCE_GENESIS_HASH);
-		expect(chain.receipts.every((receipt) => receipt.binding.deviceId === binding.deviceId)).toBe(true);
+		expect(chain.receipts.every((receipt) => receipt.binding.deviceId === binding.deviceId)).toBe(
+			true,
+		);
 		expect(chain.receipts.every((receipt) => receipt.binding.incidentId === "inc-1")).toBe(true);
 		expect(chain.links.every((entry) => entry.receiptId !== null)).toBe(true);
 		expect(verifyCausalChainEvidence(chain, hash)).toMatchObject({
@@ -315,10 +345,14 @@ describe("causal chain tamper-evident binding", () => {
 		};
 		const verification = verifyCausalChainEvidence(tampered, hash);
 		expect(verification.valid).toBe(false);
-		expect(verification.findings.some((finding) => finding.detail === "link_digest_mismatch")).toBe(true);
-		expect(verification.findings.some((finding) => finding.detail === "receipt_does_not_document_this_link")).toBe(
+		expect(verification.findings.some((finding) => finding.detail === "link_digest_mismatch")).toBe(
 			true,
 		);
+		expect(
+			verification.findings.some(
+				(finding) => finding.detail === "receipt_does_not_document_this_link",
+			),
+		).toBe(true);
 	});
 
 	it("detects a rewritten receipt and a removed receipt link", () => {
@@ -331,12 +365,16 @@ describe("causal chain tamper-evident binding", () => {
 		};
 		const rewrittenResult = verifyCausalChainEvidence(rewritten, hash);
 		expect(rewrittenResult.valid).toBe(false);
-		expect(rewrittenResult.findings.some((finding) => finding.code === "receipt_not_intact")).toBe(true);
+		expect(rewrittenResult.findings.some((finding) => finding.code === "receipt_not_intact")).toBe(
+			true,
+		);
 
 		const removed = { ...chain, receipts: chain.receipts.filter((_, index) => index !== 2) };
 		const removedResult = verifyCausalChainEvidence(removed, hash);
 		expect(removedResult.valid).toBe(false);
-		expect(removedResult.findings.some((finding) => finding.detail === "receipt_missing")).toBe(true);
+		expect(removedResult.findings.some((finding) => finding.detail === "receipt_missing")).toBe(
+			true,
+		);
 	});
 
 	it("fails closed when no binding was supplied", () => {
@@ -345,7 +383,9 @@ describe("causal chain tamper-evident binding", () => {
 		expect(chain.receipts).toEqual([]);
 		const verification = verifyCausalChainEvidence(chain, hash);
 		expect(verification.valid).toBe(false);
-		expect(verification.findings.every((finding) => finding.detail === "link_has_no_receipt")).toBe(true);
+		expect(verification.findings.every((finding) => finding.detail === "link_has_no_receipt")).toBe(
+			true,
+		);
 	});
 
 	it("recomputes missing-link gaps instead of trusting stored findings", () => {

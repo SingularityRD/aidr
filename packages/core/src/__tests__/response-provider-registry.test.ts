@@ -24,7 +24,9 @@ describe("response provider registry", () => {
 		const registry = new ResponseProviderRegistry([provider]);
 		expect(registry.supports("revoke_credential", "")).toBe(false);
 		expect(registry.supports("revoke_credential", "other-idp")).toBe(false);
-		expect(() => new ResponseProviderRegistry([undefined as never])).toThrow("invalid_response_provider");
+		expect(() => new ResponseProviderRegistry([undefined as never])).toThrow(
+			"invalid_response_provider",
+		);
 	});
 
 	it("requires independent provider verification before returning applied", async () => {
@@ -42,7 +44,9 @@ describe("response provider registry", () => {
 			idempotencyKey: "cmd-1",
 		});
 		expect(result).toMatchObject({ status: "failed", code: "provider_observation_unavailable" });
-		expect(execute).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "cmd-1", providerId: "example-idp" }));
+		expect(execute).toHaveBeenCalledWith(
+			expect.objectContaining({ idempotencyKey: "cmd-1", providerId: "example-idp" }),
+		);
 	});
 
 	it("passes the idempotency key and records provider-observed evidence", async () => {
@@ -56,13 +60,20 @@ describe("response provider registry", () => {
 			{ providerId: "example-idp", actions: ["revoke_credential"], execute, verify },
 		]);
 		await expect(
-			registry.execute({ action: "revoke_credential", target: "credential-1", idempotencyKey: "cmd-2" }),
+			registry.execute({
+				action: "revoke_credential",
+				target: "credential-1",
+				idempotencyKey: "cmd-2",
+			}),
 		).resolves.toEqual({ status: "applied", observed: "queried", rollbackToken: null });
 		expect(verify).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "cmd-2" }));
 	});
 
 	it("does not accept a replacement provider's evidence for an in-flight revocation", async () => {
-		const replacementVerify = vi.fn(async () => ({ observed: true as const, evidence: "other provider" }));
+		const replacementVerify = vi.fn(async () => ({
+			observed: true as const,
+			evidence: "other provider",
+		}));
 		const registry = new ResponseProviderRegistry();
 		registry.register({
 			providerId: "example-idp",
@@ -79,7 +90,9 @@ describe("response provider registry", () => {
 			},
 			verify: vi.fn(async () => ({ observed: true as const, evidence: "original provider" })),
 		});
-		await expect(registry.execute({ action: "revoke_credential", target: "credential-1" })).resolves.toMatchObject({
+		await expect(
+			registry.execute({ action: "revoke_credential", target: "credential-1" }),
+		).resolves.toMatchObject({
 			status: "failed",
 			code: "provider_changed_during_action",
 		});

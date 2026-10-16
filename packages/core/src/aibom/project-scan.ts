@@ -30,11 +30,7 @@ function moduleDir(): string | null {
 }
 
 export type AiBomEcosystem = "npm" | "pypi";
-type CycloneDxComponentType =
-	| "application"
-	| "framework"
-	| "library"
-	| "machine-learning-model";
+type CycloneDxComponentType = "application" | "framework" | "library" | "machine-learning-model";
 
 export interface AiCatalogEntry {
 	ecosystem: AiBomEcosystem;

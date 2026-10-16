@@ -42,9 +42,9 @@ import {
 	isEntitlementActive,
 	loadManagedState,
 	loadRevocationsCache,
-	revocationBindingForState,
 	type ManagedState,
 	managedStatePath,
+	revocationBindingForState,
 } from "./managed.js";
 import { LocalEmbeddingModel } from "./ml-model.js";
 import { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";

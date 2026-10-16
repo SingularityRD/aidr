@@ -8,7 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -160,9 +160,13 @@ describe("target safety", () => {
 		for (const failure of ["response_too_large", "redirect_not_followed"]) {
 			let calls = 0;
 			const fetchImpl = (async () => {
-				if (calls++ === 0) return failure === "response_too_large"
-					? new Response(new Uint8Array(256 * 1024 + 1))
-					: new Response(null, { status: 302, headers: { Location: "http://external.example/" } });
+				if (calls++ === 0)
+					return failure === "response_too_large"
+						? new Response(new Uint8Array(256 * 1024 + 1))
+						: new Response(null, {
+								status: 302,
+								headers: { Location: "http://external.example/" },
+							});
 				return new Response("not found", { status: 404 });
 			}) as typeof fetch;
 			const result = await scanTarget({ url: "http://127.0.0.1:9001" }, { fetchImpl });
@@ -173,8 +177,18 @@ describe("target safety", () => {
 
 	it("allows loopback and private addresses", () => {
 		for (const host of [
-			"127.0.0.1", "localhost", "10.0.0.5", "192.168.1.10", "172.16.0.1", "172.31.255.254",
-			"169.254.10.20", "::1", "fc00::1", "fd12:3456::1", "fe80::1", "febf::1",
+			"127.0.0.1",
+			"localhost",
+			"10.0.0.5",
+			"192.168.1.10",
+			"172.16.0.1",
+			"172.31.255.254",
+			"169.254.10.20",
+			"::1",
+			"fc00::1",
+			"fd12:3456::1",
+			"fe80::1",
+			"febf::1",
 		]) {
 			expect(isScannableHost(host)).toBe(true);
 		}
@@ -335,7 +349,7 @@ describe("CVE rule evaluation", () => {
 	});
 
 	it("reports unevaluated rather than guessing on an unsupported rule", () => {
-		const result = evaluateVersionRule("body=~\"foo.*\"", "1.0.0");
+		const result = evaluateVersionRule('body=~"foo.*"', "1.0.0");
 		expect(result.matched).toBe(false);
 		expect(result.evaluated).toBe(false);
 	});
@@ -378,7 +392,12 @@ describe("probe matching", () => {
 	it("matches headers and status", () => {
 		expect(
 			probeMatches(
-				{ method: "GET", path: "/", supported: true, matchers: [{ key: "header", contains: "text/html" }] },
+				{
+					method: "GET",
+					path: "/",
+					supported: true,
+					matchers: [{ key: "header", contains: "text/html" }],
+				},
 				"",
 				headers,
 				200,
@@ -386,7 +405,12 @@ describe("probe matching", () => {
 		).toBe(true);
 		expect(
 			probeMatches(
-				{ method: "GET", path: "/", supported: true, matchers: [{ key: "status", contains: "200" }] },
+				{
+					method: "GET",
+					path: "/",
+					supported: true,
+					matchers: [{ key: "status", contains: "200" }],
+				},
 				"",
 				headers,
 				200,
@@ -438,10 +462,7 @@ describe("end-to-end scan against a local server", () => {
 		// Load the compiled data to pick a fingerprint we can actually serve.
 		const data = JSON.parse(
 			await import("node:fs").then((fs) =>
-				fs.readFileSync(
-					new URL("../generated/aig-fingerprints.json", import.meta.url),
-					"utf8",
-				),
+				fs.readFileSync(new URL("../generated/aig-fingerprints.json", import.meta.url), "utf8"),
 			),
 		) as {
 			fingerprints: Array<{
@@ -584,9 +605,9 @@ describe("compiled node-semver CVE ranges", () => {
 		const findings = lookupCvesForProduct("ollama", "0.1.30");
 		const cve = findings.find((finding) => finding.cveId === "CVE-2024-7773");
 		expect(cve).toMatchObject({ evaluated: true, severity: "critical" });
-		expect(
-			lookupCvesForProduct("ollama", "99.0.0").some((f) => f.cveId === "CVE-2024-7773"),
-		).toBe(false);
+		expect(lookupCvesForProduct("ollama", "99.0.0").some((f) => f.cveId === "CVE-2024-7773")).toBe(
+			false,
+		);
 	});
 });
 
@@ -626,7 +647,11 @@ describe("version extraction from a dedicated version endpoint", () => {
 	it("reads the version from the extractor path and confirms the CVE", async () => {
 		const result = await scanTarget({ url: baseUrl }, { deadlineMs: 20000 });
 		const ollama = result.matched.find((match) => match.product === "ollama");
-		expect(ollama).toMatchObject({ version: "0.1.30", probePath: "/", versionPath: "/api/version" });
+		expect(ollama).toMatchObject({
+			version: "0.1.30",
+			probePath: "/",
+			versionPath: "/api/version",
+		});
 		expect(requested).toContain("GET /api/version");
 		const cve = result.cves.find((finding) => finding.cveId === "CVE-2024-7773");
 		expect(cve).toMatchObject({ evaluated: true, severity: "critical" });
@@ -710,10 +735,7 @@ describe("version extraction safety", () => {
 					}) as typeof fetch,
 				},
 			);
-			expect(requests).toEqual([
-				"GET http://127.0.0.1:9001/",
-				"GET http://127.0.0.1:9001/missing",
-			]);
+			expect(requests).toEqual(["GET http://127.0.0.1:9001/", "GET http://127.0.0.1:9001/missing"]);
 			expect(result.matched[0]).toMatchObject({ version: null, versionPath: null });
 			expect(result.requestsMade).toBe(2);
 		} finally {

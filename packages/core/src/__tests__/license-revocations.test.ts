@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-
+import { LicenseVerificationError, verifyLicense } from "../customer-license/verify.js";
 import { acceptPack } from "../intel/acceptance.js";
 import {
 	LICENSE_REVOCATIONS_FORMAT,
 	verifyLicenseRevocations,
 } from "../intel/license-revocations.js";
 import { IntelPackManifestSchema } from "../intel/schema.js";
-import { LicenseVerificationError, verifyLicense } from "../customer-license/verify.js";
 import {
 	devKey,
 	licensePayload,

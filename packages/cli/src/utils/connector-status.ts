@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 import { resolvePath, VERSION } from "@singularityrd/aidr-core";
 import { type MachineHookState, machineHookStatus } from "./machine-hooks.js";
 
@@ -158,12 +158,20 @@ function detectClaudeCode(home: string, machine?: MachineHookState): ConnectorSt
 		};
 	}
 
-	if (existsSync(settings)) {
+	// A fresh Claude Code install has ~/.claude/ and ~/.claude.json but no
+	// settings.json until the user changes a setting.
+	const present =
+		existsSync(settings) ||
+		existsSync(join(home, ".claude")) ||
+		existsSync(join(home, ".claude.json"));
+	if (present) {
 		return {
 			id: "claude-code",
 			label: "Claude Code",
 			state: "runtime_present_not_installed",
-			detail: "~/.claude/settings.json exists but does not reference AIDR",
+			detail: existsSync(settings)
+				? "~/.claude/settings.json exists but does not reference AIDR"
+				: "Claude Code is installed (~/.claude) but AIDR is not registered",
 			evidence,
 			remedy:
 				"Verify the publisher-signed release bundle before extracting the Claude plugin, add the extracted directory as a marketplace, then install aidr@aidr",
@@ -174,7 +182,7 @@ function detectClaudeCode(home: string, machine?: MachineHookState): ConnectorSt
 		id: "claude-code",
 		label: "Claude Code",
 		state: "not_detected",
-		detail: "no ~/.claude/settings.json found",
+		detail: "no ~/.claude directory or ~/.claude.json found",
 		evidence,
 		remedy: "Install the AIDR plugin from the Claude Code marketplace",
 	};
@@ -374,8 +382,60 @@ function detectOpenCode(home: string, env: NodeJS.ProcessEnv): ConnectorStatus {
 	};
 }
 
+/**
+ * The program a registered hook command starts, when it cannot be found. Codex
+ * runs a hook it cannot start as if it allowed the call (fail-open), so a
+ * registration whose program is gone is degraded, not installed.
+ */
+function missingHookProgram(command: string, env: NodeJS.ProcessEnv): string | null {
+	const match = command.trim().match(/^"([^"]+)"|^'([^']+)'|^(\S+)/);
+	const program = match?.[1] ?? match?.[2] ?? match?.[3];
+	if (!program) return null;
+	if (isAbsolute(program) || /^[A-Za-z]:[\\/]/.test(program)) {
+		return existsSync(program) ? null : program;
+	}
+	const extensions =
+		process.platform === "win32" ? ["", ...(env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";")] : [""];
+	const found = (env.PATH ?? env.Path ?? "")
+		.split(delimiter)
+		.filter(Boolean)
+		.some((dir) => extensions.some((ext) => existsSync(join(dir, program + ext))));
+	return found ? null : program;
+}
+
+function codexInstalled(
+	source: string,
+	command: string,
+	env: NodeJS.ProcessEnv,
+	evidence: string[],
+): ConnectorStatus {
+	const missing = missingHookProgram(command, env);
+	if (missing) {
+		return {
+			id: "codex",
+			label: "Codex",
+			state: "installed_but_degraded",
+			detail: `AIDR hook registered in ${source}, but its program ${missing} cannot be found; Codex runs every call uninspected (fails open)`,
+			evidence,
+			remedy:
+				"Reinstall @singularityrd/aidr-codex (or the standalone bundle), then rerun 'aidr setup --host codex'",
+		};
+	}
+	return {
+		id: "codex",
+		label: "Codex",
+		state: "installed",
+		detail: `AIDR PreToolUse handler registered in ${source}; host trust and execution unverified`,
+		evidence,
+	};
+}
+
 /** Codex registers hooks in config.toml and/or hooks.json. */
-function detectCodex(home: string, machine?: MachineHookState): ConnectorStatus {
+function detectCodex(
+	home: string,
+	machine?: MachineHookState,
+	env: NodeJS.ProcessEnv = process.env,
+): ConnectorStatus {
 	const cfg = join(home, ".codex", "config.toml");
 	const hooksJson = join(home, ".codex", "hooks.json");
 	const evidence = [cfg, hooksJson];
@@ -389,23 +449,21 @@ function detectCodex(home: string, machine?: MachineHookState): ConnectorStatus 
 		const configRead = readText(cfg);
 		if (configRead.unavailable) return unavailableStatus("codex", "Codex", evidence);
 		const raw = configRead.value ?? "";
-		const registered = raw.split(/(?=^[ \t]*\[)/m).some((section) => {
-			if (!/^[ \t]*\[\[hooks\.PreToolUse\.hooks\]\][ \t]*(?:#.*)?$/m.test(section)) return false;
-			if (!/^[ \t]*type[ \t]*=[ \t]*["']command["'][ \t]*(?:#.*)?$/m.test(section)) return false;
+		let registered: string | undefined;
+		for (const section of raw.split(/(?=^[ \t]*\[)/m)) {
+			if (!/^[ \t]*\[\[hooks\.PreToolUse\.hooks\]\][ \t]*(?:#.*)?$/m.test(section)) continue;
+			if (!/^[ \t]*type[ \t]*=[ \t]*["']command["'][ \t]*(?:#.*)?$/m.test(section)) continue;
 			const command = section.match(
 				/^[ \t]*command[ \t]*=[ \t]*(?:"([^"\r\n]*)"|'([^'\r\n]*)')[ \t]*(?:#.*)?$/m,
 			);
-			return /\baidr-codex-hook\b/i.test(command?.[1] ?? command?.[2] ?? "");
-		});
-		if (registered) {
-			return {
-				id: "codex",
-				label: "Codex",
-				state: "installed",
-				detail:
-					"AIDR PreToolUse handler registered in ~/.codex/config.toml; host trust and execution unverified",
-				evidence,
-			};
+			const value = command?.[1] ?? command?.[2] ?? "";
+			if (/\baidr-codex-hook\b/i.test(value)) {
+				registered = value.replaceAll('\\"', '"');
+				break;
+			}
+		}
+		if (registered !== undefined) {
+			return codexInstalled("~/.codex/config.toml", registered, env, evidence);
 		}
 		if (/hooks\.pre_tool_use/i.test(raw)) {
 			return {
@@ -425,27 +483,18 @@ function detectCodex(home: string, machine?: MachineHookState): ConnectorStatus 
 	const parsed = hooksRead.value as {
 		hooks?: { PreToolUse?: Array<{ hooks?: Array<{ type?: string; command?: string }> }> };
 	} | null;
-	const registered =
-		Array.isArray(parsed?.hooks?.PreToolUse) &&
-		parsed.hooks.PreToolUse.some(
-			(entry) =>
-				Array.isArray(entry?.hooks) &&
-				entry.hooks.some(
-					(hook) =>
-						hook?.type === "command" &&
-						typeof hook.command === "string" &&
-						/\baidr-codex-hook\b/i.test(hook.command),
-				),
-		);
-	if (registered) {
-		return {
-			id: "codex",
-			label: "Codex",
-			state: "installed",
-			detail:
-				"AIDR PreToolUse handler registered in ~/.codex/hooks.json; host trust and execution unverified",
-			evidence,
-		};
+	const registeredCommand = (
+		Array.isArray(parsed?.hooks?.PreToolUse) ? parsed.hooks.PreToolUse : []
+	)
+		.flatMap((entry) => (Array.isArray(entry?.hooks) ? entry.hooks : []))
+		.find(
+			(hook) =>
+				hook?.type === "command" &&
+				typeof hook.command === "string" &&
+				/\baidr-codex-hook\b/i.test(hook.command),
+		)?.command;
+	if (registeredCommand !== undefined) {
+		return codexInstalled("~/.codex/hooks.json", registeredCommand, env, evidence);
 	}
 	if (existsSync(join(home, ".codex"))) {
 		return {
@@ -487,6 +536,7 @@ export function detectConnectorStatuses(
 		detectCodex(
 			home,
 			machine.find((entry) => entry.host === "codex"),
+			env,
 		),
 	];
 }

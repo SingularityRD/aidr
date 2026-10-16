@@ -1,9 +1,12 @@
 import { existsSync } from "node:fs";
 import {
 	getAuditLogLossState,
+	getEffectiveManagedApiKey,
 	isCommercialBuild,
 	isInvalidConfig,
 	loadConfig,
+	loadManagedState,
+	managedStatePath,
 	readPersistedAuditLossState,
 	readTelemetryLossSummary,
 	resolvePath,
@@ -32,6 +35,14 @@ const CONFIG_STATE_KEY = {
 	invalid: "status.configInvalid",
 } as const;
 
+const CONNECTOR_STATE_KEY = {
+	installed: "status.registrationDetected",
+	unavailable: "status.state.unavailable",
+	runtime_present_not_installed: "status.state.runtime_present_not_installed",
+	not_detected: "status.state.not_detected",
+	installed_but_degraded: "status.state.installed_but_degraded",
+} as const;
+
 /** Registration, local evaluation and live host enforcement are separate facts. */
 /** The verdict as one line in the current locale. */
 export function formatStatusVerdict(verdict: StatusVerdict): string {
@@ -54,8 +65,11 @@ export function formatStatusVerdict(verdict: StatusVerdict): string {
 			}),
 		);
 	}
-	if (verdict.protected.length + verdict.restart.length === 0) parts.push(ct("status.verdictNone"));
-	else parts.push(ct("status.verdictVerify"));
+	// "Install a supported tool" only when none was found: with a manual step
+	// listed, the tools are there and that step is the next action.
+	const registered = verdict.protected.length + verdict.restart.length;
+	if (registered > 0) parts.push(ct("status.verdictVerify"));
+	else if (verdict.manual.length === 0) parts.push(ct("status.verdictNone"));
 	return `${ct("status.verdictPrefix")} ${parts.join(" | ")}`;
 }
 
@@ -150,6 +164,17 @@ export default async function statusCommand(
 	// control_plane.enabled defaults to true, but managed features only run in
 	// managed mode; a local-mode install must not be reported as managed.
 	const managedActive = config.mode === "managed" && config.control_plane.enabled;
+	// Enrolled = a usable control-plane credential exists. Without it the device
+	// still enforces locally, but receives no policy and reports nothing.
+	let enrolled = false;
+	if (managedActive) {
+		try {
+			const state = await loadManagedState(managedStatePath());
+			enrolled = getEffectiveManagedApiKey(config.auth.api_key, state) !== "";
+		} catch {
+			enrolled = false;
+		}
+	}
 	const report = {
 		schema_version: 1,
 		checked_at: new Date().toISOString(),
@@ -167,6 +192,7 @@ export default async function statusCommand(
 			enabled: managedActive,
 			control_plane_enabled: config.control_plane.enabled,
 			endpoint_configured: !!config.control_plane.endpoint,
+			enrolled,
 			connectivity: "not_checked",
 			fleet_adoption: "not_checked",
 		},
@@ -205,11 +231,22 @@ export default async function statusCommand(
 		printCustomer(customer);
 		for (const connector of connectors)
 			console.log(
-				`  ${connector.label}: ${connector.state === "installed" ? ct("status.registrationDetected") : connector.state} — ${connector.detail}`,
+				`  ${connector.label}: ${ct(CONNECTOR_STATE_KEY[connector.state])} — ${connector.detail}`,
 			);
+		// Supported tools found without (working) AIDR are as unprotected as
+		// tools AIDR has no connector for.
+		const openTools = [
+			...connectors
+				.filter(
+					(c) =>
+						c.state === "runtime_present_not_installed" || c.state === "installed_but_degraded",
+				)
+				.map((c) => c.label),
+			...unprotected.map((tool) => tool.label),
+		];
 		console.log(
-			unprotected.length > 0
-				? ct("status.unprotected", { tools: unprotected.map((tool) => tool.label).join(", ") })
+			openTools.length > 0
+				? ct("status.unprotected", { tools: openTools.join(", ") })
 				: ct("status.unprotectedNone"),
 		);
 		if (config.mode !== "managed") {
@@ -223,6 +260,7 @@ export default async function statusCommand(
 						: ct("status.endpointMissing"),
 				}),
 			);
+			if (managedActive && !enrolled) console.log(ct("status.notEnrolled"));
 		}
 		const unreadableTelemetryQueue =
 			telemetryLoss.state === "unavailable" ||

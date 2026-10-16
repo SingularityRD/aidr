@@ -3,11 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
-const aclProcess = vi.hoisted(() => vi.fn((
-	_command: string,
-	_args: string[],
-	_options: { env?: Record<string, string | undefined> },
-) => ({ status: 0 })));
+const aclProcess = vi.hoisted(() =>
+	vi.fn(
+		(
+			_command: string,
+			_args: string[],
+			_options: { env?: Record<string, string | undefined> },
+		) => ({ status: 0 }),
+	),
+);
 const testHome = mkdtempSync(join(tmpdir(), "aidr-acl-mock-"));
 const originalHome = process.env.HOME;
 process.env.HOME = testHome;
@@ -29,7 +33,12 @@ process.env.AIDR_SECRET_STORE = "file-acl";
 const { createConfig, getConfig, updateConfig } = await import("../utils/config-manager.js");
 const configDir = join(testHome, ".singularity-aidr");
 const configFile = join(configDir, "config.json");
-const env = { agent: "claude" as const, hasNode: true, nodeVersion: process.version, projectRoot: testHome };
+const env = {
+	agent: "claude" as const,
+	hasNode: true,
+	nodeVersion: process.version,
+	projectRoot: testHome,
+};
 
 afterEach(() => {
 	aclProcess.mockReset();
@@ -57,7 +66,9 @@ describe.skipIf(process.platform !== "win32")("Windows private config ACL bounda
 
 	it("does not write a credential when ACL hardening fails", async () => {
 		aclProcess.mockReturnValueOnce({ status: 1 });
-		await expect(createConfig(env, false)).rejects.toThrow("Local config Windows ACL could not be made private.");
+		await expect(createConfig(env, false)).rejects.toThrow(
+			"Local config Windows ACL could not be made private.",
+		);
 		expect(existsSync(configFile)).toBe(false);
 	});
 
@@ -65,7 +76,9 @@ describe.skipIf(process.platform !== "win32")("Windows private config ACL bounda
 		await createConfig(env, false);
 		const prior = getConfig();
 		aclProcess.mockReturnValueOnce({ status: 1 });
-		expect(() => updateConfig({ hooksInstalled: true })).toThrow("Local config Windows ACL could not be made private.");
+		expect(() => updateConfig({ hooksInstalled: true })).toThrow(
+			"Local config Windows ACL could not be made private.",
+		);
 		expect(getConfig()).toEqual(prior);
 	});
 

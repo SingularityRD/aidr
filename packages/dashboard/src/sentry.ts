@@ -5,7 +5,7 @@ const SENSITIVE_KEY_RE =
 	/(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|cookie|credential|password|passwd|private[_-]?key|secret|session[_-]?token|signature|sig|token|client[_-]?secret|invite|grant|state|dsn|prompt|tool[_-]?input|tool[_-]?output|completion|response[_-]?body|request[_-]?body|content)/i;
 const BEARER_RE = /(\bBearer\s+)[^\s,;"']+/gi;
 const KEY_VALUE_RE =
-	/(\b(?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|client[_-]?secret|cookie|password|passwd|private[_-]?key|refresh[_-]?token|id[_-]?token|secret|session[_-]?token|signature|sig|token)\b\s*[:=]\s*)(["']?)([^\s,;&"']+)\2/gi;
+	/(\b[A-Za-z0-9_-]*?(?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|client[_-]?secret|cookie|password|passwd|private[_-]?key|refresh[_-]?token|id[_-]?token|secret|session[_-]?token|signature|sig|token)(?:[_-](?:access[_-]?key|key|id|value|pem|b64|base64|prod|production|staging|dev|test|live|[0-9]+))*\b\s*[:=]\s*)(["']?)([^\s,;&"']+)\2/gi;
 const URL_CREDENTIAL_RE = /(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi;
 const URL_SECRET_QUERY_RE =
 	/([?&#](?:api[_-]?key|x-api-key|access[_-]?token|auth(?:orization|[_-]?token)?|code|client[_-]?secret|password|passwd|refresh[_-]?token|id[_-]?token|invite(?:[_-]?token)?|grant(?:[_-]?id)?|state|secret|session[_-]?token|signature|sig|token(?:[_-]?hash)?)\s*=)[^&#\s]*/gi;

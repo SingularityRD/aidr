@@ -36,20 +36,20 @@ describe("package provider response contracts", () => {
 		expect(result.details).toContain("registry response was malformed");
 	});
 
-	it.each([
-		"npm" as const,
-		"pypi" as const,
-	])("preserves genuine %s HTTP 404 as not_found", async (registry) => {
-		globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 404 });
-		const client = new RegistryClient();
-		expect(await client.getPackageMetadata("absent-package", registry)).toBeNull();
+	it.each(["npm" as const, "pypi" as const])(
+		"preserves genuine %s HTTP 404 as not_found",
+		async (registry) => {
+			globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+			const client = new RegistryClient();
+			expect(await client.getPackageMetadata("absent-package", registry)).toBeNull();
 
-		const result = await new PackageChecker({ fileCheckEnabled: false }).checkSinglePackage({
-			name: "absent-package",
-			registry,
-		});
-		expect(result.verdict).toBe("not_found");
-	});
+			const result = await new PackageChecker({ fileCheckEnabled: false }).checkSinglePackage({
+				name: "absent-package",
+				registry,
+			});
+			expect(result.verdict).toBe("not_found");
+		},
+	);
 
 	it.each([
 		{ responses: [{}] },

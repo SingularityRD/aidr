@@ -144,21 +144,32 @@ describe("tenant custom label schema", () => {
 
 	it("bounds regex matchers and dictionary terms across the whole policy", () => {
 		const regexes = customPolicy();
-		regexes.rules = Array.from({ length: Math.ceil((DLP_MAX_POLICY_REGEX_MATCHERS + 1) / 50) }, (_, index) => ({
-			...regexes.rules[0],
-			id: `bulk-regex-${index}`,
-			matchers: Array.from({ length: 50 }, (_, m) => ({ type: "regex", pattern: `ID${index}-${m}-[0-9]{4}` })),
-		}));
+		regexes.rules = Array.from(
+			{ length: Math.ceil((DLP_MAX_POLICY_REGEX_MATCHERS + 1) / 50) },
+			(_, index) => ({
+				...regexes.rules[0],
+				id: `bulk-regex-${index}`,
+				matchers: Array.from({ length: 50 }, (_, m) => ({
+					type: "regex",
+					pattern: `ID${index}-${m}-[0-9]{4}`,
+				})),
+			}),
+		);
 		expect(issuesOf(regexes)).toContain(
 			`a policy may contain at most ${DLP_MAX_POLICY_REGEX_MATCHERS} regex matchers`,
 		);
 
 		const keywords = customPolicy();
-		keywords.rules = Array.from({ length: Math.ceil((DLP_MAX_POLICY_KEYWORD_TERMS + 1) / 500) }, (_, index) => ({
-			...keywords.rules[0],
-			id: `bulk-keyword-${index}`,
-			matchers: [{ type: "keyword", values: Array.from({ length: 500 }, (_, k) => `term-${index}-${k}`) }],
-		}));
+		keywords.rules = Array.from(
+			{ length: Math.ceil((DLP_MAX_POLICY_KEYWORD_TERMS + 1) / 500) },
+			(_, index) => ({
+				...keywords.rules[0],
+				id: `bulk-keyword-${index}`,
+				matchers: [
+					{ type: "keyword", values: Array.from({ length: 500 }, (_, k) => `term-${index}-${k}`) },
+				],
+			}),
+		);
 		expect(issuesOf(keywords)).toContain(
 			`a policy may contain at most ${DLP_MAX_POLICY_KEYWORD_TERMS} keyword terms`,
 		);
@@ -178,7 +189,11 @@ describe("tenant custom label evaluation", () => {
 				});
 				expect(result).toMatchObject({ status: "inspected", action });
 				expect(result.findings).toEqual([
-					expect.objectContaining({ labelId: "acme-project-code", ruleId: "acme-project-code-rule", action }),
+					expect.objectContaining({
+						labelId: "acme-project-code",
+						ruleId: "acme-project-code-rule",
+						action,
+					}),
 				]);
 				expect(JSON.stringify(result.findings)).not.toContain(PROJECT_CODE);
 				if (action === "redact" && result.status === "inspected") {
@@ -191,8 +206,11 @@ describe("tenant custom label evaluation", () => {
 	it("matches dictionary terms and lets benign text pass", () => {
 		const policy = DlpPolicySchema.parse(customPolicy());
 		expect(
-			scanDlpInput(policy, { tenantId: TENANT, content: "status of project nightjar?", contentType: "text/plain" })
-				.findings[0],
+			scanDlpInput(policy, {
+				tenantId: TENANT,
+				content: "status of project nightjar?",
+				contentType: "text/plain",
+			}).findings[0],
 		).toMatchObject({ labelId: "acme-project-code" });
 		const benign = scanDlpInput(policy, {
 			tenantId: TENANT,
@@ -204,16 +222,34 @@ describe("tenant custom label evaluation", () => {
 
 	it("reports only checksum-valid matches when a validator is configured", () => {
 		const policy = DlpPolicySchema.parse(customPolicy());
-		const valid = scanDlpInput(policy, { tenantId: TENANT, content: "card 4111 1111 1111 1111", contentType: "text/plain" });
-		expect(valid.findings).toEqual([expect.objectContaining({ labelId: "acme-card", action: "redact" })]);
-		const invalid = scanDlpInput(policy, { tenantId: TENANT, content: "order 4111 1111 1111 1112", contentType: "text/plain" });
+		const valid = scanDlpInput(policy, {
+			tenantId: TENANT,
+			content: "card 4111 1111 1111 1111",
+			contentType: "text/plain",
+		});
+		expect(valid.findings).toEqual([
+			expect.objectContaining({ labelId: "acme-card", action: "redact" }),
+		]);
+		const invalid = scanDlpInput(policy, {
+			tenantId: TENANT,
+			content: "order 4111 1111 1111 1112",
+			contentType: "text/plain",
+		});
 		expect(invalid).toMatchObject({ action: "allow", findings: [] });
 	});
 
 	it("reports an unsupported format as unavailable instead of clean", () => {
 		const policy = DlpPolicySchema.parse(customPolicy());
-		const result = scanDlpInput(policy, { tenantId: TENANT, content: PROJECT_CODE, contentType: "application/pdf" });
-		expect(result).toMatchObject({ status: "unavailable", action: "block", unavailable: { reason: "unsupported_format" } });
+		const result = scanDlpInput(policy, {
+			tenantId: TENANT,
+			content: PROJECT_CODE,
+			contentType: "application/pdf",
+		});
+		expect(result).toMatchObject({
+			status: "unavailable",
+			action: "block",
+			unavailable: { reason: "unsupported_format" },
+		});
 	});
 
 	it("applies the exception lifecycle to custom label rules", () => {
@@ -235,7 +271,10 @@ describe("tenant custom label evaluation", () => {
 			content: PROJECT_CODE,
 			contentType: "text/plain",
 		});
-		expect(result).toMatchObject({ action: "allow", appliedExceptionIds: ["acme-project-exception"] });
+		expect(result).toMatchObject({
+			action: "allow",
+			appliedExceptionIds: ["acme-project-exception"],
+		});
 		const expired = scanDlpInput(DlpPolicySchema.parse(base), {
 			tenantId: TENANT,
 			content: PROJECT_CODE,
@@ -261,7 +300,9 @@ describe("signed tenant bundle carries custom labels to the endpoint", () => {
 		await provisionTenantDetectorPolicy({
 			homeDir: home,
 			agentRuntime: "openclaw",
-			payload: detectorPolicyPayload(TENANT, { dlp: { enabled: true, policy: customPolicy("block") } }),
+			payload: detectorPolicyPayload(TENANT, {
+				dlp: { enabled: true, policy: customPolicy("block") },
+			}),
 		});
 		const findings = await scanProvisionedOutput([`Use ${PROJECT_CODE} for the build`], "openclaw");
 		expect(findings).toContainEqual(

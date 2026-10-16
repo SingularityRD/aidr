@@ -65,7 +65,17 @@ describe("logVerdict", () => {
 			undefined,
 			"run_in_terminal",
 		);
-		await logVerdict(config, "s2", "Bash", { command: "x" }, makeVerdict(), false, 1, undefined, "Bash");
+		await logVerdict(
+			config,
+			"s2",
+			"Bash",
+			{ command: "x" },
+			makeVerdict(),
+			false,
+			1,
+			undefined,
+			"Bash",
+		);
 
 		const [mapped, same] = (await readFile(config.path, "utf8"))
 			.trim()

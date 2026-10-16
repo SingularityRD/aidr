@@ -32,7 +32,12 @@ describe("device enrollment attestation", () => {
 			{ schema_version: 1, installation_id: installationId, key_hash: "A".repeat(64) },
 			{ schema_version: 2, installation_id: installationId, key_hash: hashDeviceKey(apiKey) },
 			{ schema_version: 1, installation_id: "line\nbreak", key_hash: hashDeviceKey(apiKey) },
-			{ schema_version: 1, installation_id: installationId, key_hash: hashDeviceKey(apiKey), extra: true },
+			{
+				schema_version: 1,
+				installation_id: installationId,
+				key_hash: hashDeviceKey(apiKey),
+				extra: true,
+			},
 		]) {
 			expect(parseDeviceAttestation(value)).toMatchObject({ ok: false });
 		}
@@ -44,6 +49,8 @@ describe("device enrollment attestation", () => {
 		expect(
 			deviceAttestationMatches(expected, createDeviceAttestation("other-installation", apiKey)),
 		).toBe(false);
-		expect(deviceAttestationMatches(expected, createDeviceAttestation(installationId, "other-key"))).toBe(false);
+		expect(
+			deviceAttestationMatches(expected, createDeviceAttestation(installationId, "other-key")),
+		).toBe(false);
 	});
 });

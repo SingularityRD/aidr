@@ -25,6 +25,7 @@ import { type MachineHookState, machineHookStatus } from "./machine-hooks.js";
 import {
 	type HookProbe,
 	probeHookCommand,
+	quoteHookPath,
 	STANDALONE_CLAUDE_HOOKS,
 	STANDALONE_CODEX_HOOK,
 	STANDALONE_INSTALL_KIND,
@@ -437,9 +438,16 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 		);
 	}
 	// From the standalone bundle the hook is the bundle's binary
-	// (`"<bundle>/bin/aidr" hook aidr-codex-hook`); otherwise the npm bin on PATH.
+	// (`"<bundle>/bin/aidr" hook aidr-codex-hook`); otherwise the npm bin found on
+	// PATH, registered by absolute path: Codex started from a GUI or a service has
+	// a different PATH, and a hook it cannot find fails open.
 	const root = deps.standaloneRoot;
-	const command = root ? standaloneHookCommand(root, STANDALONE_CODEX_HOOK) : AIDR_CODEX_HOOK;
+	const onPath = root ? null : findExecutable(AIDR_CODEX_HOOK, hostEnv(deps));
+	const command = root
+		? standaloneHookCommand(root, STANDALONE_CODEX_HOOK)
+		: onPath
+			? quoteHookPath(onPath)
+			: AIDR_CODEX_HOOK;
 	if (root) {
 		const bundle = standaloneBundle(deps);
 		if (!bundle.ok)
@@ -461,7 +469,7 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 			trust,
 		);
 	}
-	const binary = root ? command : findExecutable(AIDR_CODEX_HOOK, hostEnv(deps));
+	const binary = root ? command : onPath;
 	if (!binary) {
 		return result(
 			"codex",

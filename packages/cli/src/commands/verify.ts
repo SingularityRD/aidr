@@ -13,8 +13,9 @@ import { canaryCommand, type HookProbe, runHookCommand } from "../utils/standalo
  * The canary (`curl ... | bash` against the reserved `.invalid` domain) is only
  * ever written to the hook's stdin as the tool call the host would ask about;
  * nothing runs it. Only hook commands AIDR registered are executed (the same
- * commands the host runs on every tool call), with the user's HOME. In-process
- * plugins (OpenCode, OpenClaw) and plugin-registered Claude Code hooks have no
+ * commands the host runs on every tool call), with the user's HOME. A Claude
+ * Code plugin install is exercised through the plugin's own hooks.json, resolved
+ * from installed_plugins.json. In-process plugins (OpenCode, OpenClaw) have no
  * entry point outside their host and are reported as SKIP, never as PASS.
  */
 
@@ -62,6 +63,37 @@ function hookCommands(file: string, event: string): string[] {
 	return commands;
 }
 
+/**
+ * Install directories of an enabled AIDR plugin, from Claude Code's
+ * installed_plugins.json (v1: name -> entry; v2: name -> entry[]).
+ */
+function aidrPluginRoots(home: string): string[] {
+	const registry = readObject(join(home, ".claude", "plugins", "installed_plugins.json"));
+	const plugins = registry?.plugins;
+	if (!plugins || typeof plugins !== "object") return [];
+	const roots: string[] = [];
+	for (const [name, value] of Object.entries(plugins as Record<string, unknown>)) {
+		if (!/aidr|singularity/i.test(name)) continue;
+		for (const entry of Array.isArray(value) ? value : [value]) {
+			const path = (entry as { installPath?: unknown } | null)?.installPath;
+			if (typeof path === "string" && path.length > 0) roots.push(path);
+		}
+	}
+	return roots;
+}
+
+/** The plugin's own PreToolUse commands with ${CLAUDE_PLUGIN_ROOT} filled in. */
+function pluginHookCommands(home: string): { file: string; commands: string[] } | null {
+	for (const root of aidrPluginRoots(home)) {
+		const file = join(root, "hooks", "hooks.json");
+		const commands = hookCommands(file, "PreToolUse").map((command) =>
+			command.replaceAll("${CLAUDE_PLUGIN_ROOT}", root.replaceAll("\\", "/")),
+		);
+		if (commands.length > 0) return { file, commands };
+	}
+	return null;
+}
+
 interface Plan {
 	file: string;
 	commands: string[];
@@ -87,9 +119,10 @@ function planFor(status: ConnectorStatus, home: string, cwd: string): Plan | str
 			const commands = hookCommands(file, "PreToolUse").filter(
 				(command) => /aidr|singularity/i.test(command) && !command.includes("--managed-by aidr-"),
 			);
-			return commands.length > 0
-				? { file, commands, payload: claudePayload }
-				: ct("verify.pluginOnly");
+			if (commands.length > 0) return { file, commands, payload: claudePayload };
+			// Installed as a plugin: run the plugin's own hook entry point.
+			const plugin = pluginHookCommands(home);
+			return plugin ? { ...plugin, payload: claudePayload } : ct("verify.pluginOnly");
 		}
 		case "vscode": {
 			const file = join(home, ".claude", "settings.json");

@@ -164,19 +164,24 @@ describe("health status reporting", () => {
 		});
 	});
 
-	it.each([401, 404])("degrades when the unauthenticated endpoint probe returns %s", async (statusCode) => {
-		const health = await importHealthWithMocks({
-			fetch: vi.fn().mockResolvedValue({ status: statusCode } as Response) as unknown as typeof fetch,
-		});
+	it.each([401, 404])(
+		"degrades when the unauthenticated endpoint probe returns %s",
+		async (statusCode) => {
+			const health = await importHealthWithMocks({
+				fetch: vi
+					.fn()
+					.mockResolvedValue({ status: statusCode } as Response) as unknown as typeof fetch,
+			});
 
-		const status = await health.getExtendedHealthStatus();
-		const endpoint = status.checks.find((check) => check.name === "url_endpoint");
+			const status = await health.getExtendedHealthStatus();
+			const endpoint = status.checks.find((check) => check.name === "url_endpoint");
 
-		expect(endpoint).toMatchObject({
-			status: "degraded",
-			details: { status: statusCode },
-		});
-	});
+			expect(endpoint).toMatchObject({
+				status: "degraded",
+				details: { status: statusCode },
+			});
+		},
+	);
 
 	it("makes no network probe and reports not_configured in default local mode", async () => {
 		const fetchMock = vi.fn().mockResolvedValue({ status: 204 } as Response);
@@ -195,9 +200,9 @@ describe("health status reporting", () => {
 		});
 		expect(JSON.stringify(endpoint)).not.toContain("api.singularityrd.com");
 		// An intentionally inert optional leg does not degrade overall health.
-		expect(status.checks.every((c) => c.status === "healthy" || c.status === "not_configured")).toBe(
-			true,
-		);
+		expect(
+			status.checks.every((c) => c.status === "healthy" || c.status === "not_configured"),
+		).toBe(true);
 		expect(status.status).toBe("healthy");
 		expect(health.formatHealthStatus(status)).toContain("url_endpoint: not_configured");
 	});

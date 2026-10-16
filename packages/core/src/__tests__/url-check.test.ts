@@ -105,32 +105,35 @@ describe("UrlCheckClient", () => {
 	it.each([
 		["missing", undefined],
 		["expired", "2020-01-01T00:00:00.000Z"],
-	])("treats a covered clean response with %s source freshness as unavailable", async (_label, deadline) => {
-		const url = "https://stale-safe.test";
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: async () => ({
-				answers: [
-					{
-						key: url,
-						coverage: "covered",
-						...(deadline ? { cache_valid_until: deadline } : {}),
-						result: {
-							success: {
-								classification: { result: {} },
-								flags: [],
-								coverage: "covered",
+	])(
+		"treats a covered clean response with %s source freshness as unavailable",
+		async (_label, deadline) => {
+			const url = "https://stale-safe.test";
+			globalThis.fetch = vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({
+					answers: [
+						{
+							key: url,
+							coverage: "covered",
+							...(deadline ? { cache_valid_until: deadline } : {}),
+							result: {
+								success: {
+									classification: { result: {} },
+									flags: [],
+									coverage: "covered",
+								},
 							},
 						},
-					},
-				],
-			}),
-		});
+					],
+				}),
+			});
 
-		await expect(new UrlCheckClient().checkUrls([url])).rejects.toBeInstanceOf(
-			DetectionLegUnavailableError,
-		);
-	});
+			await expect(new UrlCheckClient().checkUrls([url])).rejects.toBeInstanceOf(
+				DetectionLegUnavailableError,
+			);
+		},
+	);
 
 	it("treats a clean response expiring in transit as unavailable at the deadline", async () => {
 		vi.useFakeTimers({ toFake: ["Date"] });
@@ -450,7 +453,13 @@ describe("UrlCheckClient", () => {
 
 		expect(mockFetch).toHaveBeenCalledTimes(1);
 		const requestBody = String(mockFetch.mock.calls[0]?.[1]?.body);
-		for (const secret of ["access_token", "private-value", "private-fragment", "private-user", "private-password"]) {
+		for (const secret of [
+			"access_token",
+			"private-value",
+			"private-fragment",
+			"private-user",
+			"private-password",
+		]) {
 			expect(requestBody).not.toContain(secret);
 		}
 		expect(requestBody).toContain(safe);

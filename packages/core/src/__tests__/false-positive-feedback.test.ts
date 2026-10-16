@@ -20,7 +20,9 @@ const TENANT = "tenant-a";
 const OTHER_TENANT = "tenant-b";
 const CANDIDATE = "d".repeat(64);
 
-function binding(overrides: Partial<FalsePositiveFeedbackBinding> = {}): FalsePositiveFeedbackBinding {
+function binding(
+	overrides: Partial<FalsePositiveFeedbackBinding> = {},
+): FalsePositiveFeedbackBinding {
 	return {
 		policyRevision: "pol-rev-7",
 		incidentId: "inc-1",
@@ -31,7 +33,9 @@ function binding(overrides: Partial<FalsePositiveFeedbackBinding> = {}): FalsePo
 	};
 }
 
-function submission(overrides: Partial<FalsePositiveFeedbackInput> = {}): FalsePositiveFeedbackInput {
+function submission(
+	overrides: Partial<FalsePositiveFeedbackInput> = {},
+): FalsePositiveFeedbackInput {
 	return {
 		tenantId: TENANT,
 		binding: binding(),
@@ -77,9 +81,9 @@ describe("false-positive feedback binding", () => {
 		);
 		expect(second.outcome.version).toBe(1);
 		expect(second.store.records).toHaveLength(2);
-		expect(second.store.records.every((entry) => entry.previousHash === FALSE_POSITIVE_GENESIS_HASH)).toBe(
-			true,
-		);
+		expect(
+			second.store.records.every((entry) => entry.previousHash === FALSE_POSITIVE_GENESIS_HASH),
+		).toBe(true);
 		expect(verifyFalsePositiveFeedbackStore(second.store, hash).valid).toBe(true);
 	});
 
@@ -98,7 +102,11 @@ describe("false-positive feedback binding", () => {
 
 	it("refuses a cross-tenant record without mutating the store", () => {
 		const { store } = record(createFalsePositiveFeedbackStore(TENANT), submission());
-		const refused = recordFalsePositiveFeedback(store, submission({ tenantId: OTHER_TENANT }), hash);
+		const refused = recordFalsePositiveFeedback(
+			store,
+			submission({ tenantId: OTHER_TENANT }),
+			hash,
+		);
 		expect(refused.outcome).toMatchObject({
 			status: "refused",
 			changed: false,
@@ -112,7 +120,10 @@ describe("false-positive feedback binding", () => {
 		const cases: Array<[unknown, string]> = [
 			[submission({ reasonCode: "because" as never }), "invalid_reason_code"],
 			[submission({ feedback: "maybe" as never }), "invalid_feedback"],
-			[submission({ binding: binding({ policyRevision: "has spaces" }) }), "invalid_policy_revision"],
+			[
+				submission({ binding: binding({ policyRevision: "has spaces" }) }),
+				"invalid_policy_revision",
+			],
 			[submission({ rationale: "x".repeat(2001) }), "invalid_rationale"],
 			[null, "not_an_object"],
 		];
@@ -141,7 +152,11 @@ describe("false-positive feedback idempotency and conflict", () => {
 
 	it("is order-independent for a batch: the same submission set folds to the same store", () => {
 		const input = submission();
-		const single = foldFalsePositiveFeedback(createFalsePositiveFeedbackStore(TENANT), [input], hash);
+		const single = foldFalsePositiveFeedback(
+			createFalsePositiveFeedbackStore(TENANT),
+			[input],
+			hash,
+		);
 		const replayed = foldFalsePositiveFeedback(
 			createFalsePositiveFeedbackStore(TENANT),
 			[input, input, input],
@@ -179,7 +194,10 @@ describe("false-positive feedback idempotency and conflict", () => {
 
 	it("refuses a conflicting verdict that differs only in rationale", () => {
 		const first = record(createFalsePositiveFeedbackStore(TENANT), submission());
-		const conflicting = record(first.store, submission({ rationale: "A different justification." }));
+		const conflicting = record(
+			first.store,
+			submission({ rationale: "A different justification." }),
+		);
 		expect(conflicting.outcome.reason).toBe("conflicting_feedback_submission");
 	});
 
@@ -253,14 +271,18 @@ describe("false-positive feedback store integrity", () => {
 	});
 
 	it("reports an empty store as valid-but-empty and an unreadable store as invalid", () => {
-		expect(verifyFalsePositiveFeedbackStore(createFalsePositiveFeedbackStore(TENANT), hash)).toEqual({
+		expect(
+			verifyFalsePositiveFeedbackStore(createFalsePositiveFeedbackStore(TENANT), hash),
+		).toEqual({
 			valid: true,
 			checked: 0,
 			findings: [],
 		});
 		expect(
-			verifyFalsePositiveFeedbackStore({ schemaVersion: 9 } as unknown as FalsePositiveFeedbackStore, hash)
-				.valid,
+			verifyFalsePositiveFeedbackStore(
+				{ schemaVersion: 9 } as unknown as FalsePositiveFeedbackStore,
+				hash,
+			).valid,
 		).toBe(false);
 	});
 

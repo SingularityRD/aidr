@@ -181,7 +181,9 @@ describe("AutoRollback", () => {
 
 		it("throws for non-existent snapshot", async () => {
 			const rollback = createAutoRollback();
-			await expect(rollback.rollback("non-existent-00000000")).rejects.toThrow("Snapshot not found");
+			await expect(rollback.rollback("non-existent-00000000")).rejects.toThrow(
+				"Snapshot not found",
+			);
 		});
 	});
 

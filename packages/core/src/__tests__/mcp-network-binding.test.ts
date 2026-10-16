@@ -39,7 +39,8 @@ function mockResponse(rawHeaders: string[], chunks: Buffer[]): void {
 describe("MCP pinned HTTP connection", () => {
 	it("requires upstream TLS certificate verification even when the process default is unsafe", async () => {
 		const nodeRequest = new EventEmitter() as EventEmitter & { end: () => void };
-		nodeRequest.end = () => queueMicrotask(() => nodeRequest.emit("error", new Error("mock transport")));
+		nodeRequest.end = () =>
+			queueMicrotask(() => nodeRequest.emit("error", new Error("mock transport")));
 		httpsRequestMock.mockReturnValueOnce(nodeRequest);
 		await expect(
 			fetchMcpEndpoint(

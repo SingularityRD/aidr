@@ -29,7 +29,9 @@ function nodeId(kind: ExposureNodeKind, naturalKey: string): string {
 }
 
 /** A benign observation: one agent on one host, the host's user, and an MCP server. */
-function baseObservation(overrides: Partial<ExposureObservationInput> = {}): ExposureObservationInput {
+function baseObservation(
+	overrides: Partial<ExposureObservationInput> = {},
+): ExposureObservationInput {
 	return {
 		tenantId: TENANT,
 		observationId: "obs-1",
@@ -56,7 +58,11 @@ function graphOf(records: ExposureObservationInput[]): ExposureGraph {
 	return foldExposureObservations(records, { ...hash, tenantId: TENANT }).graph;
 }
 
-function nodeOf(graph: ExposureGraph, kind: ExposureNodeKind, naturalKey: string): ExposureNode | undefined {
+function nodeOf(
+	graph: ExposureGraph,
+	kind: ExposureNodeKind,
+	naturalKey: string,
+): ExposureNode | undefined {
 	return graph.nodes.find((node) => node.nodeId === nodeId(kind, naturalKey));
 }
 
@@ -129,7 +135,9 @@ describe("exposure graph folding", () => {
 		});
 		const forward = foldExposureObservations([a, b, c], { ...hash, tenantId: TENANT });
 		const shuffled = foldExposureObservations([c, a, b], { ...hash, tenantId: TENANT });
-		expect(canonicalExposureGraphJson(shuffled.graph)).toBe(canonicalExposureGraphJson(forward.graph));
+		expect(canonicalExposureGraphJson(shuffled.graph)).toBe(
+			canonicalExposureGraphJson(forward.graph),
+		);
 		expect(shuffled.accepted).toEqual(forward.accepted);
 	});
 
@@ -140,22 +148,23 @@ describe("exposure graph folding", () => {
 		expect(replay.duplicates).toEqual(["obs-1"]);
 		expect(replay.accepted).toEqual(["obs-1"]);
 		expect(replay.rejections).toEqual([]);
-		expect(canonicalExposureGraphJson(replay.graph)).toBe(
-			canonicalExposureGraphJson(first.graph),
-		);
+		expect(canonicalExposureGraphJson(replay.graph)).toBe(canonicalExposureGraphJson(first.graph));
 		expect(replay.graph.nodes[0]?.observationIds).toEqual(["obs-1"]);
 	});
 
 	it("refuses a replay whose content changed instead of letting the newer copy win", () => {
 		const original = baseObservation();
-		const rewritten = baseObservation({ nodes: [{ kind: "host", naturalKey: "host-2" }], edges: [] });
+		const rewritten = baseObservation({
+			nodes: [{ kind: "host", naturalKey: "host-2" }],
+			edges: [],
+		});
 		const result = foldExposureObservations([original, rewritten], { ...hash, tenantId: TENANT });
 		expect(result.rejections.map((rejection) => rejection.code)).toEqual([
 			"conflicting_observation",
 		]);
-		expect(result.graph.nodes.some((node) => node.kind === "host" && node.naturalKey === "host-2")).toBe(
-			false,
-		);
+		expect(
+			result.graph.nodes.some((node) => node.kind === "host" && node.naturalKey === "host-2"),
+		).toBe(false);
 	});
 });
 
@@ -278,14 +287,14 @@ describe("exposure staleness", () => {
 		expect(host?.lastSeenAtMs).toBe(BASE);
 		expect(host?.firstSeenAtMs).toBe(BASE);
 		expect(host?.observationIds).toEqual(["obs-1", "obs-failed"]);
-		expect(exposureStaleness(host?.lastSeenAtMs ?? null, BASE + 5 * 60 * 1000, WINDOW)).toBe("fresh");
+		expect(exposureStaleness(host?.lastSeenAtMs ?? null, BASE + 5 * 60 * 1000, WINDOW)).toBe(
+			"fresh",
+		);
 		expect(exposureStaleness(host?.lastSeenAtMs ?? null, BASE + WINDOW + 1, WINDOW)).toBe("stale");
 	});
 
 	it("reports a never-current node as unknown, never as fresh", () => {
-		const graph = graphOf([
-			baseObservation({ observed: false }),
-		]);
+		const graph = graphOf([baseObservation({ observed: false })]);
 		const report = exposureStalenessReport(graph, BASE, WINDOW);
 		expect(report.unknown).toBe(3);
 		expect(report.fresh).toBe(0);
@@ -350,15 +359,17 @@ describe("exposure coverage gaps", () => {
 		expect(coverage.unreadableSources).toEqual([
 			{ sourceRef: "https://idp.example.test/", source: "idp", detail: "EACCES" },
 		]);
-		expect(coverage.unreadableSources.some((source) => source.source === "mcp_inventory")).toBe(false);
+		expect(coverage.unreadableSources.some((source) => source.source === "mcp_inventory")).toBe(
+			false,
+		);
 	});
 
 	it("leaves a fully covered graph with no gaps", () => {
 		const nodes = EXPOSURE_NODE_KINDS.map((kind) => ({ kind, naturalKey: `k-${kind}` }));
-		const result = foldExposureObservations(
-			[baseObservation({ nodes, edges: [] })],
-			{ ...hash, tenantId: TENANT },
-		);
+		const result = foldExposureObservations([baseObservation({ nodes, edges: [] })], {
+			...hash,
+			tenantId: TENANT,
+		});
 		expect(result.coverage.unobservedKinds).toEqual([]);
 		expect(result.coverage.unreadableSources).toEqual([]);
 	});
@@ -377,7 +388,9 @@ describe("exposure coverage gaps", () => {
 describe("exposure observation digest", () => {
 	it("is stable for equal content and changes when the observation changes", () => {
 		const record = baseObservation();
-		expect(exposureObservationDigest(record, hash)).toBe(exposureObservationDigest({ ...record }, hash));
+		expect(exposureObservationDigest(record, hash)).toBe(
+			exposureObservationDigest({ ...record }, hash),
+		);
 		expect(exposureObservationDigest(record, hash)).not.toBe(
 			exposureObservationDigest({ ...record, observedAtMs: BASE + 1 }, hash),
 		);

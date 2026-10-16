@@ -1672,8 +1672,7 @@ function dropDataNotInstructionMatches<
 	return matches.filter((match) => {
 		const { category, id } = match.threat;
 		if (authoredWrite && MODEL_MANIPULATION_CATEGORIES.has(category)) return false;
-		if (docOrTestWrite && category === "self_defense" && match.artifact !== writePath)
-			return false;
+		if (docOrTestWrite && category === "self_defense" && match.artifact !== writePath) return false;
 		if (readOnlySearch && id === "CLT-SELF-007") return false;
 		return true;
 	});

@@ -96,9 +96,7 @@ describe("aidr status loss reporting", () => {
 
 	it("prints loss counters in text without claiming an unavailable queue", async () => {
 		const output = await runStatusText();
-		expect(output).toContain(
-			"Telemetry queue: idle; 0 event(s) undelivered, 0 lost.",
-		);
+		expect(output).toContain("Telemetry queue: idle; 0 event(s) undelivered, 0 lost.");
 		expect(output).not.toContain("at least one queue could not be read");
 		expect(output).toContain(
 			"Audit log: 0 append(s) could not be written, 0 rotation(s) dropped the oldest file.",

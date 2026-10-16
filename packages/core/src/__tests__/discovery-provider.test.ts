@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AigInfraTargetResult } from "../aig-infra-scan.js";
-import type { FleetFreshness, FleetInventoryEntry } from "../fleet-inventory.js";
 import {
 	createDiscoveryProvider,
 	discoveryFreshnessForInventory,
 	LocalDiscoveryProvider,
 	UnconfiguredDiscoveryProvider,
 } from "../discovery-provider.js";
+import type { FleetFreshness, FleetInventoryEntry } from "../fleet-inventory.js";
 
 function scanResult(
 	url: string,

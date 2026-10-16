@@ -74,7 +74,9 @@ describe("aidr report-fp", () => {
 			"0F1E2D3C",
 			{ reason: "developer_test", note: "fixture" },
 			{
-				config: configWithLog({ organization: { support_contact_url: "https://help.example/aidr" } }),
+				config: configWithLog({
+					organization: { support_contact_url: "https://help.example/aidr" },
+				}),
 				submit,
 				...io(),
 			},

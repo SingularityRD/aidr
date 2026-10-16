@@ -9,7 +9,9 @@ const packagesRoot = join(__dirname, "..", "..", "..");
 const reserved = new Set(["license", "license.md", "license.txt"]);
 
 describe("dist output has no case-insensitive collisions", () => {
-	for (const pkg of readdirSync(packagesRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
+	for (const pkg of readdirSync(packagesRoot, { withFileTypes: true }).filter((entry) =>
+		entry.isDirectory(),
+	)) {
 		it(`${pkg.name}/src has no entry that collides with dist/LICENSE`, () => {
 			let entries: string[];
 			try {
@@ -19,9 +21,13 @@ describe("dist output has no case-insensitive collisions", () => {
 			}
 			// A source file is emitted with a .js extension (license.ts -> license.js), so only an entry
 			// that keeps its exact name in dist (a directory or an extensionless file) can collide.
-			const emitted = entries.map((name) => name.replace(/\.(ts|tsx|mts|cts)$/, ".js").toLowerCase());
+			const emitted = entries.map((name) =>
+				name.replace(/\.(ts|tsx|mts|cts)$/, ".js").toLowerCase(),
+			);
 			expect(emitted.filter((name) => reserved.has(name))).toEqual([]);
-			expect(new Set(emitted).size, "two src entries differ only by letter case").toBe(emitted.length);
+			expect(new Set(emitted).size, "two src entries differ only by letter case").toBe(
+				emitted.length,
+			);
 		});
 	}
 });

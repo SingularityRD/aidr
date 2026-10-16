@@ -20,6 +20,7 @@ import {
 	OperatorConfirmationError,
 	operatorIdentity,
 } from "../utils/operator-confirm.js";
+import { knownRuleIds } from "../utils/test-protection.js";
 
 /**
  * `aidr exception add|list|remove` — time-limited detection exceptions.
@@ -37,6 +38,8 @@ export interface ExceptionCommandDeps {
 	store?: DetectionExceptionStoreOptions;
 	env?: NodeJS.ProcessEnv;
 	streams?: ConfirmationStreams;
+	/** Rule IDs this installation loads (tests). */
+	knownRuleIds?: () => Promise<Set<string>>;
 }
 
 export interface ExceptionAddOptions {
@@ -131,6 +134,17 @@ export async function exceptionAddCommand(
 	if (isProtectedRule(ruleId)) {
 		fail(`${ruleId} is a self-defense rule; it cannot be excepted.`);
 		return;
+	}
+	// A typo would create an exception that silently matches nothing. Toxic-flow
+	// verdicts (AIDR-FLOW-*) are not YAML rules, so they are accepted as named.
+	if (!/^AIDR-FLOW-\d+$/.test(ruleId)) {
+		const known = await (deps.knownRuleIds ?? knownRuleIds)();
+		if (known.size > 0 && !known.has(ruleId)) {
+			fail(
+				`${ruleId} is not a rule this installation loads; check the ID in the block message or 'aidr audit tail'.`,
+			);
+			return;
+		}
 	}
 
 	const expiresAt = new Date(Date.now() + ttlMs).toISOString();

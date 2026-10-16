@@ -34,7 +34,9 @@ export interface ResponseProvider {
 	/** Apply only the explicitly named provider action. */
 	execute(request: ResponseProviderRequest): Promise<ResponseProviderOutcome>;
 	/** Independent provider observation required before an applied result is accepted. */
-	verify?(request: ResponseProviderRequest): Promise<{ observed: true; evidence: string } | { observed: false; code: string }>;
+	verify?(
+		request: ResponseProviderRequest,
+	): Promise<{ observed: true; evidence: string } | { observed: false; code: string }>;
 }
 
 const ACTIONS = new Set<ResponseProviderAction>(["revoke_credential", "contain"]);
@@ -45,7 +47,10 @@ const MAX_DETAIL_LENGTH = 256;
 
 function safeText(value: unknown, fallback: string): string {
 	if (typeof value !== "string" || value.trim() === "") return fallback;
-	const bounded = value.trim().slice(0, MAX_DETAIL_LENGTH).replace(/[\r\n\u0000]/g, " ");
+	const bounded = value
+		.trim()
+		.slice(0, MAX_DETAIL_LENGTH)
+		.replace(/[\r\n\u0000]/g, " ");
 	return bounded || fallback;
 }
 
@@ -58,14 +63,17 @@ function validProvider(value: unknown): value is ResponseProvider {
 		Array.isArray(provider.actions) &&
 		provider.actions.length > 0 &&
 		new Set(provider.actions).size === provider.actions.length &&
-		provider.actions.every((action) => typeof action === "string" && ACTIONS.has(action as ResponseProviderAction)) &&
+		provider.actions.every(
+			(action) => typeof action === "string" && ACTIONS.has(action as ResponseProviderAction),
+		) &&
 		typeof provider.execute === "function" &&
 		(provider.verify === undefined || typeof provider.verify === "function")
 	);
 }
 
 function unsupported(action: ResponseProviderAction, providerId?: string): ResponseProviderOutcome {
-	const suffix = providerId !== undefined && PROVIDER_ID.test(providerId) ? ` for ${providerId}` : "";
+	const suffix =
+		providerId !== undefined && PROVIDER_ID.test(providerId) ? ` for ${providerId}` : "";
 	return {
 		status: "unsupported",
 		code: "unsupported_action",
@@ -78,7 +86,12 @@ function failed(code: string, detail: string): ResponseProviderOutcome {
 }
 
 function validObservation(value: unknown): value is string {
-	return typeof value === "string" && value.trim().length > 0 && value.length <= MAX_DETAIL_LENGTH && !/[\r\n\u0000]/.test(value);
+	return (
+		typeof value === "string" &&
+		value.trim().length > 0 &&
+		value.length <= MAX_DETAIL_LENGTH &&
+		!/[\r\n\u0000]/.test(value)
+	);
 }
 
 /**
@@ -139,9 +152,10 @@ export class ResponseProviderRegistry {
 		const outcome = raw as Record<string, unknown>;
 		if (outcome.status === "unsupported") return unsupported(request.action, provider.providerId);
 		if (outcome.status === "failed") {
-			const code = typeof outcome.code === "string" && RESULT_CODE.test(outcome.code)
-				? outcome.code
-				: "provider_execution_failed";
+			const code =
+				typeof outcome.code === "string" && RESULT_CODE.test(outcome.code)
+					? outcome.code
+					: "provider_execution_failed";
 			return failed(code, "provider action failed");
 		}
 		if (outcome.status !== "applied" && outcome.status !== "noop") {
@@ -150,7 +164,11 @@ export class ResponseProviderRegistry {
 		if (!validObservation(outcome.observed)) {
 			return failed("provider_observation_invalid", "provider returned invalid observation");
 		}
-		if (outcome.status === "applied" && outcome.rollbackToken !== null && typeof outcome.rollbackToken !== "string") {
+		if (
+			outcome.status === "applied" &&
+			outcome.rollbackToken !== null &&
+			typeof outcome.rollbackToken !== "string"
+		) {
 			return failed("provider_result_invalid", "provider returned an invalid rollback token");
 		}
 		// A registry update during an external action must not let a replacement
@@ -164,7 +182,7 @@ export class ResponseProviderRegistry {
 					status: "applied",
 					observed: safeText(verification.evidence, "provider state verified"),
 					rollbackToken: outcome.rollbackToken as string | null,
-			  };
+				};
 	}
 
 	/** Verify a previously persisted execute intent without replaying the action. */
@@ -196,13 +214,18 @@ export class ResponseProviderRegistry {
 		}
 	}
 
-	private resolve(action: ResponseProviderAction, providerId?: string): ResponseProvider | undefined {
+	private resolve(
+		action: ResponseProviderAction,
+		providerId?: string,
+	): ResponseProvider | undefined {
 		if (providerId !== undefined) {
 			if (!PROVIDER_ID.test(providerId)) return undefined;
 			const provider = this.providers.get(providerId);
 			return provider?.actions.includes(action) ? provider : undefined;
 		}
-		const candidates = [...this.providers.values()].filter((provider) => provider.actions.includes(action));
+		const candidates = [...this.providers.values()].filter((provider) =>
+			provider.actions.includes(action),
+		);
 		return candidates.length === 1 ? candidates[0] : undefined;
 	}
 }

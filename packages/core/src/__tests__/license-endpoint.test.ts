@@ -3,9 +3,6 @@ import { mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "n
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-import { acceptPack } from "../intel/acceptance.js";
-import { IntelPackManifestSchema } from "../intel/schema.js";
 import { verifyCustomerPacket } from "../customer-license/packet.js";
 import {
 	customerPacketSearchPaths,
@@ -20,6 +17,8 @@ import {
 	licenseState,
 	verifyLicense,
 } from "../customer-license/verify.js";
+import { acceptPack } from "../intel/acceptance.js";
+import { IntelPackManifestSchema } from "../intel/schema.js";
 import {
 	devKey,
 	licensePayload,

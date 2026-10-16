@@ -154,4 +154,3 @@ describe("audit log loss accounting", () => {
 		expect(state.rotationDrops + 1).toBe(getAuditLogLossState().rotationDrops);
 	});
 });
-

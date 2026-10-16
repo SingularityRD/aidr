@@ -17,7 +17,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ResponseAuditor } from "../response-audit.js";
@@ -88,7 +88,9 @@ describe("snapshot paths stay inside the configured vault", () => {
 		);
 
 		expect(await readFile(marker, "utf8")).toBe("keep this file\n");
-		expect((await readdir(tmpDir)).some((name) => name.startsWith("outside-snapshot-"))).toBe(false);
+		expect((await readdir(tmpDir)).some((name) => name.startsWith("outside-snapshot-"))).toBe(
+			false,
+		);
 	});
 
 	it("rejects metadata whose ID does not match the selected snapshot", async () => {

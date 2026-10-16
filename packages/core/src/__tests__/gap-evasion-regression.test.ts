@@ -21,7 +21,14 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const THREATS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "threats");
+const THREATS_DIR = resolve(
+	dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+	"..",
+	"..",
+	"threats",
+);
 
 /**
  * Unescape a YAML double-quoted scalar the way the rule loader must.
@@ -166,8 +173,7 @@ describe("macOS pipe-to-osascript rules tolerate flags before the pipe", () => {
 			["mac-obfuscation.yaml", "CLT-MAC-OBFUS-003"],
 		] as const) {
 			const rule = readRule(file, id);
-			const boundedOrGuarded =
-				rule.pattern.includes("[^|]{0,") || rule.pattern.includes("(?:(?!");
+			const boundedOrGuarded = rule.pattern.includes("[^|]{0,") || rule.pattern.includes("(?:(?!");
 			expect(boundedOrGuarded, `${id} must bound or guard its span`).toBe(true);
 			expect(rule.pattern).not.toMatch(/\.\*/);
 		}

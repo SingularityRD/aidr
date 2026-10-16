@@ -124,7 +124,9 @@ describe("required central policy accepts the web control plane's opaque version
 	const policy = { command_default: "deny", mcp_deny_servers: ["shell-wrapper"] };
 	const sha = createHash("sha256")
 		.update(
-			JSON.stringify(Object.fromEntries(Object.entries(policy).sort(([a], [b]) => (a < b ? -1 : 1)))),
+			JSON.stringify(
+				Object.fromEntries(Object.entries(policy).sort(([a], [b]) => (a < b ? -1 : 1))),
+			),
 		)
 		.digest("hex");
 

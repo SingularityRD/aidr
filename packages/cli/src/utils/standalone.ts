@@ -62,7 +62,7 @@ function standaloneBinary(root: string, platform = process.platform): string {
 }
 
 /** Quote a hook binary path the way `scripts/endpoint-install.mjs` does. */
-function quoteHookPath(path: string): string {
+export function quoteHookPath(path: string): string {
 	if (/["`$%\r\n]/u.test(path)) {
 		throw new Error(`the bundle path ${path} contains characters a hook command cannot carry`);
 	}
@@ -363,10 +363,19 @@ export function runHookCommand(
 	});
 	if (result.error) return { decision: "unknown", detail: result.error.message };
 	const probe = decisionOf(result.stdout ?? "");
-	if (probe.decision === "unknown" && result.status !== 0) {
+	// An empty answer is an allow only from a hook that ran and exited 0. A
+	// missing program (exit 127), a crash or a timeout also prints nothing, and
+	// the host then runs the call uninspected, so it must not read as "allow".
+	if (probe.decision !== "deny" && probe.decision !== "ask" && result.status !== 0) {
+		const reason =
+			result.status === 127 || result.status === 9009
+				? "hook program not found"
+				: result.status === null
+					? `hook did not finish (${result.signal ?? "killed"})`
+					: `exit ${result.status}`;
 		return {
 			decision: "unknown",
-			detail: `exit ${result.status}: ${`${result.stderr ?? ""}`.trim().slice(0, 200) || probe.detail}`,
+			detail: `${reason}: ${`${result.stderr ?? ""}`.trim().slice(0, 200) || probe.detail}`,
 		};
 	}
 	return probe;

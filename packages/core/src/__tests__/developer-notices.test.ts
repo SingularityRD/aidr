@@ -107,7 +107,9 @@ describe("first-run privacy notice (D4, D14)", () => {
 		]) {
 			expect(safeDisplayUrl(bad)).toBeNull();
 			expect(
-				formatPrivacyNotice(config({ organization: { privacy_notice_url: bad } }), { locale: "en" }),
+				formatPrivacyNotice(config({ organization: { privacy_notice_url: bad } }), {
+					locale: "en",
+				}),
 			).not.toContain(bad);
 		}
 	});

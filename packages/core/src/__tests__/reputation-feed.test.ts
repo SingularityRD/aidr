@@ -189,11 +189,13 @@ describe("signed reputation feed", () => {
 		await expect(
 			updateReputationFeed({
 				...common,
-				source: source(makeBundle({
-					version: "2.0.0",
-					sequence: 2,
-					issuedAt: new Date(NOW.getTime() - 25 * 60 * 60 * 1000).toISOString(),
-				})),
+				source: source(
+					makeBundle({
+						version: "2.0.0",
+						sequence: 2,
+						issuedAt: new Date(NOW.getTime() - 25 * 60 * 60 * 1000).toISOString(),
+					}),
+				),
 			}),
 		).rejects.toMatchObject({ reason: "stale" });
 		const active = requireAvailableReputationFeed(await loadReputationFeed(common));
@@ -208,9 +210,11 @@ describe("signed reputation feed", () => {
 		};
 		await updateReputationFeed({
 			...common,
-			source: source(makeBundle({
-				issuedAt: new Date(NOW.getTime() - 23 * 60 * 60 * 1000).toISOString(),
-			})),
+			source: source(
+				makeBundle({
+					issuedAt: new Date(NOW.getTime() - 23 * 60 * 60 * 1000).toISOString(),
+				}),
+			),
 			now: NOW,
 		});
 		const result = await loadReputationFeed({
@@ -228,11 +232,13 @@ describe("signed reputation feed", () => {
 			trustedKeys: { "publisher-key-1": publicPem },
 			now: NOW,
 		};
-		await expect(updateReputationFeed({
-			...common,
-			source: source(makeBundle()),
-			maxAgeMs: Number.NaN,
-		})).rejects.toMatchObject({ reason: "malformed" });
+		await expect(
+			updateReputationFeed({
+				...common,
+				source: source(makeBundle()),
+				maxAgeMs: Number.NaN,
+			}),
+		).rejects.toMatchObject({ reason: "malformed" });
 		await updateReputationFeed({ ...common, source: source(makeBundle()) });
 		const result = await loadReputationFeed({ ...common, maxAgeMs: Number.NaN });
 		expect(result).toMatchObject({ availability: "malformed", failClosed: true });
@@ -250,12 +256,14 @@ describe("signed reputation feed", () => {
 					return bundle;
 				},
 			};
-			await expect(updateReputationFeed({
-				storeDir,
-				feedId: "enterprise-reputation",
-				trustedKeys: { "publisher-key-1": publicPem },
-				source: delayedSource,
-			})).rejects.toMatchObject({ reason: "stale" });
+			await expect(
+				updateReputationFeed({
+					storeDir,
+					feedId: "enterprise-reputation",
+					trustedKeys: { "publisher-key-1": publicPem },
+					source: delayedSource,
+				}),
+			).rejects.toMatchObject({ reason: "stale" });
 		} finally {
 			vi.useRealTimers();
 		}

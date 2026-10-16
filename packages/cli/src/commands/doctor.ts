@@ -214,6 +214,16 @@ function checkConnectors(connectors: ConnectorStatus[]): DoctorCheck {
 		status = "fail";
 		summary = ct("doctor.connectorsBroken", { hosts: broken.map((c) => c.label).join(", ") });
 		notes = broken.map((c) => `${c.label}: ${c.detail}${c.remedy ? ` (${c.remedy})` : ""}`);
+	} else if (installed.length > 0 && hostsDetected.length > installed.length) {
+		// Protecting one tool does not make the others safe: say which are still open.
+		status = "warn";
+		summary = ct("doctor.connectorsPartial", {
+			hosts: installed.map((c) => c.label).join(", "),
+			unprotected: hostsDetected
+				.filter((c) => c.state !== "installed")
+				.map((c) => c.label)
+				.join(", "),
+		});
 	} else if (installed.length === 0) {
 		status = "fail";
 		summary =

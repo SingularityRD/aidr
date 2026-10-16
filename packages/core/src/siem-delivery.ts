@@ -3,10 +3,10 @@ import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import type { Incident } from "./incidents/types.js";
-import { incidentToSiemRecord } from "./siem-export.js";
 import { preparePrivateLocalDirectory, preparePrivateLocalFile } from "./private-local-file.js";
-import { redactTelemetryString } from "./telemetry-redaction.js";
+import { incidentToSiemRecord } from "./siem-export.js";
 import { createSyslogSender, type SyslogLookup, type SyslogSiemConfig } from "./siem-syslog.js";
+import { redactTelemetryString } from "./telemetry-redaction.js";
 
 export const SIEM_EVENT_SCHEMA_VERSION = "aidr.siem.event/v1" as const;
 
