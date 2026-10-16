@@ -16,7 +16,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { ControlPlaneConfigSchema, type VerifiedCustomerPacket } from "@singularityrd/aidr-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -43,6 +43,10 @@ let home: string;
 beforeEach(() => {
 	// config-manager writes ~/.singularity-aidr of this file's isolated HOME.
 	home = process.env.HOME as string;
+	// Never wipe a real profile: refuse unless HOME is a temporary directory.
+	if (!home || !resolve(home).startsWith(resolve(tmpdir()))) {
+		throw new Error(`refusing to clear a non-temporary HOME: ${home}`);
+	}
 	rmSync(join(home, ".singularity-aidr"), { recursive: true, force: true });
 	rmSync(join(home, ".config"), { recursive: true, force: true });
 	rmSync(join(home, ".claude"), { recursive: true, force: true });
