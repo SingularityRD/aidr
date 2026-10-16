@@ -17,6 +17,7 @@ import { redactTelemetryData, redactTelemetryString } from "./telemetry-redactio
 import type { LoggingConfig, Verdict } from "./types.js";
 
 const MAX_SUMMARY_LEN = 200;
+const MAX_HOST_TOOL_NAME_LEN = 128;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const preparedAuditPaths = new Set<string>();
@@ -127,6 +128,17 @@ function secureCodeSummary(verdict: Verdict): Record<string, unknown> {
 	};
 }
 
+/**
+ * `host_tool_name`: the tool name the host reported when the connector
+ * evaluated the call as a canonical operation under a different name. Local
+ * audit only; the remote ingest projection does not carry it.
+ */
+function hostToolNameField(toolName: string, hostToolName: string | undefined) {
+	return hostToolName && hostToolName !== toolName
+		? { host_tool_name: redactTelemetryString(hostToolName, MAX_HOST_TOOL_NAME_LEN) }
+		: {};
+}
+
 function toolInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
 	return toolInputSummaryForAudit(toolName, toolInput);
 }
@@ -139,6 +151,7 @@ export function buildRuntimeVerdictEntry(
 	userOverride = false,
 	durationMs?: number,
 	actionId?: string,
+	hostToolName?: string,
 ): Record<string, unknown> {
 	return {
 		type: "runtime_verdict",
@@ -148,6 +161,7 @@ export function buildRuntimeVerdictEntry(
 		// can find this record. A digest of the call, never its content.
 		...(actionId && /^[a-f0-9]{64}$/.test(actionId) ? { action_id: actionId } : {}),
 		tool_name: toolName,
+		...hostToolNameField(toolName, hostToolName),
 		tool_input_summary: toolInputSummary(toolName, toolInput),
 		artifacts: redactTelemetryData(verdict.artifacts),
 		verdict: verdict.decision,
@@ -183,6 +197,7 @@ export function buildIncidentEntry(
 				incidentId: string;
 				sessionId: string;
 				toolName: string;
+				hostToolName?: string;
 				toolInput: Record<string, unknown>;
 				verdict: Verdict;
 				recommendedActions: string[];
@@ -230,6 +245,7 @@ export function buildIncidentEntry(
 		status: "open",
 		session_id: params.sessionId,
 		tool_name: params.toolName,
+		...hostToolNameField(params.toolName, params.hostToolName),
 		tool_input_summary: toolInputSummary(params.toolName, params.toolInput),
 		artifacts: redactTelemetryData(params.verdict.artifacts),
 		decision: params.verdict.decision,
@@ -449,6 +465,7 @@ export async function logVerdict(
 	userOverride = false,
 	durationMs?: number,
 	actionId?: string,
+	hostToolName?: string,
 ): Promise<void> {
 	if (!config.enabled) return;
 
@@ -469,6 +486,7 @@ export async function logVerdict(
 		userOverride,
 		durationMs,
 		actionId,
+		hostToolName,
 	);
 
 	try {

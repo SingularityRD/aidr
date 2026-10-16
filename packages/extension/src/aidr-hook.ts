@@ -7,6 +7,8 @@ import {
 	type Artifact,
 	type BlockApproval,
 	canonicalMcpToolName,
+	canonicalToolName,
+	commandFromValue,
 	createHostObservation,
 	describeSecureCodeWarnings,
 	evaluateToolCall,
@@ -119,6 +121,8 @@ interface NormalizedHookCall {
 	artifacts: Artifact[];
 	/** Host-reported session directory; selects repository-scoped agent profiles. */
 	workingDirectory?: string;
+	/** The host's tool name when the call is evaluated under a canonical name. */
+	hostToolName?: string;
 }
 
 /** The session directory the host reports (`cwd`, else the first workspace root). */
@@ -834,6 +838,7 @@ async function evaluateNormalizedCall(
 		toolName: call.toolName,
 		toolInput: call.toolInput,
 		artifacts: call.artifacts,
+		...(call.hostToolName ? { hostToolName: call.hostToolName } : {}),
 	};
 	const evaluated = await evaluateToolCall(request, {
 		threatsDir,
@@ -1098,7 +1103,9 @@ function normalizeVsCodeCall(payload: unknown): NormalizedHookCall | undefined {
 
 	const rawToolInput = parseUnknownObject(input.tool_input);
 	if (!rawToolInput) return undefined;
-	const native = VSCODE_NATIVE_TOOLS.get(hostToolName.trim().toLowerCase());
+	const native =
+		VSCODE_NATIVE_TOOLS.get(hostToolName.trim().toLowerCase()) ??
+		structuralVsCodeTool(hostToolName, rawToolInput);
 	const toolName = native?.canonical ?? hostToolName;
 	const multiFile =
 		native?.shape === "files"
@@ -1124,83 +1131,334 @@ function normalizeVsCodeCall(payload: unknown): NormalizedHookCall | undefined {
 		toolName,
 		toolInput,
 		artifacts: editFiles?.artifacts ?? extractFromVsCodeTool(toolName, toolInput),
+		...(toolName !== hostToolName ? { hostToolName } : {}),
 	};
 }
 
 /**
  * VS Code agent-mode built-in tools that run a shell command or write a file,
- * mapped onto the canonical operation the core inspects. Hosts report either
- * the tools-reference name (`runInTerminal`, `createFile`, `editFiles`) or the
- * underlying tool id (`run_in_terminal`, `create_file`,
- * `replace_string_in_file`, …); both are keyed here, lower-cased. An unmapped
- * native shell or file tool would reach the core as an unknown tool and skip
- * shell and filesystem policy.
+ * mapped onto the canonical operation the core inspects. A host reports one of
+ * three spellings for the same tool, and all three are keyed here, lower-cased:
+ *
+ * - the tool id (`run_in_terminal`, `create_file`, `replace_string_in_file`, …),
+ * - the extension-contributed name (`copilot_createFile`, `copilot_replaceString`, …),
+ * - the tools-reference name used in prompts (`runInTerminal`, `createFile`, `editFiles`).
+ *
+ * Verified against `ToolName` / `ContributedToolName` in microsoft/vscode-copilot-chat
+ * `src/extension/tools/common/toolNames.ts` (main, fetched 2026-10-11). The
+ * reference spellings `createDirectory`, `createAndRunTask` and `editNotebook` come
+ * from the VS Code tools reference, which could not be fetched from this
+ * environment.
+ *
+ * Deliberately not mapped, because their input carries no command or file
+ * content to inspect: `run_task` (runs a task already defined in tasks.json —
+ * the file write that defined it is inspected), `run_notebook_cell` (runs a cell
+ * whose code was written through `edit_notebook_file`), `run_vscode_command`,
+ * `install_extension`, `runTests`, `get_terminal_output`, `get_task_output`, the
+ * read/search tools and subagent launchers (a subagent's own tool calls reach
+ * this hook). A native tool missing here still meets the structural fallback
+ * (`structuralVsCodeTool`) before it would reach the core as an unknown tool.
  */
 interface VsCodeNativeTool {
-	canonical: "Bash" | "Write" | "Edit";
-	/** `files`: editFiles' file list; `replacements`: multi-replace entries; `single`: one target. */
-	shape: "single" | "files" | "replacements";
+	/** `apply_patch` is handed to the core, which reads the patch body as an Edit. */
+	canonical: "Bash" | "Write" | "Edit" | "apply_patch";
+	/**
+	 * `single`: one command or one target file; `files`: editFiles' file list;
+	 * `replacements`: multi-replace entries; `task`: create_and_run_task's task
+	 * definition; `directory`: create_directory's `dirPath`; `notebook`:
+	 * edit_notebook_file's `newCode`; `patch`: apply_patch's patch body;
+	 * `ambiguous`: an unrecognised tool whose input is both a command and a file
+	 * write, which is denied.
+	 */
+	shape:
+		| "single"
+		| "files"
+		| "replacements"
+		| "task"
+		| "directory"
+		| "notebook"
+		| "patch"
+		| "ambiguous";
 }
+
+function nativeTools(
+	tool: VsCodeNativeTool,
+	...names: readonly string[]
+): [string, VsCodeNativeTool][] {
+	return names.map((name) => [name.toLowerCase(), tool]);
+}
+
 const VSCODE_NATIVE_TOOLS: ReadonlyMap<string, VsCodeNativeTool> = new Map<
 	string,
 	VsCodeNativeTool
 >([
-	["runinterminal", { canonical: "Bash", shape: "single" }],
-	["run_in_terminal", { canonical: "Bash", shape: "single" }],
-	["createfile", { canonical: "Write", shape: "single" }],
-	["create_file", { canonical: "Write", shape: "single" }],
-	["editfiles", { canonical: "Edit", shape: "files" }],
-	["replacestring", { canonical: "Edit", shape: "single" }],
-	["replace_string_in_file", { canonical: "Edit", shape: "single" }],
-	["insertedit", { canonical: "Edit", shape: "single" }],
-	["insert_edit_into_file", { canonical: "Edit", shape: "single" }],
-	["multireplacestring", { canonical: "Edit", shape: "replacements" }],
-	["multi_replace_string_in_file", { canonical: "Edit", shape: "replacements" }],
+	...nativeTools({ canonical: "Bash", shape: "single" }, "runInTerminal", "run_in_terminal"),
+	...nativeTools(
+		{ canonical: "Bash", shape: "task" },
+		"createAndRunTask",
+		"create_and_run_task",
+		"copilot_createAndRunTask",
+	),
+	...nativeTools(
+		{ canonical: "Write", shape: "single" },
+		"createFile",
+		"create_file",
+		"copilot_createFile",
+	),
+	...nativeTools(
+		{ canonical: "Write", shape: "directory" },
+		"createDirectory",
+		"create_directory",
+		"copilot_createDirectory",
+	),
+	...nativeTools(
+		{ canonical: "Edit", shape: "files" },
+		"editFiles",
+		"edit_files",
+		"copilot_editFiles",
+	),
+	...nativeTools(
+		{ canonical: "Edit", shape: "single" },
+		"replaceString",
+		"replace_string_in_file",
+		"copilot_replaceString",
+		"insertEdit",
+		"insert_edit_into_file",
+		"copilot_insertEdit",
+	),
+	...nativeTools(
+		{ canonical: "Edit", shape: "replacements" },
+		"multiReplaceString",
+		"multi_replace_string_in_file",
+		"copilot_multiReplaceString",
+	),
+	...nativeTools(
+		{ canonical: "Edit", shape: "notebook" },
+		"editNotebook",
+		"edit_notebook_file",
+		"copilot_editNotebook",
+	),
+	...nativeTools(
+		{ canonical: "apply_patch", shape: "patch" },
+		"applyPatch",
+		"apply_patch",
+		"copilot_applyPatch",
+	),
 ]);
+
+/** Fields that carry a shell command in an unrecognised tool's input. */
+const STRUCTURAL_SHELL_FIELDS = [
+	"command",
+	"cmd",
+	"commandLine",
+	"command_line",
+	"shellCommand",
+	"shell_command",
+] as const;
+/** Fields that carry the full text a tool writes to a file (canonical `Write`). */
+const STRUCTURAL_WRITE_FIELDS = ["content", "file_text", "fileText"] as const;
+/** Fields that carry the text an editing tool puts into a file (canonical `Edit`). */
+const STRUCTURAL_EDIT_FIELDS = [
+	"new_string",
+	"newString",
+	"newText",
+	"new_text",
+	"code",
+	"newCode",
+	"new_code",
+] as const;
+const STRUCTURAL_PATH_FIELDS = [...EDIT_FILE_PATH_FIELDS, "dirPath", "dir_path"] as const;
+
+/**
+ * Tools whose `command` field names a sub-operation, not a shell command, and
+ * tools that only ask the user to confirm (they execute nothing). Excluded from
+ * the structural fallback so they keep their own name and are not read as shell.
+ */
+const STRUCTURAL_FALLBACK_EXCLUDED = new Set(
+	[
+		"memory",
+		"copilot_memory",
+		"vscode_get_confirmation",
+		"vscode_get_confirmation_with_options",
+		"vscode_get_terminal_confirmation",
+	].map((name) => name.toLowerCase()),
+);
+
+/** Operations the core already recognises by name (`Bash`, `write_file`, `apply_patch`, …). */
+const CORE_OPERATIONS = new Set(["Bash", "Write", "Edit", "Read", "Delete", "WebFetch", "MCP"]);
+
+/**
+ * Structural fallback for a tool the alias map does not know: an input that
+ * carries a shell command (`command`, `cmd`, `commandLine`, …) is evaluated as
+ * `Bash`, and one that carries a target path plus the text written to it
+ * (`filePath`/`path` + `content`/`newString`/`code`, …) as `Write` or `Edit`, so
+ * a renamed or newly added native tool still meets shell and filesystem policy.
+ * The host's own name is kept for the audit record (`host_tool_name`).
+ *
+ * MCP tools (`mcp_*`) keep their identity for MCP policy, names the core already
+ * canonicalises are left to it, and a tool with neither kind of field (every
+ * read-only tool) passes through unchanged. An input that carries both a
+ * command and a file write cannot be classified and is denied.
+ */
+function structuralVsCodeTool(
+	hostToolName: string,
+	toolInput: Record<string, unknown>,
+): VsCodeNativeTool | undefined {
+	const name = hostToolName.trim();
+	if (
+		name.toLowerCase().startsWith("mcp_") ||
+		STRUCTURAL_FALLBACK_EXCLUDED.has(name.toLowerCase()) ||
+		CORE_OPERATIONS.has(canonicalToolName(name))
+	) {
+		return undefined;
+	}
+	const carriesShell = STRUCTURAL_SHELL_FIELDS.some((field) => isPopulated(toolInput[field]));
+	const carriesPath = STRUCTURAL_PATH_FIELDS.some((field) => isPopulated(toolInput[field]));
+	const carriesEdit = STRUCTURAL_EDIT_FIELDS.some((field) => toolInput[field] !== undefined);
+	const carriesWrite = STRUCTURAL_WRITE_FIELDS.some((field) => toolInput[field] !== undefined);
+	const writesFile = carriesPath && (carriesEdit || carriesWrite);
+	if (carriesShell && writesFile) return { canonical: "Bash", shape: "ambiguous" };
+	if (carriesShell) return { canonical: "Bash", shape: "single" };
+	if (writesFile) return { canonical: carriesEdit ? "Edit" : "Write", shape: "single" };
+	return undefined;
+}
+
+function isPopulated(value: unknown): boolean {
+	return (
+		(typeof value === "string" && value.trim() !== "") || (Array.isArray(value) && value.length > 0)
+	);
+}
 
 /** Field names of a VS Code native tool mapped onto the canonical input shape. */
 function normalizeVsCodeNativeInput(
 	native: VsCodeNativeTool,
 	toolInput: Record<string, unknown>,
 ): Record<string, unknown> {
-	switch (native.canonical) {
-		case "Bash": {
-			const command = firstPopulatedString(toolInput.command, toolInput.commandLine, toolInput.cmd);
-			const normalized: Record<string, unknown> = { ...toolInput, command: command ?? "" };
-			// A shell call without a readable command cannot be inspected.
-			if (command === undefined) normalized.__aidr_input_normalization_failed = true;
-			return normalized;
-		}
-		case "Write": {
-			const normalized = normalizeWriteLikeInput(toolInput);
-			if (
-				!readFilePath(toolInput) ||
-				hasConflictingPopulatedStrings(toolInput, EDIT_FILE_PATH_FIELDS)
-			) {
-				normalized.__aidr_input_normalization_failed = true;
-			}
-			return normalized;
-		}
-		case "Edit": {
-			// insert_edit_into_file carries the new text in `code`.
-			const withCode =
-				asString(toolInput.code) !== undefined &&
-				!firstPopulatedString(...EDIT_FILE_CONTENT_FIELDS.map((field) => toolInput[field]))
-					? { ...toolInput, new_string: toolInput.code }
-					: toolInput;
-			const normalized = normalizeEditLikeInput(withCode);
-			const oldString = firstPopulatedString(toolInput.old_string, toolInput.oldString);
-			if (oldString !== undefined) normalized.old_string = oldString;
-			if (
-				!readFilePath(toolInput) ||
-				hasConflictingPopulatedStrings(toolInput, EDIT_FILE_PATH_FIELDS) ||
-				hasConflictingPopulatedStrings(toolInput, EDIT_FILE_CONTENT_FIELDS)
-			) {
-				normalized.__aidr_input_normalization_failed = true;
-			}
-			return normalized;
-		}
+	if (native.shape === "ambiguous") {
+		return { ...toolInput, __aidr_input_normalization_failed: true };
 	}
+	switch (native.canonical) {
+		case "Bash":
+			return normalizeVsCodeShellInput(native, toolInput);
+		case "Write":
+			return normalizeVsCodeWriteInput(native, toolInput);
+		case "Edit":
+			return normalizeVsCodeEditInput(toolInput);
+		case "apply_patch":
+			// The core reads the patch body (`input`, `patch`, …) as an Edit and
+			// denies one it cannot parse.
+			return toolInput;
+	}
+}
+
+function normalizeVsCodeWriteInput(
+	native: VsCodeNativeTool,
+	toolInput: Record<string, unknown>,
+): Record<string, unknown> {
+	const pathFields = native.shape === "directory" ? STRUCTURAL_PATH_FIELDS : EDIT_FILE_PATH_FIELDS;
+	const filePath = firstPopulatedString(...pathFields.map((field) => toolInput[field]));
+	const content = firstPopulatedString(
+		...VSCODE_WRITE_CONTENT_FIELDS.map((field) => toolInput[field]),
+	);
+	const normalized: Record<string, unknown> = {
+		...toolInput,
+		file_path: filePath ?? "",
+		content: content ?? "",
+	};
+	if (
+		!filePath?.trim() ||
+		hasConflictingPopulatedStrings(toolInput, pathFields) ||
+		hasConflictingPopulatedStrings(toolInput, VSCODE_WRITE_CONTENT_FIELDS)
+	) {
+		normalized.__aidr_input_normalization_failed = true;
+	}
+	return normalized;
+}
+
+function normalizeVsCodeEditInput(toolInput: Record<string, unknown>): Record<string, unknown> {
+	// insert_edit_into_file carries the new text in `code`, edit_notebook_file
+	// in `newCode` (a string or a list of lines).
+	const contentInput =
+		Array.isArray(toolInput.newCode) && toolInput.newCode.every((line) => typeof line === "string")
+			? { ...toolInput, newCode: toolInput.newCode.join("\n") }
+			: toolInput;
+	const newString = firstPopulatedString(
+		...VSCODE_EDIT_CONTENT_FIELDS.map((field) => contentInput[field]),
+	);
+	const normalized = normalizeEditLikeInput(contentInput);
+	normalized.new_string = newString ?? "";
+	const oldString = firstPopulatedString(toolInput.old_string, toolInput.oldString);
+	if (oldString !== undefined) normalized.old_string = oldString;
+	if (
+		!readFilePath(toolInput)?.trim() ||
+		hasConflictingPopulatedStrings(toolInput, EDIT_FILE_PATH_FIELDS) ||
+		hasConflictingPopulatedStrings(contentInput, VSCODE_EDIT_CONTENT_FIELDS) ||
+		(toolInput.newCode !== undefined && typeof contentInput.newCode !== "string")
+	) {
+		normalized.__aidr_input_normalization_failed = true;
+	}
+	return normalized;
+}
+
+const VSCODE_WRITE_CONTENT_FIELDS = [
+	...STRUCTURAL_WRITE_FIELDS,
+	"new_string",
+	"newString",
+	"text",
+	"data",
+] as const;
+const VSCODE_EDIT_CONTENT_FIELDS = [
+	...EDIT_FILE_CONTENT_FIELDS,
+	...STRUCTURAL_EDIT_FIELDS,
+	...STRUCTURAL_WRITE_FIELDS,
+] as const;
+
+/**
+ * The command a native shell tool runs. Every populated command alias must name
+ * the same command, and an argv array is joined the way the core inspects it;
+ * a command that cannot be read marks the input uninspectable (denied).
+ */
+function normalizeVsCodeShellInput(
+	native: VsCodeNativeTool,
+	toolInput: Record<string, unknown>,
+): Record<string, unknown> {
+	if (native.shape === "task") {
+		const command = vsCodeTaskCommand(toolInput.task);
+		return command === undefined
+			? { ...toolInput, command: "", __aidr_input_normalization_failed: true }
+			: { ...toolInput, command };
+	}
+	const commands = new Set<string>();
+	let malformed = false;
+	for (const field of STRUCTURAL_SHELL_FIELDS) {
+		if (!isPopulated(toolInput[field])) continue;
+		const result = commandFromValue(toolInput[field]);
+		if (result.ok) commands.add(result.command);
+		else malformed = true;
+	}
+	const [command] = commands;
+	const normalized: Record<string, unknown> = { ...toolInput, command: command ?? "" };
+	// A shell call without a single readable command cannot be inspected.
+	if (command === undefined || commands.size > 1 || malformed) {
+		normalized.__aidr_input_normalization_failed = true;
+	}
+	return normalized;
+}
+
+/**
+ * create_and_run_task's `task` (`{ label, type, command, args }`): the command
+ * line the task runs. Arguments are joined unquoted, so shell metacharacters in
+ * them stay visible to inspection. Undefined when no command can be read.
+ */
+function vsCodeTaskCommand(value: unknown): string | undefined {
+	const task = parseUnknownObject(value);
+	const command = task ? asString(task.command) : undefined;
+	if (!task || !command?.trim()) return undefined;
+	if (task.args === undefined) return command;
+	if (!Array.isArray(task.args) || !task.args.every((arg) => typeof arg === "string")) {
+		return undefined;
+	}
+	return [command, ...task.args].join(" ");
 }
 
 function normalizeVsCodeEditFiles(toolInput: Record<string, unknown>): {

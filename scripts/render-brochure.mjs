@@ -9,16 +9,18 @@
  *   node scripts/render-brochure.mjs --force         # write output even when a check fails (for iterating)
  *
  * playwright-core is a devDependency of packages/browser-guard, so it is resolved from
- * there. The Chromium build comes from PLAYWRIGHT_BROWSERS_PATH (or AIDR_CHROMIUM_PATH).
+ * there. The Chromium build comes from PLAYWRIGHT_BROWSERS_PATH (or AIDR_CHROMIUM_PATH); on
+ * Linux only the fonts in scripts/lib/render-fonts.conf are visible (scripts/lib/render-browser.mjs).
  *
  * Before writing anything the script checks the rendered layout and exits non-zero when a
  * page overflows, content runs into the page footer, an element leaves the page, diagram
  * text leaves its figure, or the PDF does not have exactly the expected number of pages.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { launchRenderBrowser, loadChromium } from "./lib/render-browser.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const brochureDir = path.join(repositoryRoot, "docs", "sales", "brochure");
@@ -44,15 +46,6 @@ function parseArgs(argv) {
 		} else throw new Error(`Unknown argument: ${arg}`);
 	}
 	return args;
-}
-
-function loadChromium() {
-	const require = createRequire(path.join(repositoryRoot, "packages", "browser-guard", "package.json"));
-	try {
-		return require("playwright-core").chromium;
-	} catch (error) {
-		throw new Error(`playwright-core is not installed for packages/browser-guard (run pnpm install): ${error.message}`);
-	}
 }
 
 /** Count page objects in a PDF produced by Chromium (pages are never inside object streams there). */
@@ -114,7 +107,7 @@ function inspectLayout() {
 export async function renderBrochure(lang, { chromium, check = false, force = false, scale = 1.5 } = {}) {
 	const source = path.join(brochureDir, `brochure.${lang}.html`);
 	readFileSync(source); // fail early with a clear ENOENT
-	const browser = await chromium.launch(process.env.AIDR_CHROMIUM_PATH ? { executablePath: process.env.AIDR_CHROMIUM_PATH } : {});
+	const browser = await launchRenderBrowser(chromium);
 	try {
 		const context = await browser.newContext({ viewport: { width: 794, height: 1123 }, deviceScaleFactor: scale });
 		const page = await context.newPage();

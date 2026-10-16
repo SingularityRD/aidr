@@ -222,7 +222,7 @@ Bu startup'lar AIDR ile aynı kategoriyi hedefliyor.
 | Özellik | Detay |
 |---------|-------|
 | **Fon** | $40M (Mart 2026, Series A) |
-| **Odak** | Ajan davranışsal analizi + gerçek zamanlı engelleme |
+| **Odak** | Ajan davranışsal analizi + çalıştırma öncesi engelleme |
 | **Model** | Enterprise SaaS |
 
 **Güçlü Yönler:**

@@ -8,6 +8,7 @@
 import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { leaseAware } from "./lease-rpc-fake.ts";
 
 const sdk = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({ createClient: sdk.createClient }));
@@ -134,7 +135,7 @@ async function ingestHandler(options: {
 	});
 	const reads: string[] = [];
 	sdk.createClient.mockReturnValue({
-		rpc,
+		rpc: leaseAware(rpc),
 		from(table: string) {
 			reads.push(table);
 			return {

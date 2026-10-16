@@ -51,7 +51,7 @@
 
 AI kodlama ajanları pazarı patlıyor — 2024'te %40 olan kurumsal benimseme, 2026'da %70+'ye ulaştı. Ancak güvenlik altyapısı bu büyümeye ayak uyduramadı. Pazarda **üç büyük boşluk** var:
 
-1. **Runtime güvenliği boşluğu**: Mevcut çözümler ya scanning-only (tarama yapar ama engellemez) ya da policy-only (politika koyar ama uygulamaz). AIDR, gerçek zamanlı ajan koruması sunan tek hafif çözüm.
+1. **Runtime güvenliği boşluğu**: Mevcut çözümler ya scanning-only (tarama yapar ama engellemez) ya da policy-only (politika koyar ama uygulamaz). AIDR, araç çağrısını çalıştırılmadan önce denetleyen hafif bir çözüm.
 2. **MCP güvenliği boşluğu**: MCP hızla standartlaşırken, MCP tool çağrılarını denetleyen hiçbir ticari ürün yok. AIDR bu alanda first-mover avantajı yakalayabilir.
 3. **Local-first güvenlik boşluğu**: Rakiplerin çoğu cloud-based. AIDR'nin privacy-first, local processing mimarisi, özellikle regüle sektörlerde (finans, sağlık, savunma) benzersiz bir satış avantajı.
 
@@ -245,7 +245,7 @@ karşılaştırma olmadan müşteri konumlandırmasına alınmamalıdır.
 
 Varsayımsal müşteri geri bildirimlerine göre en kritik özellikler:
 
-1. **AI ajan komutlarını gerçek zamanlı engelleme** — "AI ajanım silme komutu çalıştırmasın"
+1. **AI ajan komutlarını çalıştırılmadan önce engelleme** — "AI ajanım silme komutu çalıştırmasın"
 2. **Gizli veri sızıntısını önleme** — "API key'ler ve token'lar dışarı çıkmasın"
 3. **Ne olduğunu gösteren bir dashboard** — "Hangi ajan ne yapmış, görebileyim"
 4. **Hızlı kurulum** — "5 dakikada çalışır hale gelsin"
@@ -450,12 +450,12 @@ Sprint 7-8: Behavioral Baselines + VS Code v2
 
 | # | Özellik | Vizyon |
 |---|---------|--------|
-| 1 | **Autonomous Response** | AI ajan tehditlerine otomatik müdahale (izole et, durdur, rollback) |
+| 1 | **Autonomous Response** | AI ajan tehditlerine politika tanımlı müdahale aksiyonları (izole et, durdur, rollback) — yol haritası |
 | 2 | **Federated Threat Intelligence** | AIDR kullanıcıları arasında anonim tehdit verisi paylaşımı |
 | 3 | **ML Model Marketplace** | Topluluk tarafından eğitilmiş detection modelleri |
 | 4 | **Agent Behavior Forecasting** | AI ajanının bir sonraki hamlesini tahmin etme |
 | 5 | **Cross-Platform Correlation** | Farklı IDE'ler ve CI/CD arasında tehdit korelasyonu |
-| 6 | **Automated Incident Response Playbooks** | SOAR benzeri otomatik müdahale senaryoları |
+| 6 | **Automated Incident Response Playbooks** | SOAR benzeri müdahale senaryoları — yol haritası |
 | 7 | **AI Agent Bill of Materials (ABOM)** | Her AI oturumu için malzeme listesi çıkarma |
 | 8 | **Low-latency Threat Graph** | Ölçülmüş gecikme hedefiyle ajan aktivitelerini grafik olarak görselleştirme |
 

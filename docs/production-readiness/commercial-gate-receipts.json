@@ -145,7 +145,7 @@
     "recorded_at_utc": null,
     "reviewer_name": "REQUIRED",
     "reviewer_role": "REQUIRED",
-    "scope": "Registry hard gate COM-010 (ga-connectors): Claude Code, Cursor, VS Code, OpenClaw and OpenCode each have a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner and limitations. No real-host acceptance or signed artifact is held.",
+    "scope": "Registry hard gate COM-010 (ga-connectors): Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI (direct-GA since the 2026-10-11 Product decision, with its documented host limits) each have a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner and limitations. No real-host acceptance or signed artifact is held.",
     "limitations": [
       "No real-host side-effect acceptance exists for the advertised connectors.",
       "No official code-signing certificate, notarization or publisher identity is held.",
@@ -154,7 +154,7 @@
     ],
     "external_inputs": [
       "named support owner per advertised connector",
-      "real-host E2E reports for Claude Code, Cursor, VS Code, OpenClaw and OpenCode",
+      "real-host E2E reports for Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI",
       "official code-signing certificate or notarization credentials",
       "authenticated private-registry install logs",
       "rollback and disable drill records",

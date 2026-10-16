@@ -49,6 +49,30 @@ describe("logVerdict", () => {
 		expect(entry.tool_name).toBe("Bash");
 		expect(entry.session_id).toBe("session-1");
 		expect(entry.duration_ms).toBe(12.5);
+		expect(entry).not.toHaveProperty("host_tool_name");
+	});
+
+	it("records the host tool name when the call was evaluated under a canonical name", async () => {
+		const config = makeConfig(dir);
+		await logVerdict(
+			config,
+			"s1",
+			"Bash",
+			{ command: "x" },
+			makeVerdict(),
+			false,
+			1,
+			undefined,
+			"run_in_terminal",
+		);
+		await logVerdict(config, "s2", "Bash", { command: "x" }, makeVerdict(), false, 1, undefined, "Bash");
+
+		const [mapped, same] = (await readFile(config.path, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as Record<string, unknown>);
+		expect(mapped).toMatchObject({ tool_name: "Bash", host_tool_name: "run_in_terminal" });
+		expect(same).not.toHaveProperty("host_tool_name");
 	});
 
 	it("serializes concurrent appends as intact JSONL records", async () => {

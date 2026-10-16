@@ -7,7 +7,7 @@
   "oracle_reviewer_id": "REPLACE_WITH_ORACLE_REVIEWER_ID",
   "_identity_comment": "corpus_id and version are stable identifiers owned by the corpus author, and rule_author_id must differ from oracle_reviewer_id (scripts/benchmarks/evaluate.mjs rejects a shared identity). The placeholder strings above are unfilled fields, not identities: replace them with real people or teams before the corpus is used.",
   "scope": {
-    "_comment": "Matches scripts/benchmarks/sold-scope.json (attack_families, connectors and the surfaces marked required), the six-connector engineering/evaluation denominator. It includes Codex even though COM-010's direct-GA order scope has five connectors and excludes Codex unless Product expressly adds and accepts it. evaluate.mjs --scope-file fails closed if these three lists differ from the declared scope in any way - a missing id, an extra id or a duplicate. network-egress and the provider model stream are deliberately absent because the product does not intercept them; the scope file records them under out_of_scope_with_reason.",
+    "_comment": "Matches scripts/benchmarks/sold-scope.json (attack_families, connectors and the surfaces marked required), the six-connector engineering/evaluation denominator. It includes Codex, which COM-010's direct-GA order scope also names since the 2026-10-11 Product decision. evaluate.mjs --scope-file fails closed if these three lists differ from the declared scope in any way - a missing id, an extra id or a duplicate. network-egress and the provider model stream are deliberately absent because the product does not intercept them; the scope file records them under out_of_scope_with_reason.",
     "required_attack_families": [
       "prompt-injection-direct",
       "prompt-injection-indirect",

@@ -1801,6 +1801,8 @@ export {
 	type ThreatLoadError,
 	type ThreatLoadReport,
 } from "./threat-loader.js";
+// Host tool vocabulary -> canonical operation (Bash/Write/Edit/Read/Delete/WebFetch/MCP)
+export { canonicalToolName } from "./tool-normalization.js";
 // Session toxic-flow ("lethal trifecta") and behavioral chain detection
 export {
 	recordToolOutputFlow,

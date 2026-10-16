@@ -1,0 +1,429 @@
+{
+ "label": "LOCAL ENGINEERING DRILL - shared-lease fair-share admission A/B for finding O1. Not HA, not an SLA, not candidate-bound; shared 4-vCPU host, load generator on the same host.",
+ "date": "2026-10-11",
+ "bound_declaration": "fair-share-shared-lease-bound-declaration.json (declared 2026-10-11T17:31:21Z, before any shared-lease data)",
+ "design": "supabase/migrations/20261016000100_tenant_inflight_shared_leases.sql + supabase/functions/_shared/tenant-concurrency.ts: one SECURITY DEFINER RPC per request acquires a lease (tenant resolved from the presented key's SHA-256 with the authentication lookup; fair-share rules over live leases in one scope shared by ingest and policy; serialised by a row lock on the scope row; 60 s expiry), one releases it. UNLOGGED tables in schema app, service_role execute only. Defaults unchanged: capacity 10, per-tenant max 7, floor 2, Retry-After 1 s; capacity is now deployment-wide instead of per isolate.",
+ "stack": {
+  "db": "supabase/postgres:17.11.0.004 (kit pin), 185 canonical migrations through 20261011000500 applied to a fresh database; auth/storage stubbed as the repository's PostgreSQL fixture tests do, plus auth.users.email_confirmed_at",
+  "rest": "postgrest/postgrest:v14.17, default pool 10, kit libpq keepalive/tcp_user_timeout parameters",
+  "functions": "supabase/edge-runtime:v1.77.4@sha256:ad45164b7548bf5820ed7be714789c17ac2865edce79a09cfb4c3756c3d365a8 (kit pin, pulled via mirror.gcr.io), upstream self-hosted main router (150 MB / 60 s per worker), supabase/functions copied in, Ed25519 entitlement and policy signing configured",
+  "gateway": "node:24.21.0-alpine3.24 stand-in reverse proxy (/functions/v1, /rest/v1), as in the soak",
+  "tenants": "two pilot-admitted tenants, 50 seats each: quiet 1 key, noisy owner + 9 member keys; published runtime policy each"
+ },
+ "workload": "unchanged from the per-isolate A/B: 11-key knee profile, per key ingest (2-event batch) : policy = 3 : 1, equal per-key rate, noisy = 10x quiet; 90 s per run; timeout 10 s; max_in_flight 400; per rate the order off, on, off, on with 60 s cool-down; edge runtime restarted per run",
+ "arms": {
+  "off": "AIDR_TENANT_INFLIGHT_CAPACITY=10000, AIDR_TENANT_INFLIGHT_MAX=10000 (lease RPCs still made)",
+  "on": "defaults"
+ },
+ "control": {
+  "p50_ms": 67.53843999999663,
+  "p95_ms": 91.79775700000027,
+  "p99_ms": 337.7322559999957,
+  "requests": 459,
+  "status_counts": {
+   "200": 459
+  }
+ },
+ "quiet_p95_formula_ms": 241.79775700000027,
+ "quiet_p95_bound_ms": 241.2,
+ "lease_cost": {
+  "what": "acquire_tenant_inflight_lease + release_tenant_inflight_lease through the stand-in gateway and PostgREST with the service-role key, functions idle, scope separate from the drill's, 2000 pairs per row",
+  "results": [
+   {
+    "concurrency": 1,
+    "pairs": 2000,
+    "acquire": {
+     "p50_ms": 3.37,
+     "p95_ms": 5.02,
+     "p99_ms": 7.78
+    },
+    "release": {
+     "p50_ms": 2.96,
+     "p95_ms": 4.46,
+     "p99_ms": 6.85
+    },
+    "acquire_plus_release": {
+     "p50_ms": 6.38,
+     "p95_ms": 9.35,
+     "p99_ms": 12.59
+    }
+   },
+   {
+    "concurrency": 8,
+    "pairs": 2000,
+    "acquire": {
+     "p50_ms": 6.52,
+     "p95_ms": 13.9,
+     "p99_ms": 20.45
+    },
+    "release": {
+     "p50_ms": 4.33,
+     "p95_ms": 9.7,
+     "p99_ms": 14.72
+    },
+    "acquire_plus_release": {
+     "p50_ms": 11.15,
+     "p95_ms": 20.92,
+     "p99_ms": 31.12
+    }
+   }
+  ]
+ },
+ "runs": [
+  {
+   "run": "ab56-off-1",
+   "goodput": 17.9,
+   "peak": 400,
+   "quiet_err": 0.6652,
+   "quiet_p50": 10000.6,
+   "quiet_p95": 10002.5,
+   "quiet_p99": 10004.5,
+   "quiet_status": {
+    "200": 154,
+    "transport_error": 204
+   },
+   "quiet_dropped": 102,
+   "noisy_status": {
+    "200": 1453,
+    "500": 3,
+    "transport_error": 2182
+   },
+   "noisy_dropped": 942,
+   "noisy_p95": 10002.9,
+   "overall_p95": 10002.8,
+   "within_bound": null,
+   "misses": null,
+   "edge_runtime_log": {
+    "cpu_soft_limit": 25,
+    "early_termination": 33,
+    "wall_clock": 22
+   },
+   "limiter_log_lines": {
+    "shed_log_lines": 0,
+    "lease_expired_log_lines": 0,
+    "release_failed_log_lines": 0,
+    "limiter_error_log_lines": 0
+   },
+   "lease_rows_2s_after_run": {
+    "live": 0,
+    "slot_rows": 548
+   }
+  },
+  {
+   "run": "ab56-on-1",
+   "goodput": 52.4,
+   "peak": 32,
+   "quiet_err": 0.0109,
+   "quiet_p50": 79.0,
+   "quiet_p95": 328.3,
+   "quiet_p99": 736.5,
+   "quiet_status": {
+    "200": 455,
+    "503": 5
+   },
+   "quiet_dropped": 0,
+   "noisy_status": {
+    "200": 4263,
+    "429": 294,
+    "500": 2,
+    "503": 21
+   },
+   "noisy_dropped": 0,
+   "noisy_p95": 256.8,
+   "overall_p95": 259.0,
+   "within_bound": false,
+   "misses": [
+    "error_ratio",
+    "429_503",
+    "p95"
+   ],
+   "edge_runtime_log": {
+    "cpu_soft_limit": 37,
+    "early_termination": 45,
+    "wall_clock": 8
+   },
+   "limiter_log_lines": {
+    "shed_log_lines": 101,
+    "lease_expired_log_lines": 0,
+    "release_failed_log_lines": 0,
+    "limiter_error_log_lines": 0
+   },
+   "lease_rows_2s_after_run": {
+    "live": 0,
+    "slot_rows": 548
+   }
+  },
+  {
+   "run": "ab56-off-2",
+   "goodput": 15.5,
+   "peak": 400,
+   "quiet_err": 0.7478,
+   "quiet_p50": 10000.8,
+   "quiet_p95": 10003.0,
+   "quiet_p99": 10009.8,
+   "quiet_status": {
+    "200": 116,
+    "transport_error": 243
+   },
+   "quiet_dropped": 101,
+   "noisy_status": {
+    "200": 1275,
+    "500": 1,
+    "transport_error": 2315
+   },
+   "noisy_dropped": 989,
+   "noisy_p95": 10002.8,
+   "overall_p95": 10002.8,
+   "within_bound": null,
+   "misses": null,
+   "edge_runtime_log": {
+    "cpu_soft_limit": 22,
+    "early_termination": 30,
+    "wall_clock": 24
+   },
+   "limiter_log_lines": {
+    "shed_log_lines": 0,
+    "lease_expired_log_lines": 0,
+    "release_failed_log_lines": 0,
+    "limiter_error_log_lines": 0
+   },
+   "lease_rows_2s_after_run": {
+    "live": 0,
+    "slot_rows": 589
+   }
+  },
+  {
+   "run": "ab56-on-2",
+   "goodput": 50.6,
+   "peak": 43,
+   "quiet_err": 0.0174,
+   "quiet_p50": 108.5,
+   "quiet_p95": 459.8,
+   "quiet_p99": 1094.2,
+   "quiet_status": {
+    "200": 452,
+    "503": 8
+   },
+   "quiet_dropped": 0,
+   "noisy_status": {
+    "200": 4098,
+    "429": 381,
+    "503": 101
+   },
+   "noisy_dropped": 0,
+   "noisy_p95": 359.0,
+   "overall_p95": 368.2,
+   "within_bound": false,
+   "misses": [
+    "error_ratio",
+    "429_503",
+    "p95"
+   ],
+   "edge_runtime_log": {
+    "cpu_soft_limit": 44,
+    "early_termination": 49,
+    "wall_clock": 8
+   },
+   "limiter_log_lines": {
+    "shed_log_lines": 152,
+    "lease_expired_log_lines": 0,
+    "release_failed_log_lines": 0,
+    "limiter_error_log_lines": 0
+   },
+   "lease_rows_2s_after_run": {
+    "live": 0,
+    "slot_rows": 589
+   }
+  },
+  {
+   "run": "ab52-off-1",
+   "goodput": 11.2,
+   "peak": 400,
+   "quiet_err": 0.785,
+   "quiet_p50": 10001.1,
+   "quiet_p95": 10003.0,
+   "quiet_p99": 10004.9,
+   "quiet_status": {
+    "200": 92,
+    "transport_error": 270
+   },
+   "quiet_dropped": 66,
+   "noisy_status": {
+    "200": 912,
+    "transport_error": 2614
+   },
+   "noisy_dropped": 727,
+   "noisy_p95": 10003.4,
+   "overall_p95": 10003.3,
+   "within_bound": null,
+   "misses": null,
+   "edge_runtime_log": {
+    "cpu_soft_limit": 23,
+    "early_termination": 18,
+    "wall_clock": 24
+   },
+   "limiter_log_lines": {
+    "shed_log_lines": 0,
+    "lease_expired_log_lines": 1,
+    "release_failed_log_lines": 2,
+    "limiter_error_log_lines": 5
+   },
+   "lease_rows_2s_after_run": {
+    "live": 608,
+    "slot_rows": 972
+   }
+  },
+  {
+   "run": "ab52-on-1",
+   "goodput": 47.0,
+   "peak": 56,
+   "quiet_err": 0.0164,
+   "quiet_p50": 99.2,
+   "quiet_p95": 503.7,
+   "quiet_p99": 1155.2,
+   "quiet_status": {
+    "200": 421,
+    "503": 7
+   },
+   "quiet_dropped": 0,
+   "noisy_status": {
+    "200": 3812,
+    "429": 325,
+    "503": 116
+   },
+   "noisy_dropped": 0,
+   "noisy_p95": 452.4,
+   "overall_p95": 458.3,
+   "within_bound": false,
+   "misses": [
+    "error_ratio",
+    "429_503",
+    "p95"
+   ],
+   "edge_runtime_log": {
+    "cpu_soft_limit": 44,
+    "early_termination": 49,
+    "wall_clock": 6
+   },
+   "limiter_log_lines": {
+    "shed_log_lines": 128,
+    "lease_expired_log_lines": 1,
+    "release_failed_log_lines": 0,
+    "limiter_error_log_lines": 0
+   },
+   "lease_rows_2s_after_run": {
+    "live": 0,
+    "slot_rows": 972
+   }
+  },
+  {
+   "run": "ab52-off-2",
+   "goodput": 8.2,
+   "peak": 400,
+   "quiet_err": 0.8388,
+   "quiet_p50": 10001.2,
+   "quiet_p95": 10003.4,
+   "quiet_p99": 10004.9,
+   "quiet_status": {
+    "200": 69,
+    "transport_error": 275
+   },
+   "quiet_dropped": 84,
+   "noisy_status": {
+    "200": 673,
+    "500": 1,
+    "transport_error": 2789
+   },
+   "noisy_dropped": 790,
+   "noisy_p95": 10003.7,
+   "overall_p95": 10003.6,
+   "within_bound": null,
+   "misses": null,
+   "edge_runtime_log": {
+    "cpu_soft_limit": 27,
+    "early_termination": 13,
+    "wall_clock": 28
+   },
+   "limiter_log_lines": {
+    "shed_log_lines": 0,
+    "lease_expired_log_lines": 52,
+    "release_failed_log_lines": 8,
+    "limiter_error_log_lines": 9
+   },
+   "lease_rows_2s_after_run": {
+    "live": 887,
+    "slot_rows": 1073
+   }
+  },
+  {
+   "run": "ab52-on-2",
+   "goodput": 46.3,
+   "peak": 41,
+   "quiet_err": 0.014,
+   "quiet_p50": 116.6,
+   "quiet_p95": 496.0,
+   "quiet_p99": 928.5,
+   "quiet_status": {
+    "200": 422,
+    "429": 2,
+    "503": 4
+   },
+   "quiet_dropped": 0,
+   "noisy_status": {
+    "200": 3744,
+    "429": 433,
+    "503": 76
+   },
+   "noisy_dropped": 0,
+   "noisy_p95": 438.3,
+   "overall_p95": 440.3,
+   "within_bound": false,
+   "misses": [
+    "error_ratio",
+    "429_503",
+    "p95"
+   ],
+   "edge_runtime_log": {
+    "cpu_soft_limit": 43,
+    "early_termination": 49,
+    "wall_clock": 7
+   },
+   "limiter_log_lines": {
+    "shed_log_lines": 142,
+    "lease_expired_log_lines": 4,
+    "release_failed_log_lines": 0,
+    "limiter_error_log_lines": 0
+   },
+   "lease_rows_2s_after_run": {
+    "live": 0,
+    "slot_rows": 1073
+   }
+  }
+ ],
+ "quiet_shed_log_lines_on_arm": {
+  "ab56-on-1": "capacity x3 logged (quiet held 3, 5, 5 of total 10)",
+  "ab56-on-2": "capacity x5 logged (quiet held 4, 4, 4, 5, 5)",
+  "ab52-on-1": "capacity x3 logged (quiet held 4, 5, 5)",
+  "ab52-on-2": "capacity x2 logged (quiet held 3, 4), fair_share x2 (quiet held 5 = its share of 10 / 2)"
+ },
+ "raw_artefact_sha256": {
+  "ab52-off-1.json": "939e65131c1aa993907ea61a3ca734b0353ead899d9f0cb0c8818b9694548cdf",
+  "ab52-off-2.json": "1684adad0288bfb7c84e89bca9c5070c7381eaced5f1b5f89cae6f1c6d985630",
+  "ab52-on-1.json": "a0b4ca8d09bd5094fda42e0c565f8a533a8f7360f712ed51505e265c1619266e",
+  "ab52-on-2.json": "67c61b11fc2c366d56895dae883299669572954b6a92fb4cddf07a700372b914",
+  "ab56-off-1.json": "bacae4b9adb278523a91abbab5f5b53407c3a1aafa63be1ddfca9e162ba17029",
+  "ab56-off-2.json": "62a4f8ed49165a41527216037d765ea98f477795988d4f9022b73b379f5536d0",
+  "ab56-on-1.json": "6fa4cdeed826ca7297cd85915a37ceafba611fbcc5b5ec85a3ab90eb3c0f59d2",
+  "ab56-on-2.json": "6080fff66772a13fbe6f56f6dea1ecb0de4ca9f4d1f3f3729dff4f4f61f85bb2",
+  "control-1.json": "8a45ddeb013002b403d64ac944cc6cbae606f6bf33df4ed8b65da7b9286e759d",
+  "leasebench.jsonl": "db757acc9a59a494cd1ddfc5afbcf7f4e82e5c876bc6369eb83680e37551119f"
+ },
+ "raw_artefacts_note": "load-test outputs and container logs were not retained in the repository; their hashes are listed here",
+ "result": {
+  "bound": "MISSED in all 4 on-arm runs (quiet error ratio 1.09-1.74% against <= 0.1%; 5-8 quiet 429/503 per run against 0; quiet p95 328-504 ms against <= 241.2 ms)",
+  "what_changed_vs_per_isolate_v3": "the quiet tenant is never charged to the shared unresolved bucket any more (0 unresolved sheds; its leases are charged to its own tenant from the first request of every new worker); quiet p95 fell from 0.63-1.00 s (v3) to 0.33-0.50 s; no off-arm-style collapse on-arm (goodput 46.3-52.4 HTTP 200/s, 0 drops, 0 timeouts); a deployment-wide cap of 10 now holds across workers and both functions (2 s after every on-arm run 0 live leases; lease_expired logged 0-4 times per on-arm run)",
+  "why_still_missed": "every quiet refusal happened while the quiet tenant itself already held 3-5 leases (its own fair share is 5) and the deployment was at capacity 10: at about 5 quiet requests/s that means individual quiet requests were taking roughly 0.6-1 s, i.e. they were stalled, not starved of admission. The edge runtime still retired workers 43-49 times per on-arm run on its CPU-time soft limit; concurrency admission bounds requests in flight, not CPU or worker restarts on a saturated 4-vCPU host. Quiet error ratio was higher than v3 (1.1-1.7% vs 0.65-0.93%) because a deployment-wide capacity of 10 is half of what two per-isolate limiters admitted",
+  "off_arm": "collapsed in all 4 runs (goodput 8.2-17.9 HTTP 200/s, quiet errors 67-84% timeouts/drops); at 52 rps lower than the per-isolate v3 window (52.0/51.9), so host capacity moved again between windows and the off arm now also pays two lease RPCs per request; under collapse lease RPCs themselves failed (limiter_error and release_failed logged, leases reclaimed by expiry)",
+  "not_tried": "lower capacity, lower CPU limits, preemption of leases granted before a tenant became active; not tried so that the bound is not tuned to this host"
+ }
+}

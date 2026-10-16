@@ -126,3 +126,30 @@ Still open — these cannot be closed from this machine:
 - Overload shedding policy: which tenant's requests are dropped.
 - Upstream Supabase vendor fixes and the Security risk acceptance for them.
 - Turning on GitHub automated security fixes (repository setting).
+
+## Correction addendum — record status of items 21, 25 and 26 (11 October 2026, later)
+
+The rows above for item 21 (NER quality) and items 25/26 (capacity and media scope) say the default was
+applied in an **"uncommitted working tree"**. That was accurate when the rows were written, but it is no
+longer the state. The rows stay as written. This addendum corrects their record status only:
+
+- The changes were committed as `a455f3552c28f2e3ab39df673ab8bf44fcb6bf5b` (2026-10-11 02:43 UTC).
+  The commit message is "Declare a conservative first-release scope and refuse out-of-scope input safely
+  (gaps 21, 25, 26)", and it touches 25 files.
+- That commit is an ancestor of `master` @ `eca71088` (the merge of
+  [SingularityRD/aidr#145](https://github.com/SingularityRD/aidr/pull/145)).
+- The commit contains everything the rows describe:
+  - `FEATURE_INVENTORY.json#first_release_scope` and its generator;
+  - the `check-commercial-readiness.mjs` scope check;
+  - the snapshot refusals before commit (`DSPM_POLICY_CAPACITY`, `INDEX_CAPACITY`, `INDEX_CONTENT_LIMIT`, `CONTENT_LIMIT`, `SOURCE_ROOT`);
+  - `packages/privacy/tests/platform/first-release-scope.test.mjs`;
+  - the claim-surface edits.
+
+The substance of the items is unchanged. Items 21, 25 and 26 remain **Open**. What is in place is a
+conservative, reversible default. NER/OCR qualification on an annotated corpus, field recall and
+false-positive acceptance for the supported bounds, and the product owner's scope decision are still
+outstanding.
+
+`a455f355` did not re-render the sales PDFs/PNG previews or update feature-guide sections 16 and 20.
+That work is tracked separately as `PRODUCTION_READY_PROMPT-2026-10-11.md` A.2. Commit `1b7c5935` later
+re-rendered them so that they describe NER/OCR as not sold.

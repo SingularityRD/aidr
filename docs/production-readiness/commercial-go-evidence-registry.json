@@ -8,7 +8,7 @@
   "commercialDecision": {
     "status": "locked-product-decision-evidence-open",
     "launchModel": "direct-ga",
-    "connectorScope": "five-direct-ga-connectors",
+    "connectorScope": "six-direct-ga-connectors",
     "deploymentModel": "hybrid",
     "regions": ["EU", "US", "APAC"],
     "billingModel": "cloud-online-and-enterprise-invoice",
@@ -285,8 +285,8 @@
     {
       "id": "COM-010",
       "domain": "ga-connectors",
-      "directGaConnectorScope": ["claude-code", "cursor", "vscode", "openclaw", "opencode"],
-      "requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Codex CLI is a shipped sixth connector (deploy/native/support-matrix.json) but stays preview/engineering coverage outside this direct-GA order scope (CLAIM-010) unless Product expressly adds and accepts it. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
+      "directGaConnectorScope": ["claude-code", "cursor", "vscode", "openclaw", "opencode", "codex"],
+      "requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI (Product decision 2026-10-11 added Codex; deploy/native/support-matrix.json soldConnectorScope). The direct-GA scope is a target, not acceptance. Codex keeps its documented host limits on every surface that sells it: the host fails open on a crashing or untrusted hook (the connector maps ask and its own errors to an explicit deny), there is no output-side interception, and the packaged hook matcher covers Bash and apply_patch only. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
       "decisionProfiles": ["evaluation", "assisted-sale", "production-ga", "investor"],
       "class": "hard",
       "receiptPath": "docs/production-readiness/commercial-gate-receipts.json",
@@ -492,7 +492,7 @@
     },
     {
       "id": "CLAIM-010",
-      "exactText": "Five connectors are intended for direct-GA; Codex remains outside this order scope unless Product expressly adds and accepts it.",
+      "exactText": "Six connectors are intended for direct-GA, including Codex CLI with its documented host limits (fails open on a crashing or untrusted hook; no output-side interception; Bash and apply_patch matcher only).",
       "surfaces": ["Commercial Release Manifest", "Order Form", "investor and customer materials"],
       "decisionId": "COM-010",
       "status": "blocked",

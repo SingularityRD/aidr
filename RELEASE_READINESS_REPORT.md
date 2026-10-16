@@ -1,5 +1,149 @@
 # Singularity AIDR — Release Readiness Report
 
+## Güncel durum ve karar — 11 Ekim 2026
+
+**Production kararı: NO-GO.** Karar yalnız
+[commercial-go-evidence-registry.json](docs/production-readiness/commercial-go-evidence-registry.json)
+ve [commercial-gate-receipts.json](docs/production-readiness/commercial-gate-receipts.json) ile değişir.
+Bu güncelleme iki dosyayı da değiştirmez. Registry `decision: NO-GO`, `releaseCandidate: null`.
+İmzalı ya da onaylanmış release candidate yoktur.
+
+Bu bölümün dayandığı kaynaklar:
+
+- [11 Ekim kapanış kaydı](docs/audit/production-gaps-closure-2026-10-11.md), eki ve düzeltme eki;
+- `READINESS_BACKLOG.json`;
+- `FEATURE_INVENTORY.json` (11 Ekim'de üretildi);
+- [`deploy/native/support-matrix.json`](deploy/native/support-matrix.json);
+- [`PRODUCTION_SALES_GAPS.md`](PRODUCTION_SALES_GAPS.md) (jeneratörle üretildi).
+
+Kaynak tabanı `master` @ `eca71088` ([SingularityRD/aidr#145](https://github.com/SingularityRD/aidr/pull/145)).
+Landing tabanı `main` @ `12750cab` ([SingularityRD/aidr-landing#1](https://github.com/SingularityRD/aidr-landing/pull/1)).
+
+Aşağıdaki **10 Ekim** ve önceki bölümler kendi tarihli kaynak ve ortamlarının tarihsel kaydıdır;
+başlıklarında "güncel" yazsa da bu bölümün yerine geçmez. Bu bölüm yeni ölçüm sonucu üretmez,
+yalnız kaynak kayıtları özetler. Burada yazmayan bir sonuç ölçülmüş sayılmamalıdır.
+
+### Kod bulguları ve yerel kanıt
+
+10 Ekim kaydındaki 20 kod bulgusunun hepsi düzeltildi ve merge edildi
+([kapanış kaydı](docs/audit/production-gaps-closure-2026-10-11.md), bulgu 1–20). Yerel kapı sonuçları
+o kayıttaki ikinci tur ekinden alınmıştır:
+
+| Kontrol | Sonuç |
+|---|---|
+| `check`, `build`, `lint` | Yeşil |
+| Unit | 11.699 geçti, 0 başarısız |
+| Privacy | 1.535 geçti |
+| Real-host tier | 4/4 host, bütün senaryolar PASS (linux/x64, scripted mock model) |
+| Interception matrisi | 0 hata |
+
+Bu sonuçlar yerel mühendislik kanıtıdır: tek Linux host, mock model, developer build. Gerçek host,
+bulut, pentest, PoV ya da SLA kanıtı değildir.
+
+### Backlog (`READINESS_BACKLOG.json`)
+
+82 kayıt var: **73 `VERIFIED_CLOSED`**, **8 `BLOCKED_EXTERNAL`**, **1 `IN_PROGRESS`**.
+
+AIDR-079 (dashboard ve landing runtime imajları) 11 Ekim'de yerel kanıtla `VERIFIED_CLOSED` oldu
+([kayıt](docs/production-readiness/runtime-image-security-2026-10-11-landing.md)):
+
+- Merge edilmiş kaynaktan yeniden kurulan iki imaj da Trivy 0.73.0 taramasında ignore olmadan
+  0 CRITICAL / 0 HIGH verdi.
+- Read-only, `cap-drop ALL`, no-new-privileges ve nonroot runtime kontrolleri geçti.
+- Bağımsız Security incelemesi ve müşteri kabulü açıktır.
+
+Kapanmamış kayıtlar:
+
+| Kayıt | Durum | Konu |
+|---|---|---|
+| AIDR-016 | `BLOCKED_EXTERNAL` (P0) | Enrollment / control-plane bağlantısı |
+| AIDR-019 | `IN_PROGRESS` (P1) | Dashboard/Edge Function sözleşme tamlığı; canlı enrollment ve SCIM |
+| AIDR-044 | `BLOCKED_EXTERNAL` (P0) | Şifreli yedek ve doğrulanmış restore: offsite ve ayrı hata alanı |
+| AIDR-049 | `BLOCKED_EXTERNAL` (P0) | Production deployment ve native host kabulü |
+| AIDR-050 | `BLOCKED_EXTERNAL` (P1) | Kurumsal fleet installer ve update |
+| AIDR-051 | `BLOCKED_EXTERNAL` (P1) | Sürekli ajan keşfi ve delege credential kapsamı |
+| AIDR-052 | `BLOCKED_EXTERNAL` (P0) | Ölçülmüş erişilebilirlik, ölçek ve yük altında izolasyon (HA, 8 saat soak, SLA) |
+| AIDR-070 | `BLOCKED_EXTERNAL` (P0) | Secret geçmişi: owner ve Security kararı |
+| AIDR-080 | `BLOCKED_EXTERNAL` (P0) | Pinlenmiş upstream Supabase imajlarının runtime güvenliği |
+
+### Özellik kabulü (`FEATURE_INVENTORY.json`, `FEATURE_ACCEPTANCE.json`)
+
+**109 yetenek** var: 66 `wired`, 41 `partial`, 2 `external`, 0 `missing`. Hiçbirinde
+`production_accepted: true` yoktur.
+
+`FEATURE_ACCEPTANCE.json` 11 Ekim'de yeniden gözden geçirildi. Inventory'de yeni kaynak yolu
+kazanmış yeteneklere 21 mevcut test dosyası, kapsam işaretçisi olarak eklendi. Toplam 248 işaretçi var.
+İşaretçi test sonucu değildir. Her yetenek için `candidateLocal`, `liveHost` ve `customer` hâlâ
+`NOT_RUN`, karar `NO-GO`.
+
+İlk sürüm kapsamı (`first_release_scope`):
+
+- 4 yetenek sınırlar içinde destekleniyor.
+- 5 yetenek desteklenmiyor; bunlar kararlı bir gerekçe koduyla reddediliyor.
+- 3 yetenek satılmıyor (NER ve görsel OCR dahil).
+
+Kapanış kaydının 21, 25 ve 26. maddeleri muhafazakâr, geri alınabilir bir varsayılanla açık kalır.
+Bu değişiklikler `a455f355` ile commit edildi.
+
+### Native destek matrisi (`deploy/native/support-matrix.json`)
+
+- Karar `NO-GO`.
+- Satılan altı connector'dan dördünde gerçek host kabul kaydı var: Claude Code, OpenClaw, OpenCode ve
+  Codex ([real-host kayıtları](docs/evidence/real-host/)). Bu kayıtlar yalnız linux/x64, developer
+  build ve scripted mock model içindir.
+- **Cursor ve VS Code** satırlarında kabul kanıtı yok. Bu satırlar açık satış kapısıdır.
+- Windows/macOS ve arm64 hedef kapsamdır, test edilmiş destek değildir.
+
+### Kurumsal kapılar
+
+13 kapının hepsi açık:
+
+- COM-001…005 ve COM-010…013;
+- SEC-EXT-001, POV-001, INV-001 ve CLM-001.
+
+Hiçbir kapıda isimli sahip, kanıt hash'i ya da aday digest'i kayıtlı değildir. Profil başına zorunlu
+dış kapı sayıları (`PRODUCTION_SALES_GAPS.json`):
+
+| Profil | Zorunlu dış kapı |
+|---|---|
+| evaluation | 8 |
+| assisted-sale | 12 |
+| production-ga | 12 |
+| investor | 12 |
+
+`PRODUCTION_SALES_GAPS.json` `work_package_count` değeri **60**. Üretilmiş `.md` dosyasının giriş
+cümlesindeki "59" sayısı jeneratörde sabit yazılmış bir metindir.
+
+### Sıradaki kapanışlar
+
+Bunlar [PRODUCTION_READY_PROMPT-2026-10-11.md](docs/production-readiness/PRODUCTION_READY_PROMPT-2026-10-11.md)
+dosyasında tanımlıdır.
+
+Satış PDF'leri ve feature guide NER/OCR kapsamına göre `1b7c5935` ile yeniden üretildi.
+
+Ajanın tek başına yapabilecekleri:
+
+- VS Code native araç listesi için bir yedek kural eklemek;
+- PostgREST yeniden bağlanma araştırması;
+- GO zinciri provası.
+
+Ortam gerektirenler:
+
+- Windows, macOS, Cursor ve VS Code host koşuları;
+- canlı DNS ve deployment;
+- gerçek Entra veya Okta;
+- HA, offsite yedek ve 8 saatlik soak.
+
+İnsan kararı ya da imza gerektirenler:
+
+- hukuk ve finans onayı;
+- bağımsız pentest;
+- müşteri PoV'u;
+- SLA penceresi;
+- secret geçmişi ve upstream imajlar için Security kabulü.
+
+---
+
 ## Güncel açık eksikler ve karar 10 Ekim 2026
 
 **Production kararı NO-GO.** Birleşmiş kaynakta 20 doğrulanmış açık kod bulgusu

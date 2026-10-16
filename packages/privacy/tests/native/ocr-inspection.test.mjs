@@ -120,7 +120,9 @@ test('native image-scan keeps the 8 MiB image limit',async()=>{
 const visionConfig=process.env.AIDR_VISION_CONFIG??new URL('../../vision/local.config.json',import.meta.url).pathname;
 const needsOcr=existsSync(visionConfig)?{}:{skip:`real OCR needs a vision worker config at ${visionConfig} (set AIDR_VISION_CONFIG; see vision/config.example.json)`};
 test('real OCR: image-scan blocks a screenshot with personal data',needsOcr,async()=>{
-  const engine=new VisualPrivacyEngine({backend:new LocalImageProcess(JSON.parse(readFileSync(visionConfig,'utf8'))),textEngine:new PrivacyEngine({maxInputBytes:262144})});
+  // Same shape the native host reads: {backend, policy} (src/native/host.ts).
+  const config=JSON.parse(readFileSync(visionConfig,'utf8'));
+  const engine=new VisualPrivacyEngine({...config.policy,backend:new LocalImageProcess(config.backend),textEngine:new PrivacyEngine({maxInputBytes:262144})});
   try{
     const image=readFileSync(new URL('../../fixtures/visual/english-dark.png',import.meta.url));
     const r=await commitImage(session(engine),image);

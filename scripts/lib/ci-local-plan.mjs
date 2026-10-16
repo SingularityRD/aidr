@@ -61,7 +61,7 @@ export const CI_ONLY_STEPS = Object.freeze([
 		job: "privacy-platform",
 		step: "Provision isolated real parser dependencies",
 		reason:
-			"Runner provisioning: installs apt packages with sudo and a hash-locked parser venv into RUNNER_TEMP; a developer host supplies its own AIDR_PYTHON instead of ci:local mutating the system.",
+			"Runner provisioning: installs apt packages with sudo and a hash-locked parser venv into RUNNER_TEMP; a developer host supplies its own AIDR_PYTHON/AIDR_TEST_PYTHON and AIDR_VISION_CONFIG (Tesseract eng+tur, vision venv, manifest) instead of ci:local mutating the system.",
 	},
 	{
 		job: "posture-scanner-supply-chain",
@@ -131,8 +131,12 @@ export const REQUIREMENTS = Object.freeze({
 		label: "a non-root user (GitHub runners run as the unprivileged runner user)",
 		fix: "Run ci:local as an ordinary user; the Unix fleet installer refuses its test-root mode for uid 0 on purpose.",
 	},
+	windows: {
+		label: "a Windows host (ci.yml runs the fleet-windows job on windows-2022)",
+		fix: "Run these steps on Windows: the fixtures use the inbox System32 tar.exe, %ProgramData% and Windows ACLs, so a Linux or macOS pwsh cannot stand in for the runner.",
+	},
 	pwsh: {
-		label: "PowerShell 7 (pwsh), preinstalled on GitHub's Ubuntu runners",
+		label: "PowerShell 7 (pwsh)",
 		fix: "Install PowerShell 7 so `pwsh` is on PATH (https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux).",
 	},
 	python312: {
@@ -318,10 +322,12 @@ export const STEPS = Object.freeze([
 	step({
 		id: "commercial-readiness",
 		group: "commercial",
-		name: "Commercial readiness, gate-receipt and candidate-bound production GO checks",
-		run: "node scripts/check-commercial-readiness.mjs && node --test scripts/check-commercial-readiness.test.mjs scripts/verify-commercial-gate-receipts.test.mjs scripts/verify-production-go.test.mjs scripts/stage-verified-artifact-roots.test.mjs docs/scripts/claim-check.test.mjs",
+		name: "Commercial readiness, gate-receipt, candidate-bound production GO and GO-chain simulation checks",
+		// release-go-chain-simulation.test.mjs is a LOCAL SIMULATION of release-promote.yml
+		// (dry-run -> promote -> rollback against a fake GO record in a temp copy), not an Actions run.
+		run: "node scripts/check-commercial-readiness.mjs && node --test scripts/check-commercial-readiness.test.mjs scripts/verify-commercial-gate-receipts.test.mjs scripts/verify-production-go.test.mjs scripts/stage-verified-artifact-roots.test.mjs docs/scripts/claim-check.test.mjs scripts/release-go-chain-simulation.test.mjs",
 		quick: true,
-		timeoutMs: 3 * MIN,
+		timeoutMs: 5 * MIN,
 	}),
 	step({
 		id: "claim-inventory",
@@ -658,13 +664,13 @@ export const STEPS = Object.freeze([
 		quick: true,
 		timeoutMs: 5 * MIN,
 	}),
-	// Split so a host without PowerShell still runs the Unix leg (GitHub's Ubuntu runners ship pwsh).
+	// Windows-only (ci.yml fleet-windows runs on windows-2022); split so other hosts still run the Unix leg.
 	step({
 		id: "fleet-windows",
 		group: "release",
 		name: "Windows fleet lifecycle (PowerShell fixtures)",
 		ci: ["fleet-windows", "Verify Windows fleet lifecycle"],
-		requires: ["pwsh"],
+		requires: ["windows", "pwsh"],
 		timeoutMs: 10 * MIN,
 	}),
 	step({
@@ -672,7 +678,7 @@ export const STEPS = Object.freeze([
 		group: "release",
 		name: "Windows response actions and worker lifecycle",
 		ci: ["fleet-windows", "Verify Windows response actions and worker lifecycle"],
-		requires: ["pwsh"],
+		requires: ["windows", "pwsh"],
 		timeoutMs: 10 * MIN,
 	}),
 	step({

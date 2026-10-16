@@ -594,6 +594,33 @@ test("rendered prod values add the SIEM forwarder, SMTP mail env and collector e
 	assert.ok(!renderDocs("default").some((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-siem-forwarder")));
 });
 
+test("functions get the fair-share admission limits from values, matching the function defaults", () => {
+	const values = readYaml(join(chartDir, "values.yaml"));
+	assert.deepEqual(values.functions.tenantInflight, { capacity: 10, perTenantMax: 0, fairShareFloor: 2, retryAfterSeconds: 1 });
+	const template = readFileSync(join(chartDir, "templates", "functions.yaml"), "utf8");
+	for (const name of ["AIDR_TENANT_INFLIGHT_CAPACITY", "AIDR_TENANT_INFLIGHT_MAX", "AIDR_TENANT_INFLIGHT_FAIR_SHARE_FLOOR", "AIDR_TENANT_INFLIGHT_RETRY_AFTER_SECONDS"]) {
+		assert.match(template, new RegExp(`name: ${name}\\b`));
+	}
+	// 0 leaves the per-tenant cap to the function's own default (75% of capacity).
+	assert.match(template, /if gt \(int \.perTenantMax\) 0 \}\}\s+- name: AIDR_TENANT_INFLIGHT_MAX/);
+	const schema = JSON.parse(readFileSync(join(chartDir, "values.schema.json"), "utf8"));
+	assert.equal(schema.properties.functions.properties.tenantInflight.additionalProperties, false);
+	const source = readFileSync(join(root, "supabase/functions/_shared/tenant-concurrency.ts"), "utf8");
+	assert.match(source, /DEFAULT_CAPACITY = 10;/);
+	assert.match(source, /DEFAULT_FAIR_SHARE_FLOOR = 2;/);
+	assert.match(source, /DEFAULT_RETRY_AFTER_SECONDS = 1;/);
+});
+
+test("rendered functions carry the fair-share admission limits", { skip: helmSkip }, () => {
+	const env = (docs) => docs.find((doc) => doc.kind === "Deployment" && doc.metadata.name.endsWith("-functions"))
+		.spec.template.spec.containers[0].env;
+	const defaults = Object.fromEntries(env(renderDocs("default")).filter((entry) => entry.name.startsWith("AIDR_TENANT_INFLIGHT_")).map((entry) => [entry.name, entry.value]));
+	assert.deepEqual(defaults, { AIDR_TENANT_INFLIGHT_CAPACITY: "10", AIDR_TENANT_INFLIGHT_FAIR_SHARE_FLOOR: "2", AIDR_TENANT_INFLIGHT_RETRY_AFTER_SECONDS: "1" });
+	const result = render([join(chartDir, "ci", "default-values.yaml")], ["functions.tenantInflight.perTenantMax=9"]);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /name: AIDR_TENANT_INFLIGHT_MAX\s+value: "9"/);
+});
+
 test("rendered prod values add the notification dispatcher with its own network allow-list", { skip: helmSkip }, () => {
 	const docs = renderDocs("prod");
 	const cron = docs.find((doc) => doc.kind === "CronJob" && doc.metadata.name.endsWith("-notification-dispatch"));

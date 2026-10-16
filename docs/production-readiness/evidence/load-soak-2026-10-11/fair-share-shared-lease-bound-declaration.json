@@ -1,0 +1,24 @@
+{
+  "label": "LOCAL ENGINEERING DRILL - pre-declared bound for the shared-lease fair-share re-run, written before any shared-lease A/B data existed",
+  "declared_at": "2026-10-11T17:31:21Z",
+  "finding": "O1 (congestion collapse above the knee); follow-up to fair-share-bound-declaration.json (declared 2026-10-11T16:07:10Z), whose bound every per-isolate on-arm run missed",
+  "change_under_test": "admission state moved out of the edge worker into Postgres: one SECURITY DEFINER RPC acquires a lease (resolving the tenant from the presented key's SHA-256 in the same call, with an expiry so a killed worker cannot leak its slot) and one releases it; one admission scope shared by ingest and policy. Exact defaults are recorded with the results.",
+  "workload": "unchanged from fair-share-bound-declaration.json: the 11-key knee profile, quiet tenant 1 key, noisy tenant 10 keys at the same per-key rate (noisy = 10x quiet), 2-event ingest batches, ingest:policy = 3:1, request timeout 10 s, max_in_flight 400, 90 s per run",
+  "rates_rps": [52, 56],
+  "arms": {
+    "off": "AIDR_TENANT_INFLIGHT_CAPACITY=10000 and AIDR_TENANT_INFLIGHT_MAX=10000 (limiter present but never binding; with the shared lease the off arm still makes the acquire and release round trips)",
+    "on": "kit defaults of the design under test (no AIDR_TENANT_INFLIGHT_* set)"
+  },
+  "order": "per rate: off, on, off, on; 60 s cool-down between runs; edge runtime restarted to switch arms",
+  "control": "quiet tenant alone at 56/11 = 5.09 rps for 90 s with the limiter on, same stack, measured before the A/B",
+  "bound_on_arm_quiet_tenant": {
+    "error_ratio_max": 0.001,
+    "http_429_or_503_max": 0,
+    "p95_ms_max": "min(241.2 ms, max(2 x new control p95, new control p95 + 150 ms))",
+    "p95_justification": "241.2 ms is the value the earlier declaration's formula produced from its control (p95 91.2 ms). The formula is re-applied to a fresh control on this stack because host capacity moved during the day, but the smaller of the two values is used, so the bound cannot loosen: neither a slower host nor the lease round trips themselves (which the new control includes) can raise it above 241.2 ms.",
+    "window": "whole 90 s run, no warm-up exclusion"
+  },
+  "expected_on_arm_noisy_tenant": "receives HTTP 429 tenant_overloaded with Retry-After (count > 0); informational only",
+  "latency_cost": "the acquire and release RPC round trips are measured separately (sequential and concurrency 8) and reported whatever they show",
+  "pass_rule": "every on-arm run at both rates meets every quiet-tenant bound. Any miss is reported as a miss, not re-run away. If the design is changed after a miss, the changed design runs the full A/B again against this same bound and every iteration is reported."
+}
