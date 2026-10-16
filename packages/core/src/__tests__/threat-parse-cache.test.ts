@@ -18,7 +18,7 @@ const THREATS_DIR = resolve(__dirname, "..", "..", "..", "..", "threats");
 const yamlFiles = readdirSync(THREATS_DIR).filter((f) => f.endsWith(".yaml"));
 
 /** The shipped rule count; update deliberately when rules are added or removed. */
-const SHIPPED_RULE_COUNT = 519;
+const SHIPPED_RULE_COUNT = 521;
 
 function recordingLogger() {
 	const errors: string[] = [];

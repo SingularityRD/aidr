@@ -52,7 +52,7 @@ builds itself.
 - **Deployment choice.** Free local mode, on-prem Docker Compose or Helm, and
   air-gapped with a signed offline license; a hosted cloud option is designed but not
   live yet.
-- **Rules as data.** 519 YAML threat rules the customer can read and extend, each mapped to
+- **Rules as data.** 521 YAML threat rules the customer can read and extend, each mapped to
   OWASP LLM, OWASP Agentic and MITRE ATLAS with per-item coverage (including what is not
   covered).
 - **Agent behaviour, not only malware.** Session toxic-flow chains, runaway and sabotage

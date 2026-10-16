@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "matrix": {
-    "rule_count": 519,
+    "rule_count": 521,
     "rule_files": 31,
     "frameworks": [
       {
@@ -36,7 +36,7 @@
             "title": "Sensitive Information Disclosure",
             "status": "covered",
             "rationale": "For an agent's tool calls the rules cover the main disclosure paths: reading credential, key, cloud, keychain and browser stores, known API-key formats in commands or content, and exfiltration over HTTP, DNS, archives and cloud or code repositories. Personal data inside model responses is out of scope for these rules and is handled by the separate DLP/privacy engine.",
-            "rule_count": 91,
+            "rule_count": 92,
             "example_rules": [
               "CLT-CMD-013",
               "CLT-CMD-020",
@@ -75,7 +75,7 @@
             "title": "Improper Output Handling",
             "status": "covered",
             "rationale": "Model-generated commands and code are validated before they execute: pipe-to-shell, reverse shells, eval of decoded payloads, LOLBin and script-host execution and obfuscated command lines are denied or held for approval at the tool boundary. Code the agent writes is also checked by the secure-code guardrails (eval or shell commands built from input, SQL built by string formatting, TLS verification off, permissive CORS, exposed debuggers, CSRF off, weak crypto); those are language-gated patterns over added lines and warn by default rather than block. Pipe-to-shell, reverse shells and encoded execution written into scripts (shell, PowerShell, batch, Dockerfile, Makefile, CI and git-hook files, package.json scripts) are held for approval, reverse shells denied. Output rendered in a UI (XSS, markdown links) is not covered by these rules.",
-            "rule_count": 112,
+            "rule_count": 113,
             "example_rules": [
               "CLT-CMD-001",
               "CLT-CMD-002",
@@ -88,7 +88,7 @@
             "title": "Excessive Agency",
             "status": "covered",
             "rationale": "The rule set is primarily an excessive-agency control: destructive deletion, persistence, privilege changes, security-control tampering, credential access and discovery performed through the agent's tools are denied or require out-of-band human approval.",
-            "rule_count": 369,
+            "rule_count": 371,
             "example_rules": [
               "CLT-AGENT-AUTO-001",
               "CLT-AGENT-AUTO-002",
@@ -173,7 +173,7 @@
             "title": "Tool Misuse and Exploitation",
             "status": "covered",
             "rationale": "This is the enforcement point of the product: every rule evaluates a tool call (shell command, file path, URL or tool input) before it runs, and dangerous uses of legitimate tools are denied or held for out-of-band approval.",
-            "rule_count": 341,
+            "rule_count": 343,
             "example_rules": [
               "CLT-AGENT-IRR-001",
               "CLT-AGENT-IRR-002",
@@ -212,7 +212,7 @@
             "title": "Unexpected Code Execution (RCE)",
             "status": "covered",
             "rationale": "Download-and-execute chains, pipe-to-shell, reverse shells, encoded or obfuscated execution, script hosts and LOLBins on Linux, macOS and Windows are denied before the command runs; written into a script, the same patterns are held for approval (reverse shells denied). Loading model files through code-executing deserializers and trust_remote_code are held or denied, and eval, shell commands built from input and network-exposed debuggers in code the agent writes are flagged by the (advisory) secure-code guardrails.",
-            "rule_count": 140,
+            "rule_count": 141,
             "example_rules": [
               "AISC-001",
               "AISC-002",
@@ -393,7 +393,7 @@
             "title": "Exfiltration via Cyber Means",
             "status": "covered",
             "rationale": "Sensitive-file upload, DNS-label exfiltration, alternative protocols, automated exfiltration tooling and transfers to code repositories or cloud storage are detected.",
-            "rule_count": 8,
+            "rule_count": 9,
             "example_rules": [
               "CLT-CMD-013",
               "CLT-CMD-020",
@@ -425,7 +425,7 @@
             "title": "Command and Scripting Interpreter",
             "status": "covered",
             "rationale": "Shell, PowerShell, AppleScript/JXA, Python and script-host execution patterns used for remote payloads, obfuscation and proxy execution are detected across all three OSes.",
-            "rule_count": 103,
+            "rule_count": 104,
             "example_rules": [
               "CLT-CMD-001",
               "CLT-CMD-002",
@@ -473,7 +473,7 @@
             "title": "AI Agent Tool Invocation",
             "status": "covered",
             "rationale": "Every tool call the agent makes is evaluated against the rules before it executes; a hijacked agent's tool invocations are the input AIDR inspects.",
-            "rule_count": 384,
+            "rule_count": 386,
             "example_rules": [
               "CLT-AGENT-AUTO-001",
               "CLT-AGENT-AUTO-002",
@@ -570,7 +570,7 @@
             "title": "Cyber Communication Channel",
             "status": "covered",
             "rationale": "Reverse shells over /dev/tcp, netcat, Python, Ruby, zsh and .NET sockets and C2-style paste-site or raw-IP URLs are detected.",
-            "rule_count": 19,
+            "rule_count": 20,
             "example_rules": [
               "CLT-CMD-003",
               "CLT-CMD-004",
@@ -2115,6 +2115,21 @@
       ]
     },
     "CLT-CMD-039": {
+      "owasp_llm": [
+        "LLM05",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI05"
+      ],
+      "mitre_atlas": [
+        "AML.T0050",
+        "AML.T0053",
+        "AML.T0072"
+      ]
+    },
+    "CLT-CMD-040": {
       "owasp_llm": [
         "LLM05",
         "LLM06"
@@ -5685,6 +5700,19 @@
       ],
       "mitre_atlas": [
         "AML.T0050",
+        "AML.T0053"
+      ]
+    },
+    "CLT-WIN-CMD-062": {
+      "owasp_llm": [
+        "LLM02",
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "mitre_atlas": [
+        "AML.T0025",
         "AML.T0053"
       ]
     },

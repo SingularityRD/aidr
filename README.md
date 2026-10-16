@@ -13,7 +13,7 @@ Singularity AIDR intercepts tool calls (Bash commands, URL fetches, file writes)
 
 Each tool call is checked against:
 
-- **Local heuristics** — 519 YAML threat rules in 31 files ([`threats/`](threats/)) for
+- **Local heuristics** — 521 YAML threat rules in 31 files ([`threats/`](threats/)) for
   dangerous commands, credential access, persistence, obfuscation, supply-chain and
   LLM-specific patterns on Linux, macOS and Windows
 - **Package supply-chain checks** — an offline typosquat check for npm/PyPI names, plus

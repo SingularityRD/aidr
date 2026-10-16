@@ -46,7 +46,7 @@ deployment: an "exported and unit-tested" module is not a delivered capability.
 |---|---|---|
 | Tool-call interception (Bash/exec, read, write, edit, delete, WebFetch, MCP) | all connectors | **LIVE** |
 | Artifact extraction (commands, URLs, file paths, package specs, content) | `extractors.ts` | **LIVE** |
-| YAML threat heuristics — **519 rules across 31 files** | `heuristics.ts` + `threat-loader.ts` | **LIVE** (`aidr coverage` prints the installed count; malicious probe matches) |
+| YAML threat heuristics — **521 rules across 31 files** | `heuristics.ts` + `threat-loader.ts` | **LIVE** (`aidr coverage` prints the installed count; malicious probe matches) |
 | Decision engine with confidence scoring and `deny > ask > allow` merge | `engine.ts` | **LIVE** |
 | Sensitivity presets (paranoid 0.70 / balanced 0.85 / relaxed 0.95) | `types.ts`, `engine.ts` | **LIVE** |
 | Verdict cache with TTLs | `cache.ts` | **LIVE** |

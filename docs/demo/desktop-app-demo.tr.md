@@ -49,7 +49,7 @@ sistem Türkçe ise Türkçe açılır (**Ayarlar → Dil** ile değiştirilebil
 bilgisayarda denetleniyor. Bu uygulama o korumanın durumunu, kararları ve olayları gösteriyor."
 
 1. **Durum** sayfası.
-   Gösterin: AIDR sürümü, motorun gerçekten yüklediği kural sayısı (ör. 519), uygulama modu
+   Gösterin: AIDR sürümü, motorun gerçekten yüklediği kural sayısı (ör. 521), uygulama modu
    (Yerel / Yönetilen), bağlayıcılar (Claude Code her zaman; Cursor, VS Code, Codex, OpenCode
    bulunduğunda). Sol alttaki rozet ve bildirim alanı simgesi korunma durumunu gösterir.
 

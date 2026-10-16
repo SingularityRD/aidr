@@ -33,8 +33,10 @@
   severity: critical
   confidence: 0.90
   action: block
-  pattern: "DAN\\b|\\b(jailbreak|unfiltered|uncensored)\\b"
+  pattern: "DAN\\b|\\b(jailbreak|unfiltered|uncensored)\\b|\\bdeveloper mode\\b[^\\n]{0,80}?\\b(bypass|ignore|disable|override|no (restrictions|limits|filters|rules)|without (restrictions|limits|filters|rules)|unrestricted|safety (checks|guidelines|filters|rules))\\b|\\b(you are|you're|act as|pretend|respond as|behave as)\\b[^\\n]{0,40}?\\bdeveloper mode\\b"
   match_on: content
+  # "developer mode" alone is benign (browser/OS settings); it counts only next
+  # to a safety bypass or as an assumed persona.
   title: "Known jailbreak tokens (DAN, developer mode, unfiltered)"
   expires_at: null
   revoked: false

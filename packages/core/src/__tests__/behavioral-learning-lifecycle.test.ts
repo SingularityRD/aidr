@@ -237,9 +237,15 @@ describe("authorized signed behavioral learning lifecycle", () => {
 				issued_at: new Date().toISOString(),
 			});
 		});
+		// The verdict cache is opened only for calls that carry a URL or package,
+		// so the renewal seam needs a URL in the command.
 		const prepared = await prepareAuthorizedLearningExecution(
 			"codex",
-			request(),
+			request(
+				process.platform === "win32"
+					? "Write-Output 'https://example.com/completed'"
+					: "printf https://example.com/completed",
+			),
 			{ keyId: "broker", ...executionKey },
 			resources,
 		);

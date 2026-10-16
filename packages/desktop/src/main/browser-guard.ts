@@ -1,5 +1,5 @@
 import { cpSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, win32 } from "node:path";
 import type {
 	BrowserExtensionHit,
 	BrowserGuardStatus,
@@ -123,9 +123,12 @@ export function findInProfile(
 			if (hits.has(id) || typeof raw !== "object" || raw === null) continue;
 			const entry = raw as { path?: unknown; location?: unknown; state?: unknown; disable_reasons?: unknown };
 			if (typeof entry.path !== "string") continue;
-			const dir = isAbsolute(entry.path)
+			// Chrome writes Windows separators ("id\\1.0.0_0"); split on both so a
+			// relative store path resolves under the profile on any platform.
+			const absolute = isAbsolute(entry.path) || win32.isAbsolute(entry.path);
+			const dir = absolute
 				? entry.path
-				: join(userData, profile, "Extensions", entry.path);
+				: join(userData, profile, "Extensions", ...entry.path.split(/[\\/]/));
 			const manifest = manifestName(dir);
 			if (!manifest || !NAME_PATTERN.test(manifest.name)) continue;
 			const reasons = entry.disable_reasons;
@@ -139,7 +142,7 @@ export function findInProfile(
 				extensionId: id,
 				version: manifest.version,
 				enabled: !disabled,
-				unpacked: entry.location === 4 || isAbsolute(entry.path),
+				unpacked: entry.location === 4 || absolute,
 				path: dir,
 			});
 		}

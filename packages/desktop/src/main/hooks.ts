@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute, win32 } from "node:path";
 import { MANAGED_HOOK_MARKER } from "../../../cli/src/utils/install-hooks.js";
 
 /**
@@ -79,7 +79,9 @@ export function parseHookCommand(command: string): ParsedCommand | null {
 		index = pattern.lastIndex;
 	}
 	const [file, ...args] = tokens;
-	if (!file || !isAbsolute(file)) return null;
+	// Hook commands are written by the Windows installer (C:/... or C:\...);
+	// accept those on every platform so the same check is testable everywhere.
+	if (!file || !(isAbsolute(file) || win32.isAbsolute(file))) return null;
 	return { file, args };
 }
 

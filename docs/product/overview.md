@@ -33,7 +33,7 @@ each connector has been tested on are in the
 | OpenCode | `tool.execute.before` plugin | [opencode.md](../platform-guides/opencode.md) |
 | Codex CLI | Native `PreToolUse` command hook for `Bash` and `apply_patch` | [codex.md](../platform-guides/codex.md) |
 
-**Detection.** 519 YAML threat rules in 31 files under [`threats/`](../../threats/)
+**Detection.** 521 YAML threat rules in 31 files under [`threats/`](../../threats/)
 cover dangerous commands, credential access, persistence, obfuscation, crypto-mining,
 supply-chain and LLM-specific patterns for Linux, macOS and Windows. The rules are data,
 not code, and customers can add their own under `~/.singularity-aidr/threats/`. Package

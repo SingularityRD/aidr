@@ -1607,8 +1607,10 @@ const MODEL_MANIPULATION_CATEGORIES: ReadonlySet<string> = new Set([
 ]);
 const DOC_OR_TEST_FILE =
 	/\.(?:md|markdown|mdx|txt|rst|adoc)$|(?:^|[\\/])(?:README|CHANGELOG|LICENSE|NOTICE)(?:[.\-][\w.-]*)?$|\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|[\\/])(?:__tests__|__fixtures__|__mocks__|tests?|fixtures?|testdata)[\\/]/i;
+// Files an agent host loads as instructions, memory or skills for later sessions:
+// content written here is persistence, not data, so it is always inspected.
 const AGENT_INSTRUCTION_FILE =
-	/(?:^|[\\/])(?:CLAUDE|AGENTS|GEMINI|CLINE)\.md$|(?:^|[\\/])\.(?:cursorrules|clinerules|windsurfrules|aiderrules|replit\.md)$|(?:^|[\\/])\.cursor[\\/]rules[\\/]|\.mdc$|(?:^|[\\/])\.github[\\/]copilot-instructions\.md$|(?:^|[\\/])\.?mcp\.json$|(?:^|[\\/])\.claude[\\/](?:commands|agents|skills)[\\/]/i;
+	/(?:^|[\\/])(?:CLAUDE|AGENTS|GEMINI|CLINE|CONVENTIONS|SKILL)(?:\.local|\.override)?\.md$|(?:^|[\\/])\.(?:cursorrules|clinerules|windsurfrules|aiderrules|replit\.md)$|(?:^|[\\/])\.cursor[\\/]rules[\\/]|\.mdc$|(?:^|[\\/])\.github[\\/](?:copilot-instructions\.md$|instructions[\\/]|prompts[\\/]|chatmodes[\\/]|agents[\\/])|(?:^|[\\/])\.?mcp\.json$|(?:^|[\\/])\.claude[\\/](?:commands|agents|skills|memory|rules)[\\/]|(?:^|[\\/])\.(?:clinerules|windsurf|kiro|amazonq|continue|roo|codex|opencode|gemini|junie|augment|trae|qwen)[\\/]/i;
 const AUTHORED_WRITE_TOOL =
 	/^(?:write|edit|multiedit|notebookedit|apply_patch|str_replace[\w-]*|create|update_file)$/i;
 const READ_ONLY_INSPECTOR =

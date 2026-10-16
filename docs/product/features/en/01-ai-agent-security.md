@@ -517,7 +517,7 @@ next identical call in the same Codex session is released once.
 **What it does**
 The engine extracts artifacts (commands, URLs, file paths, content, packages) from each
 tool call and matches them against YAML threat rules. The rules are data, not code:
-**519 rules in 31 files** under [`threats/`](../../../../threats/), covering Linux,
+**521 rules in 31 files** under [`threats/`](../../../../threats/), covering Linux,
 macOS and Windows.
 
 **Why it matters**
@@ -534,8 +534,8 @@ reputation legs → decision engine (deny > ask > allow) → cache → audit log
 
 Each rule has `id`, `category`, `severity`, `confidence` (0–1), `action` (`block` →
 `deny`, `require_approval` → `ask`, `log` → `allow`), a regex `pattern`, `match_on`,
-`title`, `expires_at` and `revoked`. Of the 519 rules, 225 block, 266 require approval
-and 28 log; 180 are critical, 312 high and 27 medium. The 27 `secure-code.yaml` rules are
+`title`, `expires_at` and `revoked`. Of the 521 rules, 227 block, 266 require approval
+and 28 log; 182 are critical, 312 high and 27 medium. The 27 `secure-code.yaml` rules are
 advisory: they only inspect code the agent writes, and `secure_code.action` (`warn` by
 default, or `ask`) decides what a match does. The 5 `script-content.yaml` rules carry the
 command-execution patterns over to the scripts an agent writes: a `curl … | bash` written
@@ -548,7 +548,7 @@ Rule files:
 
 | File | Scope | Rules |
 | --- | --- | --- |
-| `commands.yaml` | Dangerous commands: pipe-to-shell, reverse shells, destructive operations | 39 |
+| `commands.yaml` | Dangerous commands: pipe-to-shell, reverse shells, destructive operations | 40 |
 | `credentials.yaml` | Credential exposure | 11 |
 | `files.yaml` | Sensitive file paths | 19 |
 | `persistence.yaml` | cron, systemd, shell RC, LaunchAgents | 8 |
@@ -568,20 +568,20 @@ Rule files:
 | `context-poisoning.yaml` | Data and context poisoning: agent instruction, memory, config and MCP file writes, hidden or injected instructions, MCP tool poisoning, memory-store writes | 23 |
 | `agent-safety.yaml` | AI safety guardrails: reward hacking and sabotage, autonomy escalation, irreversible actions | 43 |
 | `mac-commands.yaml`, `mac-credentials.yaml`, `mac-files.yaml`, `mac-obfuscation.yaml`, `mac-persistence.yaml`, `mac-supply-chain.yaml` | macOS variants | 27 + 8 + 10 + 7 + 9 + 3 = 64 |
-| `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows variants | 61 + 10 + 10 + 16 + 8 + 1 = 106 |
-| **Total** | 31 files | **519** |
+| `win-commands.yaml`, `win-credentials.yaml`, `win-files.yaml`, `win-obfuscation.yaml`, `win-persistence.yaml`, `win-supply-chain.yaml` | Windows variants | 62 + 10 + 10 + 16 + 8 + 1 = 107 |
+| **Total** | 31 files | **521** |
 
 Rules by category:
 
 | Category group | Categories (rule count) | Rules |
 | --- | --- | --- |
-| Tool abuse | `tool` | 196 |
+| Tool abuse | `tool` | 197 |
 | Secrets and credentials | `secrets` | 55 |
 | MITRE ATT&CK mapped | `credential_access` (17), `defense_evasion` (15), `persistence` (11), `discovery` (9), `exfiltration` (4), `lateral_movement` (4), `execution` (2), `reconnaissance` (2), `command_and_control` (1), `privilege_escalation` (1), `collection` (1) | 67 |
 | Skill and plugin packages | 14 `skill_*` categories (instruction hijack, Unicode smuggling, memory poisoning, remote payload, embedded code, credential exfiltration, excessive permissions, privilege escalation, credential access, persistence, tool hijack, insecure dependency, hard-coded secret, insecure coding) | 26 |
 | LLM threats | `prompt_injection` (5), `tool_misuse` (4), `indirect_prompt_injection` (3), `prompt_extraction` (3), `information_disclosure` (2), `memory_poisoning` (2), `content_safety` (2) | 21 |
 | Resource hijacking | `resource_hijacking` | 17 |
-| Network egress | `network_egress` | 9 |
+| Network egress | `network_egress` | 10 |
 | Self-defence | `self_defense` | 10 |
 | Supply chain | `supply_chain` | 6 |
 | AI model supply chain | `ai_supply_chain` | 14 |
@@ -589,7 +589,7 @@ Rules by category:
 | Secure code | `secure_code_tls` (6), `secure_code_sql_injection` (5), `secure_code_weak_crypto` (4), `secure_code_cors` (3), `secure_code_code_injection` (2), `secure_code_command_injection` (2), `secure_code_permissions` (2), `secure_code_debug_exposure` (2), `secure_code_csrf` (1) | 27 |
 | Context poisoning | `context_poisoning` (14), `context_poisoning_hidden_unicode` (3), `mcp_tool_poisoning` (3), `memory_poisoning` (2), `context_poisoning_permission_widening` (1) | 23 |
 | AI safety | `reward_hacking` (17), `irreversible_action` (14), `autonomy_escalation` (7), `agent_sabotage` (5) | 43 |
-| **Total** | | **519** |
+| **Total** | | **521** |
 
 Customers can add their own rules under `~/.singularity-aidr/threats/*.yaml`; a custom
 rule with the same `id` overrides the built-in one.
@@ -2100,7 +2100,7 @@ The mapping is data (`threats/mappings/frameworks.yaml`), keyed by rule id; a te
 when a rule has no mapping or uses an identifier outside the official lists. Matched
 framework ids travel with each verdict into the local audit log, SIEM exports and
 `aidr audit export`; the dashboard shows them on events and incidents and the matrix on the
-Posture page. Current summary for the 519 rules: OWASP LLM 3 covered, 5 partial, 2 not
+Posture page. Current summary for the 521 rules: OWASP LLM 3 covered, 5 partial, 2 not
 applicable; OWASP Agentic 3 covered, 5 partial, **2 not covered** (ASI07 inter-agent
 communication, ASI08 cascading failures); MITRE ATLAS 35 techniques mapped (9 covered,
 26 partial).
