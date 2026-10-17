@@ -1,6 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { getBearerToken } from "../_shared/auth.ts";
-import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
+import { apiKeyRateSubject, authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { consumeTenantRateLimit, rateLimitHeaders } from "../_shared/request-limits.ts";
 import { canonicalPolicy, sha256, validateRuntimePolicy } from "../_shared/runtime-policy.ts";
@@ -51,7 +51,7 @@ export function createPolicyHandler(deps: {
 				const agentId = typeof auth.agentId === "string" ? auth.agentId : null;
 				const rate = await consumeTenantRateLimit(db, {
 					tenantId: tenant,
-					subject: auth.userId,
+					subject: apiKeyRateSubject(auth),
 					endpoint: "policy",
 					perSubject: 300,
 					perTenant: 10_000,

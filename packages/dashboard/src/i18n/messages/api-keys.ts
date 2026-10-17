@@ -22,6 +22,10 @@ export const apiKeysMessages = {
 	],
 	"keys.type.bg": ["Browser Guard ingest", "Browser Guard veri gönderimi"],
 	"keys.type.tenant": ["Tenant", "Çalışma alanı"],
+	"keys.type.fleetDevice": [
+		"Fleet machine · owned by this team",
+		"Filo makinesi · bu ekibe ait",
+	],
 	"keys.noTeam": [
 		"Select a team to manage its credentials.",
 		"Kimlik bilgilerini yönetmek için bir ekip seçin.",

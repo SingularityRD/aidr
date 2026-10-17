@@ -281,9 +281,9 @@ describe("/v1/api-keys hygiene", () => {
 		expect(state.rpc).not.toHaveBeenCalled();
 	});
 
-	it("lists expiry and rotation time so the dashboard can warn", () => {
+	it("lists expiry, rotation time and tenant ownership so the dashboard can warn", () => {
 		const source = readFileSync(new URL("../api-keys/index.ts", import.meta.url), "utf8");
-		expect(source).toContain('.select("id,label,revoked,created_at,scope,install_limit,expires_at,rotated_at")');
+		expect(source).toContain('.select("id,label,revoked,created_at,scope,install_limit,expires_at,rotated_at,fleet_key_id")');
 	});
 });
 

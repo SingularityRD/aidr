@@ -24,7 +24,7 @@
 // by a human in the dashboard. Every failure is closed.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
+import { apiKeyRateSubject, authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import {
 	APPROVAL_REQUEST_MAX_TTL_MS,
 	APPROVAL_TOKEN_TTL_MS,
@@ -345,7 +345,7 @@ async function handleCreate(
 	if (!auth.ok) return corsJson(req, auth.status, { error: auth.error });
 	const rate = await consumeTenantRateLimit(db, {
 		tenantId: auth.tenantId,
-		subject: auth.apiKeyId ?? auth.userId,
+		subject: auth.apiKeyId ?? apiKeyRateSubject(auth),
 		endpoint: "approval-requests:create",
 		perSubject: 120,
 		perTenant: 2000,
@@ -392,7 +392,7 @@ async function handlePoll(
 	if (!auth.ok) return corsJson(req, auth.status, { error: auth.error });
 	const rate = await consumeTenantRateLimit(db, {
 		tenantId: auth.tenantId,
-		subject: auth.apiKeyId ?? auth.userId,
+		subject: auth.apiKeyId ?? apiKeyRateSubject(auth),
 		endpoint: "approval-requests:poll",
 		perSubject: 1200,
 		perTenant: 20000,

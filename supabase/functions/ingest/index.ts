@@ -31,6 +31,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { type ApprovalPublicKey, loadApprovalPublicKeys } from "../_shared/approval-token.ts";
 import { capEntitlementTimes, parseActiveAdmission, parseEffectiveSeats } from "../_shared/effective-seats.ts";
 import {
+	apiKeyRateSubject,
 	authenticateTenantApiKeyBudgeted,
 	BROWSER_GUARD_INGEST_SCOPE,
 } from "../_shared/api-key-auth.ts";
@@ -346,7 +347,7 @@ async function ingestForTenant(
 	// An ingest key is budgeted as one subject however many installs share it.
 	const rate = await consumeTenantRateLimit(supabase, {
 		tenantId: tenantAuth.tenantId,
-		subject: browserKey ? `api_key:${browserKeyId}` : tenantAuth.userId,
+		subject: browserKey ? `api_key:${browserKeyId}` : apiKeyRateSubject(tenantAuth),
 		endpoint: browserKey ? "ingest:browser_guard" : "ingest",
 		perSubject: browserKey ? browserKeyEventsPerMinute() : 1_200,
 		perTenant: TENANT_INGEST_EVENTS_PER_MIN,
@@ -355,17 +356,29 @@ async function ingestForTenant(
 	if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
 
 	// Shared auth supplies the binding for either the active key or a valid overlap key.
-	const userId = tenantAuth.userId;
 	const tenantId = tenantAuth.tenantId;
+	// A tenant-owned device key (fleet enrollment) carries no person. Its
+	// events keep the agent's recorded enrolling user as attribution, which the
+	// events write guard binds to the agent; authority came from the fleet key.
+	const fleetDevice = tenantAuth.userId === null;
+	let userId = tenantAuth.userId ?? "";
+	if (fleetDevice && (!tenantAuth.agentId || !tenantAuth.apiKeyId)) {
+		return json(403, { error: "agent_key_mismatch" });
+	}
 	if (tenantAuth.agentId) {
 		const { data: bound, error: boundError } = await supabase
 			.from("agents")
-			.select("iid")
+			.select("iid,user_id")
 			.eq("id", tenantAuth.agentId)
 			.eq("tenant_id", tenantId)
 			.maybeSingle();
 		if (boundError || !bound || bound.iid !== iid)
 			return json(403, { error: "agent_key_mismatch" });
+		if (fleetDevice) {
+			const attributed = (bound as { user_id?: unknown }).user_id;
+			if (typeof attributed !== "string" || !attributed) return json(403, { error: "agent_key_mismatch" });
+			userId = attributed;
+		}
 	}
 
 	// 2) load the explicit entitlement row. An absent row is not a free grant.
@@ -446,9 +459,9 @@ async function ingestForTenant(
 	if (!effective || !Number.isSafeInteger(registeredAllowed) || registeredAllowed < includedAgents) {
 		return json(503, { error: "entitlements_unavailable", retryable: true });
 	}
-	const { data: admissionData, error: admissionError } = await supabase.rpc(
-		"get_tenant_admission", { p_tenant_id: tenantId, p_user_id: userId },
-	);
+	const { data: admissionData, error: admissionError } = fleetDevice
+		? await supabase.rpc("get_fleet_device_admission", { p_api_key_id: tenantAuth.apiKeyId })
+		: await supabase.rpc("get_tenant_admission", { p_tenant_id: tenantId, p_user_id: userId });
 	if (admissionError) return json(503, { error: "admission_unavailable", retryable: true });
 	if (admissionData && typeof admissionData === "object" && !Array.isArray(admissionData)
 		&& ["expired", "revoked", "none", "not_entitled", "unconfigured"].includes(String((admissionData as Record<string, unknown>).status))) {

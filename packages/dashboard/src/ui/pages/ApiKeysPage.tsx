@@ -16,6 +16,8 @@ type ApiKeyRow = {
 	install_limit?: number | null;
 	expires_at?: string | null;
 	rotated_at?: string | null;
+	/** Set for a machine key minted by a fleet enrollment key: the team owns it, not a person. */
+	fleet_key_id?: string | null;
 };
 
 /**
@@ -133,6 +135,7 @@ function keyTypeLabel(key: ApiKeyRow, t: Translate): string {
 			? t("keys.type.bgLimit", { count: key.install_limit.toLocaleString() })
 			: t("keys.type.bg");
 	}
+	if (key.fleet_key_id) return t("keys.type.fleetDevice");
 	return t("keys.type.tenant");
 }
 
