@@ -1,5 +1,5 @@
 /**
- * Parity: the endpoint verifiers (src/license) and the vendor/operator .mjs
+ * Parity: the endpoint verifiers (src/customer-license) and the vendor/operator .mjs
  * verifiers (scripts/license-verify.mjs, scripts/customer-packet-verify.mjs)
  * must accept and refuse exactly the same documents with the same codes and
  * license states. Fixtures are signed in-test with throwaway keys.
@@ -157,7 +157,7 @@ function licenseCases(withCustomerId: boolean) {
 	] as const;
 }
 
-describe("license verifier parity (src/license vs scripts/license-verify.mjs)", () => {
+describe("license verifier parity (src/customer-license vs scripts/license-verify.mjs)", () => {
 	it.each(licenseCases(false))("without customer_id: %s", (_name, document, reg, now) => {
 		expect(tsLicense(document, reg, now)).toEqual(mjsLicense(document, reg, now));
 	});
@@ -291,7 +291,7 @@ function packetCases() {
 	] as const;
 }
 
-describe("customer packet verifier parity (src/license vs scripts/customer-packet-verify.mjs)", () => {
+describe("customer packet verifier parity (src/customer-license vs scripts/customer-packet-verify.mjs)", () => {
 	it.each(packetCases())("%s", (_name, document, now) => {
 		expect(tsPacket(document, trusted, now)).toEqual(mjsPacket(document, trusted, now));
 	});

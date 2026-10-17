@@ -271,6 +271,10 @@ function probeFacts(selected, workflow) {
 		const pwsh = onPath("pwsh");
 		record("pwsh", pwsh ? { path: pwsh } : { detail: "pwsh not on PATH" });
 	}
+	if (needed.has("bridge-postgres")) {
+		available["bridge-postgres"] = Boolean(process.env.AIG_BRIDGE_TEST_POSTGRES_DSN);
+		detail["bridge-postgres"] = available["bridge-postgres"] ? "AIG_BRIDGE_TEST_POSTGRES_DSN set" : "AIG_BRIDGE_TEST_POSTGRES_DSN is unset";
+	}
 	if (needed.has("python312")) record("python312", findPython312(), (value) => `${value.version} at ${value.path}`);
 	if (needed.has("chromium")) record("chromium", findChromium(), (value) => `chromium-${value.revision} in ${value.path}`);
 	for (const entry of selected) {
@@ -542,7 +546,10 @@ async function runStep(entry, index, total, context) {
 			const runnerTemp = path.join(localDir, "runner-temp", entry.id);
 			rmSync(runnerTemp, { recursive: true, force: true });
 			mkdirSync(runnerTemp, { recursive: true });
-			const env = { ...process.env, ...resolved.env, ...(entry.env ?? {}), AIDR_CI_LOCAL: "1", RUNNER_TEMP: runnerTemp, GITHUB_ENV: path.join(runnerTemp, "github_env"), GITHUB_PATH: path.join(runnerTemp, "github_path"), GITHUB_WORKSPACE: root };
+			// `localEnv`: variables whose ci.yml value points at a CI-only resource
+			// (a service container); an operator-exported value replaces it.
+			const localEnv = Object.fromEntries((entry.localEnv ?? []).filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
+			const env = { ...process.env, ...resolved.env, ...(entry.env ?? {}), ...localEnv, AIDR_CI_LOCAL: "1", RUNNER_TEMP: runnerTemp, GITHUB_ENV: path.join(runnerTemp, "github_env"), GITHUB_PATH: path.join(runnerTemp, "github_path"), GITHUB_WORKSPACE: root };
 			const pathDirs = [toolsBin];
 			for (const [tool, variable] of Object.entries(TOOL_ENV)) {
 				const found = context.facts.found[tool];

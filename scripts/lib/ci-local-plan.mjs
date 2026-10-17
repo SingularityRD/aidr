@@ -143,6 +143,10 @@ export const REQUIREMENTS = Object.freeze({
 		label: "Python 3.12 (ci.yml pins 3.12.8)",
 		fix: "Install python3.12 (with the venv module) or set AIDR_PYTHON312_BIN; the runner creates .ci-local/venv/aig-bridge from it.",
 	},
+	"bridge-postgres": {
+		label: "a disposable PostgreSQL database for the AIG bridge live race tests (ci.yml aig-bridge services.postgres)",
+		fix: "ci:local does not start ci.yml service containers: export AIG_BRIDGE_TEST_POSTGRES_DSN=postgresql://<user>:<password>@127.0.0.1:5432/<db> pointing at a throwaway PostgreSQL 16 database (CI uses postgres:bridge-ci@127.0.0.1:5432/bridge_ci).",
+	},
 	chromium: {
 		label: "Playwright Chromium matching the pinned playwright-core revision",
 		fix: "Set PLAYWRIGHT_BROWSERS_PATH to a directory holding chromium-<revision> (or populate /opt/pw-browsers): PLAYWRIGHT_BROWSERS_PATH=<dir> node packages/browser-guard/node_modules/playwright-core/cli.js install --no-shell chromium",
@@ -638,7 +642,9 @@ export const STEPS = Object.freeze([
 		ci: ["aig-bridge", "Audit and test bridge"],
 		venv: "aig-bridge",
 		env: PIP_ENV,
-		requires: ["python312", "network"],
+		// The job's DSN names its service container; locally the operator's wins.
+		localEnv: ["AIG_BRIDGE_TEST_POSTGRES_DSN"],
+		requires: ["python312", "network", "bridge-postgres"],
 		timeoutMs: 15 * MIN,
 	}),
 

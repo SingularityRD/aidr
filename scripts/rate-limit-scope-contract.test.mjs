@@ -37,7 +37,8 @@ function sourceFiles(dir) {
 
 // String literals shaped like a rate-limit key: `<scope>:` followed by a
 // version, an interpolated subject or a named bucket. Ingress HMAC contexts and
-// consume_tenant_rate_limit subjects/endpoints share the shape but are not RPC scopes.
+// consume_tenant_rate_limit subjects/endpoints (including the `*RateSubject`
+// helpers that build them) share the shape but are not RPC scopes.
 const KEY_LITERAL = /["`]([a-z][a-z_-]*):(?:v\d|\$\{|global|aggregate|verify)/g;
 
 test("every Edge Function rate-limit scope is admitted by increment_rate_limit", () => {
@@ -47,7 +48,15 @@ test("every Edge Function rate-limit scope is admitted by increment_rate_limit",
 	for (const file of sourceFiles(functions)) {
 		const source = readFileSync(file, "utf8");
 		if (!/increment_rate_limit|consumeRateLimit|rateLimit\(|authenticateTenantApiKeyBudgeted/.test(source)) continue;
+		let inSubjectHelper = false;
 		for (const line of source.split(/\r?\n/)) {
+			// A top-level `*RateSubject(...)` helper builds a consume_tenant_rate_limit
+			// subject (e.g. `api_key:${id}`), not an increment_rate_limit scope.
+			if (/^export function \w+RateSubject\(/.test(line)) inSubjectHelper = true;
+			if (inSubjectHelper) {
+				if (line === "}") inSubjectHelper = false;
+				continue;
+			}
 			if (/_CONTEXT\s*=|\b(?:subject|endpoint):/.test(line)) continue;
 			for (const [, scope] of line.matchAll(KEY_LITERAL)) {
 				if (!used.has(scope)) used.set(scope, relative(root, file));

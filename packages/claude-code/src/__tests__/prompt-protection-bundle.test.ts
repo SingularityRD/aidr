@@ -59,6 +59,7 @@ function runBundle(
 	script: string,
 	stdin: string,
 	env: Record<string, string> = {},
+	{ keepStdinOpen = false }: { keepStdinOpen?: boolean } = {},
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
 	return new Promise((resolveRun) => {
 		const child = execFile(
@@ -78,7 +79,10 @@ function runBundle(
 		child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
 			if (error.code !== "EPIPE") throw error;
 		});
-		child.stdin?.end(stdin);
+		// An open stdin leaves the hook waiting for the rest of its input, so only
+		// the deadline can answer; the pipe closes when the hook exits.
+		if (keepStdinOpen) child.stdin?.write(stdin);
+		else child.stdin?.end(stdin);
 	});
 }
 
@@ -361,7 +365,25 @@ describe("UserPromptSubmit bundle deadline", () => {
 
 	it("sends an unfinished prompt with a visible notice when secrets policy is warn", async () => {
 		await writeLocalConfig({ prompt_protection: { secrets: "warn", pii: "warn" } });
-		const { response, stdout } = await submitPrompt(`${EMAILS} ${GITHUB_TOKEN}`, FORCED_DEADLINE);
+		// The warn answer needs the loaded config: a deadline that fires while the
+		// config is still loading must block (nothing proves the prompt safe yet).
+		// So the deadline is far above config-load time even on a loaded runner,
+		// and the prompt never finishes arriving, so its inspection cannot finish.
+		const partialInput = JSON.stringify({
+			session_id: "session-prompt",
+			hook_event_name: "UserPromptSubmit",
+			cwd: home,
+			prompt: `${EMAILS} ${GITHUB_TOKEN}`,
+		}).slice(0, -2);
+		const result = await runBundle(
+			USER_PROMPT_SUBMIT,
+			partialInput,
+			{ AIDR_USER_PROMPT_SUBMIT_DEADLINE_MS: "2000" },
+			{ keepStdinOpen: true },
+		);
+		expect(result.code).toBe(0);
+		const stdout = result.stdout;
+		const response = JSON.parse(stdout.trim());
 		expect(stdout.trim().split("\n")).toHaveLength(1);
 		expect(response.decision).toBeUndefined();
 		expect(response.systemMessage).toContain("could not finish inspecting this prompt in time");

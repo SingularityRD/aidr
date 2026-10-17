@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {VisualPrivacyEngine} from '../../dist/visual/engine.js';
 import {LocalImageProcess} from '../../dist/visual/local-process.js';
+import path from 'node:path';
 import {backend,input,textEngine} from './helpers.mjs';
 
 // Windows built-in OCR backend (vision/windows_ocr.ps1) and endpoints without a barcode decoder.
@@ -39,10 +40,12 @@ test('no barcode decoder: protect never releases bytes (residual barcode check i
 });
 
 test('LocalImageProcess: the Windows engine needs absolute powershell/script paths, Tesseract its own',()=>{
-  const base={python:'C:\\v\\python.exe',manifest:'C:\\i\\ocr-manifest.json'};
-  assert.doesNotThrow(()=>new LocalImageProcess({...base,ocrEngine:'windows',powershell:'C:\\W\\powershell.exe'}));
+  // Absolute for the host platform (a drive path on Windows, /... elsewhere): the check uses path.isAbsolute.
+  const abs=(...parts)=>path.resolve(path.sep,...parts);
+  const base={python:abs('v','python.exe'),manifest:abs('i','ocr-manifest.json')};
+  assert.doesNotThrow(()=>new LocalImageProcess({...base,ocrEngine:'windows',powershell:abs('W','powershell.exe')}));
   assert.throws(()=>new LocalImageProcess({...base,ocrEngine:'windows'}),/IMAGE_CONFIGURATION_INVALID/);
   assert.throws(()=>new LocalImageProcess({...base,ocrEngine:'windows',powershell:'powershell.exe'}),/IMAGE_CONFIGURATION_INVALID/);
-  assert.throws(()=>new LocalImageProcess({...base,ocrEngine:'easyocr',powershell:'C:\\W\\powershell.exe'}),/IMAGE_CONFIGURATION_INVALID/);
+  assert.throws(()=>new LocalImageProcess({...base,ocrEngine:'easyocr',powershell:abs('W','powershell.exe')}),/IMAGE_CONFIGURATION_INVALID/);
   assert.throws(()=>new LocalImageProcess(base),/IMAGE_CONFIGURATION_INVALID/);
 });

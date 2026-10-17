@@ -85,7 +85,7 @@ async function loadCore() {
 			import("../packages/core/dist/intel/semver.js"),
 			import("../packages/core/dist/intel/loader.js"),
 			import("../packages/core/dist/intel/acceptance.js"),
-			import("../packages/core/dist/license/index.js"),
+			import("../packages/core/dist/customer-license/index.js"),
 			import("../packages/core/dist/intel/license-revocations.js"),
 		]);
 		return {

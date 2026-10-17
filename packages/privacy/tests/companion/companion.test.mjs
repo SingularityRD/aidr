@@ -146,7 +146,7 @@ function fakeRunner({ languages = 'tr\nen-US\n', zbar = 1, pip = 0 } = {}) {
 test('install: stages the host, pins OCR, writes manifest/config/receipt and exactly the HKCU keys', async () => {
   const { local } = fakeProfiles(), installDir = path.join(tmp(), 'PrivacyCompanion');
   const registry = memoryRegistry(), { runner, calls } = fakeRunner();
-  const report = await installCompanion({ installDir, localAppData: local, registry, runner, node: 'C:\\node\\node.exe', extensionIds: [ID2] });
+  const report = await installCompanion({ installDir, localAppData: local, registry, runner, node: 'C:\\node\\node.exe', extensionIds: [ID2], ocr: 'windows' });
   const manifestPath = path.join(installDir, 'com.singularity.aidr_privacy.json');
   assert.deepEqual([...registry.entries], [[REGISTRY_KEYS.chrome, manifestPath], [REGISTRY_KEYS.edge, manifestPath]]);
   assert.deepEqual(report.extensionIds, [ID2, ID]);
@@ -176,7 +176,7 @@ test('install: stages the host, pins OCR, writes manifest/config/receipt and exa
 
   // A second install with an unchanged launcher does not recompile it.
   const compiles = calls.filter(c => String(c.at(-1)).startsWith('Add-Type')).length;
-  await installCompanion({ installDir, localAppData: local, registry, runner, node: 'C:\\node\\node.exe', extensionIds: [ID2] });
+  await installCompanion({ installDir, localAppData: local, registry, runner, node: 'C:\\node\\node.exe', extensionIds: [ID2], ocr: 'windows' });
   assert.equal(calls.filter(c => String(c.at(-1)).startsWith('Add-Type')).length, compiles);
 
   const status = await companionStatus({ installDir, registry, localAppData: local });
@@ -190,11 +190,11 @@ test('install: no Browser Guard and no id is refused; no Turkish OCR installs te
   const empty = tmp();
   await assert.rejects(installCompanion({ installDir: path.join(empty, 'c'), localAppData: empty, registry: memoryRegistry(), runner: fakeRunner().runner }), /NO_EXTENSION_ID/);
   const registry = memoryRegistry(), installDir = path.join(empty, 'd');
-  const report = await installCompanion({ installDir, localAppData: empty, extensionIds: [ID], registry, runner: fakeRunner({ languages: 'de-DE\n' }).runner, node: 'C:\\n\\node.exe' });
+  const report = await installCompanion({ installDir, localAppData: empty, extensionIds: [ID], registry, runner: fakeRunner({ languages: 'de-DE\n' }).runner, node: 'C:\\n\\node.exe', ocr: 'windows' });
   assert.equal(report.ocr, null);
   assert.ok(report.warnings.some(w => w.startsWith('OCR_UNAVAILABLE')));
   assert.equal(JSON.parse(fs.readFileSync(path.join(installDir, 'host-config.json'), 'utf8')).visual, undefined);
-  await assert.rejects(installCompanion({ installDir: path.join(empty, 'e'), localAppData: empty, extensionIds: [ID], registry: memoryRegistry(), runner: fakeRunner({ pip: 1 }).runner, node: 'C:\\n\\node.exe' }), /PIP_FAILED/);
+  await assert.rejects(installCompanion({ installDir: path.join(empty, 'e'), localAppData: empty, extensionIds: [ID], registry: memoryRegistry(), runner: fakeRunner({ pip: 1 }).runner, node: 'C:\\n\\node.exe', ocr: 'windows' }), /PIP_FAILED/);
 });
 
 test('uninstall: removes only keys pointing at this install, and only a directory with the receipt', async () => {

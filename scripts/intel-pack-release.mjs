@@ -74,8 +74,8 @@ async function loadCore() {
 			import("../packages/core/dist/intel/loader.js"),
 			import("../packages/core/dist/intel/acceptance.js"),
 			import("../packages/core/dist/intel/license-revocations.js"),
-			import("../packages/core/dist/license/index.js"),
-			import("../packages/core/dist/license/verify.js"),
+			import("../packages/core/dist/customer-license/index.js"),
+			import("../packages/core/dist/customer-license/verify.js"),
 			import("../packages/core/dist/threat-loader.js"),
 		]);
 		return {

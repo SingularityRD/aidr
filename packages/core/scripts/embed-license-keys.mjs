@@ -5,7 +5,7 @@
  * Reads `deploy/onprem/license-public-keys.json` (the `aidr-license-public-keys-v1`
  * trust root for vendor-signed licenses and customer packets) and writes
  * `src/generated/license-public-keys.ts`. The endpoint verifier
- * (`src/license/verify.ts`) uses this embedded copy by default, so the registry
+ * (`src/customer-license/verify.ts`) uses this embedded copy by default, so the registry
  * an installed endpoint trusts is part of the compiled, integrity-signed release
  * rather than a loose file that could be swapped next to it.
  *

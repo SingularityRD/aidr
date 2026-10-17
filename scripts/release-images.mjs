@@ -34,6 +34,7 @@ export const COMPONENT_VALUE_PATHS = Object.freeze({
 	dashboard: [
 		["dashboard", "image"],
 		["notifications", "dispatcher", "image"],
+		["siem", "forwarder", "image"],
 		["maintenance", "image"],
 	],
 	"edge-functions": [["functions", "image"]],
