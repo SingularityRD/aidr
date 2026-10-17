@@ -141,6 +141,72 @@ describe("central SIEM forwarding", () => {
 		await screen.findByText("2 dead letters queued for another attempt.");
 	});
 
+	it("opts a destination into admin audit forwarding and reports events that could not be queued", async () => {
+		invoke.mockImplementation(async (_name: string, options: InvokeOptions) => {
+			if (options.method === "GET")
+				return {
+					data: settings({
+						destinations: [
+							destination({
+								filters: {
+									incidents: false,
+									decisions: [],
+									browser: false,
+									admin_audit: true,
+									min_severity: "info",
+								},
+							}),
+						],
+						enqueue_failures: { count: 3, last_failed_at: "2026-10-16T08:00:00.000Z" },
+					}),
+					error: null,
+				};
+			return {
+				data: { ok: true, destination: destination({ name: options.body?.name }) },
+				error: null,
+			};
+		});
+		render(<SiemDestinations tenantId={TENANT} />);
+		expect(
+			await screen.findByText(/3 events could not be queued for forwarding/),
+		).toBeInTheDocument();
+		const toggle = screen.getByLabelText("Administrator actions and sign-ins (audit log)");
+		expect(toggle).not.toBeChecked();
+		fireEvent.click(toggle);
+		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Audit SOC" } });
+		fireEvent.change(screen.getByLabelText("Collector host"), {
+			target: { value: "siem.example.com" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Save destination" }));
+		await screen.findByText("Destination Audit SOC saved.");
+		const create = invoke.mock.calls.find(
+			([, options]) => (options as InvokeOptions).body?.action === "create",
+		)?.[1] as InvokeOptions;
+		expect(create.body?.filters).toEqual({
+			incidents: true,
+			decisions: ["deny", "ask"],
+			browser: false,
+			admin_audit: true,
+			min_severity: "info",
+		});
+	});
+
+	it("shows the admin audit toggle and the queue gap in Turkish", async () => {
+		invoke.mockImplementation(async () => ({
+			data: settings({ enqueue_failures: { count: 2, last_failed_at: null } }),
+			error: null,
+		}));
+		render(
+			<I18nProvider initialLocale="tr">
+				<SiemDestinations tenantId={TENANT} />
+			</I18nProvider>,
+		);
+		expect(await screen.findByText(/2 kayıt iletim kuyruğuna alınamadı/)).toBeInTheDocument();
+		expect(
+			screen.getByLabelText("Yönetici işlemleri ve oturum açmalar (denetim kaydı)"),
+		).toBeInTheDocument();
+	});
+
 	it("explains the server-side errors in Turkish", async () => {
 		invoke.mockImplementation(async () => ({
 			data: null,

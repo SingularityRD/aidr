@@ -42,6 +42,14 @@ export const siemMessages = {
 		"Browser Guard blocks and warnings",
 		"Browser Guard engellemeleri ve uyarıları",
 	],
+	"siem.central.events.adminAudit": [
+		"Administrator actions and sign-ins (audit log)",
+		"Yönetici işlemleri ve oturum açmalar (denetim kaydı)",
+	],
+	"siem.central.enqueueFailures": [
+		"{count} events could not be queued for forwarding. They are kept in AIDR but were not sent to your SIEM; check the server logs (siem_enqueue_failed).",
+		"{count} kayıt iletim kuyruğuna alınamadı. Bu kayıtlar AIDR'de saklanıyor ancak SIEM sisteminize gönderilmedi; sunucu günlüklerini (siem_enqueue_failed) kontrol edin.",
+	],
 	"siem.central.decision.deny": ["Blocked actions", "Engellenen işlemler"],
 	"siem.central.decision.ask": ["Actions held for approval", "Onay bekleyen işlemler"],
 	"siem.central.decision.allow": [
@@ -82,8 +90,8 @@ export const siemMessages = {
 	"siem.central.empty": ["No central destination yet.", "Henüz merkezi hedef yok."],
 	"siem.central.deadLetters": ["Dead letters", "İletilemeyen kayıtlar"],
 	"siem.central.deadLettersLead": [
-		"Events that could not be delivered after every retry. They are kept for up to 7 days; fix the collector, then resend them.",
-		"Tüm denemelere rağmen iletilemeyen kayıtlar. En fazla 7 gün saklanır; toplayıcıyı düzelttikten sonra yeniden gönderin.",
+		"Events that could not be delivered after every retry. They are kept for your workspace's operational data retention (7 days by default); fix the collector, then resend them.",
+		"Tüm denemelere rağmen iletilemeyen kayıtlar. Çalışma alanınızın operasyonel veri saklama süresi boyunca (varsayılan 7 gün) saklanır; toplayıcıyı düzelttikten sonra yeniden gönderin.",
 	],
 	"siem.central.deadAt": ["Failed at", "Başarısız olduğu zaman"],
 	"siem.central.event": ["Event", "Kayıt"],

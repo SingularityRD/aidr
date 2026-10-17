@@ -74,6 +74,8 @@ export interface SiemFilters {
 	incidents: boolean;
 	decisions: Array<(typeof DECISIONS)[number]>;
 	browser: boolean;
+	/** Administrative actions and sign-ins (public.admin_audit_logs). Optional: absent means off on create, unchanged on update. */
+	admin_audit?: boolean;
 	min_severity: (typeof SEVERITIES)[number];
 }
 
@@ -98,19 +100,22 @@ function normalizeName(value: unknown): string | null {
 	return trimmed.length >= 1 && trimmed.length <= NAME_MAX ? trimmed : null;
 }
 
-/** Mirrors app.siem_filters_valid: all four keys, decisions unique, at least one event selected. */
+const FILTER_KEYS = ["incidents", "decisions", "browser", "min_severity"] as const;
+
+/** Mirrors app.siem_filters_valid: four required keys (+ optional admin_audit), decisions unique, at least one event selected. */
 export function parseSiemFilters(value: unknown): SiemFilters | null {
-	if (!isRecord(value) || Object.keys(value).length !== 4 || !onlyKeys(value, ["incidents", "decisions", "browser", "min_severity"])) {
+	if (!isRecord(value) || !FILTER_KEYS.every((key) => key in value) || !onlyKeys(value, [...FILTER_KEYS, "admin_audit"])) {
 		return null;
 	}
 	if (typeof value.incidents !== "boolean" || typeof value.browser !== "boolean") return null;
+	if (value.admin_audit !== undefined && typeof value.admin_audit !== "boolean") return null;
 	if (!SEVERITIES.includes(value.min_severity as SiemFilters["min_severity"])) return null;
 	if (!Array.isArray(value.decisions) || value.decisions.length > 3 ||
 		!value.decisions.every((item) => DECISIONS.includes(item as SiemFilters["decisions"][number])) ||
 		new Set(value.decisions).size !== value.decisions.length) {
 		return null;
 	}
-	if (!value.incidents && !value.browser && value.decisions.length === 0) return null;
+	if (!value.incidents && !value.browser && value.admin_audit !== true && value.decisions.length === 0) return null;
 	return value as unknown as SiemFilters;
 }
 
@@ -222,6 +227,15 @@ function destinationView(value: Record<string, unknown>) {
 	};
 }
 
+/** Tenant-wide count of rows that could not be queued (app.siem_enqueue_failure_summary). */
+function enqueueFailures(value: unknown): { count: number; last_failed_at: string | null } {
+	if (!isRecord(value)) return { count: 0, last_failed_at: null };
+	return {
+		count: Number.isSafeInteger(value.count) && (value.count as number) >= 0 ? (value.count as number) : 0,
+		last_failed_at: typeof value.last_failed_at === "string" ? value.last_failed_at : null,
+	};
+}
+
 export function createSiemDestinationsHandler(deps: SiemDestinationsDeps = {}) {
 	const runtimeEnv = deps.env ?? readRuntimeEnv;
 	const now = deps.now ?? Date.now;
@@ -298,6 +312,7 @@ export function createSiemDestinationsHandler(deps: SiemDestinationsDeps = {}) {
 					limits: { max_destinations: MAX_DESTINATIONS },
 					destinations: (data.destinations as Record<string, unknown>[]).map(destinationView),
 					dead_letters: data.dead_letters,
+					enqueue_failures: enqueueFailures(data.enqueue_failures),
 				});
 			}
 

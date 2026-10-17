@@ -49,12 +49,17 @@ const SYSLOG_MAX_BYTES = 64 * 1024;
 
 const SEVERITIES = ["info", "warning", "high", "critical"] as const;
 type Severity = (typeof SEVERITIES)[number];
-const KINDS = ["incident", "decision", "browser", "test"] as const;
+const KINDS = ["incident", "decision", "browser", "admin_audit", "test"] as const;
 type Kind = (typeof KINDS)[number];
 
 const IDENT = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,31}$/;
+/** Admin audit action identifier (app.siem_admin_audit_payload). */
+const AUDIT_ACTION = /^[A-Za-z][A-Za-z0-9_.:-]{0,95}$/;
+const ROW_ID = /^[0-9]{1,19}$/;
+const BROWSER_ACTIONS = ["masked", "warned", "blocked", "allowed", "visited"] as const;
+const ADMIN_AUDIT_FIELDS = new Set(["audit_row_id", "actor_user_id", "target_user_id", "action"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,6 +71,10 @@ interface ForwardedEventFields {
 	type: string;
 	occurred_at: string;
 	event_row_id: string | null;
+	/** admin_audit only: public.admin_audit_logs row id. */
+	audit_row_id?: string;
+	actor_user_id?: string;
+	target_user_id?: string;
 	client_timestamp?: string;
 	source_event_id?: string;
 	agent_id?: string;
@@ -142,13 +151,20 @@ export function buildForwardedEvent(tenantId: string, row: ClaimedSiemDelivery):
 			if (/^[A-Z][A-Z_]{1,31}$/.test(key) && n !== undefined) entityCounts[key] = n;
 		}
 	}
-	const rowId = typeof p.event_row_id === "string" && /^[0-9]{1,19}$/.test(p.event_row_id) ? p.event_row_id : null;
+	const adminAudit = row.kind === "admin_audit";
+	// Events and admin audit rows have independent id sequences: each kind keeps its own key.
+	const rowId = adminAudit ? null : (pick(p.event_row_id, ROW_ID) ?? null);
+	const auditRowId = adminAudit ? pick(p.audit_row_id, ROW_ID) : undefined;
+	const userId = (value: unknown) => (typeof value === "string" && UUID.test(value) ? value.toLowerCase() : undefined);
 	const fields: ForwardedEventFields = {
 		type: pick(p.type, /^[a-z][a-z0-9_]{0,63}$/) ?? "unknown",
 		occurred_at: isoOr(p.occurred_at, row.createdAt),
 		event_row_id: rowId,
 	};
 	const optional: Partial<ForwardedEventFields> = {
+		audit_row_id: auditRowId,
+		actor_user_id: adminAudit ? userId(p.actor_user_id) : undefined,
+		target_user_id: adminAudit ? userId(p.target_user_id) : undefined,
 		client_timestamp: typeof p.client_timestamp === "string" && Number.isFinite(Date.parse(p.client_timestamp))
 			? new Date(Date.parse(p.client_timestamp)).toISOString()
 			: undefined,
@@ -170,18 +186,23 @@ export function buildForwardedEvent(tenantId: string, row: ClaimedSiemDelivery):
 		user_override: typeof p.user_override === "boolean" ? p.user_override : undefined,
 		tool_input_digest: pick(p.tool_input_digest, /^sha256:[a-f0-9]{64}$/),
 		site: pick(p.site, SLUG),
-		action: oneOf(p.action, ["masked", "warned", "blocked", "allowed", "visited"] as const),
+		action: adminAudit ? pick(p.action, AUDIT_ACTION) : oneOf(p.action, BROWSER_ACTIONS),
 		channel: oneOf(p.channel, ["prompt", "paste", "file"] as const),
 		service_id: pick(p.service_id, SLUG),
 		count: count(p.count, 1_000_000),
 		entity_counts: Object.keys(entityCounts).length > 0 ? entityCounts : undefined,
 	};
 	for (const [key, value] of Object.entries(optional)) {
+		// An admin audit event carries identifiers only, never telemetry fields.
+		if (adminAudit && !ADMIN_AUDIT_FIELDS.has(key)) continue;
 		if (value !== undefined) (fields as unknown as Record<string, unknown>)[key] = value;
 	}
+	let eventId: string;
+	if (adminAudit) eventId = `aidr_audit_${auditRowId ?? `d${row.deliveryId}`}`;
+	else eventId = row.kind === "test" || rowId === null ? `aidr_test_${row.deliveryId}` : `aidr_evt_${rowId}`;
 	return {
 		schema_version: FORWARDED_EVENT_SCHEMA,
-		event_id: row.kind === "test" || rowId === null ? `aidr_test_${row.deliveryId}` : `aidr_evt_${rowId}`,
+		event_id: eventId,
 		observed_at: fields.occurred_at,
 		source: { vendor: "Singularity", product: "AIDR", component: "control_plane" },
 		tenant_id: tenantId.toLowerCase(),
@@ -194,6 +215,8 @@ function severityOf(event: ForwardedEvent): Severity {
 	if (event.event.severity) return event.event.severity;
 	if (event.kind === "browser") return event.event.action === "blocked" ? "high" : "warning";
 	if (event.kind === "decision") return event.event.decision === "deny" ? "high" : event.event.decision === "ask" ? "warning" : "info";
+	// Administrative actions and sign-ins are security-relevant but not alerts by themselves.
+	if (event.kind === "admin_audit") return "warning";
 	return "info";
 }
 
@@ -225,6 +248,9 @@ function eventPairs(event: ForwardedEvent): Array<[string, string | number | boo
 		["kind", event.kind],
 		["type", e.type],
 		["event_row_id", e.event_row_id ?? undefined],
+		["audit_row_id", e.audit_row_id],
+		["actor_user_id", e.actor_user_id],
+		["target_user_id", e.target_user_id],
 		["source_event_id", e.source_event_id],
 		["incident_id", e.incident_id],
 		["status", e.status],
@@ -261,6 +287,8 @@ function eventName(event: ForwardedEvent): string {
 			return `AIDR ${event.event.decision ?? "unknown"} decision${event.event.threat_id ? ` - ${event.event.threat_id}` : ""}`;
 		case "browser":
 			return `AIDR browser ${event.event.action ?? "event"}${event.event.site ? ` - ${event.event.site}` : ""}`;
+		case "admin_audit":
+			return `AIDR admin action${event.event.action ? ` - ${event.event.action}` : ""}`;
 		default:
 			return "AIDR SIEM test event";
 	}
@@ -270,7 +298,9 @@ function eventName(event: ForwardedEvent): string {
 function signatureId(event: ForwardedEvent): string {
 	const base = `AIDR/${severityOf(event)}/${event.kind.toUpperCase()}`;
 	if (event.kind === "decision" && event.event.decision) return `${base}/${event.event.decision.toUpperCase()}`;
-	if (event.kind === "browser" && event.event.action) return `${base}/${event.event.action.toUpperCase()}`;
+	if ((event.kind === "browser" || event.kind === "admin_audit") && event.event.action) {
+		return `${base}/${event.event.action.toUpperCase()}`;
+	}
 	return base;
 }
 
@@ -281,6 +311,9 @@ export function formatCef(event: ForwardedEvent): string {
 		`externalId=${escapeCefValue(event.event_id)}`,
 		`cat=${escapeCefValue(event.kind)}`,
 		...(e.decision ? [`act=${escapeCefValue(e.decision)}`] : []),
+		// CEF source/destination user ids: who acted, on whom.
+		...(e.actor_user_id ? [`suid=${escapeCefValue(e.actor_user_id)}`] : []),
+		...(e.target_user_id ? [`duid=${escapeCefValue(e.target_user_id)}`] : []),
 		...(e.threat_id ? [`cs1Label=threat_id`, `cs1=${escapeCefValue(e.threat_id)}`] : []),
 		...eventPairs(event).map(([key, value]) => `${key}=${escapeCefValue(String(value))}`),
 	].join(" ");

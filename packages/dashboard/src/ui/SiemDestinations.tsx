@@ -213,6 +213,14 @@ function FiltersEditor({
 				/>{" "}
 				{t("siem.central.events.browser")}
 			</label>
+			<label className="label">
+				<input
+					type="checkbox"
+					checked={filters.adminAudit}
+					onChange={(event) => onChange({ ...filters, adminAudit: event.target.checked })}
+				/>{" "}
+				{t("siem.central.events.adminAudit")}
+			</label>
 			<label className="label" htmlFor="siem-central-severity">
 				{t("siem.central.minSeverity")}
 			</label>
@@ -736,6 +744,17 @@ function DeadLetters({ settings }: { settings: SiemSettings }) {
 	);
 }
 
+/** Events the server could not queue for forwarding (kept in AIDR, never sent). */
+function EnqueueFailures({ count }: { count: number }) {
+	const t = useT();
+	if (count <= 0) return null;
+	return (
+		<p className="notice notice-danger" role="alert">
+			{t("siem.central.enqueueFailures", { count })}
+		</p>
+	);
+}
+
 /** Central (control-plane) SIEM forwarding: destinations, health and dead letters. */
 export function SiemDestinations({ tenantId }: { tenantId: string }) {
 	const t = useT();
@@ -779,6 +798,7 @@ export function SiemDestinations({ tenantId }: { tenantId: string }) {
 					{t("siem.central.error.notConfigured")}
 				</p>
 			) : null}
+			{settings ? <EnqueueFailures count={settings.enqueueFailures} /> : null}
 			{settings ? (
 				<>
 					<DestinationsTable tenantId={tenantId} settings={settings} onChanged={changed} />

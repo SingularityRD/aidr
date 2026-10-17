@@ -20,6 +20,8 @@ export interface SiemFilters {
 	incidents: boolean;
 	decisions: SiemDecision[];
 	browser: boolean;
+	/** Administrative actions and sign-ins from the admin audit log (opt-in). */
+	adminAudit: boolean;
 	minSeverity: SiemSeverity;
 }
 
@@ -27,6 +29,7 @@ export const DEFAULT_SIEM_FILTERS: SiemFilters = Object.freeze({
 	incidents: true,
 	decisions: ["deny", "ask"],
 	browser: false,
+	adminAudit: false,
 	minSeverity: "info",
 }) as SiemFilters;
 
@@ -67,6 +70,9 @@ export interface SiemSettings {
 	maxDestinations: number;
 	destinations: SiemDestination[];
 	deadLetters: SiemDeadLetter[];
+	/** Events and admin actions that could not be queued for forwarding (within retention). */
+	enqueueFailures: number;
+	lastEnqueueFailureAt: string | null;
 }
 
 export type SiemResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -95,10 +101,11 @@ async function errorCode(error: unknown): Promise<string | null> {
 
 function readFilters(value: unknown): SiemFilters | null {
 	if (!isRecord(value)) return null;
-	const { incidents, decisions, browser, min_severity } = value;
+	const { incidents, decisions, browser, admin_audit, min_severity } = value;
 	if (
 		typeof incidents !== "boolean" ||
 		typeof browser !== "boolean" ||
+		(admin_audit !== undefined && typeof admin_audit !== "boolean") ||
 		!SIEM_SEVERITIES.includes(min_severity as SiemSeverity) ||
 		!Array.isArray(decisions) ||
 		!decisions.every((item) => SIEM_DECISIONS.includes(item as SiemDecision))
@@ -107,6 +114,7 @@ function readFilters(value: unknown): SiemFilters | null {
 	return {
 		incidents,
 		browser,
+		adminAudit: admin_audit === true,
 		decisions: decisions as SiemDecision[],
 		minSeverity: min_severity as SiemSeverity,
 	};
@@ -201,6 +209,10 @@ export async function loadSiemSettings(tenantId: string): Promise<SiemResult<Sie
 				maxDestinations: count(data.limits.max_destinations),
 				destinations,
 				deadLetters,
+				enqueueFailures: isRecord(data.enqueue_failures) ? count(data.enqueue_failures.count) : 0,
+				lastEnqueueFailureAt: isRecord(data.enqueue_failures)
+					? nullableString(data.enqueue_failures.last_failed_at)
+					: null,
 			},
 		};
 	} catch {
@@ -231,6 +243,7 @@ function filtersBody(filters: SiemFilters) {
 		incidents: filters.incidents,
 		decisions: [...new Set(filters.decisions)],
 		browser: filters.browser,
+		admin_audit: filters.adminAudit,
 		min_severity: filters.minSeverity,
 	};
 }
