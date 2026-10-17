@@ -19,3 +19,12 @@ describe("CLI configuration safety", () => {
 		expect(parseConfigValue("managed")).toBe("managed");
 	});
 });
+
+describe("displayConfigValue lists and objects", () => {
+	it("shows a list of plain values and keeps objects summarised", () => {
+		expect(displayConfigValue("disabled_threats", ["CLT-CMD-001", "CLT-CMD-002"])).toBe(
+			'["CLT-CMD-001","CLT-CMD-002"]',
+		);
+		expect(displayConfigValue("network", { https_proxy: "http://u:p@h" })).toBe("[object]");
+	});
+});

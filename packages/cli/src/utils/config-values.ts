@@ -29,6 +29,14 @@ export function configPathParts(path: string): string[] {
 }
 export function displayConfigValue(path: string, value: unknown): string {
 	if (isSecretConfigPath(path)) return value ? "[redacted]" : "(not set)";
+	// A list of plain values (e.g. disabled_threats) is shown as written; an
+	// object stays summarised because nested keys can hold secrets.
+	if (
+		Array.isArray(value) &&
+		value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item))
+	) {
+		return JSON.stringify(value);
+	}
 	return typeof value === "object" ? "[object]" : String(value);
 }
 export function parseConfigValue(value: string): unknown {

@@ -36,6 +36,9 @@ const ENABLE_TIGHTENS = new Set([
 	"logging.enabled",
 	"incident.enabled",
 	"agent_safety.runaway.enabled",
+	// Opt-in protections: turning them on adds a control.
+	"response.quarantine.enabled",
+	"response.audit.signed_chain",
 ]);
 
 function rankDoesNotLoosen(
