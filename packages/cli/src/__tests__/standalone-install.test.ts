@@ -47,7 +47,7 @@ import {
 	readReleaseKeyFile,
 } from "../utils/release-key.js";
 import { writeSetupLedger } from "../utils/setup-ledger.js";
-import { decisionOf, verifyStandaloneBundle } from "../utils/standalone.js";
+import { decisionOf, failClosedHookCommand, verifyStandaloneBundle } from "../utils/standalone.js";
 import { buildStatusVerdict } from "../utils/status-verdict.js";
 
 const posix = process.platform !== "win32";
@@ -204,8 +204,8 @@ describe.skipIf(!posix)("aidr setup from the standalone bundle (Claude Code)", (
 		);
 		expect(managed.map((hook) => hook.statusMessage)).toEqual(Array(3).fill(MANAGED_HOOK_MARKER));
 		expect(managed.map((hook) => hook.command)).toEqual(
-			["pre-tool-use", "post-tool-use", "session-start"].map(
-				(name) => `"${join(root, "bin", "aidr")}" hook ${name}`,
+			["pre-tool-use", "post-tool-use", "session-start"].map((name) =>
+				failClosedHookCommand(`"${join(root, "bin", "aidr")}" hook ${name}`),
 			),
 		);
 		const receipt = JSON.parse(
@@ -331,7 +331,7 @@ describe.skipIf(!posix)("aidr setup from the standalone bundle (Codex and editor
 		const codex = results.find((entry) => entry.host === "codex");
 		expect(codex?.action, codex?.detail).toBe("installed");
 		const hooks = JSON.parse(readFileSync(join(dir, ".codex", "hooks.json"), "utf8")).hooks;
-		const command = `"${join(root, "bin", "aidr")}" hook aidr-codex-hook`;
+		const command = failClosedHookCommand(`"${join(root, "bin", "aidr")}" hook aidr-codex-hook`);
 		for (const event of ["PreToolUse", "UserPromptSubmit", "PostToolUse"]) {
 			expect(hooks[event].at(-1).hooks[0].command).toBe(command);
 		}

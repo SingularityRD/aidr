@@ -21,6 +21,7 @@ import {
 	scheduleHeartbeat,
 	windowsHeartbeatTaskXml,
 } from "../utils/machine-hooks.js";
+import { failClosedHookCommand } from "../utils/standalone.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -86,7 +87,7 @@ describe("Claude Code managed-settings drop-in", () => {
 			hooks: [
 				{
 					type: "command",
-					command: '"/opt/aidr/bundle/bin/aidr" hook pre-tool-use',
+					command: failClosedHookCommand('"/opt/aidr/bundle/bin/aidr" hook pre-tool-use', "linux"),
 					timeout: 15,
 					statusMessage: MACHINE_HOOK_MARKER,
 				},
@@ -172,7 +173,10 @@ describe("Codex system layer", () => {
 		>;
 		expect(hooks.PreToolUse?.map((group) => group.hooks[0]?.command)).toEqual([
 			"/usr/local/bin/org-audit",
-			'"/opt/singularity-aidr/bundle/bin/aidr" hook aidr-codex-hook',
+			failClosedHookCommand(
+				'"/opt/singularity-aidr/bundle/bin/aidr" hook aidr-codex-hook',
+				"linux",
+			),
 		]);
 		expect(Object.keys(hooks).sort()).toEqual(["PostToolUse", "PreToolUse", "UserPromptSubmit"]);
 		const requirements = readFileSync(paths.codexRequirements, "utf8");

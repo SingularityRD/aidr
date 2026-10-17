@@ -28,6 +28,7 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 const { default: setupCommand } = await import("../commands/setup.js");
+const { failClosedHookCommand } = await import("../utils/standalone.js");
 
 const posix = process.platform !== "win32";
 const scratch: string[] = [];
@@ -145,7 +146,7 @@ describe.skipIf(!posix)("aidr setup and the release key", () => {
 		expect(config.version).toBeTruthy(); // merged into the config setup created, not a new document
 		const settings = JSON.parse(readFileSync(join(userHome, ".claude", "settings.json"), "utf8"));
 		expect(settings.hooks.PreToolUse.at(-1).hooks[0].command).toBe(
-			`"${join(root, "bin", "aidr")}" hook pre-tool-use`,
+			failClosedHookCommand(`"${join(root, "bin", "aidr")}" hook pre-tool-use`),
 		);
 
 		// A rerun leaves the key alone; a different installer key is not trusted without --force.

@@ -24,6 +24,7 @@ import {
 import { MANAGED_HOOK_MARKER } from "./install-hooks.js";
 import { type MachineHookState, machineHookStatus } from "./machine-hooks.js";
 import {
+	failClosedHookCommand,
 	type HookProbe,
 	probeHookCommand,
 	quoteHookPath,
@@ -455,7 +456,7 @@ function installCodex(deps: ConnectorDeps, dryRun: boolean): HostInstallResult {
 	const command = root
 		? standaloneHookCommand(root, STANDALONE_CODEX_HOOK)
 		: onPath
-			? quoteHookPath(onPath)
+			? failClosedHookCommand(quoteHookPath(onPath))
 			: AIDR_CODEX_HOOK;
 	if (root) {
 		const bundle = standaloneBundle(deps);

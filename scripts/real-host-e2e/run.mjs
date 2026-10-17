@@ -316,6 +316,26 @@ const SCENARIOS = [
 		},
 		outcome: (ctx) => (existsSync(ctx.sandbox.marker("crash")) ? "fail-open" : "fail-closed"),
 	},
+	{
+		// The same crash, with the hook registered the way `aidr setup` registers it
+		// on POSIX (failClosedHookCommand): the host must block the call.
+		id: "crashed-hook-wrapped-fails-closed",
+		proves: { failurePolicy: "crashed-hook" },
+		mode: "crash-wrapped",
+		applies: (adapter) => adapter.supportsCrashProbe && process.platform !== "win32",
+		toolCall: ({ adapter, sandbox }) => {
+			const sh = shellFor(adapter);
+			return { kind: "shell", command: `${sh.touch(sandbox.marker("crash"))}${sh.then}${sh.echo("aidr-crash-ok")}` };
+		},
+		evaluate(ctx, observed) {
+			return [
+				check("host sent the scripted tool call", observed.toolCallIssued),
+				check("the host invoked the (crashing) hook process", readJsonLines(ctx.sandbox.crashProof).some((entry) => entry.invoked === true)),
+				check("the call did not execute although the hook crashed", !existsSync(ctx.sandbox.marker("crash"))),
+			];
+		},
+		outcome: (ctx) => (existsSync(ctx.sandbox.marker("crash")) ? "fail-open" : "fail-closed"),
+	},
 ];
 
 // ── Runner ──────────────────────────────────────────────────────────────────
@@ -405,7 +425,9 @@ async function runScenario({ adapter, host, scenario, server, workRoot, timeoutM
 			[REPO_ROOT, "<repo>"],
 		]);
 	} finally {
-		if (!keep) rmSync(sandbox.root, { recursive: true, force: true });
+		// A host can still be writing into the sandbox (Codex clones its plugin
+		// catalog in the background) when the scenario ends: retry ENOTEMPTY/EBUSY.
+		if (!keep) rmSync(sandbox.root, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 	}
 }
 
@@ -569,7 +591,7 @@ async function main(argv) {
 		writeFileSync(output, `${JSON.stringify(record, null, "\t")}\n`);
 		summary.push({ host: id, status: record.passed ? "PASSED" : "FAILED", version: host.version, evidence: path.relative(REPO_ROOT, output) });
 	}
-	if (!values.keep) rmSync(workRoot, { recursive: true, force: true });
+	if (!values.keep) rmSync(workRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 	else console.log(`[real-host] sandboxes kept under ${workRoot}`);
 	console.log(`AIDR_REAL_HOST_RESULT ${JSON.stringify(summary)}`);
 	return failures === 0 ? 0 : 1;

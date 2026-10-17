@@ -27,6 +27,7 @@ import {
 	stripCodexToml,
 } from "../utils/connector-install.js";
 import { detectConnectorStatuses } from "../utils/connector-status.js";
+import { failClosedHookCommand } from "../utils/standalone.js";
 
 const VERSION = "9.8.7";
 const roots: string[] = [];
@@ -147,7 +148,7 @@ describe("aidr setup installs the connector of every detected host (CON-13)", ()
 			process.platform === "win32" ? "aidr-codex-hook.cmd" : "aidr-codex-hook",
 		);
 		expect(written.hooks.UserPromptSubmit?.[0]?.hooks[0]?.command).toBe(
-			`"${hookFile.replaceAll("\\", "/")}"`,
+			failClosedHookCommand(`"${hookFile.replaceAll("\\", "/")}"`),
 		);
 		expect(written.hooks.PostToolUse?.[0]?.matcher).toBe("^(Bash|mcp__.+)$");
 		expect(first?.followUp.join("\n")).toContain("/hooks");

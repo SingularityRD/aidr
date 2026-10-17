@@ -16,18 +16,28 @@
  *   - "crash":     (command-hook hosts only) the hook command is replaced by
  *                  scripts/real-host-e2e/crash-hook.mjs, which is SIGKILLed after
  *                  reading its payload, to observe the host's crashed-hook policy.
+ *   - "crash-wrapped": the same crash probe, registered in the fail-closed form
+ *                  `aidr setup` writes on POSIX (failClosedHookCommand), which
+ *                  must turn the crash into a block.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { embeddedBuildFlavors } from "../lib/release-minify.mjs";
 
 const IS_WINDOWS = process.platform === "win32";
+// The exact fail-closed wrapper `aidr setup` registers on POSIX (built CLI).
+const { failClosedHookCommand } = await import(
+	pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "packages", "cli", "dist", "utils", "standalone.js")).href
+);
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CRASH_HOOK = path.join(REPO_ROOT, "scripts", "real-host-e2e", "crash-hook.mjs");
+/** The crash probe as a bare command ("crash") or in AIDR's registered fail-closed form ("crash-wrapped"). */
+const crashCommand = (mode) =>
+	mode === "crash-wrapped" ? failClosedHookCommand(`node "${CRASH_HOOK}"`) : `node "${CRASH_HOOK}"`;
 
 /** Pinned host versions. Codex matches the version packages/codex/README.md was verified against. */
 export const HOST_PINS = Object.freeze({
@@ -251,14 +261,14 @@ const claudeCode = {
 		return { binary, version: versionOf(binary, ["--version"], process.env), pinnedVersion: pin.version };
 	},
 	prepare(sandbox, mode) {
-		if (mode === "crash") {
+		if (mode === "crash" || mode === "crash-wrapped") {
 			const pluginDir = path.join(sandbox.root, "crash-plugin");
 			mkdirSync(path.join(pluginDir, ".claude-plugin"), { recursive: true });
 			mkdirSync(path.join(pluginDir, "hooks"), { recursive: true });
 			writeFileSync(path.join(pluginDir, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name: "aidr-crash-probe", version: "0.0.0" })}\n`);
 			writeFileSync(
 				path.join(pluginDir, "hooks", "hooks.json"),
-				`${JSON.stringify({ hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: `node "${CRASH_HOOK}"`, timeout: 15 }] }] } }, null, 2)}\n`,
+				`${JSON.stringify({ hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: crashCommand(mode), timeout: 15 }] }] } }, null, 2)}\n`,
 			);
 			return { pluginDir };
 		}
@@ -315,7 +325,7 @@ const codex = {
 		const codexHome = path.join(sandbox.home, ".codex");
 		mkdirSync(codexHome, { recursive: true });
 		const hook = path.join(REPO_ROOT, "packages", "codex", "dist", "pre-tool-use.cjs");
-		const command = mode === "crash" ? `node "${CRASH_HOOK}"` : `node "${hook}"`;
+		const command = mode === "crash" || mode === "crash-wrapped" ? crashCommand(mode) : `node "${hook}"`;
 		if (mode !== "absent") {
 			// PascalCase event names and the shipped matcher, as packages/codex/README.md documents.
 			const hooks = {

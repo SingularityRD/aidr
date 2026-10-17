@@ -69,13 +69,29 @@ export function quoteHookPath(path: string): string {
 	return `"${path.replaceAll("\\", "/")}"`;
 }
 
-/** The host hook command for one hook of the bundle: `"<bundle>/bin/aidr" hook <name>`. */
+/**
+ * Make a POSIX hook command fail closed when its process cannot run or dies:
+ * Claude Code and Codex treat a hook that crashes, is killed or cannot be found
+ * (exit 1/126/127/137) as a non-blocking error and RUN the call, but block on
+ * exit 2 (Codex also needs a reason on stderr). The hook's own answers are
+ * unchanged: decisions are JSON with exit 0, and its own exit 2 is passed on.
+ * Windows hosts do not run hooks through a POSIX shell, so the command is left as is.
+ */
+export function failClosedHookCommand(command: string, platform = process.platform): string {
+	if (platform === "win32") return command;
+	return `${command} || { [ $? -eq 2 ] || echo "Singularity AIDR hook did not run; the call was blocked." >&2; exit 2; }`;
+}
+
+/** The host hook command for one hook of the bundle: `"<bundle>/bin/aidr" hook <name>` (fail-closed on POSIX). */
 export function standaloneHookCommand(
 	root: string,
 	hook: string,
 	platform = process.platform,
 ): string {
-	return `${quoteHookPath(standaloneBinary(root, platform))} hook ${hook}`;
+	return failClosedHookCommand(
+		`${quoteHookPath(standaloneBinary(root, platform))} hook ${hook}`,
+		platform,
+	);
 }
 
 /** An editor extension the bundle ships, or null when it carries none. */
