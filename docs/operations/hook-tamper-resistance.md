@@ -150,6 +150,29 @@ to run asks for, but it also stops any other hook the developers rely on. In
 Claude Code it also disables plugins with a `command` source and the `/goal`
 command.
 
+## A crashed hook blocks (POSIX registrations)
+
+Claude Code and Codex run a call whose hook crashed, was killed or could not be
+found (exit 1/126/127/137) and block on exit 2 (Codex only with a reason on
+stderr). `aidr setup` and `aidr machine-hooks install` therefore register POSIX
+hook commands as `<cmd> || { [ $? -eq 2 ] || echo "<reason>" >&2; exit 2; }`
+(packages/cli/src/utils/standalone.ts `failClosedHookCommand`). The real-host
+scenario `crashed-hook-wrapped-fails-closed` proves the block on Claude Code
+2.1.302 and Codex 0.141.0; `crashed-hook-observed` keeps recording the hosts'
+own fail-open for an unwrapped hook.
+
+Not wrapped yet:
+
+- **Windows registrations.** Claude Code runs a shell-form hook through Git Bash
+  on Windows, or PowerShell when Git Bash is not installed
+  (code.claude.com/docs/en/hooks, "Exec form and shell form", read 2026-10-17);
+  PowerShell cannot parse the wrapper. Codex runs Windows hooks through its own
+  shell. Both need a real-host run on Windows before a wrapped form ships there.
+- **The Claude Code plugin's `hooks/hooks.json`.** It is one file for every
+  platform, so it keeps the plain `node "${CLAUDE_PLUGIN_ROOT}/…"` command until
+  the Windows behaviour above is verified. Enterprise fleets should use the
+  machine-wide hooks, which are wrapped on Linux and macOS.
+
 ## The protection lock (Cursor, VS Code)
 
 With `protection_locked` set in machine policy, the extension:
