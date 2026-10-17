@@ -10,7 +10,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CONTROL_EXCEPT_NEWLINE_TAB = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 
-export type GovernanceRole = "owner" | "admin" | "member" | "viewer";
+/** `auditor` is the read-only audit role; it is admitted to reads only. */
+export type GovernanceRole = "owner" | "admin" | "member" | "viewer" | "auditor";
 
 export type GovernanceAction =
 	| "enforcement_preview"
@@ -49,7 +50,7 @@ const CONTRIBUTORS: readonly GovernanceRole[] = ["owner", "admin", "member"];
  * request needs no step-up; every decision and register change does.
  */
 export const GOVERNANCE_ACTIONS: Readonly<Record<GovernanceAction, ActionRule>> = Object.freeze({
-	enforcement_preview: { roles: ["owner", "admin", "member", "viewer"], aal2: false, bucket: "read" },
+	enforcement_preview: { roles: ["owner", "admin", "member", "viewer", "auditor"], aal2: false, bucket: "read" },
 	policy_change_detail: { roles: OWNER_ADMIN, aal2: true, bucket: "read" },
 	upsert_asset: { roles: OWNER_ADMIN, aal2: true, bucket: "write" },
 	import_candidates: { roles: OWNER_ADMIN, aal2: true, bucket: "import" },

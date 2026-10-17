@@ -26,6 +26,7 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
+import { isTenantReadRole } from "../_shared/tenant-roles.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 4096;
@@ -245,7 +246,7 @@ export function createTenantSettingsHandler(deps: TenantSettingsDeps = {}) {
 			if (memberError || tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
 			const role = String((member as { role?: unknown } | null)?.role ?? "");
 			if (!membershipActive(member as { role?: string; expires_at?: string | null } | null, now()) ||
-				!["owner", "admin", "member", "viewer"].includes(role)) {
+				!isTenantReadRole(role)) {
 				return corsJson(req, 403, { error: "workspace_forbidden" });
 			}
 			if (!tenant || tenant.status === "closed") return corsJson(req, 403, { error: "workspace_forbidden" });

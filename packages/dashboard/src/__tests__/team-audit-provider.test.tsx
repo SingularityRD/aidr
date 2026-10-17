@@ -245,6 +245,25 @@ describe("team audit provider boundaries", () => {
 		expect(screen.getByTestId("audit-probe")).toHaveTextContent(B);
 	});
 
+	it("explains a legal-hold refusal instead of reporting an unexplained export failure", async () => {
+		mocks.invoke.mockResolvedValue({
+			data: null,
+			error: Object.assign(new Error("Edge Function returned a non-2xx status code"), {
+				context: new Response(JSON.stringify({ error: "legal_hold_active" }), { status: 409 }),
+			}),
+		});
+		renderProvider();
+		await waitFor(() => expect(contexts.has(A)).toBe(true));
+		await expect(contexts.get(A)?.exportAuditLogs("csv")).rejects.toThrow(
+			/paused while a legal hold is active/,
+		);
+		mocks.invoke.mockResolvedValue({ data: { error: "export_unavailable" }, error: null });
+		await expect(contexts.get(A)?.exportAuditLogs("csv")).rejects.toThrow(
+			"Audit export failed. No partial file was produced.",
+		);
+		expect(mocks.createObjectURL).not.toHaveBeenCalled();
+	});
+
 	it("forwards the stable request ID through the team-creation RPC contract", async () => {
 		mocks.rpc.mockResolvedValue({
 			data: {

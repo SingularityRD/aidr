@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OperatorPage } from "../ui/pages/OperatorPage";
@@ -172,6 +173,22 @@ describe("operator console access", () => {
 		expect(screen.queryByRole("table")).not.toBeInTheDocument();
 		expect(fixture.invoke).toHaveBeenCalledTimes(1);
 		expect(fixture.listFactors).not.toHaveBeenCalled();
+	});
+
+	it("leaves the checking state under StrictMode's development remount", async () => {
+		fixture.invoke.mockResolvedValue(httpError(403, "forbidden"));
+		render(
+			<StrictMode>
+				<ThemeProvider>
+					<MemoryRouter initialEntries={["/operator"]}>
+						<OperatorPage />
+					</MemoryRouter>
+				</ThemeProvider>
+			</StrictMode>,
+		);
+		expect(
+			await screen.findByRole("heading", { name: "Operator access required" }),
+		).toBeInTheDocument();
 	});
 
 	it("asks the server, with the session token, instead of trusting any client flag", async () => {

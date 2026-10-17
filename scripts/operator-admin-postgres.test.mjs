@@ -70,6 +70,10 @@ begin
     raise exception '%: expected % % receipts, got %', label, expected, action, actual;
   end if;
 end $fn$;
+-- Function EXECUTE is revoked from PUBLIC by default (security review
+-- hardening), so the role-switched checks need the helpers granted.
+grant execute on function pg_temp.expect_error(text,text) to anon, authenticated, service_role;
+grant execute on function pg_temp.expect(jsonb,text[],text,text) to anon, authenticated, service_role;
 `;
 
 function run(label, fixture, body) {
@@ -162,6 +166,13 @@ do $check$ begin
     raise exception 'licensed grant did not record the plan'; end if;
 end $check$;
 select pg_temp.expect_audit('operator.license_granted','${operator}',2,'grant receipts');
+-- The plan resolvers read the billing-managed team label while the licence is
+-- active; the grant must set it, not only label the admission row (a licensed
+-- tenant used to stay on Free features and retention).
+do $check$ begin
+  if not exists(select 1 from public.teams where tenant_id='${tenant}' and plan='team') then
+    raise exception 'licensed grant did not set the team plan'; end if;
+end $check$;
 
 select pg_temp.expect(public.operator_tenant_usage('${operator}','${tenant}'),'{admission,plan_id}','team','usage plan');
 select pg_temp.expect(public.operator_tenant_usage('${operator}','${tenant}'),'{members}','1','usage members');

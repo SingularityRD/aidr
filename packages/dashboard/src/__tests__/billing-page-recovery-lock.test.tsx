@@ -27,6 +27,7 @@ import {
 import { listEnterpriseOrders } from "../billing/enterprise-orders";
 import { listInvoiceApprovals } from "../billing/invoice-approvals";
 import { useTeam } from "../enterprise/team-provider";
+import { I18nProvider } from "../i18n/I18nProvider";
 import { supabase } from "../lib/supabase";
 import { BillingPage } from "../ui/pages/BillingPage";
 
@@ -266,5 +267,20 @@ describe("billing portal actions", () => {
 		expect(screen.queryByRole("button", { name: "Apply seat change" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Cancel subscription" })).not.toBeInTheDocument();
 		expect(screen.queryByText(/No settlement is on record/)).not.toBeInTheDocument();
+	});
+});
+
+describe("billing portal errors follow the console language", () => {
+	it("shows the Turkish unavailable notice instead of the client's English error", async () => {
+		vi.mocked(loadBillingPortal).mockRejectedValue(
+			new Error("The billing portal is unavailable for this tenant"),
+		);
+		render(
+			<I18nProvider initialLocale="tr">
+				<BillingPage />
+			</I18nProvider>,
+		);
+		await screen.findByText("Faturalandırma portalı kullanılamıyor");
+		expect(screen.queryByText(/unavailable for this tenant/)).not.toBeInTheDocument();
 	});
 });

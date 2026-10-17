@@ -33,6 +33,7 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
+import { isTenantReadRole } from "../_shared/tenant-roles.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const CHANGE_REQUEST_COLUMNS =
@@ -269,7 +270,7 @@ export function createAiGovernanceHandler(deps: AiGovernanceDeps = {}) {
 			if (memberError || tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
 			const role = String((member as { role?: unknown } | null)?.role ?? "") as GovernanceRole;
 			if (!membershipActive(member as { role?: string; expires_at?: string | null } | null, now()) ||
-				!["owner", "admin", "member", "viewer"].includes(role) || !tenant) {
+				!isTenantReadRole(role) || !tenant) {
 				return corsJson(req, 403, { error: "workspace_forbidden" });
 			}
 			if ((tenant as { status?: unknown }).status !== "active") {
