@@ -120,6 +120,31 @@ erase what is already on the disk:
    agent list when it is no longer needed.
 4. Pending approvals on the old machine expire on their own (at most 31 minutes).
 
+## Tenant offboarding: what is deleted
+
+Tenant offboarding (`request_tenant_offboarding` / `run_tenant_offboarding_batch`)
+deletes every tenant-scoped table, in phases. Each phase waits for the tenant's
+retention window for its data class, stops while a legal hold is active, and
+deletes in bounded batches with a per-phase receipt. Migration
+`20261017000200_offboarding_purge_gaps.sql` closed four gaps where rows used to
+stay behind after a completed offboarding:
+
+| Phase | Table | Data class | Why this class |
+| --- | --- | --- | --- |
+| 62 | `false_positive_reports` | `telemetry` | Connector feedback on runtime verdicts, like `events` and `incident_triage` |
+| 63 | `agent_retirement_settings` | `policy_configuration` | Tenant configuration, like detection exceptions |
+| 64 | `fleet_enrollment_keys` | `access_credentials` | Enrollment secrets, like `api_keys` and `enrollment_tokens`; runs after the `api_keys` phase |
+| 65 | `license_imports` | `commercial_records` | Signed licence records, like `entitlements` and `subscriptions` |
+
+A run cannot complete while any of these rows remain
+(`offboarding_purge_gap_residue`). Runs that had already completed with such rows
+are reopened by the migration so the offboarding worker purges them (legal holds
+still apply). SIEM state, OIDC JIT settings and connector heartbeats were
+already removed (offboarding-start trigger, or cascade from `oidc_providers` and
+`agents`). `scripts/tenant-offboarding-integration.sql` fails when a
+`tenant_id` table has no phase or covered parent phase, so a new tenant-scoped
+table must be added to offboarding before it ships.
+
 ## Türkçe özet (kontrol listesi)
 
 **Çalışan ayrıldığında**
@@ -159,3 +184,16 @@ erase what is already on the disk:
 3. Eski makinede `aidr uninstall` çalıştırın ya da API anahtarları sayfasından
    (`/api-keys`) eski cihaz anahtarını iptal edin; eski ajan bir kez "çevrim
    dışı" uyarısı verir.
+
+**Kiracı (müşteri) kapatma**
+
+Kiracı kapatma, kiracıya ait her tabloyu aşamalar hâlinde siler; her aşama veri
+sınıfının saklama süresini bekler, etkin yasal saklama (legal hold) varken
+durur ve sınırlı partilerle silip makbuz yazar. `20261017000200` geçişi daha
+önce geride kalan dört tabloyu ekledi: `false_positive_reports` (aşama 62,
+telemetri), `agent_retirement_settings` (63, ilke yapılandırması),
+`fleet_enrollment_keys` (64, erişim kimlik bilgileri) ve `license_imports` (65,
+ticari kayıtlar). Bu satırlar kalırken kapatma tamamlanamaz; daha önce bu
+satırlarla tamamlanmış kapatmalar yeniden açılır ve temizlenir. Kiracı kimliği
+taşıyan yeni bir tablo kapatma aşamasına eklenmezse envanter testi başarısız
+olur.
