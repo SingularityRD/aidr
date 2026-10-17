@@ -70,6 +70,20 @@ export function syncChartText(text, appVersion) {
   return { text: updated, changed: true, previous: previousApp, chartVersion: { from: chartVersion, to: next } };
 }
 
+const ENGINE_VERSION_LINE = /^export const ENGINE_VERSION = '([^'\n]*)';$/mu;
+
+/** Rewrite the AIDR Privacy `ENGINE_VERSION` constant (reported as audit.engineVersion). */
+export function syncEngineVersionText(text, version) {
+  const match = ENGINE_VERSION_LINE.exec(text);
+  if (!match) throw new Error("packages/privacy/src/version.ts has no ENGINE_VERSION constant");
+  if (match[1] === version) return { text, changed: false, previous: match[1] };
+  return {
+    text: text.replace(ENGINE_VERSION_LINE, `export const ENGINE_VERSION = '${version}';`),
+    changed: true,
+    previous: match[1],
+  };
+}
+
 const jsonSync = (sourcePackage, targetFile, apply) => ({
   source: sourcePackage,
   target: targetFile,
@@ -94,6 +108,11 @@ export const SYNCS = Object.freeze([
   jsonSync("packages/openclaw/package.json", "packages/openclaw/openclaw.plugin.json", (version, json) => {
     json.version = version;
   }),
+  {
+    source: "packages/privacy/package.json",
+    target: "packages/privacy/src/version.ts",
+    sync: syncEngineVersionText,
+  },
   {
     source: "packages/dashboard/package.json",
     target: "deploy/helm/aidr/Chart.yaml",

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { PrivacyEngine } from '../engine.js';
+import { ENGINE_VERSION } from '../version.js';
 import type { TextResult } from '../types.js';
 import { AuditJournal, type AuditRecord } from './audit.js';
 import { PolicyRegistry, validateContext } from './policy.js';
@@ -39,7 +40,7 @@ export class EnterprisePrivacyGate {
   async protectText(text:string,context:TrustedContext):Promise<TextResult> {
     const details:{base?:TextResult}={},start=performance.now();const r=await this.#run(text,context,details);
     const base=details.base;return frozen({decision:r.decision,output:r.output,findings:base?.findings??[],
-      reasons:r.reasons,audit:base?.audit??{engineVersion:'0.5.0-rc.1',policyId:'enterprise',profile:'strict',coverage:'rules-only',inputBytes:typeof text==='string'?Math.min(Buffer.byteLength(text),1048576):0,counts:{},elapsedMs:performance.now()-start}});
+      reasons:r.reasons,audit:base?.audit??{engineVersion:ENGINE_VERSION,policyId:'enterprise',profile:'strict',coverage:'rules-only',inputBytes:typeof text==='string'?Math.min(Buffer.byteLength(text),1048576):0,counts:{},elapsedMs:performance.now()-start}});
   }
   /** One trusted request context, snapshotted at binding. Never resolve identity from OCR text. */
   textAdapter(context:TrustedContext):{protect:(text:string)=>Promise<TextResult>} {
