@@ -191,6 +191,8 @@ describe("tenant-settings reads", () => {
 	it("returns the workspace and role-derived permissions to any active member", async () => {
 		for (const [role, canEdit, canClose] of [
 			["owner", true, true], ["admin", true, false], ["member", false, false], ["viewer", false, false],
+			// The read-only auditor reads what a viewer reads.
+			["auditor", false, false],
 		] as const) {
 			// Retention is owner-only, like closure.
 			const canEditRetention = canClose;
@@ -392,7 +394,7 @@ describe("tenant-settings updates", () => {
 	});
 
 	it("keeps members and viewers read-only and requires AAL2 for owners and admins", async () => {
-		for (const role of ["member", "viewer"]) {
+		for (const role of ["member", "viewer", "auditor"]) {
 			const { handle, rpcCalls, assurance } = await handlerWith({ role });
 			const response = await handle(patch({ tenant_id: TENANT, action: "update", name: "Other" }));
 			expect(response.status).toBe(403);

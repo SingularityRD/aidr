@@ -44,6 +44,7 @@ const ADMIN_A = "12121212-1212-4121-8121-121212121212";
 const MEMBER_A = "13131313-1313-4131-8131-131313131313";
 const REVIEWER_A = "16161616-1616-4161-8161-161616161616";
 const VIEWER_A = "14141414-1414-4141-8141-141414141414";
+const AUDITOR_A = "17171717-1717-4171-8171-171717171717";
 const OWNER_B = "15151515-1515-4151-8151-151515151515";
 const AGENT_A = "33333333-3333-4333-8333-333333333333";
 const T0 = Date.parse("2026-09-27T10:00:00.000Z");
@@ -83,7 +84,8 @@ class World {
 	constructor(private readonly options: WorldOptions = {}) {
 		for (const [tenant, user, role] of [
 			[TENANT_A, OWNER_A, "owner"], [TENANT_A, ADMIN_A, "admin"], [TENANT_A, MEMBER_A, "member"],
-			[TENANT_A, REVIEWER_A, "member"], [TENANT_A, VIEWER_A, "viewer"], [TENANT_B, OWNER_B, "owner"],
+			[TENANT_A, REVIEWER_A, "member"], [TENANT_A, VIEWER_A, "viewer"], [TENANT_A, AUDITOR_A, "auditor"],
+			[TENANT_B, OWNER_B, "owner"],
 		]) {
 			this.members.push({ tenant_id: tenant, user_id: user, role, expires_at: null });
 			this.sessions.set(`session-${user}`, { user, aal: "aal2" });
@@ -443,6 +445,9 @@ describe("ai-governance: request gating", () => {
 			.toEqual({ status: 403, body: { error: "governance_role_insufficient" } });
 		expect((await call({ action: "enforcement_preview", tenant_id: TENANT_A }, `session-${VIEWER_A}`)).status).toBe(200);
 		expect(privileged(world).map((c) => c.name)).toEqual(["ai_governance_policy_overlay"]);
+		// The read-only auditor reads the enforcement preview but writes nothing.
+		expect((await call({ action: "enforcement_preview", tenant_id: TENANT_A }, `session-${AUDITOR_A}`)).status).toBe(200);
+		expect(await call(asset, `session-${AUDITOR_A}`)).toEqual({ status: 403, body: { error: "governance_role_insufficient" } });
 		// Every owner/admin-only action in the matrix is refused to members.
 		for (const [action, rule] of Object.entries(GOVERNANCE_ACTIONS)) {
 			if (!rule.roles.includes("member")) expect(rule.roles, action).toEqual(["owner", "admin"]);
