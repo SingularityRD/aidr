@@ -1300,7 +1300,9 @@ function removeCodex(deps: ConnectorDeps, dryRun: boolean): HostRemovalResult {
 		ct("remove.codex.removed", { count: found }),
 		after.state,
 		changes,
-		[ct("remove.codex.package")],
+		// A standalone (installer) bundle carries the hook itself; there is no npm
+		// package to remove.
+		deps.standaloneRoot ? [] : [ct("remove.codex.package")],
 	);
 }
 

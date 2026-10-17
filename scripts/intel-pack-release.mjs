@@ -469,6 +469,8 @@ EN  Verify the files first:   sha256sum --check SHA256SUMS
     Install on an endpoint:   node scripts/import-offline-pack.mjs --pack ${bundle} \\
                                 --trusted-keys intel-trusted-keys.json --target local --license <your license.json>${hasRevocations ? " \\\n                                --license-revocations license-revocations.json" : ""}
     Serve from your server:   ... --target storage --deployment /srv/aidr --license <your license.json>
+    Until the vendor licence-key registry is installed on this machine, add
+    --license-public-keys <vendor key registry.json> (the file your vendor supplies).
     The pack is refused when its signature, digests or expiry do not verify, when
     it was issued after your license's update term (expires_at + grace days), when
     it is issued for other customers, or when your license is revoked. Installed
@@ -478,6 +480,8 @@ TR  Önce dosyaları doğrulayın: sha256sum --check SHA256SUMS
     Uç noktaya kurun:          node scripts/import-offline-pack.mjs --pack ${bundle} \\
                                 --trusted-keys intel-trusted-keys.json --target local --license <lisans.json>${hasRevocations ? " \\\n                                --license-revocations license-revocations.json" : ""}
     Sunucunuzdan dağıtın:      ... --target storage --deployment /srv/aidr --license <lisans.json>
+    Satıcı lisans anahtarı kaydı bu makineye kurulana kadar
+    --license-public-keys <satıcı anahtar kaydı.json> ekleyin (satıcınızın verdiği dosya).
     İmza, özet ya da süre doğrulanmazsa, paket lisansınızın güncelleme süresinden
     (bitiş + ek süre) sonra yayımlandıysa, başka müşteriler için yayımlandıysa ya da
     lisansınız iptal edildiyse paket kurulmaz. Kurulu paketler her durumda

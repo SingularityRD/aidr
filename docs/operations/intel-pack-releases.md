@@ -132,7 +132,10 @@ threats/*.yaml + intel/  ->  build  ->  encrypt (shared pack key)  ->  sign (--a
 2. **encrypt** (optional): `node scripts/intel-pack-keys.mjs encrypt-pack --pack <dir> --shared-key-file <file>`.
 3. **sign**: `node scripts/sign-intel-pack-manifest.mjs --manifest <dir>/manifest.json --private-key <0600 pem> --audience <ids|none>`.
    The signer refuses a manifest whose audience is not exactly the one given, or that has no `issued_at`.
-4. **verify**: `node scripts/intel-pack-release.mjs verify --pack <dir> --trusted-keys <published key> [--shared-key-file <file>] [--license-public-keys <registry> --license-revocations <list>] --report <file>`.
+   `<trusted-keys.json>` is a JSON map of key id to public-key PEM,
+   `{"<key_id>": "-----BEGIN PUBLIC KEY-----\n..."}` (the same form threat-sync uses);
+   a bare PEM file is refused as "not JSON".
+4. **verify**: `node scripts/intel-pack-release.mjs verify --pack <dir> --trusted-keys <trusted-keys.json> [--shared-key-file <file>] [--license-public-keys <registry> --license-revocations <list>] --report <file>`.
    - the offline importer's verifier (signature against the *published* public key,
      digests, expiry);
    - the core loader in a disposable HOME: it must report the pack available and load
@@ -143,7 +146,7 @@ threats/*.yaml + intel/  ->  build  ->  encrypt (shared pack key)  ->  sign (--a
      for an audience pack (`pack_audience_mismatch`), a revoked license refused
      (`license_revoked`);
    - the real revocation list, when given, against the license registry.
-5. **export**: `node scripts/intel-pack-release.mjs export --pack <dir> --trusted-keys <published key> --out <dir> [...]`
+5. **export**: `node scripts/intel-pack-release.mjs export --pack <dir> --trusted-keys <trusted-keys.json> --out <dir> [...]`
    writes `<pack_id>-<version>.aidrpack.json`, `intel-trusted-keys.json`,
    `license-revocations.json` (if any), `IMPORT.txt` (EN/TR) and `SHA256SUMS`. This
    folder is both the release assets and the offline bundle for air-gapped customers;
