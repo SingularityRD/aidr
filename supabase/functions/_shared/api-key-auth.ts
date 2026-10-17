@@ -35,7 +35,9 @@ function isApiKeyScope(value: unknown): value is ApiKeyScope {
 
 type ApiKeyRow = {
 	id?: string;
-	user_id: string;
+	/** NULL for a tenant-owned device key minted through a fleet enrollment key. */
+	user_id: string | null;
+	fleet_key_id: string | null;
 	tenant_id: string;
 	revoked: boolean;
 	agent_id?: string | null;
@@ -44,7 +46,7 @@ type ApiKeyRow = {
 	expires_at: string | null;
 };
 
-const API_KEY_COLUMNS = "id,user_id,tenant_id,revoked,agent_id,scope,install_limit,expires_at";
+const API_KEY_COLUMNS = "id,user_id,tenant_id,revoked,agent_id,scope,install_limit,expires_at,fleet_key_id";
 
 /**
  * True when the key row carries an expiry that has passed (CP-8). A row without
@@ -67,7 +69,13 @@ const API_KEY_MEMBER_ROLES = new Set(["owner", "admin", "member"]);
 export type TenantApiKeyAuthResult =
 	| {
 		ok: true;
-		userId: string;
+		/**
+		 * The person who owns a personal key. `null` for a tenant-owned device
+		 * key (see `fleetKeyId`): no person's membership authorizes it.
+		 */
+		userId: string | null;
+		/** Set only for a tenant-owned device key: the fleet key that minted it. */
+		fleetKeyId?: string;
 		tenantId: string;
 		apiKeyId?: string;
 		agentId?: string | null;
@@ -95,10 +103,18 @@ export type TenantApiKeyAuthOptions = {
 function apiKeyRow(value: unknown): ApiKeyRow | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const row = value as Record<string, unknown>;
+	const fleetKeyId = row.fleet_key_id ?? null;
+	if (fleetKeyId !== null && (typeof fleetKeyId !== "string" || !fleetKeyId)) return null;
+	// Exactly one owner. A tenant-owned key is a full, agent-bound device key
+	// with a row id (20261016000300_fleet_keys_tenant_owned.sql).
+	if (fleetKeyId === null
+		? typeof row.user_id !== "string" || !row.user_id
+		: row.user_id !== null || typeof row.id !== "string" || !row.id ||
+			typeof row.agent_id !== "string" || !row.agent_id || row.scope !== "tenant") {
+		return null;
+	}
 	if (
 		("id" in row && (typeof row.id !== "string" || !row.id)) ||
-		typeof row.user_id !== "string" ||
-		!row.user_id ||
 		typeof row.tenant_id !== "string" ||
 		!row.tenant_id ||
 		typeof row.revoked !== "boolean" ||
@@ -115,7 +131,8 @@ function apiKeyRow(value: unknown): ApiKeyRow | null {
 		return null;
 	}
 	const parsed: ApiKeyRow = {
-		user_id: row.user_id,
+		user_id: fleetKeyId === null ? (row.user_id as string) : null,
+		fleet_key_id: fleetKeyId,
 		tenant_id: row.tenant_id,
 		revoked: row.revoked,
 		scope: row.scope,
@@ -142,6 +159,21 @@ function apiKeyMembershipActive(value: unknown, now = Date.now()): boolean {
 	return membershipActive(membership, now) && API_KEY_MEMBER_ROLES.has(membership?.role ?? "");
 }
 
+/** The fleet key row exists in the key's tenant and has not been revoked. */
+function fleetKeyActive(value: unknown, fleetKeyId: string, tenantId: string): boolean {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const row = value as Record<string, unknown>;
+	return row.id === fleetKeyId && row.tenant_id === tenantId && row.revoked_at === null;
+}
+
+/**
+ * Rate-limit subject for an authenticated key: the owning person for a
+ * personal key, the device key itself for a tenant-owned one.
+ */
+export function apiKeyRateSubject(auth: { userId: string | null; apiKeyId?: string }): string {
+	return auth.userId ?? `api_key:${auth.apiKeyId}`;
+}
+
 function tenantIsActive(value: unknown): boolean {
 	return Boolean(
 		value &&
@@ -153,7 +185,10 @@ function tenantIsActive(value: unknown): boolean {
 
 /**
  * Authenticates a hash-only API key and binds it to an active tenant membership
- * whose role is allowed to create and operate write-capable keys.
+ * whose role is allowed to create and operate write-capable keys, or, for a
+ * tenant-owned device key minted by a fleet enrollment key (`userId` null,
+ * `fleetKeyId` set), to that fleet key being unrevoked. Either way the tenant
+ * must be active and admitted.
  * Service-role callers must use this guard before reading tenant-scoped data.
  *
  * A renewed key keeps working through its retired hash only while the bounded
@@ -232,29 +267,41 @@ export async function authenticateTenantApiKeyHash(
 		return { ok: false, status: 403, error: "api_key_scope_denied" };
 	}
 
-	let membershipResult: QueryResult;
+	// A personal key is authorized by its owner's live membership. A
+	// tenant-owned device key is authorized by its unrevoked fleet key instead,
+	// so removing or deprovisioning the person who issued that fleet key does
+	// not take the fleet down. Both need an active tenant.
+	const fleetKeyId = key.fleet_key_id;
+	let ownerResult: QueryResult;
 	let tenantResult: QueryResult;
 	try {
-		[membershipResult, tenantResult] = await Promise.all([
-			db
-				.from("tenant_members")
-				.select("role,expires_at")
-				.eq("tenant_id", key.tenant_id)
-				.eq("user_id", key.user_id)
-				.maybeSingle(),
+		[ownerResult, tenantResult] = await Promise.all([
+			fleetKeyId === null
+				? db
+					.from("tenant_members")
+					.select("role,expires_at")
+					.eq("tenant_id", key.tenant_id)
+					.eq("user_id", key.user_id)
+					.maybeSingle()
+				: db
+					.from("fleet_enrollment_keys")
+					.select("id,tenant_id,revoked_at")
+					.eq("id", fleetKeyId)
+					.eq("tenant_id", key.tenant_id)
+					.maybeSingle(),
 			db.from("tenants").select("status").eq("id", key.tenant_id).maybeSingle(),
 		]);
 	} catch {
 		return { ok: false, status: 503, error: "authorization_unavailable" };
 	}
 
-	if (membershipResult.error || tenantResult.error) {
+	if (ownerResult.error || tenantResult.error) {
 		return { ok: false, status: 503, error: "authorization_unavailable" };
 	}
-	if (
-		!apiKeyMembershipActive(membershipResult.data, now) ||
-		!tenantIsActive(tenantResult.data)
-	) {
+	const ownerActive = fleetKeyId === null
+		? apiKeyMembershipActive(ownerResult.data, now)
+		: fleetKeyActive(ownerResult.data, fleetKeyId, key.tenant_id);
+	if (!ownerActive || !tenantIsActive(tenantResult.data)) {
 		return { ok: false, status: 403, error: "tenant_access_denied" };
 	}
 
@@ -277,6 +324,7 @@ export async function authenticateTenantApiKeyHash(
 	return {
 		ok: true,
 		userId: key.user_id,
+		...(fleetKeyId !== null ? { fleetKeyId } : {}),
 		tenantId: key.tenant_id,
 		...(key.id ? { apiKeyId: key.id } : {}),
 		...("agent_id" in key ? { agentId: key.agent_id ?? null } : {}),

@@ -12,7 +12,7 @@
 // protected. The body carries enums and counts only.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
+import { apiKeyRateSubject, authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
@@ -113,7 +113,7 @@ export function createConnectorHeartbeatHandler(deps: ConnectorHeartbeatDeps = {
 			if (!auth.ok) return json(auth.status, { error: auth.error });
 			const rate = await consumeTenantRateLimit(db, {
 				tenantId: auth.tenantId,
-				subject: auth.userId,
+				subject: apiKeyRateSubject(auth),
 				endpoint: ENDPOINT,
 				perSubject: 120,
 				perTenant: 20_000,

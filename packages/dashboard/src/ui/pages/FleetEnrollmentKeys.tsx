@@ -273,6 +273,7 @@ export function FleetEnrollmentKeys({ tenantId }: { tenantId: string }) {
 						<tr>
 							<th>{t("keys.col.label")}</th>
 							<th>{t("fleet.col.hint")}</th>
+							<th>{t("fleet.col.owner")}</th>
 							<th>{t("fleet.col.machines")}</th>
 							<th>{t("fleet.col.uses")}</th>
 							<th>{t("keys.col.expires")}</th>
@@ -289,6 +290,7 @@ export function FleetEnrollmentKeys({ tenantId }: { tenantId: string }) {
 								<tr key={key.id}>
 									<td>{key.label ?? <span className="muted">{t("keys.noLabel")}</span>}</td>
 									<td className="mono">…{key.key_hint}</td>
+									<td className="small">{t("fleet.owner.tenant")}</td>
 									<td className="mono">
 										{key.enrolled_count.toLocaleString()} / {key.seat_cap.toLocaleString()}
 									</td>
@@ -323,7 +325,7 @@ export function FleetEnrollmentKeys({ tenantId }: { tenantId: string }) {
 						})}
 						{keys.length === 0 ? (
 							<tr>
-								<td colSpan={7} className="muted">
+								<td colSpan={8} className="muted">
 									{t("fleet.empty")}
 								</td>
 							</tr>

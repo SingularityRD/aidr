@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+	apiKeyRateSubject,
 	authenticateTenantApiKey,
 	authenticateTenantApiKeyBudgeted,
 	DEFAULT_UNRESOLVED_API_KEY_LIMIT_PER_MINUTE,
@@ -411,5 +412,175 @@ describe("ingest-only Browser Guard keys", () => {
 		const revocations = readFileSync(join(functionsDir, "revocations", "index.ts"), "utf8");
 		expect(revocations.match(/\.from\("api_keys"\)/g) ?? []).toHaveLength(0);
 		expect(revocations.match(/authenticateTenantApiKey(?:Budgeted)?\(/g)).toHaveLength(2);
+	});
+});
+
+// Device keys minted through a fleet enrollment key belong to the tenant
+// (supabase/migrations/20261016000300_fleet_keys_tenant_owned.sql): no
+// person's membership authorizes them, their unrevoked fleet key does.
+describe("tenant-owned fleet device keys", () => {
+	const fleetRows: Record<string, StoredResult> = {
+		api_keys: {
+			data: {
+				id: "key-1",
+				user_id: null,
+				fleet_key_id: "fleet-1",
+				tenant_id: "tenant-1",
+				revoked: false,
+				agent_id: "agent-1",
+				scope: "tenant",
+			},
+			error: null,
+		},
+		fleet_enrollment_keys: {
+			data: { id: "fleet-1", tenant_id: "tenant-1", revoked_at: null },
+			error: null,
+		},
+		// Present only to prove it is never consulted for a tenant-owned key.
+		tenant_members: { data: null, error: null },
+		tenants: { data: { status: "active" }, error: null },
+	};
+
+	it("authenticates through the fleet key, without any person's membership", async () => {
+		const { calls, client } = database(fleetRows);
+		await expect(authenticateTenantApiKey(client, "device-key")).resolves.toEqual({
+			ok: true,
+			userId: null,
+			fleetKeyId: "fleet-1",
+			tenantId: "tenant-1",
+			apiKeyId: "key-1",
+			agentId: "agent-1",
+			scope: "tenant",
+			installLimit: null,
+		});
+		expect(calls.map((call) => call.table)).toEqual([
+			"api_keys",
+			"fleet_enrollment_keys",
+			"tenants",
+			"tenant_admission_capacity",
+		]);
+		expect(calls[1].filters).toEqual({ id: "fleet-1", tenant_id: "tenant-1" });
+	});
+
+	it("keeps working when the fleet key's creator has no membership any more", async () => {
+		const { client } = database({ ...fleetRows, tenant_members: { data: null, error: null } });
+		const result = await authenticateTenantApiKey(client, "device-key");
+		expect(result.ok).toBe(true);
+	});
+
+	it("stops when the fleet key is revoked, missing or belongs to another tenant", async () => {
+		for (const data of [
+			{ id: "fleet-1", tenant_id: "tenant-1", revoked_at: "2026-10-16T00:00:00.000Z" },
+			null,
+			{ id: "fleet-1", tenant_id: "tenant-2", revoked_at: null },
+			{ id: "fleet-2", tenant_id: "tenant-1", revoked_at: null },
+			{ id: "fleet-1", tenant_id: "tenant-1" },
+		]) {
+			const { client } = database({ ...fleetRows, fleet_enrollment_keys: { data, error: null } });
+			await expect(authenticateTenantApiKey(client, "device-key")).resolves.toEqual({
+				ok: false,
+				status: 403,
+				error: "tenant_access_denied",
+			});
+		}
+	});
+
+	it("still requires an active, admitted tenant", async () => {
+		const suspended = database({ ...fleetRows, tenants: { data: { status: "suspended" }, error: null } });
+		await expect(authenticateTenantApiKey(suspended.client, "device-key")).resolves.toEqual({
+			ok: false,
+			status: 403,
+			error: "tenant_access_denied",
+		});
+		const unadmitted = database(fleetRows, { data: 0, error: null });
+		await expect(authenticateTenantApiKey(unadmitted.client, "device-key")).resolves.toEqual({
+			ok: false,
+			status: 403,
+			error: "tenant_access_denied",
+		});
+	});
+
+	it("fails closed when the fleet key cannot be read", async () => {
+		const { client } = database({
+			...fleetRows,
+			fleet_enrollment_keys: { data: null, error: { message: "offline" } },
+		});
+		await expect(authenticateTenantApiKey(client, "device-key")).resolves.toEqual({
+			ok: false,
+			status: 503,
+			error: "authorization_unavailable",
+		});
+	});
+
+	it("refuses a revoked device key before any tenant state is read", async () => {
+		const row = fleetRows.api_keys.data as Record<string, unknown>;
+		const { calls, client } = database({ ...fleetRows, api_keys: { data: { ...row, revoked: true }, error: null } });
+		await expect(authenticateTenantApiKey(client, "device-key")).resolves.toEqual({
+			ok: false,
+			status: 401,
+			error: "invalid_api_key",
+		});
+		expect(calls.map((call) => call.table)).not.toContain("fleet_enrollment_keys");
+	});
+
+	it("treats a row with two owners, no owner or no agent binding as no credential", async () => {
+		const row = fleetRows.api_keys.data as Record<string, unknown>;
+		for (const data of [
+			{ ...row, user_id: "user-1" },
+			{ ...row, user_id: null, fleet_key_id: null },
+			{ ...row, agent_id: null },
+			{ ...row, id: undefined },
+			{ ...row, fleet_key_id: "" },
+			{ ...row, scope: "ingest:browser_guard", install_limit: 5 },
+		]) {
+			const { client } = database({ ...fleetRows, api_keys: { data, error: null } });
+			await expect(authenticateTenantApiKey(client, "device-key")).resolves.toEqual({
+				ok: false,
+				status: 401,
+				error: "invalid_api_key",
+			});
+		}
+	});
+
+	it("leaves personal keys bound to their owner's membership", async () => {
+		const { calls, client } = database({
+			...activeRows,
+			tenant_members: { data: null, error: null },
+			fleet_enrollment_keys: fleetRows.fleet_enrollment_keys,
+		});
+		await expect(authenticateTenantApiKey(client, "personal-key")).resolves.toEqual({
+			ok: false,
+			status: 403,
+			error: "tenant_access_denied",
+		});
+		expect(calls.map((call) => call.table)).not.toContain("fleet_enrollment_keys");
+	});
+
+	it("budgets a tenant-owned key per device and a personal key per person", () => {
+		expect(apiKeyRateSubject({ userId: null, apiKeyId: "key-1" })).toBe("api_key:key-1");
+		expect(apiKeyRateSubject({ userId: "user-1", apiKeyId: "key-1" })).toBe("user-1");
+	});
+
+	it("routes tenant-owned keys to the fleet-device admission and audit RPCs", () => {
+		const functionsDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+		for (const name of ["ingest", "installer-update"]) {
+			const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
+			expect(source).toContain('"get_fleet_device_admission"');
+		}
+		const installer = readFileSync(join(functionsDir, "installer-update", "index.ts"), "utf8");
+		expect(installer).toContain('"record_fleet_device_installer_download"');
+		// No machine endpoint may hand a possibly-null person id to a rate-limit subject.
+		for (const name of [
+			"policy",
+			"policy-ack",
+			"connector-heartbeat",
+			"browser-guard-policy",
+			"false-positive-reports",
+			"approval-requests",
+			"ingest",
+		]) {
+			const source = readFileSync(join(functionsDir, name, "index.ts"), "utf8");
+			expect(source).not.toMatch(/subject:[^,\n]*(?:auth|tenantAuth)\.userId\s*,/);
+		}
 	});
 });

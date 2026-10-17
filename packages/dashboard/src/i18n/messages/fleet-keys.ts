@@ -8,8 +8,8 @@ export const fleetKeysMessages = {
 		"Tek anahtar çok sayıda makineyi kaydeder. Anahtarı kurulum paketinizin ya da cihaz yönetim aracınızın makine ilkesine koyun; her makine ilk çalıştığında tarayıcı adımı olmadan kendini kaydeder. Anahtar bu ekibe aittir, en fazla belirlediğiniz sayıda yeni makine kaydedebilir, süresi dolar ve istediğiniz an iptal edilebilir. Lisanslı koltuk sınırınız yine geçerlidir. Bu anahtarları yalnızca sahipler ve yöneticiler görebilir ve yönetebilir.",
 	],
 	"fleet.policyHint": [
-		"Machine policy key: enrollment_key (Windows: HKLM\\SOFTWARE\\Policies\\Singularity AIDR; Linux: /etc/singularity-aidr/managed.json). Revoking a key stops new enrollments only; machines already enrolled keep working until you revoke their own keys. A key acts for the admin who creates it: if that person loses the admin role the key stops working, and if they are removed from the team the machine keys it issued are revoked too. Create fleet keys from an administrator account that outlives staff changes.",
-		"Makine ilkesindeki alan: enrollment_key (Windows: HKLM\\SOFTWARE\\Policies\\Singularity AIDR; Linux: /etc/singularity-aidr/managed.json). Anahtarı iptal etmek yalnızca yeni kayıtları durdurur; kayıtlı makineler kendi anahtarları iptal edilene kadar çalışmaya devam eder. Anahtar, onu oluşturan yönetici adına çalışır: bu kişi yönetici rolünü kaybederse anahtar çalışmaz, ekipten çıkarılırsa anahtarın verdiği makine anahtarları da iptal edilir. Filo anahtarlarını personel değişikliklerinden etkilenmeyecek bir yönetici hesabıyla oluşturun.",
+		"Machine policy key: enrollment_key (Windows: HKLM\\SOFTWARE\\Policies\\Singularity AIDR; Linux: /etc/singularity-aidr/managed.json). Machines enrolled with a fleet key get their own keys, owned by this team rather than by a person: removing, downgrading or deprovisioning the admin who created the fleet key does not affect them. Revoking a fleet key revokes the machine keys it issued as well. New enrollments need the creating admin to still be an owner or admin; when that person leaves, create a replacement fleet key and update the machine policy.",
+		"Makine ilkesindeki alan: enrollment_key (Windows: HKLM\\SOFTWARE\\Policies\\Singularity AIDR; Linux: /etc/singularity-aidr/managed.json). Filo anahtarıyla kaydedilen makineler bir kişiye değil bu ekibe ait kendi anahtarlarını alır: filo anahtarını oluşturan yöneticinin ekipten çıkarılması, rolünün düşürülmesi ya da hesabının kapatılması bu makineleri etkilemez. Filo anahtarını iptal etmek, verdiği makine anahtarlarını da iptal eder. Yeni kayıtlar için anahtarı oluşturan kişinin hâlâ sahip ya da yönetici olması gerekir; bu kişi ayrılırsa yeni bir filo anahtarı oluşturup makine ilkesini güncelleyin.",
 	],
 	"fleet.labelPlaceholder": [
 		"finance-laptops, build-servers, etc.",
@@ -56,6 +56,8 @@ export const fleetKeysMessages = {
 	"fleet.col.hint": ["Ends with", "Son karakterler"],
 	"fleet.col.machines": ["Machines / limit", "Makine / sınır"],
 	"fleet.col.uses": ["Uses", "Kullanım"],
+	"fleet.col.owner": ["Owner", "Sahip"],
+	"fleet.owner.tenant": ["This team (machine keys are team-owned)", "Bu ekip (makine anahtarları ekibe aittir)"],
 	"fleet.status.active": ["active", "etkin"],
 	"fleet.status.exhausted": ["limit reached", "sınıra ulaşıldı"],
 	"fleet.status.expired": ["expired", "süresi doldu"],

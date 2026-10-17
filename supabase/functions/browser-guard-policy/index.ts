@@ -19,7 +19,7 @@
 // member-scoped exceptions never waive a ban for every browser.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKeyBudgeted, BROWSER_GUARD_INGEST_SCOPE } from "../_shared/api-key-auth.ts";
+import { apiKeyRateSubject, authenticateTenantApiKeyBudgeted, BROWSER_GUARD_INGEST_SCOPE } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import {
 	BROWSER_GUARD_POLICY_VERSION,
@@ -79,7 +79,7 @@ export function createBrowserGuardPolicyHandler(deps: { db?: ReturnType<typeof c
 			const perSubject = browserKey ? Math.min(TENANT_REQUESTS_PER_MINUTE, Math.max(60, auth.installLimit ?? 60)) : 300;
 			const rate = await consumeTenantRateLimit(db, {
 				tenantId: auth.tenantId,
-				subject: browserKey ? `api_key:${auth.apiKeyId}` : auth.userId,
+				subject: browserKey ? `api_key:${auth.apiKeyId}` : apiKeyRateSubject(auth),
 				endpoint: "browser-guard-policy",
 				perSubject,
 				perTenant: TENANT_REQUESTS_PER_MINUTE,

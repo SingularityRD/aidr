@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
 	if (req.method === "GET") {
 		let query = supabase
 			.from("api_keys")
-			.select("id,label,revoked,created_at,scope,install_limit,expires_at,rotated_at")
+			.select("id,label,revoked,created_at,scope,install_limit,expires_at,rotated_at,fleet_key_id")
 			.eq("tenant_id", tenant.id);
 		if (!["owner", "admin"].includes(tenant.role)) query = query.eq("user_id", userId);
 		const { data, error } = await query.order("created_at", { ascending: false }).limit(200);

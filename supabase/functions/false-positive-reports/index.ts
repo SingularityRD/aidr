@@ -15,7 +15,7 @@
 // members (RLS); nothing here changes a policy or suppresses a detection.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
+import { apiKeyRateSubject, authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, type EnvReader, loadConfig } from "../_shared/config.ts";
 import { corsJson, handleCors } from "../_shared/cors.ts";
@@ -168,7 +168,7 @@ async function handleCreate(req: Request, db: DatabaseClient, token: string, val
 	if (!auth.ok) return corsJson(req, auth.status, { error: auth.error });
 	const rate = await consumeTenantRateLimit(db, {
 		tenantId: auth.tenantId,
-		subject: auth.apiKeyId ?? auth.userId,
+		subject: auth.apiKeyId ?? apiKeyRateSubject(auth),
 		endpoint: "false-positive-reports:create",
 		perSubject: 60,
 		perTenant: 2000,

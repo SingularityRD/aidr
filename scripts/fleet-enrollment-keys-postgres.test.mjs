@@ -124,7 +124,8 @@ begin
   perform pg_temp.expect(${exchange(fleetA, "host-2")}, 'status', 'enrolled', 're-enroll at cap');
   if (select enrolled_count from public.fleet_enrollment_keys where key_hash = '${fleetA}') <> 2
     or (select use_count from public.fleet_enrollment_keys where key_hash = '${fleetA}') <> 4
-    or (select count(*) from public.api_keys where tenant_id = '${team}' and user_id = '${admin}') <> 4
+    or (select count(*) from public.api_keys where tenant_id = '${team}' and user_id is null
+          and fleet_key_id = (select id from public.fleet_enrollment_keys where key_hash = '${fleetA}')) <> 4
     or (select count(*) from public.admin_audit_logs where tenant_id = '${team}' and action = 'fleet_key.enroll') <> 4 then
     raise exception 'fleet exchange counters, keys or audit rows are wrong';
   end if;

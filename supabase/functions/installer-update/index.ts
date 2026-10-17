@@ -154,10 +154,13 @@ export function createInstallerUpdateHandler(deps: InstallerUpdateDeps = {}) {
 			}
 			if (!auth.apiKeyId) return json(503, { error: "authorization_unavailable" });
 
-			const { data: admissionData, error: admissionError } = await db.rpc("get_tenant_admission", {
-				p_tenant_id: auth.tenantId,
-				p_user_id: auth.userId,
-			});
+			// A tenant-owned device key (fleet enrollment) has no person: its
+			// admission and download audit are the tenant's, checked against the
+			// key's unrevoked fleet key.
+			const fleetDevice = auth.userId === null;
+			const { data: admissionData, error: admissionError } = fleetDevice
+				? await db.rpc("get_fleet_device_admission", { p_api_key_id: auth.apiKeyId })
+				: await db.rpc("get_tenant_admission", { p_tenant_id: auth.tenantId, p_user_id: auth.userId });
 			if (admissionError) return json(503, { error: "admission_unavailable" });
 			const admissionStatus = String((admissionData as { status?: unknown } | null)?.status ?? "");
 			if (NOT_ADMITTED.includes(admissionStatus)) return json(403, { error: "entitlement_required" });
@@ -196,8 +199,10 @@ export function createInstallerUpdateHandler(deps: InstallerUpdateDeps = {}) {
 			const url = publicInstallerUrl(signed?.signedUrl, SUPABASE_URL, publicOrigin, bucket);
 			if (!url) return json(503, { error: "download_unavailable" });
 
-			const { data: audit, error: auditError } = await db.rpc("record_installer_download", {
-				p_actor_user_id: auth.userId,
+			const { data: audit, error: auditError } = await db.rpc(fleetDevice
+				? "record_fleet_device_installer_download"
+				: "record_installer_download", {
+				...(fleetDevice ? { p_api_key_id: auth.apiKeyId } : { p_actor_user_id: auth.userId }),
 				p_tenant_id: auth.tenantId,
 				p_version: catalog.version,
 				p_platform: file.platform,

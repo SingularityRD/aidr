@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
+import { apiKeyRateSubject, authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
@@ -43,7 +43,7 @@ export function createPolicyAckHandler(deps: PolicyAckDeps = {}) {
       const hash = await sha256(token);
       const tenantAuth = await authenticateTenantApiKeyBudgeted(db, token, "policy-ack");
       if (!tenantAuth.ok) return json(tenantAuth.status, { error: tenantAuth.error });
-      const rate = await consumeTenantRateLimit(db, { tenantId: tenantAuth.tenantId, subject: tenantAuth.userId, endpoint: "policy-ack", perSubject: 300, perTenant: 10_000 });
+      const rate = await consumeTenantRateLimit(db, { tenantId: tenantAuth.tenantId, subject: apiKeyRateSubject(tenantAuth), endpoint: "policy-ack", perSubject: 300, perTenant: 10_000 });
       if (!rate.ok) return json(rate.status, { error: rate.error }, rateLimitHeaders(rate));
       const agentId = tenantAuth.agentId;
       if (typeof agentId !== "string" || !UUID_PATTERN.test(agentId)) return json(403, { error: "agent_bound_key_required" });
