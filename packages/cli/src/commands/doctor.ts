@@ -15,8 +15,10 @@ import {
 	loadProvisionedDetectorContext,
 	localAgentProfilesPath,
 	localDlpPolicyPath,
+	type MachinePolicyRead,
 	type OperatorApprovalStoreOptions,
 	operatorApprovalStorePath,
+	readMachinePolicy,
 	resolvePath,
 	VERSION,
 } from "@singularityrd/aidr-core";
@@ -64,6 +66,8 @@ export interface DoctorReport {
 
 /** Test seams; production callers pass nothing. */
 export interface DoctorDeps {
+	/** Machine policy reader (tests); defaults to core's readMachinePolicy. */
+	machinePolicy?: () => MachinePolicyRead;
 	configPath?: string;
 	home?: string;
 	operatorApprovals?: OperatorApprovalStoreOptions;
@@ -148,6 +152,28 @@ async function checkConfiguration(
 				release_build: isCommercialBuild(),
 			},
 		},
+	};
+}
+
+/**
+ * A proxy URL with credentials in machine policy is readable by every local
+ * user (HKLM Policies / a 0644 managed.json). Not a blocker, but say so: the
+ * credential belongs in each user's own config or behind a local
+ * authenticating relay.
+ */
+function checkProxyCredentials(deps: DoctorDeps): DoctorCheck | null {
+	const read = (deps.machinePolicy ?? readMachinePolicy)();
+	if (read.state !== "loaded" || !read.policy.https_proxy) return null;
+	try {
+		const url = new URL(read.policy.https_proxy);
+		if (!url.username && !url.password) return null;
+	} catch {
+		return null;
+	}
+	return {
+		id: "proxy-credentials",
+		status: "warn",
+		summary: ct("doctor.proxyCredentialsShared", { source: read.source }),
 	};
 }
 
@@ -786,6 +812,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
 	const { check: configCheck, config } = await checkConfiguration(deps);
 	checks.push(configCheck);
 	checks.push(checkReleaseKey(config));
+	const proxyCredentials = checkProxyCredentials(deps);
+	if (proxyCredentials) checks.push(proxyCredentials);
 	const customer = checkCustomer(deps);
 	if (customer) checks.push(customer);
 	const clock = await checkClock(config, deps);

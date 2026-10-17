@@ -158,3 +158,41 @@ describe("doctor clock check", () => {
 		expect(text).toContain("aynı NTP kaynağına");
 	});
 });
+
+describe("aidr doctor proxy credentials in machine policy", () => {
+	async function proxyCheck(https_proxy: string | undefined) {
+		managed();
+		const report = await runDoctor({
+			configPath,
+			connectors: () => [],
+			operatorApprovals: store,
+			loadDetectors: async () => ({}),
+			agentEnvironment: () => ({
+				schema_version: 1,
+				scanned_at: "2026-10-14T00:00:00.000Z",
+				hosts: [],
+				findings: [],
+				unreadable: [],
+				scope: "test",
+			}),
+			serverTime: serverBehindBy(0).serverTime,
+			machinePolicy: () => ({
+				state: "loaded",
+				source: "/etc/singularity-aidr/managed.json",
+				policy: https_proxy ? { https_proxy } : {},
+			}),
+		});
+		return report.checks.find((c) => c.id === "proxy-credentials");
+	}
+
+	it("warns when the shared proxy URL carries a credential", async () => {
+		const check = await proxyCheck("http://svc:secret@proxy.corp.example:8080");
+		expect(check?.status).toBe("warn");
+		expect(check?.summary).not.toContain("secret");
+	});
+
+	it("says nothing for a proxy without credentials or no proxy", async () => {
+		expect(await proxyCheck("http://proxy.corp.example:8080")).toBeUndefined();
+		expect(await proxyCheck(undefined)).toBeUndefined();
+	});
+});

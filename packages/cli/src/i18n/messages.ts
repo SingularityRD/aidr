@@ -162,6 +162,8 @@ export const CLI_EN = {
 	"doctor.detectionOk": "{rules} threat rules loaded; detection self-test passed.",
 	"doctor.detectionFailed": "Detection self-test failed: {reason} ({rules} rules).",
 	"doctor.detectionCrashed": "Detection self-test crashed: {error}",
+	"doctor.proxyCredentialsShared":
+		"The proxy URL in machine policy ({source}) carries a user name/password that every user of this computer can read. Move the credential into each user's own config.json or use a local authenticating proxy relay.",
 	"doctor.connectorsOk": "Hooks registered for: {hosts}.",
 	"doctor.connectorsBroken": "Connector problems: {hosts}.",
 	"doctor.connectorsUnprotected":
@@ -992,6 +994,8 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"doctor.detectionOk": "{rules} tehdit kuralı yüklendi; tespit öz sınaması başarılı.",
 	"doctor.detectionFailed": "Tespit öz sınaması başarısız: {reason} ({rules} kural).",
 	"doctor.detectionCrashed": "Tespit öz sınaması çöktü: {error}",
+	"doctor.proxyCredentialsShared":
+		"Makine politikasındaki proxy adresi ({source}) kullanıcı adı/parola içeriyor ve bu bilgisayardaki her kullanıcı okuyabiliyor. Kimlik bilgisini her kullanıcının kendi config.json dosyasına taşıyın ya da kimlik doğrulayan yerel bir proxy aktarıcısı kullanın.",
 	"doctor.connectorsOk": "Hook kayıtlı yapay zekâ araçları: {hosts}.",
 	"doctor.connectorsBroken": "Bağlayıcı sorunları: {hosts}.",
 	"doctor.connectorsUnprotected":
