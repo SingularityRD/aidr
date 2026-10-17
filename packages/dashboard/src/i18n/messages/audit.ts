@@ -6,6 +6,14 @@ export const auditMessages = {
 		"Audit export is unavailable.",
 		"Denetim dışa aktarımı kullanılamıyor.",
 	],
+	"audit.exportFailed": [
+		"Audit export failed. No partial file was produced.",
+		"Denetim dışa aktarımı başarısız oldu. Kısmi bir dosya oluşturulmadı.",
+	],
+	"audit.exportLegalHold": [
+		"Audit export is paused while a legal hold is active for this workspace. An owner can review the hold under Legal holds and retention.",
+		"Bu çalışma alanında yasal saklama etkinken denetim dışa aktarımı durdurulur. Bir sahip, saklamayı Yasal saklama ve saklama süreleri bölümünden inceleyebilir.",
+	],
 	"audit.title": ["Team audit", "Ekip denetimi"],
 	"audit.intro": [
 		"Recent audit entries for the selected team only. This view shows at most the latest 1,000 entries; use the paginated export API for larger history. Browser export is capped at 100,000 records or 64 MiB. No raw action input is shown here.",

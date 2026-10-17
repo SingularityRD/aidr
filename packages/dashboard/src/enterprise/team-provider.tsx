@@ -8,6 +8,7 @@ import {
 	useState,
 } from "react";
 import { useT } from "../i18n/I18nProvider";
+import { edgeErrorCode } from "../lib/agent-lifecycle";
 import type { Database } from "../lib/database.types";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
@@ -570,8 +571,14 @@ function ProtectedTeamProvider({
 							...(cursor ? { cursor } : {}),
 						},
 					});
-					if (error || data?.error)
-						throw new Error("Audit export failed. No partial file was produced.");
+					if (error || data?.error) {
+						// A legal hold refuses every export (409 legal_hold_active): say so
+						// instead of reporting an unexplained failure.
+						const code = typeof data?.error === "string" ? data.error : await edgeErrorCode(error);
+						throw new Error(
+							t(code === "legal_hold_active" ? "audit.exportLegalHold" : "audit.exportFailed"),
+						);
+					}
 					return data;
 				},
 				source,
