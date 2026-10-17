@@ -47,7 +47,7 @@ export interface Database {
 				Row: {
 					tenant_id: string;
 					user_id: string;
-					role: "owner" | "admin" | "member" | "viewer" | "support_jit";
+					role: "owner" | "admin" | "member" | "viewer" | "auditor" | "support_jit";
 					joined_at: string;
 					expires_at: string | null;
 					created_at: string;
@@ -55,7 +55,7 @@ export interface Database {
 				Insert: {
 					tenant_id: string;
 					user_id: string;
-					role?: "owner" | "admin" | "member" | "viewer" | "support_jit";
+					role?: "owner" | "admin" | "member" | "viewer" | "auditor" | "support_jit";
 					joined_at?: string;
 					expires_at?: string | null;
 					created_at?: string;
@@ -63,7 +63,7 @@ export interface Database {
 				Update: {
 					tenant_id?: string;
 					user_id?: string;
-					role?: "owner" | "admin" | "member" | "viewer" | "support_jit";
+					role?: "owner" | "admin" | "member" | "viewer" | "auditor" | "support_jit";
 					joined_at?: string;
 					expires_at?: string | null;
 					created_at?: string;
@@ -602,7 +602,7 @@ export interface Database {
 					team_id: string;
 					tenant_id: string;
 					user_id: string;
-					role: "owner" | "admin" | "member" | "viewer";
+					role: "owner" | "admin" | "member" | "viewer" | "auditor";
 					invited_by: string | null;
 					joined_at: string;
 					created_at: string;
@@ -612,7 +612,7 @@ export interface Database {
 					team_id: string;
 					tenant_id: string;
 					user_id: string;
-					role?: "owner" | "admin" | "member" | "viewer";
+					role?: "owner" | "admin" | "member" | "viewer" | "auditor";
 					invited_by?: string | null;
 					joined_at?: string;
 					created_at?: string;
@@ -622,7 +622,7 @@ export interface Database {
 					team_id?: string;
 					tenant_id?: string;
 					user_id?: string;
-					role?: "owner" | "admin" | "member" | "viewer";
+					role?: "owner" | "admin" | "member" | "viewer" | "auditor";
 					invited_by?: string | null;
 					joined_at?: string;
 					created_at?: string;

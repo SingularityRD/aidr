@@ -57,6 +57,7 @@ const ROLE_LABELS: Record<string, DashboardMessageKey> = {
 	admin: "common.role.admin",
 	member: "common.role.member",
 	viewer: "common.role.viewer",
+	auditor: "common.role.auditor",
 };
 
 function roleLabel(role: string, t: Translate): string {

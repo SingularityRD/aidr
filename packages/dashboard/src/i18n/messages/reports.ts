@@ -4,8 +4,12 @@ import type { MessagePairs } from "./define";
 export const reportsMessages = {
 	"rpt.selectTeam": ["Select a team to see its reports.", "Raporları görmek için bir ekip seçin."],
 	"rpt.ownersOnly": [
-		"Only workspace owners and admins can see executive reports.",
-		"Yönetici raporlarını yalnızca çalışma alanı sahipleri ve yöneticileri görebilir.",
+		"Only workspace owners, admins and auditors can see executive reports.",
+		"Yönetici raporlarını yalnızca çalışma alanı sahipleri, yöneticileri ve denetçiler görebilir.",
+	],
+	"rpt.readOnly": [
+		"Read-only auditor access: the scheduled report is managed by owners and admins.",
+		"Salt okunur denetçi erişimi: zamanlanmış raporu sahipler ve yöneticiler yönetir.",
 	],
 	"rpt.lead": [
 		"A short summary for management, the same figures for every workspace you administer, a printable report and the scheduled e-mail. Counts only: no prompt text, matched values, page addresses or incident notes.",

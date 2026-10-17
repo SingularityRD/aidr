@@ -1353,7 +1353,10 @@ of who did what in the console.
 `aidr-audit-exports` bucket and is handed out as a signed download valid for 60 seconds,
 with its SHA-256 and a signed `next_cursor`. Follow the cursor until `complete` is
 `true`. Every page is bound to one snapshot. An active **legal hold** blocks exports
-(`409 legal_hold_active`), and an unreadable hold row fails closed.
+(`409 legal_hold_active`), and an unreadable hold row fails closed. Optional `from` /
+`to` (ISO timestamps) limit either trail to `[from, to)`; the range is signed into the
+cursor, so a later page cannot widen it. Owners, admins and the read-only **auditor** role
+may export ([roles](../../../security/roles.md)).
 
 **How to use.** On **Team**, press **Prepare CSV export** or **Prepare JSON export**,
 then **Save audit export**.

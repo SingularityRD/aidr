@@ -18,6 +18,10 @@ export const teamMessages = {
 		"Read-only: view audit logs and team activity",
 		"Salt okunur: denetim kayıtlarını ve ekip etkinliğini görür",
 	],
+	"team.role.auditorDesc": [
+		"Read-only auditor: incidents, events, reports, compliance evidence and both audit trails, including export. Cannot change anything.",
+		"Salt okunur denetçi: vakalar, olaylar, raporlar, uyum kanıtları ve iki denetim kaydı, dışa aktarma dahil. Hiçbir şeyi değiştiremez.",
+	],
 	"team.invite.created": ["Invitation created for {email}.", "{email} için davet oluşturuldu."],
 	"team.invite.replaced": ["Link replaced for {email}.", "{email} için bağlantı yenilendi."],
 	"team.invite.emailSent": [

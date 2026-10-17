@@ -9,8 +9,12 @@ export const governanceScorecardMessages = {
 	],
 	"gsc.title": ["AI governance", "Yapay zekâ yönetişimi"],
 	"gsc.ownersOnly": [
-		"Only workspace owners and admins can view the governance scorecard.",
-		"Yönetişim karnesini yalnızca çalışma alanı sahipleri ve yöneticileri görebilir.",
+		"Only workspace owners, admins and auditors can view the governance scorecard.",
+		"Yönetişim karnesini yalnızca çalışma alanı sahipleri, yöneticileri ve denetçiler görebilir.",
+	],
+	"gsc.readOnly": [
+		"Read-only auditor access: governance settings are managed by owners and admins.",
+		"Salt okunur denetçi erişimi: yönetişim ayarlarını sahipler ve yöneticiler yönetir.",
 	],
 	"gsc.workspace": ["Workspace", "Çalışma alanı"],
 	"gsc.eyebrow": ["Governance", "Yönetişim"],

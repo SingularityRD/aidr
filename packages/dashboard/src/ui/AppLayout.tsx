@@ -52,6 +52,16 @@ interface NavSection {
 const isOwner = ({ currentRole }: NavAccess) => currentRole === "owner";
 const isOwnerOrAdmin = ({ currentRole }: NavAccess) =>
 	currentRole === "owner" || currentRole === "admin";
+/** Owners, admins and the read-only auditor: reports, compliance, governance. */
+const isAuditReader = ({ currentRole }: NavAccess) =>
+	currentRole === "owner" || currentRole === "admin" || currentRole === "auditor";
+/**
+ * The read-only auditor gets no links to pages that only enrol or change
+ * something (device onboarding, installer downloads). Shown while the role is
+ * still resolving, like "Team policy".
+ */
+const notAuditor = ({ currentRole, roleResolved }: NavAccess) =>
+	!roleResolved || currentRole !== "auditor";
 
 /**
  * Console navigation, grouped by task. Each label is also the heading of the
@@ -107,8 +117,8 @@ export const NAV_SECTIONS: readonly NavSection[] = [
 		id: "devices",
 		label: "nav.section.devices",
 		items: [
-			{ to: "/onboarding", label: "nav.onboarding" },
-			{ to: "/downloads", label: "nav.downloads" },
+			{ to: "/onboarding", label: "nav.onboarding", show: notAuditor },
+			{ to: "/downloads", label: "nav.downloads", show: notAuditor },
 			{ to: "/agents", label: "nav.agents" },
 			{ to: "/api-keys", label: "nav.apiKeys" },
 		],
@@ -117,10 +127,10 @@ export const NAV_SECTIONS: readonly NavSection[] = [
 		id: "governance",
 		label: "nav.section.governance",
 		items: [
-			{ to: "/governance", label: "nav.governance", show: isOwnerOrAdmin },
-			{ to: "/governance/register", label: "nav.aiRegister" },
-			{ to: "/compliance", label: "nav.compliance", show: isOwnerOrAdmin },
-			{ to: "/reports", label: "nav.reports", show: isOwnerOrAdmin },
+			{ to: "/governance", label: "nav.governance", show: isAuditReader },
+			{ to: "/governance/register", label: "nav.aiRegister", show: notAuditor },
+			{ to: "/compliance", label: "nav.compliance", show: isAuditReader },
+			{ to: "/reports", label: "nav.reports", show: isAuditReader },
 		],
 	},
 	{

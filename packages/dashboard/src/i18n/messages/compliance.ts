@@ -9,8 +9,8 @@ export const complianceMessages = {
 	],
 	"cmp.title": ["Compliance evidence report", "Uyum kanıt raporu"],
 	"cmp.ownersOnly": [
-		"Only workspace owners and admins can generate compliance reports.",
-		"Uyum raporlarını yalnızca çalışma alanı sahipleri ve yöneticileri oluşturabilir.",
+		"Only workspace owners, admins and auditors can generate compliance reports.",
+		"Uyum raporlarını yalnızca çalışma alanı sahipleri, yöneticileri ve denetçiler oluşturabilir.",
 	],
 	"cmp.eyebrow": ["Security and data protection", "Güvenlik ve veri koruma"],
 	"cmp.lead": [

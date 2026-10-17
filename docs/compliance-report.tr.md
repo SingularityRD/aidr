@@ -22,14 +22,14 @@ olayların yaşandığı ve saklama ile silmenin nasıl uygulandığı.
 - Ortak şema ve bütünlük kodu: `supabase/functions/_shared/compliance-report.ts`
 - SQL: `supabase/migrations/20260926000030_compliance_report.sql`
   (`public.compliance_report_evidence`, `public.record_compliance_report`)
-- Panel: **Uyum** (`/compliance`), yalnız sahipler ve yöneticiler
+- Panel: **Uyum** (`/compliance`), yalnız sahipler, yöneticiler ve denetçiler
 - Çevrimdışı doğrulama: `aidr compliance verify <rapor.json>`
 
 ## Raporu kim oluşturabilir
 
 | Denetim | Davranış |
 | --- | --- |
-| Rol | Çalışma alanının etkin **sahibi** ya da **yöneticisi**. Üyeler, görüntüleyiciler, süresi dolmuş ve tam zamanında (just-in-time) destek üyelikleri reddedilir. |
+| Rol | Çalışma alanının etkin **sahibi**, **yöneticisi** ya da salt okunur **denetçisi** ([roller](security/roles.md)). Üyeler, görüntüleyiciler, süresi dolmuş ve tam zamanında (just-in-time) destek üyelikleri reddedilir. |
 | Ek doğrulama | Oturum, çalışma alanı MFA politikası isteğe bağlı olsa bile **AAL2** (çok faktörlü) düzeyinde olmalıdır. |
 | Kimlik bariyeri | Oturum iptali, zorunlu SAML sağlayıcısı ve çalışma alanı MFA politikası önce uygulanır. |
 | Çalışma alanı durumu | Çalışma alanı `active` olmalıdır. |
@@ -47,7 +47,7 @@ bir rapor üretilmez.
 
 ## Oluşturma ve indirme
 
-1. Panelde **Uyum** sayfasını açın (sahipler ve yöneticiler görür).
+1. Panelde **Uyum** sayfasını açın (sahipler, yöneticiler ve denetçiler görür).
 2. Bir dönem seçin: son 30, 90, 180 ya da 365 gün veya tam UTC günlerinden
    oluşan özel bir aralık.
 3. **Rapor oluştur** düğmesine basın. Tarayıcı, bir şey göstermeden önce

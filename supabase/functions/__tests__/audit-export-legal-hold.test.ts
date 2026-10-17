@@ -76,6 +76,7 @@ describe("audit-export legal-hold barrier", () => {
 	function database(options: DbOptions = {}) {
 		const tables: string[] = [];
 		const filters: Array<{ table: string; column: string; value: unknown }> = [];
+		const ranges: Array<{ table: string; op: "gte" | "lt" | "lte"; column: string; value: unknown }> = [];
 		const inserts: Array<{ table: string; values: unknown }> = [];
 		const rpcs: Array<{ name: string; args: Record<string, unknown> }> = [];
 		const quotaCalls: Array<Record<string, unknown>> = [];
@@ -91,7 +92,18 @@ describe("audit-export legal-hold barrier", () => {
 					filters.push({ table, column, value });
 					return query;
 				},
-				lte: () => query,
+				lte: (column: string, value: unknown) => {
+					ranges.push({ table, op: "lte", column, value });
+					return query;
+				},
+				gte: (column: string, value: unknown) => {
+					ranges.push({ table, op: "gte", column, value });
+					return query;
+				},
+				lt: (column: string, value: unknown) => {
+					ranges.push({ table, op: "lt", column, value });
+					return query;
+				},
 				is: () => query,
 				order: () => query,
 				limit: () => query,
@@ -194,6 +206,7 @@ describe("audit-export legal-hold barrier", () => {
 			},
 			tables,
 			filters,
+			ranges,
 			inserts,
 			rpcs,
 			quotaCalls,
@@ -452,6 +465,97 @@ describe("audit-export legal-hold barrier", () => {
 			const response = await handle(post({ team_id: TENANT, format: "json", source: "everything" }));
 			expect(response.status).toBe(400);
 			expect(tables).not.toContain("audit_logs");
+		});
+	});
+
+	describe("read-only auditor role", () => {
+		it.each(["audit", "admin"])("lets an active auditor export the %s trail", async (source) => {
+			const { handle, tables, rpcs } = await handlerWith({
+				member: { role: "auditor", expires_at: null },
+				adminRows: [{ id: 7, created_at: "2026-10-01T00:00:00.000Z", actor_user_id: USER, target_user_id: null, action: "x", detail: {} }],
+			});
+			const response = await handle(post({ team_id: TENANT, format: "json", source }));
+			expect(response.status).toBe(200);
+			expect(tables).toContain(source === "admin" ? "admin_audit_logs" : "audit_logs");
+			expect(rpcs.map((entry) => entry.name)).toEqual(["register_audit_export_object", "finalize_audit_export_object"]);
+		});
+
+		it("refuses an expired auditor membership before any audit read", async () => {
+			const { handle, tables } = await handlerWith({ member: { role: "auditor", expires_at: "2020-01-01T00:00:00.000Z" } });
+			expect((await handle(post())).status).toBe(403);
+			expect(tables).not.toContain("audit_logs");
+		});
+	});
+
+	describe("date range (from / to)", () => {
+		const FROM = "2026-09-01T00:00:00.000Z";
+		const TO = "2026-10-01T00:00:00.000Z";
+		const pageRows = Array.from({ length: 501 }, (_, i) => auditRow({
+			id: `44444444-4444-4444-8444-${String(i).padStart(12, "0")}`,
+			created_at: new Date(Date.parse(FROM) + i * 1000).toISOString(),
+		}));
+
+		it.each([["audit", "audit_logs"], ["admin", "admin_audit_logs"]])("applies [from, to) to the %s trail", async (source, table) => {
+			const { handle, ranges } = await handlerWith({ adminRows: [] });
+			const response = await handle(post({ team_id: TENANT, format: "json", source, from: "2026-09-01T03:00:00+03:00", to: TO }));
+			expect(response.status).toBe(200);
+			const body = (await response.json()) as Record<string, unknown>;
+			// Bounds are normalised to UTC and echoed back.
+			expect(body).toMatchObject({ from: FROM, to: TO });
+			expect(ranges).toContainEqual({ table, op: "gte", column: "created_at", value: FROM });
+			expect(ranges).toContainEqual({ table, op: "lt", column: "created_at", value: TO });
+		});
+
+		it("keeps the unbounded export when no range is given", async () => {
+			const { handle, ranges } = await handlerWith();
+			const response = await handle(post());
+			expect(response.status).toBe(200);
+			const body = (await response.json()) as Record<string, unknown>;
+			expect(body.from).toBeUndefined();
+			expect(ranges.filter((entry) => entry.op !== "lte")).toEqual([]);
+		});
+
+		it.each([
+			["a date without a time", { from: "2026-09-01" }],
+			["a timestamp without a zone", { from: "2026-09-01T00:00:00" }],
+			["microsecond precision", { to: "2026-09-01T00:00:00.000001Z" }],
+			["a non-string", { from: 1700000000000 }],
+			["null", { to: null }],
+			["an impossible date", { from: "2026-02-31T00:00:00Z" }],
+			["an inverted range", { from: TO, to: FROM }],
+			["an empty range", { from: FROM, to: FROM }],
+			["a start before 2000", { from: "1999-12-31T23:59:59Z" }],
+			["a start in the future", { from: "2999-01-01T00:00:00Z" }],
+			["PostgREST syntax", { from: `${FROM},created_at.gt.1970` }],
+		])("rejects %s before any audit read", async (_label, range) => {
+			const { handle, tables, quotaCalls } = await handlerWith();
+			const response = await handle(post({ team_id: TENANT, format: "json", ...range }));
+			expect(response.status).toBe(400);
+			expect(await response.json()).toEqual({ error: "invalid_export_range" });
+			expect(tables).not.toContain("audit_logs");
+			expect(quotaCalls).toEqual([]);
+		});
+
+		it("signs the range into the cursor: a later page cannot widen, narrow or drop it", async () => {
+			const first = await handlerWith({ rows: pageRows });
+			const response = await first.handle(post({ team_id: TENANT, format: "json", from: FROM, to: TO }));
+			expect(response.status).toBe(200);
+			const { next_cursor: cursor } = (await response.json()) as { next_cursor: string };
+			expect(typeof cursor).toBe("string");
+
+			for (const range of [{}, { from: FROM }, { to: TO }, { from: "2026-01-01T00:00:00Z", to: TO }, { from: FROM, to: "2026-12-01T00:00:00Z" }]) {
+				const next = await handlerWith({ rows: pageRows });
+				const refused = await next.handle(post({ team_id: TENANT, format: "json", cursor, ...range }));
+				expect(refused.status).toBe(400);
+				expect(await refused.json()).toEqual({ error: "invalid_or_expired_export_cursor" });
+				expect(next.tables).not.toContain("audit_logs");
+			}
+
+			const same = await handlerWith({ rows: pageRows.slice(0, 1) });
+			const accepted = await same.handle(post({ team_id: TENANT, format: "json", cursor, from: FROM, to: TO }));
+			expect(accepted.status).toBe(200);
+			expect(same.ranges).toContainEqual({ table: "audit_logs", op: "gte", column: "created_at", value: FROM });
+			expect(same.ranges).toContainEqual({ table: "audit_logs", op: "lt", column: "created_at", value: TO });
 		});
 	});
 });

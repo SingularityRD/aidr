@@ -6,6 +6,7 @@ export const commonMessages = {
 	"common.role.admin": ["Administrator", "Yönetici"],
 	"common.role.member": ["Member", "Üye"],
 	"common.role.viewer": ["Viewer", "İzleyici"],
+	"common.role.auditor": ["Auditor", "Denetçi"],
 	"common.severity.critical": ["Critical", "Kritik"],
 	"common.severity.high": ["High", "Yüksek"],
 	"common.severity.medium": ["Medium", "Orta"],

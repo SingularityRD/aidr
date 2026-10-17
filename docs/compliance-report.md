@@ -21,14 +21,14 @@ Communication Security Guide and the other frameworks in `governance/frameworks/
 - Shared schema and integrity code: `supabase/functions/_shared/compliance-report.ts`
 - SQL: `supabase/migrations/20260926000030_compliance_report.sql`
   (`public.compliance_report_evidence`, `public.record_compliance_report`)
-- Dashboard: **Compliance** (`/compliance`), owners and admins only
+- Dashboard: **Compliance** (`/compliance`), owners, admins and auditors only
 - Offline verification: `aidr compliance verify <report.json>`
 
 ## Who can generate a report
 
 | Control | Behaviour |
 | --- | --- |
-| Role | Active **owner** or **admin** of the workspace. Members, viewers, expired and just-in-time support memberships are refused. |
+| Role | Active **owner**, **admin** or read-only **auditor** of the workspace ([roles](security/roles.md)). Members, viewers, expired and just-in-time support memberships are refused. |
 | Step-up | The session must be at **AAL2** (multi-factor), even when the workspace MFA policy is optional. |
 | Identity barrier | Session revocation, a required SAML provider and the workspace MFA policy are enforced first. |
 | Workspace state | The workspace must be `active`. |
@@ -46,7 +46,7 @@ or unsigned report.
 
 ## How to generate and download
 
-1. Open **Compliance** in the dashboard (visible to owners and admins).
+1. Open **Compliance** in the dashboard (visible to owners, admins and auditors).
 2. Pick a period: last 30, 90, 180 or 365 days, or a custom range of whole UTC days.
 3. Press **Generate report**. The browser recomputes the report's SHA-256 before showing
    anything; a response that does not match its own digest is rejected.

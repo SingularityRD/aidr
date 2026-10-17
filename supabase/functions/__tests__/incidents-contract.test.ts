@@ -39,6 +39,7 @@ const OWNER_A = "11111111-1111-4111-8111-111111111111";
 const ADMIN_A = "12121212-1212-4121-8121-121212121212";
 const MEMBER_A = "13131313-1313-4131-8131-131313131313";
 const VIEWER_A = "14141414-1414-4141-8141-141414141414";
+const AUDITOR_A = "16161616-1616-4161-8161-161616161616";
 const OWNER_B = "15151515-1515-4151-8151-151515151515";
 const T0 = Date.parse("2026-10-14T10:00:00.000Z");
 const URL_BASE = "https://project.supabase.co/functions/v1/incidents";
@@ -66,7 +67,7 @@ class World {
 	constructor(private readonly options: { rateDenied?: boolean; failTables?: string[] } = {}) {
 		for (const [tenant, user, role] of [
 			[TENANT_A, OWNER_A, "owner"], [TENANT_A, ADMIN_A, "admin"], [TENANT_A, MEMBER_A, "member"],
-			[TENANT_A, VIEWER_A, "viewer"], [TENANT_B, OWNER_B, "owner"],
+			[TENANT_A, VIEWER_A, "viewer"], [TENANT_A, AUDITOR_A, "auditor"], [TENANT_B, OWNER_B, "owner"],
 		]) {
 			this.members.push({ tenant_id: tenant, user_id: user, role, expires_at: null });
 			this.sessions.set(`session-${user}`, { user, aal: "aal2" });
@@ -143,7 +144,7 @@ class World {
 				if (Number(existing?.version ?? 0) !== a.p_expected_version) fail("40001", "incident_triage_conflict");
 				const fields = a.p_fields as Row;
 				const owner = fields.owner_user_id;
-				if (owner && !this.members.some((m) => m.tenant_id === a.p_tenant_id && m.user_id === owner && m.role !== "viewer")) {
+				if (owner && !this.members.some((m) => m.tenant_id === a.p_tenant_id && m.user_id === owner && ["owner", "admin", "member"].includes(String(m.role)))) {
 					fail("22023", "incident_owner_not_member");
 				}
 				const version = Number(existing?.version ?? 0) + 1;
@@ -213,7 +214,7 @@ describe("incidents handler", () => {
 	it("lets every active member read, and tells the page whether this role may triage", async () => {
 		const world = new World();
 		await call(world, `session-${OWNER_A}`, ACK);
-		for (const [user, canTriage] of [[OWNER_A, true], [MEMBER_A, false], [VIEWER_A, false]] as const) {
+		for (const [user, canTriage] of [[OWNER_A, true], [MEMBER_A, false], [VIEWER_A, false], [AUDITOR_A, false]] as const) {
 			const listed = await call(world, `aal1-${user}`, { action: "list", tenant_id: TENANT_A });
 			expect(listed.status, user).toBe(200);
 			expect(listed.body.can_triage).toBe(canTriage);
@@ -229,7 +230,7 @@ describe("incidents handler", () => {
 		const world = new World();
 		expect((await call(world, null, ACK)).status).toBe(401);
 		expect((await call(world, "bogus", ACK)).status).toBe(401);
-		for (const user of [MEMBER_A, VIEWER_A]) {
+		for (const user of [MEMBER_A, VIEWER_A, AUDITOR_A]) {
 			expect(await call(world, `session-${user}`, ACK)).toEqual({ status: 403, body: { error: "incident_role_insufficient" } });
 		}
 		expect(await call(world, `aal1-${OWNER_A}`, ACK)).toEqual({ status: 403, body: { error: "mfa_required" } });
@@ -248,9 +249,11 @@ describe("incidents handler", () => {
 		expect(await call(world, `session-${OWNER_A}`, { ...ACK, owner_user_id: OWNER_B })).toEqual({
 			status: 400, body: { error: "incident_owner_not_member" },
 		});
-		expect(await call(world, `session-${OWNER_A}`, { ...ACK, owner_user_id: VIEWER_A })).toEqual({
-			status: 400, body: { error: "incident_owner_not_member" },
-		});
+		for (const readOnly of [VIEWER_A, AUDITOR_A]) {
+			expect(await call(world, `session-${OWNER_A}`, { ...ACK, owner_user_id: readOnly })).toEqual({
+				status: 400, body: { error: "incident_owner_not_member" },
+			});
+		}
 	});
 
 	it("validates requests before any database access", async () => {

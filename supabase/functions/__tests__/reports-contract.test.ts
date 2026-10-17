@@ -205,6 +205,20 @@ describe("reports handler", () => {
 		expect(aal1).toMatchObject({ status: 403, body: { error: "mfa_required" } });
 	});
 
+	it("lets the read-only auditor read every report but never change the options", async () => {
+		const auditor = { role: "auditor" } as const;
+		expect((await call({ action: "summary", tenant_id: GOVERNANCE_TENANT, days: 7 }, auditor)).status).toBe(200);
+		expect((await call({ action: "rollup", tenant_id: GOVERNANCE_TENANT, days: 30 }, auditor)).status).toBe(200);
+		expect((await call({ action: "document", tenant_id: GOVERNANCE_TENANT, days: 7, language: "en", include_teams: false }, auditor)).status).toBe(200);
+		const write = await call({ action: "set_options", tenant_id: GOVERNANCE_TENANT, language: "tr", attachment: false }, auditor);
+		expect(write).toMatchObject({ status: 403, body: { error: "report_role_insufficient" } });
+		// Refused before the rate limit and before the write RPC.
+		expect(write.rpcCalls.map((c) => c.name)).toEqual([]);
+		for (const role of ["viewer", "support_jit", "superuser"]) {
+			expect(await call({ action: "summary", tenant_id: GOVERNANCE_TENANT, days: 7 }, { role })).toMatchObject({ status: 403 });
+		}
+	});
+
 	it("refuses members, malformed requests and unreadable figures", async () => {
 		expect(await call({ action: "summary", tenant_id: GOVERNANCE_TENANT, days: 7 }, {}, "member-token")).toMatchObject({
 			status: 403, body: { error: "report_role_insufficient" },

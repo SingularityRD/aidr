@@ -1,6 +1,6 @@
 // Compliance evidence report (docs/compliance-report.md).
 //
-// POST { tenant_id, from, to }   owner/admin at AAL2, period <= 366 days.
+// POST { tenant_id, from, to }   owner/admin/auditor at AAL2, period <= 366 days.
 //
 // Builds a tenant-scoped JSON report designed to support KVKK and GDPR
 // accountability work: tenant profile, protection coverage, data-protection
@@ -44,6 +44,7 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
+import { isAuditReaderRole, isTenantReadRole } from "../_shared/tenant-roles.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const SIGNING_KEY_ID_ENV = "AIDR_COMPLIANCE_SIGNING_KEY_ID";
@@ -130,11 +131,12 @@ export function createComplianceReportHandler(deps: ComplianceReportDeps = {}) {
 			if (memberError || tenantError) return corsJson(req, 503, { error: "authorization_unavailable" });
 			const role = String((member as { role?: unknown } | null)?.role ?? "");
 			if (!membershipActive(member as { role?: string; expires_at?: string | null } | null, now()) ||
-				!["owner", "admin", "member", "viewer"].includes(role) || !tenant ||
+				!isTenantReadRole(role) || !tenant ||
 				(tenant as { status?: unknown }).status === "closed") {
 				return corsJson(req, 403, { error: "workspace_forbidden" });
 			}
-			if (role !== "owner" && role !== "admin") return corsJson(req, 403, { error: "compliance_role_insufficient" });
+			// Owners, admins and the read-only auditor; the RPC re-checks the role.
+			if (!isAuditReaderRole(role)) return corsJson(req, 403, { error: "compliance_role_insufficient" });
 			if ((tenant as { status?: unknown }).status !== "active") {
 				return corsJson(req, 409, { error: "workspace_not_active" });
 			}

@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<TeamRole, DashboardMessageKey> = {
 	admin: "common.role.admin",
 	member: "common.role.member",
 	viewer: "common.role.viewer",
+	auditor: "common.role.auditor",
 };
 
 const ROLE_DESCRIPTIONS: Record<TeamRole, DashboardMessageKey> = {
@@ -23,12 +24,15 @@ const ROLE_DESCRIPTIONS: Record<TeamRole, DashboardMessageKey> = {
 	admin: "team.role.adminDesc",
 	member: "team.role.memberDesc",
 	viewer: "team.role.viewerDesc",
+	auditor: "team.role.auditorDesc",
 };
 
 // Administrators cannot grant ownership. Owner changes require AAL2 and are
 // appended to the audit log atomically by the database owner-role guard.
-const ASSIGNABLE_ROLES: TeamRole[] = ["admin", "member", "viewer"];
-const CHANGEABLE_ROLES: TeamRole[] = ["owner", "admin", "member", "viewer"];
+// `auditor` is the read-only audit role, granted only here (never by SCIM or
+// OIDC group mappings).
+const ASSIGNABLE_ROLES: TeamRole[] = ["admin", "member", "viewer", "auditor"];
+const CHANGEABLE_ROLES: TeamRole[] = ["owner", "admin", "member", "viewer", "auditor"];
 
 /**
  * Outcome of the last action, kept as a typed value. The previous
@@ -44,7 +48,7 @@ interface ActionStatus {
 interface PendingInvitation {
 	id: string;
 	email: string;
-	role: "admin" | "member" | "viewer";
+	role: "admin" | "member" | "viewer" | "auditor";
 	expires_at: string;
 }
 
@@ -54,7 +58,10 @@ function isPendingInvitation(value: unknown): value is PendingInvitation {
 	return (
 		typeof row.id === "string" &&
 		typeof row.email === "string" &&
-		(row.role === "admin" || row.role === "member" || row.role === "viewer") &&
+		(row.role === "admin" ||
+			row.role === "member" ||
+			row.role === "viewer" ||
+			row.role === "auditor") &&
 		typeof row.expires_at === "string" &&
 		Number.isFinite(Date.parse(row.expires_at))
 	);

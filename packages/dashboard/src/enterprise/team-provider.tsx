@@ -11,15 +11,12 @@ import { useT } from "../i18n/I18nProvider";
 import type { Database } from "../lib/database.types";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
-import { type AuditExportSource, collectAuditExport } from "./audit-export";
+import { type AuditExportRange, type AuditExportSource, collectAuditExport } from "./audit-export";
 import { IdentityBootstrap } from "./identity-bootstrap";
+import { isAuditReaderRole, type TeamRole } from "./roles";
 
-// Mirrors the database check constraint on public.team_members.role
-// (`owner | admin | member | viewer`). "owner" is not cosmetic: the
-// handle_new_user_team trigger makes every new user the owner of their
-// personal team, so omitting it silently removed team management from the
-// people who own the team.
-export type TeamRole = "owner" | "admin" | "member" | "viewer";
+// TeamRole (with the read-only `auditor`) is defined in ./roles.
+export type { TeamRole } from "./roles";
 
 /**
  * How the service delivered a confirmed invitation. `email` is reported only
@@ -144,9 +141,18 @@ interface TeamContextType {
 	refreshAuditLogs: () => Promise<void>;
 	/** Reflect a server-confirmed workspace rename in the loaded team list. */
 	applyWorkspaceName: (teamId: string, name: string) => void;
-	/** `source: "admin"` exports the administrative trail (owner/admin, SIEM-export plans). */
-	exportAuditLogs: (format: "csv" | "json", source?: AuditExportSource) => Promise<string>;
+	/**
+	 * `source: "admin"` exports the administrative trail (owner/admin/auditor,
+	 * SIEM-export plans). `range` bounds either trail to [from, to).
+	 */
+	exportAuditLogs: (
+		format: "csv" | "json",
+		source?: AuditExportSource,
+		range?: AuditExportRange,
+	) => Promise<string>;
 	canManageTeam: boolean;
+	/** Owner, admin or auditor: may read the administrative trail and export both trails. */
+	canReadAuditTrail: boolean;
 	canViewAudit: boolean;
 	canEditPolicy: boolean;
 }
@@ -542,6 +548,7 @@ function ProtectedTeamProvider({
 	async function exportAuditLogs(
 		format: "csv" | "json",
 		source: AuditExportSource = "audit",
+		range: AuditExportRange = {},
 	): Promise<string> {
 		if (!currentTeam || !currentRole || !isIdentityCurrent())
 			throw new Error("No accessible team selected");
@@ -556,6 +563,10 @@ function ProtectedTeamProvider({
 							team_id: teamId,
 							format,
 							...(source === "admin" ? { source } : {}),
+							// The range is resent with every page: the server binds it
+							// into the signed cursor and refuses a page without it.
+							...(range.from ? { from: range.from } : {}),
+							...(range.to ? { to: range.to } : {}),
 							...(cursor ? { cursor } : {}),
 						},
 					});
@@ -582,6 +593,7 @@ function ProtectedTeamProvider({
 	// manageable locked owners out of their own team.
 	const canManageTeam = currentRole === "owner" || currentRole === "admin";
 	const canViewAudit = currentRole !== null;
+	const canReadAuditTrail = isAuditReaderRole(currentRole);
 	const canEditPolicy =
 		currentRole === "owner" || currentRole === "admin" || currentRole === "member";
 
@@ -610,6 +622,7 @@ function ProtectedTeamProvider({
 				applyWorkspaceName,
 				exportAuditLogs,
 				canManageTeam,
+				canReadAuditTrail,
 				canViewAudit,
 				canEditPolicy,
 			}}

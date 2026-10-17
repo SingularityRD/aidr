@@ -124,10 +124,28 @@ function scorecardReplies(card: () => Record<string, unknown>) {
 }
 
 describe("GovernancePage", () => {
+	it("shows the read-only auditor the scorecard without the settings form", async () => {
+		team.value = { ...team.value, currentRole: "auditor" };
+		scorecardReplies(() => fixtures.governanceScorecardFixture(30));
+		renderPage();
+		await screen.findByRole("heading", { name: "Top risks" });
+		expect(screen.queryByRole("heading", { name: "Scheduled summary" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Save settings" })).not.toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"Read-only auditor access: governance settings are managed by owners and admins.",
+			),
+		).toBeInTheDocument();
+		expect(rpc).not.toHaveBeenCalledWith("set_governance_settings", expect.anything());
+		team.value = { ...team.value, currentRole: "owner" };
+	});
+
 	it("is limited to owners and admins", () => {
 		team.value = { ...team.value, currentRole: "member" };
 		renderPage();
-		expect(screen.getByRole("alert")).toHaveTextContent("Only workspace owners and admins");
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"Only workspace owners, admins and auditors",
+		);
 		expect(rpc).not.toHaveBeenCalled();
 	});
 

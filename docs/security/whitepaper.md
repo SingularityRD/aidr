@@ -106,7 +106,9 @@ the values Browser Guard masked.
   OIDC), SCIM provisioning, MFA and recovery codes for local accounts. OIDC
   sign-in currently expects users provisioned in advance (by SCIM); live
   acceptance with the customer's IdP is a per-deployment step.
-- Roles: owner, admin, member, viewer; role changes are audited.
+- Roles: owner, admin, member, viewer and a read-only auditor (reads and exports
+  both audit trails, reports and compliance evidence; cannot change anything);
+  role changes are audited. See [roles.md](roles.md).
 - Device enrollment by short-lived device codes or an enrollment token; the
   device receives a configuration bound to its tenant. Tenant API keys are
   stored as hashes only.

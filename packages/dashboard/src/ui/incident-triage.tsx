@@ -227,7 +227,9 @@ function TriageForm(props: {
 }) {
 	const t = useT();
 	const { draft, setDraft, busy } = props;
-	const assignable = props.members.filter((m) => m.role !== "viewer");
+	// Only roles the database accepts as an incident owner (owner/admin/member);
+	// viewers and read-only auditors are never assignable.
+	const assignable = props.members.filter((m) => ["owner", "admin", "member"].includes(m.role));
 	const now = Date.now();
 	const closing = draft.status === "resolved" || draft.status === "false_positive";
 	return (

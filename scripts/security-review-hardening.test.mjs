@@ -262,9 +262,24 @@ test("g. the directory-authoritative membership gate survives the hardening migr
 		assert.ok(final, `${name} must be defined`);
 		assert.match(normalize(final), /set search_path = pg_catalog, public, pg_temp as \$\$/, `${name} must resolve pg_catalog first`);
 		assert.ok(normalize(final).includes(gate), `${name} must still consult app.directory_membership_grants`);
-		assert.equal(normalize(body(final)), normalize(body(definition(scim, name))), `${name} final body must equal the directory-authoritative body`);
+		// 20261016000400 adds the read-only `auditor` role to the role helper and
+		// nothing else: with its two role-list additions removed, the body is
+		// still exactly the directory-authoritative one.
+		const expected = name === "app.is_tenant_member_with_role" ? withoutAuditor(body(final)) : body(final);
+		assert.equal(normalize(expected), normalize(body(definition(scim, name))), `${name} final body must equal the directory-authoritative body`);
 	}
+	const auditor = sources.get("20261016000400_auditor_role.sql");
+	assert.ok(auditor);
+	assert.equal(latestBefore("app.is_tenant_member_with_role", afterEveryMigration), definition(auditor, "app.is_tenant_member_with_role"));
 });
+
+function withoutAuditor(text) {
+	const viewer = "when 'viewer' then array['owner', 'admin', 'member', 'viewer', 'auditor']";
+	const level = "when 'auditor' then array['owner', 'admin', 'auditor']";
+	const flat = normalize(text);
+	assert.ok(flat.includes(viewer) && flat.includes(level), "the auditor role helper keeps exactly the two auditor additions");
+	return flat.replace(viewer, "when 'viewer' then array['owner', 'admin', 'member', 'viewer']").replace(` ${level}`, "");
+}
 
 test("f. audit export objects are readable only by an owner/admin of the folder tenant behind the identity barrier", () => {
 	const policy = statements.find((s) => /^create\s+policy\s+audit_exports_read_own_tenant/i.test(s));
