@@ -138,6 +138,7 @@ import {
 import { evaluatePolicy } from "./policy.js";
 import { dropProjectEnvReads, projectEnvReadsAllowed } from "./project-env.js";
 import type { TenantPromptSafetyPolicy } from "./prompt-safety.js";
+import { readProtectionLock } from "./protection-lock.js";
 import { signedDetectionExceptionsOf, syncRemoteRuntimePolicy } from "./remote-policy.js";
 import type { ReputationFeedLoadOptions } from "./reputation-feed.js";
 import { inspectResponseBarrier } from "./response-barrier.js";
@@ -262,6 +263,13 @@ export interface ToolDelegationContext extends DelegatedCredentialVerificationCo
 }
 
 export interface ToolEvaluationContext {
+	/**
+	 * Whether the organisation's machine policy locks protection
+	 * (`protection_locked`, see protection-lock.ts). Tests inject it; production
+	 * reads the policy lazily, only when a local allowlist entry or local
+	 * detection exception would otherwise change the verdict.
+	 */
+	protectionLocked?: () => boolean;
 	threatsDir: string;
 	allowlistsDir: string;
 	configPath?: string;
@@ -1414,6 +1422,19 @@ async function loadHeuristics(
 	};
 }
 
+let protectionLockMemo: boolean | undefined;
+/**
+ * The machine-policy protection lock, read at most once per process: when an
+ * administrator locks protection, the user-writable local allowlist and local
+ * detection exceptions no longer relax anything (a process running as the
+ * user, such as the agent itself, can reach those but not machine policy).
+ */
+function localRelaxationLocked(context: ToolEvaluationContext): boolean {
+	if (context.protectionLocked) return context.protectionLocked();
+	protectionLockMemo ??= readProtectionLock().locked;
+	return protectionLockMemo;
+}
+
 /**
  * Operator-created, time-limited detection exceptions (`detection-exceptions.ts`):
  * drop the rule matches an active exception covers for exactly this subject.
@@ -1434,10 +1455,16 @@ async function applyDetectionExceptionLeg(
 	if (matches.length === 0 || !config.logging?.enabled) return matches;
 	try {
 		const ruleIds = new Set(matches.map((m) => m.threat.id));
-		const local = await loadUsableLocalExceptions(ruleIds, {
+		let local = await loadUsableLocalExceptions(ruleIds, {
 			logger,
 			approvals: { logger, keyStorage: config.operator_approvals?.key_storage },
 		});
+		if (local.length > 0 && localRelaxationLocked(context)) {
+			logger.warn("Local detection exceptions ignored: protection is locked by machine policy", {
+				count: local.length,
+			});
+			local = [];
+		}
 		const candidates = [...managed.filter((e) => ruleIds.has(e.ruleId)), ...local];
 		if (candidates.length === 0) return matches;
 		const subject = resolveDetectionExceptionSubjectContext(
@@ -2313,7 +2340,13 @@ async function runEvaluationPipeline(
 	try {
 		const allowlist = await loadAllowlist(config.allowlist, logger);
 		const workingDirectory = reportedWorkingDirectory(context);
-		const covered = allowlistedArtifacts(allowlist, request.artifacts, workingDirectory);
+		let covered = allowlistedArtifacts(allowlist, request.artifacts, workingDirectory);
+		if (covered.size > 0 && localRelaxationLocked(context)) {
+			logger.warn("Local allowlist ignored: protection is locked by machine policy", {
+				artifacts: covered.size,
+			});
+			covered = new Set();
+		}
 		if (covered.size > 0) {
 			allowlistedPathByRequest.set(request, (path) =>
 				isAllowlisted(allowlist, [{ type: "file_path", value: path }], workingDirectory),

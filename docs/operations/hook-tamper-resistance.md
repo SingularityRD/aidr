@@ -12,9 +12,15 @@ rest:
 
 1. **System-wide hooks.** The hooks go where the host reads organisation policy,
    which only an administrator can change (`aidr machine-hooks install`).
-2. **Protection lock for the editors.** Machine policy `protection_locked` makes
-   the Cursor / VS Code extension refuse "Disable protection" and put back hooks a
-   user deleted.
+2. **Protection lock.** Machine policy `protection_locked` makes the Cursor /
+   VS Code extension refuse "Disable protection" and put back hooks a user
+   deleted. It also takes local relaxations away from anything running as the
+   user, the agent included: the hooks ignore the local allowlist
+   (`~/.singularity-aidr/allowlist.json`) and local detection exceptions, and
+   the CLI refuses `aidr allowlist add`, `aidr exception add`, a weakening
+   `aidr config -s` and `aidr uninstall` before any prompt, so no terminal trick
+   can confirm them. Exceptions for a locked fleet come from the control plane
+   (signed managed policy), which the device cannot write.
 3. **Heartbeat and alerts.** `aidr heartbeat` measures every host on the device
    once an hour and reports one state per connector. The control plane raises
    `agent.unprotected` when a protected connector stops being protected, and

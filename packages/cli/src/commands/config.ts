@@ -144,6 +144,7 @@ async function configCommand(
 		if (!isProtectionTightening(key, before, after)) {
 			try {
 				await confirmOperatorAction({
+					relaxesProtection: true,
 					prompt: [
 						ct("config.confirmTitle"),
 						`  ${escapeTerminalText(key)}: ${describeForPrompt(key, before)} -> ${describeForPrompt(key, after)}`,

@@ -171,6 +171,7 @@ export async function allowlistAddCommand(
 	let mode: Awaited<ReturnType<typeof confirmOperatorAction>>;
 	try {
 		mode = await confirmOperatorAction({
+			relaxesProtection: true,
 			prompt: [
 				"Singularity AIDR — add a permanent allowlist entry",
 				`  ${type}: ${shown}`,

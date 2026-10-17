@@ -114,6 +114,28 @@ describe("aidr exception add", () => {
 		expect(await listDetectionExceptions(store)).toEqual([]);
 	});
 
+	it("is refused before any prompt when machine policy locks protection", async () => {
+		const { confirmOperatorAction } = await import("../utils/operator-confirm.js");
+		await expect(
+			confirmOperatorAction({
+				prompt: "add an exception",
+				word: "except",
+				streams: ttyStreams("except"),
+				relaxesProtection: true,
+				protectionLocked: () => true,
+			}),
+		).rejects.toThrow(/protection_locked/);
+		await expect(
+			confirmOperatorAction({
+				prompt: "add an exception",
+				word: "except",
+				streams: ttyStreams("except"),
+				relaxesProtection: true,
+				protectionLocked: () => false,
+			}),
+		).resolves.toBe("interactive");
+	});
+
 	it("refuses a rule ID this installation does not load (a typo would match nothing)", async () => {
 		await exceptionAddCommand("CLT-CMD-9999", VALID, {
 			store,

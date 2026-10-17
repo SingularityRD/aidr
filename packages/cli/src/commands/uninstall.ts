@@ -1031,6 +1031,7 @@ async function uninstallCommand(
 	if (!options.dryRun) {
 		try {
 			await confirmOperatorAction({
+				relaxesProtection: true,
 				prompt: confirmationPrompt(options),
 				word: "uninstall",
 				yes: options.yes,

@@ -426,7 +426,8 @@ describe("enrollment bookkeeping", () => {
 			},
 			client: () => ({
 				deviceStart: async () => plane().start as never,
-				devicePoll: async () => ({ ok: true, body: { enrollment_token: ["tok", "12345678"].join("-") } }) as never,
+				devicePoll: async () =>
+					({ ok: true, body: { enrollment_token: ["tok", "12345678"].join("-") } }) as never,
 			}),
 		});
 		await enrollment.start({ endpoint: "https://a.example", useInstallerToken: false });

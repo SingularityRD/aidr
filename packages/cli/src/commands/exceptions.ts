@@ -151,6 +151,7 @@ export async function exceptionAddCommand(
 	let mode: Awaited<ReturnType<typeof confirmOperatorAction>>;
 	try {
 		mode = await confirmOperatorAction({
+			relaxesProtection: true,
 			prompt: [
 				"Singularity AIDR — add a time-limited detection exception",
 				`  rule:     ${escapeTerminalText(ruleId)}`,

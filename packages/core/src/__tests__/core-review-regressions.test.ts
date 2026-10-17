@@ -85,6 +85,7 @@ async function evaluate(
 	toolInput: Record<string, unknown>,
 	configExtra: Record<string, unknown> = {},
 	threatsDir = THREATS_DIR,
+	protectionLocked?: () => boolean,
 ): Promise<Verdict> {
 	const configPath = await writeConfig(dir, configExtra);
 	return evaluateToolCall(
@@ -103,6 +104,7 @@ async function evaluate(
 			allowlistsDir: ALLOWLISTS_DIR,
 			userThreatsDir: join(dir, "user-threats"),
 			workingDirectory: dir,
+			...(protectionLocked ? { protectionLocked } : {}),
 		},
 	);
 }
@@ -240,6 +242,28 @@ describe("allowlist covers only the artifacts it names", () => {
 		const verdict = await evaluate(dir, "WebFetch", { url: "https://docs.example.test/page" });
 		expect(verdict.decision).toBe("allow");
 		expect(verdict.source).toBe("allowlisted");
+	});
+
+	it("ignores the user-writable allowlist when machine policy locks protection", async () => {
+		const dir = await tmp();
+		await mkdir(aidrDir(dir), { recursive: true });
+		await writeFile(
+			join(aidrDir(dir), "allowlist.json"),
+			JSON.stringify({
+				urls: {
+					"https://docs.example.test/page": {
+						added_at: "2026-01-01T00:00:00Z",
+						reason: "fp",
+						original_verdict: "ask",
+					},
+				},
+			}),
+		);
+		const input = { url: "https://docs.example.test/page" };
+		const locked = await evaluate(dir, "WebFetch", input, {}, THREATS_DIR, () => true);
+		expect(locked.source).not.toBe("allowlisted");
+		const unlocked = await evaluate(dir, "WebFetch", input, {}, THREATS_DIR, () => false);
+		expect(unlocked.source).toBe("allowlisted");
 	});
 });
 

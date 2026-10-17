@@ -128,6 +128,8 @@ export const CLI_EN = {
 	"confirm.type": 'Type "{word}" to confirm: ',
 	"confirm.notConfirmed": "Not confirmed; nothing was changed.",
 	"confirm.inputEnded": "Confirmation input ended.",
+	"confirm.protectionLocked":
+		"Refused: your organisation's machine policy locks Singularity AIDR protection (protection_locked), so local allowlist entries, exceptions, weakening settings and removal are not available here. Ask your IT or security team.",
 	"confirm.yesNeedsEnv":
 		"--yes is honoured only when {env} is also set by the operator. Run the command in an interactive terminal to confirm it by hand.",
 	"confirm.needsTerminal":
@@ -952,6 +954,8 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 	"confirm.type": 'Onaylamak için "{word}" yazın: ',
 	"confirm.notConfirmed": "Onaylanmadı; hiçbir şey değiştirilmedi.",
 	"confirm.inputEnded": "Onay girişi sona erdi.",
+	"confirm.protectionLocked":
+		"Reddedildi: kuruluşunuzun makine politikası Singularity AIDR korumasını kilitliyor (protection_locked); bu yüzden yerel izin listesi kaydı, istisna, korumayı zayıflatan ayar ve kaldırma burada kullanılamaz. BT ya da güvenlik ekibinize başvurun.",
 	"confirm.yesNeedsEnv":
 		"--yes yalnızca operatör {env} değerini de ayarladığında dikkate alınır. Elle onaylamak için komutu etkileşimli bir terminalde çalıştırın.",
 	"confirm.needsTerminal":

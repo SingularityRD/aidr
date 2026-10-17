@@ -1,5 +1,6 @@
 import { userInfo } from "node:os";
 import { createInterface } from "node:readline";
+import { readProtectionLock } from "@singularityrd/aidr-core";
 import { ct } from "../i18n/index.js";
 
 /**
@@ -45,6 +46,15 @@ export interface ConfirmOptions {
 	yes?: boolean;
 	env?: NodeJS.ProcessEnv;
 	streams?: ConfirmationStreams;
+	/**
+	 * The action relaxes protection (an allowlist entry, a detection exception,
+	 * a weakening setting, removal). When the organisation's machine policy sets
+	 * `protection_locked`, such actions are refused before any prompt: no
+	 * terminal trick can confirm them, and the hooks ignore local relaxations.
+	 */
+	relaxesProtection?: boolean;
+	/** Machine-policy lock lookup (tests); defaults to readProtectionLock(). */
+	protectionLocked?: () => boolean;
 }
 
 export type ConfirmationMode = "interactive" | "non-interactive";
@@ -81,6 +91,12 @@ export function readOperatorLine(streams: ConfirmationStreams, query: string): P
 
 /** Resolve with how the action was confirmed, or throw when it was not. */
 export async function confirmOperatorAction(options: ConfirmOptions): Promise<ConfirmationMode> {
+	if (
+		options.relaxesProtection &&
+		(options.protectionLocked ?? (() => readProtectionLock().locked))()
+	) {
+		throw new OperatorConfirmationError(ct("confirm.protectionLocked"));
+	}
 	const env = options.env ?? process.env;
 	const streams = options.streams ?? { input: process.stdin, output: process.stderr };
 

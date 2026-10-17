@@ -13,7 +13,8 @@
  *   support_contact_url, privacy_notice_url              shown to users (`organization.*`)
  *   approvals_mode             dashboard_only | host_dialog (`operator_approvals.approvals_mode`)
  *   offline_policy             keep_enforcing_local | block_after_grace (`control_plane.offline_policy`)
- *   protection_locked          editors refuse "Disable protection" (read by protection-lock.ts, not config)
+ *   protection_locked          editors refuse "Disable protection"; hooks ignore the local allowlist and
+ *                              local exceptions, and the CLI refuses to add them (protection-lock.ts, not config)
  *
  * The machine policy wins over the user's config.json for these keys. A policy
  * that fails its checks is refused as a whole and reported (`aidr setup`,
