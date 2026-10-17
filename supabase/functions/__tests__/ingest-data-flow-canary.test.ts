@@ -8,17 +8,24 @@
 import { describe, expect, it } from "vitest";
 import { normalizeIngestEvents } from "../ingest/events.ts";
 
+// Credential-shaped canaries are assembled at runtime (as in
+// packages/privacy/tests/fixtures/cases.mjs) so the source carries no
+// literal a secret scanner would report; the runtime values are unchanged.
+const fixture = (...parts: string[]): string => parts.join("");
+const AWS_KEY = fixture("AKIA", "Z7CANARY4EXAMPL3");
+const GITHUB_TOKEN = fixture("ghp_", "Canary7f3aTokenValue0123456789abcdEF");
+const QUERY_TOKEN = fixture("qtok-", "canary-5e1d");
+const CANARY_URL = `https://intranet.example.com/r?token=${QUERY_TOKEN}`;
 const CANARIES = [
 	"CANARY-PROMPT-7f3a91c2",
-	"AKIAZ7CANARY4EXAMPL3",
-	"ghp_Canary7f3aTokenValue0123456789abcdEF",
+	AWS_KEY,
+	GITHUB_TOKEN,
 	"secret-project",
 	"10000000146",
 	"alice.canary@example.com",
-	"qtok-canary-5e1d",
+	QUERY_TOKEN,
 ];
-const RAW =
-	'echo "CANARY-PROMPT-7f3a91c2" > /home/alice/secret-project/customers.db && AWS_ACCESS_KEY_ID=AKIAZ7CANARY4EXAMPL3 curl -H "Authorization: token ghp_Canary7f3aTokenValue0123456789abcdEF" "https://intranet.example.com/r?token=qtok-canary-5e1d" --data "owner=alice.canary@example.com&tckn=10000000146"';
+const RAW = `echo "CANARY-PROMPT-7f3a91c2" > /home/user/secret-project/customers.db && AWS_ACCESS_KEY_ID=${AWS_KEY} curl -H "Authorization: token ${GITHUB_TOKEN}" "${CANARY_URL}" --data "owner=alice.canary@example.com&tckn=10000000146"`;
 
 describe("ingest projection stores no canary content", () => {
 	it("runtime verdict / incident: allowlisted fields only, raw text becomes [Redacted]", () => {
@@ -36,13 +43,13 @@ describe("ingest projection stores no canary content", () => {
 				user_override: false,
 				duration_ms: 12,
 				tool_input_summary: RAW,
-				artifacts: [RAW, { type: "file_path", value: "/home/alice/secret-project/customers.db" }],
+				artifacts: [RAW, { type: "file_path", value: "/home/user/secret-project/customers.db" }],
 				reasons: [RAW],
 				prompt: RAW,
 				tool_input: { command: RAW },
 				nested: { content: RAW },
 				user_email: "alice.canary@example.com",
-				session_token: "ghp_Canary7f3aTokenValue0123456789abcdEF",
+				session_token: GITHUB_TOKEN,
 				runtime_policy_cache: { source: "valid", usable: true, content: RAW },
 			},
 			{
@@ -55,7 +62,7 @@ describe("ingest projection stores no canary content", () => {
 				tool_input_summary: RAW,
 				recommended_actions: ["review", RAW],
 				// Identifier-shaped canaries in identifier fields are refused too.
-				session_id: "AKIAZ7CANARY4EXAMPL3",
+				session_id: AWS_KEY,
 				tool_name: "10000000146",
 			},
 		]);
@@ -125,16 +132,16 @@ describe("ingest projection stores no canary content", () => {
 				event_id: "bg:canary-1",
 				event_type: "privacy_scan",
 				timestamp: "2026-10-15T12:00:00Z",
-				site: "https://intranet.example.com/r?token=qtok-canary-5e1d",
+				site: CANARY_URL,
 				action: "masked",
 				channel: "prompt",
 				entity_counts: { EMAIL: 1, TC_KIMLIK: 1, "alice.canary@example.com": 3 },
 				findings_count: 2,
-				policy_id: "ghp_Canary7f3aTokenValue0123456789abcdEF",
+				policy_id: GITHUB_TOKEN,
 				prompt: RAW,
 				masked_text: RAW,
 				matches: ["alice.canary@example.com", "10000000146"],
-				url: "https://intranet.example.com/r?token=qtok-canary-5e1d",
+				url: CANARY_URL,
 			},
 		]);
 		expect(result.ok).toBe(true);

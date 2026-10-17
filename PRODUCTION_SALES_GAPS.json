@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "generated_on": "2026-10-13",
+  "generated_on": "2026-10-17",
   "generation_timezone": "Europe/Istanbul",
   "generation_note": "Generated from the current worktree. source_commit identifies only the base commit; worktree_has_changes is explicit. This report is not candidate-bound release evidence. READINESS_BACKLOG.json is an older issue-ledger snapshot; its historical open IDs are not current verification results.",
   "decision": "NO-GO",
-  "source_commit": "b43839aa415abb950914015bae1fd244b25776d5",
+  "source_commit": "ee90eedcc3d3321da8baf8f1d4fd6f1eddfa761d",
   "worktree_has_changes": true,
   "historical_issue_ledger": {
     "path": "READINESS_BACKLOG.json",
@@ -13,9 +13,9 @@
     "last_reviewed": "2026-10-06",
     "latest_verification_date": "2026-10-06"
   },
-  "scope": "All 109 inventoried capabilities, both deployment models, current code and local verification, enterprise operations and sales acceptance. This is not a proof that no undiscovered defect exists.",
+  "scope": "All 110 inventoried capabilities, both deployment models, current code and local verification, enterprise operations and sales acceptance. This is not a proof that no undiscovered defect exists.",
   "feature_status_counts": {
-    "wired": 66,
+    "wired": 67,
     "partial": 41,
     "missing": 0,
     "external": 2
@@ -630,16 +630,19 @@
       "implementation_update": "SIEM durable state provider/endpoint/index routing fingerprint'e bağlı ve farklı hedefte reopen'i reddediyor. Windows'ta state dizini ve yeni/değişen dosya veri yazılmadan/okunmadan önce özel NTFS ACL ile korunuyor; gerçek SIEM alındısı/zamanlayıcı açık.",
       "remaining_implementation": [],
       "feature_ids": [
-        "OBS-04"
+        "OBS-04",
+        "OBS-09"
       ],
       "source_paths": [
         "packages/core/src/siem-delivery.ts",
+        "supabase/functions/siem-forwarder/index.ts",
+        "supabase/functions/_shared/siem-forwarding.ts",
         "packages/core/src/siem-incident-producer.ts",
         "scripts/siem-delivery-worker.mjs",
         "packages/core/src/evaluator.ts",
         "deploy/dashboard/monitoring.mjs"
       ],
-      "initial_current": "Dayanıklı SIEM teslimi, dependency-free evaluator süre ölçümü ve dashboard RED metrikleri mevcut.",
+      "initial_current": "Dayanıklı SIEM teslimi, merkezi SIEM forwarder (siem-destinations/siem-forwarder), dependency-free evaluator süre ölçümü ve dashboard RED metrikleri mevcut.",
       "initial_gap": "Named SIEM transport, teslim bildirimi, kesinti tamponu, şema sürümü ve müşteri SIEM alan eşlemesi kabul edilmedi.",
       "implementation": "Satılacak Splunk/Sentinel/Elastic vb. adaptörleri için gerçek endpoint entegrasyonu, retry/dedup ve sağlık göstergesi tamamla.",
       "acceptance": "SIEM kesintisi/429/401, sertifika değişimi, yeniden gönderim ve alan eşlemesi gerçek SIEM'de doğrulansın; yanlış başarı bildirimi olmasın.",
@@ -724,7 +727,7 @@
       "priority": "P0",
       "title": "Gerçek cloud ve self-hosted üretim kurulumu",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 191 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.",
+      "implementation_update": "Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 208 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.",
       "remaining_implementation": [],
       "feature_ids": [
         "DEP-01",
@@ -874,7 +877,7 @@
       "priority": "P1",
       "title": "Readiness kayıtlarının ve ürün iddialarının tutarlılığı",
       "status": "LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN",
-      "implementation_update": "109 özellik, 60 iş paketi, 11 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.",
+      "implementation_update": "110 özellik, 60 iş paketi, 11 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.",
       "remaining_implementation": [],
       "feature_ids": [
         "EVAL-02",
@@ -1423,7 +1426,7 @@
         "Rollback/disable tatbikatı",
         "İsimli sahip ve sınırlar"
       ],
-      "source_requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, and OpenCode. Codex CLI is a shipped sixth connector (deploy/native/support-matrix.json) but stays preview/engineering coverage outside this direct-GA order scope (CLAIM-010) unless Product expressly adds and accepts it. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
+      "source_requirement": "Direct-GA scope includes every advertised connector: Claude Code, Cursor, VS Code, OpenClaw, OpenCode and Codex CLI (Product decision 2026-10-11 added Codex; deploy/native/support-matrix.json soldConnectorScope). The direct-GA scope is a target, not acceptance. Codex keeps its documented host limits on every surface that sells it: the host fails open on a crashing or untrusted hook (the connector maps ask and its own errors to an explicit deny), there is no output-side interception, and the packaged hook matcher covers Bash and apply_patch only. Each connector has a supported-host matrix, signed artifact, private-registry install path, real-host E2E, rollback, support owner, and limitations.",
       "source_evidence_required": [
         "all-connector support matrix",
         "real-host reports",
@@ -2802,8 +2805,8 @@
         "docs/evidence/real-host/codex.json"
       ],
       "consumer": "PreToolUse and UserPromptSubmit connector",
-      "delivered": "Built connector and policy decisions; argv shell/local_shell/exec commands are extracted instead of yielding an uninspected allow; ask and DLP redact are converted to an explicit deny; operator approvals release an identical retry. A real-host acceptance record (Codex CLI 0.141.0 driven by a scripted mock model) proves pre-tool and pre-prompt enforcement; both are in the sold support matrix (pre-prompt since 2026-09-30)",
-      "remaining": "Host can fail open when hook execution is unavailable (an untrusted, crashed or timed-out hook); the UserPromptSubmit handler must be registered and trusted separately and codex exec shows no reason text for a blocked prompt; no tool output is inspected; not tamper-resistant isolation; the real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model)",
+      "delivered": "Built connector and policy decisions; argv shell/local_shell/exec commands are extracted instead of yielding an uninspected allow; ask and DLP redact are converted to an explicit deny; operator approvals release an identical retry. A real-host acceptance record (Codex CLI 0.141.0 driven by a scripted mock model) proves pre-tool and pre-prompt enforcement; both are in the sold support matrix (pre-prompt since 2026-09-30), and Codex is in the six-connector direct-GA order scope (COM-010, Product decision 2026-10-11) as a target, not an acceptance",
+      "remaining": "Host can fail open when hook execution is unavailable (an untrusted, crashed or timed-out hook); the UserPromptSubmit handler must be registered and trusted separately and codex exec shows no reason text for a blocked prompt; the packaged matcher covers Bash and apply_patch only, so MCP and other local function tools never reach the hook; no tool output is inspected before the model; not tamper-resistant isolation; the real-host record is recorded on linux/x64 only, with a development build and a scripted mock model (no Windows/macOS/arm64, signed artefact or real model)",
       "production_accepted": false,
       "gap_ids": [
         "T01",
@@ -3194,6 +3197,32 @@
       "production_accepted": false,
       "gap_ids": [
         "T32"
+      ]
+    },
+    {
+      "id": "OBS-09",
+      "area": "Operations",
+      "name": "Central SIEM forwarding",
+      "status": "wired",
+      "source_paths": [
+        "supabase/functions/siem-destinations/index.ts",
+        "supabase/functions/siem-forwarder/index.ts",
+        "supabase/functions/_shared/siem-config.ts",
+        "supabase/functions/_shared/siem-forwarding.ts",
+        "supabase/functions/_shared/socket-transport.ts",
+        "supabase/migrations/20261014000130_siem_forwarding.sql",
+        "packages/dashboard/src/ui/SiemDestinations.tsx",
+        "deploy/helm/aidr/templates/siem-forwarder-cronjob.yaml",
+        "docs/contracts/siem-forwarding.md",
+        "docs/integrations/qradar.md",
+        "docs/integrations/wazuh.md"
+      ],
+      "consumer": "SIEM page, the siem-forwarder Helm CronJob or Compose service",
+      "delivered": "The control plane forwards incidents, agent decisions and Browser Guard events to syslog (TLS with a private CA, TCP, UDP; JSON, CEF or LEEF), Splunk HEC, Elastic, Microsoft Sentinel and signed webhooks from a transactional outbox: at-least-once with stable event ids, backoff, a bounded backlog with a visible dropped count and re-queueable dead letters; connection settings are encrypted at rest and write-only, collectors are SSRF-checked (private networks only with an operator switch plus a per-destination opt-in)",
+      "remaining": "Not yet exercised against live QRadar, Wazuh, ArcSight, Splunk, Elastic or Sentinel; UDP depends on the Edge runtime offering datagram sockets",
+      "production_accepted": false,
+      "gap_ids": [
+        "T24"
       ]
     },
     {
@@ -3821,7 +3850,6 @@
     "AIDR-051",
     "AIDR-052",
     "AIDR-070",
-    "AIDR-079",
     "AIDR-080"
   ],
   "current_readiness_gate": "docs/production-readiness/first-customer-ready.md",

@@ -1,8 +1,8 @@
 # AIDR üretim ve satış hazırlığı: ayrıntılı eksik kaydı
 
-Otomatik rapor üretim tarihi: **2026-10-13** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
+Otomatik rapor üretim tarihi: **2026-10-17** (Europe/Istanbul). Rapor bu çalışma ağacının kaynaklarından üretildi; source_commit yalnızca taban commit'i gösterir, çalışma ağacının değişmiş olduğu ayrıca işaretlenir. Bu rapor candidate-bound release evidence değildir. READINESS_BACKLOG.json issue-ledger kaydının tarihsel baseline ve doğrulama tarihleri aşağıdaki makine kaydında yer alır; açık finding ID'leri güncel checkout doğrulaması sayılmaz. **Karar: NO-GO.** Kurulabilir bir aday ve doğrulanmış yerel akışlar var; bütün ürünün üretim ve satış kabulü tamamlanmış değil.
 
-109 alt özellik: **66 bağlı/çalışan, 41 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **47 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
+110 alt özellik: **67 bağlı/çalışan, 41 kısmi, 0 eksik, 2 dış kabule bağlı**. Çalışan bir özellikte de saha veya işletim kabulü açık olabilir. Bu raporda **47 teknik/operasyon iş paketi ve 13 ticari/dış kanıt kapısı** ayrıntılandırıldı. Bunlar benzersiz yazılım hatası sayısı veya tamamlanma yüzdesi değildir; örtüşen gereksinimler kimliklerle ilişkilidir. Makine kaydı: [PRODUCTION_SALES_GAPS.json](PRODUCTION_SALES_GAPS.json).
 
 44 teknik işte yerel uygulama ilerlemiş ve saha kabulü açık; 3 teknik iş uygulama/entegrasyon olarak açık. Başlangıç boşluğu tarihsel karşılaştırma için korunur; satırın güncel durumu ve kalan kabul koşulu esas alınmalıdır. Üretim ve destekli satış profillerinin her birinde **12 açık zorunlu dış kapı** var. Müşteri ortamı henüz bilinmiyor; cloud ve self-hosted kapsamları korunmuştur.
 
@@ -87,7 +87,7 @@ Güncel pre-customer gate [docs/production-readiness/first-customer-ready.md](do
 | INV-001 | Yatırımcı metriklerinin kanıt ve onay sözlüğü | Yatırımcı profili onayı |
 | CLM-001 | Müşteri ve satış iddialarının kanıt onayı | Ortam/ölçüm/isimli onay |
 
-Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özellikler bu kimliklere eşlenir; ayrıca yeni iş gibi toplanmaz. Kod bulunması kalan ürün bağlantısını, model onayını veya saha kabulünü kapatmaz. Ayrıntılarda **kalan ürün bağlantısı** varsa ayrıca belirtilmiştir.
+Bu tek liste 60 iş paketini kapsar. Açık backlog kayıtları ve kısmi özellikler bu kimliklere eşlenir; ayrıca yeni iş gibi toplanmaz. Kod bulunması kalan ürün bağlantısını, model onayını veya saha kabulünü kapatmaz. Ayrıntılarda **kalan ürün bağlantısı** varsa ayrıca belirtilmiştir.
 
 ### T01 — Gerçek host ve işletim sistemi kapsamı (P0)
 
@@ -463,7 +463,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** SIEM durable state provider/endpoint/index routing fingerprint'e bağlı ve farklı hedefte reopen'i reddediyor. Windows'ta state dizini ve yeni/değişen dosya veri yazılmadan/okunmadan önce özel NTFS ACL ile korunuyor; gerçek SIEM alındısı/zamanlayıcı açık.
 
-**Başlangıç durumu:** Dayanıklı SIEM teslimi, dependency-free evaluator süre ölçümü ve dashboard RED metrikleri mevcut.
+**Başlangıç durumu:** Dayanıklı SIEM teslimi, merkezi SIEM forwarder (siem-destinations/siem-forwarder), dependency-free evaluator süre ölçümü ve dashboard RED metrikleri mevcut.
 
 **Başlangıç boşluğu / müşteri etkisi:** Named SIEM transport, teslim bildirimi, kesinti tamponu, şema sürümü ve müşteri SIEM alan eşlemesi kabul edilmedi.
 
@@ -473,7 +473,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 **Sorumlu:** Integrations + Customer SOC. **Bağımlılık:** SIEM test hesabı ve event schema anlaşması.
 
-**İlişkili özellikler:** OBS-04. **Kaynak:** [packages/core/src/siem-delivery.ts](packages/core/src/siem-delivery.ts), [packages/core/src/siem-incident-producer.ts](packages/core/src/siem-incident-producer.ts), [scripts/siem-delivery-worker.mjs](scripts/siem-delivery-worker.mjs), [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [deploy/dashboard/monitoring.mjs](deploy/dashboard/monitoring.mjs).
+**İlişkili özellikler:** OBS-04, OBS-09. **Kaynak:** [packages/core/src/siem-delivery.ts](packages/core/src/siem-delivery.ts), [supabase/functions/siem-forwarder/index.ts](supabase/functions/siem-forwarder/index.ts), [supabase/functions/_shared/siem-forwarding.ts](supabase/functions/_shared/siem-forwarding.ts), [packages/core/src/siem-incident-producer.ts](packages/core/src/siem-incident-producer.ts), [scripts/siem-delivery-worker.mjs](scripts/siem-delivery-worker.mjs), [packages/core/src/evaluator.ts](packages/core/src/evaluator.ts), [deploy/dashboard/monitoring.mjs](deploy/dashboard/monitoring.mjs).
 
 ### T25 — Olay araştırması ve kanıt bütünlüğü (P1)
 
@@ -525,7 +525,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T28 — Gerçek cloud ve self-hosted üretim kurulumu (P0)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 191 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** Historical v6 self-hosted install evidence recorded execution of 33 migrations; it is not proof for the current source tree or candidate. The current source tree contains 208 canonical migration files, and no current candidate-bound install/upgrade acceptance exists. Prepare inputs are validated without creating secrets, and cloud preparation rejects public proxy/provider upstream loops. A Kubernetes Helm chart (deploy/helm/aidr) now exists beside the Compose bundle; pnpm verify:helm lints and renders it where Helm is installed (CI installs Helm, not kubeconform), but it has not been installed on a live cluster. Live provider/TLS acceptance remains open.
 
 **Başlangıç durumu:** İki model için kurulum hazırlama ve yerel Docker prova var.
 
@@ -621,7 +621,7 @@ Bu tek liste 59 iş paketini kapsar. Açık backlog kayıtları ve kısmi özell
 
 ### T34 — Readiness kayıtlarının ve ürün iddialarının tutarlılığı (P1)
 
-**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 109 özellik, 60 iş paketi, 11 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.
+**Durum:** LOCAL_IMPLEMENTATION_FIELD_ACCEPTANCE_OPEN. **Mevcut yerel uygulama:** 110 özellik, 60 iş paketi, 11 release rootu ve claim candidate/expiry tutarlılığı otomatik kontrol ediliyor; 13 dış onay kapısı açık.
 
 **Başlangıç durumu:** Envanter güncel; eski denetim alanları tarihsel metinler içeriyor.
 
@@ -1007,7 +1007,7 @@ Aşağıdakiler mevcut ticari registry'nin açık kayıtlarıdır. Doküman şab
 
 **Sorumlu:** Product/Marketing + Commercial + Legal. **Kontrol:** node docs/scripts/claim-check.mjs --mode=gate.
 
-## 109 alt özelliğin eksik/kabul işleriyle eşlemesi
+## 110 alt özelliğin eksik/kabul işleriyle eşlemesi
 
 Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir. Her özellik en az bir açık kabul işine bağlandı. Ayrıntılı kaynak ve mevcut davranış [FEATURE_INVENTORY.json](FEATURE_INVENTORY.json) içindedir.
 
@@ -1091,6 +1091,7 @@ Tabloda wired yalnız çağrılabilen akış demektir; üretim kabulü değildir
 | OBS-06 | Retention and deletion | partial | T26, T37 |
 | OBS-07 | Signed compliance evidence report | wired | T37 |
 | OBS-08 | Real-time alert integrations | wired | T32 |
+| OBS-09 | Central SIEM forwarding | wired | T24 |
 | GOV-01 | Detection framework mapping (OWASP LLM 2025, OWASP Agentic 2026, MITRE ATLAS) | wired | T34 |
 | GOV-02 | AI governance framework mapping, scorecard and scheduled summary | wired | T34, T37 |
 | GOV-03 | AI asset register, intake, exceptions and four-eyes policy change control | wired | T15, T36 |

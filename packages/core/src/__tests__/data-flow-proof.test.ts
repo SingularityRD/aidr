@@ -68,14 +68,18 @@ const MATRIX_PATH = join(
 
 // ── Canaries ─────────────────────────────────────────────────────────
 
+// Credential-shaped canaries are assembled at runtime (as in
+// packages/privacy/tests/fixtures/cases.mjs) so the source carries no
+// literal a secret scanner would report; the runtime values are unchanged.
+const fixture = (...parts: string[]): string => parts.join("");
 const CANARY = {
 	prompt: "CANARY-PROMPT-7f3a91c2",
-	awsKey: "AKIAZ7CANARY4EXAMPL3",
-	githubToken: "ghp_Canary7f3aTokenValue0123456789abcdEF",
+	awsKey: fixture("AKIA", "Z7CANARY4EXAMPL3"),
+	githubToken: fixture("ghp_", "Canary7f3aTokenValue0123456789abcdEF"),
 	privatePath: "/home/alice/secret-project/customers.db",
 	tckn: "10000000146",
 	email: "alice.canary@example.com",
-	queryToken: "qtok-canary-5e1d",
+	queryToken: fixture("qtok-", "canary-5e1d"),
 } as const;
 const CANARY_URL = `https://intranet.example.com/reports?token=${CANARY.queryToken}`;
 

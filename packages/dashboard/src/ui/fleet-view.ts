@@ -30,9 +30,9 @@ export function agentHealth(
 }
 
 export const AGENT_STATUS_FILTERS = ["all", "active", "stale", "retired"] as const;
-export type AgentStatusFilter = (typeof AGENT_STATUS_FILTERS)[number];
+type AgentStatusFilter = (typeof AGENT_STATUS_FILTERS)[number];
 export const AGENT_SORTS = ["last_seen_desc", "last_seen_asc", "name"] as const;
-export type AgentSort = (typeof AGENT_SORTS)[number];
+type AgentSort = (typeof AGENT_SORTS)[number];
 export const AGENT_PAGE_SIZE = 50;
 
 export type AgentFilters = {
@@ -117,7 +117,7 @@ export function filterAgents<T extends FleetAgent>(
 	return out;
 }
 
-export function toCsv(headers: readonly string[], rows: readonly Cell[][]): string {
+function toCsv(headers: readonly string[], rows: readonly Cell[][]): string {
 	return `${[headers, ...rows].map((row) => row.map(csvField).join(",")).join("\r\n")}\r\n`;
 }
 
@@ -153,7 +153,7 @@ export function agentsCsv(agents: readonly FleetAgent[], now: number): string {
 // ── Event feed ───────────────────────────────────────────────────────────
 
 export const EVENT_RANGES = ["all", "1h", "24h", "7d", "30d"] as const;
-export type EventRange = (typeof EVENT_RANGES)[number];
+type EventRange = (typeof EVENT_RANGES)[number];
 const RANGE_MS: Record<Exclude<EventRange, "all">, number> = {
 	"1h": 60 * 60 * 1000,
 	"24h": 24 * 60 * 60 * 1000,
@@ -224,7 +224,7 @@ export function eventFiltersActive(filters: EventFilters): boolean {
 }
 
 /** Lower bound for created_at, or null for "all time". */
-export function eventRangeStart(range: EventRange, now: number): string | null {
+function eventRangeStart(range: EventRange, now: number): string | null {
 	return range === "all" ? null : new Date(now - RANGE_MS[range]).toISOString();
 }
 
@@ -274,7 +274,7 @@ export type FeedEvent = {
 	payload: Record<string, unknown>;
 };
 
-export function eventDecision(event: FeedEvent): string | null {
+function eventDecision(event: FeedEvent): string | null {
 	const field =
 		event.type === "privacy_scan" || event.type === "shadow_ai_usage" ? "decision" : "verdict";
 	const value = event.payload?.[field];

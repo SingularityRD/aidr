@@ -138,8 +138,8 @@ The **AIDR Privacy companion** is the complete per-user install of the host with
 finds the Browser Guard extension ids in the Chrome/Edge profiles (reading Preferences only),
 stages the host under `%LOCALAPPDATA%\SingularityAIDR\PrivacyCompanion`, sets up OCR with the
 Windows built-in recognizer (no OCR model download; Pillow/pyzbar from the hash lock), builds
-the launcher and writes the same HKCU keys as the registration below. Interface, files and
-keys: [`packages/privacy/README.md`](../../privacy/README.md#aidr-privacy-companion-windows).
+the launcher and writes the same HKCU keys as the registration below. Status, sources and
+tests: [`packages/privacy/README.md`](../../privacy/README.md#status) (implementation in `packages/privacy/src/companion/`).
 `scripts/native-host.mjs` (next section) only registers a launcher you already have.
 
 After installing, each user still turns on **Use the AIDR Privacy helper app** in Browser Guard
@@ -199,7 +199,7 @@ unregisterNativeHost();                 // removes the HKCU keys and the manifes
 
 All functions are synchronous and throw `Error("<CODE>: detail")`. On Windows writes go
 through `reg.exe` and reads through PowerShell with UTF-8 output, so a profile path with
-Turkish characters (`C:\Users\Ömer`) is stored and verified exactly; after writing, the key
+Turkish characters (for example the profile of a user named `Ömer`) is stored and verified exactly; after writing, the key
 is read back and `REGISTRY_VERIFY_FAILED` is raised if it does not hold the manifest path.
 Expect about one second per registry read (PowerShell start-up).
 

@@ -6,7 +6,7 @@ Which host versions and platforms each Singularity AIDR agent connector has actu
 tested on, which interception points it enforces, and what the host does when the AIDR hook
 cannot answer. Anything not listed as tested here is untested, not supported-by-default.
 
-Release decision recorded in the support matrix (reviewed 2026-09-30): **NO-GO**.
+Release decision recorded in the support matrix (reviewed 2026-10-11): **NO-GO**.
 
 ## Tested host versions
 

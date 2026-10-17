@@ -51,7 +51,7 @@ export interface SmtpMessage {
 	attachments?: readonly SmtpAttachment[];
 }
 
-export interface SmtpAttachment {
+interface SmtpAttachment {
 	/** Safe file name ([A-Za-z0-9._-]); the mailer rejects anything else. */
 	filename: string;
 	contentType: string;

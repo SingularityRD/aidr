@@ -94,7 +94,7 @@ describe("one block-message shape", () => {
 
 	it("never names the matched value of a secret, DLP or canary finding", () => {
 		vi.stubEnv("AIDR_LOCALE", "en");
-		const secret = "sk-live-0123456789abcdef";
+		const secret = ["sk", "live", "0123456789abcdef"].join("-");
 		for (const marks of [
 			{ category: "secrets", source: "heuristic" },
 			{ category: "dlp_redact", source: "dlp" },

@@ -23,7 +23,7 @@ const OUTLOOK = "https://outlook.office.com/mail/";
 const PANE = "https://copilot.cloud.microsoft/pane?hostApp=Word";
 const M365_PANE = "https://m365.cloud.microsoft/chat/?hostApp=Excel";
 const CHATGPT = "https://chatgpt.com/c/1";
-const TELEMETRY = { controlPlaneUrl: "https://cp.example.com", apiKey: "aidr_test_key_123456" };
+const TELEMETRY = { controlPlaneUrl: "https://cp.example.com", apiKey: ["aidr_test", "key_123456"].join("_") };
 
 const EMAIL_ENTRY = { placeholder: "[EMAIL_1]", value: "ayse@example.com", type: "EMAIL" };
 

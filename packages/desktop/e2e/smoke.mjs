@@ -24,6 +24,24 @@ import { startMockLlmServer } from "../../../scripts/real-host-e2e/mock-llm-serv
 import { electronBinary } from "../scripts/electron-path.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * The committed transcript must not carry the operator's profile path (repo hygiene,
+ * AIDR-012): replace the real home directory, in its native, forward-slash and
+ * JSON-escaped spellings, with an anonymous placeholder.
+ */
+function redactHome(text) {
+	const home = homedir();
+	const placeholder = process.platform === "win32" ? "C:\\Users\\user" : "/home/user";
+	const spellings = new Map([
+		[home, placeholder],
+		[home.replace(/\\/g, "/"), placeholder.replace(/\\/g, "/")],
+		[JSON.stringify(home).slice(1, -1), JSON.stringify(placeholder).slice(1, -1)],
+	]);
+	let out = text;
+	for (const [from, to] of spellings) if (from) out = out.split(from).join(to);
+	return out;
+}
 const langIndex = process.argv.indexOf("--lang");
 const language = langIndex >= 0 ? process.argv[langIndex + 1] : "tr";
 const packagedIndex = process.argv.indexOf("--packaged");
@@ -262,7 +280,7 @@ try {
 				},
 			);
 			const transcript = `${claudeRun.stdout ?? ""}${claudeRun.stderr ?? ""}`;
-			writeFileSync(join(shots, "real-claude-transcript.jsonl"), claudeRun.stdout ?? "");
+			writeFileSync(join(shots, "real-claude-transcript.jsonl"), redactHome(claudeRun.stdout ?? ""));
 			check("real Claude Code sent the scripted tool call", server.agentRequests().some((entry) => entry.reply === "tool"));
 			check("real Claude Code reported the AIDR block", transcript.includes("Singularity AIDR"), `exit ${claudeRun.status}`);
 			check("the dangerous command never ran (no marker file)", !existsSync(marker));

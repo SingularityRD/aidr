@@ -101,7 +101,8 @@
 				"src/content/main-world.ts",
 				"e2e/fixtures/kit.js"
 			],
-			"project": ["src/**/*.ts", "scripts/**/*.mjs", "e2e/**/*.{js,mjs}"]
+			"project": ["src/**/*.ts", "scripts/**/*.mjs", "e2e/**/*.{js,mjs}"],
+			"ignoreBinaries": ["reg.exe"]
 		},
 		"packages/cli": {
 			"entry": ["src/index.ts"],

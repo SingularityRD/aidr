@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-10-11",
+  "reviewed_at": "2026-10-17",
   "inventory": "FEATURE_INVENTORY.json",
   "decision": "NO-GO",
   "meaning": "A local test source is a coverage pointer, not a test result. Current candidate local runs, real host execution, and customer acceptance require separate candidate-bound receipts; none is recorded here.",
   "review": {
-    "previous_reviewed_at": "2026-09-25",
-    "method": "Manual reconciliation; this file has no generator. Capability IDs re-checked against FEATURE_INVENTORY.json (generated 2026-10-11, 109 capabilities: 66 wired, 41 partial, 2 external, 0 production_accepted). For every capability whose inventory source_paths grew since the 2026-09-25 inventory, existing repository test files that import or execute the new source were added as coverage pointers. No pointer was removed, and no test result, candidate run, host run or customer acceptance is recorded.",
-    "pointers_added": 21,
+    "previous_reviewed_at": "2026-10-11",
+    "method": "Manual reconciliation; this file has no generator. Capability IDs re-checked against FEATURE_INVENTORY.json (generated 2026-10-17, 110 capabilities: 67 wired, 41 partial, 2 external, 0 production_accepted). The one capability added since the 2026-10-11 review, OBS-09 (central SIEM forwarding), carries the five repository test files that execute its sources as coverage pointers, with every acceptance column NOT_RUN and decision NO-GO. No other pointer was added or removed, and no test result, candidate run, host run or customer acceptance is recorded.",
+    "pointers_added": 5,
     "sources": [
       "FEATURE_INVENTORY.json",
       "READINESS_BACKLOG.json",

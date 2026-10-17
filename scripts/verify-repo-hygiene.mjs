@@ -91,6 +91,18 @@ export const ALLOWLIST = [
 			"`/home/deno/functions` is the in-container path the pinned supabase/edge-runtime image and its upstream router hard-code for function sources; it is an image filesystem path, not a host or contributor path.",
 	},
 	{
+		path: "scripts/lib/onprem-sso.test.mjs",
+		owner: "AIDR-012",
+		reason:
+			"The on-prem compose fixture asserts the functions volume `./volumes/functions:/home/deno/functions:Z` survives the SSO rewrite; `/home/deno/functions` is the supabase/edge-runtime in-container path (same as the allowlisted edge-functions Dockerfile), not a host or contributor path.",
+	},
+	{
+		path: "packages/browser-guard/src/__tests__/native-host-register.test.ts",
+		owner: "AIDR-012",
+		reason:
+			"The unpacked-extension-id test pins the id Chrome for Testing actually assigned to one recorded Windows load path; the id is a hash of that exact path, so the observed path must stay literal for the vector to remain real-browser evidence rather than a self-computed value.",
+	},
+	{
 		path: "deploy/fleet/windows/README.md",
 		owner: "AIDR-012",
 		reason:

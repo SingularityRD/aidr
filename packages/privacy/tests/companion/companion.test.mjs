@@ -17,13 +17,13 @@ const ID = 'abcdefghijklmnopabcdefghijklmnop', ID2 = 'ponmlkjihgfedcbaponmlkjihg
 // --- extension ids --------------------------------------------------------------------------------
 
 test('unpacked extension id: Chromium algorithm (UTF-16LE path, upper-case drive on Windows)', () => {
-  const dir = 'C:\\Users\\demo\\Desktop\\AIDR-Demo\\browser-guard-chrome';
+  const dir = 'C:\\Users\\user\\Desktop\\AIDR-Demo\\browser-guard-chrome';
   const hex = createHash('sha256').update(Buffer.from(dir, 'utf16le')).digest('hex').slice(0, 32);
   const expected = [...hex].map(d => String.fromCharCode(97 + parseInt(d, 16))).join('');
   assert.equal(unpackedExtensionId(dir, 'win32'), expected);
-  assert.equal(unpackedExtensionId('c:\\Users\\demo\\Desktop\\AIDR-Demo\\browser-guard-chrome', 'win32'), expected);
-  assert.match(unpackedExtensionId('/home/demo/ext', 'linux'), /^[a-p]{32}$/);
-  assert.notEqual(unpackedExtensionId('/home/demo/ext', 'linux'), unpackedExtensionId('/home/demo/ext2', 'linux'));
+  assert.equal(unpackedExtensionId('c:\\Users\\user\\Desktop\\AIDR-Demo\\browser-guard-chrome', 'win32'), expected);
+  assert.match(unpackedExtensionId('/home/user/ext', 'linux'), /^[a-p]{32}$/);
+  assert.notEqual(unpackedExtensionId('/home/user/ext', 'linux'), unpackedExtensionId('/home/user/ext2', 'linux'));
 });
 
 function fakeProfiles() {
@@ -90,7 +90,7 @@ test('host config: text strict/label; OCR block uses the Windows engine and deci
 
 test('launcher: repo C# template with base64 paths; .cmd fallback refuses cmd metacharacters', () => {
   const template = fs.readFileSync(new URL('native/windows-launcher.cs', ROOT), 'utf8');
-  const paths = { node: 'C:\\Program Files\\nodejs\\node.exe', host: 'C:\\Users\\Ayşe\\host.js', config: 'C:\\c\\host-config.json' };
+  const paths = { node: 'C:\\Program Files\\nodejs\\node.exe', host: 'C:\\Users\\user\\Ayşe\\host.js', config: 'C:\\c\\host-config.json' };
   const source = launcherSource(template, paths);
   assert.ok(!source.includes('__NODE_BASE64__') && !source.includes('__CONFIG_BASE64__'));
   assert.ok(source.includes(Buffer.from(paths.host, 'utf8').toString('base64')));
