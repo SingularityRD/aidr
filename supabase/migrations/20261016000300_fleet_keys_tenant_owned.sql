@@ -97,13 +97,18 @@ revoke all on function app.fleet_device_key_active(uuid, uuid)
   from public, anon, authenticated, service_role;
 
 -- Issue/rotation: a person's key still needs its owner's active membership; a
--- tenant-owned key needs an unrevoked fleet key of the same tenant.
+-- tenant-owned key needs an unrevoked fleet key of the same tenant. The same
+-- trigger guards public.enrollment_tokens, which has no fleet_key_id column, so
+-- the field is read through to_jsonb (a direct NEW.fleet_key_id reference fails
+-- on that table).
 create or replace function app.require_credential_member()
 returns trigger language plpgsql security definer
 set search_path = pg_catalog, public, pg_temp as $$
+declare
+  v_fleet_key_id uuid := (to_jsonb(new) ->> 'fleet_key_id')::uuid;
 begin
-  if new.fleet_key_id is not null then
-    if new.user_id is not null or not app.fleet_device_key_active(new.tenant_id, new.fleet_key_id) then
+  if v_fleet_key_id is not null then
+    if new.user_id is not null or not app.fleet_device_key_active(new.tenant_id, v_fleet_key_id) then
       raise exception 'api_key_fleet_key_inactive' using errcode = '42501';
     end if;
     return new;
