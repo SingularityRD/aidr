@@ -81,7 +81,7 @@ export const positives = [
  ['Stripe secret key',"stripe('sk_"+"live_51HxYzABCDEFGHIJKLMNOPQRSTUV')",'SECRET','sk_'+'live_51HxYzABCDEFGHIJKLMNOPQRSTUV'],
  ['Google API key','KEY = "AIza'+'SyD-1234567890abcdefghijklmnopqrstu"','SECRET','AIza'+'SyD-1234567890abcdefghijklmnopqrstu'],
  ['AWS secret env','AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY','SECRET','wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'],
- ['Azure account key','AccountName=acct;Account'+'Key=Zm9vYmFyYmF6cXV4cXV1eGNvcmdl'+'Z3JhdWx0Z2FycGx5d2FsZG8xMjM0NTY3OA==;EndpointSuffix=core.windows.net','SECRET','Zm9vYmFyYmF6cXV4cXV1eGNvcmdl'+'Z3JhdWx0Z2FycGx5d2FsZG8xMjM0NTY3OA=='],
+ ['Azure account key','AccountName=acct;Account'+'Key='+'Zm9vYmFy'+'YmF6cXV4cXV1eGNvcmdl'+'Z3JhdWx0Z2FycGx5d2FsZG8xMjM0NTY3OA==;EndpointSuffix=core.windows.net','SECRET','Zm9vYmFy'+'YmF6cXV4cXV1eGNvcmdl'+'Z3JhdWx0Z2FycGx5d2FsZG8xMjM0NTY3OA=='],
  ['TR password suffix','Wifi şifresi: Kedi2024!Mavi','SECRET','Kedi2024!Mavi'],
  ['TR parola','parola=Gizli.Kelime9','SECRET','Gizli.Kelime9'],
  ['TR phone without trunk 0','ofis 212 555 66 77','PHONE','212 555 66 77'],

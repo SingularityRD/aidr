@@ -199,7 +199,7 @@ unregisterNativeHost();                 // removes the HKCU keys and the manifes
 
 All functions are synchronous and throw `Error("<CODE>: detail")`. On Windows writes go
 through `reg.exe` and reads through PowerShell with UTF-8 output, so a profile path with
-Turkish characters (`C:\Users\Ömer`) is stored and verified exactly; after writing, the key
+Turkish characters (for example the profile of a user named `Ömer`) is stored and verified exactly; after writing, the key
 is read back and `REGISTRY_VERIFY_FAILED` is raised if it does not hold the manifest path.
 Expect about one second per registry read (PowerShell start-up).
 

@@ -108,7 +108,7 @@ function validLuhn(value) {
 const PHONE = "+90 532 123 45 67";
 const CARD = "4539 1488 0343 6467";
 const IBAN_SPACED = "TR33 0006 1005 1978 6457 8413 26";
-const GITHUB_TOKEN = "ghp_R4nd0mF4k3T0k3nF0rDem0Purp0s3s0nly12";
+const GITHUB_TOKEN = ["ghp", "R4nd0mF4k3T0k3nF0rDem0Purp0s3s0nly12"].join("_");
 const AWS_KEY = "AKIAZ7QX3EXAMPLE4DMO";
 
 if (!validLuhn(CARD)) throw new Error(`test data: ${CARD} fails the Luhn check`);

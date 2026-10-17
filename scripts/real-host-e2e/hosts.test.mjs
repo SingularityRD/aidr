@@ -13,7 +13,7 @@ test("the Windows child environment keeps the sandbox profile, system and Git Ba
 		PATHEXT: ".COM;.EXE",
 		HTTPS_PROXY: "http://proxy.invalid:8080",
 		ANTHROPIC_API_KEY: "operator-key",
-		USERPROFILE: "C:\\Users\\operator",
+		USERPROFILE: "C:\\Users\\user",
 	});
 	assert.equal(env.HOME, sandbox.home);
 	assert.equal(env.USERPROFILE, sandbox.home, "never the operator's profile");

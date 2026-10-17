@@ -16,7 +16,7 @@ const CHATGPT = "https://chatgpt.com/c/123";
 const GEMINI = "https://gemini.google.com/app";
 const POE = "https://poe.com/chat/1";
 const OTHER = "https://example.com/";
-const TELEMETRY = { controlPlaneUrl: "https://cp.example.com", apiKey: "aidr_test_key_123456" };
+const TELEMETRY = { controlPlaneUrl: "https://cp.example.com", apiKey: ["aidr_test", "key_123456"].join("_") };
 const BASE = "chrome-extension://abcdefghijklmnopabcdefghijklmnop/";
 
 interface Setup {

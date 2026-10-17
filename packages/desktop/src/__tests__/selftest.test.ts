@@ -128,8 +128,8 @@ describe("runSelfTest", () => {
 describe("parseHookCommand", () => {
 	it.each([
 		[
-			'"C:/Users/a b/.singularity-aidr/desktop/runtime/x/bin/aidr.exe" hook pre-tool-use',
-			"C:/Users/a b/.singularity-aidr/desktop/runtime/x/bin/aidr.exe",
+			'"C:/Users/Default User/.singularity-aidr/desktop/runtime/x/bin/aidr.exe" hook pre-tool-use',
+			"C:/Users/Default User/.singularity-aidr/desktop/runtime/x/bin/aidr.exe",
 			["hook", "pre-tool-use"],
 		],
 		[

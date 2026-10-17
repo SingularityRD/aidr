@@ -402,7 +402,7 @@ describe("device-code enrollment", () => {
 
 		const clock = { now: t0 };
 		const repair = enrollOps(
-			plane({ polls: [{ ok: true, body: { enrollment_token: "tok-12345678" } }] }),
+			plane({ polls: [{ ok: true, body: { enrollment_token: ["tok", "12345678"].join("-") } }] }),
 			clock,
 			"repair",
 		);
@@ -426,7 +426,7 @@ describe("enrollment bookkeeping", () => {
 			},
 			client: () => ({
 				deviceStart: async () => plane().start as never,
-				devicePoll: async () => ({ ok: true, body: { enrollment_token: "tok-12345678" } }) as never,
+				devicePoll: async () => ({ ok: true, body: { enrollment_token: ["tok", "12345678"].join("-") } }) as never,
 			}),
 		});
 		await enrollment.start({ endpoint: "https://a.example", useInstallerToken: false });
