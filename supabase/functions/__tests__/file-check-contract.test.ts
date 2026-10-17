@@ -42,6 +42,8 @@ vi.mock("npm:@supabase/supabase-js@2.116.0", () => ({
 }));
 
 vi.mock("../_shared/api-key-auth.ts", () => ({
+	apiKeyRateSubject: (auth: { userId: string | null; apiKeyId?: string }) =>
+		auth.userId ?? `api_key:${auth.apiKeyId}`,
 	// The unresolved-credential budget itself is covered in api-key-auth.test.ts.
 	authenticateTenantApiKeyBudgeted: async (_db: unknown, key: string, endpoint: string) => {
 		lookup.authCalls.push(key);
