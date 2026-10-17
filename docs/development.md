@@ -6,9 +6,16 @@
 git clone https://github.com/singularityrd/aidr
 cd aidr
 git checkout pre-release
+git submodule update --init --depth 1 deploy/upstream
 pnpm install
 pnpm build
 ```
+
+`deploy/upstream` is the pinned Supabase self-hosted Docker tree. The deployment
+gates read it (`pnpm verify:bootstrap` and `scripts/deployment-doctor.test.mjs` fail
+with `ENOENT … deploy/upstream/docker/.env.example` without it), and
+`scripts/deployment-prepare.mjs --mode self-hosted` otherwise clones it over the
+network on every run.
 
 Development happens on the `pre-release` branch. The `main` branch is the distribution channel (what users install). See [CONTRIBUTING.md](../CONTRIBUTING.md#branch-policy) for details.
 
