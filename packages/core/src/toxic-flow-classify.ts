@@ -990,7 +990,7 @@ function classifyShellCommand(
 				}
 			});
 			// POSIX word splitting reads `\` as an escape, so a Windows path
-			// (`C:\Users\user\.ssh\id_rsa`, `$env:USERPROFILE\.aws\credentials`)
+			// (`C:\Users\<user>\.ssh\id_rsa`, `$env:USERPROFILE\.aws\credentials`)
 			// loses its separators above. Check those spellings from the raw text.
 			for (const path of windowsPathsIn(stage.text)) {
 				addSensitivePath(set, path, "shell access to", options);
