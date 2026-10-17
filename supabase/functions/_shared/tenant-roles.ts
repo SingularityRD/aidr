@@ -7,7 +7,7 @@
 // auditor fails closed on every write. These helpers are for READ gates only.
 
 /** Roles that may read tenant data the Edge functions expose to members. */
-export const TENANT_READ_ROLES: ReadonlySet<string> = new Set(["owner", "admin", "member", "viewer", "auditor"]);
+const TENANT_READ_ROLES: ReadonlySet<string> = new Set(["owner", "admin", "member", "viewer", "auditor"]);
 
 /**
  * Roles that may read the audit-reader surfaces: both audit trails and their
@@ -16,7 +16,7 @@ export const TENANT_READ_ROLES: ReadonlySet<string> = new Set(["owner", "admin",
 export const AUDIT_READER_ROLES: ReadonlySet<string> = new Set(["owner", "admin", "auditor"]);
 
 /** Roles an owner or admin may grant through an invitation. Never `owner`. */
-export const INVITABLE_ROLES = ["admin", "member", "viewer", "auditor"] as const;
+const INVITABLE_ROLES = ["admin", "member", "viewer", "auditor"] as const;
 export type InvitableRole = (typeof INVITABLE_ROLES)[number];
 
 export function isTenantReadRole(role: unknown): boolean {

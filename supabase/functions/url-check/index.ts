@@ -9,7 +9,7 @@
 // This is a self-hostable replacement for proprietary URL reputation providers.
 
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
+import { apiKeyRateSubject, authenticateTenantApiKeyBudgeted } from "../_shared/api-key-auth.ts";
 import { getBearerToken } from "../_shared/auth.ts";
 import { configFailure, loadConfig, runtimeEnv } from "../_shared/config.ts";
 import { isFreshReputationRow, reputationFreshUntil } from "../_shared/reputation-freshness.ts";
@@ -171,7 +171,7 @@ export function createUrlCheckHandler(deps: UrlCheckDeps = {}) {
 		if (!auth.ok) {
 			return json(auth.status, { error: auth.error });
 		}
-		const { tenantId, userId } = auth;
+		const { tenantId } = auth;
 
 		const parsed = await readBoundedJson(req, MAX_BODY_BYTES);
 		if (!parsed.ok) return json(parsed.status, { error: parsed.error });
@@ -190,7 +190,7 @@ export function createUrlCheckHandler(deps: UrlCheckDeps = {}) {
 
 		const rate = await consumeTenantRateLimit(supabase, {
 			tenantId,
-			subject: userId,
+			subject: apiKeyRateSubject(auth),
 			endpoint: "url-check",
 			perSubject: 600,
 			perTenant: 30_000,
