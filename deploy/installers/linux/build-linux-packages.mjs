@@ -269,6 +269,11 @@ export function buildRpm({ seaDir, trustKeyPem, catalogKeyPem, customerPacket, v
 	if (!tool("rpmbuild")) throw new InstallerInputError("rpmbuild is required to build the .rpm");
 	const root = join(work, "rpm-root");
 	stageLinuxRoot({ root, seaDir, trustKeyPem, catalogKeyPem, customerPacket });
+	// %files always owns the packet directory (%dir), so a generic package
+	// (packet only %ghost) still needs it in the build root.
+	const packetDir = join(root, dirname(LINUX_CUSTOMER_PACKET).slice(1));
+	mkdirSync(packetDir, { recursive: true });
+	for (const dir of [join(root, "etc"), packetDir]) chmodSync(dir, 0o755);
 	const top = join(work, "rpmbuild");
 	for (const dir of ["BUILD", "RPMS", "SOURCES", "SPECS", "SRPMS", "BUILDROOT"]) mkdirSync(join(top, dir), { recursive: true });
 	const spec = join(top, "SPECS", `${PACKAGE_NAME}.spec`);

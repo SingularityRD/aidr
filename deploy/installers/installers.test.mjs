@@ -610,6 +610,20 @@ describe("Linux packages", () => {
 		for (const file of files) assert.match(sumsText, new RegExp(`${createHash("sha256").update(readFileSync(file)).digest("hex")}  ${file.split("/").pop().replace(/[.~]/g, "\\$&")}`));
 	});
 
+	test("generic and customer .rpm packages build and own /etc/singularity-aidr", { skip: !have("rpmbuild") && "rpmbuild not installed" }, () => {
+		const base = { seaDir: fakeSeaBundle(), trustKey: releaseKey.path, trustKeyFingerprint: releaseKey.fingerprint, version: "0.6.0", formats: "rpm" };
+		for (const packet of [undefined, customerPacket()]) {
+			const { files } = buildLinuxPackages({ ...base, out: tempDir("rpm"), ...(packet ? { customerPacket: packet, customerId: "bilgem" } : {}) });
+			const rpm = files.find((file) => file.endsWith(".rpm"));
+			assert.ok(rpm, packet ? "customer rpm" : "generic rpm");
+			if (!have("rpm")) continue;
+			const listed = spawnSync("rpm", ["-qlp", rpm], { encoding: "utf8" }).stdout.split("\n");
+			assert.ok(listed.includes("/etc/singularity-aidr"), listed.join(","));
+			assert.ok(listed.includes(LINUX_CUSTOMER_PACKET));
+			assert.ok(listed.includes("/opt/singularity-aidr/bundle/bin/aidr"));
+		}
+	});
+
 	describe("maintainer hook", () => {
 		const root = tempDir("hook-root");
 		const prefix = join(root, "opt/singularity-aidr");
