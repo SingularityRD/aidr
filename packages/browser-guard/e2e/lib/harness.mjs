@@ -658,6 +658,20 @@ class Harness {
 		return true;
 	}
 
+	/**
+	 * Make a per-user native host registration visible to this browser. On Linux and macOS
+	 * Chromium looks for per-user host manifests in `<user-data-dir>/NativeMessagingHosts`,
+	 * and the harness runs a temporary profile, so the copy under the default profile
+	 * (~/.config/chromium) is never read; the manifest is mirrored into the temporary
+	 * profile (removed with it). Windows reads the HKCU registry key, which needs nothing.
+	 */
+	exposeNativeHostManifest(manifestPath) {
+		if (process.platform === "win32") return;
+		const dir = path.join(this.profileDir, "NativeMessagingHosts");
+		fs.mkdirSync(dir, { recursive: true });
+		fs.copyFileSync(manifestPath, path.join(dir, path.basename(manifestPath)));
+	}
+
 	async close() {
 		await this.context.close().catch(() => {});
 		// Windows: Chromium's child processes can hold profile files for a while after close

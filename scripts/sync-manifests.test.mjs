@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { nextChartVersion, SYNCS, syncChartText, syncManifests } from "./sync-manifests.mjs";
+import { nextChartVersion, SYNCS, syncChartText, syncEngineVersionText, syncManifests } from "./sync-manifests.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CHART = "deploy/helm/aidr/Chart.yaml";
@@ -74,6 +74,16 @@ test("syncChartText leaves an already-synced chart untouched and refuses a chart
 	const text = 'apiVersion: v2\nname: aidr\nversion: 0.1.0\nappVersion: "0.6.0"\n';
 	assert.deepEqual(syncChartText(text, "0.6.0"), { text, changed: false, previous: "0.6.0" });
 	assert.throws(() => syncChartText("apiVersion: v2\nversion: 0.1.0\n", "1.0.0"), /no top-level appVersion/u);
+});
+
+test("syncEngineVersionText rewrites only the AIDR Privacy ENGINE_VERSION constant", () => {
+	const text = "/** doc */\nexport const ENGINE_VERSION = '0.6.0';\n";
+	assert.deepEqual(syncEngineVersionText(text, "0.6.0"), { text, changed: false, previous: "0.6.0" });
+	const next = syncEngineVersionText(text, "0.7.0");
+	assert.equal(next.text, "/** doc */\nexport const ENGINE_VERSION = '0.7.0';\n");
+	assert.equal(next.changed, true);
+	assert.throws(() => syncEngineVersionText("export const VERSION = '1';\n", "0.7.0"), /no ENGINE_VERSION/u);
+	assert.ok(SYNCS.some(({ target }) => target === "packages/privacy/src/version.ts"));
 });
 
 test("`pnpm run version` syncs manifests and `verify:manifests` checks them", () => {

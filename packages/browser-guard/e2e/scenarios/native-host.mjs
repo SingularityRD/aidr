@@ -6,7 +6,9 @@
 //                         Windows, ~/.config/chromium/NativeMessagingHosts on Linux), never
 //                         for Chrome or Edge, and removes it afterwards. It is skipped when
 //                         a Chromium registration already exists (the user's own is never
-//                         overwritten). In a managed browser with useNativeHost and the
+//                         overwritten). On Linux the manifest is also mirrored into the
+//                         temporary profile, where Chromium looks for per-user hosts
+//                         (Managed.exposeNativeHostManifest). In a managed browser with useNativeHost and the
 //                         nativeMessaging grant: the worker reports the host "connected",
 //                         a NATIVE_SCAN round trip answers through the host, a prompt sent
 //                         on the ChatGPT fixture is masked without the "rules only" notice,
@@ -111,6 +113,7 @@ export default [
 					manifestDir: work,
 				});
 				registered = true;
+				for (const r of result.registrations) m.exposeNativeHostManifest(r.manifestPath);
 				checks.equal(
 					"registered for Chromium only",
 					result.registrations.map((r) => r.browser).join(","),

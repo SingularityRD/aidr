@@ -8,7 +8,7 @@ import { parseJsonStrict } from './json.js';
 import { ENTITY_TYPES, type Action, type AuditSummary, type EngineOptions, type EntityType,
   type Finding, type JsonResult, type JsonValue, type MaskMode, type NerProvider,
   type Profile, type TextResult } from './types.js';
-const VERSION='0.5.0-rc.1';
+import { ENGINE_VERSION as VERSION } from './version.js';
 const KNOWN_ERRORS=new Set(['INPUT_LIMIT','FINDING_LIMIT','SCAN_BUDGET','INVALID_UNICODE','UNSUPPORTED_CONTROL',
   'INVALID_ENCODING','ENCODING_DEPTH','INVALID_SPAN','INCOMPLETE_PRIVATE_KEY','OPAQUE_ENCODING',
   'BIDI_CONTROL','NER_REQUIRED','NER_CAPABILITY_MISSING','NER_FAILURE','NER_TIMEOUT','NER_INCOMPLETE',

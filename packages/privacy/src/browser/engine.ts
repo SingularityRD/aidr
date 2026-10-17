@@ -5,6 +5,7 @@ import { LiteralMatcher } from '../dictionary.js';
 import { mergeFindings } from '../spans.js';
 import { fail, PrivacyError, requireInt } from '../errors.js';
 import { parseJsonStrict } from '../json.js';
+import { ENGINE_VERSION } from '../version.js';
 import { ENTITY_TYPES, type Action, type EntityType, type Finding, type LiteralRule, type TextResult, type JsonResult, type JsonValue } from '../types.js';
 export interface BrowserOptions {
   readonly injectionAction?:'off'|'review'|'block';
@@ -44,7 +45,7 @@ export class BrowserPrivacyEngine {
   #audit(start:number,bytes:number,findings:readonly Finding[]) {
     const counts:Partial<Record<EntityType,number>>=Object.create(null) as Partial<Record<EntityType,number>>;
     for(const f of findings)counts[f.type]=(counts[f.type]??0)+1;
-    return Object.freeze({engineVersion:'0.5.0-rc.1',policyId:this.#policyId,profile:'strict' as const,
+    return Object.freeze({engineVersion:ENGINE_VERSION,policyId:this.#policyId,profile:'strict' as const,
       coverage:'rules-only' as const,inputBytes:bytes,counts:Object.freeze(counts),elapsedMs:Math.round((performance.now()-start)*1000)/1000});
   }
   protect(text:string):TextResult {
