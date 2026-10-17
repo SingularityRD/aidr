@@ -49,6 +49,20 @@ insert into public.audit_logs(team_id,tenant_id,user_id,action,verdict)
 select tenant_id,tenant_id,user_id,'offboarding.fixture','{"decision":"deny"}'::jsonb from offboarding_fixture;
 insert into public.audit_export_objects(path,tenant_id,created_by)
 select object_path,tenant_id,user_id from offboarding_fixture;
+-- Tables purged by the 20261017000200 phases (62-65): seeded so the run must
+-- delete them, not merely list them.
+insert into public.false_positive_reports(tenant_id,feedback_id,record_hash,iid,action_id,decision,reason_code)
+select tenant_id,'fpfb_'||repeat('c',64),repeat('d',64),'offboarding-agent','abcdef12','deny','developer_test'
+from offboarding_fixture;
+insert into public.agent_retirement_settings(tenant_id,auto_retire_offline_days,updated_by)
+select tenant_id,30,user_id from offboarding_fixture;
+insert into public.fleet_enrollment_keys(tenant_id,created_by,key_hash,key_hint,seat_cap,expires_at)
+select tenant_id,user_id,repeat('e',64),'ofbk',1,now()+interval '30 days' from offboarding_fixture;
+insert into public.license_imports(tenant_id,status,source,license_id,key_id,customer,plan_id,seats,deployment,
+  issued_at,not_before,expires_at,grace_days,grace_ends_at,document,canonical_sha256,submitted_by)
+select tenant_id,'pending','tenant_submission','lic-offboarding','key-offboarding','Offboarding fixture','team',1,'onprem',
+  now(),now(),now()+interval '30 days',0,now()+interval '30 days','{}'::jsonb,repeat('f',64),user_id
+from offboarding_fixture;
 
 do $test$
 declare
@@ -136,7 +150,18 @@ begin
           ('notification_deliveries','api_keys'),
           ('notification_agent_outages','api_keys'),
           -- Commercial evidence retained with the entitlement ledger.
-          ('billing_plan_subscriptions','entitlements')
+          ('billing_plan_subscriptions','entitlements'),
+          -- SIEM state is deleted when offboarding starts (trigger on
+          -- tenants.status); a run cannot complete with SIEM residue.
+          ('siem_destinations','api_keys'),
+          ('siem_deliveries','api_keys'),
+          ('siem_enqueue_failures','api_keys'),
+          -- Deleted by foreign-key cascade from oidc_providers.
+          ('oidc_jit_policies','oidc_providers'),
+          ('oidc_jit_group_role_mappings','oidc_providers'),
+          ('oidc_jit_memberships','oidc_providers'),
+          -- Deleted by foreign-key cascade from agents.
+          ('connector_heartbeats','agents')
         ) covered(table_name,parent_phase)
         join public.tenant_offboarding_phase_receipts r
           on r.run_id=initial_run and r.phase=covered.parent_phase
@@ -190,6 +215,16 @@ begin
   if result->>'status' <> 'completed' then raise exception 'offboarding did not complete'; end if;
   if (select status from public.tenants where id=f.tenant_id) <> 'closed' then raise exception 'tenant not closed'; end if;
   if exists(select 1 from public.events where tenant_id=f.tenant_id) then raise exception 'events remain'; end if;
+  if exists(select 1 from public.false_positive_reports where tenant_id=f.tenant_id)
+    or exists(select 1 from public.agent_retirement_settings where tenant_id=f.tenant_id)
+    or exists(select 1 from public.fleet_enrollment_keys where tenant_id=f.tenant_id)
+    or exists(select 1 from public.license_imports where tenant_id=f.tenant_id) then
+    raise exception 'purge-gap tables remain after offboarding';
+  end if;
+  if (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and rows_deleted=1
+       and phase in ('false_positive_reports','agent_retirement_settings','fleet_enrollment_keys','license_imports')) <> 4 then
+    raise exception 'purge-gap receipt counts mismatch';
+  end if;
   if exists(select 1 from public.audit_logs where tenant_id=f.tenant_id) then raise exception 'audit rows remain'; end if;
   if exists(select 1 from public.tenant_pack_deletion_authorizations where tenant_id=f.tenant_id)
     or exists(select 1 from public.pack_versions where tenant_id=f.tenant_id)
@@ -202,7 +237,7 @@ begin
   if (select attempts from public.tenant_offboarding_phase_receipts where run_id=initial_run and phase='events') <> 2 then
     raise exception 'event batch was not bounded';
   end if;
-  if (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and status='completed') <> 62 then
+  if (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and status='completed') <> 68 then
     raise exception 'phase receipt set incomplete: % completed, missing %',
       (select count(*) from public.tenant_offboarding_phase_receipts where run_id=initial_run and status='completed'),
       (select string_agg(phase || '=' || status, ', ' order by phase_order) from public.tenant_offboarding_phase_receipts
@@ -219,6 +254,8 @@ begin
       ('oidc_sso_sessions',52),('oidc_identities',53),
       ('oidc_tenant_domains',54),('oidc_providers',55),
 	  ('saml_recovery_operator_keys',56),
+      ('false_positive_reports',62),('agent_retirement_settings',63),
+      ('fleet_enrollment_keys',64),('license_imports',65),
       ('enterprise_invoice_orders',90),('billing_settlements',91),
       ('billing_finance_evidence',92)
     ) expected(phase,phase_order)
