@@ -36,10 +36,26 @@ if (entryInfo(usersDir)) {
 	}
 }
 
+// Machine scope: the standalone bundle registered in each host's system-wide policy.
+const machineDir = join(stateRoot, "machine");
+const machineStatePath = join(machineDir, "release-state");
+const machinePending = entryInfo(join(machineDir, "pending")) !== null;
+let machine = null;
+if (entryInfo(machineStatePath) || machinePending) {
+	const release = regularFile(machineStatePath) ? readFileSync(machineStatePath, "utf8").match(/^current=([a-f0-9]{64})\nprevious=(?:[a-f0-9]{64})?\n$/)?.[1] ?? "" : "";
+	const validId = /^[a-f0-9]{64}$/.test(release);
+	const bundlePath = validId ? join(installRoot, "releases", release, "bundle") : "";
+	const releasePresent = validId && regularDirectory(join(installRoot, "releases", release)) && regularDirectory(bundlePath) &&
+		["bin/aidr", "aidr-artifact.manifest.json", "dist/aidr-artifact.manifest.json"].every((file) => regularFile(join(bundlePath, file)));
+	healthy &&= !machinePending && releasePresent;
+	machine = { release_sha256: validId ? release : null, release_present: releasePresent, lifecycle_pending: machinePending };
+}
+
 const evidence = {
 	schema_version: 1,
 	checked_at: new Date().toISOString(),
 	healthy,
+	machine,
 	registered_users: users.length,
 	users,
 	scope: "Installed release presence only. Host hook execution and MDM adoption require external acceptance evidence.",

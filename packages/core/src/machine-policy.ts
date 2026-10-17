@@ -4,6 +4,7 @@
  *
  *   Windows  HKLM\SOFTWARE\Policies\Singularity AIDR   (Group Policy, Intune, the MSI's AIDR_POLICY_* properties)
  *   Linux    /etc/singularity-aidr/managed.json         (root-owned, not group/world writable; the package hook's AIDR_POLICY_* variables)
+ *   macOS    /etc/singularity-aidr/managed.json         (same file and checks; written by the fleet lifecycle manager, deploy/fleet/unix)
  *
  * Keys (the registry value names and the JSON keys are the same):
  *   control_plane_url          company control plane (`control_plane.endpoint`)
@@ -315,7 +316,7 @@ export function readMachinePolicy(deps?: MachinePolicyDeps): MachinePolicyRead {
 		result =
 			platform === "win32"
 				? readWindowsPolicy(deps ?? {})
-				: platform === "linux"
+				: platform === "linux" || platform === "darwin"
 					? readLinuxPolicy(deps ?? {})
 					: { state: "none" };
 	} catch {

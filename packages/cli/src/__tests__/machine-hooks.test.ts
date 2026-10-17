@@ -3,10 +3,21 @@
  * temporary directory standing in for /etc/claude-code, /etc/codex and
  * /etc/systemd/user; no real host policy is touched.
  */
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { dirname, join, relative } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { machineHooksInstallCommand, verifyMachineBundle } from "../commands/machine-hooks.js";
 import { installConnectors } from "../utils/connector-install.js";
 import { detectConnectorStatuses } from "../utils/connector-status.js";
 import {
@@ -289,5 +300,136 @@ describe("heartbeat schedule", () => {
 		expect(xml).toContain("<GroupId>S-1-5-32-545</GroupId>");
 		expect(xml).toContain("<Arguments>heartbeat --quiet</Arguments>");
 		expect(xml).toContain("<Interval>PT1H</Interval>");
+	});
+});
+
+/** A minimal standalone bundle: bin/aidr, one rule file, both manifests. */
+function standaloneBundle(root: string): string {
+	const bundle = join(root, "prefix", "bundle");
+	mkdirSync(join(bundle, "bin"), { recursive: true });
+	mkdirSync(join(bundle, "dist", "resources", "threats"), { recursive: true });
+	writeFileSync(join(bundle, "bin", "aidr"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+	writeFileSync(join(bundle, "dist", "resources", "threats", "rules.yaml"), "- id: T\n");
+	const list = (base: string, dir = base): string[] =>
+		readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+			entry.isDirectory()
+				? list(base, join(dir, entry.name))
+				: [relative(base, join(dir, entry.name)).split("\\").join("/")],
+		);
+	const entries = (base: string) =>
+		list(base)
+			.filter((path) => !/^aidr-artifact\.manifest\./u.test(path))
+			.sort()
+			.map((path) => ({
+				path,
+				sha256: createHash("sha256")
+					.update(readFileSync(join(base, path)))
+					.digest("hex"),
+			}));
+	const write = (path: string, id: string, files: unknown) =>
+		writeFileSync(path, `${JSON.stringify({ schema_version: 1, artifact_id: id, files })}\n`);
+	write(
+		join(bundle, "dist", "aidr-artifact.manifest.json"),
+		"sea/dist",
+		entries(join(bundle, "dist")),
+	);
+	write(join(bundle, "aidr-artifact.manifest.json"), "claude-code/sea", entries(bundle));
+	return bundle;
+}
+
+function signStandalone(bundle: string): string {
+	const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+	const signFile = (file: string) =>
+		`${sign(null, readFileSync(file), privateKey).toString("base64")}\n`;
+	writeFileSync(
+		join(bundle, "dist", "aidr-artifact.manifest.sig"),
+		signFile(join(bundle, "dist", "aidr-artifact.manifest.json")),
+	);
+	const manifest = JSON.parse(readFileSync(join(bundle, "aidr-artifact.manifest.json"), "utf8"));
+	const sigPath = "dist/aidr-artifact.manifest.sig";
+	manifest.files.push({
+		path: sigPath,
+		sha256: createHash("sha256")
+			.update(readFileSync(join(bundle, sigPath)))
+			.digest("hex"),
+	});
+	manifest.files.sort((a: { path: string }, b: { path: string }) => a.path.localeCompare(b.path));
+	writeFileSync(join(bundle, "aidr-artifact.manifest.json"), `${JSON.stringify(manifest)}\n`);
+	writeFileSync(
+		join(bundle, "aidr-artifact.manifest.sig"),
+		signFile(join(bundle, "aidr-artifact.manifest.json")),
+	);
+	return publicKey.export({ type: "spki", format: "pem" }).toString();
+}
+
+describe("machine-hooks install verifies the bundle before registering it", () => {
+	it("accepts an intact development bundle and a signed bundle with the installer's key", () => {
+		const { root } = fixture();
+		const bundle = standaloneBundle(root);
+		expect(verifyMachineBundle(bundle, false).ok).toBe(true);
+		// A release build must be signed.
+		expect(verifyMachineBundle(bundle, true).ok).toBe(false);
+		const pem = signStandalone(bundle);
+		// Signed, but no key next to the bundle: nothing to verify against.
+		expect(verifyMachineBundle(bundle, false).ok).toBe(false);
+		mkdirSync(join(bundle, "..", "config"), { recursive: true });
+		writeFileSync(join(bundle, "..", "config", "release-public.pem"), pem);
+		const check = verifyMachineBundle(bundle, true);
+		expect(check.problems).toEqual([]);
+		expect(check.signature).toBe("verified");
+		// A different key is not the signer.
+		writeFileSync(
+			join(bundle, "..", "config", "release-public.pem"),
+			generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString(),
+		);
+		expect(verifyMachineBundle(bundle, false).ok).toBe(false);
+	});
+
+	it("refuses a modified bundle and writes no host policy", async () => {
+		const { root, paths } = fixture();
+		const bundle = standaloneBundle(root);
+		writeFileSync(join(bundle, "dist", "resources", "threats", "rules.yaml"), "[]\n");
+		const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+		const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+		try {
+			await machineHooksInstallCommand(
+				{ bundleRoot: bundle },
+				{
+					paths,
+					isAdministrator: () => true,
+					verifyBundle: (dir) => verifyMachineBundle(dir, false),
+				},
+			);
+			expect(process.exitCode).toBe(1);
+			expect(errors.mock.calls.flat().join("\n")).toContain("does not match its manifest digest");
+			expect(existsSync(paths.claudeDropIn)).toBe(false);
+			expect(existsSync(paths.codexHooks)).toBe(false);
+		} finally {
+			errors.mockRestore();
+			logs.mockRestore();
+			process.exitCode = 0;
+		}
+	});
+
+	it("registers both hosts for a bundle that verifies", async () => {
+		const { root, paths } = fixture();
+		const bundle = standaloneBundle(root);
+		const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+		try {
+			await machineHooksInstallCommand(
+				{ bundleRoot: bundle, lockOtherHooks: true },
+				{
+					paths,
+					isAdministrator: () => true,
+					verifyBundle: (dir) => verifyMachineBundle(dir, false),
+				},
+			);
+			expect(process.exitCode ?? 0).toBe(0);
+			expect(readJson(paths.claudeDropIn).allowManagedHooksOnly).toBe(true);
+			expect(readFileSync(paths.codexHooks, "utf8")).toContain(join(bundle, "bin", "aidr"));
+		} finally {
+			logs.mockRestore();
+			process.exitCode = 0;
+		}
 	});
 });

@@ -7,6 +7,8 @@ export PATH
 ACTION="${1:-}"
 if [ -z "$ACTION" ]; then
 	echo "usage: aidr-fleet.sh verify|install|upgrade|rollback|uninstall|status [options]" >&2
+	echo "  machine scope (default): signed standalone bundle, hooks for every user, no Node.js" >&2
+	echo "  user scope (--user NAME): signed npm connector package for one account, needs Node.js" >&2
 	exit 64
 fi
 shift
@@ -29,6 +31,13 @@ REMOVE_HELPER="${AIDR_REMOVE_HELPER:-$SCRIPT_DIR/remove-managed-hooks.mjs}"
 HEALTH_HELPER="${AIDR_HEALTH_HELPER:-$SCRIPT_DIR/fleet-health.mjs}"
 NODE_BIN="${AIDR_NODE_BIN:-$(command -v node || true)}"
 ARTIFACT= SHA256= SIGNATURE= PUBLIC_KEY="$CONFIG_ROOT/release-public.pem" TARGET_USER= TARGET_HOME= AGENT_CONFIG=
+# Machine scope: the standalone (SEA) bundle, registered through each host's
+# system-wide policy by the bundle's own `aidr machine-hooks install`.
+SCOPE= BUNDLE_PUBLIC_KEY= LOCK_OTHER_HOOKS= HEARTBEAT=
+# Machine policy read by every hook and the CLI (packages/core/src/machine-policy.ts).
+DEFAULT_POLICY_DIR=/etc/singularity-aidr
+POLICY_DIR="${AIDR_FLEET_POLICY_DIR:-$DEFAULT_POLICY_DIR}"
+POLICY_CONTROL_PLANE_URL= POLICY_ENROLLMENT_KEY_FILE= POLICY_PROTECTION_LOCKED=
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -43,11 +52,31 @@ while [ "$#" -gt 0 ]; do
 		--state-root) STATE_ROOT=${2:?missing value}; shift 2 ;;
 		--endpoint-installer) ENDPOINT_INSTALLER=${2:?missing value}; shift 2 ;;
 		--node) NODE_BIN=${2:?missing value}; shift 2 ;;
+		--scope) SCOPE=${2:?missing value}; shift 2 ;;
+		--bundle-public-key) BUNDLE_PUBLIC_KEY=${2:?missing value}; shift 2 ;;
+		--lock-other-hooks) LOCK_OTHER_HOOKS=1; shift ;;
+		--no-lock-other-hooks) LOCK_OTHER_HOOKS=0; shift ;;
+		--heartbeat) HEARTBEAT=1; shift ;;
+		--no-heartbeat) HEARTBEAT=0; shift ;;
+		--control-plane-url) POLICY_CONTROL_PLANE_URL=${2:?missing value}; shift 2 ;;
+		--enrollment-key-file) POLICY_ENROLLMENT_KEY_FILE=${2:?missing value}; shift 2 ;;
+		--protection-locked) POLICY_PROTECTION_LOCKED=${2:?missing value}; shift 2 ;;
 		*) echo "unknown option: $1" >&2; exit 64 ;;
 	esac
 done
 
 fail() { echo "AIDR fleet: $*" >&2; exit 1; }
+if [ -z "$SCOPE" ]; then
+	if [ -n "$TARGET_USER" ]; then SCOPE=user; else SCOPE=machine; fi
+fi
+case "$SCOPE" in
+	machine) [ -z "$TARGET_USER" ] || fail "--user selects the per-user scope; omit it for a machine-wide installation" ;;
+	user) ;;
+	*) echo "--scope must be machine or user" >&2; exit 64 ;;
+esac
+[ "$SCOPE" = machine ] || [ -z "$BUNDLE_PUBLIC_KEY$LOCK_OTHER_HOOKS$HEARTBEAT" ] || fail "--bundle-public-key, --lock-other-hooks and --heartbeat apply to the machine scope only"
+[ "$HEARTBEAT" != 1 ] || [ "$PLATFORM" = linux ] || fail "--heartbeat schedules a systemd timer and is available on Linux only"
+case "$POLICY_PROTECTION_LOCKED" in ""|true|false) ;; *) fail "--protection-locked must be true or false" ;; esac
 require_file() { [ -f "$1" ] || fail "required file missing: $1"; }
 safe_user() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]*$' || fail "unsafe user name"; }
 state_key() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
@@ -66,6 +95,9 @@ sha_file() {
 require_root_for_changes() {
 	safe_system_root "$INSTALL_ROOT"; safe_system_root "$STATE_ROOT"
 	[ "$INSTALL_ROOT" != "$STATE_ROOT" ] || fail "install and state roots must be different"
+	# Host hook commands quote the bundle path; these characters cannot be carried.
+	case "$INSTALL_ROOT" in *[\"\$\`\\]*|*"
+"*) fail "the install root contains characters a hook command cannot carry" ;; esac
 	if [ "${AIDR_FLEET_TEST_ROOT:-}" ]; then
 		[ "$(id -u)" -ne 0 ] || fail "test-root mode is unavailable to privileged installations"
 		case "$INSTALL_ROOT/" in "${AIDR_FLEET_TEST_ROOT%/}"/*) ;; *) fail "test install root escaped AIDR_FLEET_TEST_ROOT" ;; esac
@@ -73,6 +105,65 @@ require_root_for_changes() {
 		return
 	fi
 	[ "$(id -u)" -eq 0 ] || fail "system installation actions require root"
+}
+
+# Hooks and the CLI read machine policy from one fixed, root-owned path only;
+# test-root mode redirects it into the test tree.
+require_policy_dir() {
+	if [ "${AIDR_FLEET_TEST_ROOT:-}" ]; then
+		case "$POLICY_DIR/" in "${AIDR_FLEET_TEST_ROOT%/}"/*) ;; *) fail "test policy directory escaped AIDR_FLEET_TEST_ROOT" ;; esac
+	else
+		[ "$POLICY_DIR" = "$DEFAULT_POLICY_DIR" ] || fail "the machine policy directory is fixed at $DEFAULT_POLICY_DIR"
+	fi
+	[ ! -L "$POLICY_DIR" ] || fail "machine policy directory must not be a symlink"
+	mkdir -p "$POLICY_DIR"; chmod 755 "$POLICY_DIR"
+	if [ -z "${AIDR_FLEET_TEST_ROOT:-}" ]; then chown 0 "$POLICY_DIR"; fi
+}
+
+# The machine policy from --control-plane-url, --enrollment-key-file and
+# --protection-locked. With none given an existing managed.json is kept as is
+# (upgrade and rollback never drop it). With any given the file is rewritten
+# from exactly the given values, so pass the complete policy every time; the
+# replaced file is kept as managed.json.previous. Values are validated here
+# against the same rules the reader applies; a file the reader refuses would
+# be refused as a whole on every endpoint. build_machine_policy validates
+# before anything is staged; write_machine_policy writes it.
+POLICY_FIELDS=
+build_machine_policy() {
+	[ -n "$POLICY_CONTROL_PLANE_URL$POLICY_ENROLLMENT_KEY_FILE$POLICY_PROTECTION_LOCKED" ] || return 0
+	policy_fields=
+	if [ -n "$POLICY_CONTROL_PLANE_URL" ]; then
+		[ "${#POLICY_CONTROL_PLANE_URL}" -le 2048 ] || fail "--control-plane-url is longer than 2048 characters"
+		printf '%s' "$POLICY_CONTROL_PLANE_URL" | grep -Eq '^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._~/%+-]*)?$' || fail "--control-plane-url must be an https:// URL without credentials, query or unusual characters"
+		policy_fields="$policy_fields${policy_fields:+,}
+  \"control_plane_url\": \"$POLICY_CONTROL_PLANE_URL\""
+	fi
+	if [ -n "$POLICY_ENROLLMENT_KEY_FILE" ]; then
+		[ -f "$POLICY_ENROLLMENT_KEY_FILE" ] && [ ! -L "$POLICY_ENROLLMENT_KEY_FILE" ] || fail "--enrollment-key-file must be a regular file"
+		[ "$(wc -l < "$POLICY_ENROLLMENT_KEY_FILE" | tr -d ' ')" -le 1 ] || fail "--enrollment-key-file must hold one line"
+		enrollment_key=$(tr -d '\r\n' < "$POLICY_ENROLLMENT_KEY_FILE")
+		printf '%s' "$enrollment_key" | grep -Eq '^aidr_fleet_[A-Za-z0-9_-]{16,256}$' || fail "--enrollment-key-file must hold one fleet enrollment key (aidr_fleet_...)"
+		policy_fields="$policy_fields${policy_fields:+,}
+  \"enrollment_key\": \"$enrollment_key\""
+	fi
+	if [ -n "$POLICY_PROTECTION_LOCKED" ]; then
+		policy_fields="$policy_fields${policy_fields:+,}
+  \"protection_locked\": $POLICY_PROTECTION_LOCKED"
+	fi
+	POLICY_FIELDS=$policy_fields
+}
+write_machine_policy() {
+	[ -n "$POLICY_FIELDS" ] || return 0
+	require_policy_dir
+	policy_file="$POLICY_DIR/managed.json"
+	[ ! -L "$policy_file" ] || fail "machine policy file must not be a symlink"
+	policy_tmp="$policy_file.tmp.$$"
+	printf '{%s\n}\n' "$POLICY_FIELDS" > "$policy_tmp"
+	chmod 644 "$policy_tmp"
+	if [ -z "${AIDR_FLEET_TEST_ROOT:-}" ]; then chown 0 "$policy_tmp"; fi
+	if [ -f "$policy_file" ] && ! cmp -s "$policy_file" "$policy_tmp"; then cp -p "$policy_file" "$policy_file.previous"; fi
+	mv -f "$policy_tmp" "$policy_file"
+	echo "AIDR fleet: machine policy written to $policy_file"
 }
 
 # Lifecycle mutual exclusion. The lock is a directory (mkdir is atomic) holding
@@ -179,10 +270,11 @@ acquire_lock() {
 }
 
 check_public_key_permissions() {
-	[ ! -L "$PUBLIC_KEY" ] || fail "release public key must not be a symlink"
-	[ ! -L "$(dirname "$PUBLIC_KEY")" ] || fail "release public key directory must not be a symlink"
+	trust_key=${1:-$PUBLIC_KEY}
+	[ ! -L "$trust_key" ] || fail "release public key must not be a symlink"
+	[ ! -L "$(dirname "$trust_key")" ] || fail "release public key directory must not be a symlink"
 	[ "${AIDR_FLEET_TEST_ROOT:-}" ] && return
-	for trust_path in "$PUBLIC_KEY" "$(dirname "$PUBLIC_KEY")"; do
+	for trust_path in "$trust_key" "$(dirname "$trust_key")"; do
 		if [ "$PLATFORM" = macos ]; then owner=$(stat -f '%u' "$trust_path"); mode=$(stat -f '%Lp' "$trust_path")
 		else owner=$(stat -c '%u' "$trust_path"); mode=$(stat -c '%a' "$trust_path"); fi
 		[ "$owner" = 0 ] || fail "release public key and directory must be owned by root"
@@ -243,18 +335,77 @@ activate_release() {
 	run_for_user "$@"
 }
 
+
+# Machine scope: register the release's own multi-call binary in every host's
+# system-wide policy. `aidr machine-hooks install` re-verifies every bundle file
+# against the bundle manifest (and the manifest signatures against
+# releases/<digest>/config/release-public.pem when present) before it writes,
+# and fails without writing when they do not verify. Hook commands point at the
+# immutable digest directory, so an upgrade or rollback is one atomic rewrite
+# of each host's policy file.
+activate_machine_release() {
+	release_id=$1
+	bundle_path="$INSTALL_ROOT/releases/$release_id/bundle"
+	[ ! -L "$bundle_path" ] || fail "retained bundle path must not be a symlink"
+	require_file "$bundle_path/aidr-artifact.manifest.json"; require_file "$bundle_path/dist/aidr-artifact.manifest.json"
+	[ -f "$bundle_path/bin/aidr" ] && [ -x "$bundle_path/bin/aidr" ] || fail "release $release_id has no executable bin/aidr"
+	set -- "$bundle_path/bin/aidr" machine-hooks install --bundle-root "$bundle_path"
+	[ "$LOCK_OTHER_HOOKS" != 1 ] || set -- "$@" --lock-other-hooks
+	[ "$HEARTBEAT" != 1 ] || set -- "$@" --heartbeat
+	"$@" || fail "machine-wide hook registration failed for release $release_id; the previous registration (if any) is unchanged where the host files were not rewritten"
+	write_cli_launcher "$bundle_path"
+}
+
+# A stable `aidr` for administrators and users: $INSTALL_ROOT/bin/aidr runs the
+# active release (a launcher, not a link: the bundle locates its rules relative
+# to its own binary).
+write_cli_launcher() {
+	mkdir -p "$INSTALL_ROOT/bin"; chmod 755 "$INSTALL_ROOT/bin"
+	launcher_tmp="$INSTALL_ROOT/bin/.aidr.tmp.$$"
+	printf '#!/bin/sh\nexec "%s/bin/aidr" "$@"\n' "$1" > "$launcher_tmp"
+	chmod 755 "$launcher_tmp"
+	if [ -z "${AIDR_FLEET_TEST_ROOT:-}" ]; then chown 0 "$launcher_tmp"; fi
+	mv -f "$launcher_tmp" "$INSTALL_ROOT/bin/aidr"
+}
+
+# Device management owns updates of a fleet installation: `aidr update` then
+# only checks (packages/core/src/update/environment.ts).
+write_mdm_marker() {
+	require_policy_dir
+	[ ! -L "$POLICY_DIR/mdm-managed" ] || fail "MDM marker must not be a symlink"
+	: > "$POLICY_DIR/mdm-managed"; chmod 644 "$POLICY_DIR/mdm-managed"
+}
+
+# The release-signing (Ed25519) key the bundle manifests verify against. It is
+# copied into the staged release as config/release-public.pem, where both
+# `aidr machine-hooks install` and per-user `aidr setup` find it.
+check_bundle_public_key() {
+	[ -n "$BUNDLE_PUBLIC_KEY" ] || return 0
+	require_file "$BUNDLE_PUBLIC_KEY"
+	check_public_key_permissions "$BUNDLE_PUBLIC_KEY"
+	grep -q 'BEGIN PUBLIC KEY' "$BUNDLE_PUBLIC_KEY" || fail "--bundle-public-key is not a PEM public key"
+	! grep -q 'PRIVATE KEY' "$BUNDLE_PUBLIC_KEY" || fail "--bundle-public-key holds private key material"
+}
+
 stage_release() {
 	require_file "$ARTIFACT"; require_file "$SIGNATURE"; require_file "$PUBLIC_KEY"
 	printf '%s' "$SHA256" | grep -Eq '^[a-f0-9]{64}$' || fail "--sha256 must be one lowercase SHA-256 digest"
+	[ "$SCOPE" = user ] || check_bundle_public_key
 	digest=$SHA256
 	release="$INSTALL_ROOT/releases/$digest"
+	if [ "$SCOPE" = machine ]; then payload_name=bundle; else payload_name=package; fi
 	if [ -L "$release" ]; then fail "release path must not be a symlink"; fi
-	if [ -d "$release/package" ]; then
-		[ ! -L "$release/package" ] || fail "retained package path must not be a symlink"
+	if [ -d "$release/$payload_name" ]; then
+		[ ! -L "$release/$payload_name" ] || fail "retained $payload_name path must not be a symlink"
 		# Verify both the supplied candidate and the retained bytes before reuse.
 		verify_artifact >/dev/null
 		ARTIFACT="$release/artifact.tgz"; SIGNATURE="$release/artifact.sig"
 		verify_artifact >/dev/null
+		if [ "$SCOPE" = machine ] && [ -n "$BUNDLE_PUBLIC_KEY" ]; then
+			cmp -s "$BUNDLE_PUBLIC_KEY" "$release/config/release-public.pem" || fail "retained release $digest was staged with a different (or no) bundle key; review it before changing trust"
+		fi
+	elif [ -d "$release/package" ] || [ -d "$release/bundle" ]; then
+		fail "release $digest holds a $( [ -d "$release/bundle" ] && echo standalone bundle || echo per-user package ), not the $payload_name the $SCOPE scope installs"
 	elif [ -e "$release" ]; then
 		# A previous interrupted publish can leave the digest directory behind.
 		# Never move a new staging tree into that directory: it would nest the
@@ -275,14 +426,29 @@ stage_release() {
 		mkdir "$temporary/extracted"
 		tar -xzf "$temporary/artifact.tgz" --no-same-owner --no-same-permissions -C "$temporary/extracted"
 		extracted_kib=$(du -sk "$temporary/extracted" | awk '{print $1}'); [ "$extracted_kib" -le 524288 ] || fail "artifact exceeds the 512 MiB extracted limit"
-		if [ -f "$temporary/extracted/package/package.json" ]; then package_dir="$temporary/extracted/package"
-		elif [ -f "$temporary/extracted/package.json" ]; then package_dir="$temporary/extracted"
-		else fail "artifact does not contain package.json"; fi
-		require_file "$package_dir/dist/pre-tool-use.cjs"; require_file "$package_dir/dist/pre-tool-use.bundle.cjs"; [ -d "$package_dir/resources" ] || fail "artifact does not contain resources"
-		mv "$package_dir" "$temporary/package"
+		if [ "$SCOPE" = machine ]; then
+			payload_dir=
+			for candidate in "$temporary/extracted/aidr-sea" "$temporary/extracted/bundle" "$temporary/extracted"; do
+				if [ -f "$candidate/aidr-artifact.manifest.json" ]; then payload_dir=$candidate; break; fi
+			done
+			[ -n "$payload_dir" ] || fail "artifact is not a standalone AIDR bundle (no aidr-artifact.manifest.json); a per-user npm connector package installs with --user"
+			require_file "$payload_dir/bin/aidr"; require_file "$payload_dir/dist/aidr-artifact.manifest.json"
+		else
+			if [ -f "$temporary/extracted/package/package.json" ]; then payload_dir="$temporary/extracted/package"
+			elif [ -f "$temporary/extracted/package.json" ]; then payload_dir="$temporary/extracted"
+			else fail "artifact does not contain package.json"; fi
+			require_file "$payload_dir/dist/pre-tool-use.cjs"; require_file "$payload_dir/dist/pre-tool-use.bundle.cjs"; [ -d "$payload_dir/resources" ] || fail "artifact does not contain resources"
+		fi
+		mv "$payload_dir" "$temporary/$payload_name"
 		rm -rf "$temporary/extracted"
+		if [ "$SCOPE" = machine ] && [ -n "$BUNDLE_PUBLIC_KEY" ]; then
+			mkdir "$temporary/config"
+			cp "$BUNDLE_PUBLIC_KEY" "$temporary/config/release-public.pem"
+		fi
 		find "$temporary" -type d -exec chmod 755 {} \;
 		find "$temporary" -type f -exec chmod 644 {} \;
+		# The multi-call binary is the only executable a bundle carries.
+		if [ "$SCOPE" = machine ]; then chmod 755 "$temporary/bundle/bin/aidr"; fi
 		if [ -z "${AIDR_FLEET_TEST_ROOT:-}" ]; then chown -R 0 "$temporary"; fi
 		mv "$temporary" "$release"
 		STAGING_PATH=
@@ -292,8 +458,11 @@ stage_release() {
 
 secure_state_for_health() {
 	if [ "$PLATFORM" = linux ] && [ -z "${AIDR_FLEET_TEST_ROOT:-}" ] && getent group aidr-health >/dev/null 2>&1; then
-		chgrp aidr-health "$STATE_ROOT" "$STATE_ROOT/users" "$user_state"
-		chmod 750 "$STATE_ROOT" "$STATE_ROOT/users" "$user_state"
+		if [ "$SCOPE" = machine ]; then
+			chgrp aidr-health "$STATE_ROOT" "$user_state"; chmod 750 "$STATE_ROOT" "$user_state"
+		else
+			chgrp aidr-health "$STATE_ROOT" "$STATE_ROOT/users" "$user_state"; chmod 750 "$STATE_ROOT" "$STATE_ROOT/users" "$user_state"
+		fi
 		for state_file in "$user_state"/*; do
 			[ -e "$state_file" ] || continue
 			chgrp aidr-health "$state_file"; chmod 640 "$state_file"
@@ -301,10 +470,18 @@ secure_state_for_health() {
 	fi
 }
 
+# Lifecycle state lives in $STATE_ROOT/machine (machine scope) or
+# $STATE_ROOT/users/<hex user name> (user scope); the variable keeps its name.
+state_dir() {
+	if [ "$SCOPE" = machine ]; then printf '%s\n' "$STATE_ROOT/machine"
+	else printf '%s\n' "$STATE_ROOT/users/$(state_key "$TARGET_USER")"; fi
+}
+
 prepare_user_state() {
-	key=$(state_key "$TARGET_USER")
-	user_state="$STATE_ROOT/users/$key"
-	mkdir -p "$user_state"; chmod 700 "$STATE_ROOT" "$STATE_ROOT/users" "$user_state" 2>/dev/null || true
+	user_state=$(state_dir)
+	mkdir -p "$user_state"
+	if [ "$SCOPE" = machine ]; then chmod 700 "$STATE_ROOT" "$user_state" 2>/dev/null || true
+	else chmod 700 "$STATE_ROOT" "$STATE_ROOT/users" "$user_state" 2>/dev/null || true; fi
 }
 
 write_pending_state() {
@@ -343,48 +520,132 @@ write_state() {
 	secure_state_for_health
 }
 
+# Machine-scope registration options persist across upgrade and rollback, so a
+# later run without --lock-other-hooks does not silently unlock the hosts.
+# An explicit --[no-]lock-other-hooks / --[no-]heartbeat changes the record.
+load_machine_options() {
+	options_file="$user_state/options"
+	if [ -f "$options_file" ]; then
+		[ -n "$LOCK_OTHER_HOOKS" ] || LOCK_OTHER_HOOKS=$(sed -n 's/^lock_other_hooks=\([01]\)$/\1/p' "$options_file" | head -n 1)
+		[ -n "$HEARTBEAT" ] || HEARTBEAT=$(sed -n 's/^heartbeat=\([01]\)$/\1/p' "$options_file" | head -n 1)
+	fi
+	LOCK_OTHER_HOOKS=${LOCK_OTHER_HOOKS:-0}; HEARTBEAT=${HEARTBEAT:-0}
+}
+
+write_machine_options() {
+	printf 'lock_other_hooks=%s\nheartbeat=%s\n' "$LOCK_OTHER_HOOKS" "$HEARTBEAT" > "$user_state/options.tmp"
+	mv "$user_state/options.tmp" "$user_state/options"
+}
+
+# Rollback re-verifies the retained archive against the pinned key.
+verify_retained_release() {
+	release="$INSTALL_ROOT/releases/$1"
+	require_file "$release/artifact.tgz"; require_file "$release/artifact.sig"; require_file "$release/artifact.sha256"
+	ARTIFACT="$release/artifact.tgz"; SIGNATURE="$release/artifact.sig"; SHA256=$(cat "$release/artifact.sha256")
+	[ "$SHA256" = "$1" ] || fail "retained release $1 records a different digest"
+	verify_artifact >/dev/null
+}
+
+machine_status() {
+	user_state=$(state_dir)
+	read_release_state
+	pending=no; [ ! -e "$user_state/pending" ] || pending=yes
+	present=no
+	if [ -n "$CURRENT_RELEASE" ] && [ -x "$INSTALL_ROOT/releases/$CURRENT_RELEASE/bundle/bin/aidr" ]; then present=yes; fi
+	printf 'scope=machine\ncurrent=%s\nprevious=%s\nrelease_present=%s\nlifecycle_pending=%s\n' "$CURRENT_RELEASE" "$PREVIOUS_RELEASE" "$present" "$pending"
+	[ "$present" = yes ] && [ "$pending" = no ] || exit 2
+	"$INSTALL_ROOT/releases/$CURRENT_RELEASE/bundle/bin/aidr" machine-hooks status
+}
+
 case "$ACTION" in
 	verify)
 		verify_artifact >/dev/null
 		echo "Artifact SHA-256 and publisher signature verified; archive paths are safe."
 		;;
 	install|upgrade)
-		require_root_for_changes; resolve_identity; acquire_lock
+		require_root_for_changes
+		if [ "$SCOPE" = user ]; then resolve_identity; fi
+		build_machine_policy
+		acquire_lock
 		stage_release; release_id=$STAGED_RELEASE
 		write_pending_state "$ACTION" "$release_id"
-		activate_release "$release_id"
+		write_machine_policy
+		if [ "$SCOPE" = machine ]; then
+			load_machine_options
+			write_mdm_marker
+			activate_machine_release "$release_id"
+			write_machine_options
+		else
+			activate_release "$release_id"
+		fi
 		write_state "$release_id"
 		clear_pending_state
-		echo "AIDR $ACTION completed for $TARGET_USER at release $release_id. Host and MDM acceptance remain unverified."
+		if [ "$SCOPE" = machine ]; then
+			echo "AIDR $ACTION completed machine-wide (Claude Code and Codex system policy) at release $release_id. Host and MDM acceptance remain unverified."
+		else
+			echo "AIDR $ACTION completed for $TARGET_USER at release $release_id. Host and MDM acceptance remain unverified."
+		fi
 		;;
 	rollback)
-		require_root_for_changes; resolve_identity; acquire_lock
-		key=$(state_key "$TARGET_USER"); user_state="$STATE_ROOT/users/$key"
+		require_root_for_changes
+		if [ "$SCOPE" = user ]; then resolve_identity; fi
+		acquire_lock
+		user_state=$(state_dir)
 		read_release_state; [ -n "$PREVIOUS_RELEASE" ] || fail "no prior release is available for rollback"; release_id=$PREVIOUS_RELEASE
-		release="$INSTALL_ROOT/releases/$release_id"
-		require_file "$release/artifact.tgz"; require_file "$release/artifact.sig"; require_file "$release/artifact.sha256"
-		ARTIFACT="$release/artifact.tgz"; SIGNATURE="$release/artifact.sig"; SHA256=$(cat "$release/artifact.sha256")
-		verify_artifact >/dev/null
+		verify_retained_release "$release_id"
 		write_pending_state rollback "$release_id"
-		activate_release "$release_id"
+		if [ "$SCOPE" = machine ]; then
+			load_machine_options
+			activate_machine_release "$release_id"
+			write_machine_options
+		else
+			activate_release "$release_id"
+		fi
 		write_release_state "$release_id" "$CURRENT_RELEASE"
 		clear_pending_state
 		secure_state_for_health
-		echo "AIDR rollback completed for $TARGET_USER. Policy and agent configuration were preserved."
+		if [ "$SCOPE" = machine ]; then
+			echo "AIDR machine-wide rollback completed at release $release_id. Policy and agent configuration were preserved."
+		else
+			echo "AIDR rollback completed for $TARGET_USER. Policy and agent configuration were preserved."
+		fi
 		;;
 	uninstall)
-		require_root_for_changes; resolve_identity; acquire_lock; require_file "$REMOVE_HELPER"
-		write_pending_state uninstall "0000000000000000000000000000000000000000000000000000000000000000"
-		run_for_user "$NODE_BIN" "$REMOVE_HELPER" --home "$TARGET_HOME"
-		if [ -d "$user_state" ]; then
-			[ ! -f "$user_state/release-state" ] || mv "$user_state/release-state" "$user_state/uninstalled-release-state"
+		require_root_for_changes
+		if [ "$SCOPE" = machine ]; then
+			acquire_lock
+			user_state=$(state_dir)
+			read_release_state; [ -n "$CURRENT_RELEASE" ] || fail "no machine-wide installation is recorded in $user_state"
+			load_machine_options
+			remover="$INSTALL_ROOT/releases/$CURRENT_RELEASE/bundle/bin/aidr"
+			[ -x "$remover" ] || fail "the active release $CURRENT_RELEASE has no executable bin/aidr"
+			write_pending_state uninstall "0000000000000000000000000000000000000000000000000000000000000000"
+			set -- "$remover" machine-hooks remove
+			[ "$HEARTBEAT" != 1 ] || set -- "$@" --heartbeat
+			"$@" || fail "machine-wide hook removal did not finish; rerun uninstall"
+			rm -f "$INSTALL_ROOT/bin/aidr"
+			mv "$user_state/release-state" "$user_state/uninstalled-release-state"
+			clear_pending_state
+			echo "AIDR machine-wide hooks removed. Shared releases, machine policy, per-user connectors and agent configuration were preserved."
+		else
+			resolve_identity; acquire_lock; require_file "$REMOVE_HELPER"
+			write_pending_state uninstall "0000000000000000000000000000000000000000000000000000000000000000"
+			run_for_user "$NODE_BIN" "$REMOVE_HELPER" --home "$TARGET_HOME"
+			if [ -d "$user_state" ]; then
+				[ ! -f "$user_state/release-state" ] || mv "$user_state/release-state" "$user_state/uninstalled-release-state"
+			fi
+			clear_pending_state
+			echo "AIDR hooks disabled for $TARGET_USER. Shared releases, policy, allowlists and agent configuration were preserved."
 		fi
-		clear_pending_state
-		echo "AIDR hooks disabled for $TARGET_USER. Shared releases, policy, allowlists and agent configuration were preserved."
 		;;
 	status)
-		require_file "$HEALTH_HELPER"; [ -n "$NODE_BIN" ] || fail "Node.js executable not found"
-		"$NODE_BIN" "$HEALTH_HELPER" --state-root "$STATE_ROOT" --install-root "$INSTALL_ROOT"
+		if [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ] && [ -f "$HEALTH_HELPER" ]; then
+			"$NODE_BIN" "$HEALTH_HELPER" --state-root "$STATE_ROOT" --install-root "$INSTALL_ROOT"
+		elif [ "$SCOPE" = machine ]; then
+			machine_status
+		else
+			fail "Node.js executable not found"
+		fi
 		;;
 	*) echo "unknown action: $ACTION" >&2; exit 64 ;;
 esac

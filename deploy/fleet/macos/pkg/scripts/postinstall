@@ -1,13 +1,32 @@
 #!/bin/sh
+# Singularity AIDR fleet PKG postinstall (runs as root on the startup volume).
+#
+# A standalone (SEA) bundle payload is installed machine-wide: the lifecycle
+# manager re-verifies the payload's SHA-256 and publisher signature against the
+# pinned key, stages it in the root-owned release store and registers its hooks
+# for every user through each host's system-wide policy
+# (`aidr machine-hooks install`: Claude Code managed-settings.d, Codex
+# /etc/codex). No Node.js is needed and no home directory is edited. An
+# existing /etc/singularity-aidr/managed.json (machine policy, delivered by
+# MDM or by jamf-policy.sh) is kept and applies to every hook. Re-running the
+# PKG with the same payload is idempotent; a newer payload is an upgrade.
+#
+# A per-user npm connector payload is only verified, as before: activate it
+# per account with jamf-policy.sh install-user.
 set -eu
 [ "${3:-}" = / ] || { echo "AIDR PKG: installation target must be the startup volume" >&2; exit 1; }
 ROOT="/Library/Application Support/Singularity AIDR"
 DIGEST=$(tr -d ' \r\n' < "$ROOT/payload/connector.tgz.sha256")
 export AIDR_FLEET_PLATFORM=macos
-"$ROOT/fleet/unix/aidr-fleet.sh" verify \
-	--artifact "$ROOT/payload/connector.tgz" \
-	--sha256 "$DIGEST" \
-	--signature "$ROOT/payload/connector.tgz.sig" \
-	--public-key "$ROOT/config/release-public.pem"
 chmod -R go-w "$ROOT"
+set -- --artifact "$ROOT/payload/connector.tgz" --sha256 "$DIGEST" \
+	--signature "$ROOT/payload/connector.tgz.sig" --public-key "$ROOT/config/release-public.pem"
+"$ROOT/fleet/unix/aidr-fleet.sh" verify "$@"
+if tar -tzf "$ROOT/payload/connector.tgz" | grep -Eq '(^|/)aidr-artifact\.manifest\.json$' &&
+	tar -tzf "$ROOT/payload/connector.tgz" | grep -Eq '(^|/)bin/aidr$'; then
+	[ ! -f "$ROOT/config/bundle-release-public.pem" ] || set -- "$@" --bundle-public-key "$ROOT/config/bundle-release-public.pem"
+	"$ROOT/fleet/unix/aidr-fleet.sh" install --scope machine "$@"
+else
+	echo "AIDR PKG: per-user connector payload verified; activate it per account with jamf-policy.sh install-user"
+fi
 exit 0

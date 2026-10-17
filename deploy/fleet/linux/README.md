@@ -1,10 +1,45 @@
 # Linux fleet delivery template
 
-This template stages a verified Claude Code connector and registers the managed
-hook for one existing OS user. It supports clean install, idempotent upgrade,
-rollback to the prior verified release and hook-only uninstall. Policy,
-allowlists, unrelated Claude hooks and `~/.singularity-aidr/config.json` survive
-upgrade, rollback and uninstall.
+By default this template installs the signed **standalone (SEA) bundle**
+machine-wide: it stages the bundle in the root-owned release store
+`/opt/singularity-aidr/releases/<sha256>/bundle` and registers its hooks for
+every user through each host's system-wide policy with the bundle's own
+`aidr machine-hooks install` (Claude Code
+`/etc/claude-code/managed-settings.d/50-singularity-aidr.json`, Codex
+`/etc/codex/hooks.json`). Users cannot edit or `disableAllHooks` those away, and
+the endpoint needs **no Node.js**. It supports clean install, idempotent
+upgrade, rollback to the prior verified release and hook-only uninstall; see
+`../unix/README.md` for every option. Cursor, VS Code, OpenCode and OpenClaw
+stay per-user connectors (`aidr setup` per user, as documented in
+`docs/operations/hook-tamper-resistance.md`); machine policy
+`protection_locked` covers the editors.
+
+```sh
+sudo ./install.sh --artifact aidr-sea.tgz --sha256 DIGEST --signature aidr-sea.tgz.sig \
+  --public-key /etc/singularity-aidr/release-public.pem \
+  --bundle-public-key /etc/singularity-aidr/bundle-release-public.pem \
+  --control-plane-url https://aidr.example.com/functions/v1 \
+  --enrollment-key-file /etc/singularity-aidr/enrollment-key \
+  --protection-locked true --lock-other-hooks --heartbeat
+```
+
+The artifact is the `bin/aidr-sea/` directory that
+`packages/claude-code/scripts/build-sea.mjs` produces, packed with
+`tar -czf aidr-sea.tgz aidr-sea` and signed with the detached OpenSSL publisher
+signature below. `--bundle-public-key` is the Ed25519 release key the bundle
+manifests are signed with (required for a release-flavour bundle); it is copied
+next to the release, where `aidr machine-hooks install` re-verifies every
+bundle file and both manifest signatures before writing any host policy, and
+where each user's `aidr setup` finds it. Policy options rewrite
+`/etc/singularity-aidr/managed.json` from exactly the values given (the
+previous file is kept as `managed.json.previous`); without them an existing
+policy is kept. `/opt/singularity-aidr/bin/aidr` runs the active release, and
+`/etc/singularity-aidr/mdm-managed` leaves updates to your fleet tooling.
+
+The per-user path (the npm connector package for one OS user, Claude Code only,
+Node.js required) is still available with `--user`. Policy, allowlists,
+unrelated Claude hooks and `~/.singularity-aidr/config.json` survive upgrade,
+rollback and uninstall in both scopes.
 
 The release public key is an immutable trust input for both bundle builders and
 endpoints. Obtain it through reviewed configuration management or another
@@ -43,6 +78,15 @@ or over 512 MiB total regular-file size before extraction. It rejects links,
 special entries, and unsafe paths as well. Do not raise those limits without a
 customer-host disk-capacity and archive-format acceptance test.
 
+Machine-wide: run `upgrade.sh` with the new signed bundle, `rollback.sh` to
+return to the immediately prior release (it rechecks the retained archive
+against the pinned key and re-registers it; the `--lock-other-hooks` /
+`--heartbeat` choice is remembered), and `uninstall.sh` to run
+`aidr machine-hooks remove`. Uninstall keeps shared release bytes, the machine
+policy and every per-user connector.
+
+Per-user (npm connector package):
+
 ```sh
 sudo ./install.sh --artifact connector.tgz --sha256 DIGEST --signature connector.tgz.sig \
   --public-key /etc/singularity-aidr/release-public.pem --user alice \
@@ -74,7 +118,11 @@ It does not prove Claude invoked a hook or that MDM delivered the policy. Run th
 real connector canary and collect distribution evidence in the customer tenant.
 
 `build-offline-bundle.sh` creates a transport bundle after verifying the source
-artifact and includes the endpoint installer. `install-systemd.sh` also places
-that installer beside the root-owned lifecycle manager. A custom packaging path
-can set `AIDR_ENDPOINT_INSTALLER` to another root-owned copy. The connector still
-requires a supported Node.js runtime on the endpoint.
+artifact and includes the endpoint installer (its optional sixth argument adds
+the bundle release key as `payload/bundle-release-public.pem`).
+`install-systemd.sh` also places that installer beside the root-owned lifecycle
+manager. A custom packaging path can set `AIDR_ENDPOINT_INSTALLER` to another
+root-owned copy. Only the per-user npm path and this optional health timer need
+a Node.js runtime on the endpoint; the machine-wide bundle path does not
+(`aidr-fleet.sh status` falls back to a Node-free report, and `--heartbeat`
+reports hook presence to the control plane every hour).

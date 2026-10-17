@@ -64,7 +64,9 @@ before it is sold as a control:
   `%ProgramData%\OpenAI\Codex` with your device management tool).
 - **Cursor enterprise hooks on Windows** and Cursor's merge semantics were not
   confirmed from Cursor's own documentation.
-- **macOS** is not a supported endpoint; the paths are listed in code only.
+- **macOS** is not a supported endpoint yet. The fleet PKG/Jamf templates use
+  the paths listed in code and the hooks read `/etc/singularity-aidr/managed.json`
+  there too, but none of it has been run on a Mac.
 
 ## Deploying it
 
@@ -113,6 +115,20 @@ The heartbeat is the scheduled task `\Singularity AIDR\Heartbeat` (hourly and at
 logon, for whichever member of `BUILTIN\Users` is logged on). Final removal runs
 `machine-hooks remove --heartbeat`; a per-user install changes nothing
 system-wide.
+
+### Linux and macOS fleet scripts (Jamf, configuration management)
+
+`deploy/fleet/unix/aidr-fleet.sh` (behind `deploy/fleet/linux/*.sh`, the macOS
+PKG postinstall and `deploy/fleet/macos/jamf-policy.sh`) verifies a signed
+standalone bundle, stages it in a root-owned release store, writes
+`managed.json` (`--control-plane-url`, `--enrollment-key-file`,
+`--protection-locked`) and runs the release's own `aidr machine-hooks install`
+(`--lock-other-hooks`, `--heartbeat` on Linux), with upgrade, rollback and
+uninstall. No Node.js is needed. See `deploy/fleet/unix/README.md`.
+
+`aidr machine-hooks install` refuses a bundle whose files do not match its
+manifest, or whose manifest signatures do not verify against the release key
+next to it (`<prefix>/config/release-public.pem`), before writing anything.
 
 ### By hand or from a configuration-management tool
 

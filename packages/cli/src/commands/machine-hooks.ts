@@ -1,3 +1,4 @@
+import { isCommercialBuild } from "@singularityrd/aidr-core";
 import { ct } from "../i18n/index.js";
 import {
 	installMachineHooks,
@@ -8,7 +9,12 @@ import {
 	type ScheduleDeps,
 	scheduleHeartbeat,
 } from "../utils/machine-hooks.js";
-import { standaloneBundleRoot } from "../utils/standalone.js";
+import { installerReleaseKey } from "../utils/release-key.js";
+import {
+	type StandaloneBundleCheck,
+	standaloneBundleRoot,
+	verifyStandaloneBundle,
+} from "../utils/standalone.js";
 
 export interface MachineHooksOptions {
 	lockOtherHooks?: boolean;
@@ -23,6 +29,29 @@ export interface MachineHooksOptions {
 /** Test seams; production callers pass nothing. */
 export interface MachineHooksDeps extends MachineHookDeps, ScheduleDeps {
 	isAdministrator?: () => boolean;
+	/** Bundle verification (tests); default {@link verifyMachineBundle}. */
+	verifyBundle?: (root: string) => StandaloneBundleCheck;
+}
+
+/**
+ * Check the bundle the hosts will run before any system-wide hook points at
+ * it: every file against the bundle manifest, and the manifest signatures
+ * against the release key the installer placed next to the bundle
+ * (`<prefix>/config/release-public.pem`). A release (commercial) build must be
+ * signed. An unreadable key file trusts nothing, so a signed bundle then fails.
+ */
+export function verifyMachineBundle(
+	root: string,
+	commercial: boolean = isCommercialBuild(),
+): StandaloneBundleCheck {
+	let trustKeys: string[] = [];
+	try {
+		const installed = installerReleaseKey(root);
+		if (installed) trustKeys = [installed.key.pem];
+	} catch {
+		trustKeys = [];
+	}
+	return verifyStandaloneBundle(root, { trustKeys, requireSignature: commercial });
 }
 
 function isAdministrator(deps: MachineHooksDeps): boolean {
@@ -62,6 +91,14 @@ export async function machineHooksInstallCommand(
 	if (!options.dryRun && !isAdministrator(deps)) {
 		console.error(ct("machineHooks.needsAdmin"));
 		process.exitCode = 2;
+		return;
+	}
+	const check = (deps.verifyBundle ?? verifyMachineBundle)(root);
+	if (!check.ok) {
+		console.error(
+			ct("machineHooks.bundleRefused", { root, problems: check.problems.slice(0, 3).join("; ") }),
+		);
+		process.exitCode = 1;
 		return;
 	}
 	const results = installMachineHooks(
