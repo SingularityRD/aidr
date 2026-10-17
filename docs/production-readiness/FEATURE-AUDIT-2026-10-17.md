@@ -29,7 +29,7 @@ mock model. Dal: `claude/fervent-babbage-c2h8zd`.
 | Uç nokta / CLI | 6 | 6 | 3 | — | — |
 | Bağlayıcılar (CON) | 7 | 7 | 1 | 1 ³ | — |
 | Yönetim (TEN) | 9 | 9 | 2 | — | — |
-| Operasyon (OBS) | 9 | 8 | 1 | 1 ⁴ | — |
+| Operasyon (OBS) | 9 | 9 | 2 | — | — |
 | Yönetişim (GOV) | 3 | 3 | — | — | — |
 | Ticari (BIL) | 4 | 4 | 1 | — | — |
 | Dağıtım (DEP) | 12 | 12 | 1 | — | kısmen ⁵ |
@@ -38,8 +38,7 @@ mock model. Dal: `claude/fervent-babbage-c2h8zd`.
 
 ¹ Tespit kuralları ayrı bir uçtan uca denetimle değil; tam test paketi (13.955 test),
 `aidr simulate` korpusu (93/93 tespit, 0/46 yanlış alarm) ve gerçek host senaryolarıyla
-doğrulandı. ² Kapsam boşlukları (aşağıda). ³ SDK kapsamı (CON-06). ⁴ Offboarding silme
-boşlukları (OBS-06). ⁵ Docker/Kubernetes/root gerektiren adımlar. ⁶ Canlı AI siteleri ve
+doğrulandı. ² Kapsam boşlukları (aşağıda). ³ SDK kapsamı (CON-06). ⁵ Docker/Kubernetes/root gerektiren adımlar. ⁶ Canlı AI siteleri ve
 Windows OCR.
 
 ## Alan alan sonuçlar
@@ -111,9 +110,11 @@ owner, admin, member, auditor ve platform operatörü rolleri EN ve TR olarak t�
 token'larını bozan trigger, SIEM'e admin işlemlerinin gitmemesi, kuyruğa yazılamayan olayların
 kaybolması, saklama süresinin yok sayılması, auditor rolü ve tarih aralıklı dışa aktarım.
 
-**Açık (OBS-06):** tenant offboarding'de 4 tablonun (`false_positive_reports`,
-`license_imports`, `agent_retirement_settings`, `fleet_enrollment_keys`) silme yolu yok;
-düzeltmesi bu raporla birlikte yapılıyor.
+- **OBS-06**: tenant offboarding'de 4 tablonun (`false_positive_reports`,
+  `license_imports`, `agent_retirement_settings`, `fleet_enrollment_keys`) silme yolu yoktu;
+  ayrılan müşterinin verisi kalıyordu. Her biri kendi veri sınıfının saklama süresiyle ve
+  legal hold'a uyarak silinen bir offboarding fazına eklendi; tamamlanmış çalışmalar yeniden
+  açılıp temizleniyor (`billing-offboarding` 8/8).
 
 ### Dağıtım (DEP-01…12) ve yaşam döngüsü
 
