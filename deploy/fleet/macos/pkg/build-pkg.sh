@@ -3,9 +3,11 @@ set -eu
 umask 077
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 FLEET_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-ARTIFACT=${1:?usage: build-pkg.sh ARTIFACT SHA256 SIGNATURE PUBLIC_KEY SIGNING_IDENTITY VERSION OUTPUT_PKG}
+ARTIFACT=${1:?usage: build-pkg.sh ARTIFACT SHA256 SIGNATURE PUBLIC_KEY SIGNING_IDENTITY VERSION OUTPUT_PKG [BUNDLE_PUBLIC_KEY]}
 SHA256=${2:?missing SHA256}; SIGNATURE=${3:?missing SIGNATURE}; PUBLIC_KEY=${4:?missing PUBLIC_KEY}
 SIGNING_IDENTITY=${5:?missing Apple Installer signing identity}; VERSION=${6:?missing package version}; OUTPUT=${7:?missing output pkg}
+# Optional: the Ed25519 release key a signed standalone bundle's manifests verify against.
+BUNDLE_PUBLIC_KEY=${8:-}
 printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$' || { echo "invalid package version" >&2; exit 64; }
 command -v pkgbuild >/dev/null 2>&1 || { echo "pkgbuild is required" >&2; exit 1; }
 command -v productsign >/dev/null 2>&1 || { echo "productsign is required" >&2; exit 1; }
@@ -21,6 +23,10 @@ cp "$FLEET_DIR/../../../scripts/endpoint-install.mjs" "$PAYLOAD/fleet/libexec/en
 cp "$ARTIFACT" "$PAYLOAD/payload/connector.tgz"
 cp "$SIGNATURE" "$PAYLOAD/payload/connector.tgz.sig"
 cp "$PUBLIC_KEY" "$PAYLOAD/config/release-public.pem"
+if [ -n "$BUNDLE_PUBLIC_KEY" ]; then
+	openssl pkey -pubin -in "$BUNDLE_PUBLIC_KEY" -noout 2>/dev/null || { echo "invalid bundle release public key" >&2; exit 1; }
+	cp "$BUNDLE_PUBLIC_KEY" "$PAYLOAD/config/bundle-release-public.pem"
+fi
 openssl pkey -pubin -in "$PAYLOAD/config/release-public.pem" -outform DER > "$STAGING/release-public.der" 2>/dev/null || { echo "invalid release public key" >&2; exit 1; }
 KEY_SHA256=$(openssl dgst -sha256 -r "$STAGING/release-public.der" | awk '{print $1}')
 printf '%s' "$KEY_SHA256" | grep -Eq '^[a-f0-9]{64}$' || { echo "invalid release public key fingerprint" >&2; exit 1; }

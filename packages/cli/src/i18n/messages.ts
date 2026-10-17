@@ -446,6 +446,8 @@ export const CLI_EN = {
 		"machine-hooks needs the installed AIDR bundle (run it as the bundle's 'aidr', or pass --bundle-root <dir>).",
 	"machineHooks.needsAdmin":
 		"machine-hooks writes system-wide host policy: run it as root (Linux) or from an elevated prompt (Windows).",
+	"machineHooks.bundleRefused":
+		"The AIDR bundle at {root} did not verify, so no system-wide hook was registered: {problems}",
 	"machineHooks.installTitle": "System-wide AIDR hooks (apply to every user of this machine):",
 	"machineHooks.precedenceNote":
 		'Note: if Claude Code policy also comes from server-managed settings, MDM or the HKLM registry, that source wins over files; add these hooks there or set managedSourcesBehavior to "merge" (Claude Code 2.1.242+).',
@@ -1277,6 +1279,8 @@ export const CLI_TR: Record<CliMessageKey, string> = {
 		"machine-hooks kurulu AIDR paketine ihtiyaç duyar (paketin 'aidr' dosyasıyla çalıştırın ya da --bundle-root <dizin> verin).",
 	"machineHooks.needsAdmin":
 		"machine-hooks sistem geneli araç ilkesini yazar: root olarak (Linux) ya da yönetici komut isteminden (Windows) çalıştırın.",
+	"machineHooks.bundleRefused":
+		"{root} konumundaki AIDR paketi doğrulanamadı; sistem geneli hiçbir kanca kaydedilmedi: {problems}",
 	"machineHooks.installTitle":
 		"Sistem geneli AIDR kancaları (bu makinedeki her kullanıcıya uygulanır):",
 	"machineHooks.precedenceNote":

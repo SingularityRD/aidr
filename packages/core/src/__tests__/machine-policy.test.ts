@@ -107,6 +107,18 @@ describe("reading the machine policy", () => {
 		expect(readMachinePolicy(linuxDeps([1, 2])).state).toBe("refused");
 	});
 
+	it("reads the same root-owned file on macOS (fleet lifecycle manager) and nothing elsewhere", () => {
+		const document = { protection_locked: true, control_plane_url: "https://aidr.corp.example" };
+		const mac = readMachinePolicy({ ...linuxDeps(document), platform: "darwin" });
+		expect(mac).toMatchObject({ state: "loaded", policy: { protection_locked: true } });
+		expect(
+			readMachinePolicy({ ...linuxDeps(document, { uid: 501 }), platform: "darwin" }).state,
+		).toBe("refused");
+		expect(readMachinePolicy({ ...linuxDeps(document), platform: "freebsd" })).toEqual({
+			state: "none",
+		});
+	});
+
 	it("reads the HKLM policy key with reg.exe, including multi-string public keys", () => {
 		const keyA = base64Of();
 		const keyB = base64Of();

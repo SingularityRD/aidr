@@ -2,8 +2,10 @@
 set -eu
 umask 077
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-ARTIFACT=${1:?usage: build-offline-bundle.sh ARTIFACT SHA256 SIGNATURE PUBLIC_KEY OUTPUT}
+ARTIFACT=${1:?usage: build-offline-bundle.sh ARTIFACT SHA256 SIGNATURE PUBLIC_KEY OUTPUT [BUNDLE_PUBLIC_KEY]}
 SHA256=${2:?missing SHA256}; SIGNATURE=${3:?missing SIGNATURE}; PUBLIC_KEY=${4:?missing PUBLIC_KEY}; OUTPUT=${5:?missing OUTPUT}
+# Optional: the Ed25519 release key a signed standalone bundle's manifests verify against.
+BUNDLE_PUBLIC_KEY=${6:-}
 [ ! -e "$OUTPUT" ] || { echo "output already exists" >&2; exit 1; }
 "$SCRIPT_DIR/verify.sh" --artifact "$ARTIFACT" --sha256 "$SHA256" --signature "$SIGNATURE" --public-key "$PUBLIC_KEY"
 STAGING=$(mktemp -d)
@@ -17,6 +19,7 @@ cp "$SCRIPT_DIR/../../../scripts/endpoint-install.mjs" "$STAGING/aidr-fleet/libe
 cp "$ARTIFACT" "$STAGING/aidr-fleet/payload/connector.tgz"
 cp "$SIGNATURE" "$STAGING/aidr-fleet/payload/connector.tgz.sig"
 cp "$PUBLIC_KEY" "$STAGING/aidr-fleet/payload/release-public.pem"
+[ -z "$BUNDLE_PUBLIC_KEY" ] || cp "$BUNDLE_PUBLIC_KEY" "$STAGING/aidr-fleet/payload/bundle-release-public.pem"
 printf '%s\n' "$SHA256" > "$STAGING/aidr-fleet/payload/connector.tgz.sha256"
 find "$STAGING" -type d -exec chmod 755 {} \;
 find "$STAGING" -type f -exec chmod 644 {} \;

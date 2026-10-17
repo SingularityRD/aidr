@@ -5,7 +5,21 @@ publisher signature verify, and it requires an Apple Installer signing identity.
 The resulting PKG installs root-owned fleet scripts, the verified artifact and a
 release public key. Its preinstall checks that key against an independently
 provisioned fingerprint; postinstall verifies the payload again. The PKG
-does not guess a desktop user or silently edit every home directory.
+does not guess a desktop user or edit any home directory.
+
+When the payload is the signed **standalone (SEA) bundle** (`aidr-sea/` from
+`packages/claude-code/scripts/build-sea.mjs`, packed as `.tgz`), postinstall
+also installs it machine-wide: the bundle is staged under
+`/Library/Application Support/Singularity AIDR/releases/<sha256>/bundle`
+(root-owned) and `aidr machine-hooks install` registers its hooks for every
+user in Claude Code's `/Library/Application Support/ClaudeCode/managed-settings.d/`
+and Codex's `/etc/codex/hooks.json`. No Node.js is needed. Pass the bundle's
+Ed25519 release key as the optional eighth `build-pkg.sh` argument; the PKG
+carries it as `config/bundle-release-public.pem` and the install re-verifies
+every bundle file and manifest signature against it before any host policy is
+written. Re-running the PKG is idempotent; a newer PKG is an upgrade. An npm
+connector payload is only verified, as before (use the `*-user` Jamf actions).
+Cursor, VS Code, OpenCode and OpenClaw stay per-user connectors.
 
 The public key is an immutable input for the PKG builder. Obtain the approved
 fingerprint through reviewed configuration management or another authenticated
@@ -49,29 +63,46 @@ sh pkg/build-pkg.sh connector.tgz DIGEST connector.tgz.sig /etc/singularity-aidr
   "$APPROVED_SIGNING_IDENTITY" "$VERSION" "aidr-fleet-$VERSION.pkg"
 ```
 
-Deploy the signed PKG to the startup volume `/` with Jamf, require Jamf's package-signature validation,
-then run `jamf-policy.sh` for a specific enrolled user. Jamf parameters are:
+Deploy the signed PKG to the startup volume `/` with Jamf, require Jamf's
+package-signature validation. For a bundle payload the PKG has already
+registered the hooks; run `jamf-policy.sh` to apply machine policy, lock other
+hooks, roll back or uninstall. Jamf parameters ($4–$11) are:
 
-1. action: `install`, `upgrade`, `rollback` or `uninstall`
-2. connector artifact path
-3. lowercase SHA-256 (required for install/upgrade)
-4. detached signature path
-5. pinned public key path
-6. agent config path (optional)
-7. target short user name (recommended; console user is the fallback)
+| | Machine-wide: `install`, `upgrade`, `rollback`, `uninstall` | Per-user: `install-user`, `upgrade-user`, `rollback-user`, `uninstall-user` |
+| --- | --- | --- |
+| $4 | action | action |
+| $5–$8 | artifact, lowercase SHA-256 (install/upgrade), detached signature, pinned public key | same |
+| $9 | control-plane URL for `/etc/singularity-aidr/managed.json` (optional) | agent config path (optional) |
+| $10 | path of a root-owned file holding the `aidr_fleet_…` enrollment key (optional) | target short user name (console user is the fallback) |
+| $11 | comma-separated switches: `protection_locked`, `protection_unlocked`, `lock_other_hooks`, `unlock_other_hooks` | — |
 
-The install and upgrade paths preserve unrelated Claude hooks and existing
-`~/.singularity-aidr/config.json`. Rollback re-verifies the retained release
-against the root-owned pinned key before activating it. Uninstall removes only
-the managed hook entries; policy, allowlists, agent config, receipts and shared
-release bytes remain for audit and safe re-enablement.
+Giving $9, $10 or a protection switch rewrites `managed.json` from exactly those
+values (the previous file is kept as `managed.json.previous`); leave all three
+empty to keep the existing policy, for example one your MDM delivers as a file.
+The hooks and the CLI read that file on macOS as on Linux; it must stay
+root-owned and not group/world writable. `lock_other_hooks` is remembered for
+later upgrades and rollbacks. Rollback re-verifies the retained release against
+the root-owned pinned key and registers it again. Uninstall runs
+`aidr machine-hooks remove`; releases, machine policy and per-user connectors
+remain for audit and safe re-enablement. See `../unix/README.md`.
 
-Root is used only to manage the shared release store and state. User settings are
-changed in the user's own session and identity. No secrets belong in Jamf script
-parameters; `agent-config.json` may contain only the public control-plane origin
-and verification material. Enrollment tokens remain in the device-code flow.
+The per-user actions preserve unrelated Claude hooks and existing
+`~/.singularity-aidr/config.json`; their uninstall removes only the managed hook
+entries; policy, allowlists, agent config, receipts and shared release bytes
+remain. They need Node.js on the endpoint.
+
+Root is used only to manage the shared release store, state and system-wide
+host policy. Per-user settings are changed in the user's own session and
+identity. No secrets belong in Jamf script parameters: pass the fleet
+enrollment key as a root-owned file path (a fleet key is multi-use, seat-capped
+and revocable, and every local user can read the machine policy by design);
+`agent-config.json` may contain only the public control-plane origin and
+verification material.
 
 These templates provide local packaging and lifecycle controls. Approved Apple
 Team ID and Jamf signing identity, notarization, stapling, actual Jamf delivery,
 macOS compatibility, host hook execution and customer acceptance still require
-external evidence on the exact signed candidate.
+external evidence on the exact signed candidate. The macOS machine-wide paths
+(Claude Code managed-settings drop-in, Codex `/etc/codex`) come from the hosts'
+documentation and source and have not been exercised on a Mac; a macOS SEA
+binary must also be code-signed for Gatekeeper before release.
