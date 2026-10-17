@@ -821,9 +821,9 @@ function SubscriptionPortalCard({
 				const next = await loadBillingPortal(tenantId);
 				if (cancelled || activeTenantRef.current !== tenantId) return;
 				setSnapshot(next);
-			} catch (loadError) {
+			} catch {
 				if (cancelled || activeTenantRef.current !== tenantId) return;
-				setPortalError(readErrorMessage(loadError, t("billing.portal.unavailable")));
+				setPortalError(t("billing.portal.unavailable"));
 			} finally {
 				if (!cancelled) setPortalLoaded(true);
 			}
@@ -875,7 +875,7 @@ function SubscriptionPortalCard({
 				setRecovery(pending);
 				setPortalError(t("billing.portal.indeterminate"));
 			} else {
-				setPortalError(readErrorMessage(changeError, t("billing.portal.seatRejected")));
+				setPortalError(t("billing.portal.seatRejected"));
 			}
 		} finally {
 			if (activeTenantRef.current === active) setBusy(false);
@@ -912,7 +912,7 @@ function SubscriptionPortalCard({
 				setRecovery(pending);
 				setPortalError(t("billing.portal.indeterminate"));
 			} else {
-				setPortalError(readErrorMessage(cancelError, t("billing.portal.cancelRejected")));
+				setPortalError(t("billing.portal.cancelRejected"));
 			}
 		} finally {
 			if (activeTenantRef.current === active) setBusy(false);

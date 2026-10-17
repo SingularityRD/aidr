@@ -128,12 +128,13 @@ function OperatorConsole({
 	const [listError, setListError] = useState<string | null>(null);
 	const [selected, setSelected] = useState<OperatorTenant | null>(null);
 	const live = useRef(true);
-	useEffect(
-		() => () => {
+	// Re-arm on every mount: StrictMode mounts, unmounts and remounts in development.
+	useEffect(() => {
+		live.current = true;
+		return () => {
 			live.current = false;
-		},
-		[],
-	);
+		};
+	}, []);
 
 	const loadPage = useCallback(
 		async (after: string | null) => {
@@ -412,12 +413,13 @@ function TenantPanel({
 	const [confirmRevoke, setConfirmRevoke] = useState(false);
 
 	const live = useRef(true);
-	useEffect(
-		() => () => {
+	// Re-arm on every mount: StrictMode mounts, unmounts and remounts in development.
+	useEffect(() => {
+		live.current = true;
+		return () => {
 			live.current = false;
-		},
-		[],
-	);
+		};
+	}, []);
 
 	const loadUsage = useCallback(async () => {
 		const t = translator.current;
