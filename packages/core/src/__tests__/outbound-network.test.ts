@@ -80,6 +80,7 @@ describe("proxy bypass rules", () => {
 	});
 });
 
+// AIDR-SKIP: AIDR-049 qa-owner - the CA/proxy round trip mints its test certificates with the openssl CLI, which is not installed on this machine
 describe.skipIf(!haveOpenssl)("outbound fetch through the configured CA and proxy", () => {
 	let dir = "";
 	let target: Server;

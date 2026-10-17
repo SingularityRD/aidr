@@ -138,8 +138,8 @@ The **AIDR Privacy companion** is the complete per-user install of the host with
 finds the Browser Guard extension ids in the Chrome/Edge profiles (reading Preferences only),
 stages the host under `%LOCALAPPDATA%\SingularityAIDR\PrivacyCompanion`, sets up OCR with the
 Windows built-in recognizer (no OCR model download; Pillow/pyzbar from the hash lock), builds
-the launcher and writes the same HKCU keys as the registration below. Interface, files and
-keys: [`packages/privacy/README.md`](../../privacy/README.md#aidr-privacy-companion-windows).
+the launcher and writes the same HKCU keys as the registration below. Status, sources and
+tests: [`packages/privacy/README.md`](../../privacy/README.md#status) (implementation in `packages/privacy/src/companion/`).
 `scripts/native-host.mjs` (next section) only registers a launcher you already have.
 
 After installing, each user still turns on **Use the AIDR Privacy helper app** in Browser Guard

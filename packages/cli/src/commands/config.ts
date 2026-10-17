@@ -213,7 +213,7 @@ interface ChoiceIssue {
 }
 
 /** One line per rejected enum value, naming the values that are accepted. */
-export function invalidChoiceLines(issues: readonly ChoiceIssue[], given?: unknown): string[] {
+function invalidChoiceLines(issues: readonly ChoiceIssue[], given?: unknown): string[] {
 	return issues.flatMap((issue) => {
 		const choices = issue.options ?? issue.values;
 		if (!Array.isArray(choices) || choices.length === 0) return [];
