@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { AdminAuditSection } from "./admin-audit-section";
+import { type AuditExportRange, auditExportRangeFromDates } from "./audit-export";
 import { useTeam } from "./team-provider";
 
 const PAGE_SIZE = 25;
@@ -10,7 +11,7 @@ export function TeamAuditPanel() {
 	const {
 		currentTeam,
 		canViewAudit,
-		canManageTeam,
+		canReadAuditTrail,
 		auditLogs,
 		auditLoaded,
 		auditError,
@@ -21,6 +22,10 @@ export function TeamAuditPanel() {
 	const [page, setPage] = useState(0);
 	const [exporting, setExporting] = useState(false);
 	const [exportError, setExportError] = useState<string | null>(null);
+	const [fromDate, setFromDate] = useState("");
+	const [toDate, setToDate] = useState("");
+	// null: the dates are inverted or malformed, and no export may start.
+	const range: AuditExportRange | null = auditExportRangeFromDates(fromDate, toDate);
 	const [download, setDownload] = useState<{
 		teamId: string;
 		format: "csv" | "json";
@@ -43,14 +48,14 @@ export function TeamAuditPanel() {
 	}, [download]);
 
 	async function prepareExport(format: "csv" | "json") {
-		if (!currentTeam || !canViewAudit || !canManageTeam) return;
+		if (!currentTeam || !canViewAudit || !canReadAuditTrail || !range) return;
 		const teamId = currentTeam.id;
 		const isCurrent = () => mounted.current && selectedTeamId.current === teamId;
 		setExporting(true);
 		setExportError(null);
 		setDownload(null);
 		try {
-			const url = await exportAuditLogs(format);
+			const url = await exportAuditLogs(format, "audit", range);
 			if (!isCurrent()) {
 				URL.revokeObjectURL(url);
 				return;
@@ -83,18 +88,18 @@ export function TeamAuditPanel() {
 						<button type="button" onClick={() => void refreshAuditLogs()}>
 							{t("audit.refresh")}
 						</button>
-						{canManageTeam && (
+						{canReadAuditTrail && (
 							<>
 								<button
 									type="button"
-									disabled={exporting}
+									disabled={exporting || !range}
 									onClick={() => void prepareExport("csv")}
 								>
 									{t("audit.prepareCsv")}
 								</button>
 								<button
 									type="button"
-									disabled={exporting}
+									disabled={exporting || !range}
 									onClick={() => void prepareExport("json")}
 								>
 									{t("audit.prepareJson")}
@@ -102,7 +107,26 @@ export function TeamAuditPanel() {
 							</>
 						)}
 					</div>
-					{!canManageTeam && <p className="muted">{t("audit.exportOwners")}</p>}
+					{canReadAuditTrail ? (
+						<div className="row" style={{ alignItems: "center" }}>
+							<label>
+								{t("audit.rangeFrom")}{" "}
+								<input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+							</label>
+							<label>
+								{t("audit.rangeTo")}{" "}
+								<input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+							</label>
+							<span className="muted small">{t("audit.rangeHint")}</span>
+						</div>
+					) : (
+						<p className="muted">{t("audit.exportOwners")}</p>
+					)}
+					{canReadAuditTrail && !range && (
+						<div className="notice notice-danger" role="alert">
+							{t("audit.rangeInvalid")}
+						</div>
+					)}
 					{exportError && (
 						<div className="notice notice-danger" role="alert">
 							{exportError}
@@ -170,7 +194,7 @@ export function TeamAuditPanel() {
 							</div>
 						</>
 					)}
-					<AdminAuditSection />
+					<AdminAuditSection range={range} />
 				</>
 			)}
 		</section>

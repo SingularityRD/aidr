@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { isAuditReaderRole } from "../../enterprise/roles";
 import { useTeam } from "../../enterprise/team-provider";
 import type { DashboardMessageKey } from "../../i18n/en";
 import { useRichT, useT } from "../../i18n/I18nProvider";
@@ -73,7 +74,7 @@ export function GovernancePage() {
 		return <div role="status">{t("gsc.resolving")}</div>;
 	}
 	if (!currentTeam) return <div role="alert">{t("gsc.selectTeam")}</div>;
-	if (currentRole !== "owner" && currentRole !== "admin") {
+	if (!isAuditReaderRole(currentRole)) {
 		return (
 			<section className="card">
 				<h1>{t("gsc.title")}</h1>
@@ -88,6 +89,7 @@ export function GovernancePage() {
 			key={currentTeam.id}
 			tenantId={currentTeam.id}
 			workspaceName={currentTeam.name ?? t("gsc.workspace")}
+			readOnly={currentRole === "auditor"}
 		/>
 	);
 }
@@ -95,9 +97,12 @@ export function GovernancePage() {
 function TenantGovernancePage({
 	tenantId,
 	workspaceName,
+	readOnly,
 }: {
 	tenantId: string;
 	workspaceName: string;
+	/** Read-only auditor: the scorecard without the settings form. */
+	readOnly: boolean;
 }) {
 	const t = useT();
 	const [windowDays, setWindowDays] = useState<GovernanceWindow>(30);
@@ -220,11 +225,17 @@ function TenantGovernancePage({
 					<IncidentsPostureCard card={card} />
 					<BrowserGuardCard card={card} />
 					<PolicyCard card={card} />
-					<DigestCard
-						tenantId={tenantId}
-						card={card}
-						onSaved={() => setTick((value) => value + 1)}
-					/>
+					{readOnly ? (
+						<section className="card">
+							<p className="muted">{t("gsc.readOnly")}</p>
+						</section>
+					) : (
+						<DigestCard
+							tenantId={tenantId}
+							card={card}
+							onSaved={() => setTick((value) => value + 1)}
+						/>
+					)}
 					<MatrixCard coverage={coverage} />
 				</>
 			) : null}

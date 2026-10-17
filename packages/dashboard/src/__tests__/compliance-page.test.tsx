@@ -161,12 +161,21 @@ function readZip(bytes: Uint8Array): Map<string, string> {
 }
 
 describe("compliance page access", () => {
-	it("is limited to owners and admins", () => {
+	it("lets the read-only auditor generate the evidence report", () => {
+		team.value = { ...team.value, currentRole: "auditor" };
+		renderPage();
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Generate report" })).toBeInTheDocument();
+		cleanup();
+		team.value = { ...team.value, currentRole: "owner" };
+	});
+
+	it("is limited to owners, admins and auditors", () => {
 		for (const role of ["member", "viewer", null]) {
 			team.value = { ...team.value, currentRole: role };
 			renderPage();
 			expect(screen.getByRole("alert")).toHaveTextContent(
-				"Only workspace owners and admins can generate compliance reports.",
+				"Only workspace owners, admins and auditors can generate compliance reports.",
 			);
 			expect(screen.queryByRole("button", { name: "Generate report" })).not.toBeInTheDocument();
 			cleanup();
@@ -240,7 +249,7 @@ describe("compliance page generation", () => {
 
 	it.each([
 		["mfa_required", "multi-factor (AAL2) session"],
-		["compliance_role_insufficient", "Only workspace owners and admins"],
+		["compliance_role_insufficient", "Only workspace owners, admins and auditors"],
 		["rate_limited", "Wait a minute"],
 		["period_too_long", "at most 366 days"],
 		["compliance_evidence_invalid", "No partial report was produced"],

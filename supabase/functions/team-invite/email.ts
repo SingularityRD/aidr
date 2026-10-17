@@ -4,6 +4,7 @@ const ROLE_LABELS: Record<string, string> = {
 	admin: "Administrator",
 	member: "Member",
 	viewer: "Viewer",
+	auditor: "Auditor (read-only)",
 };
 
 export interface InvitationEmailInput {

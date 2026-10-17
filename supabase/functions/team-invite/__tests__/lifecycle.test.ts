@@ -22,6 +22,10 @@ describe("team invitation lifecycle", () => {
 	it("accepts only a valid team, recipient and role for creation", () => {
 		expect(parseInvitationCommand({ team_id: TEAM, email: "Mixed@Example.COM", role: "viewer" }))
 			.toEqual({ action: "create", teamId: TEAM, email: "mixed@example.com", role: "viewer" });
+		// The read-only auditor role is invitable; owner and unknown roles are not.
+		expect(parseInvitationCommand({ team_id: TEAM, email: "audit@example.com", role: "auditor" }))
+			.toEqual({ action: "create", teamId: TEAM, email: "audit@example.com", role: "auditor" });
+		expect(parseInvitationCommand({ team_id: TEAM, email: "audit@example.com", role: "superuser" })).toBeNull();
 		for (const body of [
 			{ team_id: "1".repeat(36), email: "member@example.com", role: "member" },
 			{ team_id: TEAM, email: "member@example.com", role: "owner" },

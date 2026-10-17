@@ -296,7 +296,8 @@ const EVIDENCE_SECTIONS = {
 /** The database evidence (public.compliance_report_evidence). */
 export const COMPLIANCE_EVIDENCE_SPEC = obj({
 	generated_at: ts,
-	actor_role: { kind: "enum", values: ["owner", "admin"] },
+	// `auditor` is the read-only audit role (20261016000400_auditor_role.sql).
+	actor_role: { kind: "enum", values: ["owner", "admin", "auditor"] },
 	...EVIDENCE_SECTIONS,
 });
 
@@ -365,7 +366,7 @@ export const COMPLIANCE_REPORT_BODY_SPEC = obj({
 	schema: { kind: "enum", values: [COMPLIANCE_REPORT_SCHEMA] },
 	report_id: str(36, UUID),
 	generated_at: ts,
-	generated_by: obj({ user_id: str(36, UUID), role: { kind: "enum", values: ["owner", "admin"] } }),
+	generated_by: obj({ user_id: str(36, UUID), role: { kind: "enum", values: ["owner", "admin", "auditor"] } }),
 	period: obj({ from: ts, to: ts, days: count }),
 	statement: str(1000),
 	sections: obj({

@@ -431,7 +431,8 @@ export interface TeamRollupFigures {
 export interface TeamRollupRow {
 	tenantId: string;
 	name: string;
-	role: "owner" | "admin";
+	/** `auditor` is the read-only audit role (20261016000400). */
+	role: "owner" | "admin" | "auditor";
 	/** Null when the workspace's identity barrier refused this session. */
 	figures: TeamRollupFigures | null;
 }

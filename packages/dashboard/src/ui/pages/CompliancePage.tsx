@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isAuditReaderRole } from "../../enterprise/roles";
 import { useTeam } from "../../enterprise/team-provider";
 import { type Translate, useDashboardLocale, useRichT, useT } from "../../i18n/I18nProvider";
 import {
@@ -52,7 +53,7 @@ export function CompliancePage() {
 		return <div role="status">{t("gsc.resolving")}</div>;
 	}
 	if (!currentTeam) return <div role="alert">{t("cmp.selectTeam")}</div>;
-	if (currentRole !== "owner" && currentRole !== "admin") {
+	if (!isAuditReaderRole(currentRole)) {
 		return (
 			<section className="card">
 				<h1>{t("cmp.title")}</h1>

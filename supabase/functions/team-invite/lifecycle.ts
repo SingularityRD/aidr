@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
+import { type InvitableRole, isInvitableRole } from "../_shared/tenant-roles.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export type InvitationCommand =
-	| { action: "create"; teamId: string; email: string; role: "admin" | "member" | "viewer" }
+	| { action: "create"; teamId: string; email: string; role: InvitableRole }
 	| { action: "list"; teamId: string }
 	| { action: "revoke" | "resend"; teamId: string; invitationId: string };
 
@@ -20,7 +21,7 @@ export function parseInvitationCommand(value: unknown): InvitationCommand | null
 			: null;
 	}
 	if (action !== "create" || typeof body.email !== "string" || body.email.length > 254 || !EMAIL.test(body.email)) return null;
-	if (body.role !== "admin" && body.role !== "member" && body.role !== "viewer") return null;
+	if (!isInvitableRole(body.role)) return null;
 	return { action, teamId: body.team_id, email: body.email.toLowerCase(), role: body.role };
 }
 
@@ -35,7 +36,7 @@ export function invitationUrl(dashboardUrl: string, secret: string): string {
 }
 
 /** Each RPC writes the invitation and privileged audit row in one DB transaction. */
-export function createPendingInvitation(db: Pick<SupabaseClient, "rpc">, teamId: string, email: string, role: "admin" | "member" | "viewer", tokenHash: string, actorId: string) {
+export function createPendingInvitation(db: Pick<SupabaseClient, "rpc">, teamId: string, email: string, role: InvitableRole, tokenHash: string, actorId: string) {
 	return db.rpc("mutate_team_invitation", {
 		p_action: "create", p_tenant_id: teamId, p_actor_user_id: actorId,
 		p_email: email, p_role: role, p_invitation_id: null, p_token_hash: tokenHash,

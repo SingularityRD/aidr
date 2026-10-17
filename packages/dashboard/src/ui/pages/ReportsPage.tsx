@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { isAuditReaderRole } from "../../enterprise/roles";
 import { useTeam } from "../../enterprise/team-provider";
 import { useDashboardLocale, useT } from "../../i18n/I18nProvider";
 import { stepUpPath } from "../../lib/ai-governance";
@@ -33,14 +34,17 @@ function saveFile(name: string, content: string) {
 	setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-/** Executive summary, team rollup and scheduled report delivery (owners and admins). */
+/**
+ * Executive summary, team rollup and scheduled report delivery (owners and
+ * admins). The read-only auditor sees the reports without the schedule form.
+ */
 export function ReportsPage() {
 	const t = useT();
 	const { currentTeam, currentRole, isLoading, roleResolved } = useTeam();
 	if (isLoading || (currentTeam && !roleResolved))
 		return <div role="status">{t("gsc.resolving")}</div>;
 	if (!currentTeam) return <div role="alert">{t("rpt.selectTeam")}</div>;
-	if (currentRole !== "owner" && currentRole !== "admin") {
+	if (!isAuditReaderRole(currentRole)) {
 		return (
 			<section className="card">
 				<h1>{t("nav.reports")}</h1>
@@ -50,10 +54,16 @@ export function ReportsPage() {
 			</section>
 		);
 	}
-	return <TenantReportsPage key={currentTeam.id} tenantId={currentTeam.id} />;
+	return (
+		<TenantReportsPage
+			key={currentTeam.id}
+			tenantId={currentTeam.id}
+			readOnly={currentRole === "auditor"}
+		/>
+	);
 }
 
-function TenantReportsPage({ tenantId }: { tenantId: string }) {
+function TenantReportsPage({ tenantId, readOnly }: { tenantId: string; readOnly: boolean }) {
 	const t = useT();
 	const locale = useDashboardLocale();
 	const [days, setDays] = useState<ReportWindow>(30);
@@ -220,14 +230,20 @@ function TenantReportsPage({ tenantId }: { tenantId: string }) {
 				</div>
 			</section>
 
-			<ScheduleCard
-				summary={summary}
-				options={options}
-				setOptions={setOptions}
-				busy={busy}
-				onSave={() => void saveOptions()}
-				onTest={() => void sendTest()}
-			/>
+			{readOnly ? (
+				<section className="card">
+					<p className="muted">{t("rpt.readOnly")}</p>
+				</section>
+			) : (
+				<ScheduleCard
+					summary={summary}
+					options={options}
+					setOptions={setOptions}
+					busy={busy}
+					onSave={() => void saveOptions()}
+					onTest={() => void sendTest()}
+				/>
+			)}
 		</div>
 	);
 }

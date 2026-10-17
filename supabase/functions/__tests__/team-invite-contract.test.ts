@@ -558,8 +558,8 @@ describe("team-invite authorization", () => {
 		{ team_id: TEAM, action: "list" },
 	];
 
-	it("refuses a viewer or member for create, revoke, resend and list", async () => {
-		for (const role of ["viewer", "member"]) {
+	it("refuses a viewer, member or auditor for create, revoke, resend and list", async () => {
+		for (const role of ["viewer", "member", "auditor"]) {
 			for (const body of actions) {
 				const fake = handlerWith({ memberships: { [TEAM]: { role, expires_at: null } } });
 				const response = await fake.handle(post(body));
@@ -728,6 +728,16 @@ describe("team invitation lifecycle", () => {
 		expect(fake.invitations).toHaveLength(1);
 		const firstSecret = secretOf(firstBody.invite_url);
 		expect(redeemable(fake.invitations, firstSecret)).toHaveLength(1);
+	});
+
+	it("lets an owner or admin invite a read-only auditor", async () => {
+		for (const inviter of ["owner", "admin"]) {
+			const fake = handlerWith({ memberships: { [TEAM]: { role: inviter, expires_at: null } } });
+			const response = await fake.handle(post({ ...CREATE, role: "auditor" }));
+			expect(response.status, inviter).toBe(200);
+			expect(fake.invitations.map((row) => row.role)).toEqual(["auditor"]);
+			expect(fake.rpcs.find((entry) => entry.name === "mutate_team_invitation")?.args).toMatchObject({ p_role: "auditor" });
+		}
 	});
 
 	it("rejects a role change for a recipient who already has a pending invitation and leaves exactly one row", async () => {

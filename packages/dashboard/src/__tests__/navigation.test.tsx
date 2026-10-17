@@ -50,7 +50,11 @@ function consoleRoutes(): string[] {
 }
 
 function renderNav(locale: "en" | "tr", role: string | null = "owner") {
-	team.value = { ...team.value, currentRole: role, canEditPolicy: role !== "viewer" };
+	team.value = {
+		...team.value,
+		currentRole: role,
+		canEditPolicy: role === "owner" || role === "admin" || role === "member",
+	};
 	render(
 		<I18nProvider initialLocale={locale}>
 			<MemoryRouter initialEntries={["/dashboard"]}>
@@ -126,5 +130,38 @@ describe("console navigation", () => {
 		expect(within(nav).getByRole("link", { name: "Team" })).toBeInTheDocument();
 		const governance = within(nav).getByRole("group", { name: "Governance & compliance" });
 		expect(within(governance).getAllByRole("link")).toHaveLength(1);
+	});
+
+	it("shows the read-only auditor its audit pages and hides enrolment and editing", () => {
+		renderNav("en", "auditor");
+		const nav = screen.getByRole("navigation", { name: "Dashboard" });
+		const governance = within(nav).getByRole("group", { name: "Governance & compliance" });
+		expect(
+			within(governance)
+				.getAllByRole("link")
+				.map((link) => link.getAttribute("href")),
+		).toEqual(["/governance", "/compliance", "/reports"]);
+		for (const href of ["/events", "/incidents", "/team"]) {
+			expect(nav.querySelector(`a[href="${href}"]`), href).not.toBeNull();
+		}
+		for (const href of [
+			"/policies",
+			"/onboarding",
+			"/downloads",
+			"/siem",
+			"/sso",
+			"/scim",
+			"/retention",
+			"/governance/detection-exceptions",
+			"/governance/register",
+		]) {
+			expect(nav.querySelector(`a[href="${href}"]`), href).toBeNull();
+		}
+		cleanup();
+		renderNav("tr", "auditor");
+		expect(screen.getByRole("link", { name: tr["nav.reports"] })).toHaveAttribute(
+			"href",
+			"/reports",
+		);
 	});
 });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/I18nProvider";
 import { readErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
+import type { AuditExportRange } from "./audit-export";
 import { useTeam } from "./team-provider";
 
 export const ADMIN_AUDIT_PAGE_SIZE = 25;
@@ -58,11 +59,13 @@ function summarize(detail: Record<string, unknown>): string {
 
 /**
  * Administrative actions (policy, SSO, SCIM, retention, roles…) recorded in
- * admin_audit_logs, for owners and admins only. The server RPC re-checks the
- * role and the tenant on every page; this view only renders what it returns.
+ * admin_audit_logs, for owners, admins and read-only auditors. The server RPC
+ * re-checks the role and the tenant on every page; this view only renders what
+ * it returns. `range` (from the team audit panel) bounds the export; null
+ * means the chosen dates are invalid and no export may start.
  */
-export function AdminAuditSection() {
-	const { currentTeam, canManageTeam, exportAuditLogs } = useTeam();
+export function AdminAuditSection({ range = {} }: { range?: AuditExportRange | null } = {}) {
+	const { currentTeam, canReadAuditTrail, exportAuditLogs } = useTeam();
 	const t = useT();
 	const tenantId = currentTeam?.tenant_id ?? null;
 	const [rows, setRows] = useState<AdminAuditRow[]>([]);
@@ -110,10 +113,10 @@ export function AdminAuditSection() {
 	useEffect(() => {
 		setHistory([null]);
 		setExportState({});
-		if (canManageTeam) void load(null);
-	}, [load, canManageTeam]);
+		if (canReadAuditTrail) void load(null);
+	}, [load, canReadAuditTrail]);
 
-	if (!currentTeam || !canManageTeam) return null;
+	if (!currentTeam || !canReadAuditTrail) return null;
 
 	const pageIndex = history.length - 1;
 	const older = () => {
@@ -129,9 +132,10 @@ export function AdminAuditSection() {
 		void load(next[next.length - 1] ?? null);
 	};
 	const exportAdmin = async (format: "csv" | "json") => {
+		if (!range) return;
 		setExportState({ busy: true });
 		try {
-			const url = await exportAuditLogs(format, "admin");
+			const url = await exportAuditLogs(format, "admin", range);
 			setExportState({ url });
 		} catch (err) {
 			setExportState({
@@ -148,10 +152,18 @@ export function AdminAuditSection() {
 				<button type="button" onClick={() => void load(history[pageIndex] ?? null)}>
 					{t("adminAudit.refresh")}
 				</button>
-				<button type="button" disabled={exportState.busy} onClick={() => void exportAdmin("csv")}>
+				<button
+					type="button"
+					disabled={exportState.busy || !range}
+					onClick={() => void exportAdmin("csv")}
+				>
 					{t("adminAudit.csv")}
 				</button>
-				<button type="button" disabled={exportState.busy} onClick={() => void exportAdmin("json")}>
+				<button
+					type="button"
+					disabled={exportState.busy || !range}
+					onClick={() => void exportAdmin("json")}
+				>
 					{t("adminAudit.json")}
 				</button>
 			</div>

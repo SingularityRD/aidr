@@ -306,7 +306,20 @@ describe("compliance-report authorization", () => {
 		expect((await handle(post(validBody(), "valid-token", "GET"))).status).toBe(405);
 	});
 
-	it("allows only owners and admins", async () => {
+	it("lets the read-only auditor generate a report, recorded with the auditor role", async () => {
+		const evidence = { ...complianceEvidenceFixture(), actor_role: "auditor" };
+		const { handle, rpcCalls } = await handlerWith({ role: "auditor", evidence });
+		const response = await handle(post(validBody()));
+		expect(response.status).toBe(200);
+		const { report } = await response.json();
+		expect(report.generated_by.role).toBe("auditor");
+		expect(rpcCalls.map((entry) => entry.name)).toContain("record_compliance_report");
+		// An auditor still needs step-up like every other caller.
+		const aal1 = await handlerWith({ role: "auditor", evidence, assurance: "aal1" });
+		expect((await aal1.handle(post(validBody()))).status).toBe(403);
+	});
+
+	it("allows only owners, admins and auditors", async () => {
 		for (const role of ["member", "viewer"]) {
 			const { handle, rpcCalls } = await handlerWith({ role });
 			const response = await handle(post(validBody()));

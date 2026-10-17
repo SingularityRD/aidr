@@ -19,8 +19,18 @@ export const auditMessages = {
 	"audit.prepareCsv": ["Prepare CSV export", "CSV dışa aktarımını hazırla"],
 	"audit.prepareJson": ["Prepare JSON export", "JSON dışa aktarımını hazırla"],
 	"audit.exportOwners": [
-		"Audit export is available to team owners and admins.",
-		"Denetim dışa aktarımı ekip sahipleri ve yöneticileri içindir.",
+		"Audit export is available to team owners, admins and auditors.",
+		"Denetim dışa aktarımı ekip sahipleri, yöneticileri ve denetçiler içindir.",
+	],
+	"audit.rangeFrom": ["From (UTC date)", "Başlangıç (UTC tarihi)"],
+	"audit.rangeTo": ["To (UTC date, inclusive)", "Bitiş (UTC tarihi, dahil)"],
+	"audit.rangeHint": [
+		"Leave both dates empty to export the whole trail. The range applies to both audit trails.",
+		"Kaydın tamamını dışa aktarmak için iki tarihi de boş bırakın. Aralık iki denetim kaydına da uygulanır.",
+	],
+	"audit.rangeInvalid": [
+		"The start date must not be after the end date.",
+		"Başlangıç tarihi bitiş tarihinden sonra olamaz.",
 	],
 	"audit.ready": ["Audit export is ready to download.", "Denetim dışa aktarımı indirilmeye hazır."],
 	"audit.save": ["Save audit export", "Denetim dışa aktarımını kaydet"],
@@ -50,8 +60,8 @@ export const auditMessages = {
 	],
 	"adminAudit.title": ["Administrative actions", "Yönetim işlemleri"],
 	"adminAudit.intro": [
-		"Configuration and access changes (policies, SSO, SCIM, retention, roles) for this team. Visible to owners and admins only.",
-		"Bu ekibin yapılandırma ve erişim değişiklikleri (politikalar, SSO, SCIM, saklama, roller). Yalnızca sahipler ve yöneticiler görebilir.",
+		"Configuration and access changes (policies, SSO, SCIM, retention, roles) for this team. Visible to owners, admins and auditors only.",
+		"Bu ekibin yapılandırma ve erişim değişiklikleri (politikalar, SSO, SCIM, saklama, roller). Yalnızca sahipler, yöneticiler ve denetçiler görebilir.",
 	],
 	"adminAudit.refresh": ["Refresh administrative audit", "Yönetim denetimini yenile"],
 	"adminAudit.csv": ["Export administrative CSV", "Yönetim CSV dışa aktar"],

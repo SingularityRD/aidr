@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readAuditCursor, signAuditCursor } from "../_shared/export-cursor.ts";
+import { parseAuditExportRange, readAuditCursor, signAuditCursor } from "../_shared/export-cursor.ts";
 const now = Date.now();
 const binding = { tenant: crypto.randomUUID(), user: crypto.randomUUID(), format: "json" as const };
 const cursor = { ...binding, snapshot: new Date(now).toISOString(), expires: now + 600000, after: { created_at: new Date(now - 1000).toISOString(), id: crypto.randomUUID() } };
@@ -48,5 +48,36 @@ describe("audit export cursor authorization", () => {
       expect(bytes(modified)).toEqual(bytes(token));
       await expect(readAuditCursor(modified, "secret", binding, now)).rejects.toThrow("invalid_or_expired");
     }
+  });
+  it("binds the export range: a cursor cannot be replayed with another or no range", async () => {
+    const from = "2026-01-01T00:00:00.000Z";
+    const to = new Date(now + 60000).toISOString();
+    const ranged = { ...binding, from, to };
+    const token = await signAuditCursor({ ...cursor, from, to }, "secret");
+    expect(await readAuditCursor(token, "secret", ranged, now)).toMatchObject({ from, to });
+    for (const scope of [binding, { ...binding, from }, { ...binding, to }, { ...ranged, from: "2025-01-01T00:00:00.000Z" }, { ...ranged, to: undefined }]) {
+      await expect(readAuditCursor(token, "secret", scope, now)).rejects.toThrow("invalid_or_expired");
+    }
+    // An unranged cursor cannot gain a range either.
+    const plain = await signAuditCursor(cursor, "secret");
+    await expect(readAuditCursor(plain, "secret", ranged, now)).rejects.toThrow("invalid_or_expired");
+    // A signed but inverted or noncanonical range is still refused.
+    for (const bad of [{ from: to, to: from }, { from: "2026-01-01", to }]) {
+      const forged = await signAuditCursor({ ...cursor, ...bad }, "secret");
+      await expect(readAuditCursor(forged, "secret", { ...binding, ...bad }, now)).rejects.toThrow("invalid_or_expired");
+    }
+  });
+  it("parses optional ISO range bounds into canonical UTC", () => {
+    expect(parseAuditExportRange(undefined, undefined, now)).toEqual({ ok: true });
+    expect(parseAuditExportRange("2026-09-01T03:00:00+03:00", "2026-10-01T00:00Z", now)).toEqual({
+      ok: true, from: "2026-09-01T00:00:00.000Z", to: "2026-10-01T00:00:00.000Z",
+    });
+    expect(parseAuditExportRange(undefined, "2999-01-01T00:00:00Z", now)).toEqual({ ok: true, to: "2999-01-01T00:00:00.000Z" });
+    for (const [from, to] of [
+      ["2026-09-01", undefined], [undefined, "2026-09-01T00:00:00"], ["2026-02-30T00:00:00Z", undefined],
+      ["2026-09-01T24:00:00Z", undefined], ["2026-09-02T00:00:00Z", "2026-09-01T00:00:00Z"],
+      ["2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z"], [new Date(now + 3_600_000).toISOString(), undefined],
+      ["1999-01-01T00:00:00Z", undefined], [null, undefined], [undefined, 0], ["x".repeat(41), undefined],
+    ]) expect(parseAuditExportRange(from, to, now)).toEqual({ ok: false });
   });
 });

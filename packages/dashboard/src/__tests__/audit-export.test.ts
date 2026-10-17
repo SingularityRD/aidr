@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { collectAuditExport } from "../enterprise/audit-export";
+import { auditExportRangeFromDates, collectAuditExport } from "../enterprise/audit-export";
 
 afterEach(() => vi.unstubAllGlobals());
 const page = async (content: string, next: string | null, rows = 1) => {
@@ -129,5 +129,30 @@ describe("paginated audit download", () => {
 			new URL("http://127.0.0.1:54321/storage/v1/object/sign/test"),
 			expect.any(Object),
 		);
+	});
+});
+
+describe("audit export date range", () => {
+	it("turns UTC calendar days into a half-open range with an inclusive end day", () => {
+		expect(auditExportRangeFromDates("", "")).toEqual({});
+		expect(auditExportRangeFromDates("2026-09-01", "")).toEqual({
+			from: "2026-09-01T00:00:00.000Z",
+		});
+		expect(auditExportRangeFromDates("", "2026-09-30")).toEqual({ to: "2026-10-01T00:00:00.000Z" });
+		expect(auditExportRangeFromDates("2026-09-30", "2026-09-30")).toEqual({
+			from: "2026-09-30T00:00:00.000Z",
+			to: "2026-10-01T00:00:00.000Z",
+		});
+	});
+	it("refuses malformed, impossible and inverted dates", () => {
+		for (const [from, to] of [
+			["2026-10-02", "2026-10-01"],
+			["2026-02-31", ""],
+			["", "2026-13-01"],
+			["01/09/2026", ""],
+			["2026-09-01T00:00:00Z", ""],
+		]) {
+			expect(auditExportRangeFromDates(from as string, to as string), `${from}..${to}`).toBeNull();
+		}
 	});
 });

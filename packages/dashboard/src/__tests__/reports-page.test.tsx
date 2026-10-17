@@ -125,10 +125,30 @@ function renderPage() {
 }
 
 describe("ReportsPage", () => {
+	it("shows the read-only auditor the reports without the schedule form", async () => {
+		team("auditor");
+		renderPage();
+		expect(await screen.findByText("Needs attention")).toBeInTheDocument();
+		expect(screen.getByRole("region", { name: "Team rollup" })).toBeInTheDocument();
+		expect(screen.queryByRole("region", { name: "Scheduled e-mail" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Save e-mail settings" })).not.toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"Read-only auditor access: the scheduled report is managed by owners and admins.",
+			),
+		).toBeInTheDocument();
+		expect(invoke).not.toHaveBeenCalledWith(
+			"reports",
+			expect.objectContaining({ body: expect.objectContaining({ action: "set_options" }) }),
+		);
+	});
+
 	it("is limited to owners and admins", () => {
 		team("member");
 		renderPage();
-		expect(screen.getByRole("alert")).toHaveTextContent("Only workspace owners and admins");
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"Only workspace owners, admins and auditors",
+		);
 		expect(invoke).not.toHaveBeenCalled();
 	});
 

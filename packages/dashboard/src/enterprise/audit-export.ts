@@ -20,6 +20,45 @@ const AUDIT_EXPORT_HEADERS = {
 } as const;
 export type AuditExportSource = keyof typeof AUDIT_EXPORT_HEADERS;
 
+/** Optional half-open export range [from, to), ISO timestamps with a zone. */
+export interface AuditExportRange {
+	from?: string;
+	to?: string;
+}
+
+/**
+ * Turn the panel's UTC calendar dates (YYYY-MM-DD, either may be empty) into
+ * an export range: `from` at 00:00 UTC, `to` inclusive (next day 00:00 UTC).
+ * Returns null when the dates are malformed or inverted.
+ */
+export function auditExportRangeFromDates(
+	fromDate: string,
+	toDate: string,
+): AuditExportRange | null {
+	// A real calendar day: Date.parse would roll 2026-02-31 over to March.
+	const midnight = (value: string) => {
+		const ms = Date.parse(`${value}T00:00:00Z`);
+		return /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+			Number.isFinite(ms) &&
+			new Date(ms).toISOString().slice(0, 10) === value
+			? ms
+			: null;
+	};
+	const range: AuditExportRange = {};
+	if (fromDate) {
+		const start = midnight(fromDate);
+		if (start === null) return null;
+		range.from = new Date(start).toISOString();
+	}
+	if (toDate) {
+		const end = midnight(toDate);
+		if (end === null) return null;
+		range.to = new Date(end + 86_400_000).toISOString();
+	}
+	if (range.from && range.to && Date.parse(range.from) >= Date.parse(range.to)) return null;
+	return range;
+}
+
 export async function collectAuditExport(
 	format: "json" | "csv",
 	getPage: (cursor?: string) => Promise<ExportPage>,

@@ -4,18 +4,18 @@
 //   Executive summary of one workspace: counts-only summary, incident triage
 //   counts, headlines in English or Turkish and the scheduled-report options.
 // POST { action: "rollup",   tenant_id, days }
-//   One row of counts per workspace the caller administers (owner or admin of
-//   an active workspace, at most 50). Each workspace's identity barrier is
+//   One row of counts per workspace the caller administers or audits (owner,
+//   admin or auditor of an active workspace, at most 50). Each workspace's identity barrier is
 //   checked against the caller's session; a workspace whose MFA/SSO policy the
 //   session does not meet is listed by name only, without figures.
 // POST { action: "document", tenant_id, days, language, include_teams }
 //   The printable executive report (self-contained HTML, the same document the
 //   scheduled summary attaches), returned for download.
 // POST { action: "set_options", tenant_id, language, attachment }
-//   Language and attachment choice of the scheduled summary. AAL2.
+//   Language and attachment choice of the scheduled summary. AAL2, owner/admin.
 //
-// Every request: session -> identity barrier -> active owner/admin membership
-// in an active workspace -> tenant rate limit. Every read is counts, enums and
+// Every request: session -> identity barrier -> active owner/admin/auditor
+// membership in an active workspace (set_options: owner/admin) -> tenant rate limit. Every read is counts, enums and
 // workspace names only (see _shared/executive-report.ts). Every failure is
 // closed: an unreadable summary is an error, never a page of zeros.
 
@@ -39,6 +39,7 @@ import { GovernanceDigestError, type GovernanceSummary, parseGovernanceSummary }
 import { checkIdentityBarrier } from "../_shared/identity-barrier.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
+import { isAuditReaderRole, isTenantReadRole } from "../_shared/tenant-roles.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 1024;
@@ -165,7 +166,7 @@ async function teamRollup(
 	for (const item of data) {
 		if (
 			!isRecord(item) || typeof item.tenant_id !== "string" || !UUID.test(item.tenant_id) ||
-			typeof item.name !== "string" || (item.role !== "owner" && item.role !== "admin")
+			typeof item.name !== "string" || (item.role !== "owner" && item.role !== "admin" && item.role !== "auditor")
 		) {
 			throw new ReadFailure("report_invalid");
 		}
@@ -238,11 +239,16 @@ export function createReportsHandler(deps: ReportsDeps = {}) {
 			const role = String((member as { role?: unknown } | null)?.role ?? "");
 			if (
 				!membershipActive(member as { role?: string; expires_at?: string | null } | null, now()) ||
-				!["owner", "admin", "member", "viewer"].includes(role) || !tenant
+				!isTenantReadRole(role) || !tenant
 			) {
 				return corsJson(req, 403, { error: "workspace_forbidden" });
 			}
-			if (role !== "owner" && role !== "admin") return corsJson(req, 403, { error: "report_role_insufficient" });
+			// Reading reports is for owners, admins and the read-only auditor;
+			// changing the scheduled-report options is owner/admin only.
+			if (!isAuditReaderRole(role)) return corsJson(req, 403, { error: "report_role_insufficient" });
+			if (command.action === "set_options" && role !== "owner" && role !== "admin") {
+				return corsJson(req, 403, { error: "report_role_insufficient" });
+			}
 			if ((tenant as { status?: unknown }).status !== "active") return corsJson(req, 409, { error: "workspace_not_active" });
 			if (command.action === "set_options") {
 				const { data: assurance, error: assuranceError } = await db.auth.mfa.getAuthenticatorAssuranceLevel(token);

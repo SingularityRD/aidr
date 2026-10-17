@@ -6,7 +6,8 @@ import { corsJson, handleCors } from "../_shared/cors.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
 import { ADMIN_AUDIT_EXPORT_COLUMNS, AUDIT_EXPORT_COLUMNS, serializeAuditExport } from "../_shared/audit-export.ts";
 import { type PlanEntitlementDb, requireFeature } from "../_shared/plan-entitlements.ts";
-import { readAuditCursor, signAuditCursor } from "../_shared/export-cursor.ts";
+import { parseAuditExportRange, readAuditCursor, signAuditCursor } from "../_shared/export-cursor.ts";
+import { AUDIT_READER_ROLES } from "../_shared/tenant-roles.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import {
 	AUDIT_EXPORT_MAX_OBJECT_BYTES,
@@ -16,7 +17,6 @@ import {
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const MAX_BODY_BYTES = 8 * 1024;
-const AUDIT_EXPORT_ROLES: ReadonlySet<string> = new Set(["owner", "admin"]);
 const AUDIT_EXPORT_PER_USER_PER_MINUTE = 30;
 const AUDIT_EXPORT_PER_TENANT_PER_MINUTE = 60;
 
@@ -47,15 +47,20 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			// absent or "audit" exports the tenant audit_logs trail as before.
 			if (body.source !== undefined && body.source !== "audit" && body.source !== "admin") return corsJson(req, 400, { error: "invalid_export" });
 			const adminTrail = body.source === "admin";
+			// Optional half-open range [from, to) applied to either trail. It is
+			// signed into every cursor, so a later page cannot widen or drop it.
+			const range = parseAuditExportRange(body.from, body.to);
+			if (!range.ok) return corsJson(req, 400, { error: "invalid_export_range" });
 			const identity = await checkIdentityBarrier(db, token, auth.user.id, body.team_id);
 			if (!identity.ok) return corsJson(req, identity.status, { error: identity.error });
 			const { data: member, error: memberError } = await db.from("tenant_members").select("role,expires_at").eq("tenant_id", body.team_id).eq("user_id", auth.user.id).maybeSingle();
 			if (memberError) return corsJson(req, 503, { error: "authorization_unavailable" });
 			if (!membershipActive(member)) return corsJson(req, 403, { error: "team_forbidden" });
 			// Product decision: bulk audit export (a copy of the whole tenant audit
-			// trail) is an owner/admin capability. Viewers and members keep in-app
-			// read access but cannot export.
-			if (!AUDIT_EXPORT_ROLES.has(String((member as { role?: unknown } | null)?.role ?? ""))) {
+			// trail) is an owner/admin capability, plus the read-only auditor role
+			// whose purpose it is. Viewers and members keep in-app read access but
+			// cannot export.
+			if (!AUDIT_READER_ROLES.has(String((member as { role?: unknown } | null)?.role ?? ""))) {
 				return corsJson(req, 403, { error: "audit_export_forbidden" });
 			}
 			const { data: tenant, error: tenantError } = await db.from("tenants").select("status").eq("id", body.team_id).maybeSingle();
@@ -82,13 +87,16 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 			const { data: hold, error: holdError } = await db.from("tenant_legal_holds").select("id").eq("tenant_id", body.team_id).is("released_at", null).limit(1).maybeSingle();
 			if (holdError) return corsJson(req, 503, { error: "legal_hold_unavailable" });
 			if (hold) return corsJson(req, 409, { error: "legal_hold_active" });
-			const binding = { tenant: body.team_id, user: auth.user.id, format: body.format as "csv" | "json", ...(adminTrail ? { source: "admin" as const } : {}) };
+			const binding = { tenant: body.team_id, user: auth.user.id, format: body.format as "csv" | "json", ...(adminTrail ? { source: "admin" as const } : {}), ...(range.from ? { from: range.from } : {}), ...(range.to ? { to: range.to } : {}) };
 			let cursor;
 			try { cursor = body.cursor === undefined ? null : await readAuditCursor(body.cursor, config.values.SUPABASE_SERVICE_ROLE_KEY, binding); }
 			catch { return corsJson(req, 400, { error: "invalid_or_expired_export_cursor" }); }
 			const snapshot = cursor?.snapshot ?? new Date().toISOString();
 			const expires = cursor?.expires ?? Date.now() + 900000;
-			let query = db.from(adminTrail ? "admin_audit_logs" : "audit_logs").select((adminTrail ? ADMIN_AUDIT_EXPORT_COLUMNS : AUDIT_EXPORT_COLUMNS).join(",")).eq("tenant_id", body.team_id).lte("created_at", snapshot).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(501);
+			let query = db.from(adminTrail ? "admin_audit_logs" : "audit_logs").select((adminTrail ? ADMIN_AUDIT_EXPORT_COLUMNS : AUDIT_EXPORT_COLUMNS).join(",")).eq("tenant_id", body.team_id).lte("created_at", snapshot);
+			if (range.from) query = query.gte("created_at", range.from);
+			if (range.to) query = query.lt("created_at", range.to);
+			query = query.order("created_at", { ascending: true }).order("id", { ascending: true }).limit(501);
 			if (cursor) query = query.or(`created_at.gt.${cursor.after.created_at},and(created_at.eq.${cursor.after.created_at},id.gt.${cursor.after.id})`);
 			const { data: rows, error: rowsError } = await query;
 			if (rowsError || !rows) return corsJson(req, 503, { error: "export_unavailable" });
@@ -139,7 +147,7 @@ export function createAuditExportHandler(deps: AuditExportDeps = {}) {
 				if (publicationError) return corsJson(req, 503, { error: "export_unavailable" });
 				if (publication === "legal_hold_active") return corsJson(req, 409, { error: "legal_hold_active" });
 				if (publication !== "published") return corsJson(req, 503, { error: "export_unavailable" });
-				const response = corsJson(req, 200, { ok: true, url: downloadUrl, rows: page.length, bytes, sha256, expires_in: 60, snapshot, next_cursor: nextCursor, complete: nextCursor === null, tenant_storage_bytes_remaining: reservation.remainingBytes });
+				const response = corsJson(req, 200, { ok: true, url: downloadUrl, rows: page.length, bytes, sha256, expires_in: 60, snapshot, ...(range.from ? { from: range.from } : {}), ...(range.to ? { to: range.to } : {}), next_cursor: nextCursor, complete: nextCursor === null, tenant_storage_bytes_remaining: reservation.remainingBytes });
 				published = true;
 				return response;
 			} finally {

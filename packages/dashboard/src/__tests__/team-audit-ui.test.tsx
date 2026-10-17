@@ -34,6 +34,7 @@ function teamState(overrides: Record<string, unknown> = {}): ReturnType<typeof u
 		},
 		canViewAudit: true,
 		canManageTeam: true,
+		canReadAuditTrail: true,
 		auditLogs: [],
 		auditLoaded: true,
 		auditError: null,
@@ -124,16 +125,53 @@ describe("Team audit customer UI", () => {
 	it("shows audit rows but no export controls to members and viewers", () => {
 		const exportAuditLogs = vi.fn();
 		useTeamMock.mockReturnValue(
-			teamState({ canManageTeam: false, exportAuditLogs, auditLogs: [makeRow(TEAM_A, 0)] }),
+			teamState({
+				canManageTeam: false,
+				canReadAuditTrail: false,
+				exportAuditLogs,
+				auditLogs: [makeRow(TEAM_A, 0)],
+			}),
 		);
 		render(<TeamAuditPanel />);
 		expect(screen.getByText("action-0")).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Prepare CSV export" })).toBeNull();
 		expect(screen.queryByRole("button", { name: "Prepare JSON export" })).toBeNull();
 		expect(
-			screen.getByText("Audit export is available to team owners and admins."),
+			screen.getByText("Audit export is available to team owners, admins and auditors."),
 		).toBeInTheDocument();
 		expect(exportAuditLogs).not.toHaveBeenCalled();
+	});
+
+	it("exports a chosen date range and blocks an inverted one", async () => {
+		const exportAuditLogs = vi.fn().mockResolvedValue("blob:ranged");
+		useTeamMock.mockReturnValue(teamState({ exportAuditLogs }));
+		render(<TeamAuditPanel />);
+		fireEvent.change(screen.getByLabelText("From (UTC date)"), { target: { value: "2026-09-01" } });
+		fireEvent.change(screen.getByLabelText("To (UTC date, inclusive)"), {
+			target: { value: "2026-09-30" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Prepare CSV export" }));
+		await screen.findByRole("link", { name: "Save audit export" });
+		expect(exportAuditLogs).toHaveBeenCalledWith("csv", "audit", {
+			from: "2026-09-01T00:00:00.000Z",
+			to: "2026-10-01T00:00:00.000Z",
+		});
+
+		fireEvent.change(screen.getByLabelText("From (UTC date)"), { target: { value: "2026-10-05" } });
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"The start date must not be after the end date.",
+		);
+		expect(screen.getByRole("button", { name: "Prepare CSV export" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Prepare JSON export" })).toBeDisabled();
+	});
+
+	it("gives the read-only auditor the export controls without team management", () => {
+		useTeamMock.mockReturnValue(teamState({ canManageTeam: false, canReadAuditTrail: true }));
+		render(<TeamAuditPanel />);
+		expect(screen.getByRole("button", { name: "Prepare CSV export" })).toBeEnabled();
+		expect(
+			screen.queryByText("Audit export is available to team owners, admins and auditors."),
+		).toBeNull();
 	});
 
 	it("offers a save link only for a completed tenant-scoped export", async () => {
@@ -146,7 +184,7 @@ describe("Team audit customer UI", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Prepare CSV export" }));
 		const csvLink = await screen.findByRole("link", { name: "Save audit export" });
-		expect(exportAuditLogs).toHaveBeenCalledWith("csv");
+		expect(exportAuditLogs).toHaveBeenCalledWith("csv", "audit", {});
 		expect(csvLink).toHaveAttribute("href", "blob:csv-export");
 		expect(csvLink.getAttribute("download")).toContain(TEAM_A);
 		expect(csvLink.getAttribute("download")).toMatch(/\.csv$/);
@@ -159,7 +197,7 @@ describe("Team audit customer UI", () => {
 				"blob:json-export",
 			),
 		);
-		expect(exportAuditLogs).toHaveBeenLastCalledWith("json");
+		expect(exportAuditLogs).toHaveBeenLastCalledWith("json", "audit", {});
 		expect(
 			screen.getByRole("link", { name: "Save audit export" }).getAttribute("download"),
 		).toMatch(/\.json$/);
@@ -177,7 +215,7 @@ describe("Team audit customer UI", () => {
 		useTeamMock.mockReturnValue(teamState({ exportAuditLogs }));
 		const { rerender } = render(<TeamAuditPanel />);
 		fireEvent.click(screen.getByRole("button", { name: "Prepare CSV export" }));
-		expect(exportAuditLogs).toHaveBeenCalledWith("csv");
+		expect(exportAuditLogs).toHaveBeenCalledWith("csv", "audit", {});
 
 		useTeamMock.mockReturnValue(teamState({ currentTeam: { id: TEAM_B, name: "Team B" } }));
 		rerender(<TeamAuditPanel />);

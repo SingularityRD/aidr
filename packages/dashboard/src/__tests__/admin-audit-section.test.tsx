@@ -31,7 +31,7 @@ function row(id: number) {
 function team(overrides: Record<string, unknown> = {}) {
 	return {
 		currentTeam: { id: TENANT, tenant_id: TENANT, name: "Team" },
-		canManageTeam: true,
+		canReadAuditTrail: true,
 		exportAuditLogs: vi.fn().mockResolvedValue("blob:admin"),
 		...overrides,
 	};
@@ -72,7 +72,7 @@ describe("Administrative actions (admin_audit_logs)", () => {
 	});
 
 	it("is not rendered, and never queried, for members and viewers", () => {
-		useTeamMock.mockReturnValue(team({ canManageTeam: false }));
+		useTeamMock.mockReturnValue(team({ canReadAuditTrail: false }));
 		const { container } = render(<AdminAuditSection />);
 		expect(container).toBeEmptyDOMElement();
 		expect(rpc).not.toHaveBeenCalled();
@@ -95,7 +95,7 @@ describe("Administrative actions (admin_audit_logs)", () => {
 		useTeamMock.mockReturnValue(state);
 		render(<AdminAuditSection />);
 		fireEvent.click(await screen.findByRole("button", { name: "Export administrative CSV" }));
-		await waitFor(() => expect(state.exportAuditLogs).toHaveBeenCalledWith("csv", "admin"));
+		await waitFor(() => expect(state.exportAuditLogs).toHaveBeenCalledWith("csv", "admin", {}));
 		expect(await screen.findByText("Save administrative audit export")).toHaveAttribute(
 			"href",
 			"blob:admin",

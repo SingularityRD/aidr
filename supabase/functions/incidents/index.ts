@@ -5,7 +5,8 @@
 //
 // Every request: session -> identity barrier (tenant MFA/SSO policy, global
 // revocation) -> live membership in an active tenant -> tenant rate limit.
-// Reading (list, history) is open to every active member, viewers included,
+// Reading (list, history) is open to every active member, viewers and
+// read-only auditors included,
 // because the incidents themselves are. Changing triage (update) additionally
 // needs owner/admin and AAL2, and goes through one service-role RPC that
 // re-checks role and input under a tenant lock, applies optimistic
@@ -28,6 +29,7 @@ import {
 } from "../_shared/incident-triage.ts";
 import { consumeTenantRateLimit, rateLimitHeaders, readBoundedJson } from "../_shared/request-limits.ts";
 import { membershipActive } from "../_shared/runtime-policy.ts";
+import { isTenantReadRole } from "../_shared/tenant-roles.ts";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const TRIAGE_COLUMNS = "event_id,status,owner_user_id,resolution_note,snoozed_until,version,updated_by,updated_at";
@@ -93,7 +95,7 @@ export function createIncidentsHandler(deps: IncidentsDeps = {}) {
 			const role = String((member as { role?: unknown } | null)?.role ?? "");
 			if (
 				!membershipActive(member as { role?: string; expires_at?: string | null } | null, now()) ||
-				!["owner", "admin", "member", "viewer"].includes(role) || !tenant
+				!isTenantReadRole(role) || !tenant
 			) {
 				return corsJson(req, 403, { error: "workspace_forbidden" });
 			}
