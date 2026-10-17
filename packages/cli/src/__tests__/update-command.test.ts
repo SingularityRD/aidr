@@ -754,6 +754,17 @@ describe("aidr update outside an installer layout", () => {
 	it("explains how to update other installs and that Linux updates run as the user", async () => {
 		const other = await update({ check: true }, { executable: null });
 		expect(other.output).toContain("was not installed with the Windows or Linux installer");
+		// --check --json stays JSON even when the check cannot start.
+		process.exitCode = undefined;
+		const json = await update({ check: true, json: true }, { executable: null });
+		expect(json.errors).toEqual([]);
+		expect(JSON.parse(json.lines.join("\n"))).toMatchObject({
+			schema_version: 1,
+			status: "error",
+			error: "not_installer_install",
+			current: "1.4.0",
+		});
+		expect(process.exitCode).toBe(1);
 		const asRoot = await update({ from: join(root, "mirror"), yes: true }, { isRoot: true });
 		expect(asRoot.output).toContain("not as root or with sudo");
 		const mac = await update({ check: true }, { platform: "darwin", arch: "arm64" });

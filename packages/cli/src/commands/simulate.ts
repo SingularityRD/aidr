@@ -536,7 +536,7 @@ export async function runSimulation(options: SimulateOptions): Promise<Simulatio
 		suites,
 		connector,
 		minScore,
-		sensitivity: sensitivityOverride ?? "(from config)",
+		sensitivity: sensitivityOverride ?? FROM_CONFIG,
 		mode: connector ? "connector" : "evaluator",
 	});
 }
@@ -760,27 +760,64 @@ function pct(numerator: number, denominator: number): string {
 	return `${round1((numerator / denominator) * 100)}%`;
 }
 
+/** The sensitivity a run used when it took the configured one (the JSON report keeps this marker). */
+const FROM_CONFIG = "(from config)";
+
+function sensitivityLabel(sensitivity: string): string {
+	return sensitivity === FROM_CONFIG ? ct("simulate.fromConfig") : sensitivity;
+}
+
+/**
+ * A table column at least `min` wide and always wider than its header, so a
+ * long translated header (Turkish "Yanlış alarm") never runs into its neighbour.
+ */
+function columnWidth(min: number, header: string): number {
+	return Math.max(min, header.length + 1);
+}
+
 export function formatTable(report: SimulationReport): string {
 	const lines: string[] = [];
 	lines.push(ct("simulate.title"));
 	lines.push(
 		ct("simulate.modeLine", {
 			mode: `${report.mode}${report.connector ? ` (${report.connector})` : ""}`,
-			sensitivity: report.sensitivity,
+			sensitivity: sensitivityLabel(report.sensitivity),
 		}),
 	);
 	lines.push("");
-	const header = `${ct("simulate.colCategory").padEnd(24)}${ct("simulate.colDetected").padStart(12)}${ct("simulate.colRate").padStart(9)}${ct("simulate.colBenignFp").padStart(12)}`;
+	const category = ct("simulate.colCategory");
+	const detected = ct("simulate.colDetected");
+	const rate = ct("simulate.colRate");
+	const benignFp = ct("simulate.colBenignFp");
+	const w = {
+		category: columnWidth(24, category),
+		detected: columnWidth(12, detected),
+		rate: columnWidth(9, rate),
+		benignFp: columnWidth(12, benignFp),
+	};
+	const row = (first: string, second: string, third: string, fourth: string) =>
+		`${first.padEnd(w.category)}${second.padStart(w.detected)}${third.padStart(w.rate)}${fourth.padStart(w.benignFp)}`;
+	const header = row(category, detected, rate, benignFp);
 	lines.push(header);
 	lines.push("-".repeat(header.length));
 	for (const c of report.categories) {
 		lines.push(
-			`${categoryLabel(c.category).padEnd(24)}${`${c.detected}/${c.counted}`.padStart(12)}${pct(c.detected, c.counted).padStart(9)}${`${c.benignFalsePositives}/${c.benignCounted}`.padStart(12)}`,
+			row(
+				categoryLabel(c.category),
+				`${c.detected}/${c.counted}`,
+				pct(c.detected, c.counted),
+				`${c.benignFalsePositives}/${c.benignCounted}`,
+			),
 		);
 	}
 	lines.push("-".repeat(header.length));
 	lines.push(
-		`${ct("simulate.total").padEnd(24)}${`${report.totals.detected}/${report.totals.counted}`.padStart(12)}${`${report.score}%`.padStart(9)}${`${report.totals.benignFalsePositives}/${report.totals.benignCounted}`.padStart(12)}`,
+		row(
+			ct("simulate.total"),
+			`${report.totals.detected}/${report.totals.counted}`,
+			`${report.score}%`,
+			`${report.totals.benignFalsePositives}/${report.totals.benignCounted}`,
+		),
 	);
 	lines.push("");
 	lines.push(ct("simulate.score", { score: report.score }));
@@ -905,7 +942,7 @@ export function formatHtml(report: SimulationReport): string {
 			ct("simulate.html.sub", {
 				generated: report.generatedAt,
 				mode: `${report.mode}${report.connector ? ` (${report.connector})` : ""}`,
-				sensitivity: report.sensitivity,
+				sensitivity: sensitivityLabel(report.sensitivity),
 			}),
 		)}</p>
     <div class="cards">

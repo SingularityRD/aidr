@@ -19,7 +19,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { anyConnectorInstalled, detectConnectorStatuses } from "../utils/connector-status.js";
 
 let homes: string[] = [];
@@ -79,6 +79,28 @@ describe("connector detection reports measured state", () => {
 		expect(claude?.state).toBe("runtime_present_not_installed");
 		// A runtime with no AIDR registration must NOT count as protected.
 		expect(anyConnectorInstalled([claude!])).toBe(false);
+	});
+
+	it("describes every host in Turkish under AIDR_LOCALE=tr", () => {
+		const home = makeHome();
+		write(home, join(".claude", "settings.json"), JSON.stringify({ hooks: {} }));
+		mkdirSync(join(home, ".codex"), { recursive: true });
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			const statuses = detectConnectorStatuses(home, {}, []);
+			const claude = statuses.find((s) => s.id === "claude-code");
+			expect(claude?.detail).toBe("~/.claude/settings.json var ama AIDR'ye hiç başvurmuyor");
+			expect(claude?.remedy).toContain("marketplace olarak ekleyin");
+			expect(statuses.find((s) => s.id === "codex")?.remedy).toContain("işleyiciyle");
+			// No English sentence is left in any detail or remedy.
+			for (const status of statuses) {
+				expect(`${status.detail} ${status.remedy ?? ""}`).not.toMatch(
+					/\b(found|exists|registered|Install|Verify|Add|Check)\b/,
+				);
+			}
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it.each([

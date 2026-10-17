@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	PRIVACY_EXIT,
 	PRIVACY_SCAN_MAX_BYTES,
@@ -276,6 +276,20 @@ describe("aidr privacy scan - input handling", () => {
 		expect(types.stderr).toContain('Unknown type "bogus"');
 		const failOn = await run(undefined, { failOn: "sometimes" }, { stdin: stdinOf(SAMPLE) });
 		expect(failOn.code).toBe(PRIVACY_EXIT.error);
+	});
+
+	it("reports in Turkish under AIDR_LOCALE=tr", async () => {
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			const missing = await run(join(directory, "missing.txt"));
+			expect(missing.stderr).toContain("Dosya bulunamadı");
+			const report = await run(undefined, {}, { stdin: stdinOf(SAMPLE) });
+			expect(report.stdout).toContain("AIDR gizlilik taraması: standart girdi");
+			expect(report.stdout).toContain("Değerler hiçbir zaman yazdırılmaz");
+			expect(report.stdout).not.toMatch(/finding\(s\)|local only/);
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 });
 

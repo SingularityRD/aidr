@@ -209,3 +209,12 @@ describe("incident command output", () => {
 		expect(ct("approvals.none")).toBe("No Singularity AIDR asks are waiting for approval.");
 	});
 });
+
+describe("output flags", () => {
+	it("accepts -o for support-bundle --out, like aibom's -o/--output", () => {
+		const out = find(["support-bundle"]).options.find((option) => option.long === "--out");
+		expect(out?.short).toBe("-o");
+		const output = find(["aibom"]).options.find((option) => option.long === "--output");
+		expect(output?.short).toBe("-o");
+	});
+});

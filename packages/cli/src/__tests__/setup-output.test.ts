@@ -136,7 +136,7 @@ describe("aidr setup connector install", () => {
 		await setupCommand({}, { env: {} });
 		const summary = stdout.join("\n");
 		expect(summary).not.toContain("✅ Setup complete!");
-		expect(summary).toContain("Protection is NOT yet active");
+		expect(summary).toContain("but protection is NOT yet active for every AI tool");
 		expect(summary).toContain("Not protected: Codex");
 		expect(summary).toContain("Codex: install it");
 		expect(recordHooksInstalled).toHaveBeenCalledWith(false);
@@ -159,7 +159,50 @@ describe("aidr setup connector install", () => {
 		expect(progress).toContain("! No supported AI tool found in this home directory");
 		expect(progress).not.toMatch(/✓ No supported/);
 		expect(stdout.join("\n")).not.toContain("✅");
+		// Nothing was registered, so there is nothing to restart or verify.
+		expect(stdout.join("\n")).not.toContain("aidr verify");
 		expect(process.exitCode).toBe(3); // distinct from a failure: no AI tool to protect yet (installers read it)
+
+		// A dry run reports the same outcome with the same exit code.
+		process.exitCode = undefined;
+		stdout.length = 0;
+		await setupCommand({ dryRun: true }, { env: {} });
+		expect(stdout.join("\n")).toContain("Run without --dry-run to apply.");
+		expect(process.exitCode).toBe(3);
+	});
+
+	it("labels a detected host left out by --host as 'detected — not selected'", async () => {
+		vi.mocked(installConnectors).mockReturnValue([
+			hostResult("installed", "installed"),
+			{
+				...hostResult("skipped_not_selected", "runtime_present_not_installed"),
+				host: "cursor",
+				label: "Cursor",
+				detail: "",
+			},
+		] as never);
+		await setupCommand({ host: "codex" }, { env: {} });
+		const summary = stdout.join("\n");
+		expect(summary).toContain("  Cursor       detected — not selected\n");
+		expect(summary).not.toContain("Cursor       not detected");
+		// The operator's selection is not a failed setup.
+		expect(summary).toContain("✅ Setup complete!");
+		expect(process.exitCode).toBeUndefined();
+	});
+
+	it("reports a reused configuration once", async () => {
+		vi.mocked(createConfig).mockResolvedValue({
+			path: "/workspace/test/.singularity-aidr/config.json",
+			outcome: "reused",
+			credential: "none",
+		});
+		await setupCommand({}, { env: {} });
+		const output = [...stdout, ...stderr].join("\n");
+		expect(output).toContain(
+			"✓ Configuration already in place — no changes were needed: /workspace/test/.singularity-aidr/config.json",
+		);
+		expect(output.split("/workspace/test/.singularity-aidr/config.json")).toHaveLength(2);
+		expect(output).not.toContain("Config already present");
 	});
 
 	it("reports a partly protected machine as not complete", async () => {
@@ -235,6 +278,12 @@ describe("aidr setup connector install", () => {
 		expect(installConnectors).not.toHaveBeenCalled();
 		expect(createConfig).not.toHaveBeenCalled();
 		expect(process.exitCode).toBe(1);
+		// Without a terminal the refusal says what needs confirming and how.
+		const refusal = stderr.join("\n");
+		expect(refusal).toContain("Claude Code plugin directory: /tmp/agent-supplied");
+		expect(refusal).toContain("interactive terminal and type 'install'");
+		expect(refusal).toContain("AIDR_OPERATOR_NONINTERACTIVE=1 and pass --yes");
+		expect(refusal).toContain("Nothing was changed.");
 
 		await setupCommand(
 			{ cursorVsix: "/verified/aidr-cursor.vsix", yes: true },

@@ -247,6 +247,25 @@ describe("aidr scan --skill / --upload", () => {
 		expect(result.exitCode).toBe(1);
 		expect(upload).not.toHaveBeenCalled();
 	});
+
+	it("treats a run without targets as a usage error (exit 1), in either language", async () => {
+		const result = await run({});
+		expect(result.exitCode).toBe(1);
+		expect(result.stdout).toBe("");
+		expect(result.stderr).toContain("No targets given.");
+		expect(result.stderr).toContain("aidr scan --target http://127.0.0.1:8080");
+
+		vi.stubEnv("AIDR_LOCALE", "tr");
+		try {
+			const turkish = await run({});
+			expect(turkish.exitCode).toBe(1);
+			expect(turkish.stderr).toContain("Hedef verilmedi.");
+			expect(turkish.stderr).toContain("# her satırda bir URL");
+			expect(turkish.stderr).not.toContain("No targets given");
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
 });
 
 describe("aidr scan --code", () => {

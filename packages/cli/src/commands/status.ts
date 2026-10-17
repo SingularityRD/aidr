@@ -35,13 +35,14 @@ const CONFIG_STATE_KEY = {
 	invalid: "status.configInvalid",
 } as const;
 
+/** A measured connector state in words (English keeps the state ids scripts already match). */
 const CONNECTOR_STATE_KEY = {
 	installed: "status.registrationDetected",
-	unavailable: "status.state.unavailable",
-	runtime_present_not_installed: "status.state.runtime_present_not_installed",
-	not_detected: "status.state.not_detected",
-	installed_but_degraded: "status.state.installed_but_degraded",
-} as const;
+	unavailable: "conn.state.unavailable",
+	runtime_present_not_installed: "conn.state.runtime_present_not_installed",
+	not_detected: "conn.state.not_detected",
+	installed_but_degraded: "conn.state.installed_but_degraded",
+} as const satisfies Record<ConnectorStatus["state"], string>;
 
 /** Registration, local evaluation and live host enforcement are separate facts. */
 /** The verdict as one line in the current locale. */

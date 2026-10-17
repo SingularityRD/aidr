@@ -21,6 +21,7 @@ import {
 	type SecretStore,
 	VERSION,
 } from "@singularityrd/aidr-core";
+import { type CliMessageKey, ct } from "../i18n/index.js";
 import {
 	type ConnectorDeps,
 	type HostCommandRunner,
@@ -556,65 +557,68 @@ function refusalRemedy(code: UninstallRefusalCode): string {
 	switch (code) {
 		case "receipt_missing":
 		case "receipt_unreadable":
-			return "Run 'aidr status' to see what is registered. A Claude Code marketplace install has no receipt: remove it with '/plugin uninstall aidr@aidr' and '/plugin marketplace remove aidr'. If AIDR was installed by hand or by an MDM, remove it with the same tool that installed it.";
+			return ct("uninstall.remedy.receipt");
 		case "settings_invalid_json":
 		case "settings_invalid_shape":
-			return "Repair or restore your agent settings file first; it was left untouched.";
+			return ct("uninstall.remedy.settings");
 		default:
-			return "Run 'aidr status' for the measured installation state before retrying.";
+			return ct("uninstall.remedy.default");
 	}
 }
 
+/** "Left alone: …" — the hook entries and registrations an uninstall did not touch. */
+function leftAloneLine(preserved: UninstallReport["preserved"]): string {
+	return ct("uninstall.leftAlone", {
+		entries: preserved.entries,
+		entryWord: ct(preserved.entries === 1 ? "uninstall.entry" : "uninstall.entries"),
+		hooks: preserved.hooks,
+	});
+}
+
 export function printUninstallReport(report: UninstallReport): void {
-	console.log("Singularity AIDR — uninstall (managed hooks only)");
-	console.log(`Target home: ${report.home}`);
+	console.log(ct("uninstall.titleHooks"));
+	console.log(ct("uninstall.targetHome", { home: report.home }));
 	if (report.receipt) {
 		console.log(
-			`Installation receipt verified: ${report.receipt_path} (connector ${report.receipt.connector}, digest ${report.receipt.artifact_sha256.slice(0, 12)}…)`,
+			ct("uninstall.receiptVerified", {
+				path: String(report.receipt_path),
+				connector: report.receipt.connector,
+				digest: report.receipt.artifact_sha256.slice(0, 12),
+			}),
 		);
 	}
 
 	if (report.outcome === "refused") {
-		console.log(`Refused: ${report.reason?.detail ?? "the installation could not be verified."}`);
-		console.log(`Reason code: ${report.reason?.code ?? "unknown"}`);
-		console.log("No configuration was changed.");
+		console.log(
+			ct("uninstall.refused", {
+				reason: report.reason?.detail ?? ct("uninstall.refusedInstall"),
+			}),
+		);
+		console.log(ct("uninstall.reasonCode", { code: report.reason?.code ?? "unknown" }));
+		console.log(ct("uninstall.noConfigChanged"));
 		if (report.reason) console.log(refusalRemedy(report.reason.code));
 		return;
 	}
 
 	if (report.outcome === "nothing_to_remove") {
-		console.log("No AIDR-managed hook entries found; agent settings were left untouched.");
-		console.log(
-			`Left alone: ${report.preserved.entries} hook entr${report.preserved.entries === 1 ? "y" : "ies"} and ${report.preserved.hooks} non-AIDR hook registration(s).`,
-		);
+		console.log(ct("uninstall.noManagedHooks"));
+		console.log(leftAloneLine(report.preserved));
 		return;
 	}
 
-	console.log(`Removed ${report.removed.length} AIDR-managed hook registration(s):`);
+	console.log(ct("uninstall.removedCount", { count: report.removed.length }));
 	for (const record of report.removed) {
-		console.log(`  ${record.event.padEnd(12)} ${record.command ?? "(no command recorded)"}`);
+		console.log(`  ${record.event.padEnd(12)} ${record.command ?? ct("uninstall.noCommand")}`);
 	}
-	console.log(
-		`Left alone: ${report.preserved.entries} hook entr${report.preserved.entries === 1 ? "y" : "ies"} and ${report.preserved.hooks} non-AIDR hook registration(s).`,
-	);
+	console.log(leftAloneLine(report.preserved));
 	if (report.preserved.events.length > 0) {
-		console.log(
-			`Hook events left empty and therefore deleted: ${report.preserved.events.join(", ")}`,
-		);
+		console.log(ct("uninstall.emptyEvents", { events: report.preserved.events.join(", ") }));
 	}
-	console.log(`Backup of the previous settings: ${report.backup_path}`);
-	console.log(
-		"Preserved: AIDR policy/allowlist configuration, connector files, the installation receipt and every non-AIDR hook.",
-	);
-	console.log(
-		"The local CLI credential and its vault item are also preserved; use 'aidr config revoke-key' to remove that credential. Managed endpoint API keys are unchanged.",
-	);
-	console.log(
-		"Protection is NOT active for this agent now: AIDR no longer inspects its tool calls.",
-	);
-	console.log(
-		"Re-enable it with 'aidr setup' and the connector install for your agent (docs/getting-started.md).",
-	);
+	console.log(ct("uninstall.backup", { path: String(report.backup_path) }));
+	console.log(ct("uninstall.preserved"));
+	console.log(ct("uninstall.credentialKept"));
+	console.log(ct("uninstall.notActive"));
+	console.log(ct("uninstall.reEnable"));
 }
 
 // ── Full removal: every connector, the data directory and vault items ────
@@ -895,70 +899,89 @@ export async function uninstallEverything(
 	return report;
 }
 
-const REMOVAL_TEXT: Record<HostRemovalResult["action"], string> = {
-	removed: "removed",
-	nothing_to_remove: "nothing to remove",
-	would_remove: "would remove",
-	manual: "manual step needed",
-	failed: "FAILED",
+const REMOVAL_TEXT: Record<HostRemovalResult["action"], CliMessageKey> = {
+	removed: "uninstall.action.removed",
+	nothing_to_remove: "uninstall.action.nothingToRemove",
+	would_remove: "uninstall.action.wouldRemove",
+	manual: "setup.action.manual",
+	failed: "setup.action.failed",
 };
 
+/** The "Local data:" line for what happened to ~/.singularity-aidr. */
+function dataLine(data: FullUninstallReport["data"]): string {
+	switch (data.action) {
+		case "deleted":
+			return ct("uninstall.data.deleted", { path: data.path });
+		case "kept":
+			return ct("uninstall.data.kept", {
+				path: data.path,
+				reason: data.reason ? ` (${data.reason})` : "",
+			});
+		case "would_delete":
+			return ct("uninstall.data.wouldDelete", { path: data.path });
+		case "absent":
+			return ct("uninstall.data.absent", { path: data.path });
+		default:
+			return ct("uninstall.data.failed", {
+				path: data.path,
+				reason: data.reason ?? ct("uninstall.unknownError"),
+			});
+	}
+}
+
 function printFullUninstallReport(report: FullUninstallReport): void {
-	console.log("Singularity AIDR — uninstall");
-	console.log(`Target home: ${report.home}`);
+	console.log(ct("uninstall.title"));
+	console.log(ct("uninstall.targetHome", { home: report.home }));
 	if (report.outcome === "refused") {
-		console.log(`Refused: ${report.reason?.detail ?? "the target could not be verified."}`);
-		console.log("Nothing was changed.");
+		console.log(
+			ct("uninstall.refused", { reason: report.reason?.detail ?? ct("uninstall.refusedTarget") }),
+		);
+		console.log(ct("setup.nothingChanged"));
 		return;
 	}
 	const hooks = report.claude_hooks;
 	if (hooks.outcome === "removed") {
 		console.log(
-			`Claude Code managed hooks: removed ${hooks.removed.length} (backup: ${hooks.backup_path}).`,
+			ct("uninstall.hooksRemoved", {
+				count: hooks.removed.length,
+				backup: String(hooks.backup_path),
+			}),
 		);
 	} else if (hooks.outcome === "refused") {
-		console.log(`Claude Code managed hooks: NOT removed — ${hooks.reason?.detail ?? "refused"}`);
+		console.log(
+			ct("uninstall.hooksRefused", {
+				reason: hooks.reason?.detail ?? ct("uninstall.refusedWord"),
+			}),
+		);
 	} else if (report.outcome === "dry_run" && hooks.removed.length > 0) {
-		console.log(`Claude Code managed hooks: would remove ${hooks.removed.length}.`);
+		console.log(ct("uninstall.hooksWould", { count: hooks.removed.length }));
 	}
-	console.log("Connectors:");
+	console.log(ct("setup.connectors"));
 	for (const entry of report.connectors) {
-		console.log(`  ${entry.label.padEnd(12)} ${REMOVAL_TEXT[entry.action]} — ${entry.detail}`);
+		console.log(`  ${entry.label.padEnd(12)} ${ct(REMOVAL_TEXT[entry.action])} — ${entry.detail}`);
 		for (const change of entry.changes) console.log(`               ${change}`);
 	}
-	const data = report.data;
-	const dataLine: Record<FullUninstallReport["data"]["action"], string> = {
-		deleted: `deleted ${data.path} (configuration, allowlist, audit log, approvals, quarantine, keys)`,
-		kept: `kept ${data.path}${data.reason ? ` (${data.reason})` : ""}`,
-		would_delete: `would delete ${data.path} and the AIDR vault items`,
-		absent: `${data.path} does not exist`,
-		failed: `FAILED to delete ${data.path}: ${data.reason ?? "unknown error"}`,
-	};
-	console.log(`Local data: ${dataLine[data.action]}`);
+	console.log(ct("uninstall.localData", { line: dataLine(report.data) }));
 	if (report.vault.revoked.length > 0) {
-		console.log(`Vault items removed: ${report.vault.revoked.join(", ")}`);
+		console.log(ct("uninstall.vaultRemoved", { items: report.vault.revoked.join(", ") }));
 	}
 	if (report.vault.failed.length > 0) {
-		console.log(`Vault items that could NOT be removed: ${report.vault.failed.join(", ")}`);
+		console.log(ct("uninstall.vaultFailed", { items: report.vault.failed.join(", ") }));
 	}
 	if (report.vault.note) console.log(report.vault.note);
 	const pending = report.connectors.filter((entry) => entry.followUp.length > 0);
 	if (pending.length > 0) {
-		console.log("Still to do by hand:");
+		console.log(ct("uninstall.byHand"));
 		for (const entry of pending) for (const line of entry.followUp) console.log(line);
 	}
-	if (report.outcome === "dry_run") console.log("Dry run: nothing was changed.");
+	if (report.outcome === "dry_run") console.log(ct("uninstall.dryRun"));
 	else if (report.outcome === "partial") {
-		console.log(
-			"Uninstall is INCOMPLETE: see the lines above. AIDR may still inspect some agents.",
-		);
+		console.log(ct("uninstall.incomplete"));
 	} else if (report.outcome === "removed") {
-		console.log("AIDR was removed. Restart the agent hosts so they unload it.");
-		console.log(
-			"Browser Guard is a browser extension: remove it from the browser (or the enterprise policy) separately.",
-		);
+		console.log(ct("uninstall.removed"));
+		console.log(ct("uninstall.browserGuard"));
 	} else {
-		console.log("Nothing to remove.");
+		console.log(ct("uninstall.nothing"));
 	}
 }
 
@@ -984,19 +1007,17 @@ function confirmationPrompt(options: UninstallCommandOptions): string {
 	const target = escapeTerminalText(resolve(options.home ?? homedir()));
 	if (options.hooksOnly) {
 		return [
-			"Singularity AIDR — uninstall the managed agent hooks",
-			`  Target home: ${target}`,
-			"AIDR will no longer inspect this agent's tool calls.",
+			ct("uninstall.confirm.hooksTitle"),
+			`  ${ct("uninstall.targetHome", { home: target })}`,
+			ct("uninstall.confirm.hooksEffect"),
 		].join("\n");
 	}
 	return [
-		"Singularity AIDR — uninstall",
-		`  Target home: ${target}`,
-		"  Removes the AIDR connector from every agent host and the AIDR-managed hooks.",
-		options.keepData
-			? "  Keeps ~/.singularity-aidr and the AIDR vault items (--keep-data)."
-			: "  DELETES ~/.singularity-aidr (configuration, allowlist, audit log, approvals,\n  quarantined files, keys) and the AIDR items in the OS credential vault.",
-		"AIDR will no longer inspect any agent's tool calls.",
+		ct("uninstall.title"),
+		`  ${ct("uninstall.targetHome", { home: target })}`,
+		ct("uninstall.confirm.removes"),
+		ct(options.keepData ? "uninstall.confirm.keeps" : "uninstall.confirm.deletes"),
+		ct("uninstall.confirm.effect"),
 	].join("\n");
 }
 
@@ -1018,7 +1039,9 @@ async function uninstallCommand(
 			});
 		} catch (error) {
 			console.error(
-				`${error instanceof OperatorConfirmationError ? error.message : String(error)} Nothing was removed.`,
+				ct("uninstall.notRemoved", {
+					error: error instanceof OperatorConfirmationError ? error.message : String(error),
+				}),
 			);
 			process.exitCode = 1;
 			return;
